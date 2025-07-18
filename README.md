@@ -1,6 +1,6 @@
-# 🦤 Krackend.Sagas.Orchestration
+# 🐙 Krackend
 
-**Simple. Fast. Reliable message delivery for .NET.**
+**Modular. Performant. Backend architecture made simple.**
 
 [![Build](https://github.com/mape1402/pelican/actions/workflows/publish.yaml/badge.svg)](https://github.com/mape1402/pelican/actions/workflows/publish.yaml)
 [![NuGet](https://img.shields.io/nuget/v/Krackend.Sagas.Orchestration.svg)](https://www.nuget.org/packages/Krackend.Sagas.Orchestration/)
@@ -8,17 +8,18 @@
 
 ---
 
-`Krackend.Sagas.Orchestration` Description...
+**Krackend** is a lightweight backend framework designed to accelerate microservice and modular monolith development. It simplifies common patterns like event-driven architecture, messaging, validations, data access, and pipelines — all with developer experience and extensibility in mind.
 
 ---
 
 ## ✨ Features
 
-- ⚡ Fast: delegate-based
-- 🧩 Supports ...
-- 🔌 DI-friendly: plug it into any `IServiceProvider`
-- 🧼 Zero dependencies (except DI abstractions)
+- ⚡ Fast: built with performance-first principles
+- 🧩 Modular: supports microservices and monoliths alike
+- 🔌 DI-friendly: integrates seamlessly with any `IServiceProvider`
 - 🧪 Battle-tested with xUnit & NSubstitute
+- 🎯 Focused: core patterns like messaging, pipelines, and validations
+- 🛠️ Extensible: plug in your own conventions, behaviors, and adapters
 
 ---
 
