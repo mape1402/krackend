@@ -7,4 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [unreleased] 
+## [v0.0.0] - 2024-07-21
+
+### Added
+
+- 🎉 Preview Version: Add orchestration working services and pipelines.
