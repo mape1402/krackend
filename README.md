@@ -2,7 +2,7 @@
 
 **Modular. Performant. Backend architecture made simple.**
 
-[![Build](https://github.com/mape1402/pelican/actions/workflows/publish.yaml/badge.svg)](https://github.com/mape1402/pelican/actions/workflows/publish.yaml)
+[![Build](https://github.com/mape1402/krackend/actions/workflows/publish.yaml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/publish.yaml)
 [![NuGet](https://img.shields.io/nuget/v/Krackend.Sagas.Orchestration.svg)](https://www.nuget.org/packages/Krackend.Sagas.Orchestration/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
