@@ -16,7 +16,7 @@
         /// <param name="config">The post-process configuration to extend.</param>
         /// <returns>The updated post-process configuration.</returns>
         public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config)
-            => config.Forward(null, null);
+            => config.ForwardSuccess(null, null);
 
         /// <summary>
         /// Configures the pipeline to forward the operation request on success using the specified context and a payload transformation function.
@@ -26,7 +26,7 @@
         /// <param name="transformPayload">A function to transform the operation request payload before forwarding.</param>
         /// <returns>The updated post-process configuration.</returns>
         public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config, Func<TRequest, object> transformPayload)
-            => config.Forward(null, transformPayload);
+            => config.ForwardSuccess(null, transformPayload);
 
         /// <summary>
         /// Configures the pipeline to forward the operation request on success to a specific topic using the specified context.
@@ -36,7 +36,7 @@
         /// <param name="topic">The topic to which the operation should be forwarded.</param>
         /// <returns>The updated post-process configuration.</returns>
         public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic)
-            => config.Forward(topic, null);
+            => config.ForwardSuccess(topic, null);
 
         /// <summary>
         /// Configures the pipeline to forward the operation request on success to a specific topic using the specified context and a payload transformation function.
@@ -66,7 +66,7 @@
         /// <param name="config">The post-process configuration to extend.</param>
         /// <returns>The updated post-process configuration.</returns>
         public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config)
-            => config.Forward(null, null);
+            => config.ForwardSuccess(null, null);
 
         /// <summary>
         /// Configures the pipeline to forward the operation request and response on success using the specified context and a payload transformation function.
@@ -77,7 +77,7 @@
         /// <param name="transformPayload">A function to transform the operation request and response payload before forwarding.</param>
         /// <returns>The updated post-process configuration.</returns>
         public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, Func<TRequest, TResponse, object> transformPayload)
-            => config.Forward(null, transformPayload);
+            => config.ForwardSuccess(null, transformPayload);
 
         /// <summary>
         /// Configures the pipeline to forward the operation request and response on success to a specific topic using the specified context.
@@ -88,7 +88,7 @@
         /// <param name="topic">The topic to which the operation should be forwarded.</param>
         /// <returns>The updated post-process configuration.</returns>
         public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic)
-            => config.Forward(topic, null);
+            => config.ForwardSuccess(topic, null);
 
         /// <summary>
         /// Configures the pipeline to forward the operation request and response on success to a specific topic using the specified context and a payload transformation function.
