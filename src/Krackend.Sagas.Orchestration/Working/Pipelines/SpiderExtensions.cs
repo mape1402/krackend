@@ -19,7 +19,7 @@
                         .OnPostProcess(after =>
                         {
                             after
-                                .Forward()
+                                .ForwardSuccess()
                                 .ForwardError();
                         });
         }
@@ -37,7 +37,7 @@
                         .OnPostProcess(after =>
                         {
                             after
-                                .Forward()
+                                .ForwardSuccess()
                                 .ForwardError();
                         });
         }
