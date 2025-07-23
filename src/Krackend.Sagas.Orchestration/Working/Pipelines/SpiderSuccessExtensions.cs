@@ -15,7 +15,7 @@
         /// <typeparam name="TRequest">The type of the operation request.</typeparam>
         /// <param name="config">The post-process configuration to extend.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest> Forward<TRequest>(this IPostProcessConfiguration<TRequest> config)
+        public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config)
             => config.Forward(null, null);
 
         /// <summary>
@@ -25,7 +25,7 @@
         /// <param name="config">The post-process configuration to extend.</param>
         /// <param name="transformPayload">A function to transform the operation request payload before forwarding.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest> Forward<TRequest>(this IPostProcessConfiguration<TRequest> config, Func<TRequest, object> transformPayload)
+        public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config, Func<TRequest, object> transformPayload)
             => config.Forward(null, transformPayload);
 
         /// <summary>
@@ -35,7 +35,7 @@
         /// <param name="config">The post-process configuration to extend.</param>
         /// <param name="topic">The topic to which the operation should be forwarded.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest> Forward<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic)
+        public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic)
             => config.Forward(topic, null);
 
         /// <summary>
@@ -46,7 +46,7 @@
         /// <param name="topic">The topic to which the operation should be forwarded.</param>
         /// <param name="transformPayload">A function to transform the operation request payload before forwarding.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest> Forward<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic, Func<TRequest, object> transformPayload)
+        public static IPostProcessConfiguration<TRequest> ForwardSuccess<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic, Func<TRequest, object> transformPayload)
         {
             config
                 .OnSuccess(async (context, args) =>
@@ -65,7 +65,7 @@
         /// <typeparam name="TResponse">The type of the operation response.</typeparam>
         /// <param name="config">The post-process configuration to extend.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest, TResponse> Forward<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config)
+        public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config)
             => config.Forward(null, null);
 
         /// <summary>
@@ -76,7 +76,7 @@
         /// <param name="config">The post-process configuration to extend.</param>
         /// <param name="transformPayload">A function to transform the operation request and response payload before forwarding.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest, TResponse> Forward<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, Func<TRequest, TResponse, object> transformPayload)
+        public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, Func<TRequest, TResponse, object> transformPayload)
             => config.Forward(null, transformPayload);
 
         /// <summary>
@@ -87,7 +87,7 @@
         /// <param name="config">The post-process configuration to extend.</param>
         /// <param name="topic">The topic to which the operation should be forwarded.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest, TResponse> Forward<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic)
+        public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic)
             => config.Forward(topic, null);
 
         /// <summary>
@@ -99,7 +99,7 @@
         /// <param name="topic">The topic to which the operation should be forwarded.</param>
         /// <param name="transformPayload">A function to transform the operation request and response payload before forwarding.</param>
         /// <returns>The updated post-process configuration.</returns>
-        public static IPostProcessConfiguration<TRequest, TResponse> Forward<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic, Func<TRequest, TResponse, object> transformPayload)
+        public static IPostProcessConfiguration<TRequest, TResponse> ForwardSuccess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic, Func<TRequest, TResponse, object> transformPayload)
         {
             config
                 .OnSuccess(async (context, args) =>

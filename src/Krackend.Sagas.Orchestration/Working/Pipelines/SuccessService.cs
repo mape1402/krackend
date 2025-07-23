@@ -51,7 +51,7 @@
             _metadataSetter.SetAsSuccess();
             var metadata = _orchestrationContext.GetMetadata();
 
-            object payload = transformPayload != null ? transformPayload(context.Request, context.Response) : context.Request;
+            object payload = transformPayload != null ? transformPayload(context.Request, context.Response) : context.Response;
 
             var replyTo = string.IsNullOrEmpty(topic) ? metadata.ReplyTo : topic;
 
