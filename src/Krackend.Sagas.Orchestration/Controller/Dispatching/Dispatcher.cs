@@ -1,10 +1,12 @@
 ﻿namespace Krackend.Sagas.Orchestration.Controller.Dispatching
 {
     using Krackend.Sagas.Orchestration.Controller.Shared;
+    using Krackend.Sagas.Orchestration.Controller.Tracking;
     using Krackend.Sagas.Orchestration.Core;
     using Microsoft.Extensions.DependencyInjection;
     using Pigeon.Messaging.Contracts;
     using Spider.Pipelines.Core;
+    using Spider.Pipelines.Extensions;
 
     /// <summary>
     /// Provides an implementation for dispatching messages and advancing saga execution.
@@ -45,19 +47,30 @@
 
             var spider = state.Services.GetRequiredService<ISpider>();
 
-            return spider.InitBridge<ICommander>()
+            return spider
+                    .InitBridge<ICommander>()
                     .Attach<ICommand>(pipeline =>
                     {
                         pipeline
                             .OnPreProcess(before =>
                             {
                                 before
-                                    .OnPreProcess((ctx, args) =>
+                                    .OnPreProcess(async (ctx, args) =>
                                     {
                                         var command = ctx.Request;
                                         command.State.CloseAndMoveStage();
 
+                                        if(command.State.SagaStatus == Tracking.Models.SagaStatus.Completed)
+                                        {
+                                            //TODO: Delete orchestration from DB
+                                            ctx.CancelOperation();
+                                            return;
+                                        }
+
                                         command.State.StartCurrentStage();
+
+                                        var stateMachineManager = ctx.Services.GetRequiredService<IStateMachineManager>();
+                                        await stateMachineManager.Set(command.State.GetStateMachine(), ctx.CancellationToken);
 
                                         var state = ctx.Request.State;
                                         var metadata = new OrchestrationMetadata
@@ -83,8 +96,6 @@
 
                                         var setter = ctx.Services.GetRequiredService<IMetadataSetter>();
                                         setter.SetMetadata(metadata);
-
-                                        return Task.CompletedTask;
                                     });
                             });
                     })
