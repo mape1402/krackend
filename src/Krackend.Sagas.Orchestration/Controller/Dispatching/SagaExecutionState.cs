@@ -47,7 +47,7 @@
 
             OrchestrationKey = metadata.OrchestrationKey;
             OrchestrationName = metadata.OrchestrationName;
-            SagaState = (SagaState)stateMachine.State;
+            SagaState = stateMachine.State;
 
             PreviousStage = metadata.PreviousStage;
             CurrentStage = metadata.CurrentStage;
@@ -95,6 +95,11 @@
         public SagaState SagaState { get; private set; }
 
         /// <summary>
+        /// Gets the status of the saga.
+        /// </summary>
+        public SagaStatus SagaStatus { get; private set; }
+
+        /// <summary>
         /// Gets or sets the service provider for dependency injection.
         /// </summary>
         public IServiceProvider Services { get; init; }
@@ -104,26 +109,23 @@
         /// </summary>
         public void CloseAndMoveStage()
         {
-            var status = default(StageStatus);
-
             var logger = Services.GetService<ILogger<SagaExecutionState>>();
 
             // TODO: mmmm maybe should be a flag like 'IsSuccess', because not only returns one error, returns all attempts
             if (_metadata?.OperationalResults?.HasError == true)
             {
-                status = StageStatus.Failed;
-                logger.LogInformation("Saga with id '{0}' has been changed to status '{1}'", SagaId, status);
+                var attempts = Enumerable.Empty<Attempt>(); // TODO: Get attempts from metadata;
+                _stateMachine.CloseCurrentStage(StageStatus.Failed, attempts);
+                logger.LogInformation("Saga with id '{0}' has been changed to status '{1}'", SagaId, StageStatus.Failed);
                 Backward();
             }
             else
             {
-                status = StageStatus.Completed;
-                logger.LogInformation("Saga with id '{0}' has been changed to status '{1}'", SagaId, status);
+                var attempts = Enumerable.Empty<Attempt>(); // TODO: Get attempts from metadata;
+                _stateMachine.CloseCurrentStage(StageStatus.Completed, attempts);
+                logger.LogInformation("Saga with id '{0}' has been changed to status '{1}'", SagaId, StageStatus.Completed);
                 Forward();
-            }
-
-            var attempts = Enumerable.Empty<Attempt>(); // TODO: Get attempts from metadata;
-            _stateMachine.CloseCurrentStage(status, attempts);
+            }      
         }
 
         /// <summary>
@@ -146,8 +148,14 @@
         /// </summary>
         public void Forward()
         {
-            if (string.IsNullOrEmpty(CurrentStage))
+            if (string.IsNullOrWhiteSpace(CurrentStage))
                 throw new InvalidOperationException("Current stage is not set.");
+
+            if (string.IsNullOrWhiteSpace(NextStage))
+            {
+                SagaStatus = SagaStatus.Completed;
+                return;
+            }
 
             PreviousStage = CurrentStage;
             CurrentStage = NextStage;
@@ -159,8 +167,14 @@
         /// </summary>
         public void Backward()
         {
-            if (string.IsNullOrEmpty(CurrentStage))
+            if (string.IsNullOrWhiteSpace(CurrentStage))
                 throw new InvalidOperationException("Current stage is not set.");
+
+            if (string.IsNullOrWhiteSpace(NextStage))
+            {
+                SagaStatus = SagaStatus.Completed;
+                return;
+            }
 
             var previousStage = CurrentStage;
 
@@ -186,5 +200,12 @@
         public SemanticVersion GetOrchestrationTopicVersion()
             => _roadmap?.EventTopicVersion ?? _metadata?.OrchestrationTopicVersion
                ?? throw new InvalidOperationException("Orchestration topic version is not set.");
+
+        /// <summary>
+        /// Gets the underlying state machine for the saga execution.
+        /// </summary>
+        /// <returns>The <see cref="StateMachine"/> instance.</returns>
+        public StateMachine GetStateMachine()
+            => _stateMachine;
     }
 }

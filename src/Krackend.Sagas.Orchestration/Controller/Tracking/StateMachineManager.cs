@@ -34,11 +34,11 @@
                     Status = StageStatus.Pending,
                     Compensation = new StageExecution
                     {
-                        ResolveTo = x.Compensation.ResolveTo
+                        ResolveTo = x.Compensation?.ResolveTo
                     },
                     StepForward = new StageExecution
                     {
-                        ResolveTo = x.StepForward.ResolveTo
+                        ResolveTo = x.StepForward?.ResolveTo
                     }
                 })
             };
