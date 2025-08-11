@@ -2,7 +2,8 @@
   <ItemGroup>
     <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.6" />
     <PackageReference Update="MinVer" Version="6.0.0" />
-    <PackageReference Update="Pigeon.Messaging" Version="1.0.4" />
+    <PackageReference Update="Pigeon.Messaging" Version="1.0.11" />
     <PackageReference Update="Spider.Pipelines" Version="1.0.0" />
+    <PackageReference Update="Ulid" Version="1.4.1" />
   </ItemGroup>
 </Project>

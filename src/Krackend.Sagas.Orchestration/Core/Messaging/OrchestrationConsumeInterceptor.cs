@@ -32,7 +32,7 @@
         {
             try
             {
-                var metadata = context.GetMetadata<Metadata>(Metadata.MetadataKey);
+                var metadata = context.GetMetadata<OrchestrationMetadata>(OrchestrationMetadata.MetadataKey);
                 _metadataSetter.SetMetadata(metadata);
             }
             catch (Exception ex)

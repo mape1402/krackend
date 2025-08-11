@@ -1,4 +1,4 @@
-﻿namespace Krackend.Sagas.Orchestration.Working.Pipelines
+﻿namespace Krackend.Sagas.Orchestration.Worker.Pipelines
 {
     using Spider.Pipelines.Core;
 

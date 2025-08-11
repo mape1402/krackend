@@ -12,10 +12,10 @@
         bool HasMetadata();
 
         /// <summary>
-        /// Gets the <see cref="Metadata"/> associated with the orchestration context.
+        /// Gets the <see cref="OrchestrationMetadata"/> associated with the orchestration context.
         /// </summary>
-        /// <returns>The <see cref="Metadata"/> instance.</returns>
-        Metadata GetMetadata();
+        /// <returns>The <see cref="OrchestrationMetadata"/> instance.</returns>
+        OrchestrationMetadata GetMetadata();
 
         /// <summary>
         /// Determines whether the context contains error metadata.

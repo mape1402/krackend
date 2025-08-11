@@ -1,8 +1,13 @@
 ﻿namespace Microsoft.Extensions.DependencyInjection
 {
+    using Krackend.Sagas.Orchestration.Controller.Configuration.Builders;
+    using Krackend.Sagas.Orchestration.Controller.Configuration.Metadata;
+    using Krackend.Sagas.Orchestration.Controller.Dispatching;
+    using Krackend.Sagas.Orchestration.Controller.Tracking;
     using Krackend.Sagas.Orchestration.Core;
-    using Krackend.Sagas.Orchestration.Working;
-    using Krackend.Sagas.Orchestration.Working.Pipelines;
+    using Krackend.Sagas.Orchestration.Worker;
+    using Krackend.Sagas.Orchestration.Worker.Pipelines;
+    using Microsoft.AspNetCore.Builder;
     using Pigeon.Messaging.Consuming.Dispatching;
     using Pigeon.Messaging.Producing;
     using System.Diagnostics.CodeAnalysis;
@@ -17,11 +22,57 @@
         private static Dictionary<Type, int> _errorCodeBindings = new();
 
         /// <summary>
-        /// Registers core orchestration services, failure and success services, and exception evaluator in the service collection.
+        /// Registers the orchestration controller and related services in the dependency injection container.
         /// </summary>
         /// <param name="services">The service collection to add orchestration services to.</param>
         /// <returns>An <see cref="IOrchestrationServiceBuilder"/> for further configuration.</returns>
-        public static IOrchestrationServiceBuilder AddOrchestrationWorking(this IServiceCollection services)
+        public static IOrchestrationServiceBuilder AddOrchestrationController(this IServiceCollection services)
+        {
+            services.AddCore();
+            services.AddSingleton<ISagaIdGenerator, DefaultSagaIdGenerator>();
+            services.AddSingleton<IOrchestratorBuilder, OrchestratorBuilder>();
+            services.AddScoped<IDispatcher, Dispatcher>();
+            services.AddScoped<IStateManager, StateManager>();
+            services.AddSingleton<IStateMachineManager, StateMachineManager>();
+
+            services.AddSingleton<IRoadmapManager, RoadmapManager>();
+
+            return new OrchestrationServiceBuilder(services);
+        }
+
+        /// <summary>
+        /// Registers an orchestration implementation as a singleton in the dependency injection container.
+        /// </summary>
+        /// <typeparam name="TOrchestration">The orchestration implementation type.</typeparam>
+        /// <param name="builder">The orchestration service builder.</param>
+        /// <returns>The same <see cref="IOrchestrationServiceBuilder"/> for chaining.</returns>
+        public static IOrchestrationServiceBuilder AddOrchestration<TOrchestration>(this IOrchestrationServiceBuilder builder)
+            where TOrchestration : class, IOrchestration
+        {
+            builder.Services.AddSingleton<IOrchestration, TOrchestration>();
+            return builder;
+        }
+
+        /// <summary>
+        /// Configures the application to use the orchestration controller, starting all registered orchestrations.
+        /// </summary>
+        /// <param name="app">The application builder.</param>
+        /// <returns>The same <see cref="IApplicationBuilder"/> for chaining.</returns>
+        public static IApplicationBuilder UseOrchestrationController(this IApplicationBuilder app)
+        {
+            var orchestrations = app.ApplicationServices.GetServices<IOrchestration>();
+            var orchestratorBuilder = app.ApplicationServices.GetRequiredService<IOrchestratorBuilder>();
+            orchestratorBuilder.Start(orchestrations);
+
+            return app;
+        }
+
+        /// <summary>
+        /// Registers core orchestration worker services, including failure, success, and exception evaluator services, in the dependency injection container.
+        /// </summary>
+        /// <param name="services">The service collection to add orchestration worker services to.</param>
+        /// <returns>An <see cref="IOrchestrationServiceBuilder"/> for further configuration.</returns>
+        public static IOrchestrationServiceBuilder AddOrchestrationWorker(this IServiceCollection services)
         {
             services.AddCore();
 
