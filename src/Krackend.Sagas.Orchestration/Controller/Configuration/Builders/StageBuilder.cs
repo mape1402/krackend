@@ -52,8 +52,8 @@
             {
                 Id = _configuration.Id,
                 Name = _configuration.Name,
-                StepForward = _configuration.StepForwardBuilder.Buid(),
-                Compensation = _configuration.CompensationBuilder.Buid()
+                StepForward = _configuration.StepForwardBuilder?.Buid(),
+                Compensation = _configuration.CompensationBuilder?.Buid()
             };
     }
 }
