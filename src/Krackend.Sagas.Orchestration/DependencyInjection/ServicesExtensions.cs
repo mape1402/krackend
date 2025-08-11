@@ -34,7 +34,7 @@
             services.AddScoped<IDispatcher, Dispatcher>();
             services.AddScoped<IStateManager, StateManager>();
             services.AddSingleton<IStateMachineManager, StateMachineManager>();
-
+            services.AddScoped<ICommander, Commander>();
             services.AddSingleton<IRoadmapManager, RoadmapManager>();
 
             return new OrchestrationServiceBuilder(services);
