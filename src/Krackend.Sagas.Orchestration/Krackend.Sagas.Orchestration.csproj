@@ -18,10 +18,10 @@
     <PackageReference Include="MinVer" />
     <PackageReference Include="Pigeon.Messaging" />
     <PackageReference Include="Spider.Pipelines" />
-  </ItemGroup>
+    <PackageReference Include="Ulid" />
 
-  <ItemGroup>
-    <Folder Include="Control\" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+
   </ItemGroup>
 
 </Project>

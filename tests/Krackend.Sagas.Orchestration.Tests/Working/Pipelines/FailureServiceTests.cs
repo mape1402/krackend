@@ -1,12 +1,9 @@
-using System.Threading;
-using System.Threading.Tasks;
 using Krackend.Sagas.Orchestration.Core;
-using Krackend.Sagas.Orchestration.Working.Pipelines;
-using Krackend.Sagas.Orchestration.Working;
+using Krackend.Sagas.Orchestration.Worker;
+using Krackend.Sagas.Orchestration.Worker.Pipelines;
 using NSubstitute;
 using Pigeon.Messaging.Producing;
 using Spider.Pipelines.Core;
-using Xunit;
 
 namespace Krackend.Sagas.Orchestration.Tests.Working.Pipelines
 {
@@ -20,7 +17,7 @@ namespace Krackend.Sagas.Orchestration.Tests.Working.Pipelines
             var metadataSetter = Substitute.For<IMetadataSetter>();
             var exceptionEvaluator = Substitute.For<IExceptionEvaluator>();
             var producer = Substitute.For<IProducer>();
-            var metadata = new Metadata { ReplyTo = "reply-topic" };
+            var metadata = new OrchestrationMetadata { OrchestrationTopic = "reply-topic" };
             var errorMetadata = new ErrorMetadata { Code = 1, Message = "err", StackTrace = "stack" };
             orchestrationContext.HasMetadata().Returns(true);
             orchestrationContext.GetMetadata().Returns(metadata);

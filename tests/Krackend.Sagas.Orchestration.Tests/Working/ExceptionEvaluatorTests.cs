@@ -1,4 +1,4 @@
-using Krackend.Sagas.Orchestration.Working;
+using Krackend.Sagas.Orchestration.Worker;
 
 namespace Krackend.Sagas.Orchestration.Tests.Working
 {

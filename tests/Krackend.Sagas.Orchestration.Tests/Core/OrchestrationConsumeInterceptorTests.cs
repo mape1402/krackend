@@ -12,14 +12,14 @@ namespace Krackend.Sagas.Orchestration.Tests.Core
         public async Task Intercept_SetsMetadata_WhenPresent()
         {
             // Arrange
-            var metadata = new Metadata();
+            var metadata = new OrchestrationMetadata();
             var setter = Substitute.For<IMetadataSetter>();
             var logger = Substitute.For<ILogger<OrchestrationConsumeInterceptor>>();
             var context = new ConsumeContext
             {
                 RawMetadata = new Dictionary<string, string>
                 {
-                    { Metadata.MetadataKey, JsonSerializer.Serialize(metadata) }
+                    { OrchestrationMetadata.MetadataKey, JsonSerializer.Serialize(metadata) }
                 }
             };
 

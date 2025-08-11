@@ -1,6 +1,5 @@
-﻿namespace Krackend.Sagas.Orchestration.Working
+﻿namespace Krackend.Sagas.Orchestration.Worker.Pipelines
 {
-    using Krackend.Sagas.Orchestration.Working.Pipelines;
     using Microsoft.Extensions.DependencyInjection;
     using Spider.Pipelines.PostProcessing;
 

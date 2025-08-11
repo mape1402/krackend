@@ -5,7 +5,7 @@
     /// </summary>
     internal sealed class OrchestrationContext : IOrchestrationContext, IMetadataSetter
     {
-        private Metadata _metadata;
+        private OrchestrationMetadata _metadata;
         private ErrorMetadata _errorMetadata;
 
         /// <inheritdoc />
@@ -13,7 +13,7 @@
             => _errorMetadata;
 
         /// <inheritdoc />
-        public Metadata GetMetadata()
+        public OrchestrationMetadata GetMetadata()
             => _metadata;
 
         /// <inheritdoc />
@@ -48,7 +48,7 @@
         }
 
         /// <inheritdoc />
-        public void SetMetadata(Metadata metadata)
+        public void SetMetadata(OrchestrationMetadata metadata)
         {
             if (metadata == null)
                 throw new ArgumentNullException(nameof(metadata), "Metadata cannot be null.");

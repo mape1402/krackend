@@ -8,7 +8,7 @@ namespace Krackend.Sagas.Orchestration.Tests.Core
         public void SetAndGetMetadata_WorksCorrectly()
         {
             var context = new OrchestrationContext();
-            var metadata = new Metadata();
+            var metadata = new OrchestrationMetadata();
             context.SetMetadata(metadata);
             Assert.True(context.HasMetadata());
             Assert.Equal(metadata, context.GetMetadata());
@@ -18,7 +18,7 @@ namespace Krackend.Sagas.Orchestration.Tests.Core
         public void SetAsFailure_SetsErrorMetadataAndOperationalResults()
         {
             var context = new OrchestrationContext();
-            var metadata = new Metadata();
+            var metadata = new OrchestrationMetadata();
             context.SetMetadata(metadata);
             var error = new ErrorMetadata { Code = 1, Message = "fail", StackTrace = "stack" };
             context.SetAsFailure(error);
@@ -31,7 +31,7 @@ namespace Krackend.Sagas.Orchestration.Tests.Core
         public void SetAsSuccess_SetsOperationalResultsToNoError()
         {
             var context = new OrchestrationContext();
-            var metadata = new Metadata();
+            var metadata = new OrchestrationMetadata();
             context.SetMetadata(metadata);
             context.SetAsSuccess();
             Assert.False(context.GetMetadata().OperationalResults.HasError);

@@ -37,7 +37,7 @@
             }
 
             var metadata = _orchestrationContext.GetMetadata();
-            publishContext.AddMetadata(Metadata.MetadataKey, metadata);
+            publishContext.AddMetadata(OrchestrationMetadata.MetadataKey, metadata);
 
             return ValueTask.CompletedTask;
         }

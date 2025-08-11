@@ -1,4 +1,4 @@
-﻿namespace Krackend.Sagas.Orchestration.Working.Pipelines
+﻿namespace Krackend.Sagas.Orchestration.Worker.Pipelines
 {
     using Krackend.Sagas.Orchestration.Core;
     using Pigeon.Messaging.Producing;
@@ -37,7 +37,7 @@
 
             object payload = transformPayload != null ? transformPayload(context.Request) : context.Request;
 
-            var replyTo = string.IsNullOrEmpty(topic) ? metadata.ReplyTo : topic;
+            var replyTo = string.IsNullOrEmpty(topic) ? metadata.OrchestrationTopic : topic;
 
             await _producer.PublishAsync(payload, replyTo, context.CancellationToken);
         }
@@ -53,7 +53,7 @@
 
             object payload = transformPayload != null ? transformPayload(context.Request, context.Response) : context.Response;
 
-            var replyTo = string.IsNullOrEmpty(topic) ? metadata.ReplyTo : topic;
+            var replyTo = string.IsNullOrEmpty(topic) ? metadata.OrchestrationTopic : topic;
 
             await _producer.PublishAsync(payload, replyTo, context.CancellationToken);
         }

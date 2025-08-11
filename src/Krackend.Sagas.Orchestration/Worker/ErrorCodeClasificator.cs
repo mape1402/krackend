@@ -1,4 +1,4 @@
-﻿namespace Krackend.Sagas.Orchestration.Working
+﻿namespace Krackend.Sagas.Orchestration.Worker
 {
     /// <summary>
     /// Represents a delegate that classifies an exception type and returns an associated error code.

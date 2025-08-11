@@ -6,10 +6,10 @@
     internal interface IMetadataSetter
     {
         /// <summary>
-        /// Sets the provided <see cref="Metadata"/> instance on the implementing object.
+        /// Sets the provided <see cref="OrchestrationMetadata"/> instance on the implementing object.
         /// </summary>
         /// <param name="metadata">The metadata to set.</param>
-        void SetMetadata(Metadata metadata);
+        void SetMetadata(OrchestrationMetadata metadata);
 
         /// <summary>
         /// Marks the orchestration result as a failure on the implementing object and sets the associated error metadata.

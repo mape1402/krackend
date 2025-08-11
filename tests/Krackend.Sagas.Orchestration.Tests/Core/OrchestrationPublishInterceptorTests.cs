@@ -11,7 +11,7 @@ namespace Krackend.Sagas.Orchestration.Tests.Core
         public async Task Intercept_AddsMetadata_WhenPresent()
         {
             // Arrange
-            var metadata = new Metadata();
+            var metadata = new OrchestrationMetadata();
             var context = Substitute.For<IOrchestrationContext>();
             var logger = Substitute.For<ILogger<OrchestrationPublishInterceptor>>();
             context.HasMetadata().Returns(true);

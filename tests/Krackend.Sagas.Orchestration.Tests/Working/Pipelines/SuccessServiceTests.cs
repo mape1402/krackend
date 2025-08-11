@@ -1,11 +1,8 @@
-using System.Threading;
-using System.Threading.Tasks;
 using Krackend.Sagas.Orchestration.Core;
-using Krackend.Sagas.Orchestration.Working.Pipelines;
+using Krackend.Sagas.Orchestration.Worker.Pipelines;
 using NSubstitute;
 using Pigeon.Messaging.Producing;
 using Spider.Pipelines.Core;
-using Xunit;
 
 namespace Krackend.Sagas.Orchestration.Tests.Working.Pipelines
 {
@@ -18,7 +15,7 @@ namespace Krackend.Sagas.Orchestration.Tests.Working.Pipelines
             var orchestrationContext = Substitute.For<IOrchestrationContext>();
             var metadataSetter = Substitute.For<IMetadataSetter>();
             var producer = Substitute.For<IProducer>();
-            var metadata = new Metadata { ReplyTo = "reply-topic" };
+            var metadata = new OrchestrationMetadata { OrchestrationTopic = "reply-topic" };
             orchestrationContext.HasMetadata().Returns(true);
             orchestrationContext.GetMetadata().Returns(metadata);
             var context = Substitute.For<IReadOnlyContext<string>>();

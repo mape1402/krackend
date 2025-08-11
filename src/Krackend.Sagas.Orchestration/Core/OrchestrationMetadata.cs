@@ -1,9 +1,11 @@
 ﻿namespace Krackend.Sagas.Orchestration.Core
 {
+    using Pigeon.Messaging.Contracts;
+
     /// <summary>
     /// Contains metadata information for a saga orchestration message, including identifiers, stages, and message context.
     /// </summary>
-    public class Metadata
+    public class OrchestrationMetadata
     {
         /// <summary>
         /// Represents the key used for accessing orchestration metadata in the Krackend Sagas framework.
@@ -89,9 +91,14 @@
         public bool IsCompensation { get; internal set; }
 
         /// <summary>
-        /// Gets or sets the queue to which replies should be sent.
+        /// Gets or sets the topic to which replies should be sent.
         /// </summary>
-        public string ReplyTo { get; internal set; }
+        public string OrchestrationTopic { get; internal set; }
+
+        /// <summary>
+        /// Gets or sets the version of the orchestration topic.
+        /// </summary>
+        public SemanticVersion OrchestrationTopicVersion { get; set; }
 
         /// <summary>
         /// Gets the results of the operation, including any relevant data and status information.
