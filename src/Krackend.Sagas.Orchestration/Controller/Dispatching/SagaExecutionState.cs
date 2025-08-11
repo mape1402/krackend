@@ -4,6 +4,8 @@
     using Krackend.Sagas.Orchestration.Controller.Shared;
     using Krackend.Sagas.Orchestration.Controller.Tracking.Models;
     using Krackend.Sagas.Orchestration.Core;
+    using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Logging;
     using Pigeon.Messaging.Contracts;
 
     /// <summary>
@@ -104,15 +106,19 @@
         {
             var status = default(StageStatus);
 
+            var logger = Services.GetService<ILogger<SagaExecutionState>>();
+
             // TODO: mmmm maybe should be a flag like 'IsSuccess', because not only returns one error, returns all attempts
-            if (_metadata.OperationalResults.HasError)
+            if (_metadata?.OperationalResults?.HasError == true)
             {
                 status = StageStatus.Failed;
+                logger.LogInformation("Saga with id '{0}' has been changed to status '{1}'", SagaId, status);
                 Backward();
             }
             else
             {
                 status = StageStatus.Completed;
+                logger.LogInformation("Saga with id '{0}' has been changed to status '{1}'", SagaId, status);
                 Forward();
             }
 

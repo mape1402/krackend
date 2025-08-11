@@ -56,20 +56,9 @@
                                     {
                                         var command = ctx.Request;
                                         command.State.CloseAndMoveStage();
-                                        return Task.CompletedTask;
-                                    });
-                            })
-                            .OnPostProcess(after =>
-                            {
-                                after
-                                    .OnSuccess((ctx, args) =>
-                                    {
-                                        var command = ctx.Request;
+
                                         command.State.StartCurrentStage();
-                                        return Task.CompletedTask;
-                                    })
-                                    .OnSuccess((ctx, args) =>
-                                    {
+
                                         var state = ctx.Request.State;
                                         var metadata = new OrchestrationMetadata
                                         {
