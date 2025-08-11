@@ -2,6 +2,7 @@
 {
     using Krackend.Sagas.Orchestration.Controller.Shared;
     using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Logging;
     using Pigeon.Messaging.Contracts;
     using Pigeon.Messaging.Producing;
 
@@ -29,8 +30,10 @@
         /// <returns>A task that represents the asynchronous operation.</returns>
         public async Task ProcessAsync(SagaExecutionState state, CancellationToken cancellationToken = default)
         {
+            var logger = state.Services.GetService<ILogger<StepForwardExecution>>();
             var producer = state.Services.GetRequiredService<IProducer>();
             await producer.PublishAsync(state.Payload, _topic, _version, cancellationToken);
+            logger.LogInformation("Saga with id '{0}' has dispatched to topic '{1}' with version '{2}'", state.SagaId, _topic, _version);
         }
     }
 }
