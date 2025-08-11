@@ -44,15 +44,15 @@
             _roadmapManager.AddRoadmap(roadmap);
 
             _consumingConfigurator
-                .AddConsumer<string>(roadmap.EventTopic, roadmap.EventTopicVersion, static async (context, message) =>
+                .AddConsumer<object>(roadmap.EventTopic, roadmap.EventTopicVersion, static async (context, message) =>
                 {
                     var dispatcher = context.Services.GetRequiredService<IDispatcher>();
-                    await dispatcher.StartAsync(context.Topic, context.MessageVersion, message, context.CancellationToken);
+                    await dispatcher.StartAsync(context.Topic, context.MessageVersion, message.ToString(), context.CancellationToken);
                 })
-                .AddConsumer<string>(roadmap.OrchestrationTopic, roadmap.OrchestrationTopicVersion, static async (context, message) =>
+                .AddConsumer<object>(roadmap.OrchestrationTopic, roadmap.OrchestrationTopicVersion, static async (context, message) =>
                 {
                     var dispatcher = context.Services.GetRequiredService<IDispatcher>();
-                    await dispatcher.ForwardAsync(message, context.CancellationToken);
+                    await dispatcher.ForwardAsync(message.ToString(), context.CancellationToken);
                 });
         }
     }
