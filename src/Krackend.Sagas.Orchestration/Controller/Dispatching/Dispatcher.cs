@@ -21,7 +21,7 @@
         }
 
         /// <inheritdoc/>
-        public async Task StartAsync(string topic, SemanticVersion version, string payload, CancellationToken cancellationToken = default)
+        public async Task StartAsync(string topic, SemanticVersion version, object payload, CancellationToken cancellationToken = default)
         {
             var currentState = await _stateManager.CreateState(topic);
             currentState.SetPayload(payload);
@@ -30,7 +30,7 @@
         }
 
         /// <inheritdoc/>
-        public async Task ForwardAsync(string payload, CancellationToken cancellationToken = default)
+        public async Task ForwardAsync(object payload, CancellationToken cancellationToken = default)
         {
             var currentState = await _stateManager.GetCurrentState();
             currentState.SetPayload(payload);

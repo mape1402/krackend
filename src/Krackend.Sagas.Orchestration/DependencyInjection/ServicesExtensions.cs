@@ -138,7 +138,11 @@
             services.AddScoped<IConsumeInterceptor, OrchestrationConsumeInterceptor>();
 
             services.AddScoped<IOrchestrationContext, OrchestrationContext>();
-            services.AddScoped<IMetadataSetter, OrchestrationContext>();
+            services.AddScoped(p =>
+            {
+                var context = p.GetRequiredService<IOrchestrationContext>();
+                return context as IMetadataSetter;
+            });
         }
     }
 }

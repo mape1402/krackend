@@ -15,7 +15,7 @@
         /// <param name="payload">The data to send.</param>
         /// <param name="cancellationToken">Optional cancellation token.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
-        Task StartAsync(string topic, SemanticVersion version, string payload, CancellationToken cancellationToken = default);
+        Task StartAsync(string topic, SemanticVersion version, object payload, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Advances the saga execution by sending the payload to the next step.
@@ -23,6 +23,6 @@
         /// <param name="payload">The data to send.</param>
         /// <param name="cancellationToken">Optional cancellation token.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
-        Task ForwardAsync(string payload, CancellationToken cancellationToken = default);
+        Task ForwardAsync(object payload, CancellationToken cancellationToken = default);
     }
 }

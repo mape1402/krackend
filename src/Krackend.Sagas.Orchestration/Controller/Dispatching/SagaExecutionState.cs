@@ -72,7 +72,7 @@
         /// <summary>
         /// Gets the payload associated with the current stage.
         /// </summary>
-        public string Payload { get; private set; }
+        public object Payload { get; private set; }
 
         /// <summary>
         /// Gets the identifier of the previous stage.
@@ -140,7 +140,7 @@
         /// Sets the payload for the current stage.
         /// </summary>
         /// <param name="payload">The payload to set.</param>
-        public void SetPayload(string payload)
+        public void SetPayload(object payload)
             => Payload = payload;
 
         /// <summary>
