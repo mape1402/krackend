@@ -12,6 +12,15 @@
         private readonly object _sync = new object();
 
         /// <inheritdoc />
+        public Roadmap Get(string orchestrationKey)
+        {
+            lock (_sync)
+            {
+                return _roadmaps.FirstOrDefault(x => x.OrchestrationKey == orchestrationKey);
+            }
+        }
+
+        /// <inheritdoc />
         public Roadmap GetRoadmap(string topic)
         {
             lock (_sync)

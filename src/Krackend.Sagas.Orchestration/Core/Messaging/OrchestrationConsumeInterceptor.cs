@@ -2,6 +2,8 @@
 {
     using Microsoft.Extensions.Logging;
     using Pigeon.Messaging.Consuming.Dispatching;
+    using Pigeon.Messaging.Contracts;
+    using System.Text.Json;
 
     /// <summary>
     /// Intercepts message consumption to extract and set orchestration metadata from incoming messages, logging a warning if metadata is missing or extraction fails.

@@ -1,3 +1,4 @@
+using Krackend.Client.Tests.HubConsumers;
 using Krackend.Client.Tests.Orchestrations;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,13 +10,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddSingleton<IService, DemoService>();
+
 builder.Services.AddPigeon(builder.Configuration, opts =>
 {
     opts
+       .ScanConsumersFromAssemblies(typeof(DemoHubConsumer).Assembly)
        .UseRabbitMq();
 });
 
 builder.Services.AddSpider();
+
+builder.Services.AddOrchestrationWorker();
 
 builder.Services.AddOrchestrationController()
     .AddOrchestration<DemoOrchestration>();

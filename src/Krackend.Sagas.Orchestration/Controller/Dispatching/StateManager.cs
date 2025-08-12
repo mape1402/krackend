@@ -74,7 +74,12 @@
             var metadata = _orchestrationContext.GetMetadata();
             var stateMachine = await _stateMachineManager.Get(metadata.SagaId, cancellationToken);
 
-            return new SagaExecutionState(metadata, stateMachine)
+            var roadmap = _roadmapManager.Get(metadata.OrchestrationKey);
+
+            if (roadmap == null)
+                throw new InvalidOperationException($"There isn't an orchestration-roadmap linked to key '{metadata.OrchestrationKey}'.");
+
+            return new SagaExecutionState(roadmap, metadata, stateMachine)
             {
                 SagaId = metadata.SagaId,
                 Services = _serviceProvider

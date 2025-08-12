@@ -32,18 +32,12 @@
 
             _errorMetadata = errorMetadata;
 
-            if (_metadata.OperationalResults == null)
-                _metadata.OperationalResults = new();
-
             _metadata.OperationalResults.HasError = true;
         }
 
         /// <inheritdoc />
         public void SetAsSuccess()
         {
-            if (_metadata.OperationalResults == null)
-                _metadata.OperationalResults = new();
-
             _metadata.OperationalResults.HasError = false;
         }
 

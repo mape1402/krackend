@@ -38,10 +38,12 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="SagaExecutionState"/> class using orchestration metadata and a state machine.
         /// </summary>
+        /// <param name="roadmap"></param>
         /// <param name="metadata">The orchestration metadata.</param>
         /// <param name="stateMachine">The state machine managing saga state transitions.</param>
-        public SagaExecutionState(OrchestrationMetadata metadata, StateMachine stateMachine)
+        public SagaExecutionState(Roadmap roadmap, OrchestrationMetadata metadata, StateMachine stateMachine)
         {
+            _roadmap = roadmap ?? throw new ArgumentNullException(nameof(roadmap));
             _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
             _stateMachine = stateMachine ?? throw new ArgumentNullException(nameof(stateMachine));
 
@@ -190,7 +192,7 @@
         /// </summary>
         /// <returns>The orchestration topic as a string.</returns>
         public string GetOrchestrationTopic()
-            => _roadmap?.EventTopic ?? _metadata?.OrchestrationTopic
+            => _roadmap?.OrchestrationTopic ?? _metadata?.OrchestrationTopic
                ?? throw new InvalidOperationException("Orchestration topic is not set.");
 
         /// <summary>
@@ -198,7 +200,7 @@
         /// </summary>
         /// <returns>The orchestration topic version as a <see cref="SemanticVersion"/>.</returns>
         public SemanticVersion GetOrchestrationTopicVersion()
-            => _roadmap?.EventTopicVersion ?? _metadata?.OrchestrationTopicVersion
+            => _roadmap?.OrchestrationTopicVersion ?? _metadata?.OrchestrationTopicVersion
                ?? throw new InvalidOperationException("Orchestration topic version is not set.");
 
         /// <summary>

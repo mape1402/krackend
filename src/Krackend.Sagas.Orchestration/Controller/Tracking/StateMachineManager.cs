@@ -69,7 +69,7 @@
         /// <returns>A task representing the asynchronous operation.</returns>
         public Task Set(StateMachine stateMachine, CancellationToken cancellationToken = default)
         {
-            _stateMachines.AddOrUpdate(stateMachine.OrchestrationKey, stateMachine, (key, value) => value);
+            _stateMachines.AddOrUpdate(stateMachine.SagaId, stateMachine, (key, value) => value);
             return Task.CompletedTask;
         }
     }
