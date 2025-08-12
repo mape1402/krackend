@@ -95,8 +95,8 @@
                     throw new InvalidOperationException($"Stage with id '{stageId}' into orchestration with key '{orchestrationKey}' doesn't exist.");
 
                 return direction == SagaState.Forward
-                    ? stage.StepForward.StepExecution
-                    : stage.Compensation.StepExecution;
+                    ? stage.StepForward?.StepExecution
+                    : stage.Compensation?.StepExecution;
             }
         }
 

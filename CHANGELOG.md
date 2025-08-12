@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.0.8] - 2024-08-11
+
+Preview Version
+
+- ### Fixed
+
+  - 🐛 Fix roadmap building.
+
+------
+
 ## [v0.0.7] - 2024-08-11
 
 Preview Version

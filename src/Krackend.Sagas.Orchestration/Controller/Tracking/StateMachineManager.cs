@@ -40,7 +40,7 @@
                     {
                         ResolveTo = x.StepForward?.ResolveTo
                     }
-                })
+                }).ToArray()
             };
 
             return state;

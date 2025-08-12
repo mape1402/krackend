@@ -1,0 +1,6 @@
+@Krackend.Client.Tests_HostAddress = http://localhost:5085
+
+GET {{Krackend.Client.Tests_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
