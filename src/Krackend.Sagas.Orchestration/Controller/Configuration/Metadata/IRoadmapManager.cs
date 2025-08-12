@@ -8,6 +8,13 @@
     public interface IRoadmapManager
     {
         /// <summary>
+        /// Gets the roadmap associated with the specified orchestration key.
+        /// </summary>
+        /// <param name="orchestrationKey">The unique key identifying the orchestration.</param>
+        /// <returns>The <see cref="Roadmap"/> associated with the given orchestration key, or null if not found.</returns>
+        Roadmap Get(string orchestrationKey);
+
+        /// <summary>
         /// Gets the roadmap for the specified topic.
         /// </summary>
         /// <param name="topic">The topic to retrieve the roadmap for.</param>

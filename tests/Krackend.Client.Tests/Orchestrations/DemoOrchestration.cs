@@ -33,18 +33,18 @@ namespace Krackend.Client.Tests.Orchestrations
                             config
                                 .ResolveTo("commands.opportunities.cancel_opportunity");
                         });
-                })
-                .Next(stage =>
-                {
-                    stage
-                        .Set("dispatch_to_webhook", "Dispatch to Webhook")
-                        .Description("Dispatches the created opportunity to a webhook for external further processing.")
-                        .StepForward(config =>
-                        {
-                            config
-                                .ResolveTo("commands.webhook_dispatcher.dispatch_webhook");
-                        });
                 });
+                //.Next(stage =>
+                //{
+                //    stage
+                //        .Set("dispatch_to_webhook", "Dispatch to Webhook")
+                //        .Description("Dispatches the created opportunity to a webhook for external further processing.")
+                //        .StepForward(config =>
+                //        {
+                //            config
+                //                .ResolveTo("commands.webhook_dispatcher.dispatch_webhook");
+                //        });
+                //});
         }
     }
 }
