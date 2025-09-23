@@ -1,6 +1,7 @@
 ﻿namespace Krackend.Sagas.Orchestration.Worker.Pipelines
 {
     using Microsoft.Extensions.DependencyInjection;
+    using Pigeon.Messaging.Producing;
     using Spider.Pipelines.PostProcessing;
 
     /// <summary>
@@ -109,5 +110,71 @@
 
             return config;
         }
+
+        /// <summary>
+        /// Configures the pipeline to publish a message on success to a specific topic with payload transformation.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of the operation request.</typeparam>
+        /// <typeparam name="TResponse">The type of the operation response.</typeparam>
+        /// <param name="config">The post-process configuration to extend.</param>
+        /// <param name="topic">The topic to which the message should be published.</param>
+        /// <param name="transformPayload">A function to transform the request and response into the payload to publish.</param>
+        /// <returns>The updated post-process configuration.</returns>
+        public static IPostProcessConfiguration<TRequest, TResponse> PublishOnSucess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic, Func<TRequest, TResponse, object> transformPayload)
+        {
+            config
+                .OnSuccess(async (context, args) =>
+                {
+                    var producer = context.Services.GetRequiredService<IProducer>();
+                    object payload = transformPayload != null ? transformPayload(context.Request, context.Response) : context.Response;
+
+                    await producer.PublishAsync(payload, topic, context.CancellationToken);
+                });
+
+            return config;
+        }
+
+        /// <summary>
+        /// Configures the pipeline to publish a message on success to a specific topic using the response as the payload.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of the operation request.</typeparam>
+        /// <typeparam name="TResponse">The type of the operation response.</typeparam>
+        /// <param name="config">The post-process configuration to extend.</param>
+        /// <param name="topic">The topic to which the message should be published.</param>
+        /// <returns>The updated post-process configuration.</returns>
+        public static IPostProcessConfiguration<TRequest, TResponse> PublishOnSucess<TRequest, TResponse>(this IPostProcessConfiguration<TRequest, TResponse> config, string topic)
+            => config.PublishOnSucess(topic, null);
+
+        /// <summary>
+        /// Configures the pipeline to publish a message on success to a specific topic with payload transformation.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of the operation request.</typeparam>
+        /// <param name="config">The post-process configuration to extend.</param>
+        /// <param name="topic">The topic to which the message should be published.</param>
+        /// <param name="transformPayload">A function to transform the request into the payload to publish.</param>
+        /// <returns>The updated post-process configuration.</returns>
+        public static IPostProcessConfiguration<TRequest> PublishOnSucess<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic, Func<TRequest, object> transformPayload)
+        {
+            config
+                .OnSuccess(async (context, args) =>
+                {
+                    var producer = context.Services.GetRequiredService<IProducer>();
+                    object payload = transformPayload != null ? transformPayload(context.Request) : context.Request;
+
+                    await producer.PublishAsync(payload, topic, context.CancellationToken);
+                });
+
+            return config;
+        }
+
+        /// <summary>
+        /// Configures the pipeline to publish a message on success to a specific topic using the request as the payload.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of the operation request.</typeparam>
+        /// <param name="config">The post-process configuration to extend.</param>
+        /// <param name="topic">The topic to which the message should be published.</param>
+        /// <returns>The updated post-process configuration.</returns>
+        public static IPostProcessConfiguration<TRequest> PublishOnSucess<TRequest>(this IPostProcessConfiguration<TRequest> config, string topic)
+            => config.PublishOnSucess(topic, null);
     }
 }
