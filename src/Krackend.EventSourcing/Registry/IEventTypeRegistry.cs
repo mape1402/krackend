@@ -1,0 +1,17 @@
+namespace Krackend.EventSourcing.Registry;
+
+/// <summary>
+/// Resolves CLR event types to persisted event names and versions.
+/// </summary>
+public interface IEventTypeRegistry
+{
+    /// <summary>
+    /// Gets the registration for a CLR event type.
+    /// </summary>
+    EventTypeRegistration GetRegistration(Type eventType);
+
+    /// <summary>
+    /// Resolves a persisted event name and version to a CLR type.
+    /// </summary>
+    Type Resolve(string eventType, int eventVersion);
+}
