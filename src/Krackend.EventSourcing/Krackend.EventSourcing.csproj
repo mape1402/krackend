@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Krackend.EventSourcing</PackageId>
+    <Description>Krackend.EventSourcing provides configurable event store primitives, envelopes, routing, and aggregate rehydration support for .NET applications.</Description>
+    <PackageTags>event-sourcing;event-store;domain-events;outbox;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+</Project>
