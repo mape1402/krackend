@@ -11,4 +11,14 @@ public sealed class EventSourcingOptions
     /// Gets envelope configuration.
     /// </summary>
     public EventEnvelopeOptions Envelope { get; } = new();
+
+    /// <summary>
+    /// Gets logical event store configuration.
+    /// </summary>
+    public EventStoreOptionsCollection Stores { get; } = new();
+
+    /// <summary>
+    /// Gets event routing configuration.
+    /// </summary>
+    public EventRoutingOptions Routing { get; } = new();
 }
