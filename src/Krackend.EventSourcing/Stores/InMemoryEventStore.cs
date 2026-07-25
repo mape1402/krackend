@@ -5,7 +5,7 @@ namespace Krackend.EventSourcing.Stores;
 /// <summary>
 /// In-memory event store implementation for tests and local development.
 /// </summary>
-public sealed class InMemoryEventStore : IEventStore
+public sealed class InMemoryEventStore : IEventStore, IEventLogReader
 {
     private readonly IEventEnvelopeFactory _envelopeFactory;
     private readonly object _syncRoot = new();
@@ -86,6 +86,37 @@ public sealed class InMemoryEventStore : IEventStore
             stream.AddRange(envelopes);
 
             return Task.FromResult<IReadOnlyCollection<EventEnvelope>>(envelopes);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyCollection<EventEnvelope>> ReadFromAsync(
+        string streamName,
+        long afterGlobalPosition,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+
+        if (afterGlobalPosition < 0)
+            throw new ArgumentOutOfRangeException(nameof(afterGlobalPosition), "Global position cannot be negative.");
+
+        if (maxCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxCount), "Max count must be greater than zero.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            var events = _streams
+                .Where(pair => pair.Key.StreamName == streamName)
+                .SelectMany(pair => pair.Value)
+                .Where(envelope => envelope.GlobalPosition > afterGlobalPosition)
+                .OrderBy(envelope => envelope.GlobalPosition)
+                .Take(maxCount)
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyCollection<EventEnvelope>>(events);
         }
     }
 
