@@ -3,6 +3,7 @@ using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Pelican.Sample.Commands;
 using Krackend.EventSourcing.Pelican.Sample.Data;
 using Krackend.EventSourcing.Pelican.Sample.Domain;
+using Krackend.EventSourcing.Pelican.Sample.Events;
 using Krackend.EventSourcing.Pelican.Sample.Hooks;
 using Krackend.EventSourcing.Pelican.Sample.State;
 using Krackend.EventSourcing.Pelican.Sample.TemplateCore;
@@ -37,7 +38,14 @@ services.AddSingleton<ISnapshotCandidatePolicy>(new IntervalSnapshotCandidatePol
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
 services.AddPelican(typeof(Program).Assembly);
 
-services.AddScoped<ICommittedEventFactory<CreateCustomerCommand, Customer>, CustomerCreatedEventFactory>();
+services.AddCommittedEvents(events =>
+{
+    events.CreateMultiMap<CustomerCreated>()
+        .From<CreateCustomerCommand>()
+        .From<Customer>()
+        .ConstructUsing((_, customer) =>
+            new CustomerCreated(customer.Id, customer.Name, customer.Email));
+});
 services.AddScoped<
     ICommandHandlerHook<CreateCustomerCommand, Customer>,
     EventSourcingPostSaveHook<CreateCustomerCommand, Customer>>();
