@@ -123,11 +123,12 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
 
     /// <inheritdoc />
     public void Dispose()
-        => _dbContext.Dispose();
+    {
+    }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
-        => _dbContext.DisposeAsync();
+        => ValueTask.CompletedTask;
 
     private void EnsureStore(string streamName)
         => _stores.GetRequired(streamName);

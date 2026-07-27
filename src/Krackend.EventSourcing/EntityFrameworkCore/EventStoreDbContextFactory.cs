@@ -10,7 +10,6 @@ public sealed class EventStoreDbContextFactory<TDbContext> : IEventStoreDbContex
     where TDbContext : DbContext
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly DbContextOptions<TDbContext> _options;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EventStoreDbContextFactory{TDbContext}"/> class.
@@ -18,10 +17,10 @@ public sealed class EventStoreDbContextFactory<TDbContext> : IEventStoreDbContex
     public EventStoreDbContextFactory(IServiceProvider serviceProvider, DbContextOptions<TDbContext> options)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-        _options = options ?? throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
     }
 
     /// <inheritdoc />
     public TDbContext CreateDbContext()
-        => ActivatorUtilities.CreateInstance<TDbContext>(_serviceProvider, _options);
+        => _serviceProvider.GetRequiredService<TDbContext>();
 }
