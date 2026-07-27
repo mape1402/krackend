@@ -61,12 +61,12 @@ public sealed class InMemoryEventStoreTests
     }
 
     [Fact]
-    public async Task AppendAsync_without_expected_version_appends_without_loading_stream_events()
+    public async Task AppendAsync_with_any_expected_version_appends_without_loading_stream_events()
     {
         var store = CreateStore();
 
-        await store.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
-        await store.AppendAsync("orders", "order-1", [new OrderPaid("order-1")]);
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderPaid("order-1")]);
 
         Assert.Equal(2, await store.GetCurrentVersionAsync("orders", "order-1"));
     }
@@ -76,15 +76,29 @@ public sealed class InMemoryEventStoreTests
     {
         var store = CreateStore();
 
-        await store.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
-        await store.AppendAsync("orders", "order-1", [new OrderPaid("order-1")]);
-        await store.AppendAsync("orders", "order-1", [new OrderPaid("order-1")]);
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderPaid("order-1")]);
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderPaid("order-1")]);
 
         var envelopes = await store.ReadStreamAsync("orders", "order-1", fromVersion: 2, maxCount: 1);
 
         Assert.Single(envelopes);
         Assert.Equal(2, envelopes.Single().StreamVersion);
         Assert.Equal("OrderPaid", envelopes.Single().EventType);
+    }
+
+    [Fact]
+    public async Task AppendAsync_with_no_stream_rejects_existing_stream()
+    {
+        var store = CreateStore();
+
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.NoStream, [new OrderCreated("order-1")]);
+
+        var exception = await Assert.ThrowsAsync<EventStoreConcurrencyException>(() =>
+            store.AppendAsync("orders", "order-1", ExpectedVersion.NoStream, [new OrderPaid("order-1")]));
+
+        Assert.Equal(0, exception.ExpectedVersion);
+        Assert.Equal(1, exception.ActualVersion);
     }
 
     private static InMemoryEventStore CreateStore(EventEnvelopeOptions? options = null)

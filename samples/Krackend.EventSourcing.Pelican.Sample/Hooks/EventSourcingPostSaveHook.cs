@@ -34,6 +34,6 @@ public sealed class EventSourcingPostSaveHook<TRequest, TEntity>
         if (events.Count == 0)
             return;
 
-        await _eventStore.AppendAsync(stream.Name, stream.Id, events, cancellationToken);
+        await _eventStore.AppendAsync(stream.Name, stream.Id, ExpectedVersion.Any, events, cancellationToken);
     }
 }

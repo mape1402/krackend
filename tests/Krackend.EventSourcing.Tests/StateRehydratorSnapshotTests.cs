@@ -108,6 +108,7 @@ public sealed class StateRehydratorSnapshotTests
         public Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
             string streamName,
             string streamId,
+            long expectedVersion,
             IReadOnlyCollection<object> events,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -115,7 +116,7 @@ public sealed class StateRehydratorSnapshotTests
         public Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
             string streamName,
             string streamId,
-            long expectedVersion,
+            ExpectedVersion expectedVersion,
             IReadOnlyCollection<object> events,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
