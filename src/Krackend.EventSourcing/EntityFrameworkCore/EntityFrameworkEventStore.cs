@@ -37,19 +37,63 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
         string streamName,
         string streamId,
         CancellationToken cancellationToken = default)
+        => await ReadStreamAsync(streamName, streamId, 1, int.MaxValue, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyCollection<EventEnvelope>> ReadStreamAsync(
+        string streamName,
+        string streamId,
+        long fromVersion,
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
+
+        if (fromVersion <= 0)
+            throw new ArgumentOutOfRangeException(nameof(fromVersion), "From version must be greater than zero.");
+
+        if (maxCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxCount), "Max count must be greater than zero.");
+
+        EnsureStore(streamName);
+
+        var records = await _dbContext.Set<EventStoreRecord>(streamName)
+            .AsNoTracking()
+            .Where(x => x.StreamName == streamName && x.StreamId == streamId && x.StreamVersion >= fromVersion)
+            .OrderBy(x => x.StreamVersion)
+            .Take(maxCount)
+            .ToListAsync(cancellationToken);
+
+        return records.Select(ToEnvelope).ToArray();
+    }
+
+    /// <inheritdoc />
+    public async Task<long> GetCurrentVersionAsync(
+        string streamName,
+        string streamId,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
         ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
 
         EnsureStore(streamName);
 
-        var records = await _dbContext.Set<EventStoreRecord>(streamName)
+        return await _dbContext.Set<EventStoreRecord>(streamName)
             .AsNoTracking()
             .Where(x => x.StreamName == streamName && x.StreamId == streamId)
-            .OrderBy(x => x.StreamVersion)
-            .ToListAsync(cancellationToken);
+            .MaxAsync(x => (long?)x.StreamVersion, cancellationToken) ?? 0;
+    }
 
-        return records.Select(ToEnvelope).ToArray();
+    /// <inheritdoc />
+    public async Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
+        string streamName,
+        string streamId,
+        IReadOnlyCollection<object> events,
+        CancellationToken cancellationToken = default)
+    {
+        var actualVersion = await GetCurrentVersionAsync(streamName, streamId, cancellationToken);
+        return await AppendCoreAsync(streamName, streamId, actualVersion, events, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -67,16 +111,24 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
         if (expectedVersion < 0)
             throw new ArgumentOutOfRangeException(nameof(expectedVersion), "Expected version cannot be negative.");
 
-        EnsureStore(streamName);
-
-        var set = _dbContext.Set<EventStoreRecord>(streamName);
-        var actualVersion = await set
-            .Where(x => x.StreamName == streamName && x.StreamId == streamId)
-            .MaxAsync(x => (long?)x.StreamVersion, cancellationToken) ?? 0;
+        var actualVersion = await GetCurrentVersionAsync(streamName, streamId, cancellationToken);
 
         if (actualVersion != expectedVersion)
             throw new EventStoreConcurrencyException(streamName, streamId, expectedVersion, actualVersion);
 
+        return await AppendCoreAsync(streamName, streamId, expectedVersion, events, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<EventEnvelope>> AppendCoreAsync(
+        string streamName,
+        string streamId,
+        long expectedVersion,
+        IReadOnlyCollection<object> events,
+        CancellationToken cancellationToken)
+    {
+        EnsureStore(streamName);
+
+        var set = _dbContext.Set<EventStoreRecord>(streamName);
         var nextGlobalPosition = await set.MaxAsync(x => (long?)x.GlobalPosition, cancellationToken) ?? 0;
         var pendingEnvelopes = _envelopeFactory.Create(streamName, streamId, null, expectedVersion, events);
         var committedEnvelopes = new List<EventEnvelope>(pendingEnvelopes.Count);

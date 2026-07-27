@@ -16,6 +16,33 @@ public interface IEventStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads committed events for the specified stream from a version range.
+    /// </summary>
+    Task<IReadOnlyCollection<EventEnvelope>> ReadStreamAsync(
+        string streamName,
+        string streamId,
+        long fromVersion,
+        int maxCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the current stream version without loading stream events.
+    /// </summary>
+    Task<long> GetCurrentVersionAsync(
+        string streamName,
+        string streamId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends new events to the stream without a version precondition.
+    /// </summary>
+    Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
+        string streamName,
+        string streamId,
+        IReadOnlyCollection<object> events,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Appends new events to the stream using optimistic concurrency.
     /// </summary>
     Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(

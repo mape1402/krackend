@@ -60,6 +60,33 @@ public sealed class InMemoryEventStoreTests
         Assert.Contains("\"tenantId\":\"tenant-a\"", envelopes.Single().Metadata);
     }
 
+    [Fact]
+    public async Task AppendAsync_without_expected_version_appends_without_loading_stream_events()
+    {
+        var store = CreateStore();
+
+        await store.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await store.AppendAsync("orders", "order-1", [new OrderPaid("order-1")]);
+
+        Assert.Equal(2, await store.GetCurrentVersionAsync("orders", "order-1"));
+    }
+
+    [Fact]
+    public async Task ReadStreamAsync_reads_from_requested_version_with_limit()
+    {
+        var store = CreateStore();
+
+        await store.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await store.AppendAsync("orders", "order-1", [new OrderPaid("order-1")]);
+        await store.AppendAsync("orders", "order-1", [new OrderPaid("order-1")]);
+
+        var envelopes = await store.ReadStreamAsync("orders", "order-1", fromVersion: 2, maxCount: 1);
+
+        Assert.Single(envelopes);
+        Assert.Equal(2, envelopes.Single().StreamVersion);
+        Assert.Equal("OrderPaid", envelopes.Single().EventType);
+    }
+
     private static InMemoryEventStore CreateStore(EventEnvelopeOptions? options = null)
     {
         var registry = new EventTypeRegistry()

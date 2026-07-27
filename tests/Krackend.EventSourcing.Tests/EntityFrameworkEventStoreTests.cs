@@ -38,6 +38,36 @@ public sealed class EntityFrameworkEventStoreTests
     }
 
     [Fact]
+    public async Task AppendAsync_without_expected_version_appends_and_updates_current_version()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
+
+        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+
+        Assert.Equal(2, await eventStore.GetCurrentVersionAsync("orders", "order-1"));
+    }
+
+    [Fact]
+    public async Task ReadStreamAsync_reads_stream_range_without_loading_full_stream()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
+
+        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+
+        var envelopes = await eventStore.ReadStreamAsync("orders", "order-1", fromVersion: 2, maxCount: 1);
+
+        Assert.Single(envelopes);
+        Assert.Equal(2, envelopes.Single().StreamVersion);
+    }
+
+    [Fact]
     public void EventStoreDbContextFactory_uses_the_scoped_app_db_context()
     {
         using var provider = BuildProvider();
