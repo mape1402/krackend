@@ -3,6 +3,12 @@ using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.EntityFrameworkCore;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Stores;
+using Krackend.EventSourcing.Sqlite.Sample.Commands;
+using Krackend.EventSourcing.Sqlite.Sample.Data;
+using Krackend.EventSourcing.Sqlite.Sample.Deciders;
+using Krackend.EventSourcing.Sqlite.Sample.Events;
+using Krackend.EventSourcing.Sqlite.Sample.Reducers;
+using Krackend.EventSourcing.Sqlite.Sample.State;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -41,18 +47,7 @@ registry.Register<CustomerCreated>();
 registry.Register<CustomerRenamed>();
 
 var reducers = scope.ServiceProvider.GetRequiredService<IEventReducerRegistry>();
-reducers
-    .Register<CustomerState, CustomerCreated>((state, @event) => state with
-    {
-        CustomerId = @event.CustomerId,
-        Name = @event.Name,
-        Email = @event.Email,
-        IsCreated = true
-    })
-    .Register<CustomerState, CustomerRenamed>((state, @event) => state with
-    {
-        Name = @event.Name
-    });
+reducers.AddCustomerReducers();
 
 var createCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, CreateCustomer>>();
 var renameCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, RenameCustomer>>();
@@ -83,64 +78,4 @@ Console.WriteLine($"Events stored: {envelopes.Count}");
 foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
 {
     Console.WriteLine($"{envelope.StreamVersion}: {envelope.EventType} metadata={envelope.Metadata}");
-}
-
-public sealed class SampleDbContext : DbContext
-{
-    public SampleDbContext(DbContextOptions<SampleDbContext> options)
-        : base(options)
-    {
-    }
-}
-
-public sealed record CustomerState(
-    string CustomerId,
-    string Name,
-    string Email,
-    bool IsCreated)
-{
-    public static CustomerState Empty { get; } = new(string.Empty, string.Empty, string.Empty, false);
-}
-
-public sealed record CreateCustomer(string CustomerId, string Name, string Email);
-
-public sealed record RenameCustomer(string CustomerId, string Name);
-
-public sealed record CustomerCreated(string CustomerId, string Name, string Email);
-
-public sealed record CustomerRenamed(string CustomerId, string Name);
-
-public sealed class CreateCustomerDecider : IEventDecider<CustomerState, CreateCustomer>
-{
-    public ValueTask<IReadOnlyCollection<object>> DecideAsync(
-        CustomerState state,
-        CreateCustomer command,
-        CancellationToken cancellationToken = default)
-    {
-        if (state.IsCreated)
-            throw new InvalidOperationException("Customer already exists.");
-
-        return ValueTask.FromResult<IReadOnlyCollection<object>>([
-            new CustomerCreated(command.CustomerId, command.Name, command.Email)
-        ]);
-    }
-}
-
-public sealed class RenameCustomerDecider : IEventDecider<CustomerState, RenameCustomer>
-{
-    public ValueTask<IReadOnlyCollection<object>> DecideAsync(
-        CustomerState state,
-        RenameCustomer command,
-        CancellationToken cancellationToken = default)
-    {
-        if (!state.IsCreated)
-            throw new InvalidOperationException("Customer must exist before it can be renamed.");
-
-        if (string.IsNullOrWhiteSpace(command.Name))
-            throw new ArgumentException("Customer name is required.", nameof(command));
-
-        return ValueTask.FromResult<IReadOnlyCollection<object>>([
-            new CustomerRenamed(command.CustomerId, command.Name)
-        ]);
-    }
 }
