@@ -38,14 +38,14 @@ public sealed class EntityFrameworkEventStoreTests
     }
 
     [Fact]
-    public async Task AppendAsync_without_expected_version_appends_and_updates_current_version()
+    public async Task AppendAsync_with_any_expected_version_appends_and_updates_current_version()
     {
         using var provider = BuildProvider();
         using var scope = provider.CreateScope();
         var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
 
-        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
-        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
 
         Assert.Equal(2, await eventStore.GetCurrentVersionAsync("orders", "order-1"));
     }
@@ -57,9 +57,9 @@ public sealed class EntityFrameworkEventStoreTests
         using var scope = provider.CreateScope();
         var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
 
-        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
-        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
-        await eventStore.AppendAsync("orders", "order-1", [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
+        await eventStore.AppendAsync("orders", "order-1", ExpectedVersion.Any, [new OrderCreated("order-1")]);
 
         var envelopes = await eventStore.ReadStreamAsync("orders", "order-1", fromVersion: 2, maxCount: 1);
 

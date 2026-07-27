@@ -66,6 +66,30 @@ public interface IEventReducerRegistry
 
 El reducer registry debe ejecutar delegates cacheados, no reflection.
 
+## Lectura, Append Y Versiones
+
+Append no debe cargar eventos del stream.
+
+La version esperada debe ser una politica explicita:
+
+```csharp
+await eventStore.AppendAsync(streamName, streamId, ExpectedVersion.Any, events);
+await eventStore.AppendAsync(streamName, streamId, ExpectedVersion.NoStream, events);
+await eventStore.AppendAsync(streamName, streamId, ExpectedVersion.Exact(version), events);
+```
+
+Uso recomendado:
+
+- `ExpectedVersion.Any`: hooks CRUD / committed event log, donde el evento registra algo que ya paso.
+- `ExpectedVersion.NoStream`: creates estrictos donde el stream no debe existir.
+- `ExpectedVersion.Exact(version)`: event sourcing real, despues de rehidratar y decidir sobre una version concreta.
+
+`ReadStreamAsync(streamName, streamId, fromVersion, maxCount)` es una API de infraestructura. La aplicacion no deberia adivinar `fromVersion`:
+
+- Sin snapshot, el rehydrator empieza desde version `1`.
+- Con snapshot, el rehydrator empieza desde `snapshot.StreamVersion + 1`.
+- Para herramientas/proyecciones/rebuilds, el caller avanzado puede controlar rango y batch.
+
 ## Ergonomia De Streams
 
 El nombre del stream y el id no deben aparecer como strings en el handler o en el caso de uso.
@@ -226,6 +250,35 @@ Para servicios CRUD actuales, el hook usa adapters:
 - `IEventStore`: persiste el envelope en la tabla configurada.
 
 Asi el dev que ya hereda de `CreateCommandHandler`, `UpdateCommandHandler` o `DeleteCommandHandler` no tiene que cambiar su handler. Solo registra la integracion y, si su request no expone id suficiente, agrega un resolver/factory tipado.
+
+## Snapshots
+
+Snapshots no deben crearse por default dentro del request path.
+
+La ruta caliente de un comando puede leer el ultimo snapshot para no rehidratar desde cero, pero generar snapshots debe ser trabajo aparte:
+
+- background service
+- scheduled job
+- worker de mantenimiento
+- proceso de rebuild controlado
+
+Ese worker debe operar sobre streams candidatos, no recorrer todos los aggregates a ciegas. Una forma razonable:
+
+```txt
+stream candidate
+  -> load latest snapshot
+  -> read events after snapshot in batches
+  -> reduce state
+  -> save snapshot at current version
+```
+
+La politica de candidatos puede salir de metricas simples:
+
+- streams con mas de N eventos desde el ultimo snapshot
+- streams modificados recientemente
+- streams marcados por el append path como "snapshot due"
+
+El punto importante: snapshot creation es mantenimiento asíncrono, no trabajo obligatorio del handler.
 
 ## Committed Events Para Handlers CRUD
 

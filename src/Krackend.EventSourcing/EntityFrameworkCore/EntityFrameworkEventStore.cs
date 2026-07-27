@@ -89,18 +89,16 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
     public async Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
         string streamName,
         string streamId,
+        long expectedVersion,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default)
-    {
-        var actualVersion = await GetCurrentVersionAsync(streamName, streamId, cancellationToken);
-        return await AppendCoreAsync(streamName, streamId, actualVersion, events, cancellationToken);
-    }
+        => await AppendAsync(streamName, streamId, ExpectedVersion.Exact(expectedVersion), events, cancellationToken);
 
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
         string streamName,
         string streamId,
-        long expectedVersion,
+        ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default)
     {
@@ -108,15 +106,11 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
         ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
         ArgumentNullException.ThrowIfNull(events);
 
-        if (expectedVersion < 0)
-            throw new ArgumentOutOfRangeException(nameof(expectedVersion), "Expected version cannot be negative.");
-
         var actualVersion = await GetCurrentVersionAsync(streamName, streamId, cancellationToken);
 
-        if (actualVersion != expectedVersion)
-            throw new EventStoreConcurrencyException(streamName, streamId, expectedVersion, actualVersion);
+        EnsureExpectedVersion(streamName, streamId, expectedVersion, actualVersion);
 
-        return await AppendCoreAsync(streamName, streamId, expectedVersion, events, cancellationToken);
+        return await AppendCoreAsync(streamName, streamId, actualVersion, events, cancellationToken);
     }
 
     private async Task<IReadOnlyCollection<EventEnvelope>> AppendCoreAsync(
@@ -184,6 +178,23 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
 
     private void EnsureStore(string streamName)
         => _stores.GetRequired(streamName);
+
+    private static void EnsureExpectedVersion(
+        string streamName,
+        string streamId,
+        ExpectedVersion expectedVersion,
+        long actualVersion)
+    {
+        if (expectedVersion.Mode == ExpectedVersionMode.Any)
+            return;
+
+        var expected = expectedVersion.Mode == ExpectedVersionMode.NoStream
+            ? 0
+            : expectedVersion.Value;
+
+        if (actualVersion != expected)
+            throw new EventStoreConcurrencyException(streamName, streamId, expected, actualVersion);
+    }
 
     private static EventStoreRecord ToRecord(EventEnvelope envelope)
         => new()

@@ -86,43 +86,22 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
     public Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
         string streamName,
         string streamId,
+        long expectedVersion,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
-        ArgumentNullException.ThrowIfNull(events);
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        lock (_syncRoot)
-        {
-            var key = new StreamKey(streamName, streamId);
-
-            if (!_streams.TryGetValue(key, out var stream))
-            {
-                stream = [];
-                _streams[key] = stream;
-            }
-
-            return AppendCore(streamName, streamId, stream, stream.Count == 0 ? 0 : stream[^1].StreamVersion, events);
-        }
-    }
+        => AppendAsync(streamName, streamId, ExpectedVersion.Exact(expectedVersion), events, cancellationToken);
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
         string streamName,
         string streamId,
-        long expectedVersion,
+        ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
         ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
         ArgumentNullException.ThrowIfNull(events);
-
-        if (expectedVersion < 0)
-            throw new ArgumentOutOfRangeException(nameof(expectedVersion), "Expected version cannot be negative.");
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -138,10 +117,9 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
 
             var actualVersion = stream.Count == 0 ? 0 : stream[^1].StreamVersion;
 
-            if (actualVersion != expectedVersion)
-                throw new EventStoreConcurrencyException(streamName, streamId, expectedVersion, actualVersion);
+            EnsureExpectedVersion(streamName, streamId, expectedVersion, actualVersion);
 
-            return AppendCore(streamName, streamId, stream, expectedVersion, events);
+            return AppendCore(streamName, streamId, stream, actualVersion, events);
         }
     }
 
@@ -177,6 +155,23 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
     }
 
     private readonly record struct StreamKey(string StreamName, string StreamId);
+
+    private static void EnsureExpectedVersion(
+        string streamName,
+        string streamId,
+        ExpectedVersion expectedVersion,
+        long actualVersion)
+    {
+        if (expectedVersion.Mode == ExpectedVersionMode.Any)
+            return;
+
+        var expected = expectedVersion.Mode == ExpectedVersionMode.NoStream
+            ? 0
+            : expectedVersion.Value;
+
+        if (actualVersion != expected)
+            throw new EventStoreConcurrencyException(streamName, streamId, expected, actualVersion);
+    }
 
     private Task<IReadOnlyCollection<EventEnvelope>> AppendCore(
         string streamName,

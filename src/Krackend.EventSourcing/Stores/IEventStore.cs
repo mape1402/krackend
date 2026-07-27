@@ -34,21 +34,22 @@ public interface IEventStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Appends new events to the stream without a version precondition.
-    /// </summary>
-    Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
-        string streamName,
-        string streamId,
-        IReadOnlyCollection<object> events,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Appends new events to the stream using optimistic concurrency.
     /// </summary>
     Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
         string streamName,
         string streamId,
         long expectedVersion,
+        IReadOnlyCollection<object> events,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends new events to the stream using the specified version precondition.
+    /// </summary>
+    Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
+        string streamName,
+        string streamId,
+        ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default);
 }
