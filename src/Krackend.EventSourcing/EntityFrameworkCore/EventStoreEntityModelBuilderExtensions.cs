@@ -1,0 +1,52 @@
+using Krackend.EventSourcing.Configuration;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Microsoft.EntityFrameworkCore;
+
+/// <summary>
+/// Provides EF Core model configuration for Krackend event store entities.
+/// </summary>
+public static class EventStoreEntityModelBuilderExtensions
+{
+    /// <summary>
+    /// Adds Krackend event store entity mappings to an EF Core model.
+    /// </summary>
+    public static ModelBuilder AddKrackendEventStore(
+        this ModelBuilder modelBuilder,
+        EventStoreOptionsCollection stores)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+        ArgumentNullException.ThrowIfNull(stores);
+
+        foreach (var store in stores.Values.Values)
+        {
+            modelBuilder.SharedTypeEntity<Krackend.EventSourcing.EntityFrameworkCore.EventStoreRecord>(
+                store.Name,
+                entity => ConfigureEntity(entity, store));
+        }
+
+        return modelBuilder;
+    }
+
+    private static void ConfigureEntity(
+        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.EventStoreRecord> entity,
+        EventStoreOptions store)
+    {
+        entity.ToTable(store.TableName, store.Schema);
+        entity.HasKey(x => x.EventId);
+        entity.Property(x => x.EventId).ValueGeneratedNever();
+        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
+        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
+        entity.Property(x => x.StreamType).HasMaxLength(300);
+        entity.Property(x => x.EventType).IsRequired().HasMaxLength(500);
+        entity.Property(x => x.EventVersion).IsRequired();
+        entity.Property(x => x.StreamVersion).IsRequired();
+        entity.Property(x => x.GlobalPosition).ValueGeneratedOnAdd();
+        entity.Property(x => x.OccurredAt).IsRequired();
+        entity.Property(x => x.Payload).IsRequired();
+        entity.Property(x => x.Metadata);
+        entity.HasIndex(x => new { x.StreamName, x.StreamId, x.StreamVersion }).IsUnique();
+        entity.HasIndex(x => x.GlobalPosition);
+        entity.HasIndex(x => new { x.EventType, x.GlobalPosition });
+    }
+}
