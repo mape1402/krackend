@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Outbox;
@@ -40,6 +41,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddSingleton(eventTypeRegistry);
         services.AddSingleton<IEventSerializer, SystemTextJsonEventSerializer>();
         services.AddSingleton<IEventStreamResolver, ConfiguredEventStreamResolver>();
+        services.AddSingleton<IEventReducerRegistry, EventReducerRegistry>();
         services.AddSingleton<IEventUpcasterPipeline>(provider => new EventUpcasterPipeline(provider.GetServices<IEventUpcaster>()));
         services.AddSingleton<ICheckpointStore, InMemoryCheckpointStore>();
         services.AddSingleton<IOutboxStore, InMemoryOutboxStore>();
@@ -48,6 +50,8 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<InMemoryEventStore>();
         services.AddScoped<IEventStore>(provider => provider.GetRequiredService<InMemoryEventStore>());
         services.AddScoped<IEventLogReader>(provider => provider.GetRequiredService<InMemoryEventStore>());
+        services.AddScoped<IStateRehydrator, StateRehydrator>();
+        services.AddScoped(typeof(IEventSourcedApplicationService<,>), typeof(EventSourcedApplicationService<,>));
         services.AddScoped<IProjectionRunner, ProjectionRunner>();
 
         return services;
