@@ -1,6 +1,9 @@
 <Project>
   <ItemGroup>
-    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.6" />
+    <PackageReference Update="Microsoft.EntityFrameworkCore" Version="9.0.7" />
+    <PackageReference Update="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.7" />
+    <PackageReference Update="Microsoft.EntityFrameworkCore.Relational" Version="9.0.7" />
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.7" />
     <PackageReference Update="MinVer" Version="6.0.0" />
     <PackageReference Update="Pigeon.Messaging" Version="1.0.11" />
     <PackageReference Update="Spider.Pipelines" Version="1.0.0" />
