@@ -5,6 +5,7 @@ using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Projections;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
+using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
 using Krackend.EventSourcing.Upcasting;
@@ -44,6 +45,9 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddSingleton(eventTypeRegistry);
         services.AddSingleton<IEventSerializer, SystemTextJsonEventSerializer>();
         services.AddSingleton<IEventStreamResolver, ConfiguredEventStreamResolver>();
+        services.AddSingleton<ISnapshotStore, InMemorySnapshotStore>();
+        services.AddSingleton<ISnapshotSerializer, SystemTextJsonSnapshotSerializer>();
+        services.AddSingleton<ISnapshotStrategy, NeverSnapshotStrategy>();
         services.AddScoped<IEventReducerRegistry>(provider =>
         {
             var registry = new EventReducerRegistry();

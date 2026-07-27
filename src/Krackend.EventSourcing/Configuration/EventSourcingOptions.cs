@@ -24,6 +24,11 @@ public sealed class EventSourcingOptions
     public EventRoutingOptions Routing { get; } = new();
 
     /// <summary>
+    /// Gets or sets the number of stream events read per rehydration batch.
+    /// </summary>
+    public int RehydrationBatchSize { get; set; } = 500;
+
+    /// <summary>
     /// Gets assemblies scanned for event sourcing components.
     /// </summary>
     public List<Assembly> Assemblies { get; } = [];
