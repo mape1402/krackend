@@ -6,13 +6,11 @@ namespace Krackend.EventSourcing.Pelican.Sample.Hooks;
 
 public sealed class CustomerCreatedEventFactory : ICommittedEventFactory<CreateCustomerCommand, Customer>
 {
-    public ValueTask<IReadOnlyCollection<object>> CreateAsync(
+    public ValueTask<object?> CreateAsync(
         CreateCustomerCommand request,
         Customer entity,
         CancellationToken cancellationToken = default)
     {
-        return ValueTask.FromResult<IReadOnlyCollection<object>>([
-            new CustomerCreated(entity.Id, entity.Name, entity.Email)
-        ]);
+        return ValueTask.FromResult<object?>(new CustomerCreated(entity.Id, entity.Name, entity.Email));
     }
 }
