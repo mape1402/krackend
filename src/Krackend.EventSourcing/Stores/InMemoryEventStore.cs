@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Envelopes;
+using Krackend.EventSourcing.Snapshots;
 
 namespace Krackend.EventSourcing.Stores;
 
@@ -8,6 +9,7 @@ namespace Krackend.EventSourcing.Stores;
 public sealed class InMemoryEventStore : IEventStore, IEventLogReader
 {
     private readonly IEventEnvelopeFactory _envelopeFactory;
+    private readonly ISnapshotCandidateMarker _snapshotCandidateMarker;
     private readonly object _syncRoot = new();
     private readonly Dictionary<StreamKey, List<EventEnvelope>> _streams = [];
     private long _globalPosition;
@@ -15,9 +17,12 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryEventStore"/> class.
     /// </summary>
-    public InMemoryEventStore(IEventEnvelopeFactory envelopeFactory)
+    public InMemoryEventStore(
+        IEventEnvelopeFactory envelopeFactory,
+        ISnapshotCandidateMarker? snapshotCandidateMarker = null)
     {
         _envelopeFactory = envelopeFactory ?? throw new ArgumentNullException(nameof(envelopeFactory));
+        _snapshotCandidateMarker = snapshotCandidateMarker ?? new NoOpSnapshotCandidateMarker();
     }
 
     /// <inheritdoc />
@@ -119,7 +124,7 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
 
             EnsureExpectedVersion(streamName, streamId, expectedVersion, actualVersion);
 
-            return AppendCore(streamName, streamId, stream, actualVersion, events);
+            return AppendCoreAsync(streamName, streamId, stream, actualVersion, events, cancellationToken);
         }
     }
 
@@ -173,12 +178,13 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
             throw new EventStoreConcurrencyException(streamName, streamId, expected, actualVersion);
     }
 
-    private Task<IReadOnlyCollection<EventEnvelope>> AppendCore(
+    private async Task<IReadOnlyCollection<EventEnvelope>> AppendCoreAsync(
         string streamName,
         string streamId,
         List<EventEnvelope> stream,
         long expectedVersion,
-        IReadOnlyCollection<object> events)
+        IReadOnlyCollection<object> events,
+        CancellationToken cancellationToken)
     {
         var envelopes = _envelopeFactory.Create(
                 streamName,
@@ -191,6 +197,22 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
 
         stream.AddRange(envelopes);
 
-        return Task.FromResult<IReadOnlyCollection<EventEnvelope>>(envelopes);
+        await _snapshotCandidateMarker.MarkIfNeededAsync(
+            streamName,
+            streamId,
+            envelopes.Length == 0 ? expectedVersion : envelopes[^1].StreamVersion,
+            cancellationToken);
+
+        return envelopes;
+    }
+
+    private sealed class NoOpSnapshotCandidateMarker : ISnapshotCandidateMarker
+    {
+        public Task MarkIfNeededAsync(
+            string streamName,
+            string streamId,
+            long currentStreamVersion,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

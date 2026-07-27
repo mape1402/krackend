@@ -1,5 +1,6 @@
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.Envelopes;
+using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,6 +14,7 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
 {
     private readonly EventStoreOptionsCollection _stores;
     private readonly IEventEnvelopeFactory _envelopeFactory;
+    private readonly ISnapshotCandidateMarker _snapshotCandidateMarker;
     private readonly TDbContext _dbContext;
 
     /// <summary>
@@ -21,10 +23,12 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
     public EntityFrameworkEventStore(
         EventStoreOptionsCollection stores,
         IEventEnvelopeFactory envelopeFactory,
+        ISnapshotCandidateMarker snapshotCandidateMarker,
         IEventStoreDbContextFactory<TDbContext> dbContextFactory)
     {
         _stores = stores ?? throw new ArgumentNullException(nameof(stores));
         _envelopeFactory = envelopeFactory ?? throw new ArgumentNullException(nameof(envelopeFactory));
+        _snapshotCandidateMarker = snapshotCandidateMarker ?? throw new ArgumentNullException(nameof(snapshotCandidateMarker));
 
         if (dbContextFactory is null)
             throw new ArgumentNullException(nameof(dbContextFactory));
@@ -136,6 +140,11 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _snapshotCandidateMarker.MarkIfNeededAsync(
+            streamName,
+            streamId,
+            committedEnvelopes.Count == 0 ? expectedVersion : committedEnvelopes[^1].StreamVersion,
+            cancellationToken);
 
         return committedEnvelopes;
     }

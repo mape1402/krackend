@@ -48,6 +48,10 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddSingleton<ISnapshotStore, InMemorySnapshotStore>();
         services.AddSingleton<ISnapshotSerializer, SystemTextJsonSnapshotSerializer>();
         services.AddSingleton<ISnapshotStrategy, NeverSnapshotStrategy>();
+        services.AddSingleton<ISnapshotCandidateStore, InMemorySnapshotCandidateStore>();
+        services.AddSingleton<ISnapshotCandidatePolicy, NeverSnapshotCandidatePolicy>();
+        services.AddScoped<ISnapshotCandidateMarker, SnapshotCandidateMarker>();
+        services.AddScoped(typeof(ISnapshotProcessor<>), typeof(SnapshotProcessor<>));
         services.AddScoped<IEventReducerRegistry>(provider =>
         {
             var registry = new EventReducerRegistry();

@@ -280,6 +280,15 @@ La politica de candidatos puede salir de metricas simples:
 
 El punto importante: snapshot creation es mantenimiento asíncrono, no trabajo obligatorio del handler.
 
+Implementacion base:
+
+- Append marca candidatos mediante `ISnapshotCandidateMarker`.
+- La politica default no marca nada.
+- `IntervalSnapshotCandidatePolicy` marca streams con N eventos desde el ultimo snapshot.
+- `ISnapshotProcessor<TState>` procesa candidatos por batches y guarda snapshots.
+- EF Core agrega tablas para snapshots y candidatos al mismo `DbContext` de la app.
+- El worker real puede llamar `ProcessPendingAsync` en un `BackgroundService` o job programado.
+
 ## Committed Events Para Handlers CRUD
 
 Para el template actual, existe otro caso distinto a event sourcing puro:
