@@ -1,6 +1,7 @@
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.EntityFrameworkCore;
+using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,8 @@ public sealed class EntityFrameworkEventStoreTests
 
         Assert.NotNull(dbContext.Model.FindEntityType("orders"));
         Assert.NotNull(dbContext.Model.FindEntityType("payments"));
+        Assert.NotNull(dbContext.Model.FindEntityType(typeof(EventSnapshotRecord)));
+        Assert.NotNull(dbContext.Model.FindEntityType(typeof(SnapshotCandidateRecord)));
     }
 
     [Fact]
@@ -77,6 +80,27 @@ public sealed class EntityFrameworkEventStoreTests
         var factory = scope.ServiceProvider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.IEventStoreDbContextFactory<TestDbContext>>();
 
         Assert.Same(dbContext, factory.CreateDbContext());
+    }
+
+    [Fact]
+    public async Task EntityFramework_snapshot_stores_use_app_db_context_model()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var snapshotStore = scope.ServiceProvider.GetRequiredService<ISnapshotStore>();
+        var candidateStore = scope.ServiceProvider.GetRequiredService<ISnapshotCandidateStore>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+
+        await snapshotStore.SaveAsync(new Snapshot(
+            "orders",
+            "order-1",
+            3,
+            "{}",
+            DateTimeOffset.UtcNow));
+        await candidateStore.MarkAsync("orders", "order-1", 4);
+
+        Assert.Equal(1, await dbContext.Set<EventSnapshotRecord>().CountAsync());
+        Assert.Equal(1, await dbContext.Set<SnapshotCandidateRecord>().CountAsync());
     }
 
     private static ServiceProvider BuildProvider()

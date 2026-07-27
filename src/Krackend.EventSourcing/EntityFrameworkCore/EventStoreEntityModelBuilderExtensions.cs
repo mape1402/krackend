@@ -25,6 +25,9 @@ public static class EventStoreEntityModelBuilderExtensions
                 entity => ConfigureEntity(entity, store));
         }
 
+        modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord>(ConfigureSnapshotEntity);
+        modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.SnapshotCandidateRecord>(ConfigureSnapshotCandidateEntity);
+
         return modelBuilder;
     }
 
@@ -48,5 +51,31 @@ public static class EventStoreEntityModelBuilderExtensions
         entity.HasIndex(x => new { x.StreamName, x.StreamId, x.StreamVersion }).IsUnique();
         entity.HasIndex(x => x.GlobalPosition);
         entity.HasIndex(x => new { x.EventType, x.GlobalPosition });
+    }
+
+    private static void ConfigureSnapshotEntity(
+        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord> entity)
+    {
+        entity.ToTable("EventSnapshots");
+        entity.HasKey(x => x.SnapshotId);
+        entity.Property(x => x.SnapshotId).ValueGeneratedNever();
+        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
+        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
+        entity.Property(x => x.StreamVersion).IsRequired();
+        entity.Property(x => x.Payload).IsRequired();
+        entity.Property(x => x.CreatedAt).IsRequired();
+        entity.HasIndex(x => new { x.StreamName, x.StreamId, x.StreamVersion }).IsUnique();
+    }
+
+    private static void ConfigureSnapshotCandidateEntity(
+        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.SnapshotCandidateRecord> entity)
+    {
+        entity.ToTable("EventSnapshotCandidates");
+        entity.HasKey(x => new { x.StreamName, x.StreamId });
+        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
+        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
+        entity.Property(x => x.StreamVersion).IsRequired();
+        entity.Property(x => x.MarkedAt).IsRequired();
+        entity.HasIndex(x => x.MarkedAt);
     }
 }
