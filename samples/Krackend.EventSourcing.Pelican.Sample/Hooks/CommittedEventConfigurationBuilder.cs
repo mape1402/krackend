@@ -11,8 +11,12 @@ public sealed class CommittedEventConfigurationBuilder
         _services = services;
     }
 
-    public CommittedEventMapExpression<TEvent> CreateMultiMap<TEvent>()
+    public CommittedEventConfigurationBuilder Map<TRequest, TEntity, TEvent>()
     {
-        return new CommittedEventMapExpression<TEvent>(_services);
+        _services.AddScoped<
+            ICommittedEventMapper<TRequest, TEntity>,
+            OctoMapCommittedEventMapper<TRequest, TEntity, TEvent>>();
+
+        return this;
     }
 }
