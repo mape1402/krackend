@@ -38,7 +38,7 @@ command
   -> decider decides new events
   -> append events with expected version
   -> reduce new events into current state
-  -> projections/outbox/integration
+  -> projections
 ```
 
 Contratos principales:
@@ -94,7 +94,7 @@ Envelope:
 
 ## EF Core
 
-La integracion EF Core debe agregar entidades del event store al modelo del `DbContext` de la app, siguiendo el patron usado por Pigeon Outbox:
+La integracion EF Core debe agregar entidades del event store al modelo del `DbContext` de la app, siguiendo el mismo patron de integracion al modelo que ya se usa en otras librerias de Krackend:
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>
@@ -140,7 +140,7 @@ Puntos naturales:
 
 - `PreProcess`: cargar metadata/correlation, preparar stream.
 - `Middleware`: envolver ejecucion con contexto event sourced.
-- `PostProcess`: append committed events, ejecutar proyecciones, outbox.
+- `PostProcess`: append committed events y ejecutar proyecciones.
 - `Boundary`: lifecycle de complete/fault/cancel.
 
 ## Hooks En Templates
@@ -216,12 +216,11 @@ Krackend.EventSourcing.Testing
 2. EF event store integrado al app `DbContext`.
 3. SQLite sample usando commands, state, deciders y reducers.
 4. Projections y checkpoints.
-5. Outbox/integration events.
-6. Spider extension.
-7. Hooks evolutivos en templates.
-8. Pigeon integration.
-9. Snapshots.
-10. Testing helpers para decider/reducer/state.
+5. Spider extension.
+6. Hooks evolutivos en templates.
+7. Pigeon integration.
+8. Snapshots.
+9. Testing helpers para decider/reducer/state.
 
 ## Criterio Para Primer Release
 
@@ -229,7 +228,7 @@ La primera version debe permitir:
 
 - Configurar multiples stores logicos.
 - Agregar tablas del event store al `DbContext` de la app.
-- Registrar eventos y reducers.
+- Descubrir eventos, deciders y reducers por assembly scanning.
 - Rehidratar state desde stream.
 - Ejecutar decider.
 - Append con expected version.

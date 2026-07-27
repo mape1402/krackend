@@ -19,6 +19,15 @@ public sealed class EventReducerRegistry : IEventReducerRegistry
     }
 
     /// <inheritdoc />
+    public IEventReducerRegistry Register(IEventReducer reducer)
+    {
+        ArgumentNullException.ThrowIfNull(reducer);
+
+        _reducers[new ReducerKey(reducer.StateType, reducer.EventType)] = reducer.Apply;
+        return this;
+    }
+
+    /// <inheritdoc />
     public TState Apply<TState>(TState state, object @event)
     {
         ArgumentNullException.ThrowIfNull(@event);
