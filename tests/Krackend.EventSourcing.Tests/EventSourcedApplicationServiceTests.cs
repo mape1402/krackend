@@ -5,6 +5,7 @@ using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Stores;
+using Krackend.EventSourcing.Streams;
 
 namespace Krackend.EventSourcing.Tests;
 
@@ -40,7 +41,8 @@ public sealed class EventSourcedApplicationServiceTests
             rehydrator,
             new DepositMoneyDecider(),
             reducers,
-            store);
+            store,
+            new StaticCommandStreamResolver<DepositMoney>("accounts", "account-1"));
 
         var result = await service.ExecuteAsync(
             "accounts",
@@ -92,5 +94,17 @@ public sealed class EventSourcedApplicationServiceTests
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    private sealed class StaticCommandStreamResolver<TCommand> : ICommandStreamResolver<TCommand>
+    {
+        private readonly EventStreamReference _stream;
+
+        public StaticCommandStreamResolver(string streamName, string streamId)
+        {
+            _stream = EventStreamReference.Create(streamName, streamId);
+        }
+
+        public EventStreamReference Resolve(TCommand command) => _stream;
     }
 }

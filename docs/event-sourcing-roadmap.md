@@ -66,6 +66,26 @@ public interface IEventReducerRegistry
 
 El reducer registry debe ejecutar delegates cacheados, no reflection.
 
+## Ergonomia De Streams
+
+El nombre del stream y el id no deben aparecer como strings en el handler o en el caso de uso.
+
+API deseada:
+
+```csharp
+await eventSourcedService.ExecuteAsync(
+    CustomerState.Empty,
+    new CreateCustomer("customer-001", "Mario", "mario@example.com"));
+```
+
+La libreria resuelve el stream con:
+
+- `IEventStreamCommand` para comandos simples que ya pueden exponer `StreamId`.
+- `ICommandStreamResolver<TCommand>` para integraciones donde el comando no debe modificarse.
+- `EventRoutingOptions` para mapear comandos a stores logicos.
+
+Esto permite que un template use `BaseRequest.Id` desde un resolver externo sin que los handlers base ni los handlers concretos tengan literals del event store.
+
 ## Event Store
 
 El event store mantiene:
@@ -184,6 +204,28 @@ Hooks por etapa:
 - `PostDeleteEntity`
 
 Esto permite registrar comportamiento externo sin obligar a los devs a reescribir handlers existentes.
+
+El encaje con event sourcing no debe ser que el handler llame manualmente a `IEventStore`.
+
+El encaje debe ser:
+
+```txt
+Handle
+  -> ValidateWithHooks
+  -> Map/Get/Patch/Delete with hooks
+  -> SaveWithHooks
+       -> template hace su persistencia actual
+       -> event sourcing hook genera/commitea evento dentro del mismo DbContext
+  -> ResponseWithHooks
+```
+
+Para servicios CRUD actuales, el hook usa adapters:
+
+- `ICommandStreamResolver<TRequest>`: obtiene stream name/id desde el request o entidad.
+- `ICommandEventFactory<TRequest, TEntity>`: convierte request + entidad + operacion en evento.
+- `IEventStore`: persiste el envelope en la tabla configurada.
+
+Asi el dev que ya hereda de `CreateCommandHandler`, `UpdateCommandHandler` o `DeleteCommandHandler` no tiene que cambiar su handler. Solo registra la integracion y, si su request no expone id suficiente, agrega un resolver/factory tipado.
 
 ## Committed Events Para Handlers CRUD
 

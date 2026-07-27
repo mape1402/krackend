@@ -1,11 +1,9 @@
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.DependencyInjection;
-using Krackend.EventSourcing.EntityFrameworkCore;
-using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Sqlite.Sample.Commands;
 using Krackend.EventSourcing.Sqlite.Sample.Data;
-using Krackend.EventSourcing.Sqlite.Sample.Events;
 using Krackend.EventSourcing.Sqlite.Sample.State;
+using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -26,6 +24,7 @@ services.AddKrackendEventSourcing(options =>
         store.TableName = "CustomerEvents";
     });
 
+    options.Routing.DefaultStreamName = "customers";
     options.Envelope.AddMetadata("sample", _ => "sqlite");
 });
 
@@ -41,14 +40,10 @@ var createCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedAppli
 var renameCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, RenameCustomer>>();
 
 var created = await createCustomer.ExecuteAsync(
-    "customers",
-    "customer-001",
     CustomerState.Empty,
     new CreateCustomer("customer-001", "Mario", "mario@example.com"));
 
 var renamed = await renameCustomer.ExecuteAsync(
-    "customers",
-    "customer-001",
     CustomerState.Empty,
     new RenameCustomer("customer-001", "Mario Perez"));
 
