@@ -35,7 +35,6 @@ public static class EventSourcingServiceCollectionExtensions
             options.ScanAssembly(entryAssembly);
 
         var eventTypeRegistry = new EventTypeRegistry();
-        EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, options.Assemblies);
 
         services.AddSingleton(options);
         services.AddSingleton(options.Envelope);
@@ -59,8 +58,10 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IEventStore>(provider => provider.GetRequiredService<InMemoryEventStore>());
         services.AddScoped<IEventLogReader>(provider => provider.GetRequiredService<InMemoryEventStore>());
         services.AddScoped<IStateRehydrator, StateRehydrator>();
+        services.AddScoped(typeof(ICommandStreamResolver<>), typeof(DefaultCommandStreamResolver<>));
         services.AddScoped(typeof(IEventSourcedApplicationService<,>), typeof(EventSourcedApplicationService<,>));
         services.AddScoped<IProjectionRunner, ProjectionRunner>();
+        EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, options.Assemblies);
 
         return services;
     }

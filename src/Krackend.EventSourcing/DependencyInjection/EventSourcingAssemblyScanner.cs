@@ -2,6 +2,7 @@ using System.Reflection;
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Projections;
 using Krackend.EventSourcing.Registry;
+using Krackend.EventSourcing.Streams;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Krackend.EventSourcing.DependencyInjection;
@@ -16,7 +17,7 @@ internal static class EventSourcingAssemblyScanner
         var types = assemblies
             .Distinct()
             .SelectMany(assembly => assembly.DefinedTypes)
-            .Where(type => type is { IsAbstract: false, IsInterface: false })
+            .Where(type => type is { IsAbstract: false, IsInterface: false, ContainsGenericParameters: false })
             .ToArray();
 
         foreach (var type in types)
@@ -24,6 +25,7 @@ internal static class EventSourcingAssemblyScanner
             RegisterClosedInterfaces(services, type, typeof(IEventDecider<,>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(IProjectionHandler<>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(IEventReducer<,>), ServiceLifetime.Scoped);
+            RegisterClosedInterfaces(services, type, typeof(ICommandStreamResolver<>), ServiceLifetime.Scoped);
             RegisterEventTypes(eventTypeRegistry, type);
         }
     }
