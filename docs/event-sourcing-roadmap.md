@@ -2,122 +2,83 @@
 
 ## Objetivo
 
-Construir una libreria standalone para event sourcing en .NET, independiente de templates, mediators, mensajeria o frameworks especificos de Krackend.
+Construir una libreria de event sourcing para .NET que pueda usarse de forma standalone y que tambien pueda integrarse con el ecosistema Krackend sin obligar a reescribir servicios existentes.
 
-La libreria debe resolver primero el problema central:
+La prioridad es:
 
-- Persistir eventos como fuente de verdad.
-- Soportar multiples tablas o stores de eventos definidos por configuracion.
-- Permitir un envelope base extensible.
-- Rehidratar estado desde streams de eventos.
-- Generar proyecciones y eventos de integracion sin acoplar el dominio a infraestructura externa.
+- Core real de event sourcing, sin reflection y sin aggregates magicos.
+- Estado rehidratado mediante reducers explicitos.
+- Decisiones de negocio mediante deciders explicitos.
+- Event store EF Core integrado al mismo `DbContext` de la app.
+- Extension rica para Spider.
+- Evolucion transparente de los handlers base mediante hooks.
 
-La integracion con templates existentes, Pelican, Pigeon, pipelines o DbContext debe planearse como adaptadores posteriores, no como requisito del core.
+No se implementara integracion para Mediator directo por ahora.
 
-## Principios De Diseno
+## Principios
 
-- El evento representa un hecho aceptado por el bounded context, no el request crudo.
-- El event store local del bounded context es privado y es la fuente de verdad del dominio.
-- Las proyecciones son derivadas y regenerables.
-- El event log central, si existe, debe tratarse como log de integracion, auditoria o distribucion, no como fuente canonica de todos los dominios.
-- La libreria debe exponer contratos pequenos y estables.
-- La configuracion debe resolver detalles fisicos como tabla, schema, serializer y routing.
-- La aplicacion no debe depender de nombres fisicos de tablas al escribir eventos.
+- El evento es un hecho aceptado por el bounded context.
+- El estado se rehidrata reduciendo eventos.
+- La decision de negocio produce eventos, no muta entidades directamente.
+- No usar reflection para aplicar eventos.
+- No exigir heredar de `AggregateRoot`.
+- No obligar a los devs a cambiar controllers o handlers existentes.
+- EF Core es el provider principal para integrarse al `DbContext` de la app.
+- Spider es la integracion principal para composicion avanzada.
 
-## Alcance Inicial
+## Modelo Core
 
-Incluido:
-
-- Event store local.
-- Multiples event tables configurables.
-- Envelope base con metadata extensible.
-- Append con concurrencia optimista.
-- Load por stream.
-- Serializacion configurable.
-- Registro y resolucion de tipos de evento.
-- Rehidratacion de aggregates.
-- Testing helpers.
-
-Fuera del primer alcance:
-
-- Integracion obligatoria con EF Core.
-- Integracion obligatoria con Pelican.Mediator.
-- Publicacion obligatoria con Pigeon.Messaging.
-- Event store centralizado como fuente de verdad compartida.
-- Snapshots avanzados.
-- Proyecciones distribuidas complejas.
-
-## Modelo Conceptual
-
-Flujo principal:
+Flujo:
 
 ```txt
-command/request
-  -> application
+command
   -> load stream
-  -> rehydrate aggregate
-  -> domain decision
-  -> pending events
-  -> append to configured event store
-  -> committed events
-  -> projections / outbox / integration log
+  -> deserialize events
+  -> reduce events into state
+  -> decider decides new events
+  -> append events with expected version
+  -> reduce new events into current state
+  -> projections/outbox/integration
 ```
 
-Estados de un evento:
-
-```txt
-Pending event
-  Existe en memoria como resultado de una decision de dominio.
-
-Committed event
-  Fue persistido exitosamente en el event store.
-```
-
-## Fase 1: Core Contracts
-
-Definir los contratos minimos sin dependencia de storage especifico.
-
-Entregables:
-
-- `IEvent`
-- `IEventEnvelope`
-- `IEventStore`
-- `IEventSerializer`
-- `IEventTypeRegistry`
-- `IAggregateRoot`
-- `IEventStreamResolver`
-- `IEventMetadataProvider`
-
-API esperada:
+Contratos principales:
 
 ```csharp
-public interface IEventStore
+public interface IEventDecider<TState, TCommand>
 {
-    Task<IReadOnlyCollection<EventEnvelope>> LoadAsync(
-        string streamName,
-        string streamId,
+    ValueTask<IReadOnlyCollection<object>> DecideAsync(
+        TState state,
+        TCommand command,
         CancellationToken cancellationToken = default);
+}
 
-    Task<IReadOnlyCollection<EventEnvelope>> AppendAsync(
-        string streamName,
-        string streamId,
-        long expectedVersion,
-        IReadOnlyCollection<object> events,
-        CancellationToken cancellationToken = default);
+public interface IEventReducer<TState, TEvent>
+{
+    TState Apply(TState state, TEvent @event);
+}
+
+public interface IEventReducerRegistry
+{
+    IEventReducerRegistry Register<TState, TEvent>(Func<TState, TEvent, TState> reducer);
+    TState Apply<TState>(TState state, object @event);
 }
 ```
 
-Decisiones:
+El reducer registry debe ejecutar delegates cacheados, no reflection.
 
-- `streamName` identifica configuracion logica, no tabla fisica.
-- `streamId` identifica el aggregate o flujo de negocio.
-- `expectedVersion` habilita concurrencia optimista.
+## Event Store
 
-## Fase 2: Envelope Base Y Extensibilidad
+El event store mantiene:
 
-Definir un envelope base estable.
+- Multiples stores logicos.
+- Multiples tablas configurables.
+- Envelope base estable.
+- Metadata extensible.
+- Append con concurrencia optimista.
+- Load por stream.
+- Read por global position para proyecciones.
 
-Campos base recomendados:
+Envelope:
 
 - `EventId`
 - `StreamName`
@@ -131,374 +92,146 @@ Campos base recomendados:
 - `Payload`
 - `Metadata`
 
-Metadata recomendada:
+## EF Core
 
-- `CorrelationId`
-- `CausationId`
-- `TenantId`
-- `UserId`
-- `TraceId`
-- `Source`
-
-Regla de diseno:
-
-Los campos estructurales necesarios para guardar, ordenar, rehidratar y aplicar concurrencia deben ser parte del contrato base. La metadata puede ser dinamica.
-
-Configuracion esperada:
+La integracion EF Core debe agregar entidades del event store al modelo del `DbContext` de la app, siguiendo el patron usado por Pigeon Outbox:
 
 ```csharp
+services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(connectionString));
+
 services.AddKrackendEventSourcing(options =>
 {
-    options.Envelope.AddMetadata("tenantId", provider => provider.GetRequiredService<ITenantAccessor>().TenantId);
-    options.Envelope.AddMetadata("traceId", provider => Activity.Current?.TraceId.ToString());
+    options.Stores.Add("customers", store =>
+    {
+        store.TableName = "CustomerEvents";
+    });
 });
+
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 ```
 
-## Fase 3: Multiples Event Stores O Tablas
+La app no debe necesitar:
 
-Soportar multiples stores logicos sobre una misma base de datos o multiples bases.
+```csharp
+public DbSet<EventStoreRecord> Events { get; set; }
+```
+
+## Spider Extension
+
+Spider sera la integracion avanzada.
+
+Objetivo:
+
+- Permitir plug-in de event sourcing en pre/post/middleware/boundaries.
+- Componer event sourcing con otras capacidades.
+- Evitar meter toda la logica en handlers o controllers.
+
+Posible API:
+
+```csharp
+spider.AsMediator()
+    .DefaultForwading<CreateCustomer, CustomerResult>()
+    .UseEventSourcing<CustomerState, CreateCustomer>("customers", command => command.CustomerId)
+    .Send(command);
+```
+
+Puntos naturales:
+
+- `PreProcess`: cargar metadata/correlation, preparar stream.
+- `Middleware`: envolver ejecucion con contexto event sourced.
+- `PostProcess`: append committed events, ejecutar proyecciones, outbox.
+- `Boundary`: lifecycle de complete/fault/cancel.
+
+## Hooks En Templates
+
+Los handlers base pueden evolucionar sin breaking change si los metodos virtuales actuales permanecen.
 
 Ejemplo:
 
 ```csharp
-services.AddKrackendEventSourcing(options =>
-{
-    options.Stores.Add("orders", store =>
-    {
-        store.Schema = "orders";
-        store.TableName = "events";
-    });
-
-    options.Stores.Add("payments", store =>
-    {
-        store.Schema = "payments";
-        store.TableName = "events";
-    });
-
-    options.Stores.Add("integration", store =>
-    {
-        store.Schema = "integration";
-        store.TableName = "events";
-    });
-});
+await ValidateWithHooksAsync(request, cancellationToken);
 ```
 
-Routing por tipo:
+Implementacion conceptual:
 
 ```csharp
-options.Routing.Route<OrderCreated>("orders");
-options.Routing.Route<OrderPaid>("orders");
-options.Routing.Route<PaymentAuthorized>("payments");
-options.Routing.Route<OrderPlacedIntegrationEvent>("integration");
-```
+protected virtual ValueTask ValidateAsync(TRequest request, CancellationToken cancellationToken);
 
-Reglas:
-
-- La aplicacion escribe contra un store logico.
-- La infraestructura resuelve tabla, schema, serializer y dialecto.
-- Una tabla debe poder almacenar multiples tipos de evento.
-- Un bounded context puede tener mas de una tabla si necesita separar dominio, integracion, auditoria o alta cardinalidad.
-
-## Fase 4: Storage Provider Inicial
-
-Implementar primero un provider relacional.
-
-Prioridad:
-
-1. SQL Server.
-2. PostgreSQL.
-3. SQLite/InMemory para tests.
-
-Tabla base propuesta:
-
-```sql
-EventId uniqueidentifier not null
-StreamName nvarchar(200) not null
-StreamId nvarchar(300) not null
-StreamType nvarchar(300) null
-StreamVersion bigint not null
-GlobalPosition bigint identity not null
-EventType nvarchar(500) not null
-EventVersion int not null
-OccurredAt datetimeoffset not null
-Payload nvarchar(max) not null
-Metadata nvarchar(max) null
-```
-
-Indices:
-
-- Unique: `(StreamName, StreamId, StreamVersion)`
-- Unique: `EventId`
-- Ordered read: `(StreamName, StreamId, StreamVersion)`
-- Subscription read: `(GlobalPosition)`
-- Type scan: `(EventType, GlobalPosition)`
-
-## Fase 5: Aggregate Support
-
-Proveer una base opcional para aggregates.
-
-```csharp
-public abstract class AggregateRoot
+private async ValueTask ValidateWithHooksAsync(TRequest request, CancellationToken cancellationToken)
 {
-    private readonly List<object> _pendingEvents = [];
-
-    public string Id { get; protected set; }
-    public long Version { get; private set; }
-
-    public IReadOnlyCollection<object> PendingEvents => _pendingEvents;
-
-    protected void Raise(object @event);
-    public void LoadFromHistory(IEnumerable<object> events);
-    public void ClearPendingEvents();
+    await Hooks.PreValidationAsync(context, cancellationToken);
+    await ValidateAsync(request, cancellationToken);
+    await Hooks.PostValidationAsync(context, cancellationToken);
 }
 ```
 
-Regla:
+Hooks por etapa:
 
-El core debe permitir usar aggregates propios sin heredar de una clase base. La clase base es conveniencia, no requisito.
+- `PreValidation`
+- `PostValidation`
+- `PreMapToEntity`
+- `PostMapToEntity`
+- `PreSaveEntity`
+- `PostSaveEntity`
+- `PreMapToResponse`
+- `PostMapToResponse`
+- `PreGetEntity`
+- `PostGetEntity`
+- `PreUpdateEntity`
+- `PostUpdateEntity`
+- `PreDeleteEntity`
+- `PostDeleteEntity`
 
-## Fase 6: Repository Opcional
+Esto permite registrar comportamiento externo sin obligar a los devs a reescribir handlers existentes.
 
-Agregar un repository para simplificar rehidratacion y append.
+## Committed Events Para Handlers CRUD
 
-```csharp
-public interface IEventSourcedRepository<TAggregate>
-{
-    Task<TAggregate> LoadAsync(string streamId, CancellationToken cancellationToken = default);
-    Task SaveAsync(TAggregate aggregate, CancellationToken cancellationToken = default);
-}
-```
-
-Responsabilidades:
-
-- Resolver `streamName`.
-- Cargar eventos.
-- Rehidratar aggregate.
-- Guardar eventos pendientes con `expectedVersion`.
-- Limpiar eventos pendientes tras append exitoso.
-
-## Fase 7: Projections
-
-Implementar un modelo de proyecciones desacoplado.
-
-Contratos:
-
-- `IProjection`
-- `IProjectionHandler<TEvent>`
-- `ICheckpointStore`
-- `IProjectionRunner`
-
-Checkpoint minimo:
-
-- `ProjectionName`
-- `StoreName`
-- `LastGlobalPosition`
-- `UpdatedAt`
-
-Reglas:
-
-- Las proyecciones consumen committed events.
-- Los handlers deben poder reprocesarse.
-- La libreria debe soportar proyecciones sync para casos simples y async/background para casos reales.
-
-## Fase 8: Outbox E Integration Events
-
-Agregar un mecanismo para derivar integration events desde domain events.
-
-Flujo:
+Para el template actual, existe otro caso distinto a event sourcing puro:
 
 ```txt
-domain event committed
-  -> integration event mapper
-  -> outbox append
-  -> publisher externo
-  -> central event log / broker
+handler CRUD actual
+  -> valida
+  -> mapea entidad
+  -> guarda proyeccion/estado actual
+  -> PostSave hook produce committed event
+  -> append al event store
 ```
 
-Contratos:
-
-- `IIntegrationEventMapper<TDomainEvent>`
-- `IOutboxStore`
-- `IOutboxPublisher`
-
-Regla:
-
-El outbox no debe ser requerido para usar event sourcing local. Debe ser modulo opcional.
-
-## Fase 9: Versionado Y Upcasting
-
-Agregar soporte para evolucionar eventos.
-
-Contratos:
-
-- `IEventUpcaster`
-- `IEventVersionResolver`
-
-Reglas:
-
-- El envelope guarda `EventVersion`.
-- El registry resuelve version y tipo CLR.
-- Los upcasters transforman payload viejo antes de entregar el evento al dominio.
-
-## Fase 10: Snapshots
-
-Agregar snapshots solo despues de validar necesidad real.
-
-Contratos:
-
-- `ISnapshotStore`
-- `ISnapshotSerializer`
-- `ISnapshotStrategy`
-
-Estrategias:
-
-- Cada N eventos.
-- Por tiempo.
-- Manual.
-- Por tipo de aggregate.
-
-Regla:
-
-Snapshots optimizan lectura; no reemplazan el event store.
-
-## Fase 11: Testing Helpers
-
-Crear utilidades para probar aggregates y handlers.
-
-Ejemplo:
-
-```csharp
-Given(events)
-    .When(command)
-    .Then(expectedEvents);
-```
-
-Casos:
-
-- Concurrencia optimista.
-- Metadata generada.
-- Routing correcto.
-- Rehidratacion.
-- Upcasting.
-- Proyecciones idempotentes.
-
-## Fase 12: Integraciones Planeadas
-
-Estas integraciones deben vivir fuera del core.
-
-### Krackend Templates
-
-Objetivo:
-
-- Permitir que un template CRUD/CQRS escriba committed events u outbox sin modificar handlers base.
-- Integrar mediante pipeline behavior, decorator o adapter.
-
-Posible integracion:
-
-```txt
-Pelican request
-  -> TransactionPipelineBehavior
-  -> handler existente
-  -> committed event behavior
-  -> local outbox/event log
-```
-
-Riesgo:
-
-Si el handler llama `SaveChangesAsync` internamente, el behavior transaccional solo agrupa por `TransactionScope`. La integracion debe asegurar que el committed event se escriba antes de completar la transaccion.
-
-### Pelican.Mediator
-
-Objetivo:
-
-- Agregar behavior opcional para commands que producen eventos.
-
-Opciones:
-
-- Marker interface: `IProducesEvents`
-- Factory: `ICommittedEventFactory<TRequest, TResponse>`
-- Decorator del handler.
-
-Recomendacion:
-
-Preferir factory configurable sobre marker interface cuando se quiera evitar contaminar commands.
-
-### Pigeon.Messaging
-
-Objetivo:
-
-- Publicar outbox events mediante Pigeon.
-- Mantener idempotencia y retry fuera del dominio.
-
-Integracion:
-
-```txt
-OutboxStore
-  -> BackgroundPublisher
-  -> Pigeon publisher
-```
-
-### EF Core
-
-Objetivo:
-
-- Provider relacional y migraciones.
-- Interceptors opcionales para casos outbox/committed log.
-
-Restriccion:
-
-El core no debe depender directamente de EF Core si puede evitarse. EF Core debe ser provider/adaptador.
+Esto debe nombrarse como committed events/event log transaccional, no como event sourcing puro.
 
 ## Paquetes Propuestos
 
 ```txt
-Krackend.EventSourcing.Abstractions
-Krackend.EventSourcing.Core
-Krackend.EventSourcing.SqlServer
-Krackend.EventSourcing.PostgreSql
-Krackend.EventSourcing.EntityFrameworkCore
-Krackend.EventSourcing.Projections
-Krackend.EventSourcing.Outbox
-Krackend.EventSourcing.Pelican
+Krackend.EventSourcing
+Krackend.EventSourcing.Spider
+Krackend.EventSourcing.TemplateHooks
 Krackend.EventSourcing.Pigeon
 Krackend.EventSourcing.Testing
 ```
 
-## Orden Recomendado De Implementacion
+## Orden Recomendado
 
-1. `Abstractions`: contracts, envelope, options.
-2. `Core`: registry, serializer, metadata providers, routing.
-3. `SqlServer`: append/load con concurrencia optimista.
-4. `Testing`: tests de event store y aggregates.
-5. `AggregateRoot` y repository opcional.
-6. `Projections`: checkpoint y runner simple.
-7. `Outbox`: store y publisher contract.
-8. `Pelican` adapter.
-9. `Pigeon` adapter.
-10. `PostgreSql` provider.
-11. Upcasters.
-12. Snapshots.
-
-## Preguntas Pendientes
-
-- El primer provider debe ser SQL Server, PostgreSQL o ambos?
-- El event store debe crear tablas automaticamente o solo exponer migraciones/scripts?
-- El envelope fisico debe ser columnar, JSON completo o hibrido?
-- Los eventos se guardaran como clases CLR, records, o payloads anonimos serializables?
-- Se requiere multi-tenant desde el primer release?
-- El central event store sera un paquete separado o solo un patron documentado mediante outbox?
-- El primer caso de uso sera event sourcing real o committed outbox para servicios CRUD/CQRS existentes?
+1. Core state/decider/reducer sin reflection.
+2. EF event store integrado al app `DbContext`.
+3. SQLite sample usando commands, state, deciders y reducers.
+4. Projections y checkpoints.
+5. Outbox/integration events.
+6. Spider extension.
+7. Hooks evolutivos en templates.
+8. Pigeon integration.
+9. Snapshots.
+10. Testing helpers para decider/reducer/state.
 
 ## Criterio Para Primer Release
 
 La primera version debe permitir:
 
-- Configurar al menos dos stores logicos con tablas distintas.
-- Registrar tipos de eventos.
-- Guardar eventos con append atomico y concurrencia optimista.
-- Leer un stream completo en orden.
-- Rehidratar un aggregate.
+- Configurar multiples stores logicos.
+- Agregar tablas del event store al `DbContext` de la app.
+- Registrar eventos y reducers.
+- Rehidratar state desde stream.
+- Ejecutar decider.
+- Append con expected version.
 - Agregar metadata dinamica.
-- Probar el flujo con helpers.
-
-No debe requerir templates, Pelican, Pigeon ni EF Core como dependencia obligatoria.
+- Correr sample SQLite completo.

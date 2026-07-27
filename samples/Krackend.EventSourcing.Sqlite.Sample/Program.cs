@@ -1,8 +1,7 @@
-using Krackend.EventSourcing.Aggregates;
+using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.EntityFrameworkCore;
 using Krackend.EventSourcing.Registry;
-using Krackend.EventSourcing.Repositories;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,21 +18,17 @@ services.AddDbContext<SampleDbContext>(options =>
 
 services.AddKrackendEventSourcing(options =>
 {
-    options.Stores.Add("banking", store =>
+    options.Stores.Add("customers", store =>
     {
-        store.TableName = "BankingEvents";
+        store.TableName = "CustomerEvents";
     });
 
     options.Envelope.AddMetadata("sample", _ => "sqlite");
 });
 
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
-services.AddScoped<IEventSourcedRepository<BankAccount>>(provider =>
-    new EventSourcedRepository<BankAccount>(
-        provider.GetRequiredService<IEventStore>(),
-        provider.GetRequiredService<Krackend.EventSourcing.Serialization.IEventSerializer>(),
-        provider.GetRequiredService<IEventTypeRegistry>(),
-        "banking"));
+services.AddScoped<IEventDecider<CustomerState, CreateCustomer>, CreateCustomerDecider>();
+services.AddScoped<IEventDecider<CustomerState, RenameCustomer>, RenameCustomerDecider>();
 
 await using var provider = services.BuildServiceProvider();
 await using var scope = provider.CreateAsyncScope();
@@ -42,25 +37,47 @@ var dbContext = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
 await dbContext.Database.EnsureCreatedAsync();
 
 var registry = scope.ServiceProvider.GetRequiredService<EventTypeRegistry>();
-registry.Register<AccountOpened>();
-registry.Register<MoneyDeposited>();
+registry.Register<CustomerCreated>();
+registry.Register<CustomerRenamed>();
 
-var repository = scope.ServiceProvider.GetRequiredService<IEventSourcedRepository<BankAccount>>();
-var account = new BankAccount();
+var reducers = scope.ServiceProvider.GetRequiredService<IEventReducerRegistry>();
+reducers
+    .Register<CustomerState, CustomerCreated>((state, @event) => state with
+    {
+        CustomerId = @event.CustomerId,
+        Name = @event.Name,
+        Email = @event.Email,
+        IsCreated = true
+    })
+    .Register<CustomerState, CustomerRenamed>((state, @event) => state with
+    {
+        Name = @event.Name
+    });
 
-account.Open("account-001", "Mario");
-account.Deposit(150m);
-await repository.SaveAsync(account);
+var createCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, CreateCustomer>>();
+var renameCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, RenameCustomer>>();
 
-var rehydrated = await repository.LoadAsync("account-001");
+var created = await createCustomer.ExecuteAsync(
+    "customers",
+    "customer-001",
+    CustomerState.Empty,
+    new CreateCustomer("customer-001", "Mario", "mario@example.com"));
+
+var renamed = await renameCustomer.ExecuteAsync(
+    "customers",
+    "customer-001",
+    CustomerState.Empty,
+    new RenameCustomer("customer-001", "Mario Perez"));
+
 var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
-var envelopes = await eventStore.LoadAsync("banking", "account-001");
+var envelopes = await eventStore.LoadAsync("customers", "customer-001");
 
 Console.WriteLine($"SQLite database: {databasePath}");
-Console.WriteLine($"Account: {rehydrated.Id}");
-Console.WriteLine($"Owner: {rehydrated.Owner}");
-Console.WriteLine($"Balance: {rehydrated.Balance}");
-Console.WriteLine($"Version: {rehydrated.Version}");
+Console.WriteLine($"Customer: {renamed.CurrentState.CustomerId}");
+Console.WriteLine($"Name: {renamed.CurrentState.Name}");
+Console.WriteLine($"Email: {renamed.CurrentState.Email}");
+Console.WriteLine($"Created version: {created.CurrentVersion}");
+Console.WriteLine($"Current version: {renamed.CurrentVersion}");
 Console.WriteLine($"Events stored: {envelopes.Count}");
 
 foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
@@ -76,43 +93,54 @@ public sealed class SampleDbContext : DbContext
     }
 }
 
-public sealed class BankAccount : AggregateRoot
+public sealed record CustomerState(
+    string CustomerId,
+    string Name,
+    string Email,
+    bool IsCreated)
 {
-    public string Owner { get; private set; } = string.Empty;
+    public static CustomerState Empty { get; } = new(string.Empty, string.Empty, string.Empty, false);
+}
 
-    public decimal Balance { get; private set; }
+public sealed record CreateCustomer(string CustomerId, string Name, string Email);
 
-    public void Open(string accountId, string owner)
+public sealed record RenameCustomer(string CustomerId, string Name);
+
+public sealed record CustomerCreated(string CustomerId, string Name, string Email);
+
+public sealed record CustomerRenamed(string CustomerId, string Name);
+
+public sealed class CreateCustomerDecider : IEventDecider<CustomerState, CreateCustomer>
+{
+    public ValueTask<IReadOnlyCollection<object>> DecideAsync(
+        CustomerState state,
+        CreateCustomer command,
+        CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(Id))
-            throw new InvalidOperationException("Account is already open.");
+        if (state.IsCreated)
+            throw new InvalidOperationException("Customer already exists.");
 
-        Raise(new AccountOpened(accountId, owner));
-    }
-
-    public void Deposit(decimal amount)
-    {
-        if (string.IsNullOrWhiteSpace(Id))
-            throw new InvalidOperationException("Account must be opened before depositing money.");
-
-        if (amount <= 0)
-            throw new ArgumentOutOfRangeException(nameof(amount), "Deposit amount must be greater than zero.");
-
-        Raise(new MoneyDeposited(Id, amount));
-    }
-
-    private void Apply(AccountOpened @event)
-    {
-        Id = @event.AccountId;
-        Owner = @event.Owner;
-    }
-
-    private void Apply(MoneyDeposited @event)
-    {
-        Balance += @event.Amount;
+        return ValueTask.FromResult<IReadOnlyCollection<object>>([
+            new CustomerCreated(command.CustomerId, command.Name, command.Email)
+        ]);
     }
 }
 
-public sealed record AccountOpened(string AccountId, string Owner);
+public sealed class RenameCustomerDecider : IEventDecider<CustomerState, RenameCustomer>
+{
+    public ValueTask<IReadOnlyCollection<object>> DecideAsync(
+        CustomerState state,
+        RenameCustomer command,
+        CancellationToken cancellationToken = default)
+    {
+        if (!state.IsCreated)
+            throw new InvalidOperationException("Customer must exist before it can be renamed.");
 
-public sealed record MoneyDeposited(string AccountId, decimal Amount);
+        if (string.IsNullOrWhiteSpace(command.Name))
+            throw new ArgumentException("Customer name is required.", nameof(command));
+
+        return ValueTask.FromResult<IReadOnlyCollection<object>>([
+            new CustomerRenamed(command.CustomerId, command.Name)
+        ]);
+    }
+}
