@@ -1,13 +1,10 @@
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.EntityFrameworkCore;
-using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Sqlite.Sample.Commands;
 using Krackend.EventSourcing.Sqlite.Sample.Data;
-using Krackend.EventSourcing.Sqlite.Sample.Deciders;
 using Krackend.EventSourcing.Sqlite.Sample.Events;
-using Krackend.EventSourcing.Sqlite.Sample.Reducers;
 using Krackend.EventSourcing.Sqlite.Sample.State;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,21 +30,12 @@ services.AddKrackendEventSourcing(options =>
 });
 
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
-services.AddScoped<IEventDecider<CustomerState, CreateCustomer>, CreateCustomerDecider>();
-services.AddScoped<IEventDecider<CustomerState, RenameCustomer>, RenameCustomerDecider>();
 
 await using var provider = services.BuildServiceProvider();
 await using var scope = provider.CreateAsyncScope();
 
 var dbContext = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
 await dbContext.Database.EnsureCreatedAsync();
-
-var registry = scope.ServiceProvider.GetRequiredService<EventTypeRegistry>();
-registry.Register<CustomerCreated>();
-registry.Register<CustomerRenamed>();
-
-var reducers = scope.ServiceProvider.GetRequiredService<IEventReducerRegistry>();
-reducers.AddCustomerReducers();
 
 var createCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, CreateCustomer>>();
 var renameCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, RenameCustomer>>();

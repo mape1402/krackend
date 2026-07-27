@@ -2,7 +2,6 @@ using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Metadata;
-using Krackend.EventSourcing.Outbox;
 using Krackend.EventSourcing.Projections;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
@@ -10,6 +9,7 @@ using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
 using Krackend.EventSourcing.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
+using System.Reflection;
 
 namespace Krackend.EventSourcing.DependencyInjection;
 
@@ -31,7 +31,11 @@ public static class EventSourcingServiceCollectionExtensions
         options.Stores.Add(options.Routing.DefaultStreamName);
         configure?.Invoke(options);
 
+        if (options.Assemblies.Count == 0 && Assembly.GetEntryAssembly() is { } entryAssembly)
+            options.ScanAssembly(entryAssembly);
+
         var eventTypeRegistry = new EventTypeRegistry();
+        EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, options.Assemblies);
 
         services.AddSingleton(options);
         services.AddSingleton(options.Envelope);
@@ -41,10 +45,14 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddSingleton(eventTypeRegistry);
         services.AddSingleton<IEventSerializer, SystemTextJsonEventSerializer>();
         services.AddSingleton<IEventStreamResolver, ConfiguredEventStreamResolver>();
-        services.AddSingleton<IEventReducerRegistry, EventReducerRegistry>();
+        services.AddScoped<IEventReducerRegistry>(provider =>
+        {
+            var registry = new EventReducerRegistry();
+            EventSourcingAssemblyScanner.RegisterReducers(provider, registry);
+            return registry;
+        });
         services.AddSingleton<IEventUpcasterPipeline>(provider => new EventUpcasterPipeline(provider.GetServices<IEventUpcaster>()));
         services.AddSingleton<ICheckpointStore, InMemoryCheckpointStore>();
-        services.AddSingleton<IOutboxStore, InMemoryOutboxStore>();
         services.AddScoped<EventMetadataCollector>();
         services.AddScoped<IEventEnvelopeFactory, EventEnvelopeFactory>();
         services.AddScoped<InMemoryEventStore>();

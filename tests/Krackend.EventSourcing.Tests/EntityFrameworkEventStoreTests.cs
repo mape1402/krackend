@@ -25,8 +25,6 @@ public sealed class EntityFrameworkEventStoreTests
     {
         using var provider = BuildProvider();
         using var scope = provider.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<Krackend.EventSourcing.Registry.EventTypeRegistry>();
-        registry.Register<OrderCreated>();
         var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
 
         await eventStore.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);

@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Metadata;
+using System.Reflection;
 
 namespace Krackend.EventSourcing.Configuration;
 
@@ -21,4 +22,28 @@ public sealed class EventSourcingOptions
     /// Gets event routing configuration.
     /// </summary>
     public EventRoutingOptions Routing { get; } = new();
+
+    /// <summary>
+    /// Gets assemblies scanned for event sourcing components.
+    /// </summary>
+    public List<Assembly> Assemblies { get; } = [];
+
+    /// <summary>
+    /// Adds an assembly to component discovery.
+    /// </summary>
+    public EventSourcingOptions ScanAssembly(Assembly assembly)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        if (!Assemblies.Contains(assembly))
+            Assemblies.Add(assembly);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds the assembly that contains the specified type to component discovery.
+    /// </summary>
+    public EventSourcingOptions ScanAssemblyContaining<T>()
+        => ScanAssembly(typeof(T).Assembly);
 }
