@@ -37,6 +37,18 @@ public sealed class EntityFrameworkEventStoreTests
         Assert.Equal(1, await dbContext.Set<EventStoreRecord>("orders").CountAsync());
     }
 
+    [Fact]
+    public void EventStoreDbContextFactory_uses_the_scoped_app_db_context()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var factory = scope.ServiceProvider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.IEventStoreDbContextFactory<TestDbContext>>();
+
+        Assert.Same(dbContext, factory.CreateDbContext());
+    }
+
     private static ServiceProvider BuildProvider()
     {
         var services = new ServiceCollection();
