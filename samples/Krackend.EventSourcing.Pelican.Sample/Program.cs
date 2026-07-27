@@ -11,6 +11,7 @@ using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OctoMap;
 using Pelican.Mediator;
 
 var databasePath = Path.Combine(AppContext.BaseDirectory, "pelican-event-sourcing-sample.db");
@@ -37,14 +38,11 @@ services.AddKrackendEventSourcing(options =>
 services.AddSingleton<ISnapshotCandidatePolicy>(new IntervalSnapshotCandidatePolicy(1));
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
 services.AddPelican(typeof(Program).Assembly);
+services.AddOctoMap(typeof(Program).Assembly);
 
 services.AddCommittedEvents(events =>
 {
-    events.CreateMultiMap<CustomerCreated>()
-        .From<CreateCustomerCommand>()
-        .From<Customer>()
-        .ConstructUsing((_, customer) =>
-            new CustomerCreated(customer.Id, customer.Name, customer.Email));
+    events.Map<CreateCustomerCommand, Customer, CustomerCreated>();
 });
 services.AddScoped<
     ICommandHandlerHook<CreateCustomerCommand, Customer>,

@@ -8,16 +8,16 @@ public sealed class EventSourcingPostSaveHook<TRequest, TEntity>
     : ICommandHandlerHook<TRequest, TEntity>
 {
     private readonly ICommandStreamResolver<TRequest> _streamResolver;
-    private readonly ICommittedEventFactory<TRequest, TEntity> _eventFactory;
+    private readonly ICommittedEventMapper<TRequest, TEntity> _eventMapper;
     private readonly IEventStore _eventStore;
 
     public EventSourcingPostSaveHook(
         ICommandStreamResolver<TRequest> streamResolver,
-        ICommittedEventFactory<TRequest, TEntity> eventFactory,
+        ICommittedEventMapper<TRequest, TEntity> eventMapper,
         IEventStore eventStore)
     {
         _streamResolver = streamResolver;
-        _eventFactory = eventFactory;
+        _eventMapper = eventMapper;
         _eventStore = eventStore;
     }
 
@@ -29,7 +29,7 @@ public sealed class EventSourcingPostSaveHook<TRequest, TEntity>
             throw new InvalidOperationException("Entity must be available after save.");
 
         var stream = _streamResolver.Resolve(context.Request);
-        var @event = await _eventFactory.CreateAsync(context.Request, context.Entity, cancellationToken);
+        var @event = _eventMapper.Map(context.Request, context.Entity);
 
         if (@event is null)
             return;
