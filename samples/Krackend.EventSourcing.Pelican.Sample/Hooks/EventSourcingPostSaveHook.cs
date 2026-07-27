@@ -29,11 +29,11 @@ public sealed class EventSourcingPostSaveHook<TRequest, TEntity>
             throw new InvalidOperationException("Entity must be available after save.");
 
         var stream = _streamResolver.Resolve(context.Request);
-        var events = await _eventFactory.CreateAsync(context.Request, context.Entity, cancellationToken);
+        var @event = await _eventFactory.CreateAsync(context.Request, context.Entity, cancellationToken);
 
-        if (events.Count == 0)
+        if (@event is null)
             return;
 
-        await _eventStore.AppendAsync(stream.Name, stream.Id, ExpectedVersion.Any, events, cancellationToken);
+        await _eventStore.AppendAsync(stream.Name, stream.Id, ExpectedVersion.Any, [@event], cancellationToken);
     }
 }
