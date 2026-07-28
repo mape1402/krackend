@@ -109,6 +109,29 @@ public sealed class SemanticVersionTests
         Assert.Equal(typeof(VersionedEvent), registry.Resolve("VersionedEvent", "2.3.4"));
     }
 
+    [Fact]
+    public void Event_type_registry_tracks_latest_schema_for_same_event_type()
+    {
+        var registry = new EventTypeRegistry()
+            .Register<LegacyBalanceMoved>()
+            .Register<BalanceMoved>();
+
+        var latest = registry.GetLatestRegistration("BalanceMoved");
+
+        Assert.Equal(typeof(BalanceMoved), latest.ClrType);
+        Assert.Equal(new SemanticVersion(1, 1, 0), latest.EventSchemaVersion);
+        Assert.Equal(typeof(LegacyBalanceMoved), registry.Resolve("BalanceMoved", "1.0.0"));
+        Assert.Equal(typeof(BalanceMoved), registry.Resolve("BalanceMoved", "1.1.0"));
+    }
+
     [EventSchemaVersion("2.3.4")]
     private sealed record VersionedEvent;
+
+    [EventType("BalanceMoved")]
+    [EventSchemaVersion("1.0.0")]
+    private sealed record LegacyBalanceMoved;
+
+    [EventType("BalanceMoved")]
+    [EventSchemaVersion("1.1.0")]
+    private sealed record BalanceMoved;
 }

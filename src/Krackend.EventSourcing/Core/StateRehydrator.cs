@@ -3,6 +3,7 @@ using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
+using Krackend.EventSourcing.Upcasting;
 
 namespace Krackend.EventSourcing.Core;
 
@@ -17,6 +18,7 @@ public sealed class StateRehydrator : IStateRehydrator
     private readonly IEventReducerRegistry _reducers;
     private readonly ISnapshotStore? _snapshotStore;
     private readonly ISnapshotSerializer? _snapshotSerializer;
+    private readonly IEventUpcasterPipeline _upcasterPipeline;
     private readonly int _batchSize;
 
     /// <summary>
@@ -29,7 +31,8 @@ public sealed class StateRehydrator : IStateRehydrator
         IEventReducerRegistry reducers,
         ISnapshotStore? snapshotStore = null,
         ISnapshotSerializer? snapshotSerializer = null,
-        EventSourcingOptions? options = null)
+        EventSourcingOptions? options = null,
+        IEventUpcasterPipeline? upcasterPipeline = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
@@ -37,6 +40,7 @@ public sealed class StateRehydrator : IStateRehydrator
         _reducers = reducers ?? throw new ArgumentNullException(nameof(reducers));
         _snapshotStore = snapshotStore;
         _snapshotSerializer = snapshotSerializer;
+        _upcasterPipeline = upcasterPipeline ?? new EventUpcasterPipeline([]);
         _batchSize = options?.RehydrationBatchSize ?? 500;
 
         if (_batchSize <= 0)
@@ -75,8 +79,19 @@ public sealed class StateRehydrator : IStateRehydrator
 
             foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
             {
-                var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventSchemaVersion);
-                var @event = _serializer.Deserialize(envelope.Payload, eventType)
+                var registration = _eventTypeRegistry.GetLatestRegistration(envelope.EventType);
+                var payload = envelope.Payload;
+
+                if (envelope.EventSchemaVersion < registration.EventSchemaVersion)
+                {
+                    payload = _upcasterPipeline.Upcast(
+                        envelope.EventType,
+                        envelope.EventSchemaVersion,
+                        registration.EventSchemaVersion,
+                        envelope.Payload).Payload;
+                }
+
+                var @event = _serializer.Deserialize(payload, registration.ClrType)
                     ?? throw new InvalidOperationException($"Event '{envelope.EventType}' could not be deserialized.");
 
                 state = _reducers.Apply(state, @event);

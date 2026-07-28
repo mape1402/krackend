@@ -1,10 +1,13 @@
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
+using Krackend.EventSourcing.Upcasting;
+using System.Text.Json.Nodes;
 
 namespace Krackend.EventSourcing.Tests;
 
@@ -67,9 +70,105 @@ public sealed class StateRehydratorSnapshotTests
         Assert.Equal(25, eventStore.Reads.Single().MaxCount);
     }
 
+    [Fact]
+    public async Task RehydrateAsync_upcasts_old_event_schema_to_latest_registered_schema()
+    {
+        var serializer = new SystemTextJsonEventSerializer();
+        var registry = new EventTypeRegistry()
+            .Register<LegacyBalanceMoved>()
+            .Register<BalanceMoved>();
+        var reducers = new EventReducerRegistry()
+            .Register<BalanceState, BalanceMoved>((state, @event) => state with
+            {
+                Balance = @event.Balance,
+                Description = @event.Description
+            });
+        var eventStore = new RecordingEventStore([
+            new EventEnvelope(
+                EventId: Guid.NewGuid(),
+                StreamName: "accounts",
+                StreamId: "account-1",
+                StreamType: null,
+                StreamVersion: 1,
+                GlobalPosition: 1,
+                EventType: "BalanceMoved",
+                EventSchemaVersion: "1.0.0",
+                OccurredAt: DateTimeOffset.UtcNow,
+                CorrelationId: null,
+                CausationId: null,
+                UserId: null,
+                TenantId: null,
+                Source: null,
+                Payload: serializer.Serialize(new LegacyBalanceMoved
+                {
+                    AccountId = "account-1",
+                    Amount = 50m,
+                    Balance = 50m
+                }),
+                Metadata: null)
+        ]);
+        var rehydrator = new StateRehydrator(
+            eventStore,
+            serializer,
+            registry,
+            reducers,
+            options: new EventSourcingOptions(),
+            upcasterPipeline: new EventUpcasterPipeline([new BalanceMovedUpcaster()]));
+
+        var result = await rehydrator.RehydrateAsync("accounts", "account-1", BalanceState.Empty);
+
+        Assert.Equal(50m, result.State.Balance);
+        Assert.Equal("Legacy balance movement", result.State.Description);
+    }
+
     private sealed record AccountState(decimal Balance);
 
     private sealed record MoneyDeposited(decimal Amount);
+
+    private sealed record BalanceState(decimal Balance, string Description)
+    {
+        public static BalanceState Empty { get; } = new(0m, string.Empty);
+    }
+
+    [EventType("BalanceMoved")]
+    [EventSchemaVersion("1.0.0")]
+    private sealed class LegacyBalanceMoved
+    {
+        public string AccountId { get; set; } = string.Empty;
+
+        public decimal Amount { get; set; }
+
+        public decimal Balance { get; set; }
+    }
+
+    [EventType("BalanceMoved")]
+    [EventSchemaVersion("1.1.0")]
+    private sealed class BalanceMoved
+    {
+        public string AccountId { get; set; } = string.Empty;
+
+        public decimal Amount { get; set; }
+
+        public decimal Balance { get; set; }
+
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private sealed class BalanceMovedUpcaster : IEventUpcaster
+    {
+        public string EventType => "BalanceMoved";
+
+        public SemanticVersion FromSchemaVersion => "1.0.0";
+
+        public SemanticVersion ToSchemaVersion => "1.1.0";
+
+        public string Upcast(string payload)
+        {
+            var node = JsonNode.Parse(payload)!;
+            node["description"] = "Legacy balance movement";
+            return node.ToJsonString();
+        }
+    }
 
     private sealed class RecordingEventStore : IEventStore
     {
