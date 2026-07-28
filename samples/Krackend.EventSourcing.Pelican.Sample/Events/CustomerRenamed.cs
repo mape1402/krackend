@@ -2,7 +2,7 @@ using Krackend.EventSourcing.Contracts;
 
 namespace Krackend.EventSourcing.Pelican.Sample.Events;
 
-[EventSchemaVersion("1.0.0")]
+[EventSchema("CustomerRenamed")]
 public sealed record CustomerRenamed
 {
     public string CustomerId { get; set; } = string.Empty;

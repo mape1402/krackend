@@ -130,8 +130,7 @@ public sealed class StateRehydratorSnapshotTests
         public static BalanceState Empty { get; } = new(0m, string.Empty);
     }
 
-    [EventType("BalanceMoved")]
-    [EventSchemaVersion("1.0.0")]
+    [EventSchema("BalanceMoved", "1.0.0")]
     private sealed class LegacyBalanceMoved
     {
         public string AccountId { get; set; } = string.Empty;
@@ -141,8 +140,7 @@ public sealed class StateRehydratorSnapshotTests
         public decimal Balance { get; set; }
     }
 
-    [EventType("BalanceMoved")]
-    [EventSchemaVersion("1.1.0")]
+    [EventSchema("BalanceMoved", "1.1.0")]
     private sealed class BalanceMoved
     {
         public string AccountId { get; set; } = string.Empty;

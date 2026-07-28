@@ -25,10 +25,12 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     {
         ArgumentNullException.ThrowIfNull(clrType);
 
-        if (eventSchemaVersion == default)
-            eventSchemaVersion = ResolveSchemaVersion(clrType);
+        var schema = clrType.GetCustomAttribute<EventSchemaAttribute>();
 
-        var resolvedEventType = string.IsNullOrWhiteSpace(eventType) ? ResolveEventType(clrType) : eventType;
+        if (eventSchemaVersion == default)
+            eventSchemaVersion = schema?.Version ?? SemanticVersion.Default;
+
+        var resolvedEventType = string.IsNullOrWhiteSpace(eventType) ? schema?.Name ?? clrType.Name : eventType;
         var registration = new EventTypeRegistration(clrType, resolvedEventType, eventSchemaVersion);
 
         _byClrType[clrType] = registration;
@@ -81,11 +83,4 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
 
     private readonly record struct EventTypeKey(string EventType, SemanticVersion EventSchemaVersion);
 
-    private static SemanticVersion ResolveSchemaVersion(Type clrType)
-        => clrType.GetCustomAttribute<EventSchemaVersionAttribute>()?.Version
-            ?? SemanticVersion.Default;
-
-    private static string ResolveEventType(Type clrType)
-        => clrType.GetCustomAttribute<EventTypeAttribute>()?.Name
-            ?? clrType.Name;
 }
