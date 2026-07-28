@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Contracts;
+using Krackend.EventSourcing.Registry;
 using System.Text.Json;
 
 namespace Krackend.EventSourcing.Tests;
@@ -95,4 +96,19 @@ public sealed class SemanticVersionTests
         Assert.Equal("\"1.0.0\"", json);
         Assert.Equal(new SemanticVersion(2, 3, 4), version);
     }
+
+    [Fact]
+    public void Event_type_registry_uses_schema_version_attribute()
+    {
+        var registry = new EventTypeRegistry()
+            .Register<VersionedEvent>();
+
+        var registration = registry.GetRegistration(typeof(VersionedEvent));
+
+        Assert.Equal(new SemanticVersion(2, 3, 4), registration.EventSchemaVersion);
+        Assert.Equal(typeof(VersionedEvent), registry.Resolve("VersionedEvent", "2.3.4"));
+    }
+
+    [EventSchemaVersion("2.3.4")]
+    private sealed record VersionedEvent;
 }
