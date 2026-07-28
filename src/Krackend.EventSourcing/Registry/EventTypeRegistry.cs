@@ -10,7 +10,6 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
 {
     private readonly Dictionary<Type, EventTypeRegistration> _byClrType = [];
     private readonly Dictionary<EventTypeKey, Type> _byStoredType = [];
-    private readonly Dictionary<string, EventTypeRegistration> _latestByEventType = [];
 
     /// <summary>
     /// Registers an event type.
@@ -35,12 +34,6 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
 
         _byClrType[clrType] = registration;
         _byStoredType[new EventTypeKey(resolvedEventType, eventSchemaVersion)] = clrType;
-
-        if (!_latestByEventType.TryGetValue(resolvedEventType, out var latest)
-            || eventSchemaVersion > latest.EventSchemaVersion)
-        {
-            _latestByEventType[resolvedEventType] = registration;
-        }
 
         return this;
     }
@@ -70,17 +63,5 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         throw new InvalidOperationException($"Event type '{eventType}' schema version '{eventSchemaVersion}' is not registered.");
     }
 
-    /// <inheritdoc />
-    public EventTypeRegistration GetLatestRegistration(string eventType)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
-
-        if (_latestByEventType.TryGetValue(eventType, out var registration))
-            return registration;
-
-        throw new InvalidOperationException($"Event type '{eventType}' is not registered.");
-    }
-
     private readonly record struct EventTypeKey(string EventType, SemanticVersion EventSchemaVersion);
-
 }
