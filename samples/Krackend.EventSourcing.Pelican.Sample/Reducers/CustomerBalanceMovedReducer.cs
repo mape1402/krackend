@@ -4,17 +4,14 @@ using Krackend.EventSourcing.Pelican.Sample.State;
 
 namespace Krackend.EventSourcing.Pelican.Sample.Reducers;
 
-public sealed class CustomerCreatedReducer : IEventReducer<CustomerState, CustomerCreated>
+public sealed class CustomerBalanceMovedReducer : IEventReducer<CustomerState, CustomerBalanceMoved>
 {
-    public CustomerState Apply(CustomerState state, CustomerCreated @event)
+    public CustomerState Apply(CustomerState state, CustomerBalanceMoved @event)
     {
         return state with
         {
             CustomerId = @event.CustomerId,
-            Name = @event.Name,
-            Email = @event.Email,
-            Balance = 0m,
-            IsCreated = true
+            Balance = @event.Balance
         };
     }
 }

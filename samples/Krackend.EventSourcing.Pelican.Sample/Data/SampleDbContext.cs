@@ -20,6 +20,7 @@ public sealed class SampleDbContext : DbContext
             entity.Property(x => x.Id).HasMaxLength(80);
             entity.Property(x => x.Name).HasMaxLength(200);
             entity.Property(x => x.Email).HasMaxLength(320);
+            entity.Property(x => x.Balance).HasPrecision(18, 2);
         });
     }
 }
