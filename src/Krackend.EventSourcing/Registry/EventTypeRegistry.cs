@@ -1,6 +1,7 @@
 namespace Krackend.EventSourcing.Registry;
 
 using Krackend.EventSourcing.Contracts;
+using System.Reflection;
 
 /// <summary>
 /// Default in-memory event type registry.
@@ -24,7 +25,7 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         ArgumentNullException.ThrowIfNull(clrType);
 
         if (eventSchemaVersion == default)
-            eventSchemaVersion = SemanticVersion.Default;
+            eventSchemaVersion = ResolveSchemaVersion(clrType);
 
         var resolvedEventType = string.IsNullOrWhiteSpace(eventType) ? clrType.Name : eventType;
         var registration = new EventTypeRegistration(clrType, resolvedEventType, eventSchemaVersion);
@@ -61,4 +62,8 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     }
 
     private readonly record struct EventTypeKey(string EventType, SemanticVersion EventSchemaVersion);
+
+    private static SemanticVersion ResolveSchemaVersion(Type clrType)
+        => clrType.GetCustomAttribute<EventSchemaVersionAttribute>()?.Version
+            ?? SemanticVersion.Default;
 }
