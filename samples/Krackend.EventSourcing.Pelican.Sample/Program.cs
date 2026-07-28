@@ -33,12 +33,10 @@ services.AddKrackendEventSourcing(options =>
     });
 
     options.Routing.DefaultStreamName = "customers";
-    options.Envelope
-        .UseExecutionContextMetadata()
-        .AddMetadata("sample", _ => "pelican-hooks");
+    options.Envelope.AddMetadata("sample", _ => "pelican-hooks");
 });
 
-services.AddScoped<IEventExecutionContext>(_ => new EventExecutionContext(
+services.AddEventExecutionContext(_ => new EventExecutionContext(
     CorrelationId: "request-001",
     CausationId: "http-request-001",
     UserId: "mario",
@@ -103,5 +101,9 @@ Console.WriteLine($"Rehydrated from snapshot: {rehydrated.State.CustomerId} v{re
 
 foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
 {
-    Console.WriteLine($"{envelope.StreamVersion}: {envelope.EventType} metadata={envelope.Metadata}");
+    Console.WriteLine(
+        $"{envelope.StreamVersion}: {envelope.EventType} "
+        + $"correlation={envelope.CorrelationId} causation={envelope.CausationId} "
+        + $"user={envelope.UserId} tenant={envelope.TenantId} source={envelope.Source} "
+        + $"metadata={envelope.Metadata}");
 }

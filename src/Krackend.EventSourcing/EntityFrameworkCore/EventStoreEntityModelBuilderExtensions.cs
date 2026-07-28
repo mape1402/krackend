@@ -46,11 +46,18 @@ public static class EventStoreEntityModelBuilderExtensions
         entity.Property(x => x.StreamVersion).IsRequired();
         entity.Property(x => x.GlobalPosition).IsRequired().ValueGeneratedNever();
         entity.Property(x => x.OccurredAt).IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(100);
+        entity.Property(x => x.CausationId).HasMaxLength(100);
+        entity.Property(x => x.UserId).HasMaxLength(200);
+        entity.Property(x => x.TenantId).HasMaxLength(200);
+        entity.Property(x => x.Source).HasMaxLength(300);
         entity.Property(x => x.Payload).IsRequired();
         entity.Property(x => x.Metadata);
         entity.HasIndex(x => new { x.StreamName, x.StreamId, x.StreamVersion }).IsUnique();
         entity.HasIndex(x => x.GlobalPosition);
         entity.HasIndex(x => new { x.EventType, x.GlobalPosition });
+        entity.HasIndex(x => x.CorrelationId);
+        entity.HasIndex(x => x.CausationId);
     }
 
     private static void ConfigureSnapshotEntity(

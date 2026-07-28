@@ -63,8 +63,7 @@ public sealed class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_includes_execution_context_metadata()
     {
-        var options = new EventEnvelopeOptions()
-            .UseExecutionContextMetadata();
+        var options = new EventEnvelopeOptions();
         var context = new EventExecutionContext(
             CorrelationId: "request-001",
             CausationId: "message-001",
@@ -75,12 +74,13 @@ public sealed class InMemoryEventStoreTests
 
         var envelopes = await store.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);
 
-        var metadata = envelopes.Single().Metadata;
-        Assert.Contains("\"correlationId\":\"request-001\"", metadata);
-        Assert.Contains("\"causationId\":\"message-001\"", metadata);
-        Assert.Contains("\"userId\":\"mario\"", metadata);
-        Assert.Contains("\"tenantId\":\"elysium\"", metadata);
-        Assert.Contains("\"source\":\"tests\"", metadata);
+        var envelope = envelopes.Single();
+        Assert.Equal("request-001", envelope.CorrelationId);
+        Assert.Equal("message-001", envelope.CausationId);
+        Assert.Equal("mario", envelope.UserId);
+        Assert.Equal("elysium", envelope.TenantId);
+        Assert.Equal("tests", envelope.Source);
+        Assert.Null(envelope.Metadata);
     }
 
     [Fact]
@@ -136,7 +136,11 @@ public sealed class InMemoryEventStoreTests
         var collector = new EventMetadataCollector(
             options ?? new EventEnvelopeOptions(),
             serviceProvider ?? new EmptyServiceProvider());
-        var factory = new EventEnvelopeFactory(registry, serializer, collector);
+        var factory = new EventEnvelopeFactory(
+            registry,
+            serializer,
+            collector,
+            serviceProvider?.GetService(typeof(IEventExecutionContext)) as IEventExecutionContext);
 
         return new InMemoryEventStore(factory);
     }

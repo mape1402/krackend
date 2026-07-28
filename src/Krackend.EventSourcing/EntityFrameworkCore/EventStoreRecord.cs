@@ -51,6 +51,31 @@ public sealed class EventStoreRecord
     public DateTimeOffset OccurredAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the identifier that correlates all work in the same flow.
+    /// </summary>
+    public string? CorrelationId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the identifier of the request, message, or event that caused this event.
+    /// </summary>
+    public string? CausationId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the user identifier associated with the event.
+    /// </summary>
+    public string? UserId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tenant identifier associated with the event.
+    /// </summary>
+    public string? TenantId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the source component or channel that originated the event.
+    /// </summary>
+    public string? Source { get; set; }
+
+    /// <summary>
     /// Gets or sets the serialized payload.
     /// </summary>
     public string Payload { get; set; } = string.Empty;

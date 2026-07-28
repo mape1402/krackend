@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Core;
+using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Streams;
@@ -8,6 +9,39 @@ namespace Krackend.EventSourcing.Tests;
 
 public sealed class EventSourcingServiceCollectionExtensionsTests
 {
+    [Fact]
+    public void AddKrackendEventSourcing_adds_pascal_case_default_store_when_no_store_is_configured()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendEventSourcing();
+
+        using var provider = services.BuildServiceProvider();
+        var stores = provider.GetRequiredService<EventStoreOptionsCollection>();
+
+        var store = Assert.Single(stores.Values.Values);
+        Assert.Equal("domain", store.Name);
+        Assert.Equal("Events", store.TableName);
+    }
+
+    [Fact]
+    public void AddKrackendEventSourcing_does_not_add_default_store_when_stores_are_configured()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendEventSourcing(options =>
+        {
+            options.Stores.Add("orders", store => store.TableName = "OrderEvents");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var stores = provider.GetRequiredService<EventStoreOptionsCollection>();
+
+        var store = Assert.Single(stores.Values.Values);
+        Assert.Equal("orders", store.Name);
+        Assert.Equal("OrderEvents", store.TableName);
+    }
+
     [Fact]
     public async Task AddKrackendEventSourcing_discovers_deciders_reducers_and_event_types()
     {

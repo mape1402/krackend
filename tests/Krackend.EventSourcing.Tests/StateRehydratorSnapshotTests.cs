@@ -32,17 +32,22 @@ public sealed class StateRehydratorSnapshotTests
 
         var eventStore = new RecordingEventStore([
             new EventEnvelope(
-                Guid.NewGuid(),
-                "accounts",
-                "account-1",
-                null,
-                101,
-                1,
-                "MoneyDeposited",
-                1,
-                DateTimeOffset.UtcNow,
-                serializer.Serialize(new MoneyDeposited(25)),
-                null)
+                EventId: Guid.NewGuid(),
+                StreamName: "accounts",
+                StreamId: "account-1",
+                StreamType: null,
+                StreamVersion: 101,
+                GlobalPosition: 1,
+                EventType: "MoneyDeposited",
+                EventVersion: 1,
+                OccurredAt: DateTimeOffset.UtcNow,
+                CorrelationId: null,
+                CausationId: null,
+                UserId: null,
+                TenantId: null,
+                Source: null,
+                Payload: serializer.Serialize(new MoneyDeposited(25)),
+                Metadata: null)
         ]);
 
         var rehydrator = new StateRehydrator(
