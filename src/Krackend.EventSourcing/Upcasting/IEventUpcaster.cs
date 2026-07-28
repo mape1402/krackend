@@ -11,14 +11,14 @@ public interface IEventUpcaster
     string EventType { get; }
 
     /// <summary>
-    /// Gets the source event version.
+    /// Gets the source event schema version.
     /// </summary>
-    int FromVersion { get; }
+    string FromSchemaVersion { get; }
 
     /// <summary>
-    /// Gets the target event version.
+    /// Gets the target event schema version.
     /// </summary>
-    int ToVersion { get; }
+    string ToSchemaVersion { get; }
 
     /// <summary>
     /// Converts a payload into the next event version.

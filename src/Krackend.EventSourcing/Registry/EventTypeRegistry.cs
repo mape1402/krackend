@@ -11,24 +11,22 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     /// <summary>
     /// Registers an event type.
     /// </summary>
-    public EventTypeRegistry Register<TEvent>(string? eventType = null, int eventVersion = 1)
-        => Register(typeof(TEvent), eventType, eventVersion);
+    public EventTypeRegistry Register<TEvent>(string? eventType = null, string eventSchemaVersion = "1.0.0")
+        => Register(typeof(TEvent), eventType, eventSchemaVersion);
 
     /// <summary>
     /// Registers an event type.
     /// </summary>
-    public EventTypeRegistry Register(Type clrType, string? eventType = null, int eventVersion = 1)
+    public EventTypeRegistry Register(Type clrType, string? eventType = null, string eventSchemaVersion = "1.0.0")
     {
         ArgumentNullException.ThrowIfNull(clrType);
-
-        if (eventVersion <= 0)
-            throw new ArgumentOutOfRangeException(nameof(eventVersion), "Event version must be greater than zero.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(eventSchemaVersion);
 
         var resolvedEventType = string.IsNullOrWhiteSpace(eventType) ? clrType.Name : eventType;
-        var registration = new EventTypeRegistration(clrType, resolvedEventType, eventVersion);
+        var registration = new EventTypeRegistration(clrType, resolvedEventType, eventSchemaVersion);
 
         _byClrType[clrType] = registration;
-        _byStoredType[new EventTypeKey(resolvedEventType, eventVersion)] = clrType;
+        _byStoredType[new EventTypeKey(resolvedEventType, eventSchemaVersion)] = clrType;
 
         return this;
     }
@@ -45,15 +43,16 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     }
 
     /// <inheritdoc />
-    public Type Resolve(string eventType, int eventVersion)
+    public Type Resolve(string eventType, string eventSchemaVersion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(eventSchemaVersion);
 
-        if (_byStoredType.TryGetValue(new EventTypeKey(eventType, eventVersion), out var clrType))
+        if (_byStoredType.TryGetValue(new EventTypeKey(eventType, eventSchemaVersion), out var clrType))
             return clrType;
 
-        throw new InvalidOperationException($"Event type '{eventType}' version '{eventVersion}' is not registered.");
+        throw new InvalidOperationException($"Event type '{eventType}' schema version '{eventSchemaVersion}' is not registered.");
     }
 
-    private readonly record struct EventTypeKey(string EventType, int EventVersion);
+    private readonly record struct EventTypeKey(string EventType, string EventSchemaVersion);
 }

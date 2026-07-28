@@ -92,7 +92,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
                 if (envelope.StreamVersion > candidate.StreamVersion)
                     break;
 
-                var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventVersion);
+                var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventSchemaVersion);
                 var @event = _eventSerializer.Deserialize(envelope.Payload, eventType)
                     ?? throw new InvalidOperationException($"Event '{envelope.EventType}' could not be deserialized.");
 

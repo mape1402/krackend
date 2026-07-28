@@ -16,35 +16,39 @@ public sealed class EventUpcasterPipeline : IEventUpcasterPipeline
     }
 
     /// <inheritdoc />
-    public UpcastedEventPayload Upcast(string eventType, int currentVersion, int targetVersion, string payload)
+    public UpcastedEventPayload Upcast(
+        string eventType,
+        string currentSchemaVersion,
+        string targetSchemaVersion,
+        string payload)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(currentSchemaVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetSchemaVersion);
         ArgumentException.ThrowIfNullOrWhiteSpace(payload);
 
-        if (currentVersion <= 0)
-            throw new ArgumentOutOfRangeException(nameof(currentVersion), "Current version must be greater than zero.");
-
-        if (targetVersion <= 0)
-            throw new ArgumentOutOfRangeException(nameof(targetVersion), "Target version must be greater than zero.");
+        var currentVersion = Version.Parse(currentSchemaVersion);
+        var targetVersion = Version.Parse(targetSchemaVersion);
 
         if (currentVersion > targetVersion)
-            throw new InvalidOperationException("Current version cannot be greater than target version.");
+            throw new InvalidOperationException("Current schema version cannot be greater than target schema version.");
 
-        var version = currentVersion;
+        var version = currentSchemaVersion;
         var currentPayload = payload;
 
-        while (version < targetVersion)
+        while (Version.Parse(version) < targetVersion)
         {
             var upcaster = _upcasters.SingleOrDefault(candidate =>
                 candidate.EventType == eventType &&
-                candidate.FromVersion == version &&
-                candidate.ToVersion == version + 1);
+                candidate.FromSchemaVersion == version &&
+                Version.Parse(candidate.ToSchemaVersion) > Version.Parse(candidate.FromSchemaVersion) &&
+                Version.Parse(candidate.ToSchemaVersion) <= targetVersion);
 
             if (upcaster is null)
-                throw new InvalidOperationException($"No upcaster found for event '{eventType}' from version '{version}' to '{version + 1}'.");
+                throw new InvalidOperationException($"No upcaster found for event '{eventType}' from schema version '{version}' toward '{targetSchemaVersion}'.");
 
             currentPayload = upcaster.Upcast(currentPayload);
-            version = upcaster.ToVersion;
+            version = upcaster.ToSchemaVersion;
         }
 
         return new UpcastedEventPayload(eventType, version, currentPayload);

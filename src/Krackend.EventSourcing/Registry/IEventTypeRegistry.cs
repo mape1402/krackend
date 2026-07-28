@@ -13,5 +13,5 @@ public interface IEventTypeRegistry
     /// <summary>
     /// Resolves a persisted event name and version to a CLR type.
     /// </summary>
-    Type Resolve(string eventType, int eventVersion);
+    Type Resolve(string eventType, string eventSchemaVersion);
 }
