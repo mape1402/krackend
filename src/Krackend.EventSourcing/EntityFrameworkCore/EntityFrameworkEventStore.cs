@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
@@ -215,7 +216,7 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
             StreamVersion = envelope.StreamVersion,
             GlobalPosition = envelope.GlobalPosition ?? 0,
             EventType = envelope.EventType,
-            EventSchemaVersion = envelope.EventSchemaVersion,
+            EventSchemaVersion = envelope.EventSchemaVersion.ToString(),
             OccurredAt = envelope.OccurredAt,
             CorrelationId = envelope.CorrelationId,
             CausationId = envelope.CausationId,
@@ -235,7 +236,7 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
             StreamVersion: record.StreamVersion,
             GlobalPosition: record.GlobalPosition,
             EventType: record.EventType,
-            EventSchemaVersion: record.EventSchemaVersion,
+            EventSchemaVersion: SemanticVersion.Parse(record.EventSchemaVersion),
             OccurredAt: record.OccurredAt,
             CorrelationId: record.CorrelationId,
             CausationId: record.CausationId,

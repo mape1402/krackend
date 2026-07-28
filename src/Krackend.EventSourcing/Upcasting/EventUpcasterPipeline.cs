@@ -1,5 +1,7 @@
 namespace Krackend.EventSourcing.Upcasting;
 
+using Krackend.EventSourcing.Contracts;
+
 /// <summary>
 /// Default event upcaster pipeline.
 /// </summary>
@@ -18,31 +20,32 @@ public sealed class EventUpcasterPipeline : IEventUpcasterPipeline
     /// <inheritdoc />
     public UpcastedEventPayload Upcast(
         string eventType,
-        string currentSchemaVersion,
-        string targetSchemaVersion,
+        SemanticVersion currentSchemaVersion,
+        SemanticVersion targetSchemaVersion,
         string payload)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(currentSchemaVersion);
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetSchemaVersion);
         ArgumentException.ThrowIfNullOrWhiteSpace(payload);
 
-        var currentVersion = Version.Parse(currentSchemaVersion);
-        var targetVersion = Version.Parse(targetSchemaVersion);
+        if (currentSchemaVersion == default)
+            currentSchemaVersion = SemanticVersion.Default;
 
-        if (currentVersion > targetVersion)
+        if (targetSchemaVersion == default)
+            targetSchemaVersion = SemanticVersion.Default;
+
+        if (currentSchemaVersion > targetSchemaVersion)
             throw new InvalidOperationException("Current schema version cannot be greater than target schema version.");
 
         var version = currentSchemaVersion;
         var currentPayload = payload;
 
-        while (Version.Parse(version) < targetVersion)
+        while (version < targetSchemaVersion)
         {
             var upcaster = _upcasters.SingleOrDefault(candidate =>
                 candidate.EventType == eventType &&
                 candidate.FromSchemaVersion == version &&
-                Version.Parse(candidate.ToSchemaVersion) > Version.Parse(candidate.FromSchemaVersion) &&
-                Version.Parse(candidate.ToSchemaVersion) <= targetVersion);
+                candidate.ToSchemaVersion > candidate.FromSchemaVersion &&
+                candidate.ToSchemaVersion <= targetSchemaVersion);
 
             if (upcaster is null)
                 throw new InvalidOperationException($"No upcaster found for event '{eventType}' from schema version '{version}' toward '{targetSchemaVersion}'.");

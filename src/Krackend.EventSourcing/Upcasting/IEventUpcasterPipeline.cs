@@ -1,5 +1,7 @@
 namespace Krackend.EventSourcing.Upcasting;
 
+using Krackend.EventSourcing.Contracts;
+
 /// <summary>
 /// Applies configured event upcasters.
 /// </summary>
@@ -10,7 +12,7 @@ public interface IEventUpcasterPipeline
     /// </summary>
     UpcastedEventPayload Upcast(
         string eventType,
-        string currentSchemaVersion,
-        string targetSchemaVersion,
+        SemanticVersion currentSchemaVersion,
+        SemanticVersion targetSchemaVersion,
         string payload);
 }

@@ -1,5 +1,7 @@
 namespace Krackend.EventSourcing.Envelopes;
 
+using Krackend.EventSourcing.Contracts;
+
 /// <summary>
 /// Default immutable event envelope used by event stores.
 /// </summary>
@@ -11,7 +13,7 @@ public sealed record EventEnvelope(
     long StreamVersion,
     long? GlobalPosition,
     string EventType,
-    string EventSchemaVersion,
+    SemanticVersion EventSchemaVersion,
     DateTimeOffset OccurredAt,
     string? CorrelationId,
     string? CausationId,
