@@ -7,6 +7,7 @@ using Krackend.EventSourcing.Pelican.Sample.Events;
 using Krackend.EventSourcing.Pelican.Sample.Hooks;
 using Krackend.EventSourcing.Pelican.Sample.State;
 using Krackend.EventSourcing.Pelican.Sample.TemplateCore;
+using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
@@ -32,9 +33,17 @@ services.AddKrackendEventSourcing(options =>
     });
 
     options.Routing.DefaultStreamName = "customers";
-    options.Envelope.AddMetadata("sample", _ => "pelican-hooks");
+    options.Envelope
+        .UseExecutionContextMetadata()
+        .AddMetadata("sample", _ => "pelican-hooks");
 });
 
+services.AddScoped<IEventExecutionContext>(_ => new EventExecutionContext(
+    CorrelationId: "request-001",
+    CausationId: "http-request-001",
+    UserId: "mario",
+    TenantId: "elysium",
+    Source: "pelican-sample"));
 services.AddSingleton<ISnapshotCandidatePolicy>(new IntervalSnapshotCandidatePolicy(1));
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
 services.AddPelican(typeof(Program).Assembly);

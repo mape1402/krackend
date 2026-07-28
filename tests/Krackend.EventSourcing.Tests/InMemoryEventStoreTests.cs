@@ -61,6 +61,29 @@ public sealed class InMemoryEventStoreTests
     }
 
     [Fact]
+    public async Task AppendAsync_includes_execution_context_metadata()
+    {
+        var options = new EventEnvelopeOptions()
+            .UseExecutionContextMetadata();
+        var context = new EventExecutionContext(
+            CorrelationId: "request-001",
+            CausationId: "message-001",
+            UserId: "mario",
+            TenantId: "elysium",
+            Source: "tests");
+        var store = CreateStore(options, new ContextServiceProvider(context));
+
+        var envelopes = await store.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);
+
+        var metadata = envelopes.Single().Metadata;
+        Assert.Contains("\"correlationId\":\"request-001\"", metadata);
+        Assert.Contains("\"causationId\":\"message-001\"", metadata);
+        Assert.Contains("\"userId\":\"mario\"", metadata);
+        Assert.Contains("\"tenantId\":\"elysium\"", metadata);
+        Assert.Contains("\"source\":\"tests\"", metadata);
+    }
+
+    [Fact]
     public async Task AppendAsync_with_any_expected_version_appends_without_loading_stream_events()
     {
         var store = CreateStore();
@@ -101,14 +124,18 @@ public sealed class InMemoryEventStoreTests
         Assert.Equal(1, exception.ActualVersion);
     }
 
-    private static InMemoryEventStore CreateStore(EventEnvelopeOptions? options = null)
+    private static InMemoryEventStore CreateStore(
+        EventEnvelopeOptions? options = null,
+        IServiceProvider? serviceProvider = null)
     {
         var registry = new EventTypeRegistry()
             .Register<OrderCreated>()
             .Register<OrderPaid>();
 
         var serializer = new SystemTextJsonEventSerializer();
-        var collector = new EventMetadataCollector(options ?? new EventEnvelopeOptions(), new EmptyServiceProvider());
+        var collector = new EventMetadataCollector(
+            options ?? new EventEnvelopeOptions(),
+            serviceProvider ?? new EmptyServiceProvider());
         var factory = new EventEnvelopeFactory(registry, serializer, collector);
 
         return new InMemoryEventStore(factory);
@@ -121,5 +148,18 @@ public sealed class InMemoryEventStoreTests
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    private sealed class ContextServiceProvider : IServiceProvider
+    {
+        private readonly IEventExecutionContext _context;
+
+        public ContextServiceProvider(IEventExecutionContext context)
+        {
+            _context = context;
+        }
+
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IEventExecutionContext) ? _context : null;
     }
 }
