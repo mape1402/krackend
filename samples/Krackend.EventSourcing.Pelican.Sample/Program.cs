@@ -15,15 +15,15 @@ using Microsoft.Extensions.DependencyInjection;
 using OctoMap;
 using Pelican.Mediator;
 
-var databasePath = Path.Combine(AppContext.BaseDirectory, "pelican-event-sourcing-sample.db");
-
-if (File.Exists(databasePath))
-    File.Delete(databasePath);
+const string serverName = "DF-1613-02";
+const string databaseName = "KrackendEventSourcingSample";
+const string connectionString =
+    $"Server={serverName};Database={databaseName};Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=True";
 
 var services = new ServiceCollection();
 
 services.AddDbContext<SampleDbContext>(options =>
-    options.UseSqlite($"Data Source={databasePath}"));
+    options.UseSqlServer(connectionString));
 
 services.AddKrackendEventSourcing(options =>
 {
@@ -61,6 +61,7 @@ await using var provider = services.BuildServiceProvider();
 await using var scope = provider.CreateAsyncScope();
 
 var dbContext = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
+await dbContext.Database.EnsureDeletedAsync();
 await dbContext.Database.EnsureCreatedAsync();
 
 var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
@@ -88,7 +89,8 @@ var snapshotAfter = await snapshotStore.LoadLatestAsync("customers", response.Id
 var rehydrator = scope.ServiceProvider.GetRequiredService<IStateRehydrator>();
 var rehydrated = await rehydrator.RehydrateAsync("customers", response.Id, CustomerState.Empty);
 
-Console.WriteLine($"SQLite database: {databasePath}");
+Console.WriteLine($"SQL Server: {serverName}");
+Console.WriteLine($"Database: {databaseName}");
 Console.WriteLine($"Mediator response: {response.Id} {response.Name} {response.Email}");
 Console.WriteLine($"Projection rows: {customers.Count}");
 Console.WriteLine($"Events stored by hook: {envelopes.Count}");
