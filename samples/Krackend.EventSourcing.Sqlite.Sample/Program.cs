@@ -47,7 +47,7 @@ var renamed = await renameCustomer.ExecuteAsync(
     CustomerState.Empty,
     new RenameCustomer("customer-001", "Mario Perez"));
 
-var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
+var eventStore =   scope.ServiceProvider.GetRequiredService<IEventStore>();
 var envelopes = await eventStore.LoadAsync("customers", "customer-001");
 
 Console.WriteLine($"SQLite database: {databasePath}");

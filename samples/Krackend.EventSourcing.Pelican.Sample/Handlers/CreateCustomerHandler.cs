@@ -13,7 +13,7 @@ public sealed class CreateCustomerHandler
     public CreateCustomerHandler(
         SampleDbContext dbContext,
         IEnumerable<ICommandHandlerHook<CreateCustomerCommand, Customer>> hooks)
-        : base(hooks)
+        : base(hooks)  
     {
         _dbContext = dbContext;
     }
