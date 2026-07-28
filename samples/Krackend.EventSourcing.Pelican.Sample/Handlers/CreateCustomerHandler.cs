@@ -38,7 +38,8 @@ public sealed class CreateCustomerHandler
         {
             Id = request.CustomerId,
             Name = request.Name,
-            Email = request.Email
+            Email = request.Email,
+            Balance = 0m
         });
     }
 
@@ -56,6 +57,6 @@ public sealed class CreateCustomerHandler
         Customer entity,
         CancellationToken cancellationToken)
     {
-        return ValueTask.FromResult(new CustomerResponse(entity.Id, entity.Name, entity.Email));
+        return ValueTask.FromResult(new CustomerResponse(entity.Id, entity.Name, entity.Email, entity.Balance));
     }
 }

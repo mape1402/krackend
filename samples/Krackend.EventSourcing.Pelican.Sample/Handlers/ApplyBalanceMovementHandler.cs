@@ -6,32 +6,37 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.EventSourcing.Pelican.Sample.Handlers;
 
-public sealed class RenameCustomerHandler
-    : HookedEntityCommandHandler<RenameCustomerCommand, CustomerResponse, Customer>
+public sealed class ApplyBalanceMovementHandler
+    : HookedEntityCommandHandler<ApplyBalanceMovementCommand, CustomerResponse, Customer>
 {
     private readonly SampleDbContext _dbContext;
 
-    public RenameCustomerHandler(
+    public ApplyBalanceMovementHandler(
         SampleDbContext dbContext,
-        IEnumerable<ICommandHandlerHook<RenameCustomerCommand, Customer>> hooks)
+        IEnumerable<ICommandHandlerHook<ApplyBalanceMovementCommand, Customer>> hooks)
         : base(hooks)
     {
         _dbContext = dbContext;
     }
 
-    protected override ValueTask ValidateAsync(RenameCustomerCommand request, CancellationToken cancellationToken)
+    protected override ValueTask ValidateAsync(
+        ApplyBalanceMovementCommand request,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.CustomerId))
             throw new ArgumentException("Customer id is required.", nameof(request));
 
-        if (string.IsNullOrWhiteSpace(request.Name))
-            throw new ArgumentException("Customer name is required.", nameof(request));
+        if (request.Amount == 0m)
+            throw new ArgumentOutOfRangeException(nameof(request), "Movement amount must be different from zero.");
+
+        if (string.IsNullOrWhiteSpace(request.Description))
+            throw new ArgumentException("Movement description is required.", nameof(request));
 
         return ValueTask.CompletedTask;
     }
 
     protected override async ValueTask<Customer> MapToEntityAsync(
-        RenameCustomerCommand request,
+        ApplyBalanceMovementCommand request,
         CancellationToken cancellationToken)
     {
         var customer = await _dbContext.Customers
@@ -40,12 +45,12 @@ public sealed class RenameCustomerHandler
         if (customer is null)
             throw new InvalidOperationException($"Customer '{request.CustomerId}' was not found.");
 
-        customer.Name = request.Name;
+        customer.Balance += request.Amount;
         return customer;
     }
 
     protected override Task SaveEntityAsync(
-        RenameCustomerCommand request,
+        ApplyBalanceMovementCommand request,
         Customer entity,
         CancellationToken cancellationToken)
     {
@@ -53,7 +58,7 @@ public sealed class RenameCustomerHandler
     }
 
     protected override ValueTask<CustomerResponse> MapToResponseAsync(
-        RenameCustomerCommand request,
+        ApplyBalanceMovementCommand request,
         Customer entity,
         CancellationToken cancellationToken)
     {

@@ -21,5 +21,13 @@ public sealed class CommittedEventProfile : OctoMapProfile
             .From<Customer>(map => map
                 .ForMember(x => x.CustomerId, x => x.MapFrom(s => s.Id))
                 .ForMember(x => x.Name, x => x.MapFrom(s => s.Name)));
+
+        builder.CreateMultiMap<CustomerBalanceMoved>()
+            .From<ApplyBalanceMovementCommand>(map => map
+                .ForMember(x => x.Amount, x => x.MapFrom(s => s.Amount))
+                .ForMember(x => x.Description, x => x.MapFrom(s => s.Description)))
+            .From<Customer>(map => map
+                .ForMember(x => x.CustomerId, x => x.MapFrom(s => s.Id))
+                .ForMember(x => x.Balance, x => x.MapFrom(s => s.Balance)));
     }
 }
