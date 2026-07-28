@@ -3,6 +3,7 @@ using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Stores;
+using Krackend.EventSourcing.Upcasting;
 
 namespace Krackend.EventSourcing.Snapshots;
 
@@ -18,6 +19,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
     private readonly ISnapshotStore _snapshotStore;
     private readonly ISnapshotSerializer _snapshotSerializer;
     private readonly ISnapshotCandidateStore _candidateStore;
+    private readonly IEventUpcasterPipeline _upcasterPipeline;
     private readonly int _batchSize;
 
     /// <summary>
@@ -31,7 +33,8 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         ISnapshotStore snapshotStore,
         ISnapshotSerializer snapshotSerializer,
         ISnapshotCandidateStore candidateStore,
-        EventSourcingOptions options)
+        EventSourcingOptions options,
+        IEventUpcasterPipeline? upcasterPipeline = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _eventSerializer = eventSerializer ?? throw new ArgumentNullException(nameof(eventSerializer));
@@ -40,6 +43,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         _snapshotSerializer = snapshotSerializer ?? throw new ArgumentNullException(nameof(snapshotSerializer));
         _candidateStore = candidateStore ?? throw new ArgumentNullException(nameof(candidateStore));
+        _upcasterPipeline = upcasterPipeline ?? new EventUpcasterPipeline([]);
 
         ArgumentNullException.ThrowIfNull(options);
         _batchSize = options.RehydrationBatchSize;
@@ -92,8 +96,19 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
                 if (envelope.StreamVersion > candidate.StreamVersion)
                     break;
 
-                var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventSchemaVersion);
-                var @event = _eventSerializer.Deserialize(envelope.Payload, eventType)
+                var registration = _eventTypeRegistry.GetLatestRegistration(envelope.EventType);
+                var payload = envelope.Payload;
+
+                if (envelope.EventSchemaVersion < registration.EventSchemaVersion)
+                {
+                    payload = _upcasterPipeline.Upcast(
+                        envelope.EventType,
+                        envelope.EventSchemaVersion,
+                        registration.EventSchemaVersion,
+                        envelope.Payload).Payload;
+                }
+
+                var @event = _eventSerializer.Deserialize(payload, registration.ClrType)
                     ?? throw new InvalidOperationException($"Event '{envelope.EventType}' could not be deserialized.");
 
                 state = _reducers.Apply(state, @event);

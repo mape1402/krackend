@@ -1,6 +1,7 @@
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Stores;
+using Krackend.EventSourcing.Upcasting;
 
 namespace Krackend.EventSourcing.Projections;
 
@@ -13,6 +14,7 @@ public sealed class ProjectionRunner : IProjectionRunner
     private readonly ICheckpointStore _checkpointStore;
     private readonly IEventTypeRegistry _eventTypeRegistry;
     private readonly IEventSerializer _serializer;
+    private readonly IEventUpcasterPipeline _upcasterPipeline;
     private readonly IReadOnlyDictionary<Type, IProjectionHandler> _handlers;
 
     /// <summary>
@@ -23,12 +25,14 @@ public sealed class ProjectionRunner : IProjectionRunner
         ICheckpointStore checkpointStore,
         IEventTypeRegistry eventTypeRegistry,
         IEventSerializer serializer,
-        IEnumerable<IProjectionHandler> handlers)
+        IEnumerable<IProjectionHandler> handlers,
+        IEventUpcasterPipeline? upcasterPipeline = null)
     {
         _eventLogReader = eventLogReader ?? throw new ArgumentNullException(nameof(eventLogReader));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _eventTypeRegistry = eventTypeRegistry ?? throw new ArgumentNullException(nameof(eventTypeRegistry));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+        _upcasterPipeline = upcasterPipeline ?? new EventUpcasterPipeline([]);
         _handlers = handlers?.ToDictionary(handler => handler.EventType)
             ?? throw new ArgumentNullException(nameof(handlers));
     }
@@ -49,11 +53,22 @@ public sealed class ProjectionRunner : IProjectionRunner
 
         foreach (var envelope in envelopes.OrderBy(envelope => envelope.GlobalPosition))
         {
-            var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventSchemaVersion);
-            var @event = _serializer.Deserialize(envelope.Payload, eventType)
+            var registration = _eventTypeRegistry.GetLatestRegistration(envelope.EventType);
+            var payload = envelope.Payload;
+
+            if (envelope.EventSchemaVersion < registration.EventSchemaVersion)
+            {
+                payload = _upcasterPipeline.Upcast(
+                    envelope.EventType,
+                    envelope.EventSchemaVersion,
+                    registration.EventSchemaVersion,
+                    envelope.Payload).Payload;
+            }
+
+            var @event = _serializer.Deserialize(payload, registration.ClrType)
                 ?? throw new InvalidOperationException($"Event '{envelope.EventType}' could not be deserialized.");
 
-            if (_handlers.TryGetValue(eventType, out var handler))
+            if (_handlers.TryGetValue(registration.ClrType, out var handler))
                 await handler.HandleAsync(@event, cancellationToken);
 
             if (envelope.GlobalPosition.HasValue)

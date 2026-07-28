@@ -51,6 +51,7 @@ services.AddCommittedEvents(events =>
 {
     events.Map<CreateCustomerCommand, Customer, CustomerCreated>();
     events.Map<RenameCustomerCommand, Customer, CustomerRenamed>();
+    events.Map<ApplyLegacyBalanceMovementCommand, Customer, CustomerBalanceMovedV1>();
     events.Map<ApplyBalanceMovementCommand, Customer, CustomerBalanceMoved>();
 });
 services.AddScoped<
@@ -62,6 +63,9 @@ services.AddScoped<
 services.AddScoped<
     ICommandHandlerHook<ApplyBalanceMovementCommand, Customer>,
     EventSourcingPostSaveHook<ApplyBalanceMovementCommand, Customer>>();
+services.AddScoped<
+    ICommandHandlerHook<ApplyLegacyBalanceMovementCommand, Customer>,
+    EventSourcingPostSaveHook<ApplyLegacyBalanceMovementCommand, Customer>>();
 
 await using var provider = services.BuildServiceProvider();
 await using var scope = provider.CreateAsyncScope();
@@ -83,10 +87,9 @@ var renamed = await mediator.Send(new RenameCustomerCommand(
 var renamedAgain = await mediator.Send(new RenameCustomerCommand(
     "customer-001",
     "Mario Perez Jr"));
-var deposit = await mediator.Send(new ApplyBalanceMovementCommand(
+var legacyDeposit = await mediator.Send(new ApplyLegacyBalanceMovementCommand(
     "customer-001",
-    250m,
-    "Initial deposit"));
+    250m));
 var payment = await mediator.Send(new ApplyBalanceMovementCommand(
     "customer-001",
     -75m,
@@ -114,7 +117,7 @@ Console.WriteLine($"Database: {databaseName}");
 Console.WriteLine($"Created response: {created.Id} {created.Name} {created.Email} balance={created.Balance}");
 Console.WriteLine($"Renamed response: {renamed.Id} {renamed.Name} {renamed.Email} balance={renamed.Balance}");
 Console.WriteLine($"Renamed again response: {renamedAgain.Id} {renamedAgain.Name} {renamedAgain.Email} balance={renamedAgain.Balance}");
-Console.WriteLine($"Deposit response: {deposit.Id} {deposit.Name} balance={deposit.Balance}");
+Console.WriteLine($"Legacy deposit response: {legacyDeposit.Id} {legacyDeposit.Name} balance={legacyDeposit.Balance}");
 Console.WriteLine($"Payment response: {payment.Id} {payment.Name} balance={payment.Balance}");
 Console.WriteLine($"Projection rows: {customers.Count}");
 Console.WriteLine($"Events stored by hook: {envelopes.Count}");
@@ -128,7 +131,7 @@ Console.WriteLine($"Rehydrated from snapshot: {rehydrated.State.CustomerId} {reh
 foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
 {
     Console.WriteLine(
-        $"{envelope.StreamVersion}: {envelope.EventType} "
+        $"{envelope.StreamVersion}: {envelope.EventType} schema={envelope.EventSchemaVersion} "
         + $"correlation={envelope.CorrelationId} causation={envelope.CausationId} "
         + $"user={envelope.UserId} tenant={envelope.TenantId} source={envelope.Source} "
         + $"metadata={envelope.Metadata}");
