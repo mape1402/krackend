@@ -1,5 +1,6 @@
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Streams;
@@ -43,7 +44,7 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddKrackendEventSourcing_discovers_deciders_reducers_and_event_types()
+    public async Task AddKrackendEventSourcing_discovers_deciders_reducers_and_attributed_event_types()
     {
         var services = new ServiceCollection();
 
@@ -62,10 +63,12 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         var events = await decider.DecideAsync(TestState.Empty, new CreateThing("thing-1"));
         var currentState = reducers.Apply(TestState.Empty, events.Single());
         var registration = eventTypes.GetRegistration(typeof(ThingCreated));
+        var attributedOnlyEvent = eventTypes.Resolve("ThingArchived", "2.0.0");
 
         Assert.True(currentState.IsCreated);
         Assert.Equal("thing-1", currentState.Id);
         Assert.Equal("ThingCreated", registration.EventType);
+        Assert.Equal(typeof(ThingArchived), attributedOnlyEvent);
     }
 
     [Fact]
@@ -99,7 +102,11 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         public string StreamId => Id;
     }
 
+    [EventSchema("ThingCreated")]
     private sealed record ThingCreated(string Id);
+
+    [EventSchema("ThingArchived", "2.0.0")]
+    private sealed record ThingArchived(string Id);
 
     private sealed class CreateThingDecider : IEventDecider<TestState, CreateThing>
     {

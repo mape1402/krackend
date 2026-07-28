@@ -1,4 +1,5 @@
 using System.Reflection;
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Projections;
 using Krackend.EventSourcing.Registry;
@@ -71,6 +72,9 @@ internal static class EventSourcingAssemblyScanner
 
     private static void RegisterEventTypes(EventTypeRegistry registry, TypeInfo implementationType)
     {
+        if (implementationType.GetCustomAttribute<EventSchemaAttribute>() is not null)
+            registry.Register(implementationType.AsType());
+
         foreach (var contract in implementationType.ImplementedInterfaces.Where(IsEventContract))
         {
             var eventType = contract.GetGenericTypeDefinition() == typeof(IEventReducer<,>)
