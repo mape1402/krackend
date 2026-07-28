@@ -148,6 +148,7 @@ public sealed class StateRehydratorSnapshotTests
 
     private sealed record AccountState(decimal Balance);
 
+    [EventSchema("MoneyDeposited")]
     private sealed record MoneyDeposited(decimal Amount);
 
     private sealed record BalanceState(decimal Balance, string Description)

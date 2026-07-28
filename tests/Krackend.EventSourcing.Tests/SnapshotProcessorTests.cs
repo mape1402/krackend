@@ -14,7 +14,7 @@ public sealed class SnapshotProcessorTests
     [Fact]
     public async Task Append_marks_candidate_and_processor_creates_snapshot_later()
     {
-        var registry = new EventTypeRegistry().Register<CounterIncremented>();
+        var registry = new EventTypeRegistry().Register<CounterIncremented>("CounterIncremented");
         var eventSerializer = new SystemTextJsonEventSerializer();
         var snapshotSerializer = new SystemTextJsonSnapshotSerializer();
         var snapshotStore = new InMemorySnapshotStore();

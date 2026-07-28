@@ -113,19 +113,42 @@ public sealed class SemanticVersionTests
     public void Event_type_registry_resolves_each_schema_for_same_event_type()
     {
         var registry = new EventTypeRegistry()
-            .Register<LegacyBalanceMoved>()
-            .Register<BalanceMoved>();
+            .Register<LegacyBalanceMoved>("BalanceMoved", "1.0.0")
+            .Register<BalanceMoved>("BalanceMoved", "1.1.0");
 
         Assert.Equal(typeof(LegacyBalanceMoved), registry.Resolve("BalanceMoved", "1.0.0"));
         Assert.Equal(typeof(BalanceMoved), registry.Resolve("BalanceMoved", "1.1.0"));
     }
 
+    [Fact]
+    public void Event_type_registry_requires_schema_attribute_or_explicit_name()
+    {
+        var registry = new EventTypeRegistry();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => registry.Register<UnattributedEvent>());
+
+        Assert.Contains(nameof(EventSchemaAttribute), exception.Message);
+    }
+
+    [Fact]
+    public void Event_type_registry_rejects_duplicate_schema_for_different_types()
+    {
+        var registry = new EventTypeRegistry()
+            .Register<BalanceMoved>("BalanceMoved", "1.1.0");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => registry.Register<DuplicateBalanceMoved>("BalanceMoved", "1.1.0"));
+
+        Assert.Contains("already registered", exception.Message);
+    }
+
     [EventSchema("VersionedEvent", "2.3.4")]
     private sealed record VersionedEvent;
 
-    [EventSchema("BalanceMoved", "1.0.0")]
     private sealed record LegacyBalanceMoved;
 
-    [EventSchema("BalanceMoved", "1.1.0")]
     private sealed record BalanceMoved;
+
+    private sealed record DuplicateBalanceMoved;
+
+    private sealed record UnattributedEvent;
 }

@@ -17,7 +17,14 @@ public sealed class CommittedEventProfile : OctoMapProfile
                 .ForMember(x => x.Email, x => x.MapFrom(s => s.Email)));
 
         builder.CreateMultiMap<CustomerRenamed>()
-            .From<RenameCustomerCommand>(_ => { })
+            .From<RenameCustomerCommand>(map => map
+                .ForMember(x => x.Reason, x => x.MapFrom(s => s.Reason)))
+            .From<Customer>(map => map
+                .ForMember(x => x.CustomerId, x => x.MapFrom(s => s.Id))
+                .ForMember(x => x.Name, x => x.MapFrom(s => s.Name)));
+
+        builder.CreateMultiMap<CustomerRenamedV1>()
+            .From<RenameCustomerLegacyCommand>(_ => { })
             .From<Customer>(map => map
                 .ForMember(x => x.CustomerId, x => x.MapFrom(s => s.Id))
                 .ForMember(x => x.Name, x => x.MapFrom(s => s.Name)));

@@ -12,28 +12,39 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     private readonly Dictionary<EventTypeKey, Type> _byStoredType = [];
 
     /// <summary>
-    /// Registers an event type.
+    /// Registers an event type using its <see cref="EventSchemaAttribute"/> or explicit schema values.
     /// </summary>
     public EventTypeRegistry Register<TEvent>(string? eventType = null, SemanticVersion eventSchemaVersion = default)
         => Register(typeof(TEvent), eventType, eventSchemaVersion);
 
     /// <summary>
-    /// Registers an event type.
+    /// Registers an event type using its <see cref="EventSchemaAttribute"/> or explicit schema values.
     /// </summary>
     public EventTypeRegistry Register(Type clrType, string? eventType = null, SemanticVersion eventSchemaVersion = default)
     {
         ArgumentNullException.ThrowIfNull(clrType);
 
         var schema = clrType.GetCustomAttribute<EventSchemaAttribute>();
+        var hasExplicitEventType = !string.IsNullOrWhiteSpace(eventType);
+
+        if (schema is null && !hasExplicitEventType)
+            throw new InvalidOperationException($"Event type '{clrType.FullName}' must be decorated with '{nameof(EventSchemaAttribute)}' or registered with an explicit event type name.");
 
         if (eventSchemaVersion == default)
             eventSchemaVersion = schema?.Version ?? SemanticVersion.Default;
 
-        var resolvedEventType = string.IsNullOrWhiteSpace(eventType) ? schema?.Name ?? clrType.Name : eventType;
+        var resolvedEventType = hasExplicitEventType ? eventType! : schema!.Name;
         var registration = new EventTypeRegistration(clrType, resolvedEventType, eventSchemaVersion);
+        var key = new EventTypeKey(resolvedEventType, eventSchemaVersion);
+
+        if (_byStoredType.TryGetValue(key, out var registeredType) && registeredType != clrType)
+        {
+            throw new InvalidOperationException(
+                $"Event schema '{resolvedEventType}' version '{eventSchemaVersion}' is already registered for '{registeredType.FullName}'.");
+        }
 
         _byClrType[clrType] = registration;
-        _byStoredType[new EventTypeKey(resolvedEventType, eventSchemaVersion)] = clrType;
+        _byStoredType[key] = clrType;
 
         return this;
     }
@@ -43,10 +54,10 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     {
         ArgumentNullException.ThrowIfNull(eventType);
 
-        if (_byClrType.TryGetValue(eventType, out var registration))
-            return registration;
+        if (!_byClrType.TryGetValue(eventType, out var registration))
+            throw new InvalidOperationException($"Event type '{eventType.FullName}' is not registered.");
 
-        return Register(eventType).GetRegistration(eventType);
+        return registration;
     }
 
     /// <inheritdoc />

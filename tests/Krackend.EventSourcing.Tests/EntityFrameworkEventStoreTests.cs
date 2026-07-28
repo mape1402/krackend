@@ -1,3 +1,4 @@
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.EntityFrameworkCore;
@@ -112,6 +113,7 @@ public sealed class EntityFrameworkEventStoreTests
 
         services.AddKrackendEventSourcing(options =>
         {
+            options.ScanAssemblyContaining<EntityFrameworkEventStoreTests>();
             options.Stores.Add("orders", store => store.TableName = "OrderEvents");
             options.Stores.Add("payments", store => store.TableName = "PaymentEvents");
         });
@@ -129,5 +131,6 @@ public sealed class EntityFrameworkEventStoreTests
         }
     }
 
+    [EventSchema("OrderCreated")]
     private sealed record OrderCreated(string OrderId);
 }

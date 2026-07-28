@@ -129,8 +129,8 @@ public sealed class InMemoryEventStoreTests
         IServiceProvider? serviceProvider = null)
     {
         var registry = new EventTypeRegistry()
-            .Register<OrderCreated>()
-            .Register<OrderPaid>();
+            .Register<OrderCreated>("OrderCreated")
+            .Register<OrderPaid>("OrderPaid");
 
         var serializer = new SystemTextJsonEventSerializer();
         var collector = new EventMetadataCollector(

@@ -15,8 +15,8 @@ public sealed class EventSourcedApplicationServiceTests
     public async Task ExecuteAsync_rehydrates_state_decides_events_and_commits_them()
     {
         var registry = new EventTypeRegistry()
-            .Register<AccountOpened>()
-            .Register<MoneyDeposited>();
+            .Register<AccountOpened>("AccountOpened")
+            .Register<MoneyDeposited>("MoneyDeposited");
 
         var serializer = new SystemTextJsonEventSerializer();
         var collector = new EventMetadataCollector(new EventEnvelopeOptions(), new EmptyServiceProvider());
