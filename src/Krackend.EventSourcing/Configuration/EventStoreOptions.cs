@@ -18,7 +18,7 @@ public sealed class EventStoreOptions
     /// <summary>
     /// Gets or sets the physical table name.
     /// </summary>
-    public string TableName { get; set; } = "events";
+    public string TableName { get; set; } = "Events";
 
     /// <summary>
     /// Gets the fully qualified table name.

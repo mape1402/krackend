@@ -12,6 +12,7 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
     private readonly IEventTypeRegistry _eventTypeRegistry;
     private readonly IEventSerializer _serializer;
     private readonly EventMetadataCollector _metadataCollector;
+    private readonly IEventExecutionContext? _executionContext;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EventEnvelopeFactory"/> class.
@@ -19,11 +20,13 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
     public EventEnvelopeFactory(
         IEventTypeRegistry eventTypeRegistry,
         IEventSerializer serializer,
-        EventMetadataCollector metadataCollector)
+        EventMetadataCollector metadataCollector,
+        IEventExecutionContext? executionContext = null)
     {
         _eventTypeRegistry = eventTypeRegistry ?? throw new ArgumentNullException(nameof(eventTypeRegistry));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _metadataCollector = metadataCollector ?? throw new ArgumentNullException(nameof(metadataCollector));
+        _executionContext = executionContext;
     }
 
     /// <inheritdoc />
@@ -61,6 +64,11 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
                 EventType: registration.EventType,
                 EventVersion: registration.EventVersion,
                 OccurredAt: occurredAt,
+                CorrelationId: _executionContext?.CorrelationId,
+                CausationId: _executionContext?.CausationId,
+                UserId: _executionContext?.UserId,
+                TenantId: _executionContext?.TenantId,
+                Source: _executionContext?.Source,
                 Payload: _serializer.Serialize(@event),
                 Metadata: serializedMetadata));
         }

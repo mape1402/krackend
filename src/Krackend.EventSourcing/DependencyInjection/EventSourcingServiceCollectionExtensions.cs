@@ -29,8 +29,10 @@ public static class EventSourcingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         var options = new EventSourcingOptions();
-        options.Stores.Add(options.Routing.DefaultStreamName);
         configure?.Invoke(options);
+
+        if (options.Stores.Values.Count == 0)
+            options.Stores.Add(options.Routing.DefaultStreamName);
 
         if (options.Assemblies.Count == 0 && Assembly.GetEntryAssembly() is { } entryAssembly)
             options.ScanAssembly(entryAssembly);

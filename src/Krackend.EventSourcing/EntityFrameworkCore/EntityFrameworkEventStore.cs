@@ -217,6 +217,11 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
             EventType = envelope.EventType,
             EventVersion = envelope.EventVersion,
             OccurredAt = envelope.OccurredAt,
+            CorrelationId = envelope.CorrelationId,
+            CausationId = envelope.CausationId,
+            UserId = envelope.UserId,
+            TenantId = envelope.TenantId,
+            Source = envelope.Source,
             Payload = envelope.Payload,
             Metadata = envelope.Metadata
         };
@@ -232,6 +237,11 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
             EventType: record.EventType,
             EventVersion: record.EventVersion,
             OccurredAt: record.OccurredAt,
+            CorrelationId: record.CorrelationId,
+            CausationId: record.CausationId,
+            UserId: record.UserId,
+            TenantId: record.TenantId,
+            Source: record.Source,
             Payload: record.Payload,
             Metadata: record.Metadata);
 }

@@ -13,5 +13,10 @@ public sealed record EventEnvelope(
     string EventType,
     int EventVersion,
     DateTimeOffset OccurredAt,
+    string? CorrelationId,
+    string? CausationId,
+    string? UserId,
+    string? TenantId,
+    string? Source,
     string Payload,
     string? Metadata) : IEventEnvelope;

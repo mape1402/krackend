@@ -51,6 +51,31 @@ public interface IEventEnvelope
     DateTimeOffset OccurredAt { get; }
 
     /// <summary>
+    /// Gets the identifier that correlates all work in the same flow.
+    /// </summary>
+    string? CorrelationId { get; }
+
+    /// <summary>
+    /// Gets the identifier of the request, message, or event that caused this event.
+    /// </summary>
+    string? CausationId { get; }
+
+    /// <summary>
+    /// Gets the user identifier associated with the event.
+    /// </summary>
+    string? UserId { get; }
+
+    /// <summary>
+    /// Gets the tenant identifier associated with the event.
+    /// </summary>
+    string? TenantId { get; }
+
+    /// <summary>
+    /// Gets the source component or channel that originated the event.
+    /// </summary>
+    string? Source { get; }
+
+    /// <summary>
     /// Gets the serialized event payload.
     /// </summary>
     string Payload { get; }
