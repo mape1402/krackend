@@ -17,8 +17,4 @@ public interface IEventTypeRegistry
     /// </summary>
     Type Resolve(string eventType, SemanticVersion eventSchemaVersion);
 
-    /// <summary>
-    /// Gets the latest registered schema for a persisted event name.
-    /// </summary>
-    EventTypeRegistration GetLatestRegistration(string eventType);
 }

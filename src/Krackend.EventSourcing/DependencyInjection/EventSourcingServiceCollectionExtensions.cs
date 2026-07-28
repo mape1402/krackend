@@ -8,7 +8,6 @@ using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
-using Krackend.EventSourcing.Upcasting;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
 
@@ -60,7 +59,6 @@ public static class EventSourcingServiceCollectionExtensions
             EventSourcingAssemblyScanner.RegisterReducers(provider, registry);
             return registry;
         });
-        services.AddSingleton<IEventUpcasterPipeline>(provider => new EventUpcasterPipeline(provider.GetServices<IEventUpcaster>()));
         services.AddSingleton<ICheckpointStore, InMemoryCheckpointStore>();
         services.AddScoped<EventMetadataCollector>();
         services.AddScoped<IEventEnvelopeFactory, EventEnvelopeFactory>();
