@@ -50,6 +50,7 @@ services.AddOctoMap(typeof(Program).Assembly);
 services.AddCommittedEvents(events =>
 {
     events.Map<CreateCustomerCommand, Customer, CustomerCreated>();
+    events.Map<RenameCustomerLegacyCommand, Customer, CustomerRenamedV1>();
     events.Map<RenameCustomerCommand, Customer, CustomerRenamed>();
     events.Map<ApplyLegacyBalanceMovementCommand, Customer, CustomerBalanceMovedV1>();
     events.Map<ApplyBalanceMovementCommand, Customer, CustomerBalanceMoved>();
@@ -57,6 +58,9 @@ services.AddCommittedEvents(events =>
 services.AddScoped<
     ICommandHandlerHook<CreateCustomerCommand, Customer>,
     EventSourcingPostSaveHook<CreateCustomerCommand, Customer>>();
+services.AddScoped<
+    ICommandHandlerHook<RenameCustomerLegacyCommand, Customer>,
+    EventSourcingPostSaveHook<RenameCustomerLegacyCommand, Customer>>();
 services.AddScoped<
     ICommandHandlerHook<RenameCustomerCommand, Customer>,
     EventSourcingPostSaveHook<RenameCustomerCommand, Customer>>();
@@ -81,12 +85,13 @@ var created = await mediator.Send(new CreateCustomerCommand(
     "customer-001",
     "Mario",
     "mario@example.com"));
-var renamed = await mediator.Send(new RenameCustomerCommand(
+var renamed = await mediator.Send(new RenameCustomerLegacyCommand(
     "customer-001",
     "Mario Perez"));
 var renamedAgain = await mediator.Send(new RenameCustomerCommand(
     "customer-001",
-    "Mario Perez Jr"));
+    "Mario Perez Jr",
+    "Legal name update"));
 var legacyDeposit = await mediator.Send(new ApplyLegacyBalanceMovementCommand(
     "customer-001",
     250m));
@@ -115,8 +120,8 @@ var rehydrated = await rehydrator.RehydrateAsync("customers", created.Id, Custom
 Console.WriteLine($"SQL Server: {serverName}");
 Console.WriteLine($"Database: {databaseName}");
 Console.WriteLine($"Created response: {created.Id} {created.Name} {created.Email} balance={created.Balance}");
-Console.WriteLine($"Renamed response: {renamed.Id} {renamed.Name} {renamed.Email} balance={renamed.Balance}");
-Console.WriteLine($"Renamed again response: {renamedAgain.Id} {renamedAgain.Name} {renamedAgain.Email} balance={renamedAgain.Balance}");
+Console.WriteLine($"Legacy rename response: {renamed.Id} {renamed.Name} {renamed.Email} balance={renamed.Balance}");
+Console.WriteLine($"Current rename response: {renamedAgain.Id} {renamedAgain.Name} {renamedAgain.Email} balance={renamedAgain.Balance}");
 Console.WriteLine($"Legacy deposit response: {legacyDeposit.Id} {legacyDeposit.Name} balance={legacyDeposit.Balance}");
 Console.WriteLine($"Payment response: {payment.Id} {payment.Name} balance={payment.Balance}");
 Console.WriteLine($"Projection rows: {customers.Count}");

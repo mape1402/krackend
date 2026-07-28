@@ -8,12 +8,12 @@ using Krackend.EventSourcing.Contracts;
 public interface IEventTypeRegistry
 {
     /// <summary>
-    /// Gets the registration for a CLR event type.
+    /// Gets the schema registration for a previously registered CLR event type.
     /// </summary>
     EventTypeRegistration GetRegistration(Type eventType);
 
     /// <summary>
-    /// Resolves a persisted event name and version to a CLR type.
+    /// Resolves a persisted event name and schema version to the exact CLR type registered for that schema.
     /// </summary>
     Type Resolve(string eventType, SemanticVersion eventSchemaVersion);
 

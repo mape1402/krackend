@@ -10,7 +10,7 @@ namespace Krackend.EventSourcing.DependencyInjection;
 
 internal static class EventSourcingAssemblyScanner
 {
-    public static void RegisterComponents(
+    internal static void RegisterComponents(
         IServiceCollection services,
         EventTypeRegistry eventTypeRegistry,
         IEnumerable<Assembly> assemblies)
@@ -27,11 +27,11 @@ internal static class EventSourcingAssemblyScanner
             RegisterClosedInterfaces(services, type, typeof(IProjectionHandler<>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(IEventReducer<,>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(ICommandStreamResolver<>), ServiceLifetime.Scoped);
-            RegisterEventTypes(eventTypeRegistry, type);
+            RegisterEventSchema(eventTypeRegistry, type);
         }
     }
 
-    public static void RegisterReducers(IServiceProvider provider, IEventReducerRegistry registry)
+    internal static void RegisterReducers(IServiceProvider provider, IEventReducerRegistry registry)
     {
         foreach (var reducer in provider.GetServices<IEventReducer>())
             registry.Register(reducer);
@@ -56,7 +56,7 @@ internal static class EventSourcingAssemblyScanner
         }
     }
 
-    private static void RegisterEventTypes(EventTypeRegistry registry, TypeInfo implementationType)
+    private static void RegisterEventSchema(EventTypeRegistry registry, TypeInfo implementationType)
     {
         if (implementationType.GetCustomAttribute<EventSchemaAttribute>() is not null)
             registry.Register(implementationType.AsType());
