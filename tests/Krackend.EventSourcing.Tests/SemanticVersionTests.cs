@@ -98,7 +98,7 @@ public sealed class SemanticVersionTests
     }
 
     [Fact]
-    public void Event_type_registry_uses_schema_version_attribute()
+    public void Event_type_registry_uses_event_schema_attribute()
     {
         var registry = new EventTypeRegistry()
             .Register<VersionedEvent>();
@@ -124,14 +124,12 @@ public sealed class SemanticVersionTests
         Assert.Equal(typeof(BalanceMoved), registry.Resolve("BalanceMoved", "1.1.0"));
     }
 
-    [EventSchemaVersion("2.3.4")]
+    [EventSchema("VersionedEvent", "2.3.4")]
     private sealed record VersionedEvent;
 
-    [EventType("BalanceMoved")]
-    [EventSchemaVersion("1.0.0")]
+    [EventSchema("BalanceMoved", "1.0.0")]
     private sealed record LegacyBalanceMoved;
 
-    [EventType("BalanceMoved")]
-    [EventSchemaVersion("1.1.0")]
+    [EventSchema("BalanceMoved", "1.1.0")]
     private sealed record BalanceMoved;
 }

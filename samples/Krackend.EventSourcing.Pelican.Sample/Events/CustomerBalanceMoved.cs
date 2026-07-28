@@ -2,8 +2,7 @@ using Krackend.EventSourcing.Contracts;
 
 namespace Krackend.EventSourcing.Pelican.Sample.Events;
 
-[EventSchemaVersion("1.1.0")]
-[EventType("CustomerBalanceMoved")]
+[EventSchema("CustomerBalanceMoved", "1.1.0")]
 public sealed record CustomerBalanceMoved
 {
     public string CustomerId { get; set; } = string.Empty;
