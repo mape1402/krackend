@@ -1,5 +1,7 @@
 namespace Krackend.EventSourcing.Envelopes;
 
+using Krackend.EventSourcing.Contracts;
+
 /// <summary>
 /// Represents the storage envelope that surrounds a persisted domain event.
 /// </summary>
@@ -43,7 +45,7 @@ public interface IEventEnvelope
     /// <summary>
     /// Gets the schema version of the event payload.
     /// </summary>
-    string EventSchemaVersion { get; }
+    SemanticVersion EventSchemaVersion { get; }
 
     /// <summary>
     /// Gets the time when the event occurred.

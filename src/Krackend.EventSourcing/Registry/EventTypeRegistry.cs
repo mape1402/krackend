@@ -1,5 +1,7 @@
 namespace Krackend.EventSourcing.Registry;
 
+using Krackend.EventSourcing.Contracts;
+
 /// <summary>
 /// Default in-memory event type registry.
 /// </summary>
@@ -11,16 +13,18 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     /// <summary>
     /// Registers an event type.
     /// </summary>
-    public EventTypeRegistry Register<TEvent>(string? eventType = null, string eventSchemaVersion = "1.0.0")
+    public EventTypeRegistry Register<TEvent>(string? eventType = null, SemanticVersion eventSchemaVersion = default)
         => Register(typeof(TEvent), eventType, eventSchemaVersion);
 
     /// <summary>
     /// Registers an event type.
     /// </summary>
-    public EventTypeRegistry Register(Type clrType, string? eventType = null, string eventSchemaVersion = "1.0.0")
+    public EventTypeRegistry Register(Type clrType, string? eventType = null, SemanticVersion eventSchemaVersion = default)
     {
         ArgumentNullException.ThrowIfNull(clrType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(eventSchemaVersion);
+
+        if (eventSchemaVersion == default)
+            eventSchemaVersion = SemanticVersion.Default;
 
         var resolvedEventType = string.IsNullOrWhiteSpace(eventType) ? clrType.Name : eventType;
         var registration = new EventTypeRegistration(clrType, resolvedEventType, eventSchemaVersion);
@@ -43,10 +47,12 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
     }
 
     /// <inheritdoc />
-    public Type Resolve(string eventType, string eventSchemaVersion)
+    public Type Resolve(string eventType, SemanticVersion eventSchemaVersion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(eventSchemaVersion);
+
+        if (eventSchemaVersion == default)
+            eventSchemaVersion = SemanticVersion.Default;
 
         if (_byStoredType.TryGetValue(new EventTypeKey(eventType, eventSchemaVersion), out var clrType))
             return clrType;
@@ -54,5 +60,5 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         throw new InvalidOperationException($"Event type '{eventType}' schema version '{eventSchemaVersion}' is not registered.");
     }
 
-    private readonly record struct EventTypeKey(string EventType, string EventSchemaVersion);
+    private readonly record struct EventTypeKey(string EventType, SemanticVersion EventSchemaVersion);
 }
