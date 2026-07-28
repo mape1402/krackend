@@ -75,7 +75,7 @@ public sealed class StateRehydrator : IStateRehydrator
 
             foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
             {
-                var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventVersion);
+                var eventType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventSchemaVersion);
                 var @event = _serializer.Deserialize(envelope.Payload, eventType)
                     ?? throw new InvalidOperationException($"Event '{envelope.EventType}' could not be deserialized.");
 

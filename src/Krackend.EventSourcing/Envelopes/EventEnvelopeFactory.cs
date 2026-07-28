@@ -62,7 +62,7 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
                 StreamVersion: version,
                 GlobalPosition: null,
                 EventType: registration.EventType,
-                EventVersion: registration.EventVersion,
+                EventSchemaVersion: registration.EventSchemaVersion,
                 OccurredAt: occurredAt,
                 CorrelationId: _executionContext?.CorrelationId,
                 CausationId: _executionContext?.CausationId,

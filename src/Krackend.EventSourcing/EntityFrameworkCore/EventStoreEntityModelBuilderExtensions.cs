@@ -42,7 +42,7 @@ public static class EventStoreEntityModelBuilderExtensions
         entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
         entity.Property(x => x.StreamType).HasMaxLength(300);
         entity.Property(x => x.EventType).IsRequired().HasMaxLength(500);
-        entity.Property(x => x.EventVersion).IsRequired();
+        entity.Property(x => x.EventSchemaVersion).IsRequired().HasMaxLength(50);
         entity.Property(x => x.StreamVersion).IsRequired();
         entity.Property(x => x.GlobalPosition).IsRequired().ValueGeneratedNever();
         entity.Property(x => x.OccurredAt).IsRequired();

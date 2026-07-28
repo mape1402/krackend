@@ -11,7 +11,7 @@ public sealed record EventEnvelope(
     long StreamVersion,
     long? GlobalPosition,
     string EventType,
-    int EventVersion,
+    string EventSchemaVersion,
     DateTimeOffset OccurredAt,
     string? CorrelationId,
     string? CausationId,

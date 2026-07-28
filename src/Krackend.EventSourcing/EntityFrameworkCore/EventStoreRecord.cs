@@ -41,9 +41,9 @@ public sealed class EventStoreRecord
     public string EventType { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the event version.
+    /// Gets or sets the event schema version.
     /// </summary>
-    public int EventVersion { get; set; }
+    public string EventSchemaVersion { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the occurrence timestamp.

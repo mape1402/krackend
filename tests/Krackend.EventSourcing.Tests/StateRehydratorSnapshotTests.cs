@@ -39,7 +39,7 @@ public sealed class StateRehydratorSnapshotTests
                 StreamVersion: 101,
                 GlobalPosition: 1,
                 EventType: "MoneyDeposited",
-                EventVersion: 1,
+                EventSchemaVersion: "1.0.0",
                 OccurredAt: DateTimeOffset.UtcNow,
                 CorrelationId: null,
                 CausationId: null,

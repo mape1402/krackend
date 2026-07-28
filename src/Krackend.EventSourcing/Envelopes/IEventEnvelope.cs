@@ -43,7 +43,7 @@ public interface IEventEnvelope
     /// <summary>
     /// Gets the schema version of the event payload.
     /// </summary>
-    int EventVersion { get; }
+    string EventSchemaVersion { get; }
 
     /// <summary>
     /// Gets the time when the event occurred.
