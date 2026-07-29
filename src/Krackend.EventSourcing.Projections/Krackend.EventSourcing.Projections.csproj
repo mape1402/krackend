@@ -11,7 +11,8 @@
     <PackageId>Krackend.EventSourcing.Projections</PackageId>
     <Description>Krackend.EventSourcing.Projections provides projection handlers, checkpoint storage, and projection runners for Krackend event streams.</Description>
     <PackageTags>event-sourcing;projections;checkpoints;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <UseRootPackageReadme>false</UseRootPackageReadme>
   </PropertyGroup>
 
