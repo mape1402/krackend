@@ -35,7 +35,7 @@ public sealed class EventReducerRegistry : IEventReducerRegistry
         var key = new ReducerKey(typeof(TState), @event.GetType());
 
         if (!_reducers.TryGetValue(key, out var reducer))
-            return state;
+            throw new InvalidOperationException($"No reducer registered for state '{typeof(TState).FullName}' and event '{@event.GetType().FullName}'.");
 
         return (TState)reducer(state, @event)!;
     }
