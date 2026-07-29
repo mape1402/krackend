@@ -11,14 +11,26 @@ using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OctoMap;
 using Pelican.Mediator;
 
-const string serverName = "DF-1613-02";
-const string databaseName = "KrackendEventSourcingSample";
-const string connectionString =
-    $"Server={serverName};Database={databaseName};Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=True";
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddUserSecrets<Program>(optional: true)
+    .AddEnvironmentVariables("KRACKEND_ES_")
+    .Build();
+
+var connectionString = configuration.GetConnectionString("EventSourcingSample");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Configure ConnectionStrings:EventSourcingSample with user secrets or environment variables before running the sample. "
+        + "Example: dotnet user-secrets set \"ConnectionStrings:EventSourcingSample\" \"Server=...;Database=...;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=True\"");
+}
 
 var services = new ServiceCollection();
 
@@ -39,8 +51,8 @@ services.AddKrackendEventSourcing(options =>
 services.AddEventExecutionContext(_ => new EventExecutionContext(
     CorrelationId: "request-001",
     CausationId: "http-request-001",
-    UserId: "mario",
-    TenantId: "elysium",
+    UserId: "sample-user",
+    TenantId: "sample-tenant",
     Source: "pelican-sample"));
 services.AddSingleton<ISnapshotCandidatePolicy>(new IntervalSnapshotCandidatePolicy(1));
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
@@ -83,14 +95,14 @@ await using var transaction = await dbContext.Database.BeginTransactionAsync();
 
 var created = await mediator.Send(new CreateCustomerCommand(
     "customer-001",
-    "Mario",
-    "mario@example.com"));
+    "Sample Customer",
+    "customer@example.test"));
 var renamed = await mediator.Send(new RenameCustomerLegacyCommand(
     "customer-001",
-    "Mario Perez"));
+    "Sample Customer Legacy"));
 var renamedAgain = await mediator.Send(new RenameCustomerCommand(
     "customer-001",
-    "Mario Perez Jr",
+    "Sample Customer Current",
     "Legal name update"));
 var legacyDeposit = await mediator.Send(new ApplyLegacyBalanceMovementCommand(
     "customer-001",
@@ -117,8 +129,7 @@ var snapshotAfter = await snapshotStore.LoadLatestAsync("customers", created.Id)
 var rehydrator = scope.ServiceProvider.GetRequiredService<IStateRehydrator>();
 var rehydrated = await rehydrator.RehydrateAsync("customers", created.Id, CustomerState.Empty);
 
-Console.WriteLine($"SQL Server: {serverName}");
-Console.WriteLine($"Database: {databaseName}");
+Console.WriteLine("SQL Server connection: ConnectionStrings:EventSourcingSample");
 Console.WriteLine($"Created response: {created.Id} {created.Name} {created.Email} balance={created.Balance}");
 Console.WriteLine($"Legacy rename response: {renamed.Id} {renamed.Name} {renamed.Email} balance={renamed.Balance}");
 Console.WriteLine($"Current rename response: {renamedAgain.Id} {renamedAgain.Name} {renamedAgain.Email} balance={renamedAgain.Balance}");
