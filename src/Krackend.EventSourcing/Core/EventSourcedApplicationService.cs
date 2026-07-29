@@ -13,6 +13,7 @@ public sealed class EventSourcedApplicationService<TState, TCommand> : IEventSou
     private readonly IEventReducerRegistry _reducers;
     private readonly IEventStore _eventStore;
     private readonly ICommandStreamResolver<TCommand> _streamResolver;
+    private readonly IInitialStateFactory<TState> _initialStateFactory;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EventSourcedApplicationService{TState, TCommand}"/> class.
@@ -22,13 +23,25 @@ public sealed class EventSourcedApplicationService<TState, TCommand> : IEventSou
         IEventDecider<TState, TCommand> decider,
         IEventReducerRegistry reducers,
         IEventStore eventStore,
-        ICommandStreamResolver<TCommand> streamResolver)
+        ICommandStreamResolver<TCommand> streamResolver,
+        IInitialStateFactory<TState> initialStateFactory)
     {
         _rehydrator = rehydrator ?? throw new ArgumentNullException(nameof(rehydrator));
         _decider = decider ?? throw new ArgumentNullException(nameof(decider));
         _reducers = reducers ?? throw new ArgumentNullException(nameof(reducers));
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _streamResolver = streamResolver ?? throw new ArgumentNullException(nameof(streamResolver));
+        _initialStateFactory = initialStateFactory ?? throw new ArgumentNullException(nameof(initialStateFactory));
+    }
+
+    /// <inheritdoc />
+    public async Task<EventSourcingExecutionResult<TState>> ExecuteAsync(
+        TCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var initialState = await _initialStateFactory.CreateAsync(cancellationToken);
+
+        return await ExecuteAsync(initialState, command, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -39,6 +52,18 @@ public sealed class EventSourcedApplicationService<TState, TCommand> : IEventSou
     {
         var stream = _streamResolver.Resolve(command);
         return ExecuteAsync(stream.Name, stream.Id, initialState, command, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<EventSourcingExecutionResult<TState>> ExecuteAsync(
+        string streamName,
+        string streamId,
+        TCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var initialState = await _initialStateFactory.CreateAsync(cancellationToken);
+
+        return await ExecuteAsync(streamName, streamId, initialState, command, cancellationToken);
     }
 
     /// <inheritdoc />

@@ -48,6 +48,20 @@ public sealed record CustomerState(string CustomerId, string Name, decimal Balan
 
 El schema del state no es el schema del evento. Un evento puede mantenerse igual mientras el state cambia, o al reves.
 
+Para application services, registra el estado inicial una sola vez en DI:
+
+```csharp
+services.AddEventSourcedInitialState(() => CustomerState.Empty);
+```
+
+Con eso el flujo normal no pide `initialState` por cada ejecucion:
+
+```csharp
+await customerService.ExecuteAsync(new RenameCustomer("customer-001", "New Name"));
+```
+
+Las sobrecargas que reciben `initialState` siguen disponibles para tests o escenarios avanzados.
+
 ## Reducers
 
 Cada version de evento que participa en la rehidratacion debe tener reducer exacto:
