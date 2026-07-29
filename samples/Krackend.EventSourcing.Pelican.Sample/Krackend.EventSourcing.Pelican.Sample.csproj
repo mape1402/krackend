@@ -14,11 +14,11 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.7" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="9.0.7" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.7" />
+    <PackageReference Include="OctoMap" Version="1.0.0" />
     <PackageReference Include="Pelican.Mediator" Version="1.1.2" />
     <ProjectReference Include="..\..\src\Krackend.EventSourcing.Abstractions\Krackend.EventSourcing.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.EventSourcing.EntityFrameworkCore\Krackend.EventSourcing.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\Krackend.EventSourcing\Krackend.EventSourcing.csproj" />
-    <ProjectReference Include="..\..\..\octomap\src\OctoMap\OctoMap.csproj" />
   </ItemGroup>
 
   <ItemGroup>
