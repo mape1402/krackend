@@ -60,9 +60,10 @@ public sealed class StateRehydratorSnapshotTests
             reducers,
             snapshotStore,
             snapshotSerializer,
-            new EventSourcingOptions { RehydrationBatchSize = 25 });
+            new EventSourcingOptions { RehydrationBatchSize = 25 },
+            new InitialStateServiceProvider<AccountState>(new AccountState(0)));
 
-        var result = await rehydrator.RehydrateAsync("accounts", "account-1", new AccountState(0));
+        var result = await rehydrator.RehydrateAsync<AccountState>("accounts", "account-1");
 
         Assert.Equal(525, result.State.Balance);
         Assert.Equal(101, result.Version);
@@ -140,9 +141,10 @@ public sealed class StateRehydratorSnapshotTests
             serializer,
             registry,
             reducers,
-            options: new EventSourcingOptions());
+            options: new EventSourcingOptions(),
+            serviceProvider: new InitialStateServiceProvider<BalanceState>(BalanceState.Empty));
 
-        var result = await rehydrator.RehydrateAsync("accounts", "account-1", BalanceState.Empty);
+        var result = await rehydrator.RehydrateAsync<BalanceState>("accounts", "account-1");
 
         Assert.Equal(75m, result.State.Balance);
         Assert.Equal("Current reducer", result.State.Description);
@@ -233,4 +235,24 @@ public sealed class StateRehydratorSnapshotTests
     }
 
     private sealed record ReadRequest(long FromVersion, int MaxCount);
+
+    private sealed class InitialStateServiceProvider<TState> : IServiceProvider, IInitialStateFactory<TState>
+    {
+        private readonly TState _initialState;
+
+        public InitialStateServiceProvider(TState initialState)
+        {
+            _initialState = initialState;
+        }
+
+        public ValueTask<TState> CreateAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(_initialState);
+
+        public object? GetService(Type serviceType)
+        {
+            return serviceType == typeof(IInitialStateFactory<TState>)
+                ? this
+                : null;
+        }
+    }
 }

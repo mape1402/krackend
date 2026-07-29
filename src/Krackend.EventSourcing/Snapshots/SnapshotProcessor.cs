@@ -19,6 +19,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
     private readonly ISnapshotStore _snapshotStore;
     private readonly ISnapshotSerializer _snapshotSerializer;
     private readonly ISnapshotCandidateStore _candidateStore;
+    private readonly IInitialStateFactory<TState> _initialStateFactory;
     private readonly int _batchSize;
 
     /// <summary>
@@ -32,7 +33,8 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         ISnapshotStore snapshotStore,
         ISnapshotSerializer snapshotSerializer,
         ISnapshotCandidateStore candidateStore,
-        EventSourcingOptions options)
+        EventSourcingOptions options,
+        IInitialStateFactory<TState> initialStateFactory)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _eventSerializer = eventSerializer ?? throw new ArgumentNullException(nameof(eventSerializer));
@@ -41,12 +43,23 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         _snapshotSerializer = snapshotSerializer ?? throw new ArgumentNullException(nameof(snapshotSerializer));
         _candidateStore = candidateStore ?? throw new ArgumentNullException(nameof(candidateStore));
+        _initialStateFactory = initialStateFactory ?? throw new ArgumentNullException(nameof(initialStateFactory));
 
         ArgumentNullException.ThrowIfNull(options);
         _batchSize = options.RehydrationBatchSize;
 
         if (_batchSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(options), "Snapshot batch size must be greater than zero.");
+    }
+
+    /// <inheritdoc />
+    public async Task<SnapshotProcessingResult> ProcessAsync(
+        SnapshotCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        var initialState = await _initialStateFactory.CreateAsync(cancellationToken);
+
+        return await ProcessAsync(candidate, initialState, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -135,6 +148,16 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
             candidate.StreamId,
             version,
             SnapshotSaved: true);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyCollection<SnapshotProcessingResult>> ProcessPendingAsync(
+        int maxCount,
+        CancellationToken cancellationToken = default)
+    {
+        var initialState = await _initialStateFactory.CreateAsync(cancellationToken);
+
+        return await ProcessPendingAsync(initialState, maxCount, cancellationToken);
     }
 
     /// <inheritdoc />
