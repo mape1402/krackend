@@ -45,7 +45,8 @@ public sealed class ApplyBalanceMovementHandler
         if (customer is null)
             throw new InvalidOperationException($"Customer '{request.CustomerId}' was not found.");
 
-        customer.Balance += request.Amount;
+        var fee = MovementFees.Calculate(request.Amount);
+        customer.Balance += request.Amount - fee;
         return customer;
     }
 

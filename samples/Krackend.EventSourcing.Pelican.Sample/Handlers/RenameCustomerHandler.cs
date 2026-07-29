@@ -40,7 +40,7 @@ public sealed class RenameCustomerHandler
         if (customer is null)
             throw new InvalidOperationException($"Customer '{request.CustomerId}' was not found.");
 
-        customer.Name = request.Name;
+        customer.Name = NormalizeName(request.Name);
         return customer;
     }
 
@@ -59,4 +59,7 @@ public sealed class RenameCustomerHandler
     {
         return ValueTask.FromResult(new CustomerResponse(entity.Id, entity.Name, entity.Email, entity.Balance));
     }
+
+    private static string NormalizeName(string name)
+        => string.Join(' ', name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries));
 }
