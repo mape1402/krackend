@@ -4,6 +4,7 @@ using Pelican.Mediator;
 
 namespace Krackend.EventSourcing.Pelican.Sample.Commands;
 
+[EventStream("customers")]
 public sealed record ApplyLegacyBalanceMovementCommand(string CustomerId, decimal Amount)
     : IRequest<CustomerResponse>, IEventStreamCommand
 {

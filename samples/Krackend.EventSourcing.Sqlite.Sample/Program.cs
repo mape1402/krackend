@@ -24,7 +24,6 @@ services.AddKrackendEventSourcing(options =>
         store.TableName = "CustomerEvents";
     });
 
-    options.Routing.DefaultStreamName = "customers";
     options.Envelope.AddMetadata("sample", _ => "sqlite");
 });
 

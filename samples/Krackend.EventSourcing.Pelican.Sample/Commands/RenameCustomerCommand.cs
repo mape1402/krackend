@@ -4,6 +4,7 @@ using Pelican.Mediator;
 
 namespace Krackend.EventSourcing.Pelican.Sample.Commands;
 
+[EventStream("customers")]
 public sealed record RenameCustomerCommand(string CustomerId, string Name, string Reason)
     : IRequest<CustomerResponse>, IEventStreamCommand
 {
