@@ -189,12 +189,6 @@ public sealed class StateRehydratorSnapshotTests
 
         public List<ReadRequest> Reads { get; } = [];
 
-        public Task<IReadOnlyCollection<EventEnvelope>> LoadAsync(
-            string streamName,
-            string streamId,
-            CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Snapshot rehydration must use ranged stream reads.");
-
         public Task<IReadOnlyCollection<EventEnvelope>> ReadStreamAsync(
             string streamName,
             string streamId,

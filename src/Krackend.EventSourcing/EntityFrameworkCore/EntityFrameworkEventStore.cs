@@ -38,13 +38,6 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyCollection<EventEnvelope>> LoadAsync(
-        string streamName,
-        string streamId,
-        CancellationToken cancellationToken = default)
-        => await ReadStreamAsync(streamName, streamId, 1, int.MaxValue, cancellationToken);
-
-    /// <inheritdoc />
     public async Task<IReadOnlyCollection<EventEnvelope>> ReadStreamAsync(
         string streamName,
         string streamId,
