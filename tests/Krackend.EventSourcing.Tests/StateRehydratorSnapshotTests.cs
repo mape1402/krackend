@@ -28,6 +28,8 @@ public sealed class StateRehydratorSnapshotTests
             "accounts",
             "account-1",
             100,
+            "AccountState",
+            "1.0.0",
             snapshotSerializer.Serialize(new AccountState(500)),
             DateTimeOffset.UtcNow));
 
@@ -146,11 +148,13 @@ public sealed class StateRehydratorSnapshotTests
         Assert.Equal("Current reducer", result.State.Description);
     }
 
+    [StateSchema("AccountState")]
     private sealed record AccountState(decimal Balance);
 
     [EventSchema("MoneyDeposited")]
     private sealed record MoneyDeposited(decimal Amount);
 
+    [StateSchema("BalanceState")]
     private sealed record BalanceState(decimal Balance, string Description)
     {
         public static BalanceState Empty { get; } = new(0m, string.Empty);

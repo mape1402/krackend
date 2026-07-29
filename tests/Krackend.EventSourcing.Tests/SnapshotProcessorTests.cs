@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Metadata;
@@ -59,10 +60,13 @@ public sealed class SnapshotProcessorTests
         Assert.Single(results);
         Assert.True(results.Single().SnapshotSaved);
         Assert.Equal(2, snapshot!.StreamVersion);
+        Assert.Equal("CounterState", snapshot.StateType);
+        Assert.Equal("1.0.0", snapshot.StateSchemaVersion.ToString());
         Assert.Equal(new CounterState(3), snapshotSerializer.Deserialize(snapshot.Payload, typeof(CounterState)));
         Assert.Empty(await candidateStore.GetPendingAsync(10));
     }
 
+    [StateSchema("CounterState")]
     private sealed record CounterState(int Value)
     {
         public static CounterState Empty { get; } = new(0);

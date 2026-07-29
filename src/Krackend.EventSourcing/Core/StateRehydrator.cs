@@ -97,6 +97,14 @@ public sealed class StateRehydrator : IStateRehydrator
         if (snapshot is null)
             return initialState;
 
+        var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
+
+        if (snapshot.StateType != stateSchema.StateType || snapshot.StateSchemaVersion != stateSchema.StateSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                $"Snapshot state schema '{snapshot.StateType}' version '{snapshot.StateSchemaVersion}' does not match requested state '{stateSchema.StateType}' version '{stateSchema.StateSchemaVersion}'.");
+        }
+
         if (_snapshotSerializer is null)
             throw new InvalidOperationException("A snapshot serializer is required to load snapshots.");
 

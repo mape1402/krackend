@@ -26,6 +26,16 @@ public sealed class EventSnapshotRecord
     public long StreamVersion { get; set; }
 
     /// <summary>
+    /// Gets or sets the persisted state schema name.
+    /// </summary>
+    public string StateType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the persisted state schema version.
+    /// </summary>
+    public string StateSchemaVersion { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the serialized snapshot payload.
     /// </summary>
     public string Payload { get; set; } = string.Empty;

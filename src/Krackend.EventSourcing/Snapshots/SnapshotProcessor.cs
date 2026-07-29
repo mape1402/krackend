@@ -116,10 +116,14 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
                 SnapshotSaved: false);
         }
 
+        var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
+
         await _snapshotStore.SaveAsync(new Snapshot(
             candidate.StreamName,
             candidate.StreamId,
             version,
+            stateSchema.StateType,
+            stateSchema.StateSchemaVersion,
             _snapshotSerializer.Serialize(state),
             DateTimeOffset.UtcNow), cancellationToken);
 
@@ -156,6 +160,14 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
     {
         if (snapshot is null)
             return initialState;
+
+        var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
+
+        if (snapshot.StateType != stateSchema.StateType || snapshot.StateSchemaVersion != stateSchema.StateSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                $"Snapshot state schema '{snapshot.StateType}' version '{snapshot.StateSchemaVersion}' does not match requested state '{stateSchema.StateType}' version '{stateSchema.StateSchemaVersion}'.");
+        }
 
         return (TState)(_snapshotSerializer.Deserialize(snapshot.Payload, typeof(TState))
             ?? throw new InvalidOperationException($"Snapshot for stream '{snapshot.StreamName}/{snapshot.StreamId}' could not be deserialized."));

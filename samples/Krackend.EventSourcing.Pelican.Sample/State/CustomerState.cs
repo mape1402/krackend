@@ -1,5 +1,8 @@
+using Krackend.EventSourcing.Contracts;
+
 namespace Krackend.EventSourcing.Pelican.Sample.State;
 
+[StateSchema("CustomerState")]
 public sealed record CustomerState(
     string CustomerId,
     string Name,
