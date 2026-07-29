@@ -11,9 +11,7 @@ public sealed class CustomerRenamedReducer : IEventReducer<CustomerState, Custom
         return state with
         {
             CustomerId = @event.CustomerId,
-            Name = @event.NormalizedName,
-            LastRenameChange =
-                $"v1.1 normalized '{@event.RequestedName}' to '{@event.NormalizedName}' because '{@event.Reason}'"
+            Name = @event.Name
         };
     }
 }

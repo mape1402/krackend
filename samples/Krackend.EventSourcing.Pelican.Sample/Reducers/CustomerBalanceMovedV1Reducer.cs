@@ -11,8 +11,7 @@ public sealed class CustomerBalanceMovedV1Reducer : IEventReducer<CustomerState,
         return state with
         {
             CustomerId = @event.CustomerId,
-            Balance = @event.Balance,
-            LastBalanceChange = $"v1 applied amount {@event.Amount} directly => {@event.Balance}"
+            Balance = @event.Balance
         };
     }
 }

@@ -18,11 +18,10 @@ public sealed class CommittedEventProfile : OctoMapProfile
 
         builder.CreateMultiMap<CustomerRenamed>()
             .From<RenameCustomerCommand>(map => map
-                .ForMember(x => x.RequestedName, x => x.MapFrom(s => s.Name))
                 .ForMember(x => x.Reason, x => x.MapFrom(s => s.Reason)))
             .From<Customer>(map => map
                 .ForMember(x => x.CustomerId, x => x.MapFrom(s => s.Id))
-                .ForMember(x => x.NormalizedName, x => x.MapFrom(s => s.Name)));
+                .ForMember(x => x.Name, x => x.MapFrom(s => s.Name)));
 
         builder.CreateMultiMap<CustomerRenamedV1>()
             .From<RenameCustomerLegacyCommand>(_ => { })
@@ -33,11 +32,10 @@ public sealed class CommittedEventProfile : OctoMapProfile
         builder.CreateMultiMap<CustomerBalanceMoved>()
             .From<ApplyBalanceMovementCommand>(map => map
                 .ForMember(x => x.Amount, x => x.MapFrom(s => s.Amount))
-                .ForMember(x => x.Fee, x => x.MapFrom(s => MovementFees.Calculate(s.Amount)))
                 .ForMember(x => x.Description, x => x.MapFrom(s => s.Description)))
             .From<Customer>(map => map
                 .ForMember(x => x.CustomerId, x => x.MapFrom(s => s.Id))
-                .ForMember(x => x.BalanceAfterFee, x => x.MapFrom(s => s.Balance)));
+                .ForMember(x => x.Balance, x => x.MapFrom(s => s.Balance)));
 
         builder.CreateMultiMap<CustomerBalanceMovedV1>()
             .From<ApplyLegacyBalanceMovementCommand>(map => map
