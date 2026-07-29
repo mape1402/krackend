@@ -1,257 +1,91 @@
 # Krackend Event Sourcing Roadmap
 
-## Objetivo
+## Goal
 
-Convertir `Krackend.EventSourcing` en una libreria estable, modular y extensible para event sourcing en .NET.
+Make `Krackend.EventSourcing` a stable, modular, and extensible event sourcing library for .NET services.
 
-La version estable debe dejar un core pequeno y claro, con adapters de storage separados, versionado explicito de eventos y state, snapshots seguros, errores ruidosos cuando falten piezas criticas, y analyzers que detecten problemas antes de ejecutar la aplicacion.
+The stable release should keep the core small and explicit, separate storage adapters from contracts, support event and state schema versioning, keep snapshots safe, fail loudly when critical pieces are missing, and provide analyzers that catch common mistakes before runtime.
 
-## Principios De Diseno
+## Design Principles
 
-- El core contiene abstracciones y comportamiento de event sourcing, no storage concreto.
-- Los eventos se identifican por `EventSchema(name, version)`.
-- El state se identifica por su propio schema, separado del schema del evento.
-- Cada evento persistido se resuelve por `EventType + EventSchemaVersion`.
-- Si falta un reducer para `TState + TEvent`, debe fallar.
-- El registro manual de eventos sigue permitido.
-- No hay aplicacion magica de eventos por reflection.
-- No hay aggregates base obligatorios.
-- No se carga un stream completo en APIs de produccion.
-- EF Core, ADO, Mongo u otros storages son adapters intercambiables.
-- Proyecciones viven en paquete separado.
-- Spider, Pelican, templates u otras librerias del ecosistema son extensiones, no parte del core.
-- Los analyzers deben ayudar a detectar configuraciones incompletas.
+- The core runtime owns event sourcing behavior, not concrete storage.
+- Events are identified by `EventSchema(name, version)`.
+- State is identified by `StateSchema(name, version)`, separate from event schemas.
+- Persisted events are resolved by `EventType + EventSchemaVersion`.
+- Snapshot payloads contain state only.
+- Missing reducers must fail.
+- Manual event and state registration must remain available for dynamic scenarios.
+- There is no reflection-based event application.
+- There are no mandatory aggregate base classes.
+- Production APIs must not load complete streams without limits.
+- EF Core, ADO, Mongo, or other stores are interchangeable adapters.
+- Spider, Pelican, templates, and other ecosystem libraries are optional extension packages.
+- Projections belong to read-model infrastructure, not the write-model core.
 
-## Paquetes Objetivo
+## Package Layout
 
 ```txt
-Krackend.EventSourcing
 Krackend.EventSourcing.Abstractions
+Krackend.EventSourcing
 Krackend.EventSourcing.EntityFrameworkCore
-Krackend.EventSourcing.Projections
 Krackend.EventSourcing.SpiderExtensions
 Krackend.EventSourcing.PelicanExtensions
 Krackend.EventSourcing.Analyzers
 Krackend.EventSourcing.Testing
-Krackend.EventSourcing.Pelican.Sample
 ```
 
-### `Krackend.EventSourcing.Abstractions`
+`Krackend.EventSourcing.Projections` exists as an optional package, but it should be treated as read-model infrastructure rather than core event sourcing behavior.
 
-Contratos publicos compartidos:
+## Implemented
 
-- `IEventStore`
-- `IEventLogReader`
-- `IEventTypeRegistry`
-- `IEventReducer<TState, TEvent>`
-- `IEventReducerRegistry`
-- `IStateRehydrator`
-- `ISnapshotStore`
-- `ISnapshotProcessor<TState>`
-- `IEventSerializer`
-- `ISnapshotSerializer`
-- `ExpectedVersion`
-- `EventSchemaAttribute`
-- `StateSchemaAttribute`
-- `SemanticVersion`
-- envelope contracts
+1. Removed unbounded `LoadAsync` from `IEventStore`.
+2. Added paged reads through `ReadStreamAsync(streamName, streamId, fromVersion, maxCount)`.
+3. Added expected version append modes: `Any`, `NoStream`, and `Exact(version)`.
+4. Added event schema versioning through `[EventSchema]` and `SemanticVersion`.
+5. Added state schema versioning through `[StateSchema]`.
+6. Added state schema metadata to snapshots: `StateType` and `StateSchemaVersion`.
+7. Added `IInitialStateFactory<TState>` and DI registration APIs.
+8. Added automatic discovery for deciders, reducers, stream resolvers, event schemas, state schemas, and initial state factories.
+9. Added `IStateSchemaRegistry` and duplicate state schema detection.
+10. Split abstractions into `Krackend.EventSourcing.Abstractions`.
+11. Split EF Core storage into `Krackend.EventSourcing.EntityFrameworkCore`.
+12. Split optional integration packages for Spider and Pelican.
+13. Added typed diagnostic exceptions.
+14. Added basic Roslyn analyzers.
+15. Added `Krackend.EventSourcing.Testing`.
+16. Updated SQLite and Pelican samples.
 
-### `Krackend.EventSourcing`
+## Remaining Work
 
-Core runtime:
+### Integration Packages
 
-- registro de schemas
-- envelope factory
-- rehidratacion de state
-- reducer registry
-- decider/application service
-- snapshot processor
-- serializers default
-- metadata collector
-- stream routing
-- DI basico
+Move the sample-level Pelican hook implementation into `Krackend.EventSourcing.PelicanExtensions` once the template contracts are stable:
 
-Este paquete no debe tener referencias a EF Core.
+- committed event mapping
+- request/entity event creation
+- post-save hooks
+- stream resolution helpers
+- template-friendly DI extensions
 
-### `Krackend.EventSourcing.EntityFrameworkCore`
+Move Spider-specific behavior into `Krackend.EventSourcing.SpiderExtensions` only when the integration surface is clear.
 
-Adapter EF Core:
+### Snapshots
 
-- `EntityFrameworkEventStore<TDbContext>`
-- `EntityFrameworkSnapshotStore<TDbContext>`
-- `EntityFrameworkSnapshotCandidateStore<TDbContext>`
-- model builder extensions
-- integration con el `DbContext` de la app
-- configuracion de multiples stores/tablas
-
-### `Krackend.EventSourcing.Projections`
-
-Runtime de lectura:
-
-- projection handlers
-- checkpoint store
-- projection runner
-- adapters de checkpoints
-- rebuild helpers
-
-Este paquete debe depender de abstractions/core, pero no mezclar logica de snapshots.
-
-### `Krackend.EventSourcing.SpiderExtensions`
-
-Integracion opcional con Spider.
-
-Debe contener solamente:
-
-- adapters para conectar event sourcing al pipeline de Spider
-- hooks/middlewares propios de Spider
-- DI extensions especificas de Spider
-- documentacion de integracion Spider
-
-No debe contener core runtime, storage, EF Core, snapshots ni proyecciones.
-
-### `Krackend.EventSourcing.PelicanExtensions`
-
-Integracion opcional con Pelican/templates.
-
-Debe contener solamente:
-
-- hooks para handlers base
-- committed event factories/mappers
-- resolvers para requests del template
-- DI extensions especificas de Pelican/templates
-
-No debe formar parte de `Krackend.EventSourcing` core.
-
-### `Krackend.EventSourcing.Analyzers`
-
-Analyzers Roslyn:
-
-- evento con `[EventSchema]` sin reducer para states conocidos
-- dos CLR types con mismo `EventSchema(name, version)`
-- evento usado en reducer sin `[EventSchema]`
-- reducer registrado para un evento no registrado
-- state usado en snapshots sin `[StateSchema]`
-- uso de APIs peligrosas o deprecated
-- comandos event-sourced sin stream resolver
-
-### `Krackend.EventSourcing.Testing`
-
-Helpers:
-
-- builders de event streams
-- assertions para reducers
-- assertions para deciders
-- in-memory stores orientados a tests
-- snapshot fixtures
-
-## Roadmap Por Fases
-
-## Fase 1: Contrato Publico Estable
-
-### 1.1 Quitar `LoadAsync`
-
-`LoadAsync(streamName, streamId)` debe salir del contrato publico `IEventStore`.
-
-Motivo:
-
-- incentiva cargar streams completos
-- puede romper aplicaciones con miles o millones de eventos
-- contradice snapshots y lecturas paginadas
-
-La alternativa oficial queda:
+Add an optional snapshot worker package or extension:
 
 ```csharp
-ReadStreamAsync(streamName, streamId, fromVersion, maxCount)
+services.AddKrackendSnapshotWorker<CustomerState>(options =>
+{
+    options.Interval = TimeSpan.FromMinutes(5);
+    options.BatchSize = 100;
+});
 ```
 
-La rehidratacion decide `fromVersion`:
+Snapshot creation should stay outside the request path.
 
-- sin snapshot: `1`
-- con snapshot: `snapshot.StreamVersion + 1`
+### State Migration
 
-Si se necesita una herramienta para debug o tests, debe vivir fuera del contrato principal, por ejemplo en `Krackend.EventSourcing.Testing`.
-
-### 1.2 Mantener Registro Manual De Eventos
-
-El registro por atributo sigue siendo el camino recomendado:
-
-```csharp
-[EventSchema("CustomerBalanceMoved", "1.1.0")]
-public sealed record CustomerBalanceMoved;
-```
-
-Pero el registro manual debe quedarse:
-
-```csharp
-registry.Register<CustomerBalanceMoved>("CustomerBalanceMoved", "1.1.0");
-```
-
-Esto permite escenarios dinamicos, generacion de tipos, integraciones avanzadas y adapters futuros.
-
-### 1.3 Reducer Faltante Debe Fallar
-
-`IEventReducerRegistry.Apply` no debe ignorar eventos sin reducer.
-
-Debe lanzar una excepcion clara:
-
-```txt
-No reducer registered for state 'CustomerState' and event 'CustomerBalanceMovedV1'.
-```
-
-Esto evita rehidrataciones incompletas y snapshots incorrectos.
-
-## Fase 2: Versionado De State
-
-### 2.1 Crear `StateSchemaAttribute`
-
-El schema del state es independiente del schema de eventos.
-
-```csharp
-[StateSchema("CustomerState", "1.0.0")]
-public sealed record CustomerState(...);
-```
-
-Motivo:
-
-```txt
-Event schema version != State schema version
-```
-
-Un evento puede no cambiar, pero el state si.
-
-### 2.2 Persistir Metadata De State En Snapshots
-
-La tabla de snapshots debe guardar:
-
-- `SnapshotId`
-- `StreamName`
-- `StreamId`
-- `StreamVersion`
-- `StateType`
-- `StateSchemaVersion`
-- `Payload`
-- `CreatedAt`
-
-`Payload` debe ser solamente el state serializado.
-
-Las demas columnas son metadata tecnica del snapshot.
-
-### 2.3 Resolver State Exacto Al Leer Snapshots
-
-Al cargar snapshot:
-
-```txt
-StateType + StateSchemaVersion -> CLR state type
-```
-
-Si no coincide con el `TState` solicitado:
-
-- fallar con error claro, o
-- usar migracion de state cuando exista.
-
-### 2.4 Migraciones De State
-
-Definir contrato:
+Define explicit state snapshot migration contracts:
 
 ```csharp
 public interface IStateSnapshotMigrator
@@ -263,408 +97,61 @@ public interface IStateSnapshotMigrator
 }
 ```
 
-No debe ejecutarse magicamente si falta una ruta completa de migracion.
-
-## Fase 3: Storage Adapter Pattern
-
-### 3.1 Extraer Abstracciones
-
-Mover contratos a `Krackend.EventSourcing.Abstractions`.
-
-El core no debe conocer EF Core.
-
-### 3.2 Extraer EF Core
-
-Mover todo lo siguiente a `Krackend.EventSourcing.EntityFrameworkCore`:
-
-- `EntityFrameworkEventStore`
-- `EventStoreRecord`
-- `EventSnapshotRecord`
-- `SnapshotCandidateRecord`
-- model builder extensions
-- db context factory
-- EF model customizer
-- EF DI extensions
-
-### 3.3 Mantener Integracion Con App `DbContext`
-
-La app debe seguir pudiendo hacer:
-
-```csharp
-services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
-
-services.AddKrackendEventSourcing(options =>
-{
-    options.Stores.Add("customers", store =>
-    {
-        store.TableName = "CustomerEvents";
-    });
-});
-
-services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
-```
-
-Sin agregar `DbSet<EventStoreRecord>` manualmente.
-
-### 3.4 Preparar Adapters Futuros
-
-El diseno debe permitir:
-
-- `Krackend.EventSourcing.Ado`
-- `Krackend.EventSourcing.Mongo`
-- `Krackend.EventSourcing.PostgreSql`
-
-sin tocar el core.
-
-## Fase 4: Event Store Robusto
-
-### 4.1 Concurrencia
-
-Mantener:
-
-```csharp
-ExpectedVersion.Any
-ExpectedVersion.NoStream
-ExpectedVersion.Exact(version)
-```
-
-Validar en todos los adapters:
-
-- append concurrente
-- stream inexistente
-- stream existente
-- append multi-event
-- rollback transaccional
-
-### 4.2 Multiples Stores
-
-Soportar multiples stores logicos:
-
-```csharp
-options.Stores.Add("customers", x => x.TableName = "CustomerEvents");
-options.Stores.Add("orders", x => x.TableName = "OrderEvents");
-```
-
-Validar:
-
-- tabla default `Events`
-- PascalCase naming
-- schema opcional
-- indices por tabla
-- global position por store
-
-### 4.3 Ranged Reads Solamente
-
-API oficial:
-
-```csharp
-ReadStreamAsync(streamName, streamId, fromVersion, maxCount)
-ReadFromAsync(streamName, afterGlobalPosition, maxCount)
-GetCurrentVersionAsync(streamName, streamId)
-AppendAsync(...)
-```
-
-No debe existir API publica que lea un stream completo sin limite.
-
-## Fase 5: Snapshots
-
-### 5.1 Snapshot Del State
-
-Confirmar invariantes:
-
-```txt
-events -> reducers -> TState -> snapshot payload
-```
-
-No snapshot de:
-
-- request
-- event payload
-- entidad EF de la app
-- proyeccion
-- envelope
-
-### 5.2 Snapshot Fuera Del Request Path
-
-La ruta caliente puede leer snapshots, pero no debe generarlos obligatoriamente.
-
-Creacion:
-
-- background service
-- scheduled job
-- maintenance worker
-- rebuild controlado
-
-### 5.3 Snapshot Candidates
-
-Mantener candidatos:
-
-```txt
-append path marks stream candidate
-worker processes candidates in batches
-```
-
-Politicas:
-
-- nunca crear snapshots por default
-- intervalo por numero de eventos
-- politica custom
-
-### 5.4 Background Worker Opcional
-
-Agregar worker opcional:
-
-```csharp
-services.AddKrackendSnapshotWorker<CustomerState>(options =>
-{
-    options.Interval = TimeSpan.FromMinutes(5);
-    options.BatchSize = 100;
-});
-```
-
-Debe ser opcional y vivir en core o en paquete separado si requiere hosting.
-
-## Fase 6: Projections Como Paquete Separado
-
-### 6.1 Extraer Projections
-
-Mover:
-
-- `IProjectionHandler`
-- `IProjectionRunner`
-- `ICheckpointStore`
-- checkpoint implementations
-
-a `Krackend.EventSourcing.Projections`.
-
-### 6.2 Projection Dispatch Exacto
-
-Igual que rehidratacion:
-
-```txt
-EventType + EventSchemaVersion -> CLR exacto -> handler exacto
-```
-
-No usar latest automatico.
-
-### 6.3 Checkpoints Por Proyeccion
-
-Checkpoint key:
-
-- projection name
-- stream name/store
-- global position
-
-## Fase 7: Analyzers
-
-### 7.1 Analyzer De Reducers Faltantes
-
-Detectar:
-
-- evento con `[EventSchema]`
-- evento aparece en streams/reducers/projections
-- no hay reducer para un state conocido
-
-Este analyzer probablemente necesite convenciones o configuracion:
-
-```csharp
-[EventSourcedState(typeof(CustomerState))]
-public sealed record CustomerCreated;
-```
-
-o configuracion por assembly.
-
-### 7.2 Analyzer De Schemas Duplicados
-
-Detectar dos tipos con:
-
-```csharp
-[EventSchema("CustomerRenamed", "1.0.0")]
-```
-
-en el mismo assembly/proyecto.
-
-### 7.3 Analyzer De Evento Sin Schema
-
-Detectar eventos usados en:
-
-- `IEventReducer<TState, TEvent>`
-- `IProjectionHandler<TEvent>`
-- event factories
-
-sin `[EventSchema]` ni registro explicito conocido.
-
-### 7.4 Analyzer De State Sin Schema
-
-Detectar states usados en:
-
-- `IStateRehydrator`
-- `ISnapshotProcessor<TState>`
-- `IEventSourcedApplicationService<TState, TCommand>`
-
-sin `[StateSchema]`.
-
-## Fase 8: Extensiones De Integracion
-
-### 8.1 Spider Extensions
-
-Crear `Krackend.EventSourcing.SpiderExtensions`.
-
-Objetivo:
-
-- conectar event sourcing al pipeline de Spider
-- permitir pre/post/middleware/boundaries sin acoplar el core
-- mantener el core usable sin Spider instalado
-
-Regla:
-
-```txt
-Krackend.EventSourcing.SpiderExtensions -> depende de Krackend.EventSourcing
-Krackend.EventSourcing -> no depende de Spider
-```
-
-### 8.2 Pelican/Template Extensions
-
-Crear `Krackend.EventSourcing.PelicanExtensions` o nombre equivalente cuando el contrato del template este maduro.
-
-Objetivo:
-
-- integrar committed events con handlers base
-- usar hooks sin modificar handlers concretos
-- mapear request + entity a eventos
-- resolver stream desde request/entity
-
-Regla:
-
-```txt
-Krackend.EventSourcing.PelicanExtensions -> depende de Krackend.EventSourcing
-Krackend.EventSourcing -> no depende de Pelican ni templates
-```
-
-### 8.3 Otras Integraciones
-
-Cualquier integracion con otra libreria debe seguir el mismo patron:
-
-```txt
-Krackend.EventSourcing.SomeLibraryExtensions
-```
-
-El core no debe tomar dependencias por conveniencia.
-
-## Fase 9: Errores Y Diagnosticos
-
-Agregar excepciones especificas:
-
-- `EventSchemaMissingException`
-- `DuplicateEventSchemaException`
-- `EventTypeNotRegisteredException`
-- `EventReducerNotRegisteredException`
-- `StateSchemaMissingException`
-- `SnapshotStateSchemaMismatchException`
-- `EventPayloadDeserializationException`
-- `SnapshotDeserializationException`
-- `SnapshotSerializerMissingException`
-- `EventStoreConcurrencyException` ya existe
-
-Cada error debe incluir:
-
-- stream
-- event type
-- event schema version
-- state type
-- state schema version
-- sugerencia de fix cuando aplique
-
-## Fase 10: Samples
-
-### 10.1 Core Sample
-
-Sin Pelican, sin EF integrado.
-
-Debe mostrar:
-
-- commands
-- deciders
-- reducers
-- in-memory store
-- snapshots
-- eventos versionados
-
-### 10.2 EF Sample
-
-Debe mostrar:
-
-- SQL Server
-- multiples stores/tablas
-- EF integrado al app `DbContext`
-- migraciones EF reales
-- snapshots con state schema
-
-### 10.3 Pelican Sample
-
-Debe mostrar:
-
-- handlers con hooks
-- committed events
-- multiples versiones del mismo evento
-- reducers separados por version
-- snapshots del state, no de entidad/proyeccion
-
-El sample puede imprimir payloads de eventos para explicar diferencias de versiones, pero no debe contaminar `CustomerState` con campos didacticos.
-
-## Fase 11: Documentacion
-
-Documentar:
-
-- event sourcing vs committed event log
-- event schema versioning
-- state schema versioning
-- snapshots
-- reducers por version
-- storage adapters
-- extension packages
-- Spider extensions
-- Pelican/template extensions
-- EF Core integration
-- expected versions
-- metadata/correlation/causation
-- errores comunes
-- analyzers
-
-## Criterio Para Version Estable
-
-La version estable debe cumplir:
-
-- `LoadAsync` eliminado del contrato publico.
-- Core sin dependencia EF Core.
-- EF Core extraido a adapter.
-- Projections en paquete separado.
-- Spider/Pelican/templates fuera del core y en extension packages.
-- `EventSchema` estable.
-- `StateSchema` implementado.
-- Snapshots guardan `StateType` y `StateSchemaVersion`.
-- Reducer faltante falla.
-- Eventos no registrados fallan.
-- Schemas duplicados fallan.
-- Registro manual de eventos soportado.
-- Analyzers basicos disponibles.
-- Tests para todos los casos criticos.
-- Samples actualizados.
-- Documentacion minima completa.
-
-## Orden Recomendado De Implementacion
-
-1. Eliminar `LoadAsync`.
-2. Hacer que reducer faltante truene.
-3. Agregar `StateSchemaAttribute`.
-4. Agregar metadata de state schema a snapshots.
-5. Crear paquete `Krackend.EventSourcing.Abstractions`.
-6. Extraer EF Core a `Krackend.EventSourcing.EntityFrameworkCore`.
-7. Extraer projections a `Krackend.EventSourcing.Projections`.
-8. Crear extension packages para Spider/Pelican si aplica.
-9. Ajustar tests y samples a paquetes nuevos.
-10. Crear analyzers basicos.
-11. Endurecer excepciones y diagnosticos.
-12. Completar documentacion.
-13. Preparar release estable.
+Migrations should run only when a complete migration path exists.
+
+### Analyzers
+
+Current analyzer rules:
+
+- duplicate event schemas
+- reducer events missing `[EventSchema]`
+- duplicate state schemas
+- reducer states missing `[StateSchema]`
+- initial state factories using states missing `[StateSchema]`
+
+Future rules can include:
+
+- command types without stream resolution
+- event-sourced application services without initial state factories
+- suspicious manual schema/version mismatches
+- deprecated or dangerous API usage
+
+Reducer coverage by event version should be added only when there is a reliable convention or explicit configuration that defines which state owns which event versions.
+
+### Testing Package
+
+Expand `Krackend.EventSourcing.Testing` with:
+
+- in-memory stores focused on assertions
+- snapshot fixtures
+- event stream assertions
+- decider scenario DSL
+- reducer scenario DSL
+
+### Release Preparation
+
+Before tagging:
+
+- run full build and tests
+- inspect generated `.nupkg` files
+- verify package README content
+- verify public XML documentation
+- run the Pelican sample against SQL Server
+- decide the first public version tag
+
+## Stable Release Criteria
+
+- Core has no EF Core dependency.
+- EF Core lives in a storage adapter package.
+- Optional integrations live outside the core runtime.
+- Event and state schemas are explicit and versioned.
+- Snapshots store state payloads and state schema metadata.
+- Missing reducers fail.
+- Missing event/state schemas fail.
+- Duplicate event/state schemas fail.
+- Manual registration remains supported.
+- The hot path does not require snapshot generation.
+- Roslyn analyzers catch common schema mistakes.
+- Testing helpers exist.
+- Samples demonstrate real usage without personal configuration.
+- Documentation is in English.
