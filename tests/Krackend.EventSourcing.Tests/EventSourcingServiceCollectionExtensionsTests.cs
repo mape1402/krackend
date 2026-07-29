@@ -95,6 +95,27 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task AddKrackendEventSourcing_discovers_initial_state_factories()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton(new InitialStateSeed("discovered"));
+        services.AddKrackendEventSourcing(options =>
+        {
+            options.ScanAssemblyContaining<EventSourcingServiceCollectionExtensionsTests>();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var factory = scope.ServiceProvider.GetRequiredService<IInitialStateFactory<DiscoveredState>>();
+
+        var state = await factory.CreateAsync();
+
+        Assert.Equal("discovered", state.Id);
+    }
+
+    [Fact]
     public async Task AddEventSourcedInitialStateFactory_registers_factory_type_with_dependencies()
     {
         var services = new ServiceCollection();
@@ -145,6 +166,8 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         public static TestState Empty { get; } = new(string.Empty, false);
     }
 
+    private sealed record DiscoveredState(string Id);
+
     private sealed record InitialStateSeed(string Id);
 
     private sealed class SeededInitialStateFactory : IInitialStateFactory<TestState>
@@ -159,6 +182,21 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         public ValueTask<TestState> CreateAsync(CancellationToken cancellationToken = default)
         {
             return ValueTask.FromResult(new TestState(_seed.Id, IsCreated: false));
+        }
+    }
+
+    private sealed class DiscoveredInitialStateFactory : IInitialStateFactory<DiscoveredState>
+    {
+        private readonly InitialStateSeed _seed;
+
+        public DiscoveredInitialStateFactory(InitialStateSeed seed)
+        {
+            _seed = seed;
+        }
+
+        public ValueTask<DiscoveredState> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(new DiscoveredState(_seed.Id));
         }
     }
 
