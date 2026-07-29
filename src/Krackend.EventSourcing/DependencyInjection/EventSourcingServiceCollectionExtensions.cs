@@ -2,7 +2,6 @@ using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Metadata;
-using Krackend.EventSourcing.Projections;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Snapshots;
@@ -59,7 +58,6 @@ public static class EventSourcingServiceCollectionExtensions
             EventSourcingAssemblyScanner.RegisterReducers(provider, registry);
             return registry;
         });
-        services.AddSingleton<ICheckpointStore, InMemoryCheckpointStore>();
         services.AddScoped<EventMetadataCollector>();
         services.AddScoped<IEventEnvelopeFactory, EventEnvelopeFactory>();
         services.AddScoped<InMemoryEventStore>();
@@ -68,7 +66,6 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IStateRehydrator, StateRehydrator>();
         services.AddScoped(typeof(ICommandStreamResolver<>), typeof(DefaultCommandStreamResolver<>));
         services.AddScoped(typeof(IEventSourcedApplicationService<,>), typeof(EventSourcedApplicationService<,>));
-        services.AddScoped<IProjectionRunner, ProjectionRunner>();
         EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, options.Assemblies);
 
         return services;
