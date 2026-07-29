@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Krackend.EventSourcing.Testing</PackageId>
+    <Description>Krackend.EventSourcing.Testing provides helpers for testing event streams, reducers, deciders, and initial state factories.</Description>
+    <PackageTags>event-sourcing;testing;event-store;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <UseRootPackageReadme>false</UseRootPackageReadme>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\event-sourcing.md" Pack="true" PackagePath="README.md" Link="README.md" />
+    <None Include="..\..\assets\image.png" Pack="true" Visible="false" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.EventSourcing\Krackend.EventSourcing.csproj" />
+  </ItemGroup>
+
+</Project>
