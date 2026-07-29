@@ -8,14 +8,6 @@ namespace Krackend.EventSourcing.Stores;
 public interface IEventStore
 {
     /// <summary>
-    /// Loads all committed events for the specified stream.
-    /// </summary>
-    Task<IReadOnlyCollection<EventEnvelope>> LoadAsync(
-        string streamName,
-        string streamId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Reads committed events for the specified stream from a version range.
     /// </summary>
     Task<IReadOnlyCollection<EventEnvelope>> ReadStreamAsync(

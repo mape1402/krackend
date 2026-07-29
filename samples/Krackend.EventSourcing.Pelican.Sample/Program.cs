@@ -103,7 +103,7 @@ var payment = await mediator.Send(new ApplyBalanceMovementCommand(
 await transaction.CommitAsync();
 
 var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
-var envelopes = await eventStore.LoadAsync("customers", created.Id);
+var envelopes = await eventStore.ReadStreamAsync("customers", created.Id, fromVersion: 1, maxCount: 100);
 var customers = await dbContext.Customers.AsNoTracking().ToListAsync();
 var candidateStore = scope.ServiceProvider.GetRequiredService<ISnapshotCandidateStore>();
 var snapshotStore = scope.ServiceProvider.GetRequiredService<ISnapshotStore>();

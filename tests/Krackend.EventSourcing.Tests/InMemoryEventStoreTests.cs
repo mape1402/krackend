@@ -17,7 +17,7 @@ public sealed class InMemoryEventStoreTests
         await store.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);
         await store.AppendAsync("orders", "order-1", 1, [new OrderPaid("order-1")]);
 
-        var events = await store.LoadAsync("orders", "order-1");
+        var events = await store.ReadStreamAsync("orders", "order-1", fromVersion: 1, maxCount: 10);
 
         Assert.Collection(
             events,

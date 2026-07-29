@@ -26,13 +26,6 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<EventEnvelope>> LoadAsync(
-        string streamName,
-        string streamId,
-        CancellationToken cancellationToken = default)
-        => ReadStreamAsync(streamName, streamId, 1, int.MaxValue, cancellationToken);
-
-    /// <inheritdoc />
     public Task<IReadOnlyCollection<EventEnvelope>> ReadStreamAsync(
         string streamName,
         string streamId,
