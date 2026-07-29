@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.EventSourcing.Abst
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.EventSourcing.EntityFrameworkCore", "src\Krackend.EventSourcing.EntityFrameworkCore\Krackend.EventSourcing.EntityFrameworkCore.csproj", "{BE124EE0-16CA-4790-B652-DC1E7E9D2512}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.EventSourcing.Projections", "src\Krackend.EventSourcing.Projections\Krackend.EventSourcing.Projections.csproj", "{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -151,6 +153,18 @@ Global
 		{BE124EE0-16CA-4790-B652-DC1E7E9D2512}.Release|x64.Build.0 = Release|Any CPU
 		{BE124EE0-16CA-4790-B652-DC1E7E9D2512}.Release|x86.ActiveCfg = Release|Any CPU
 		{BE124EE0-16CA-4790-B652-DC1E7E9D2512}.Release|x86.Build.0 = Release|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Debug|x64.Build.0 = Debug|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Debug|x86.Build.0 = Debug|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Release|x64.ActiveCfg = Release|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Release|x64.Build.0 = Release|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Release|x86.ActiveCfg = Release|Any CPU
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -165,6 +179,7 @@ Global
 		{C3A9A6FF-AD83-4AD6-9A49-2860D3F7C988} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{DCAFB1F9-A40A-428E-BEB5-2FB396B5295E} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
 		{BE124EE0-16CA-4790-B652-DC1E7E9D2512} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
+		{A034C0CA-07B0-43E0-9D63-F8B3A25EC73A} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3F2B5274-3B0F-4F73-B211-9BD128E1AF56}

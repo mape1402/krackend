@@ -1,7 +1,6 @@
 using System.Reflection;
 using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Core;
-using Krackend.EventSourcing.Projections;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Streams;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +23,6 @@ internal static class EventSourcingAssemblyScanner
         foreach (var type in types)
         {
             RegisterClosedInterfaces(services, type, typeof(IEventDecider<,>), ServiceLifetime.Scoped);
-            RegisterClosedInterfaces(services, type, typeof(IProjectionHandler<>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(IEventReducer<,>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(ICommandStreamResolver<>), ServiceLifetime.Scoped);
             RegisterEventSchema(eventTypeRegistry, type);
@@ -50,9 +48,6 @@ internal static class EventSourcingAssemblyScanner
 
             if (openGenericContract == typeof(IEventReducer<,>))
                 services.Add(new ServiceDescriptor(typeof(IEventReducer), implementationType.AsType(), lifetime));
-
-            if (openGenericContract == typeof(IProjectionHandler<>))
-                services.Add(new ServiceDescriptor(typeof(IProjectionHandler), implementationType.AsType(), lifetime));
         }
     }
 
