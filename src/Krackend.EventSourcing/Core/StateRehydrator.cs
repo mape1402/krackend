@@ -4,6 +4,7 @@ using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Krackend.EventSourcing.Core;
 
@@ -18,6 +19,7 @@ public sealed class StateRehydrator : IStateRehydrator
     private readonly IEventReducerRegistry _reducers;
     private readonly ISnapshotStore? _snapshotStore;
     private readonly ISnapshotSerializer? _snapshotSerializer;
+    private readonly IServiceProvider? _serviceProvider;
     private readonly int _batchSize;
 
     /// <summary>
@@ -30,7 +32,8 @@ public sealed class StateRehydrator : IStateRehydrator
         IEventReducerRegistry reducers,
         ISnapshotStore? snapshotStore = null,
         ISnapshotSerializer? snapshotSerializer = null,
-        EventSourcingOptions? options = null)
+        EventSourcingOptions? options = null,
+        IServiceProvider? serviceProvider = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
@@ -38,10 +41,27 @@ public sealed class StateRehydrator : IStateRehydrator
         _reducers = reducers ?? throw new ArgumentNullException(nameof(reducers));
         _snapshotStore = snapshotStore;
         _snapshotSerializer = snapshotSerializer;
+        _serviceProvider = serviceProvider;
         _batchSize = options?.RehydrationBatchSize ?? 500;
 
         if (_batchSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(options), "Rehydration batch size must be greater than zero.");
+    }
+
+    /// <inheritdoc />
+    public async Task<EventSourcedState<TState>> RehydrateAsync<TState>(
+        string streamName,
+        string streamId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_serviceProvider is null)
+            throw new InitialStateNotConfiguredException(typeof(TState));
+
+        var initialState = await _serviceProvider
+            .GetRequiredService<IInitialStateFactory<TState>>()
+            .CreateAsync(cancellationToken);
+
+        return await RehydrateAsync(streamName, streamId, initialState, cancellationToken);
     }
 
     /// <inheritdoc />

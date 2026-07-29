@@ -52,9 +52,12 @@ public sealed class SnapshotProcessorTests
             snapshotStore,
             snapshotSerializer,
             candidateStore,
-            new EventSourcingOptions { RehydrationBatchSize = 1 });
+            new EventSourcingOptions { RehydrationBatchSize = 1 },
+            new DelegateInitialStateFactory<CounterState>(
+                (_, _) => ValueTask.FromResult(CounterState.Empty),
+                new EmptyServiceProvider()));
 
-        var results = await processor.ProcessPendingAsync(CounterState.Empty, 10);
+        var results = await processor.ProcessPendingAsync(10);
         var snapshot = await snapshotStore.LoadLatestAsync("counters", "counter-1");
 
         Assert.Single(results);

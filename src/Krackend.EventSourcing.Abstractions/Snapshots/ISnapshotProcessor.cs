@@ -6,11 +6,25 @@ namespace Krackend.EventSourcing.Snapshots;
 public interface ISnapshotProcessor<TState>
 {
     /// <summary>
+    /// Processes a single candidate using the configured initial state factory.
+    /// </summary>
+    Task<SnapshotProcessingResult> ProcessAsync(
+        SnapshotCandidate candidate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Processes a single candidate.
     /// </summary>
     Task<SnapshotProcessingResult> ProcessAsync(
         SnapshotCandidate candidate,
         TState initialState,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Processes pending candidates using the configured initial state factory.
+    /// </summary>
+    Task<IReadOnlyCollection<SnapshotProcessingResult>> ProcessPendingAsync(
+        int maxCount,
         CancellationToken cancellationToken = default);
 
     /// <summary>
