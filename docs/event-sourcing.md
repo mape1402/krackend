@@ -65,8 +65,6 @@ services.AddKrackendEventSourcing(options =>
     {
         store.TableName = "CustomerEvents";
     });
-
-    options.Routing.DefaultStreamName = "customers";
 });
 
 services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
@@ -200,9 +198,10 @@ An event stream has two parts:
 - `StreamName`: the logical event store/stream category, such as `customers` or `orders`.
 - `StreamId`: the aggregate/entity/business id, such as `customer-001`.
 
-Commands can implement `IEventStreamCommand` when the command itself can provide the `StreamId`:
+For most commands, combine `[EventStream]` and `IEventStreamCommand`. The attribute defines the `StreamName`; the interface defines the `StreamId`:
 
 ```csharp
+[EventStream("customers")]
 public sealed record RenameCustomer(string CustomerId, string Name)
     : IEventStreamCommand
 {
@@ -212,7 +211,16 @@ public sealed record RenameCustomer(string CustomerId, string Name)
 
 `IEventStreamCommand` exists only to support the default resolver. It keeps simple commands from needing a custom resolver class. If you do not like that marker interface on commands, do not use it; implement `ICommandStreamResolver<TCommand>` instead.
 
-The `StreamName` comes from routing. `DefaultStreamName` is the fallback stream name used by the default command resolver when no command-specific route is configured:
+Resolution order:
+
+```txt
+ICommandStreamResolver<TCommand>
+    > [EventStream("name")] + IEventStreamCommand
+    > DefaultStreamName + IEventStreamCommand
+    > error
+```
+
+`DefaultStreamName` is still available as a fallback stream name used by the default command resolver when no `[EventStream]` or command-specific route is configured:
 
 ```csharp
 services.AddKrackendEventSourcing(options =>
@@ -220,6 +228,8 @@ services.AddKrackendEventSourcing(options =>
     options.Routing.DefaultStreamName = "customers";
 });
 ```
+
+Prefer `[EventStream]` for application commands because it keeps the stream name close to the command contract.
 
 For custom stream routing, implement `ICommandStreamResolver<TCommand>`. This is the better option when the stream name/id require more than reading a single command property:
 
@@ -722,7 +732,6 @@ services.AddKrackendEventSourcing(options =>
 {
     options.ScanAssemblyContaining<CustomerState>();
     options.Stores.Add("customers", store => store.TableName = "CustomerEvents");
-    options.Routing.DefaultStreamName = "customers";
 });
 
 services.AddEventSourcedInitialStateFactory<CustomerState>((_, _) =>

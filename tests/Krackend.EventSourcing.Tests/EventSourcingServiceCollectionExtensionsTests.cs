@@ -98,6 +98,26 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void DefaultCommandStreamResolver_uses_event_stream_attribute_for_stream_name()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendEventSourcing(options =>
+        {
+            options.Routing.DefaultStreamName = "fallback";
+        });
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var resolver = scope.ServiceProvider.GetRequiredService<ICommandStreamResolver<AttributedCreateThing>>();
+        var stream = resolver.Resolve(new AttributedCreateThing("thing-1"));
+
+        Assert.Equal("things", stream.Name);
+        Assert.Equal("thing-1", stream.Id);
+    }
+
+    [Fact]
     public async Task AddKrackendEventSourcing_discovers_initial_state_factories()
     {
         var services = new ServiceCollection();
@@ -205,6 +225,12 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
     }
 
     private sealed record CreateThing(string Id) : IEventStreamCommand
+    {
+        public string StreamId => Id;
+    }
+
+    [EventStream("things")]
+    private sealed record AttributedCreateThing(string Id) : IEventStreamCommand
     {
         public string StreamId => Id;
     }

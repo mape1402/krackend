@@ -1,9 +1,10 @@
+using System.Reflection;
 using Krackend.EventSourcing.Configuration;
 
 namespace Krackend.EventSourcing.Streams;
 
 /// <summary>
-/// Resolves command streams from routing configuration and command-provided stream ids.
+/// Resolves command streams from command attributes, routing configuration, and command-provided stream ids.
 /// </summary>
 public sealed class DefaultCommandStreamResolver<TCommand> : ICommandStreamResolver<TCommand>
 {
@@ -25,6 +26,9 @@ public sealed class DefaultCommandStreamResolver<TCommand> : ICommandStreamResol
         if (command is not IEventStreamCommand streamCommand)
             throw new InvalidOperationException($"Command '{typeof(TCommand).Name}' must implement '{nameof(IEventStreamCommand)}' or provide a custom '{nameof(ICommandStreamResolver<TCommand>)}'.");
 
-        return EventStreamReference.Create(_routingOptions.ResolveCommand(typeof(TCommand)), streamCommand.StreamId);
+        var streamName = typeof(TCommand).GetCustomAttribute<EventStreamAttribute>()?.Name
+            ?? _routingOptions.ResolveCommand(typeof(TCommand));
+
+        return EventStreamReference.Create(streamName, streamCommand.StreamId);
     }
 }

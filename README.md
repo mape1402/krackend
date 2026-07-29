@@ -50,7 +50,6 @@ services.AddKrackendEventSourcing(options =>
 {
     options.ScanAssemblyContaining<Program>();
     options.Stores.Add("customers", store => store.TableName = "CustomerEvents");
-    options.Routing.DefaultStreamName = "customers";
 });
 
 services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
@@ -60,6 +59,13 @@ services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 Usage:
 
 ```csharp
+[EventStream("customers")]
+public sealed record RenameCustomer(string CustomerId, string Name)
+    : IEventStreamCommand
+{
+    public string StreamId => CustomerId;
+}
+
 await customerService.ExecuteAsync(new RenameCustomer("customer-001", "New Name"));
 ```
 
