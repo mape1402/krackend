@@ -54,6 +54,23 @@ Para application services, registra el estado inicial una sola vez en DI:
 services.AddEventSourcedInitialState(() => CustomerState.Empty);
 ```
 
+Si el estado inicial necesita dependencias o reglas dinamicas, registra una factory:
+
+```csharp
+services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
+```
+
+o un delegado con acceso al container:
+
+```csharp
+services.AddEventSourcedInitialStateFactory<CustomerState>((provider, cancellationToken) =>
+{
+    var tenant = provider.GetRequiredService<ICurrentTenant>();
+
+    return ValueTask.FromResult(CustomerState.ForTenant(tenant.Id));
+});
+```
+
 Con eso el flujo normal no pide `initialState` por cada ejecucion:
 
 ```csharp

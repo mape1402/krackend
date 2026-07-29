@@ -114,4 +114,43 @@ public static class EventSourcingServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers the factory that creates the initial state for a state type.
+    /// </summary>
+    public static IServiceCollection AddEventSourcedInitialStateFactory<TState, TFactory>(
+        this IServiceCollection services)
+        where TFactory : class, IInitialStateFactory<TState>
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<IInitialStateFactory<TState>, TFactory>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the factory that creates the initial state for a state type.
+    /// </summary>
+    public static IServiceCollection AddEventSourcedInitialStateFactory<TState>(
+        this IServiceCollection services,
+        IInitialStateFactory<TState> factory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        services.AddSingleton(factory);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the factory that creates the initial state for a state type.
+    /// </summary>
+    public static IServiceCollection AddEventSourcedInitialStateFactory<TState>(
+        this IServiceCollection services,
+        Func<IServiceProvider, CancellationToken, ValueTask<TState>> factory)
+    {
+        return services.AddEventSourcedInitialState(factory);
+    }
 }

@@ -94,9 +94,72 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         Assert.Equal("thing-1", result.CurrentState.Id);
     }
 
+    [Fact]
+    public async Task AddEventSourcedInitialStateFactory_registers_factory_type_with_dependencies()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton(new InitialStateSeed("seeded"));
+        services.AddKrackendEventSourcing(options =>
+        {
+            options.ScanAssemblyContaining<EventSourcingServiceCollectionExtensionsTests>();
+        });
+        services.AddEventSourcedInitialStateFactory<TestState, SeededInitialStateFactory>();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var factory = scope.ServiceProvider.GetRequiredService<IInitialStateFactory<TestState>>();
+
+        var state = await factory.CreateAsync();
+
+        Assert.Equal("seeded", state.Id);
+    }
+
+    [Fact]
+    public async Task AddEventSourcedInitialStateFactory_registers_delegate_with_service_provider()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton(new InitialStateSeed("delegated"));
+        services.AddKrackendEventSourcing();
+        services.AddEventSourcedInitialStateFactory<TestState>((provider, _) =>
+        {
+            var seed = provider.GetRequiredService<InitialStateSeed>();
+
+            return ValueTask.FromResult(new TestState(seed.Id, IsCreated: false));
+        });
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var factory = scope.ServiceProvider.GetRequiredService<IInitialStateFactory<TestState>>();
+
+        var state = await factory.CreateAsync();
+
+        Assert.Equal("delegated", state.Id);
+    }
+
     private sealed record TestState(string Id, bool IsCreated)
     {
         public static TestState Empty { get; } = new(string.Empty, false);
+    }
+
+    private sealed record InitialStateSeed(string Id);
+
+    private sealed class SeededInitialStateFactory : IInitialStateFactory<TestState>
+    {
+        private readonly InitialStateSeed _seed;
+
+        public SeededInitialStateFactory(InitialStateSeed seed)
+        {
+            _seed = seed;
+        }
+
+        public ValueTask<TestState> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(new TestState(_seed.Id, IsCreated: false));
+        }
     }
 
     private sealed record CreateThing(string Id) : IEventStreamCommand
