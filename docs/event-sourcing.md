@@ -1,90 +1,196 @@
 # Krackend Event Sourcing
 
-`Krackend.EventSourcing` provides the core write-model runtime for persisting events, rehydrating state with reducers, creating state snapshots, and building event envelopes with technical metadata.
+`Krackend.EventSourcing` is a write-model runtime for .NET services that persist committed events, rehydrate state with reducers, create snapshots, and store event envelopes with technical metadata.
 
-The library is split into packages so the core runtime does not take hard dependencies on storage adapters, projections, or ecosystem integrations.
+The core package is storage-agnostic. EF Core, testing helpers, analyzers, and ecosystem integrations live in separate packages.
 
-## Packages
+## Install
 
-- `Krackend.EventSourcing.Abstractions`: public contracts, attributes, envelopes, stores, snapshots, streams, registries, and exceptions.
-- `Krackend.EventSourcing`: core runtime, default serializers, schema registries, reducers, rehydration, snapshots, metadata collection, stream routing, and base DI.
-- `Krackend.EventSourcing.EntityFrameworkCore`: EF Core storage adapter for event stores, snapshots, and snapshot candidates integrated into the application `DbContext`.
-- `Krackend.EventSourcing.Projections`: optional projection runtime.
-- `Krackend.EventSourcing.SpiderExtensions`: optional Spider integration package.
-- `Krackend.EventSourcing.PelicanExtensions`: optional Pelican/template integration package.
-- `Krackend.EventSourcing.Analyzers`: Roslyn diagnostics for common schema and reducer mistakes.
-- `Krackend.EventSourcing.Testing`: test helpers for streams, reducers, deciders, and initial states.
+For the core runtime:
 
-## Events
-
-Every persisted event should declare a stable schema:
-
-```csharp
-[EventSchema("CustomerBalanceMoved", "1.1.0")]
-public sealed record CustomerBalanceMoved(string CustomerId, decimal Amount, decimal Balance);
+```bash
+dotnet add package Krackend.EventSourcing
 ```
 
-`EventSchema.Name` and `EventSchema.Version` are part of the persisted contract. Two CLR types may represent different versions of the same business event, but they cannot share the same `name + version`.
+For EF Core storage:
 
-Attribute-based registration is the recommended path:
-
-```csharp
-registry.Register<CustomerBalanceMoved>();
+```bash
+dotnet add package Krackend.EventSourcing.EntityFrameworkCore
 ```
 
-Manual registration is still supported for dynamic scenarios:
+Recommended development packages:
 
-```csharp
-registry.Register<CustomerBalanceMoved>("CustomerBalanceMoved", "1.1.0");
+```bash
+dotnet add package Krackend.EventSourcing.Analyzers
+dotnet add package Krackend.EventSourcing.Testing
 ```
 
-## State
+Optional packages:
+
+```bash
+dotnet add package Krackend.EventSourcing.Abstractions
+dotnet add package Krackend.EventSourcing.SpiderExtensions
+dotnet add package Krackend.EventSourcing.PelicanExtensions
+```
+
+## Package Roles
+
+- `Krackend.EventSourcing.Abstractions`: contracts, attributes, envelopes, store interfaces, snapshot interfaces, registries, expected versions, and exceptions.
+- `Krackend.EventSourcing`: core runtime, serializers, schema registries, reducers, state rehydration, snapshots, metadata, stream routing, in-memory store, and DI.
+- `Krackend.EventSourcing.EntityFrameworkCore`: EF Core event store, snapshot store, snapshot candidate store, model builder integration, and app `DbContext` integration.
+- `Krackend.EventSourcing.Analyzers`: Roslyn diagnostics for schema and reducer mistakes.
+- `Krackend.EventSourcing.Testing`: test helpers for event streams, reducers, deciders, and initial states.
+
+## Mental Model
+
+There are two main usage styles:
+
+1. Event-sourced application service:
+
+```txt
+command -> rehydrate state -> decider -> append events -> reduce current state
+```
+
+2. Committed event hook:
+
+```txt
+request -> application handler -> save business data -> append committed event
+```
+
+The library supports both. The first style is a full event-sourced write model. The second style is useful when an existing service already writes entities/projections and only needs a reliable event log after commit.
+
+## Minimal Setup
+
+```csharp
+services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
+services.AddKrackendEventSourcing(options =>
+{
+    options.ScanAssemblyContaining<CustomerState>();
+
+    options.Stores.Add("customers", store =>
+    {
+        store.TableName = "CustomerEvents";
+    });
+
+    options.Routing.DefaultStreamName = "customers";
+});
+
+services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
+```
+
+`ScanAssemblyContaining<T>()` discovers:
+
+- `[EventSchema]` event types
+- `[StateSchema]` state types
+- `IEventDecider<TState, TCommand>`
+- `IEventReducer<TState, TEvent>`
+- `ICommandStreamResolver<TCommand>`
+- `IInitialStateFactory<TState>`
+
+## Defining Events
+
+Every persisted event should declare an event schema:
+
+```csharp
+[EventSchema("CustomerCreated", "1.0.0")]
+public sealed record CustomerCreated(
+    string CustomerId,
+    string Name,
+    string Email);
+```
+
+The persisted event identity is:
+
+```txt
+EventType + EventSchemaVersion
+```
+
+Two CLR types can represent two versions of the same event:
+
+```csharp
+[EventSchema("CustomerRenamed", "1.0.0")]
+public sealed record CustomerRenamedV1(string CustomerId, string Name);
+
+[EventSchema("CustomerRenamed", "1.1.0")]
+public sealed record CustomerRenamed(string CustomerId, string Name, string Reason);
+```
+
+Each version is resolved independently during rehydration.
+
+Manual registration is also supported:
+
+```csharp
+var registry = new EventTypeRegistry()
+    .Register<CustomerRenamedV1>("CustomerRenamed", "1.0.0")
+    .Register<CustomerRenamed>("CustomerRenamed", "1.1.0");
+```
+
+Manual registration is useful for generated types, dynamic loading, or advanced adapters.
+
+## Defining State
 
 State has its own schema:
 
 ```csharp
 [StateSchema("CustomerState", "1.0.0")]
-public sealed record CustomerState(string CustomerId, string Name, decimal Balance);
-```
-
-The state schema is not the event schema. An event can stay stable while state changes, and state can stay stable while event contracts evolve.
-
-States marked with `[StateSchema]` are registered automatically when the assembly is scanned:
-
-```csharp
-services.AddKrackendEventSourcing(options =>
+public sealed record CustomerState(
+    string CustomerId,
+    string Name,
+    string Email,
+    decimal Balance,
+    bool IsCreated)
 {
-    options.ScanAssemblyContaining<CustomerState>();
-});
+    public static CustomerState Empty { get; } =
+        new(string.Empty, string.Empty, string.Empty, 0m, false);
+}
 ```
 
-You can also register state schemas manually with `StateSchemaRegistry` for dynamic scenarios.
+The persisted state identity is:
 
-For application services, register the initial state once in DI:
+```txt
+StateType + StateSchemaVersion
+```
+
+Event schema version and state schema version are independent. An event contract can change without changing state, and state can change without changing an event contract.
+
+## Initial State
+
+The initial state is used when a stream has no snapshot and no events.
+
+For static state:
 
 ```csharp
 services.AddEventSourcedInitialState(() => CustomerState.Empty);
 ```
 
-If the initial state needs dependencies or dynamic rules, register a factory:
-
-```csharp
-services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
-```
-
-Concrete implementations of `IInitialStateFactory<TState>` are also discovered automatically during assembly scanning:
+For a factory class with dependencies:
 
 ```csharp
 public sealed class CustomerInitialStateFactory : IInitialStateFactory<CustomerState>
 {
+    private readonly ICurrentTenant _tenant;
+
+    public CustomerInitialStateFactory(ICurrentTenant tenant)
+    {
+        _tenant = tenant;
+    }
+
     public ValueTask<CustomerState> CreateAsync(CancellationToken cancellationToken = default)
     {
-        return ValueTask.FromResult(CustomerState.Empty);
+        return ValueTask.FromResult(CustomerState.Empty with
+        {
+            TenantId = _tenant.Id
+        });
     }
 }
+
+services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
 ```
 
-You can also register a delegate with access to the container:
+For a delegate with access to DI:
 
 ```csharp
 services.AddEventSourcedInitialStateFactory<CustomerState>((provider, cancellationToken) =>
@@ -95,52 +201,174 @@ services.AddEventSourcedInitialStateFactory<CustomerState>((provider, cancellati
 });
 ```
 
-After that, the normal execution path does not require passing `initialState` per call:
+Concrete implementations of `IInitialStateFactory<TState>` are also discovered automatically when their assembly is scanned.
+
+## Commands And Streams
+
+Commands can implement `IEventStreamCommand` when the stream id is part of the command:
 
 ```csharp
-await customerService.ExecuteAsync(new RenameCustomer("customer-001", "New Name"));
+public sealed record RenameCustomer(string CustomerId, string Name)
+    : IEventStreamCommand
+{
+    public string StreamId => CustomerId;
+}
 ```
 
-Overloads that accept `initialState` remain available for tests and advanced scenarios.
+The stream name comes from routing:
+
+```csharp
+services.AddKrackendEventSourcing(options =>
+{
+    options.Routing.DefaultStreamName = "customers";
+});
+```
+
+For custom stream routing, implement `ICommandStreamResolver<TCommand>`:
+
+```csharp
+public sealed class RenameCustomerStreamResolver
+    : ICommandStreamResolver<RenameCustomer>
+{
+    public EventStreamReference Resolve(RenameCustomer command)
+    {
+        return EventStreamReference.Create("customers", command.CustomerId);
+    }
+}
+```
+
+Resolvers are discovered automatically during assembly scanning.
+
+## Deciders
+
+A decider turns a command and current state into events:
+
+```csharp
+public sealed class RenameCustomerDecider
+    : IEventDecider<CustomerState, RenameCustomer>
+{
+    public ValueTask<IReadOnlyCollection<object>> DecideAsync(
+        CustomerState state,
+        RenameCustomer command,
+        CancellationToken cancellationToken = default)
+    {
+        if (!state.IsCreated)
+            throw new InvalidOperationException("Customer must exist before it can be renamed.");
+
+        if (string.IsNullOrWhiteSpace(command.Name))
+            throw new ArgumentException("Customer name is required.", nameof(command));
+
+        return ValueTask.FromResult<IReadOnlyCollection<object>>([
+            new CustomerRenamed(command.CustomerId, command.Name)
+        ]);
+    }
+}
+```
+
+Deciders are discovered automatically during assembly scanning.
 
 ## Reducers
 
-Every event version used during rehydration must have an exact reducer:
+A reducer applies one event version to state:
 
 ```csharp
-reducers.Register<CustomerState, CustomerBalanceMovedV1>((state, @event) =>
-    state with { Balance = @event.Balance });
-
-reducers.Register<CustomerState, CustomerBalanceMovedV2>((state, @event) =>
-    state with { Balance = @event.NewBalance });
+public sealed class CustomerRenamedReducer
+    : IEventReducer<CustomerState, CustomerRenamed>
+{
+    public CustomerState Apply(CustomerState state, CustomerRenamed @event)
+    {
+        return state with
+        {
+            CustomerId = @event.CustomerId,
+            Name = @event.Name
+        };
+    }
+}
 ```
 
-If a reducer is missing, the library throws `EventReducerNotRegisteredException`. Events are not silently ignored during rehydration.
-
-## Reads
-
-The public API does not expose unbounded stream reads.
-
-Use:
+Every event version used during rehydration needs its own reducer:
 
 ```csharp
-ReadStreamAsync(streamName, streamId, fromVersion, maxCount)
+public sealed class CustomerRenamedV1Reducer
+    : IEventReducer<CustomerState, CustomerRenamedV1>
+{
+    public CustomerState Apply(CustomerState state, CustomerRenamedV1 @event)
+    {
+        return state with
+        {
+            CustomerId = @event.CustomerId,
+            Name = @event.Name
+        };
+    }
+}
 ```
 
-Rehydration calculates `fromVersion`:
+If a reducer is missing, rehydration fails with `EventReducerNotRegisteredException`. Events are not silently skipped.
 
-- without snapshot: `1`
-- with snapshot: `snapshot.StreamVersion + 1`
+## Executing An Event-Sourced Command
 
-The recommended overload resolves the initial state through `IInitialStateFactory<TState>`:
+Resolve `IEventSourcedApplicationService<TState, TCommand>` from DI:
 
 ```csharp
-var state = await rehydrator.RehydrateAsync<CustomerState>("customers", "customer-001");
+var service = provider.GetRequiredService<
+    IEventSourcedApplicationService<CustomerState, RenameCustomer>>();
+
+var result = await service.ExecuteAsync(
+    new RenameCustomer("customer-001", "New Name"));
 ```
 
-## Append
+The service:
 
-Append operations should use expected versions:
+1. Resolves the stream from the command.
+2. Resolves the initial state from `IInitialStateFactory<TState>`.
+3. Loads the latest snapshot when available.
+4. Reads events after the snapshot version in batches.
+5. Applies reducers to get current state.
+6. Calls the decider.
+7. Appends the decided events using `ExpectedVersion.Exact(rehydrated.Version)`.
+8. Applies the new events to return the current state.
+
+The result contains:
+
+```csharp
+result.PreviousState
+result.CurrentState
+result.PreviousVersion
+result.CurrentVersion
+result.CommittedEvents
+```
+
+Advanced overloads allow passing `streamName`, `streamId`, or `initialState` explicitly:
+
+```csharp
+await service.ExecuteAsync("customers", "customer-001", new RenameCustomer(...));
+await service.ExecuteAsync(CustomerState.Empty, new RenameCustomer(...));
+```
+
+Prefer the overload without `initialState` for application code.
+
+## Appending Events Directly
+
+Use `IEventStore` when you want to persist committed events directly:
+
+```csharp
+var eventStore = provider.GetRequiredService<IEventStore>();
+
+var envelopes = await eventStore.AppendAsync(
+    streamName: "customers",
+    streamId: "customer-001",
+    expectedVersion: ExpectedVersion.Any,
+    events: [new CustomerRenamed("customer-001", "New Name")],
+    cancellationToken);
+```
+
+This is useful for hook-based integration:
+
+```txt
+request -> handler -> save entity/projection -> append committed event
+```
+
+Use expected versions deliberately:
 
 ```csharp
 ExpectedVersion.Any
@@ -148,46 +376,128 @@ ExpectedVersion.NoStream
 ExpectedVersion.Exact(version)
 ```
 
-`Any` exists for flows that intentionally skip optimistic version checks, such as committed events created by hooks. For strict event-sourced write flows, prefer `Exact(version)`.
+Guidance:
 
-## Snapshots
+- `Exact(version)`: strict event-sourced write flow with optimistic concurrency.
+- `NoStream`: first event must create the stream.
+- `Any`: append without optimistic version check, useful for committed events emitted by hooks.
 
-A snapshot is a snapshot of state:
+## Reading Events
 
-```txt
-events -> reducers -> TState -> snapshot payload
+There is no unbounded stream-load API.
+
+Read streams in bounded ranges:
+
+```csharp
+var events = await eventStore.ReadStreamAsync(
+    streamName: "customers",
+    streamId: "customer-001",
+    fromVersion: 1,
+    maxCount: 100,
+    cancellationToken);
 ```
 
-It is not a snapshot of a request, envelope, EF entity, or projection.
+Read the global log through `IEventLogReader`:
 
-Snapshot tables store technical metadata:
+```csharp
+var reader = provider.GetRequiredService<IEventLogReader>();
 
+var page = await reader.ReadFromAsync(
+    streamName: "customers",
+    afterGlobalPosition: 0,
+    maxCount: 100,
+    cancellationToken);
+```
+
+Get the current stream version:
+
+```csharp
+var version = await eventStore.GetCurrentVersionAsync(
+    "customers",
+    "customer-001",
+    cancellationToken);
+```
+
+## Rehydrating State Manually
+
+Use `IStateRehydrator` when you need to rebuild state without executing a command:
+
+```csharp
+var rehydrator = provider.GetRequiredService<IStateRehydrator>();
+
+var rehydrated = await rehydrator.RehydrateAsync<CustomerState>(
+    "customers",
+    "customer-001",
+    cancellationToken);
+
+CustomerState state = rehydrated.State;
+long version = rehydrated.Version;
+```
+
+The recommended overload resolves initial state from `IInitialStateFactory<TState>`.
+
+For tests or custom flows, you can pass the initial state explicitly:
+
+```csharp
+var rehydrated = await rehydrator.RehydrateAsync(
+    "customers",
+    "customer-001",
+    CustomerState.Empty,
+    cancellationToken);
+```
+
+## Metadata, Correlation, And Causation
+
+Register execution context metadata:
+
+```csharp
+services.AddEventExecutionContext(_ => new EventExecutionContext(
+    CorrelationId: "request-001",
+    CausationId: "http-request-001",
+    UserId: "sample-user",
+    TenantId: "sample-tenant",
+    Source: "customers-api"));
+```
+
+Add custom envelope metadata:
+
+```csharp
+services.AddKrackendEventSourcing(options =>
+{
+    options.Envelope.AddMetadata("sample", _ => "customers");
+});
+```
+
+Every persisted envelope stores:
+
+- `EventId`
 - `StreamName`
 - `StreamId`
 - `StreamVersion`
-- `StateType`
-- `StateSchemaVersion`
+- `GlobalPosition`
+- `EventType`
+- `EventSchemaVersion`
+- `OccurredAt`
+- `CorrelationId`
+- `CausationId`
+- `UserId`
+- `TenantId`
+- `Source`
 - `Payload`
-- `CreatedAt`
+- `Metadata`
 
-`Payload` contains only the serialized state.
+## EF Core Storage
 
-Snapshot generation should run outside the request path: background worker, scheduled job, or maintenance process. The hot path can read snapshots, but should not depend on creating them.
-
-The processor can also resolve the initial state through a factory:
-
-```csharp
-await snapshotProcessor.ProcessPendingAsync(maxCount: 100);
-```
-
-## EF Core
-
-The EF Core adapter integrates event store tables into the application `DbContext`:
+Register EF Core normally:
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
+```
 
+Then register event sourcing and the EF adapter:
+
+```csharp
 services.AddKrackendEventSourcing(options =>
 {
     options.Stores.Add("customers", store =>
@@ -199,7 +509,157 @@ services.AddKrackendEventSourcing(options =>
 services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 ```
 
-The default table name is `Events`.
+The adapter integrates event store tables into the application `DbContext`. You do not need to add `DbSet<EventStoreRecord>` manually.
+
+If you want to configure the model explicitly:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.AddKrackendEventStore();
+}
+```
+
+The default event table is `Events`. Table names should use PascalCase.
+
+## Multiple Event Stores
+
+Configure multiple logical stores:
+
+```csharp
+services.AddKrackendEventSourcing(options =>
+{
+    options.Stores.Add("customers", store =>
+    {
+        store.TableName = "CustomerEvents";
+    });
+
+    options.Stores.Add("orders", store =>
+    {
+        store.TableName = "OrderEvents";
+    });
+});
+```
+
+Use the store name as the stream name when appending or reading:
+
+```csharp
+await eventStore.AppendAsync(
+    "orders",
+    "order-001",
+    ExpectedVersion.NoStream,
+    [new OrderCreated("order-001")],
+    cancellationToken);
+```
+
+## Snapshots
+
+Snapshots store serialized state, not requests, envelopes, EF entities, or projections.
+
+```txt
+events -> reducers -> TState -> snapshot payload
+```
+
+Snapshot metadata includes:
+
+- `StreamName`
+- `StreamId`
+- `StreamVersion`
+- `StateType`
+- `StateSchemaVersion`
+- `Payload`
+- `CreatedAt`
+
+Enable snapshot candidates with a policy:
+
+```csharp
+services.AddSingleton<ISnapshotCandidatePolicy>(
+    new IntervalSnapshotCandidatePolicy(interval: 100));
+```
+
+Process candidates outside the request path:
+
+```csharp
+var processor = provider.GetRequiredService<ISnapshotProcessor<CustomerState>>();
+
+var results = await processor.ProcessPendingAsync(
+    maxCount: 100,
+    cancellationToken);
+```
+
+The processor resolves initial state from `IInitialStateFactory<TState>`.
+
+For custom/test flows, an overload accepts explicit initial state:
+
+```csharp
+await processor.ProcessPendingAsync(CustomerState.Empty, maxCount: 100, cancellationToken);
+```
+
+## Hook-Based Committed Events
+
+When integrating with an existing handler/template, append events after the business data is saved:
+
+```csharp
+public sealed class EventSourcingPostSaveHook<TRequest, TEntity>
+{
+    private readonly ICommandStreamResolver<TRequest> _streamResolver;
+    private readonly ICommittedEventMapper<TRequest, TEntity> _eventMapper;
+    private readonly IEventStore _eventStore;
+
+    public async ValueTask PostSaveEntityAsync(
+        TRequest request,
+        TEntity entity,
+        CancellationToken cancellationToken = default)
+    {
+        var stream = _streamResolver.Resolve(request);
+        var @event = _eventMapper.Map(request, entity);
+
+        if (@event is null)
+            return;
+
+        await _eventStore.AppendAsync(
+            stream.Name,
+            stream.Id,
+            ExpectedVersion.Any,
+            [@event],
+            cancellationToken);
+    }
+}
+```
+
+This pattern is intentionally different from full event sourcing. It is useful when the request flow is already:
+
+```txt
+request -> validation/business handler -> save entity/projection -> append committed event
+```
+
+## Schema Registries
+
+Event schemas:
+
+```csharp
+var events = new EventTypeRegistry()
+    .Register<CustomerCreated>()
+    .Register<CustomerRenamed>("CustomerRenamed", "1.1.0");
+```
+
+State schemas:
+
+```csharp
+var states = new StateSchemaRegistry()
+    .Register<CustomerState>()
+    .Register<CustomerStateV2>("CustomerState", "2.0.0");
+```
+
+Duplicate `name + version` registrations fail:
+
+- `DuplicateEventSchemaException`
+- `DuplicateStateSchemaException`
+
+Unregistered lookups fail:
+
+- `EventTypeNotRegisteredException`
+- `StateTypeNotRegisteredException`
 
 ## Errors
 
@@ -212,6 +672,7 @@ Public exceptions live under `Krackend.EventSourcing.Diagnostics`:
 - `StateSchemaMissingException`
 - `DuplicateStateSchemaException`
 - `StateTypeNotRegisteredException`
+- `InitialStateNotConfiguredException`
 - `SnapshotStateSchemaMismatchException`
 - `EventPayloadDeserializationException`
 - `SnapshotDeserializationException`
@@ -220,7 +681,7 @@ Public exceptions live under `Krackend.EventSourcing.Diagnostics`:
 
 ## Analyzers
 
-The analyzers currently report:
+Current diagnostics:
 
 - `KES0001`: two CLR types declare the same `EventSchema(name, version)`.
 - `KES0002`: a reducer handles an event without `[EventSchema]`.
@@ -228,15 +689,19 @@ The analyzers currently report:
 - `KES0004`: a reducer handles state without `[StateSchema]`.
 - `KES0005`: an initial state factory creates state without `[StateSchema]`.
 
-These diagnostics complement runtime errors. Manual registration is still supported, so not every configuration can be validated statically.
+Manual registration is still supported, so not every valid configuration can be inferred statically.
 
 ## Testing
 
-`Krackend.EventSourcing.Testing` includes helpers for tests:
+Use `Krackend.EventSourcing.Testing` for test helpers:
 
 ```csharp
 var initialState = new TestInitialStateFactory<CustomerState>(CustomerState.Empty);
+```
 
+Build envelopes for rehydration tests:
+
+```csharp
 var envelopes = EventStreamBuilder
     .ForStream("customers", "customer-001")
     .Register<CustomerCreated>()
@@ -244,4 +709,69 @@ var envelopes = EventStreamBuilder
     .Build();
 ```
 
-It also includes `ReducerTest` and `DeciderTest` for testing reducers and deciders without starting storage.
+Test reducers:
+
+```csharp
+var state = ReducerTest.Apply(
+    CustomerState.Empty,
+    new CustomerCreated("customer-001", "Sample Customer", "customer@example.test"),
+    (current, @event) => current with
+    {
+        CustomerId = @event.CustomerId,
+        Name = @event.Name,
+        Email = @event.Email,
+        IsCreated = true
+    });
+```
+
+Test deciders:
+
+```csharp
+var events = await DeciderTest.DecideAsync(
+    new CreateCustomerDecider(),
+    CustomerState.Empty,
+    new CreateCustomer("customer-001", "Sample Customer", "customer@example.test"));
+```
+
+## Complete Example
+
+```csharp
+var services = new ServiceCollection();
+
+services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
+services.AddKrackendEventSourcing(options =>
+{
+    options.ScanAssemblyContaining<CustomerState>();
+    options.Stores.Add("customers", store => store.TableName = "CustomerEvents");
+    options.Routing.DefaultStreamName = "customers";
+});
+
+services.AddEventSourcedInitialStateFactory<CustomerState>((_, _) =>
+    ValueTask.FromResult(CustomerState.Empty));
+
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
+
+await using var provider = services.BuildServiceProvider();
+await using var scope = provider.CreateAsyncScope();
+
+var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+await dbContext.Database.EnsureCreatedAsync();
+
+var service = scope.ServiceProvider.GetRequiredService<
+    IEventSourcedApplicationService<CustomerState, CreateCustomer>>();
+
+var result = await service.ExecuteAsync(
+    new CreateCustomer("customer-001", "Sample Customer", "customer@example.test"));
+
+Console.WriteLine(result.CurrentVersion);
+Console.WriteLine(result.CurrentState.Name);
+```
+
+## Samples
+
+The repository contains:
+
+- `samples/Krackend.EventSourcing.Sqlite.Sample`: compact event-sourced application service flow with SQLite.
+- `samples/Krackend.EventSourcing.Pelican.Sample`: hook-based committed event flow using Pelican-style handlers and SQL Server configuration from user secrets/environment variables.
