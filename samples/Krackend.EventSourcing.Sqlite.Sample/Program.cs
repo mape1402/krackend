@@ -41,13 +41,13 @@ var renameCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedAppli
 
 var created = await createCustomer.ExecuteAsync(
     CustomerState.Empty,
-    new CreateCustomer("customer-001", "Mario", "mario@example.com"));
+    new CreateCustomer("customer-001", "Sample Customer", "customer@example.test"));
 
 var renamed = await renameCustomer.ExecuteAsync(
     CustomerState.Empty,
-    new RenameCustomer("customer-001", "Mario Perez"));
+    new RenameCustomer("customer-001", "Sample Customer Renamed"));
 
-var eventStore =   scope.ServiceProvider.GetRequiredService<IEventStore>();
+var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
 var envelopes = await eventStore.ReadStreamAsync("customers", "customer-001", fromVersion: 1, maxCount: 100);
 
 Console.WriteLine($"SQLite database: {databasePath}");
