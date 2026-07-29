@@ -1,5 +1,6 @@
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.Core;
+using Krackend.EventSourcing.Diagnostics;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Registry;
@@ -42,7 +43,10 @@ public sealed class EventSourcedApplicationServiceTests
             new DepositMoneyDecider(),
             reducers,
             store,
-            new StaticCommandStreamResolver<DepositMoney>("accounts", "account-1"));
+            new StaticCommandStreamResolver<DepositMoney>("accounts", "account-1"),
+            new DelegateInitialStateFactory<AccountState>(
+                (_, _) => ValueTask.FromResult(AccountState.Empty),
+                new EmptyServiceProvider()));
 
         var result = await service.ExecuteAsync(
             "accounts",
@@ -55,6 +59,73 @@ public sealed class EventSourcedApplicationServiceTests
         Assert.Equal(150m, result.CurrentState.Balance);
         Assert.Single(result.CommittedEvents);
         Assert.Equal("MoneyDeposited", result.CommittedEvents.Single().EventType);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_uses_configured_initial_state_factory()
+    {
+        var registry = new EventTypeRegistry()
+            .Register<AccountOpened>("AccountOpened")
+            .Register<MoneyDeposited>("MoneyDeposited");
+
+        var serializer = new SystemTextJsonEventSerializer();
+        var collector = new EventMetadataCollector(new EventEnvelopeOptions(), new EmptyServiceProvider());
+        var factory = new EventEnvelopeFactory(registry, serializer, collector);
+        var store = new InMemoryEventStore(factory);
+        var reducers = new EventReducerRegistry()
+            .Register<AccountState, AccountOpened>((state, @event) => state with
+            {
+                AccountId = @event.AccountId,
+                Owner = @event.Owner,
+                IsOpen = true
+            })
+            .Register<AccountState, MoneyDeposited>((state, @event) => state with
+            {
+                Balance = state.Balance + @event.Amount
+            });
+
+        await store.AppendAsync("accounts", "account-1", 0, [new AccountOpened("account-1", "Sample Owner")]);
+
+        var rehydrator = new StateRehydrator(store, serializer, registry, reducers);
+        var service = new EventSourcedApplicationService<AccountState, DepositMoney>(
+            rehydrator,
+            new DepositMoneyDecider(),
+            reducers,
+            store,
+            new StaticCommandStreamResolver<DepositMoney>("accounts", "account-1"),
+            new DelegateInitialStateFactory<AccountState>(
+                (_, _) => ValueTask.FromResult(AccountState.Empty),
+                new EmptyServiceProvider()));
+
+        var result = await service.ExecuteAsync(new DepositMoney("account-1", 150m));
+
+        Assert.Equal(1, result.PreviousVersion);
+        Assert.Equal(2, result.CurrentVersion);
+        Assert.Equal(150m, result.CurrentState.Balance);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_throws_when_initial_state_is_not_configured()
+    {
+        var registry = new EventTypeRegistry();
+        var serializer = new SystemTextJsonEventSerializer();
+        var collector = new EventMetadataCollector(new EventEnvelopeOptions(), new EmptyServiceProvider());
+        var factory = new EventEnvelopeFactory(registry, serializer, collector);
+        var store = new InMemoryEventStore(factory);
+        var reducers = new EventReducerRegistry();
+        var rehydrator = new StateRehydrator(store, serializer, registry, reducers);
+        var service = new EventSourcedApplicationService<AccountState, DepositMoney>(
+            rehydrator,
+            new DepositMoneyDecider(),
+            reducers,
+            store,
+            new StaticCommandStreamResolver<DepositMoney>("accounts", "account-1"),
+            new MissingInitialStateFactory<AccountState>());
+
+        var exception = await Assert.ThrowsAsync<InitialStateNotConfiguredException>(() =>
+            service.ExecuteAsync(new DepositMoney("account-1", 150m)));
+
+        Assert.Equal(typeof(AccountState), exception.StateType);
     }
 
     private sealed record AccountState(

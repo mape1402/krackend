@@ -28,6 +28,7 @@ services.AddKrackendEventSourcing(options =>
     options.Envelope.AddMetadata("sample", _ => "sqlite");
 });
 
+services.AddEventSourcedInitialState(() => CustomerState.Empty);
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
 
 await using var provider = services.BuildServiceProvider();
@@ -40,11 +41,9 @@ var createCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedAppli
 var renameCustomer = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<CustomerState, RenameCustomer>>();
 
 var created = await createCustomer.ExecuteAsync(
-    CustomerState.Empty,
     new CreateCustomer("customer-001", "Sample Customer", "customer@example.test"));
 
 var renamed = await renameCustomer.ExecuteAsync(
-    CustomerState.Empty,
     new RenameCustomer("customer-001", "Sample Customer Renamed"));
 
 var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();

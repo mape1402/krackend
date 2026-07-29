@@ -52,6 +52,7 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         {
             options.ScanAssemblyContaining<EventSourcingServiceCollectionExtensionsTests>();
         });
+        services.AddEventSourcedInitialState(() => TestState.Empty);
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -80,12 +81,13 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         {
             options.ScanAssemblyContaining<EventSourcingServiceCollectionExtensionsTests>();
         });
+        services.AddEventSourcedInitialState(() => TestState.Empty);
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
         var service = scope.ServiceProvider.GetRequiredService<IEventSourcedApplicationService<TestState, CreateThing>>();
-        var result = await service.ExecuteAsync(TestState.Empty, new CreateThing("thing-1"));
+        var result = await service.ExecuteAsync(new CreateThing("thing-1"));
 
         Assert.Equal(1, result.CurrentVersion);
         Assert.True(result.CurrentState.IsCreated);

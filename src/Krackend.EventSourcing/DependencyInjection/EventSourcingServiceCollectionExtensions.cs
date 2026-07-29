@@ -8,6 +8,7 @@ using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Reflection;
 
 namespace Krackend.EventSourcing.DependencyInjection;
@@ -65,8 +66,51 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IEventLogReader>(provider => provider.GetRequiredService<InMemoryEventStore>());
         services.AddScoped<IStateRehydrator, StateRehydrator>();
         services.AddScoped(typeof(ICommandStreamResolver<>), typeof(DefaultCommandStreamResolver<>));
+        services.TryAddScoped(typeof(IInitialStateFactory<>), typeof(MissingInitialStateFactory<>));
         services.AddScoped(typeof(IEventSourcedApplicationService<,>), typeof(EventSourcedApplicationService<,>));
         EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, options.Assemblies);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the initial state used by event-sourced application services for a state type.
+    /// </summary>
+    public static IServiceCollection AddEventSourcedInitialState<TState>(
+        this IServiceCollection services,
+        Func<TState> factory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        return services.AddEventSourcedInitialState<TState>((_, _) => ValueTask.FromResult(factory()));
+    }
+
+    /// <summary>
+    /// Registers the initial state used by event-sourced application services for a state type.
+    /// </summary>
+    public static IServiceCollection AddEventSourcedInitialState<TState>(
+        this IServiceCollection services,
+        Func<IServiceProvider, TState> factory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        return services.AddEventSourcedInitialState<TState>((provider, _) => ValueTask.FromResult(factory(provider)));
+    }
+
+    /// <summary>
+    /// Registers the initial state used by event-sourced application services for a state type.
+    /// </summary>
+    public static IServiceCollection AddEventSourcedInitialState<TState>(
+        this IServiceCollection services,
+        Func<IServiceProvider, CancellationToken, ValueTask<TState>> factory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        services.AddScoped<IInitialStateFactory<TState>>(provider =>
+            new DelegateInitialStateFactory<TState>(factory, provider));
 
         return services;
     }

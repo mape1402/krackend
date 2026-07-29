@@ -6,10 +6,26 @@ namespace Krackend.EventSourcing.Core;
 public interface IEventSourcedApplicationService<TState, in TCommand>
 {
     /// <summary>
+    /// Rehydrates state, decides events, and appends them using the configured command stream resolver and initial state factory.
+    /// </summary>
+    Task<EventSourcingExecutionResult<TState>> ExecuteAsync(
+        TCommand command,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rehydrates state, decides events, and appends them using the configured command stream resolver.
     /// </summary>
     Task<EventSourcingExecutionResult<TState>> ExecuteAsync(
         TState initialState,
+        TCommand command,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rehydrates state, decides events, and appends them using the configured initial state factory.
+    /// </summary>
+    Task<EventSourcingExecutionResult<TState>> ExecuteAsync(
+        string streamName,
+        string streamId,
         TCommand command,
         CancellationToken cancellationToken = default);
 
