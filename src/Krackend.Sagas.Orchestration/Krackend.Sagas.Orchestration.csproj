@@ -10,7 +10,8 @@
     <PackageId>Krackend.Sagas.Orchestration</PackageId>   
     <Description>Krackend.Sagas.Orchestration provides orchestration, error handling, and pipeline support for distributed saga patterns in .NET applications.</Description>
     <PackageTags>saga;orchestration;pipeline;distributed;error-handling;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>

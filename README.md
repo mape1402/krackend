@@ -3,14 +3,9 @@
 Modular backend building blocks for .NET services.
 
 [![Build](https://github.com/mape1402/krackend/actions/workflows/CI.yml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/CI.yml)
-[![NuGet](https://img.shields.io/nuget/v/Krackend.Sagas.Orchestration.svg)](https://www.nuget.org/packages/Krackend.Sagas.Orchestration/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Packages
-
-```bash
-dotnet add package Krackend.Sagas.Orchestration
-```
 
 Event sourcing packages:
 

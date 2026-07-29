@@ -24,10 +24,10 @@ Release these packages together:
 - `Krackend.EventSourcing.Abstractions`
 - `Krackend.EventSourcing`
 - `Krackend.EventSourcing.EntityFrameworkCore`
-- `Krackend.EventSourcing.Projections`
 - `Krackend.EventSourcing.Analyzers`
 
 Do not publish Spider/Pelican extension packages until their integration contracts are stable.
+Do not publish `Krackend.EventSourcing.Projections` until the read-model projection surface is designed as a stable package.
 
 ## Stable Contract Checks
 

@@ -32,7 +32,7 @@ Krackend.EventSourcing.Analyzers
 Krackend.EventSourcing.Testing
 ```
 
-`Krackend.EventSourcing.Projections` exists as an optional package, but it should be treated as read-model infrastructure rather than core event sourcing behavior.
+`Krackend.EventSourcing.Projections` remains in the solution as internal read-model infrastructure, but it is not part of the NuGet package set for the stable event sourcing release.
 
 ## Implemented
 
