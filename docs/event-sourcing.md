@@ -1,38 +1,38 @@
 # Krackend Event Sourcing
 
-`Krackend.EventSourcing` implementa el runtime base para persistir eventos, rehidratar state con reducers, manejar snapshots y construir envelopes con metadata tecnica.
+`Krackend.EventSourcing` provides the core write-model runtime for persisting events, rehydrating state with reducers, creating state snapshots, and building event envelopes with technical metadata.
 
-La libreria esta separada por paquetes para evitar acoplar el core con storage, proyecciones o integraciones externas.
+The library is split into packages so the core runtime does not take hard dependencies on storage adapters, projections, or ecosystem integrations.
 
-## Paquetes
+## Packages
 
-- `Krackend.EventSourcing.Abstractions`: contratos publicos, attributes, envelopes, stores, snapshots, streams y excepciones.
-- `Krackend.EventSourcing`: runtime core, serializers default, registry, reducers, rehidratacion, snapshots y DI base.
-- `Krackend.EventSourcing.EntityFrameworkCore`: adapter EF Core para event store, snapshots y candidates integrados al `DbContext` de la app.
-- `Krackend.EventSourcing.Projections`: runtime opcional de proyecciones.
-- `Krackend.EventSourcing.SpiderExtensions`: extension point opcional para Spider.
-- `Krackend.EventSourcing.PelicanExtensions`: extension point opcional para Pelican/templates.
-- `Krackend.EventSourcing.Analyzers`: diagnostics Roslyn para errores comunes de schema/reducers.
-- `Krackend.EventSourcing.Testing`: helpers para tests de streams, reducers, deciders e initial states.
+- `Krackend.EventSourcing.Abstractions`: public contracts, attributes, envelopes, stores, snapshots, streams, registries, and exceptions.
+- `Krackend.EventSourcing`: core runtime, default serializers, schema registries, reducers, rehydration, snapshots, metadata collection, stream routing, and base DI.
+- `Krackend.EventSourcing.EntityFrameworkCore`: EF Core storage adapter for event stores, snapshots, and snapshot candidates integrated into the application `DbContext`.
+- `Krackend.EventSourcing.Projections`: optional projection runtime.
+- `Krackend.EventSourcing.SpiderExtensions`: optional Spider integration package.
+- `Krackend.EventSourcing.PelicanExtensions`: optional Pelican/template integration package.
+- `Krackend.EventSourcing.Analyzers`: Roslyn diagnostics for common schema and reducer mistakes.
+- `Krackend.EventSourcing.Testing`: test helpers for streams, reducers, deciders, and initial states.
 
-## Evento
+## Events
 
-Cada evento persistible debe tener un schema estable:
+Every persisted event should declare a stable schema:
 
 ```csharp
 [EventSchema("CustomerBalanceMoved", "1.1.0")]
 public sealed record CustomerBalanceMoved(string CustomerId, decimal Amount, decimal Balance);
 ```
 
-`EventSchema.Name` y `EventSchema.Version` son parte del contrato persistido. Dos CLR types pueden representar el mismo evento de negocio en versiones distintas, pero no pueden compartir el mismo `name + version`.
+`EventSchema.Name` and `EventSchema.Version` are part of the persisted contract. Two CLR types may represent different versions of the same business event, but they cannot share the same `name + version`.
 
-El registro por atributo es recomendado:
+Attribute-based registration is the recommended path:
 
 ```csharp
 registry.Register<CustomerBalanceMoved>();
 ```
 
-El registro manual sigue soportado para escenarios dinamicos:
+Manual registration is still supported for dynamic scenarios:
 
 ```csharp
 registry.Register<CustomerBalanceMoved>("CustomerBalanceMoved", "1.1.0");
@@ -40,16 +40,16 @@ registry.Register<CustomerBalanceMoved>("CustomerBalanceMoved", "1.1.0");
 
 ## State
 
-El state tambien tiene schema propio:
+State has its own schema:
 
 ```csharp
 [StateSchema("CustomerState", "1.0.0")]
 public sealed record CustomerState(string CustomerId, string Name, decimal Balance);
 ```
 
-El schema del state no es el schema del evento. Un evento puede mantenerse igual mientras el state cambia, o al reves.
+The state schema is not the event schema. An event can stay stable while state changes, and state can stay stable while event contracts evolve.
 
-Los states con `[StateSchema]` se registran automaticamente cuando escaneas el assembly:
+States marked with `[StateSchema]` are registered automatically when the assembly is scanned:
 
 ```csharp
 services.AddKrackendEventSourcing(options =>
@@ -58,21 +58,21 @@ services.AddKrackendEventSourcing(options =>
 });
 ```
 
-Tambien puedes registrar schemas manualmente con `StateSchemaRegistry` para escenarios dinamicos.
+You can also register state schemas manually with `StateSchemaRegistry` for dynamic scenarios.
 
-Para application services, registra el estado inicial una sola vez en DI:
+For application services, register the initial state once in DI:
 
 ```csharp
 services.AddEventSourcedInitialState(() => CustomerState.Empty);
 ```
 
-Si el estado inicial necesita dependencias o reglas dinamicas, registra una factory:
+If the initial state needs dependencies or dynamic rules, register a factory:
 
 ```csharp
 services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
 ```
 
-Las implementaciones concretas de `IInitialStateFactory<TState>` tambien se descubren automaticamente cuando el assembly se escanea:
+Concrete implementations of `IInitialStateFactory<TState>` are also discovered automatically during assembly scanning:
 
 ```csharp
 public sealed class CustomerInitialStateFactory : IInitialStateFactory<CustomerState>
@@ -84,7 +84,7 @@ public sealed class CustomerInitialStateFactory : IInitialStateFactory<CustomerS
 }
 ```
 
-o un delegado con acceso al container:
+You can also register a delegate with access to the container:
 
 ```csharp
 services.AddEventSourcedInitialStateFactory<CustomerState>((provider, cancellationToken) =>
@@ -95,17 +95,17 @@ services.AddEventSourcedInitialStateFactory<CustomerState>((provider, cancellati
 });
 ```
 
-Con eso el flujo normal no pide `initialState` por cada ejecucion:
+After that, the normal execution path does not require passing `initialState` per call:
 
 ```csharp
 await customerService.ExecuteAsync(new RenameCustomer("customer-001", "New Name"));
 ```
 
-Las sobrecargas que reciben `initialState` siguen disponibles para tests o escenarios avanzados.
+Overloads that accept `initialState` remain available for tests and advanced scenarios.
 
 ## Reducers
 
-Cada version de evento que participa en la rehidratacion debe tener reducer exacto:
+Every event version used during rehydration must have an exact reducer:
 
 ```csharp
 reducers.Register<CustomerState, CustomerBalanceMovedV1>((state, @event) =>
@@ -115,24 +115,24 @@ reducers.Register<CustomerState, CustomerBalanceMovedV2>((state, @event) =>
     state with { Balance = @event.NewBalance });
 ```
 
-Si falta reducer, la libreria falla con `EventReducerNotRegisteredException`. No se ignoran eventos durante rehidratacion.
+If a reducer is missing, the library throws `EventReducerNotRegisteredException`. Events are not silently ignored during rehydration.
 
-## Lecturas
+## Reads
 
-La API publica no expone lectura ilimitada de streams.
+The public API does not expose unbounded stream reads.
 
-Usa:
+Use:
 
 ```csharp
 ReadStreamAsync(streamName, streamId, fromVersion, maxCount)
 ```
 
-La rehidratacion calcula `fromVersion`:
+Rehydration calculates `fromVersion`:
 
-- sin snapshot: `1`
-- con snapshot: `snapshot.StreamVersion + 1`
+- without snapshot: `1`
+- with snapshot: `snapshot.StreamVersion + 1`
 
-La overload recomendada resuelve el initial state desde `IInitialStateFactory<TState>`:
+The recommended overload resolves the initial state through `IInitialStateFactory<TState>`:
 
 ```csharp
 var state = await rehydrator.RehydrateAsync<CustomerState>("customers", "customer-001");
@@ -140,7 +140,7 @@ var state = await rehydrator.RehydrateAsync<CustomerState>("customers", "custome
 
 ## Append
 
-El append debe usar version esperada:
+Append operations should use expected versions:
 
 ```csharp
 ExpectedVersion.Any
@@ -148,19 +148,19 @@ ExpectedVersion.NoStream
 ExpectedVersion.Exact(version)
 ```
 
-`Any` existe para escenarios donde no quieres control optimista, por ejemplo committed events de hooks. Para flujos event-sourced estrictos, prefiere `Exact(version)`.
+`Any` exists for flows that intentionally skip optimistic version checks, such as committed events created by hooks. For strict event-sourced write flows, prefer `Exact(version)`.
 
 ## Snapshots
 
-El snapshot es del state:
+A snapshot is a snapshot of state:
 
 ```txt
 events -> reducers -> TState -> snapshot payload
 ```
 
-No es snapshot del request, envelope, entidad EF ni proyeccion.
+It is not a snapshot of a request, envelope, EF entity, or projection.
 
-La tabla de snapshots guarda metadata tecnica:
+Snapshot tables store technical metadata:
 
 - `StreamName`
 - `StreamId`
@@ -170,11 +170,11 @@ La tabla de snapshots guarda metadata tecnica:
 - `Payload`
 - `CreatedAt`
 
-`Payload` contiene solamente el state serializado.
+`Payload` contains only the serialized state.
 
-La generacion de snapshots debe vivir fuera del request path: worker, job programado o proceso de mantenimiento. La ruta caliente puede leer snapshots, pero no debe depender de generarlos.
+Snapshot generation should run outside the request path: background worker, scheduled job, or maintenance process. The hot path can read snapshots, but should not depend on creating them.
 
-El processor tambien puede resolver el initial state desde factory:
+The processor can also resolve the initial state through a factory:
 
 ```csharp
 await snapshotProcessor.ProcessPendingAsync(maxCount: 100);
@@ -182,7 +182,7 @@ await snapshotProcessor.ProcessPendingAsync(maxCount: 100);
 
 ## EF Core
 
-El adapter EF permite integrar las tablas del event store al `DbContext` de la app:
+The EF Core adapter integrates event store tables into the application `DbContext`:
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>
@@ -199,11 +199,11 @@ services.AddKrackendEventSourcing(options =>
 services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 ```
 
-La tabla default debe nombrarse `Events`.
+The default table name is `Events`.
 
-## Errores
+## Errors
 
-Las excepciones publicas viven en `Krackend.EventSourcing.Diagnostics`:
+Public exceptions live under `Krackend.EventSourcing.Diagnostics`:
 
 - `EventSchemaMissingException`
 - `DuplicateEventSchemaException`
@@ -220,19 +220,19 @@ Las excepciones publicas viven en `Krackend.EventSourcing.Diagnostics`:
 
 ## Analyzers
 
-Los analyzers basicos detectan:
+The analyzers currently report:
 
-- `KES0001`: dos CLR types con el mismo `EventSchema(name, version)`.
-- `KES0002`: reducer para evento sin `[EventSchema]`.
-- `KES0003`: dos CLR types con el mismo `StateSchema(name, version)`.
-- `KES0004`: reducer para state sin `[StateSchema]`.
-- `KES0005`: initial state factory para state sin `[StateSchema]`.
+- `KES0001`: two CLR types declare the same `EventSchema(name, version)`.
+- `KES0002`: a reducer handles an event without `[EventSchema]`.
+- `KES0003`: two CLR types declare the same `StateSchema(name, version)`.
+- `KES0004`: a reducer handles state without `[StateSchema]`.
+- `KES0005`: an initial state factory creates state without `[StateSchema]`.
 
-Estos diagnostics complementan los errores runtime. El registro manual de eventos sigue permitido, asi que no todo se puede validar estaticamente.
+These diagnostics complement runtime errors. Manual registration is still supported, so not every configuration can be validated statically.
 
 ## Testing
 
-`Krackend.EventSourcing.Testing` incluye helpers para tests:
+`Krackend.EventSourcing.Testing` includes helpers for tests:
 
 ```csharp
 var initialState = new TestInitialStateFactory<CustomerState>(CustomerState.Empty);
@@ -244,4 +244,4 @@ var envelopes = EventStreamBuilder
     .Build();
 ```
 
-Tambien incluye `ReducerTest` y `DeciderTest` para probar reducers y deciders sin levantar storage.
+It also includes `ReducerTest` and `DeciderTest` for testing reducers and deciders without starting storage.
