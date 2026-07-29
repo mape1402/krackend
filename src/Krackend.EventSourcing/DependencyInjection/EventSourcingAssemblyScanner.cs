@@ -25,6 +25,7 @@ internal static class EventSourcingAssemblyScanner
             RegisterClosedInterfaces(services, type, typeof(IEventDecider<,>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(IEventReducer<,>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(ICommandStreamResolver<>), ServiceLifetime.Scoped);
+            RegisterClosedInterfaces(services, type, typeof(IInitialStateFactory<>), ServiceLifetime.Scoped);
             RegisterEventSchema(eventTypeRegistry, type);
         }
     }

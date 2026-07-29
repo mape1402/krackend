@@ -60,6 +60,18 @@ Si el estado inicial necesita dependencias o reglas dinamicas, registra una fact
 services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
 ```
 
+Las implementaciones concretas de `IInitialStateFactory<TState>` tambien se descubren automaticamente cuando el assembly se escanea:
+
+```csharp
+public sealed class CustomerInitialStateFactory : IInitialStateFactory<CustomerState>
+{
+    public ValueTask<CustomerState> CreateAsync(CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(CustomerState.Empty);
+    }
+}
+```
+
 o un delegado con acceso al container:
 
 ```csharp
