@@ -1,38 +1,66 @@
-# 🐙 Krackend
+# Krackend
 
-**Modular. Performant. Backend architecture made simple.**
+Modular backend building blocks for .NET services.
 
 [![Build](https://github.com/mape1402/krackend/actions/workflows/publish.yaml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/publish.yaml)
 [![NuGet](https://img.shields.io/nuget/v/Krackend.Sagas.Orchestration.svg)](https://www.nuget.org/packages/Krackend.Sagas.Orchestration/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
-
-**Krackend** is a lightweight backend framework designed to accelerate microservice and modular monolith development. It simplifies common patterns like event-driven architecture, messaging, validations, data access, and pipelines — all with developer experience and extensibility in mind.
-
----
-
-## ✨ Features
-
-- ⚡ Fast: built with performance-first principles
-- 🧩 Modular: supports microservices and monoliths alike
-- 🔌 DI-friendly: integrates seamlessly with any `IServiceProvider`
-- 🧪 Battle-tested with xUnit & NSubstitute
-- 🎯 Focused: core patterns like messaging, pipelines, and validations
-- 🛠️ Extensible: plug in your own conventions, behaviors, and adapters
-
----
-
-## 📦 Installation
+## Packages
 
 ```bash
 dotnet add package Krackend.Sagas.Orchestration
-
 ```
 
-## 🚀 Quick Start
+Event sourcing packages:
 
-## 🛠️ Upcoming Features
+```bash
+dotnet add package Krackend.EventSourcing
+dotnet add package Krackend.EventSourcing.EntityFrameworkCore
+dotnet add package Krackend.EventSourcing.Analyzers
+dotnet add package Krackend.EventSourcing.Testing
+```
 
-- **Some new features...**
-   Some new feature...
+Optional event sourcing packages:
+
+```bash
+dotnet add package Krackend.EventSourcing.Abstractions
+dotnet add package Krackend.EventSourcing.SpiderExtensions
+dotnet add package Krackend.EventSourcing.PelicanExtensions
+```
+
+## Event Sourcing
+
+`Krackend.EventSourcing` provides a modular write-model runtime for event sourcing:
+
+- event and state schema versioning
+- expected-version appends
+- paged stream reads
+- state rehydration with reducers
+- snapshots of state
+- EF Core event store adapter
+- runtime diagnostics
+- Roslyn analyzers
+- testing helpers
+
+Minimal setup:
+
+```csharp
+services.AddKrackendEventSourcing(options =>
+{
+    options.ScanAssemblyContaining<Program>();
+    options.Stores.Add("customers", store => store.TableName = "CustomerEvents");
+    options.Routing.DefaultStreamName = "customers";
+});
+
+services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
+```
+
+Usage:
+
+```csharp
+await customerService.ExecuteAsync(new RenameCustomer("customer-001", "New Name"));
+```
+
+See [docs/event-sourcing.md](docs/event-sourcing.md) for the full guide.

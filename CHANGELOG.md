@@ -14,7 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added modular EventSourcing packages: Abstractions, Core, EntityFrameworkCore, Projections, SpiderExtensions, PelicanExtensions, and Analyzers.
   - Added event and state schema versioning with `EventSchemaAttribute`, `StateSchemaAttribute`, and `SemanticVersion`.
   - Added paged stream reads, expected version append modes, EF Core stores, snapshots, snapshot candidates, and diagnostic exceptions.
-  - Added basic Roslyn analyzers for duplicate event schemas and reducers handling events without schemas.
+  - Added `IInitialStateFactory<TState>` support for application services, state rehydration, and snapshot processing.
+  - Added automatic discovery of `IInitialStateFactory<TState>`, event schemas, state schemas, deciders, reducers, and stream resolvers.
+  - Added `IStateSchemaRegistry` with duplicate state schema detection.
+  - Added Roslyn analyzers for duplicate event/state schemas and reducers or initial state factories using types without schemas.
+  - Added `Krackend.EventSourcing.Testing` with helpers for stream envelopes, reducers, deciders, and test initial state factories.
 
 ------
 
