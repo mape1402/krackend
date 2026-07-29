@@ -11,8 +11,7 @@ public sealed class CustomerRenamedV1Reducer : IEventReducer<CustomerState, Cust
         return state with
         {
             CustomerId = @event.CustomerId,
-            Name = @event.Name,
-            LastRenameChange = $"v1 kept raw name '{@event.Name}'"
+            Name = @event.Name
         };
     }
 }

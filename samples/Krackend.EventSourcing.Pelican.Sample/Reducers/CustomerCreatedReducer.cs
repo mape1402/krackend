@@ -14,8 +14,6 @@ public sealed class CustomerCreatedReducer : IEventReducer<CustomerState, Custom
             Name = @event.Name,
             Email = @event.Email,
             Balance = 0m,
-            LastRenameChange = string.Empty,
-            LastBalanceChange = string.Empty,
             IsCreated = true
         };
     }

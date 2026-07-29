@@ -87,11 +87,11 @@ var created = await mediator.Send(new CreateCustomerCommand(
     "mario@example.com"));
 var renamed = await mediator.Send(new RenameCustomerLegacyCommand(
     "customer-001",
-    "  Mario   Perez  "));
+    "Mario Perez"));
 var renamedAgain = await mediator.Send(new RenameCustomerCommand(
     "customer-001",
-    "  Mario    Perez    Jr  ",
-    "Trim and collapse customer legal name"));
+    "Mario Perez Jr",
+    "Legal name update"));
 var legacyDeposit = await mediator.Send(new ApplyLegacyBalanceMovementCommand(
     "customer-001",
     250m));
@@ -132,8 +132,6 @@ Console.WriteLine($"Snapshots saved by worker: {snapshotResults.Count(x => x.Sna
 Console.WriteLine($"Snapshot candidates after worker: {pendingAfter.Count}");
 Console.WriteLine($"Snapshot after worker: {(snapshotAfter is null ? "none" : snapshotAfter.StreamVersion)}");
 Console.WriteLine($"Rehydrated from snapshot: {rehydrated.State.CustomerId} {rehydrated.State.Name} balance={rehydrated.State.Balance} v{rehydrated.Version}");
-Console.WriteLine($"Rename version behavior: {rehydrated.State.LastRenameChange}");
-Console.WriteLine($"Balance version behavior: {rehydrated.State.LastBalanceChange}");
 
 foreach (var envelope in envelopes.OrderBy(x => x.StreamVersion))
 {
