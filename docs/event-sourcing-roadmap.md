@@ -2,147 +2,297 @@
 
 ## Objetivo
 
-Construir una libreria de event sourcing para .NET que pueda usarse de forma standalone y que tambien pueda integrarse con el ecosistema Krackend sin obligar a reescribir servicios existentes.
+Convertir `Krackend.EventSourcing` en una libreria estable, modular y extensible para event sourcing en .NET.
 
-La prioridad es:
+La version estable debe dejar un core pequeno y claro, con adapters de storage separados, versionado explicito de eventos y state, snapshots seguros, errores ruidosos cuando falten piezas criticas, y analyzers que detecten problemas antes de ejecutar la aplicacion.
 
-- Core real de event sourcing, sin reflection y sin aggregates magicos.
-- Estado rehidratado mediante reducers explicitos.
-- Decisiones de negocio mediante deciders explicitos.
-- Event store EF Core integrado al mismo `DbContext` de la app.
-- Extension rica para Spider.
-- Evolucion transparente de los handlers base mediante hooks.
+## Principios De Diseno
 
-No se implementara integracion para Mediator directo por ahora.
+- El core contiene abstracciones y comportamiento de event sourcing, no storage concreto.
+- Los eventos se identifican por `EventSchema(name, version)`.
+- El state se identifica por su propio schema, separado del schema del evento.
+- Cada evento persistido se resuelve por `EventType + EventSchemaVersion`.
+- Si falta un reducer para `TState + TEvent`, debe fallar.
+- El registro manual de eventos sigue permitido.
+- No hay aplicacion magica de eventos por reflection.
+- No hay aggregates base obligatorios.
+- No se carga un stream completo en APIs de produccion.
+- EF Core, ADO, Mongo u otros storages son adapters intercambiables.
+- Proyecciones viven en paquete separado.
+- Spider, Pelican, templates u otras librerias del ecosistema son extensiones, no parte del core.
+- Los analyzers deben ayudar a detectar configuraciones incompletas.
 
-## Principios
-
-- El evento es un hecho aceptado por el bounded context.
-- El estado se rehidrata reduciendo eventos.
-- La decision de negocio produce eventos, no muta entidades directamente.
-- No usar reflection para aplicar eventos.
-- No exigir heredar de `AggregateRoot`.
-- No obligar a los devs a cambiar controllers o handlers existentes.
-- EF Core es el provider principal para integrarse al `DbContext` de la app.
-- Spider es la integracion principal para composicion avanzada.
-
-## Modelo Core
-
-Flujo:
+## Paquetes Objetivo
 
 ```txt
-command
-  -> load stream
-  -> deserialize events
-  -> reduce events into state
-  -> decider decides new events
-  -> append events with expected version
-  -> reduce new events into current state
-  -> projections
+Krackend.EventSourcing
+Krackend.EventSourcing.Abstractions
+Krackend.EventSourcing.EntityFrameworkCore
+Krackend.EventSourcing.Projections
+Krackend.EventSourcing.SpiderExtensions
+Krackend.EventSourcing.PelicanExtensions
+Krackend.EventSourcing.Analyzers
+Krackend.EventSourcing.Testing
+Krackend.EventSourcing.Pelican.Sample
 ```
 
-Contratos principales:
+### `Krackend.EventSourcing.Abstractions`
+
+Contratos publicos compartidos:
+
+- `IEventStore`
+- `IEventLogReader`
+- `IEventTypeRegistry`
+- `IEventReducer<TState, TEvent>`
+- `IEventReducerRegistry`
+- `IStateRehydrator`
+- `ISnapshotStore`
+- `ISnapshotProcessor<TState>`
+- `IEventSerializer`
+- `ISnapshotSerializer`
+- `ExpectedVersion`
+- `EventSchemaAttribute`
+- `StateSchemaAttribute`
+- `SemanticVersion`
+- envelope contracts
+
+### `Krackend.EventSourcing`
+
+Core runtime:
+
+- registro de schemas
+- envelope factory
+- rehidratacion de state
+- reducer registry
+- decider/application service
+- snapshot processor
+- serializers default
+- metadata collector
+- stream routing
+- DI basico
+
+Este paquete no debe tener referencias a EF Core.
+
+### `Krackend.EventSourcing.EntityFrameworkCore`
+
+Adapter EF Core:
+
+- `EntityFrameworkEventStore<TDbContext>`
+- `EntityFrameworkSnapshotStore<TDbContext>`
+- `EntityFrameworkSnapshotCandidateStore<TDbContext>`
+- model builder extensions
+- integration con el `DbContext` de la app
+- configuracion de multiples stores/tablas
+
+### `Krackend.EventSourcing.Projections`
+
+Runtime de lectura:
+
+- projection handlers
+- checkpoint store
+- projection runner
+- adapters de checkpoints
+- rebuild helpers
+
+Este paquete debe depender de abstractions/core, pero no mezclar logica de snapshots.
+
+### `Krackend.EventSourcing.SpiderExtensions`
+
+Integracion opcional con Spider.
+
+Debe contener solamente:
+
+- adapters para conectar event sourcing al pipeline de Spider
+- hooks/middlewares propios de Spider
+- DI extensions especificas de Spider
+- documentacion de integracion Spider
+
+No debe contener core runtime, storage, EF Core, snapshots ni proyecciones.
+
+### `Krackend.EventSourcing.PelicanExtensions`
+
+Integracion opcional con Pelican/templates.
+
+Debe contener solamente:
+
+- hooks para handlers base
+- committed event factories/mappers
+- resolvers para requests del template
+- DI extensions especificas de Pelican/templates
+
+No debe formar parte de `Krackend.EventSourcing` core.
+
+### `Krackend.EventSourcing.Analyzers`
+
+Analyzers Roslyn:
+
+- evento con `[EventSchema]` sin reducer para states conocidos
+- dos CLR types con mismo `EventSchema(name, version)`
+- evento usado en reducer sin `[EventSchema]`
+- reducer registrado para un evento no registrado
+- state usado en snapshots sin `[StateSchema]`
+- uso de APIs peligrosas o deprecated
+- comandos event-sourced sin stream resolver
+
+### `Krackend.EventSourcing.Testing`
+
+Helpers:
+
+- builders de event streams
+- assertions para reducers
+- assertions para deciders
+- in-memory stores orientados a tests
+- snapshot fixtures
+
+## Roadmap Por Fases
+
+## Fase 1: Contrato Publico Estable
+
+### 1.1 Quitar `LoadAsync`
+
+`LoadAsync(streamName, streamId)` debe salir del contrato publico `IEventStore`.
+
+Motivo:
+
+- incentiva cargar streams completos
+- puede romper aplicaciones con miles o millones de eventos
+- contradice snapshots y lecturas paginadas
+
+La alternativa oficial queda:
 
 ```csharp
-public interface IEventDecider<TState, TCommand>
-{
-    ValueTask<IReadOnlyCollection<object>> DecideAsync(
-        TState state,
-        TCommand command,
-        CancellationToken cancellationToken = default);
-}
-
-public interface IEventReducer<TState, TEvent>
-{
-    TState Apply(TState state, TEvent @event);
-}
-
-public interface IEventReducerRegistry
-{
-    IEventReducerRegistry Register<TState, TEvent>(Func<TState, TEvent, TState> reducer);
-    TState Apply<TState>(TState state, object @event);
-}
+ReadStreamAsync(streamName, streamId, fromVersion, maxCount)
 ```
 
-El reducer registry debe ejecutar delegates cacheados, no reflection.
+La rehidratacion decide `fromVersion`:
 
-## Lectura, Append Y Versiones
+- sin snapshot: `1`
+- con snapshot: `snapshot.StreamVersion + 1`
 
-Append no debe cargar eventos del stream.
+Si se necesita una herramienta para debug o tests, debe vivir fuera del contrato principal, por ejemplo en `Krackend.EventSourcing.Testing`.
 
-La version esperada debe ser una politica explicita:
+### 1.2 Mantener Registro Manual De Eventos
+
+El registro por atributo sigue siendo el camino recomendado:
 
 ```csharp
-await eventStore.AppendAsync(streamName, streamId, ExpectedVersion.Any, events);
-await eventStore.AppendAsync(streamName, streamId, ExpectedVersion.NoStream, events);
-await eventStore.AppendAsync(streamName, streamId, ExpectedVersion.Exact(version), events);
+[EventSchema("CustomerBalanceMoved", "1.1.0")]
+public sealed record CustomerBalanceMoved;
 ```
 
-Uso recomendado:
-
-- `ExpectedVersion.Any`: hooks CRUD / committed event log, donde el evento registra algo que ya paso.
-- `ExpectedVersion.NoStream`: creates estrictos donde el stream no debe existir.
-- `ExpectedVersion.Exact(version)`: event sourcing real, despues de rehidratar y decidir sobre una version concreta.
-
-`ReadStreamAsync(streamName, streamId, fromVersion, maxCount)` es una API de infraestructura. La aplicacion no deberia adivinar `fromVersion`:
-
-- Sin snapshot, el rehydrator empieza desde version `1`.
-- Con snapshot, el rehydrator empieza desde `snapshot.StreamVersion + 1`.
-- Para herramientas/proyecciones/rebuilds, el caller avanzado puede controlar rango y batch.
-
-## Ergonomia De Streams
-
-El nombre del stream y el id no deben aparecer como strings en el handler o en el caso de uso.
-
-API deseada:
+Pero el registro manual debe quedarse:
 
 ```csharp
-await eventSourcedService.ExecuteAsync(
-    CustomerState.Empty,
-    new CreateCustomer("customer-001", "Mario", "mario@example.com"));
+registry.Register<CustomerBalanceMoved>("CustomerBalanceMoved", "1.1.0");
 ```
 
-La libreria resuelve el stream con:
+Esto permite escenarios dinamicos, generacion de tipos, integraciones avanzadas y adapters futuros.
 
-- `IEventStreamCommand` para comandos simples que ya pueden exponer `StreamId`.
-- `ICommandStreamResolver<TCommand>` para integraciones donde el comando no debe modificarse.
-- `EventRoutingOptions` para mapear comandos a stores logicos.
+### 1.3 Reducer Faltante Debe Fallar
 
-Esto permite que un template use `BaseRequest.Id` desde un resolver externo sin que los handlers base ni los handlers concretos tengan literals del event store.
+`IEventReducerRegistry.Apply` no debe ignorar eventos sin reducer.
 
-## Event Store
+Debe lanzar una excepcion clara:
 
-El event store mantiene:
+```txt
+No reducer registered for state 'CustomerState' and event 'CustomerBalanceMovedV1'.
+```
 
-- Multiples stores logicos.
-- Multiples tablas configurables.
-- Envelope base estable.
-- Metadata extensible.
-- Append con concurrencia optimista.
-- Load por stream.
-- Read por global position para proyecciones.
+Esto evita rehidrataciones incompletas y snapshots incorrectos.
 
-Envelope:
+## Fase 2: Versionado De State
 
-- `EventId`
+### 2.1 Crear `StateSchemaAttribute`
+
+El schema del state es independiente del schema de eventos.
+
+```csharp
+[StateSchema("CustomerState", "1.0.0")]
+public sealed record CustomerState(...);
+```
+
+Motivo:
+
+```txt
+Event schema version != State schema version
+```
+
+Un evento puede no cambiar, pero el state si.
+
+### 2.2 Persistir Metadata De State En Snapshots
+
+La tabla de snapshots debe guardar:
+
+- `SnapshotId`
 - `StreamName`
 - `StreamId`
-- `StreamType`
 - `StreamVersion`
-- `GlobalPosition`
-- `EventType`
-- `EventVersion`
-- `OccurredAt`
+- `StateType`
+- `StateSchemaVersion`
 - `Payload`
-- `Metadata`
+- `CreatedAt`
 
-## EF Core
+`Payload` debe ser solamente el state serializado.
 
-La integracion EF Core debe agregar entidades del event store al modelo del `DbContext` de la app, siguiendo el mismo patron de integracion al modelo que ya se usa en otras librerias de Krackend:
+Las demas columnas son metadata tecnica del snapshot.
+
+### 2.3 Resolver State Exacto Al Leer Snapshots
+
+Al cargar snapshot:
+
+```txt
+StateType + StateSchemaVersion -> CLR state type
+```
+
+Si no coincide con el `TState` solicitado:
+
+- fallar con error claro, o
+- usar migracion de state cuando exista.
+
+### 2.4 Migraciones De State
+
+Definir contrato:
+
+```csharp
+public interface IStateSnapshotMigrator
+{
+    string StateType { get; }
+    SemanticVersion FromSchemaVersion { get; }
+    SemanticVersion ToSchemaVersion { get; }
+    string Migrate(string payload);
+}
+```
+
+No debe ejecutarse magicamente si falta una ruta completa de migracion.
+
+## Fase 3: Storage Adapter Pattern
+
+### 3.1 Extraer Abstracciones
+
+Mover contratos a `Krackend.EventSourcing.Abstractions`.
+
+El core no debe conocer EF Core.
+
+### 3.2 Extraer EF Core
+
+Mover todo lo siguiente a `Krackend.EventSourcing.EntityFrameworkCore`:
+
+- `EntityFrameworkEventStore`
+- `EventStoreRecord`
+- `EventSnapshotRecord`
+- `SnapshotCandidateRecord`
+- model builder extensions
+- db context factory
+- EF model customizer
+- EF DI extensions
+
+### 3.3 Mantener Integracion Con App `DbContext`
+
+La app debe seguir pudiendo hacer:
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(connectionString));
+    options.UseSqlServer(connectionString));
 
 services.AddKrackendEventSourcing(options =>
 {
@@ -155,186 +305,366 @@ services.AddKrackendEventSourcing(options =>
 services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 ```
 
-La app no debe necesitar:
+Sin agregar `DbSet<EventStoreRecord>` manualmente.
+
+### 3.4 Preparar Adapters Futuros
+
+El diseno debe permitir:
+
+- `Krackend.EventSourcing.Ado`
+- `Krackend.EventSourcing.Mongo`
+- `Krackend.EventSourcing.PostgreSql`
+
+sin tocar el core.
+
+## Fase 4: Event Store Robusto
+
+### 4.1 Concurrencia
+
+Mantener:
 
 ```csharp
-public DbSet<EventStoreRecord> Events { get; set; }
+ExpectedVersion.Any
+ExpectedVersion.NoStream
+ExpectedVersion.Exact(version)
 ```
 
-## Spider Extension
+Validar en todos los adapters:
 
-Spider sera la integracion avanzada.
+- append concurrente
+- stream inexistente
+- stream existente
+- append multi-event
+- rollback transaccional
 
-Objetivo:
+### 4.2 Multiples Stores
 
-- Permitir plug-in de event sourcing en pre/post/middleware/boundaries.
-- Componer event sourcing con otras capacidades.
-- Evitar meter toda la logica en handlers o controllers.
-
-Posible API:
+Soportar multiples stores logicos:
 
 ```csharp
-spider.AsMediator()
-    .DefaultForwading<CreateCustomer, CustomerResult>()
-    .UseEventSourcing<CustomerState, CreateCustomer>("customers", command => command.CustomerId)
-    .Send(command);
+options.Stores.Add("customers", x => x.TableName = "CustomerEvents");
+options.Stores.Add("orders", x => x.TableName = "OrderEvents");
 ```
 
-Puntos naturales:
+Validar:
 
-- `PreProcess`: cargar metadata/correlation, preparar stream.
-- `Middleware`: envolver ejecucion con contexto event sourced.
-- `PostProcess`: append committed events y ejecutar proyecciones.
-- `Boundary`: lifecycle de complete/fault/cancel.
+- tabla default `Events`
+- PascalCase naming
+- schema opcional
+- indices por tabla
+- global position por store
 
-## Hooks En Templates
+### 4.3 Ranged Reads Solamente
 
-Los handlers base pueden evolucionar sin breaking change si los metodos virtuales actuales permanecen.
-
-Ejemplo:
+API oficial:
 
 ```csharp
-await ValidateWithHooksAsync(request, cancellationToken);
+ReadStreamAsync(streamName, streamId, fromVersion, maxCount)
+ReadFromAsync(streamName, afterGlobalPosition, maxCount)
+GetCurrentVersionAsync(streamName, streamId)
+AppendAsync(...)
 ```
 
-Implementacion conceptual:
+No debe existir API publica que lea un stream completo sin limite.
 
-```csharp
-protected virtual ValueTask ValidateAsync(TRequest request, CancellationToken cancellationToken);
+## Fase 5: Snapshots
 
-private async ValueTask ValidateWithHooksAsync(TRequest request, CancellationToken cancellationToken)
-{
-    await Hooks.PreValidationAsync(context, cancellationToken);
-    await ValidateAsync(request, cancellationToken);
-    await Hooks.PostValidationAsync(context, cancellationToken);
-}
-```
+### 5.1 Snapshot Del State
 
-Hooks por etapa:
-
-- `PreValidation`
-- `PostValidation`
-- `PreMapToEntity`
-- `PostMapToEntity`
-- `PreSaveEntity`
-- `PostSaveEntity`
-- `PreMapToResponse`
-- `PostMapToResponse`
-- `PreGetEntity`
-- `PostGetEntity`
-- `PreUpdateEntity`
-- `PostUpdateEntity`
-- `PreDeleteEntity`
-- `PostDeleteEntity`
-
-Esto permite registrar comportamiento externo sin obligar a los devs a reescribir handlers existentes.
-
-El encaje con event sourcing no debe ser que el handler llame manualmente a `IEventStore`.
-
-El encaje debe ser:
+Confirmar invariantes:
 
 ```txt
-Handle
-  -> ValidateWithHooks
-  -> Map/Get/Patch/Delete with hooks
-  -> SaveWithHooks
-       -> template hace su persistencia actual
-       -> event sourcing hook genera/commitea evento dentro del mismo DbContext
-  -> ResponseWithHooks
+events -> reducers -> TState -> snapshot payload
 ```
 
-Para servicios CRUD actuales, el hook usa adapters:
+No snapshot de:
 
-- `ICommandStreamResolver<TRequest>`: obtiene stream name/id desde el request o entidad.
-- `ICommandEventFactory<TRequest, TEntity>`: convierte request + entidad + operacion en evento.
-- `IEventStore`: persiste el envelope en la tabla configurada.
+- request
+- event payload
+- entidad EF de la app
+- proyeccion
+- envelope
 
-Asi el dev que ya hereda de `CreateCommandHandler`, `UpdateCommandHandler` o `DeleteCommandHandler` no tiene que cambiar su handler. Solo registra la integracion y, si su request no expone id suficiente, agrega un resolver/factory tipado.
+### 5.2 Snapshot Fuera Del Request Path
 
-## Snapshots
+La ruta caliente puede leer snapshots, pero no debe generarlos obligatoriamente.
 
-Snapshots no deben crearse por default dentro del request path.
-
-La ruta caliente de un comando puede leer el ultimo snapshot para no rehidratar desde cero, pero generar snapshots debe ser trabajo aparte:
+Creacion:
 
 - background service
 - scheduled job
-- worker de mantenimiento
-- proceso de rebuild controlado
+- maintenance worker
+- rebuild controlado
 
-Ese worker debe operar sobre streams candidatos, no recorrer todos los aggregates a ciegas. Una forma razonable:
+### 5.3 Snapshot Candidates
 
-```txt
-stream candidate
-  -> load latest snapshot
-  -> read events after snapshot in batches
-  -> reduce state
-  -> save snapshot at current version
-```
-
-La politica de candidatos puede salir de metricas simples:
-
-- streams con mas de N eventos desde el ultimo snapshot
-- streams modificados recientemente
-- streams marcados por el append path como "snapshot due"
-
-El punto importante: snapshot creation es mantenimiento asíncrono, no trabajo obligatorio del handler.
-
-Implementacion base:
-
-- Append marca candidatos mediante `ISnapshotCandidateMarker`.
-- La politica default no marca nada.
-- `IntervalSnapshotCandidatePolicy` marca streams con N eventos desde el ultimo snapshot.
-- `ISnapshotProcessor<TState>` procesa candidatos por batches y guarda snapshots.
-- EF Core agrega tablas para snapshots y candidatos al mismo `DbContext` de la app.
-- El worker real puede llamar `ProcessPendingAsync` en un `BackgroundService` o job programado.
-
-## Committed Events Para Handlers CRUD
-
-Para el template actual, existe otro caso distinto a event sourcing puro:
+Mantener candidatos:
 
 ```txt
-handler CRUD actual
-  -> valida
-  -> mapea entidad
-  -> guarda proyeccion/estado actual
-  -> PostSave hook produce committed event
-  -> append al event store
+append path marks stream candidate
+worker processes candidates in batches
 ```
 
-Esto debe nombrarse como committed events/event log transaccional, no como event sourcing puro.
+Politicas:
 
-## Paquetes Propuestos
+- nunca crear snapshots por default
+- intervalo por numero de eventos
+- politica custom
+
+### 5.4 Background Worker Opcional
+
+Agregar worker opcional:
+
+```csharp
+services.AddKrackendSnapshotWorker<CustomerState>(options =>
+{
+    options.Interval = TimeSpan.FromMinutes(5);
+    options.BatchSize = 100;
+});
+```
+
+Debe ser opcional y vivir en core o en paquete separado si requiere hosting.
+
+## Fase 6: Projections Como Paquete Separado
+
+### 6.1 Extraer Projections
+
+Mover:
+
+- `IProjectionHandler`
+- `IProjectionRunner`
+- `ICheckpointStore`
+- checkpoint implementations
+
+a `Krackend.EventSourcing.Projections`.
+
+### 6.2 Projection Dispatch Exacto
+
+Igual que rehidratacion:
 
 ```txt
-Krackend.EventSourcing
-Krackend.EventSourcing.Spider
-Krackend.EventSourcing.TemplateHooks
-Krackend.EventSourcing.Pigeon
-Krackend.EventSourcing.Testing
+EventType + EventSchemaVersion -> CLR exacto -> handler exacto
 ```
 
-## Orden Recomendado
+No usar latest automatico.
 
-1. Core state/decider/reducer sin reflection.
-2. EF event store integrado al app `DbContext`.
-3. SQLite sample usando commands, state, deciders y reducers.
-4. Projections y checkpoints.
-5. Spider extension.
-6. Hooks evolutivos en templates.
-7. Pigeon integration.
-8. Snapshots.
-9. Testing helpers para decider/reducer/state.
+### 6.3 Checkpoints Por Proyeccion
 
-## Criterio Para Primer Release
+Checkpoint key:
 
-La primera version debe permitir:
+- projection name
+- stream name/store
+- global position
 
-- Configurar multiples stores logicos.
-- Agregar tablas del event store al `DbContext` de la app.
-- Descubrir eventos, deciders y reducers por assembly scanning.
-- Rehidratar state desde stream.
-- Ejecutar decider.
-- Append con expected version.
-- Agregar metadata dinamica.
-- Correr sample SQLite completo.
+## Fase 7: Analyzers
+
+### 7.1 Analyzer De Reducers Faltantes
+
+Detectar:
+
+- evento con `[EventSchema]`
+- evento aparece en streams/reducers/projections
+- no hay reducer para un state conocido
+
+Este analyzer probablemente necesite convenciones o configuracion:
+
+```csharp
+[EventSourcedState(typeof(CustomerState))]
+public sealed record CustomerCreated;
+```
+
+o configuracion por assembly.
+
+### 7.2 Analyzer De Schemas Duplicados
+
+Detectar dos tipos con:
+
+```csharp
+[EventSchema("CustomerRenamed", "1.0.0")]
+```
+
+en el mismo assembly/proyecto.
+
+### 7.3 Analyzer De Evento Sin Schema
+
+Detectar eventos usados en:
+
+- `IEventReducer<TState, TEvent>`
+- `IProjectionHandler<TEvent>`
+- event factories
+
+sin `[EventSchema]` ni registro explicito conocido.
+
+### 7.4 Analyzer De State Sin Schema
+
+Detectar states usados en:
+
+- `IStateRehydrator`
+- `ISnapshotProcessor<TState>`
+- `IEventSourcedApplicationService<TState, TCommand>`
+
+sin `[StateSchema]`.
+
+## Fase 8: Extensiones De Integracion
+
+### 8.1 Spider Extensions
+
+Crear `Krackend.EventSourcing.SpiderExtensions`.
+
+Objetivo:
+
+- conectar event sourcing al pipeline de Spider
+- permitir pre/post/middleware/boundaries sin acoplar el core
+- mantener el core usable sin Spider instalado
+
+Regla:
+
+```txt
+Krackend.EventSourcing.SpiderExtensions -> depende de Krackend.EventSourcing
+Krackend.EventSourcing -> no depende de Spider
+```
+
+### 8.2 Pelican/Template Extensions
+
+Crear `Krackend.EventSourcing.PelicanExtensions` o nombre equivalente cuando el contrato del template este maduro.
+
+Objetivo:
+
+- integrar committed events con handlers base
+- usar hooks sin modificar handlers concretos
+- mapear request + entity a eventos
+- resolver stream desde request/entity
+
+Regla:
+
+```txt
+Krackend.EventSourcing.PelicanExtensions -> depende de Krackend.EventSourcing
+Krackend.EventSourcing -> no depende de Pelican ni templates
+```
+
+### 8.3 Otras Integraciones
+
+Cualquier integracion con otra libreria debe seguir el mismo patron:
+
+```txt
+Krackend.EventSourcing.SomeLibraryExtensions
+```
+
+El core no debe tomar dependencias por conveniencia.
+
+## Fase 9: Errores Y Diagnosticos
+
+Agregar excepciones especificas:
+
+- `EventSchemaMissingException`
+- `DuplicateEventSchemaException`
+- `EventTypeNotRegisteredException`
+- `EventReducerNotRegisteredException`
+- `StateSchemaMissingException`
+- `SnapshotStateSchemaMismatchException`
+- `EventPayloadDeserializationException`
+- `SnapshotDeserializationException`
+- `SnapshotSerializerMissingException`
+- `EventStoreConcurrencyException` ya existe
+
+Cada error debe incluir:
+
+- stream
+- event type
+- event schema version
+- state type
+- state schema version
+- sugerencia de fix cuando aplique
+
+## Fase 10: Samples
+
+### 10.1 Core Sample
+
+Sin Pelican, sin EF integrado.
+
+Debe mostrar:
+
+- commands
+- deciders
+- reducers
+- in-memory store
+- snapshots
+- eventos versionados
+
+### 10.2 EF Sample
+
+Debe mostrar:
+
+- SQL Server
+- multiples stores/tablas
+- EF integrado al app `DbContext`
+- migraciones EF reales
+- snapshots con state schema
+
+### 10.3 Pelican Sample
+
+Debe mostrar:
+
+- handlers con hooks
+- committed events
+- multiples versiones del mismo evento
+- reducers separados por version
+- snapshots del state, no de entidad/proyeccion
+
+El sample puede imprimir payloads de eventos para explicar diferencias de versiones, pero no debe contaminar `CustomerState` con campos didacticos.
+
+## Fase 11: Documentacion
+
+Documentar:
+
+- event sourcing vs committed event log
+- event schema versioning
+- state schema versioning
+- snapshots
+- reducers por version
+- storage adapters
+- extension packages
+- Spider extensions
+- Pelican/template extensions
+- EF Core integration
+- expected versions
+- metadata/correlation/causation
+- errores comunes
+- analyzers
+
+## Criterio Para Version Estable
+
+La version estable debe cumplir:
+
+- `LoadAsync` eliminado del contrato publico.
+- Core sin dependencia EF Core.
+- EF Core extraido a adapter.
+- Projections en paquete separado.
+- Spider/Pelican/templates fuera del core y en extension packages.
+- `EventSchema` estable.
+- `StateSchema` implementado.
+- Snapshots guardan `StateType` y `StateSchemaVersion`.
+- Reducer faltante falla.
+- Eventos no registrados fallan.
+- Schemas duplicados fallan.
+- Registro manual de eventos soportado.
+- Analyzers basicos disponibles.
+- Tests para todos los casos criticos.
+- Samples actualizados.
+- Documentacion minima completa.
+
+## Orden Recomendado De Implementacion
+
+1. Eliminar `LoadAsync`.
+2. Hacer que reducer faltante truene.
+3. Agregar `StateSchemaAttribute`.
+4. Agregar metadata de state schema a snapshots.
+5. Crear paquete `Krackend.EventSourcing.Abstractions`.
+6. Extraer EF Core a `Krackend.EventSourcing.EntityFrameworkCore`.
+7. Extraer projections a `Krackend.EventSourcing.Projections`.
+8. Crear extension packages para Spider/Pelican si aplica.
+9. Ajustar tests y samples a paquetes nuevos.
+10. Crear analyzers basicos.
+11. Endurecer excepciones y diagnosticos.
+12. Completar documentacion.
+13. Preparar release estable.
