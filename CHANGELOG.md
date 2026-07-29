@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+- ### Added
+
+  - Added modular EventSourcing packages: Abstractions, Core, EntityFrameworkCore, Projections, SpiderExtensions, PelicanExtensions, and Analyzers.
+  - Added event and state schema versioning with `EventSchemaAttribute`, `StateSchemaAttribute`, and `SemanticVersion`.
+  - Added paged stream reads, expected version append modes, EF Core stores, snapshots, snapshot candidates, and diagnostic exceptions.
+  - Added basic Roslyn analyzers for duplicate event schemas and reducers handling events without schemas.
+
+------
+
 ## [v0.0.10] - 2025-08-11
 
 Preview Version

@@ -18,9 +18,10 @@
     <PackageIcon>image.png</PackageIcon>
     <PackageReleaseNotes>https://github.com/mape1402/krackend/releases</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <UseRootPackageReadme>true</UseRootPackageReadme>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(UseRootPackageReadme)' == 'true'">
     <None Include="../../README.md" Pack="true" Visible="false" PackagePath="" />
     <None Include="../../assets/image.png" Pack="true" Visible="false" PackagePath="" />
   </ItemGroup>
