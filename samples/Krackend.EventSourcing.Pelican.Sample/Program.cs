@@ -48,6 +48,7 @@ services.AddKrackendEventSourcing(options =>
     options.Envelope.AddMetadata("sample", _ => "pelican-hooks");
 });
 
+services.AddEventSourcedInitialState(() => CustomerState.Empty);
 services.AddEventExecutionContext(_ => new EventExecutionContext(
     CorrelationId: "request-001",
     CausationId: "http-request-001",
