@@ -43,21 +43,13 @@ dotnet add package Krackend.EventSourcing.PelicanExtensions
 
 ## Mental Model
 
-There are two main usage styles:
-
-1. Event-sourced application service:
+The core library focuses on the write-model event sourcing flow:
 
 ```txt
 command -> rehydrate state -> decider -> append events -> reduce current state
 ```
 
-2. Committed event hook:
-
-```txt
-request -> application handler -> save business data -> append committed event
-```
-
-The library supports both. The first style is a full event-sourced write model. The second style is useful when an existing service already writes entities/projections and only needs a reliable event log after commit.
+Integrations that append committed events after existing handlers save data belong outside the core package, for example in template, Spider, or Pelican extension packages.
 
 ## Minimal Setup
 
@@ -120,15 +112,7 @@ public sealed record CustomerRenamed(string CustomerId, string Name, string Reas
 
 Each version is resolved independently during rehydration.
 
-Manual registration is also supported:
-
-```csharp
-var registry = new EventTypeRegistry()
-    .Register<CustomerRenamedV1>("CustomerRenamed", "1.0.0")
-    .Register<CustomerRenamed>("CustomerRenamed", "1.1.0");
-```
-
-Manual registration is useful for generated types, dynamic loading, or advanced adapters.
+Manual registration remains available for advanced scenarios such as generated types, dynamic loading, or custom adapters. For normal application code, prefer `[EventSchema]` plus assembly scanning.
 
 ## Defining State
 
@@ -205,7 +189,18 @@ Concrete implementations of `IInitialStateFactory<TState>` are also discovered a
 
 ## Commands And Streams
 
-Commands can implement `IEventStreamCommand` when the stream id is part of the command:
+Resolvers answer one question:
+
+```txt
+Which event stream should this command append to?
+```
+
+An event stream has two parts:
+
+- `StreamName`: the logical event store/stream category, such as `customers` or `orders`.
+- `StreamId`: the aggregate/entity/business id, such as `customer-001`.
+
+Commands can implement `IEventStreamCommand` when the command itself can provide the `StreamId`:
 
 ```csharp
 public sealed record RenameCustomer(string CustomerId, string Name)
@@ -215,7 +210,9 @@ public sealed record RenameCustomer(string CustomerId, string Name)
 }
 ```
 
-The stream name comes from routing:
+`IEventStreamCommand` exists only to support the default resolver. It keeps simple commands from needing a custom resolver class. If you do not like that marker interface on commands, do not use it; implement `ICommandStreamResolver<TCommand>` instead.
+
+The `StreamName` comes from routing. `DefaultStreamName` is the fallback stream name used by the default command resolver when no command-specific route is configured:
 
 ```csharp
 services.AddKrackendEventSourcing(options =>
@@ -224,7 +221,7 @@ services.AddKrackendEventSourcing(options =>
 });
 ```
 
-For custom stream routing, implement `ICommandStreamResolver<TCommand>`:
+For custom stream routing, implement `ICommandStreamResolver<TCommand>`. This is the better option when the stream name/id require more than reading a single command property:
 
 ```csharp
 public sealed class RenameCustomerStreamResolver
@@ -238,6 +235,13 @@ public sealed class RenameCustomerStreamResolver
 ```
 
 Resolvers are discovered automatically during assembly scanning.
+
+Use a custom resolver when:
+
+- the command does not implement `IEventStreamCommand`
+- the stream name depends on tenant, module, command type, or configuration
+- the stream id needs normalization or composition
+- a command maps to a stream that is not obvious from a single property
 
 ## Deciders
 
@@ -266,6 +270,8 @@ public sealed class RenameCustomerDecider
 ```
 
 Deciders are discovered automatically during assembly scanning.
+
+Deciders are not persisted contracts and normally should not be versioned the way events are. Version events because they are stored forever. Version state because snapshots are stored. A decider is application behavior: evolve it with the application code, and produce whichever event schema version is current for that command. If two command behaviors must coexist, use different command types, feature flags, or separate decider implementations registered intentionally by DI.
 
 ## Reducers
 
@@ -349,7 +355,7 @@ Prefer the overload without `initialState` for application code.
 
 ## Appending Events Directly
 
-Use `IEventStore` when you want to persist committed events directly:
+Use `IEventStore` when you want to persist events directly:
 
 ```csharp
 var eventStore = provider.GetRequiredService<IEventStore>();
@@ -360,12 +366,6 @@ var envelopes = await eventStore.AppendAsync(
     expectedVersion: ExpectedVersion.Any,
     events: [new CustomerRenamed("customer-001", "New Name")],
     cancellationToken);
-```
-
-This is useful for hook-based integration:
-
-```txt
-request -> handler -> save entity/projection -> append committed event
 ```
 
 Use expected versions deliberately:
@@ -380,7 +380,7 @@ Guidance:
 
 - `Exact(version)`: strict event-sourced write flow with optimistic concurrency.
 - `NoStream`: first event must create the stream.
-- `Any`: append without optimistic version check, useful for committed events emitted by hooks.
+- `Any`: append without optimistic version check, useful when the caller intentionally does not own stream concurrency.
 
 ## Reading Events
 
@@ -448,15 +448,33 @@ var rehydrated = await rehydrator.RehydrateAsync(
 
 ## Metadata, Correlation, And Causation
 
-Register execution context metadata:
+Register execution context metadata from the current request/message context. Avoid hardcoded values in real applications.
 
 ```csharp
-services.AddEventExecutionContext(_ => new EventExecutionContext(
-    CorrelationId: "request-001",
-    CausationId: "http-request-001",
-    UserId: "sample-user",
-    TenantId: "sample-tenant",
-    Source: "customers-api"));
+public sealed class CurrentRequestEventExecutionContext : IEventExecutionContext
+{
+    private readonly ICurrentRequestContext _request;
+
+    public CurrentRequestEventExecutionContext(ICurrentRequestContext request)
+    {
+        _request = request;
+    }
+
+    public string? CorrelationId => _request.CorrelationId;
+
+    public string? CausationId => _request.CausationId;
+
+    public string? UserId => _request.UserId;
+
+    public string? TenantId => _request.TenantId;
+
+    public string? Source => _request.Source;
+}
+
+services.AddScoped<CurrentRequestEventExecutionContext>();
+
+services.AddEventExecutionContext(provider =>
+    provider.GetRequiredService<CurrentRequestEventExecutionContext>());
 ```
 
 Add custom envelope metadata:
@@ -595,61 +613,20 @@ For custom/test flows, an overload accepts explicit initial state:
 await processor.ProcessPendingAsync(CustomerState.Empty, maxCount: 100, cancellationToken);
 ```
 
-## Hook-Based Committed Events
-
-When integrating with an existing handler/template, append events after the business data is saved:
-
-```csharp
-public sealed class EventSourcingPostSaveHook<TRequest, TEntity>
-{
-    private readonly ICommandStreamResolver<TRequest> _streamResolver;
-    private readonly ICommittedEventMapper<TRequest, TEntity> _eventMapper;
-    private readonly IEventStore _eventStore;
-
-    public async ValueTask PostSaveEntityAsync(
-        TRequest request,
-        TEntity entity,
-        CancellationToken cancellationToken = default)
-    {
-        var stream = _streamResolver.Resolve(request);
-        var @event = _eventMapper.Map(request, entity);
-
-        if (@event is null)
-            return;
-
-        await _eventStore.AppendAsync(
-            stream.Name,
-            stream.Id,
-            ExpectedVersion.Any,
-            [@event],
-            cancellationToken);
-    }
-}
-```
-
-This pattern is intentionally different from full event sourcing. It is useful when the request flow is already:
-
-```txt
-request -> validation/business handler -> save entity/projection -> append committed event
-```
-
 ## Schema Registries
 
-Event schemas:
+For application code, prefer attributes and scanning:
 
 ```csharp
-var events = new EventTypeRegistry()
-    .Register<CustomerCreated>()
-    .Register<CustomerRenamed>("CustomerRenamed", "1.1.0");
+services.AddKrackendEventSourcing(options =>
+{
+    options.ScanAssemblyContaining<CustomerState>();
+});
 ```
 
-State schemas:
+That scan registers `[EventSchema]` events and `[StateSchema]` states into the DI-owned registries used by the runtime.
 
-```csharp
-var states = new StateSchemaRegistry()
-    .Register<CustomerState>()
-    .Register<CustomerStateV2>("CustomerState", "2.0.0");
-```
+Manual registration exists for advanced tooling, generated types, or adapter scenarios. Do not create separate registry instances in application code unless you are intentionally building an isolated test/tooling registry.
 
 Duplicate `name + version` registrations fail:
 
@@ -774,4 +751,4 @@ Console.WriteLine(result.CurrentState.Name);
 The repository contains:
 
 - `samples/Krackend.EventSourcing.Sqlite.Sample`: compact event-sourced application service flow with SQLite.
-- `samples/Krackend.EventSourcing.Pelican.Sample`: hook-based committed event flow using Pelican-style handlers and SQL Server configuration from user secrets/environment variables.
+- `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration sample. The integration pieces are intentionally outside the core event sourcing runtime.

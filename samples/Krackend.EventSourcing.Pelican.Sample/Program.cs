@@ -5,6 +5,7 @@ using Krackend.EventSourcing.Pelican.Sample.Data;
 using Krackend.EventSourcing.Pelican.Sample.Domain;
 using Krackend.EventSourcing.Pelican.Sample.Events;
 using Krackend.EventSourcing.Pelican.Sample.Hooks;
+using Krackend.EventSourcing.Pelican.Sample.RequestContext;
 using Krackend.EventSourcing.Pelican.Sample.State;
 using Krackend.EventSourcing.Pelican.Sample.TemplateCore;
 using Krackend.EventSourcing.Metadata;
@@ -49,12 +50,10 @@ services.AddKrackendEventSourcing(options =>
     options.Envelope.AddMetadata("sample", _ => "pelican-hooks");
 });
 
-services.AddEventExecutionContext(_ => new EventExecutionContext(
-    CorrelationId: "request-001",
-    CausationId: "http-request-001",
-    UserId: "sample-user",
-    TenantId: "sample-tenant",
-    Source: "pelican-sample"));
+services.AddSingleton<ICurrentRequestContextAccessor, CurrentRequestContextAccessor>();
+services.AddEventExecutionContext(provider =>
+    new CurrentRequestEventExecutionContext(
+        provider.GetRequiredService<ICurrentRequestContextAccessor>()));
 services.AddSingleton<ISnapshotCandidatePolicy>(new IntervalSnapshotCandidatePolicy(1));
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
 services.AddPelican(typeof(Program).Assembly);
@@ -90,6 +89,14 @@ await using var scope = provider.CreateAsyncScope();
 var dbContext = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
 await dbContext.Database.EnsureDeletedAsync();
 await dbContext.Database.EnsureCreatedAsync();
+
+var requestContextAccessor = scope.ServiceProvider.GetRequiredService<ICurrentRequestContextAccessor>();
+requestContextAccessor.Current = new CurrentRequestContext(
+    CorrelationId: Guid.NewGuid().ToString("N"),
+    CausationId: $"console:{Guid.NewGuid():N}",
+    UserId: configuration["Sample:UserId"] ?? "operator-001",
+    TenantId: configuration["Sample:TenantId"] ?? "tenant-001",
+    Source: configuration["Sample:Source"] ?? "pelican-sample");
 
 var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 await using var transaction = await dbContext.Database.BeginTransactionAsync();
