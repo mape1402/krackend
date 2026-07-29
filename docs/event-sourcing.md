@@ -13,6 +13,7 @@ La libreria esta separada por paquetes para evitar acoplar el core con storage, 
 - `Krackend.EventSourcing.SpiderExtensions`: extension point opcional para Spider.
 - `Krackend.EventSourcing.PelicanExtensions`: extension point opcional para Pelican/templates.
 - `Krackend.EventSourcing.Analyzers`: diagnostics Roslyn para errores comunes de schema/reducers.
+- `Krackend.EventSourcing.Testing`: helpers para tests de streams, reducers, deciders e initial states.
 
 ## Evento
 
@@ -47,6 +48,17 @@ public sealed record CustomerState(string CustomerId, string Name, decimal Balan
 ```
 
 El schema del state no es el schema del evento. Un evento puede mantenerse igual mientras el state cambia, o al reves.
+
+Los states con `[StateSchema]` se registran automaticamente cuando escaneas el assembly:
+
+```csharp
+services.AddKrackendEventSourcing(options =>
+{
+    options.ScanAssemblyContaining<CustomerState>();
+});
+```
+
+Tambien puedes registrar schemas manualmente con `StateSchemaRegistry` para escenarios dinamicos.
 
 Para application services, registra el estado inicial una sola vez en DI:
 
@@ -120,6 +132,12 @@ La rehidratacion calcula `fromVersion`:
 - sin snapshot: `1`
 - con snapshot: `snapshot.StreamVersion + 1`
 
+La overload recomendada resuelve el initial state desde `IInitialStateFactory<TState>`:
+
+```csharp
+var state = await rehydrator.RehydrateAsync<CustomerState>("customers", "customer-001");
+```
+
 ## Append
 
 El append debe usar version esperada:
@@ -156,6 +174,12 @@ La tabla de snapshots guarda metadata tecnica:
 
 La generacion de snapshots debe vivir fuera del request path: worker, job programado o proceso de mantenimiento. La ruta caliente puede leer snapshots, pero no debe depender de generarlos.
 
+El processor tambien puede resolver el initial state desde factory:
+
+```csharp
+await snapshotProcessor.ProcessPendingAsync(maxCount: 100);
+```
+
 ## EF Core
 
 El adapter EF permite integrar las tablas del event store al `DbContext` de la app:
@@ -186,6 +210,8 @@ Las excepciones publicas viven en `Krackend.EventSourcing.Diagnostics`:
 - `EventTypeNotRegisteredException`
 - `EventReducerNotRegisteredException`
 - `StateSchemaMissingException`
+- `DuplicateStateSchemaException`
+- `StateTypeNotRegisteredException`
 - `SnapshotStateSchemaMismatchException`
 - `EventPayloadDeserializationException`
 - `SnapshotDeserializationException`
@@ -198,5 +224,24 @@ Los analyzers basicos detectan:
 
 - `KES0001`: dos CLR types con el mismo `EventSchema(name, version)`.
 - `KES0002`: reducer para evento sin `[EventSchema]`.
+- `KES0003`: dos CLR types con el mismo `StateSchema(name, version)`.
+- `KES0004`: reducer para state sin `[StateSchema]`.
+- `KES0005`: initial state factory para state sin `[StateSchema]`.
 
 Estos diagnostics complementan los errores runtime. El registro manual de eventos sigue permitido, asi que no todo se puede validar estaticamente.
+
+## Testing
+
+`Krackend.EventSourcing.Testing` incluye helpers para tests:
+
+```csharp
+var initialState = new TestInitialStateFactory<CustomerState>(CustomerState.Empty);
+
+var envelopes = EventStreamBuilder
+    .ForStream("customers", "customer-001")
+    .Register<CustomerCreated>()
+    .Add(new CustomerCreated("customer-001", "Sample Customer", "customer@example.test"))
+    .Build();
+```
+
+Tambien incluye `ReducerTest` y `DeciderTest` para probar reducers y deciders sin levantar storage.
