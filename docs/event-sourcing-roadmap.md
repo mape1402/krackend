@@ -19,7 +19,7 @@ The stable release should keep the core small and explicit, separate storage ada
 - There are no mandatory aggregate base classes.
 - Production APIs must not load complete streams without limits.
 - EF Core, ADO, Mongo, or other stores are interchangeable adapters.
-- Spider, Pelican, templates, and other ecosystem libraries are optional extension packages.
+- Spider, Pelican, templates, and other ecosystem libraries must stay outside the core runtime. Dedicated extension packages can be created later only when their integration contracts are stable.
 - Projections belong to read-model infrastructure, not the write-model core.
 
 ## Package Layout
@@ -28,8 +28,6 @@ The stable release should keep the core small and explicit, separate storage ada
 Krackend.EventSourcing.Abstractions
 Krackend.EventSourcing
 Krackend.EventSourcing.EntityFrameworkCore
-Krackend.EventSourcing.SpiderExtensions
-Krackend.EventSourcing.PelicanExtensions
 Krackend.EventSourcing.Analyzers
 Krackend.EventSourcing.Testing
 ```
@@ -49,17 +47,17 @@ Krackend.EventSourcing.Testing
 9. Added `IStateSchemaRegistry` and duplicate state schema detection.
 10. Split abstractions into `Krackend.EventSourcing.Abstractions`.
 11. Split EF Core storage into `Krackend.EventSourcing.EntityFrameworkCore`.
-12. Split optional integration packages for Spider and Pelican.
-13. Added typed diagnostic exceptions.
-14. Added basic Roslyn analyzers.
-15. Added `Krackend.EventSourcing.Testing`.
-16. Updated SQLite and Pelican samples.
+12. Added typed diagnostic exceptions.
+13. Added basic Roslyn analyzers.
+14. Added `Krackend.EventSourcing.Testing`.
+15. Updated SQLite and Pelican samples.
+16. Removed placeholder Spider and Pelican extension projects until their integration contracts are stable.
 
 ## Remaining Work
 
 ### Integration Packages
 
-Move the sample-level Pelican hook implementation into `Krackend.EventSourcing.PelicanExtensions` once the template contracts are stable:
+Move the sample-level Pelican hook implementation into a dedicated extension package once the template contracts are stable:
 
 - committed event mapping
 - request/entity event creation
@@ -67,7 +65,7 @@ Move the sample-level Pelican hook implementation into `Krackend.EventSourcing.P
 - stream resolution helpers
 - template-friendly DI extensions
 
-Move Spider-specific behavior into `Krackend.EventSourcing.SpiderExtensions` only when the integration surface is clear.
+Move Spider-specific behavior into a dedicated extension package only when the integration surface is clear.
 
 ### Snapshots
 

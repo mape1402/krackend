@@ -25,11 +25,9 @@ Release these packages together:
 - `Krackend.EventSourcing`
 - `Krackend.EventSourcing.EntityFrameworkCore`
 - `Krackend.EventSourcing.Projections`
-- `Krackend.EventSourcing.SpiderExtensions`
-- `Krackend.EventSourcing.PelicanExtensions`
 - `Krackend.EventSourcing.Analyzers`
 
-Do not publish Spider/Pelican packages as required dependencies of the core package. They are optional extensions.
+Do not publish Spider/Pelican extension packages until their integration contracts are stable.
 
 ## Stable Contract Checks
 

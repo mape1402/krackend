@@ -29,8 +29,6 @@ Optional packages:
 
 ```bash
 dotnet add package Krackend.EventSourcing.Abstractions
-dotnet add package Krackend.EventSourcing.SpiderExtensions
-dotnet add package Krackend.EventSourcing.PelicanExtensions
 ```
 
 ## Package Roles
