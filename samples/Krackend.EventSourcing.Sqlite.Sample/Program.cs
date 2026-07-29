@@ -28,7 +28,8 @@ services.AddKrackendEventSourcing(options =>
     options.Envelope.AddMetadata("sample", _ => "sqlite");
 });
 
-services.AddEventSourcedInitialState(() => CustomerState.Empty);
+services.AddEventSourcedInitialStateFactory<CustomerState>((_, _) =>
+    ValueTask.FromResult(CustomerState.Empty));
 services.AddKrackendEntityFrameworkEventStore<SampleDbContext>();
 
 await using var provider = services.BuildServiceProvider();

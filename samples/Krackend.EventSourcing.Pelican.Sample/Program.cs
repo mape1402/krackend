@@ -34,6 +34,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 var services = new ServiceCollection();
 
+services.AddSingleton(new CustomerInitialStateDefaults(0m));
 services.AddDbContext<SampleDbContext>(options =>
     options.UseSqlServer(connectionString));
 
@@ -48,7 +49,6 @@ services.AddKrackendEventSourcing(options =>
     options.Envelope.AddMetadata("sample", _ => "pelican-hooks");
 });
 
-services.AddEventSourcedInitialState(() => CustomerState.Empty);
 services.AddEventExecutionContext(_ => new EventExecutionContext(
     CorrelationId: "request-001",
     CausationId: "http-request-001",
@@ -121,14 +121,16 @@ var customers = await dbContext.Customers.AsNoTracking().ToListAsync();
 var candidateStore = scope.ServiceProvider.GetRequiredService<ISnapshotCandidateStore>();
 var snapshotStore = scope.ServiceProvider.GetRequiredService<ISnapshotStore>();
 var snapshotProcessor = scope.ServiceProvider.GetRequiredService<ISnapshotProcessor<CustomerState>>();
+var initialStateFactory = scope.ServiceProvider.GetRequiredService<IInitialStateFactory<CustomerState>>();
+var initialState = await initialStateFactory.CreateAsync();
 
 var pendingBefore = await candidateStore.GetPendingAsync(10);
 var snapshotBefore = await snapshotStore.LoadLatestAsync("customers", created.Id);
-var snapshotResults = await snapshotProcessor.ProcessPendingAsync(CustomerState.Empty, maxCount: 10);
+var snapshotResults = await snapshotProcessor.ProcessPendingAsync(initialState, maxCount: 10);
 var pendingAfter = await candidateStore.GetPendingAsync(10);
 var snapshotAfter = await snapshotStore.LoadLatestAsync("customers", created.Id);
 var rehydrator = scope.ServiceProvider.GetRequiredService<IStateRehydrator>();
-var rehydrated = await rehydrator.RehydrateAsync("customers", created.Id, CustomerState.Empty);
+var rehydrated = await rehydrator.RehydrateAsync("customers", created.Id, initialState);
 
 Console.WriteLine("SQL Server connection: ConnectionStrings:EventSourcingSample");
 Console.WriteLine($"Created response: {created.Id} {created.Name} {created.Email} balance={created.Balance}");
