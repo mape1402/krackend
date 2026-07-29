@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Contracts;
+using Krackend.EventSourcing.Diagnostics;
 using System.Reflection;
 
 namespace Krackend.EventSourcing.Snapshots;
@@ -12,7 +13,7 @@ internal static class StateSchemaResolver
         var schema = stateType.GetCustomAttribute<StateSchemaAttribute>();
 
         if (schema is null)
-            throw new InvalidOperationException($"State type '{stateType.FullName}' must be decorated with '{nameof(StateSchemaAttribute)}' before it can be snapshotted.");
+            throw new StateSchemaMissingException(stateType);
 
         return new StateSchemaRegistration(schema.Name, schema.Version);
     }
