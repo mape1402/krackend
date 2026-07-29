@@ -12,7 +12,13 @@
     <Description>Krackend.EventSourcing provides configurable event store primitives, envelopes, routing, and state rehydration support for .NET applications.</Description>
     <PackageTags>event-sourcing;event-store;domain-events;dotnet</PackageTags>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <UseRootPackageReadme>false</UseRootPackageReadme>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\event-sourcing.md" Pack="true" PackagePath="README.md" Link="README.md" />
+    <None Include="..\..\assets\image.png" Pack="true" Visible="false" PackagePath="" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Krackend.EventSourcing.Abstractions\Krackend.EventSourcing.Abstractions.csproj" />

@@ -12,7 +12,13 @@
     <Description>Krackend.EventSourcing.PelicanExtensions provides optional integration points between Pelican/template handlers and Krackend event sourcing.</Description>
     <PackageTags>event-sourcing;pelican;template;extensions;dotnet</PackageTags>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <UseRootPackageReadme>false</UseRootPackageReadme>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\event-sourcing.md" Pack="true" PackagePath="README.md" Link="README.md" />
+    <None Include="..\..\assets\image.png" Pack="true" Visible="false" PackagePath="" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Krackend.EventSourcing\Krackend.EventSourcing.csproj" />
