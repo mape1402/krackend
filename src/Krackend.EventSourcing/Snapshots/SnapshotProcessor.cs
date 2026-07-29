@@ -15,6 +15,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
     private readonly IEventStore _eventStore;
     private readonly IEventSerializer _eventSerializer;
     private readonly IEventTypeRegistry _eventTypeRegistry;
+    private readonly IStateSchemaRegistry _stateSchemaRegistry;
     private readonly IEventReducerRegistry _reducers;
     private readonly ISnapshotStore _snapshotStore;
     private readonly ISnapshotSerializer _snapshotSerializer;
@@ -35,10 +36,39 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         ISnapshotCandidateStore candidateStore,
         EventSourcingOptions options,
         IInitialStateFactory<TState> initialStateFactory)
+        : this(
+            eventStore,
+            eventSerializer,
+            eventTypeRegistry,
+            new StateSchemaRegistry().Register<TState>(),
+            reducers,
+            snapshotStore,
+            snapshotSerializer,
+            candidateStore,
+            options,
+            initialStateFactory)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SnapshotProcessor{TState}"/> class.
+    /// </summary>
+    public SnapshotProcessor(
+        IEventStore eventStore,
+        IEventSerializer eventSerializer,
+        IEventTypeRegistry eventTypeRegistry,
+        IStateSchemaRegistry stateSchemaRegistry,
+        IEventReducerRegistry reducers,
+        ISnapshotStore snapshotStore,
+        ISnapshotSerializer snapshotSerializer,
+        ISnapshotCandidateStore candidateStore,
+        EventSourcingOptions options,
+        IInitialStateFactory<TState> initialStateFactory)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _eventSerializer = eventSerializer ?? throw new ArgumentNullException(nameof(eventSerializer));
         _eventTypeRegistry = eventTypeRegistry ?? throw new ArgumentNullException(nameof(eventTypeRegistry));
+        _stateSchemaRegistry = stateSchemaRegistry ?? throw new ArgumentNullException(nameof(stateSchemaRegistry));
         _reducers = reducers ?? throw new ArgumentNullException(nameof(reducers));
         _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         _snapshotSerializer = snapshotSerializer ?? throw new ArgumentNullException(nameof(snapshotSerializer));
@@ -130,7 +160,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
                 SnapshotSaved: false);
         }
 
-        var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
+        var stateSchema = _stateSchemaRegistry.GetRegistration(typeof(TState));
 
         await _snapshotStore.SaveAsync(new Snapshot(
             candidate.StreamName,
@@ -185,7 +215,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         if (snapshot is null)
             return initialState;
 
-        var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
+        var stateSchema = _stateSchemaRegistry.GetRegistration(typeof(TState));
 
         if (snapshot.StateType != stateSchema.StateType || snapshot.StateSchemaVersion != stateSchema.StateSchemaVersion)
             throw new SnapshotStateSchemaMismatchException(

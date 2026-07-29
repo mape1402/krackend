@@ -12,6 +12,7 @@ internal static class EventSourcingAssemblyScanner
     internal static void RegisterComponents(
         IServiceCollection services,
         EventTypeRegistry eventTypeRegistry,
+        StateSchemaRegistry stateSchemaRegistry,
         IEnumerable<Assembly> assemblies)
     {
         var types = assemblies
@@ -27,6 +28,7 @@ internal static class EventSourcingAssemblyScanner
             RegisterClosedInterfaces(services, type, typeof(ICommandStreamResolver<>), ServiceLifetime.Scoped);
             RegisterClosedInterfaces(services, type, typeof(IInitialStateFactory<>), ServiceLifetime.Scoped);
             RegisterEventSchema(eventTypeRegistry, type);
+            RegisterStateSchema(stateSchemaRegistry, type);
         }
     }
 
@@ -55,6 +57,12 @@ internal static class EventSourcingAssemblyScanner
     private static void RegisterEventSchema(EventTypeRegistry registry, TypeInfo implementationType)
     {
         if (implementationType.GetCustomAttribute<EventSchemaAttribute>() is not null)
+            registry.Register(implementationType.AsType());
+    }
+
+    private static void RegisterStateSchema(StateSchemaRegistry registry, TypeInfo implementationType)
+    {
+        if (implementationType.GetCustomAttribute<StateSchemaAttribute>() is not null)
             registry.Register(implementationType.AsType());
     }
 }

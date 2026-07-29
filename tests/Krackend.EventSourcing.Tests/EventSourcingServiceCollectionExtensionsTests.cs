@@ -60,15 +60,18 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         var decider = scope.ServiceProvider.GetRequiredService<IEventDecider<TestState, CreateThing>>();
         var reducers = scope.ServiceProvider.GetRequiredService<IEventReducerRegistry>();
         var eventTypes = scope.ServiceProvider.GetRequiredService<IEventTypeRegistry>();
+        var stateSchemas = scope.ServiceProvider.GetRequiredService<IStateSchemaRegistry>();
 
         var events = await decider.DecideAsync(TestState.Empty, new CreateThing("thing-1"));
         var currentState = reducers.Apply(TestState.Empty, events.Single());
         var registration = eventTypes.GetRegistration(typeof(ThingCreated));
+        var stateRegistration = stateSchemas.GetRegistration(typeof(TestState));
         var attributedOnlyEvent = eventTypes.Resolve("ThingArchived", "2.0.0");
 
         Assert.True(currentState.IsCreated);
         Assert.Equal("thing-1", currentState.Id);
         Assert.Equal("ThingCreated", registration.EventType);
+        Assert.Equal("TestState", stateRegistration.StateType);
         Assert.Equal(typeof(ThingArchived), attributedOnlyEvent);
     }
 
@@ -161,6 +164,7 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         Assert.Equal("delegated", state.Id);
     }
 
+    [StateSchema("TestState")]
     private sealed record TestState(string Id, bool IsCreated)
     {
         public static TestState Empty { get; } = new(string.Empty, false);

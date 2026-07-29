@@ -37,6 +37,7 @@ public static class EventSourcingServiceCollectionExtensions
             options.ScanAssembly(entryAssembly);
 
         var eventTypeRegistry = new EventTypeRegistry();
+        var stateSchemaRegistry = new StateSchemaRegistry();
 
         services.AddSingleton(options);
         services.AddSingleton(options.Envelope);
@@ -44,6 +45,8 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddSingleton(options.Stores);
         services.AddSingleton<IEventTypeRegistry>(eventTypeRegistry);
         services.AddSingleton(eventTypeRegistry);
+        services.AddSingleton<IStateSchemaRegistry>(stateSchemaRegistry);
+        services.AddSingleton(stateSchemaRegistry);
         services.AddSingleton<IEventSerializer, SystemTextJsonEventSerializer>();
         services.AddSingleton<IEventStreamResolver, ConfiguredEventStreamResolver>();
         services.AddSingleton<ISnapshotStore, InMemorySnapshotStore>();
@@ -68,7 +71,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped(typeof(ICommandStreamResolver<>), typeof(DefaultCommandStreamResolver<>));
         services.TryAddScoped(typeof(IInitialStateFactory<>), typeof(MissingInitialStateFactory<>));
         services.AddScoped(typeof(IEventSourcedApplicationService<,>), typeof(EventSourcedApplicationService<,>));
-        EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, options.Assemblies);
+        EventSourcingAssemblyScanner.RegisterComponents(services, eventTypeRegistry, stateSchemaRegistry, options.Assemblies);
 
         return services;
     }
