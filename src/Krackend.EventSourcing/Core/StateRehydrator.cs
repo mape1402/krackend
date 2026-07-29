@@ -16,6 +16,7 @@ public sealed class StateRehydrator : IStateRehydrator
     private readonly IEventStore _eventStore;
     private readonly IEventSerializer _serializer;
     private readonly IEventTypeRegistry _eventTypeRegistry;
+    private readonly IStateSchemaRegistry _stateSchemaRegistry;
     private readonly IEventReducerRegistry _reducers;
     private readonly ISnapshotStore? _snapshotStore;
     private readonly ISnapshotSerializer? _snapshotSerializer;
@@ -34,10 +35,37 @@ public sealed class StateRehydrator : IStateRehydrator
         ISnapshotSerializer? snapshotSerializer = null,
         EventSourcingOptions? options = null,
         IServiceProvider? serviceProvider = null)
+        : this(
+            eventStore,
+            serializer,
+            eventTypeRegistry,
+            new StateSchemaRegistry(),
+            reducers,
+            snapshotStore,
+            snapshotSerializer,
+            options,
+            serviceProvider)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="StateRehydrator"/> class.
+    /// </summary>
+    public StateRehydrator(
+        IEventStore eventStore,
+        IEventSerializer serializer,
+        IEventTypeRegistry eventTypeRegistry,
+        IStateSchemaRegistry? stateSchemaRegistry,
+        IEventReducerRegistry reducers,
+        ISnapshotStore? snapshotStore = null,
+        ISnapshotSerializer? snapshotSerializer = null,
+        EventSourcingOptions? options = null,
+        IServiceProvider? serviceProvider = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _eventTypeRegistry = eventTypeRegistry ?? throw new ArgumentNullException(nameof(eventTypeRegistry));
+        _stateSchemaRegistry = stateSchemaRegistry ?? new StateSchemaRegistry();
         _reducers = reducers ?? throw new ArgumentNullException(nameof(reducers));
         _snapshotStore = snapshotStore;
         _snapshotSerializer = snapshotSerializer;
@@ -118,7 +146,7 @@ public sealed class StateRehydrator : IStateRehydrator
         if (snapshot is null)
             return initialState;
 
-        var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
+        var stateSchema = GetStateSchemaRegistration(typeof(TState));
 
         if (snapshot.StateType != stateSchema.StateType || snapshot.StateSchemaVersion != stateSchema.StateSchemaVersion)
             throw new SnapshotStateSchemaMismatchException(
@@ -132,5 +160,17 @@ public sealed class StateRehydrator : IStateRehydrator
 
         return (TState)(_snapshotSerializer.Deserialize(snapshot.Payload, typeof(TState))
             ?? throw new SnapshotDeserializationException(snapshot.StreamName, snapshot.StreamId, typeof(TState)));
+    }
+
+    private StateSchemaRegistration GetStateSchemaRegistration(Type stateType)
+    {
+        try
+        {
+            return _stateSchemaRegistry.GetRegistration(stateType);
+        }
+        catch (StateTypeNotRegisteredException) when (_stateSchemaRegistry is StateSchemaRegistry registry)
+        {
+            return registry.Register(stateType).GetRegistration(stateType);
+        }
     }
 }

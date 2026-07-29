@@ -184,8 +184,60 @@ public sealed class SemanticVersionTests
         Assert.Equal(SemanticVersion.Default, attribute.Version);
     }
 
+    [Fact]
+    public void State_schema_registry_uses_state_schema_attribute()
+    {
+        var registry = new StateSchemaRegistry()
+            .Register<VersionedState>();
+
+        var registration = registry.GetRegistration(typeof(VersionedState));
+
+        Assert.Equal("VersionedState", registration.StateType);
+        Assert.Equal(new SemanticVersion(2, 3, 4), registration.StateSchemaVersion);
+        Assert.Equal(typeof(VersionedState), registry.Resolve("VersionedState", "2.3.4"));
+    }
+
+    [Fact]
+    public void State_schema_registry_resolves_each_schema_for_same_state_type()
+    {
+        var registry = new StateSchemaRegistry()
+            .Register<LegacyCustomerState>("CustomerState", "1.0.0")
+            .Register<CustomerState>("CustomerState", "1.1.0");
+
+        Assert.Equal(typeof(LegacyCustomerState), registry.Resolve("CustomerState", "1.0.0"));
+        Assert.Equal(typeof(CustomerState), registry.Resolve("CustomerState", "1.1.0"));
+    }
+
+    [Fact]
+    public void State_schema_registry_requires_schema_attribute_or_explicit_name()
+    {
+        var registry = new StateSchemaRegistry();
+
+        var exception = Assert.Throws<StateSchemaMissingException>(() => registry.Register<UnattributedState>());
+
+        Assert.Equal(typeof(UnattributedState), exception.StateType);
+    }
+
+    [Fact]
+    public void State_schema_registry_rejects_duplicate_schema_for_different_types()
+    {
+        var registry = new StateSchemaRegistry()
+            .Register<CustomerState>("CustomerState", "1.1.0");
+
+        var exception = Assert.Throws<DuplicateStateSchemaException>(() => registry.Register<DuplicateCustomerState>("CustomerState", "1.1.0"));
+
+        Assert.Contains("already registered", exception.Message);
+        Assert.Equal("CustomerState", exception.StateType);
+        Assert.Equal(new SemanticVersion(1, 1, 0), exception.StateSchemaVersion);
+        Assert.Equal(typeof(CustomerState), exception.RegisteredClrType);
+        Assert.Equal(typeof(DuplicateCustomerState), exception.DuplicateClrType);
+    }
+
     [EventSchema("VersionedEvent", "2.3.4")]
     private sealed record VersionedEvent;
+
+    [StateSchema("VersionedState", "2.3.4")]
+    private sealed record VersionedState;
 
     private sealed record LegacyBalanceMoved;
 
@@ -194,4 +246,12 @@ public sealed class SemanticVersionTests
     private sealed record DuplicateBalanceMoved;
 
     private sealed record UnattributedEvent;
+
+    private sealed record LegacyCustomerState;
+
+    private sealed record CustomerState;
+
+    private sealed record DuplicateCustomerState;
+
+    private sealed record UnattributedState;
 }
