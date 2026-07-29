@@ -9,6 +9,7 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <IncludeSymbols>true</IncludeSymbols>
     <IncludeSource>true</IncludeSource>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
     <Authors>Mario Perez</Authors>
     <Company>Elysium Coding</Company>
