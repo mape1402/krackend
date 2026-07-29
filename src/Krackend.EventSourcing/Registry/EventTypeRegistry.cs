@@ -1,6 +1,7 @@
 namespace Krackend.EventSourcing.Registry;
 
 using Krackend.EventSourcing.Contracts;
+using Krackend.EventSourcing.Diagnostics;
 using System.Reflection;
 
 /// <summary>
@@ -28,7 +29,7 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         var hasExplicitEventType = !string.IsNullOrWhiteSpace(eventType);
 
         if (schema is null && !hasExplicitEventType)
-            throw new InvalidOperationException($"Event type '{clrType.FullName}' must be decorated with '{nameof(EventSchemaAttribute)}' or registered with an explicit event type name.");
+            throw new EventSchemaMissingException(clrType);
 
         if (eventSchemaVersion == default)
             eventSchemaVersion = schema?.Version ?? SemanticVersion.Default;
@@ -38,10 +39,7 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         var key = new EventTypeKey(resolvedEventType, eventSchemaVersion);
 
         if (_byStoredType.TryGetValue(key, out var registeredType) && registeredType != clrType)
-        {
-            throw new InvalidOperationException(
-                $"Event schema '{resolvedEventType}' version '{eventSchemaVersion}' is already registered for '{registeredType.FullName}'.");
-        }
+            throw new DuplicateEventSchemaException(resolvedEventType, eventSchemaVersion, registeredType, clrType);
 
         _byClrType[clrType] = registration;
         _byStoredType[key] = clrType;
@@ -55,7 +53,7 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         ArgumentNullException.ThrowIfNull(eventType);
 
         if (!_byClrType.TryGetValue(eventType, out var registration))
-            throw new InvalidOperationException($"Event type '{eventType.FullName}' is not registered.");
+            throw new EventTypeNotRegisteredException(eventType);
 
         return registration;
     }
@@ -71,7 +69,7 @@ public sealed class EventTypeRegistry : IEventTypeRegistry
         if (_byStoredType.TryGetValue(new EventTypeKey(eventType, eventSchemaVersion), out var clrType))
             return clrType;
 
-        throw new InvalidOperationException($"Event type '{eventType}' schema version '{eventSchemaVersion}' is not registered.");
+        throw new EventTypeNotRegisteredException(eventType, eventSchemaVersion);
     }
 
     private readonly record struct EventTypeKey(string EventType, SemanticVersion EventSchemaVersion);

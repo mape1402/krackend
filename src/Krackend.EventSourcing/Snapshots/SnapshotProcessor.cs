@@ -1,5 +1,6 @@
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.Core;
+using Krackend.EventSourcing.Diagnostics;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
 using Krackend.EventSourcing.Stores;
@@ -95,7 +96,7 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
                 var eventClrType = _eventTypeRegistry.Resolve(envelope.EventType, envelope.EventSchemaVersion);
 
                 var @event = _eventSerializer.Deserialize(envelope.Payload, eventClrType)
-                    ?? throw new InvalidOperationException($"Event '{envelope.EventType}' could not be deserialized.");
+                    ?? throw new EventPayloadDeserializationException(envelope.EventType, envelope.EventSchemaVersion, eventClrType);
 
                 state = _reducers.Apply(state, @event);
                 version = envelope.StreamVersion;
@@ -164,12 +165,13 @@ public sealed class SnapshotProcessor<TState> : ISnapshotProcessor<TState>
         var stateSchema = StateSchemaResolver.Resolve(typeof(TState));
 
         if (snapshot.StateType != stateSchema.StateType || snapshot.StateSchemaVersion != stateSchema.StateSchemaVersion)
-        {
-            throw new InvalidOperationException(
-                $"Snapshot state schema '{snapshot.StateType}' version '{snapshot.StateSchemaVersion}' does not match requested state '{stateSchema.StateType}' version '{stateSchema.StateSchemaVersion}'.");
-        }
+            throw new SnapshotStateSchemaMismatchException(
+                snapshot.StateType,
+                snapshot.StateSchemaVersion,
+                stateSchema.StateType,
+                stateSchema.StateSchemaVersion);
 
         return (TState)(_snapshotSerializer.Deserialize(snapshot.Payload, typeof(TState))
-            ?? throw new InvalidOperationException($"Snapshot for stream '{snapshot.StreamName}/{snapshot.StreamId}' could not be deserialized."));
+            ?? throw new SnapshotDeserializationException(snapshot.StreamName, snapshot.StreamId, typeof(TState)));
     }
 }

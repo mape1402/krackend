@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Contracts;
+using Krackend.EventSourcing.Diagnostics;
 using Krackend.EventSourcing.Registry;
 using System.Text.Json;
 
@@ -125,9 +126,9 @@ public sealed class SemanticVersionTests
     {
         var registry = new EventTypeRegistry();
 
-        var exception = Assert.Throws<InvalidOperationException>(() => registry.Register<UnattributedEvent>());
+        var exception = Assert.Throws<EventSchemaMissingException>(() => registry.Register<UnattributedEvent>());
 
-        Assert.Contains(nameof(EventSchemaAttribute), exception.Message);
+        Assert.Equal(typeof(UnattributedEvent), exception.EventClrType);
     }
 
     [Fact]
@@ -136,9 +137,34 @@ public sealed class SemanticVersionTests
         var registry = new EventTypeRegistry()
             .Register<BalanceMoved>("BalanceMoved", "1.1.0");
 
-        var exception = Assert.Throws<InvalidOperationException>(() => registry.Register<DuplicateBalanceMoved>("BalanceMoved", "1.1.0"));
+        var exception = Assert.Throws<DuplicateEventSchemaException>(() => registry.Register<DuplicateBalanceMoved>("BalanceMoved", "1.1.0"));
 
         Assert.Contains("already registered", exception.Message);
+        Assert.Equal("BalanceMoved", exception.EventType);
+        Assert.Equal(new SemanticVersion(1, 1, 0), exception.EventSchemaVersion);
+        Assert.Equal(typeof(BalanceMoved), exception.RegisteredClrType);
+        Assert.Equal(typeof(DuplicateBalanceMoved), exception.DuplicateClrType);
+    }
+
+    [Fact]
+    public void Event_type_registry_throws_typed_exception_when_clr_type_is_not_registered()
+    {
+        var registry = new EventTypeRegistry();
+
+        var exception = Assert.Throws<EventTypeNotRegisteredException>(() => registry.GetRegistration(typeof(BalanceMoved)));
+
+        Assert.Equal(typeof(BalanceMoved), exception.EventClrType);
+    }
+
+    [Fact]
+    public void Event_type_registry_throws_typed_exception_when_schema_is_not_registered()
+    {
+        var registry = new EventTypeRegistry();
+
+        var exception = Assert.Throws<EventTypeNotRegisteredException>(() => registry.Resolve("BalanceMoved", "9.9.9"));
+
+        Assert.Equal("BalanceMoved", exception.EventType);
+        Assert.Equal(new SemanticVersion(9, 9, 9), exception.EventSchemaVersion);
     }
 
     [Fact]

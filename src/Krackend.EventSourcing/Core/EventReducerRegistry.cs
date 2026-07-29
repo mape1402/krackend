@@ -1,5 +1,7 @@
 namespace Krackend.EventSourcing.Core;
 
+using Krackend.EventSourcing.Diagnostics;
+
 /// <summary>
 /// In-memory reducer registry backed by typed delegates.
 /// </summary>
@@ -35,7 +37,7 @@ public sealed class EventReducerRegistry : IEventReducerRegistry
         var key = new ReducerKey(typeof(TState), @event.GetType());
 
         if (!_reducers.TryGetValue(key, out var reducer))
-            throw new InvalidOperationException($"No reducer registered for state '{typeof(TState).FullName}' and event '{@event.GetType().FullName}'.");
+            throw new EventReducerNotRegisteredException(typeof(TState), @event.GetType());
 
         return (TState)reducer(state, @event)!;
     }
