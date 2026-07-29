@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Snapshots;
+using Krackend.EventSourcing.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.EventSourcing.EntityFrameworkCore;
@@ -41,6 +42,8 @@ public sealed class EntityFrameworkSnapshotStore<TDbContext> : ISnapshotStore
                 record.StreamName,
                 record.StreamId,
                 record.StreamVersion,
+                record.StateType,
+                SemanticVersion.Parse(record.StateSchemaVersion),
                 record.Payload,
                 record.CreatedAt);
     }
@@ -56,6 +59,8 @@ public sealed class EntityFrameworkSnapshotStore<TDbContext> : ISnapshotStore
             StreamName = snapshot.StreamName,
             StreamId = snapshot.StreamId,
             StreamVersion = snapshot.StreamVersion,
+            StateType = snapshot.StateType,
+            StateSchemaVersion = snapshot.StateSchemaVersion.ToString(),
             Payload = snapshot.Payload,
             CreatedAt = snapshot.CreatedAt
         });

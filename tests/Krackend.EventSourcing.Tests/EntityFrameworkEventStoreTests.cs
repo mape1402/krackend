@@ -96,12 +96,17 @@ public sealed class EntityFrameworkEventStoreTests
             "orders",
             "order-1",
             3,
+            "OrderState",
+            "1.0.0",
             "{}",
             DateTimeOffset.UtcNow));
         await candidateStore.MarkAsync("orders", "order-1", 4);
 
         Assert.Equal(1, await dbContext.Set<EventSnapshotRecord>().CountAsync());
         Assert.Equal(1, await dbContext.Set<SnapshotCandidateRecord>().CountAsync());
+        var snapshot = await dbContext.Set<EventSnapshotRecord>().SingleAsync();
+        Assert.Equal("OrderState", snapshot.StateType);
+        Assert.Equal("1.0.0", snapshot.StateSchemaVersion);
     }
 
     private static ServiceProvider BuildProvider()
