@@ -141,6 +141,23 @@ public sealed class SemanticVersionTests
         Assert.Contains("already registered", exception.Message);
     }
 
+    [Fact]
+    public void State_schema_attribute_parses_schema_version()
+    {
+        var attribute = new StateSchemaAttribute("CustomerState", "2.1.0");
+
+        Assert.Equal("CustomerState", attribute.Name);
+        Assert.Equal(new SemanticVersion(2, 1, 0), attribute.Version);
+    }
+
+    [Fact]
+    public void State_schema_attribute_uses_default_schema_version()
+    {
+        var attribute = new StateSchemaAttribute("CustomerState");
+
+        Assert.Equal(SemanticVersion.Default, attribute.Version);
+    }
+
     [EventSchema("VersionedEvent", "2.3.4")]
     private sealed record VersionedEvent;
 
