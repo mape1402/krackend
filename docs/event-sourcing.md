@@ -390,6 +390,66 @@ Guidance:
 - `NoStream`: first event must create the stream.
 - `Any`: append without optimistic version check, useful when the caller intentionally does not own stream concurrency.
 
+## Appending Raw Events
+
+Use `IRawEventStore` when the service stores events produced by other bounded contexts and should not reference every CLR event type from the whole system.
+
+This is useful for centralized event stores, audit logs, forwarding services, and integration collectors. The raw API stores the same envelope shape as typed event sourcing, but it does not use event schemas from attributes, reducers, state rehydration, or snapshots.
+
+```csharp
+var rawEventStore = provider.GetRequiredService<IRawEventStore>();
+
+await rawEventStore.AppendRawAsync(
+    streamName: "integration-events",
+    streamId: "customers:customer-001",
+    expectedVersion: ExpectedVersion.Any,
+    events:
+    [
+        new RawEventData(
+            eventType: "Customers.CustomerRenamed",
+            eventSchemaVersion: "1.0.0",
+            payload: """
+            {"customerId":"customer-001","name":"New Name"}
+            """,
+            metadata: """
+            {"producer":"customers-api","messageId":"9ff3b801"}
+            """)
+    ],
+    cancellationToken);
+```
+
+Raw events still receive envelope fields from the current `IEventExecutionContext`:
+
+- `CorrelationId`
+- `CausationId`
+- `UserId`
+- `TenantId`
+- `Source`
+- `OccurredAt`
+- `StreamVersion`
+- `GlobalPosition`
+
+If `RawEventData.Metadata` is provided, it is stored as-is. If it is omitted, configured envelope metadata providers are collected and serialized into `Metadata`.
+
+Read raw events with the same bounded APIs:
+
+```csharp
+var page = await rawEventStore.ReadStreamAsync(
+    streamName: "integration-events",
+    streamId: "customers:customer-001",
+    fromVersion: 1,
+    maxCount: 100,
+    cancellationToken);
+
+var next = await rawEventStore.ReadFromAsync(
+    streamName: "integration-events",
+    afterGlobalPosition: 5000,
+    maxCount: 500,
+    cancellationToken);
+```
+
+Use typed `IEventStore` for bounded-context write models that need reducers and rehydration. Use `IRawEventStore` for centralized storage where JSON is the contract and C# event classes would become operational debt.
+
 ## Reading Events
 
 There is no unbounded stream-load API.
