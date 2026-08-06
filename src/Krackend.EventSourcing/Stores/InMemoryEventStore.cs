@@ -6,7 +6,7 @@ namespace Krackend.EventSourcing.Stores;
 /// <summary>
 /// In-memory event store implementation for tests and local development.
 /// </summary>
-public sealed class InMemoryEventStore : IEventStore, IEventLogReader
+public sealed class InMemoryEventStore : IEventStore, IRawEventStore, IEventLogReader
 {
     private readonly IEventEnvelopeFactory _envelopeFactory;
     private readonly ISnapshotCandidateMarker _snapshotCandidateMarker;
@@ -122,6 +122,47 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyCollection<EventEnvelope>> AppendRawAsync(
+        string streamName,
+        string streamId,
+        long expectedVersion,
+        IReadOnlyCollection<RawEventData> events,
+        CancellationToken cancellationToken = default)
+        => AppendRawAsync(streamName, streamId, ExpectedVersion.Exact(expectedVersion), events, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyCollection<EventEnvelope>> AppendRawAsync(
+        string streamName,
+        string streamId,
+        ExpectedVersion expectedVersion,
+        IReadOnlyCollection<RawEventData> events,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
+        ArgumentNullException.ThrowIfNull(events);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_syncRoot)
+        {
+            var key = new StreamKey(streamName, streamId);
+
+            if (!_streams.TryGetValue(key, out var stream))
+            {
+                stream = [];
+                _streams[key] = stream;
+            }
+
+            var actualVersion = stream.Count == 0 ? 0 : stream[^1].StreamVersion;
+
+            EnsureExpectedVersion(streamName, streamId, expectedVersion, actualVersion);
+
+            return AppendRawCoreAsync(streamName, streamId, stream, actualVersion, events);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyCollection<EventEnvelope>> ReadFromAsync(
         string streamName,
         long afterGlobalPosition,
@@ -197,6 +238,27 @@ public sealed class InMemoryEventStore : IEventStore, IEventLogReader
             cancellationToken);
 
         return envelopes;
+    }
+
+    private Task<IReadOnlyCollection<EventEnvelope>> AppendRawCoreAsync(
+        string streamName,
+        string streamId,
+        List<EventEnvelope> stream,
+        long expectedVersion,
+        IReadOnlyCollection<RawEventData> events)
+    {
+        var envelopes = _envelopeFactory.CreateRaw(
+                streamName,
+                streamId,
+                streamType: null,
+                expectedVersion,
+                events)
+            .Select(envelope => envelope with { GlobalPosition = ++_globalPosition })
+            .ToArray();
+
+        stream.AddRange(envelopes);
+
+        return Task.FromResult<IReadOnlyCollection<EventEnvelope>>(envelopes);
     }
 
     private sealed class NoOpSnapshotCandidateMarker : ISnapshotCandidateMarker
