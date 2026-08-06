@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Registry;
@@ -122,6 +123,78 @@ public sealed class InMemoryEventStoreTests
 
         Assert.Equal(0, exception.ExpectedVersion);
         Assert.Equal(1, exception.ActualVersion);
+    }
+
+    [Fact]
+    public async Task AppendRawAsync_stores_untyped_event_without_event_registration()
+    {
+        var store = CreateStore();
+
+        var envelopes = await store.AppendRawAsync(
+            "integration-events",
+            "billing:payment-001",
+            ExpectedVersion.NoStream,
+            [
+                new RawEventData(
+                    "Billing.PaymentCaptured",
+                    new SemanticVersion(2, 1, 0),
+                    "{\"paymentId\":\"payment-001\",\"amount\":150.25}",
+                    "{\"sourceSystem\":\"billing\"}")
+            ]);
+
+        var envelope = Assert.Single(envelopes);
+        Assert.Equal("Billing.PaymentCaptured", envelope.EventType);
+        Assert.Equal(new SemanticVersion(2, 1, 0), envelope.EventSchemaVersion);
+        Assert.Equal(1, envelope.StreamVersion);
+        Assert.Equal(1, envelope.GlobalPosition);
+        Assert.Equal("{\"paymentId\":\"payment-001\",\"amount\":150.25}", envelope.Payload);
+        Assert.Equal("{\"sourceSystem\":\"billing\"}", envelope.Metadata);
+    }
+
+    [Fact]
+    public async Task AppendRawAsync_respects_expected_version()
+    {
+        var store = CreateStore();
+
+        await store.AppendRawAsync(
+            "integration-events",
+            "customer:customer-001",
+            ExpectedVersion.NoStream,
+            [new RawEventData("Customers.CustomerCreated", SemanticVersion.Default, "{\"customerId\":\"customer-001\"}")]);
+
+        var exception = await Assert.ThrowsAsync<EventStoreConcurrencyException>(() =>
+            store.AppendRawAsync(
+                "integration-events",
+                "customer:customer-001",
+                ExpectedVersion.NoStream,
+                [new RawEventData("Customers.CustomerRenamed", SemanticVersion.Default, "{\"customerId\":\"customer-001\"}")]));
+
+        Assert.Equal(0, exception.ExpectedVersion);
+        Assert.Equal(1, exception.ActualVersion);
+    }
+
+    [Fact]
+    public async Task AppendRawAsync_can_append_after_typed_events_in_the_same_stream()
+    {
+        var store = CreateStore();
+
+        await store.AppendAsync("orders", "order-1", ExpectedVersion.NoStream, [new OrderCreated("order-1")]);
+        await store.AppendRawAsync(
+            "orders",
+            "order-1",
+            ExpectedVersion.Exact(1),
+            [new RawEventData("External.OrderSynced", SemanticVersion.Default, "{\"orderId\":\"order-1\"}")]);
+
+        var envelopes = await store.ReadStreamAsync("orders", "order-1", fromVersion: 1, maxCount: 10);
+
+        Assert.Collection(
+            envelopes,
+            first => Assert.Equal("OrderCreated", first.EventType),
+            second =>
+            {
+                Assert.Equal("External.OrderSynced", second.EventType);
+                Assert.Equal(2, second.StreamVersion);
+            });
     }
 
     private static InMemoryEventStore CreateStore(
