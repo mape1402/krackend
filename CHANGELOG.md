@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+------
+
+## [v1.1.0] - 2026-08-06
+
 - ### Added
 
   - Added `IRawEventStore` and `RawEventData` for appending raw JSON events without CLR event types.
