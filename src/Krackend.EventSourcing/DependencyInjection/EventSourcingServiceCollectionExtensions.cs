@@ -66,6 +66,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddScoped<IEventEnvelopeFactory, EventEnvelopeFactory>();
         services.AddScoped<InMemoryEventStore>();
         services.AddScoped<IEventStore>(provider => provider.GetRequiredService<InMemoryEventStore>());
+        services.AddScoped<IRawEventStore>(provider => provider.GetRequiredService<InMemoryEventStore>());
         services.AddScoped<IEventLogReader>(provider => provider.GetRequiredService<InMemoryEventStore>());
         services.AddScoped<IStateRehydrator, StateRehydrator>();
         services.AddScoped(typeof(ICommandStreamResolver<>), typeof(DefaultCommandStreamResolver<>));

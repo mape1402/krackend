@@ -24,6 +24,7 @@ public static class EntityFrameworkEventStoreServiceCollectionExtensions
         services.AddScoped<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkSnapshotStore<TDbContext>>();
         services.AddScoped<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkSnapshotCandidateStore<TDbContext>>();
         services.Replace(ServiceDescriptor.Scoped<IEventStore>(provider => provider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStore<TDbContext>>()));
+        services.Replace(ServiceDescriptor.Scoped<IRawEventStore>(provider => provider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStore<TDbContext>>()));
         services.Replace(ServiceDescriptor.Scoped<IEventLogReader>(provider => provider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStore<TDbContext>>()));
         services.Replace(ServiceDescriptor.Scoped<Krackend.EventSourcing.Snapshots.ISnapshotStore>(provider => provider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkSnapshotStore<TDbContext>>()));
         services.Replace(ServiceDescriptor.Scoped<Krackend.EventSourcing.Snapshots.ISnapshotCandidateStore>(provider => provider.GetRequiredService<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkSnapshotCandidateStore<TDbContext>>()));
