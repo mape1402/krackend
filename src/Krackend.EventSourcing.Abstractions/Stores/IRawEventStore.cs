@@ -26,6 +26,15 @@ public interface IRawEventStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads raw events after a global position.
+    /// </summary>
+    Task<IReadOnlyCollection<EventEnvelope>> ReadFromAsync(
+        string streamName,
+        long afterGlobalPosition,
+        int maxCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Appends raw events to the stream using optimistic concurrency.
     /// </summary>
     Task<IReadOnlyCollection<EventEnvelope>> AppendRawAsync(
