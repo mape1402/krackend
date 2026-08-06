@@ -1,6 +1,7 @@
 using Krackend.EventSourcing.Metadata;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Serialization;
+using Krackend.EventSourcing.Stores;
 
 namespace Krackend.EventSourcing.Envelopes;
 
@@ -71,6 +72,54 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
                 Source: _executionContext?.Source,
                 Payload: _serializer.Serialize(@event),
                 Metadata: serializedMetadata));
+        }
+
+        return envelopes;
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<EventEnvelope> CreateRaw(
+        string streamName,
+        string streamId,
+        string? streamType,
+        long expectedVersion,
+        IReadOnlyCollection<RawEventData> events)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
+        ArgumentNullException.ThrowIfNull(events);
+
+        var metadata = _metadataCollector.Collect();
+        var serializedMetadata = metadata.Count == 0 ? null : _serializer.Serialize(metadata);
+        var occurredAt = DateTimeOffset.UtcNow;
+        var envelopes = new List<EventEnvelope>(events.Count);
+        var version = expectedVersion;
+
+        foreach (var @event in events)
+        {
+            ArgumentNullException.ThrowIfNull(@event);
+
+            version++;
+
+            envelopes.Add(new EventEnvelope(
+                EventId: Guid.NewGuid(),
+                StreamName: streamName,
+                StreamId: streamId,
+                StreamType: streamType,
+                StreamVersion: version,
+                GlobalPosition: null,
+                EventType: @event.EventType,
+                EventSchemaVersion: @event.EventSchemaVersion,
+                OccurredAt: occurredAt,
+                CorrelationId: _executionContext?.CorrelationId,
+                CausationId: _executionContext?.CausationId,
+                UserId: _executionContext?.UserId,
+                TenantId: _executionContext?.TenantId,
+                Source: _executionContext?.Source,
+                Payload: @event.Payload,
+                Metadata: string.IsNullOrWhiteSpace(@event.Metadata)
+                    ? serializedMetadata
+                    : @event.Metadata));
         }
 
         return envelopes;
