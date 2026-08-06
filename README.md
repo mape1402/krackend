@@ -32,6 +32,7 @@ dotnet add package Krackend.EventSourcing.Abstractions
 - state rehydration with reducers
 - snapshots of state
 - EF Core event store adapter
+- raw JSON event appends for centralized event stores
 - runtime diagnostics
 - Roslyn analyzers
 - testing helpers
@@ -60,6 +61,24 @@ public sealed record RenameCustomer(string CustomerId, string Name)
 }
 
 await customerService.ExecuteAsync(new RenameCustomer("customer-001", "New Name"));
+```
+
+Centralized raw event store usage:
+
+```csharp
+var rawEventStore = provider.GetRequiredService<IRawEventStore>();
+
+await rawEventStore.AppendRawAsync(
+    streamName: "integration-events",
+    streamId: "customers:customer-001",
+    expectedVersion: ExpectedVersion.Any,
+    events:
+    [
+        new RawEventData(
+            "Customers.CustomerRenamed",
+            "1.0.0",
+            "{\"customerId\":\"customer-001\",\"name\":\"New Name\"}")
+    ]);
 ```
 
 See [docs/event-sourcing.md](docs/event-sourcing.md) for the full guide.

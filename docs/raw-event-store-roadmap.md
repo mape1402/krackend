@@ -63,13 +63,13 @@ public interface IRawEventStore
 
 ## Implementation Steps
 
-1. Add raw contracts to `Krackend.EventSourcing.Abstractions`.
-2. Add raw envelope creation support in the core runtime.
-3. Implement `IRawEventStore` in `InMemoryEventStore`.
-4. Implement `IRawEventStore` in `EntityFrameworkEventStore<TDbContext>`.
-5. Register `IRawEventStore` in core and EF dependency injection.
-6. Add tests for raw append/read, metadata preservation, expected versions, and coexistence with typed events.
-7. Update documentation with centralized event store guidance and examples.
+1. Done: add raw contracts to `Krackend.EventSourcing.Abstractions`.
+2. Done: add raw envelope creation support in the core runtime.
+3. Done: implement `IRawEventStore` in `InMemoryEventStore`.
+4. Done: implement `IRawEventStore` in `EntityFrameworkEventStore<TDbContext>`.
+5. Done: register `IRawEventStore` in core and EF dependency injection.
+6. Done: add tests for raw append/read, metadata preservation, expected versions, and coexistence with typed events.
+7. Done: update documentation with centralized event store guidance and examples.
 
 ## Future Work
 

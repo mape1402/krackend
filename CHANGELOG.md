@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ### Added
+
+  - Added `IRawEventStore` and `RawEventData` for appending raw JSON events without CLR event types.
+  - Added raw append support to the in-memory and EF Core event stores.
+  - Added dependency injection registration and tests for centralized raw event store scenarios.
+
 ------
 
 ## [v1.0.0] - 2026-07-29
