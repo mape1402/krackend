@@ -42,6 +42,37 @@ public sealed class EntityFrameworkEventStoreTests
     }
 
     [Fact]
+    public async Task AppendRawAsync_persists_untyped_events_in_app_db_context_event_store()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var rawEventStore = scope.ServiceProvider.GetRequiredService<IRawEventStore>();
+
+        await rawEventStore.AppendRawAsync(
+            "payments",
+            "payment-1",
+            ExpectedVersion.NoStream,
+            [
+                new RawEventData(
+                    "Billing.PaymentCaptured",
+                    new SemanticVersion(2, 0, 0),
+                    "{\"paymentId\":\"payment-1\",\"amount\":250.00}",
+                    "{\"sourceSystem\":\"billing\"}")
+            ]);
+
+        var envelopes = await rawEventStore.ReadStreamAsync("payments", "payment-1", fromVersion: 1, maxCount: 10);
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var record = await dbContext.Set<EventStoreRecord>("payments").SingleAsync();
+
+        var envelope = Assert.Single(envelopes);
+        Assert.Equal("Billing.PaymentCaptured", envelope.EventType);
+        Assert.Equal(new SemanticVersion(2, 0, 0), envelope.EventSchemaVersion);
+        Assert.Equal("{\"paymentId\":\"payment-1\",\"amount\":250.00}", envelope.Payload);
+        Assert.Equal("{\"sourceSystem\":\"billing\"}", record.Metadata);
+        Assert.Equal("2.0.0", record.EventSchemaVersion);
+    }
+
+    [Fact]
     public async Task AppendAsync_with_any_expected_version_appends_and_updates_current_version()
     {
         using var provider = BuildProvider();
