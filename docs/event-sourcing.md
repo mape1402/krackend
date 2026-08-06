@@ -818,4 +818,5 @@ Console.WriteLine(result.CurrentState.Name);
 The repository contains:
 
 - `samples/Krackend.EventSourcing.Sqlite.Sample`: compact event-sourced application service flow with SQLite.
+- `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store flow with SQLite.
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration sample. The integration pieces are intentionally outside the core event sourcing runtime.

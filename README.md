@@ -82,3 +82,9 @@ await rawEventStore.AppendRawAsync(
 ```
 
 See [docs/event-sourcing.md](docs/event-sourcing.md) for the full guide.
+
+Samples:
+
+- `samples/Krackend.EventSourcing.Sqlite.Sample`: typed event-sourced write model with SQLite.
+- `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store with SQLite.
+- `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
