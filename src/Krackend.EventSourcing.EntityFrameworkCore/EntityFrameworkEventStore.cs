@@ -10,7 +10,7 @@ namespace Krackend.EventSourcing.EntityFrameworkCore;
 /// <summary>
 /// Entity Framework Core event store using entities added to the application DbContext model.
 /// </summary>
-public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventLogReader, IDisposable, IAsyncDisposable
+public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IRawEventStore, IEventLogReader, IDisposable, IAsyncDisposable
     where TDbContext : DbContext
 {
     private readonly EventStoreOptionsCollection _stores;
@@ -111,6 +111,34 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
         return await AppendCoreAsync(streamName, streamId, actualVersion, events, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyCollection<EventEnvelope>> AppendRawAsync(
+        string streamName,
+        string streamId,
+        long expectedVersion,
+        IReadOnlyCollection<RawEventData> events,
+        CancellationToken cancellationToken = default)
+        => await AppendRawAsync(streamName, streamId, ExpectedVersion.Exact(expectedVersion), events, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyCollection<EventEnvelope>> AppendRawAsync(
+        string streamName,
+        string streamId,
+        ExpectedVersion expectedVersion,
+        IReadOnlyCollection<RawEventData> events,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
+        ArgumentNullException.ThrowIfNull(events);
+
+        var actualVersion = await GetCurrentVersionAsync(streamName, streamId, cancellationToken);
+
+        EnsureExpectedVersion(streamName, streamId, expectedVersion, actualVersion);
+
+        return await AppendRawCoreAsync(streamName, streamId, actualVersion, events, cancellationToken);
+    }
+
     private async Task<IReadOnlyCollection<EventEnvelope>> AppendCoreAsync(
         string streamName,
         string streamId,
@@ -139,6 +167,33 @@ public sealed class EntityFrameworkEventStore<TDbContext> : IEventStore, IEventL
             streamId,
             committedEnvelopes.Count == 0 ? expectedVersion : committedEnvelopes[^1].StreamVersion,
             cancellationToken);
+
+        return committedEnvelopes;
+    }
+
+    private async Task<IReadOnlyCollection<EventEnvelope>> AppendRawCoreAsync(
+        string streamName,
+        string streamId,
+        long expectedVersion,
+        IReadOnlyCollection<RawEventData> events,
+        CancellationToken cancellationToken)
+    {
+        EnsureStore(streamName);
+
+        var set = _dbContext.Set<EventStoreRecord>(streamName);
+        var nextGlobalPosition = await set.MaxAsync(x => (long?)x.GlobalPosition, cancellationToken) ?? 0;
+        var pendingEnvelopes = _envelopeFactory.CreateRaw(streamName, streamId, null, expectedVersion, events);
+        var committedEnvelopes = new List<EventEnvelope>(pendingEnvelopes.Count);
+
+        foreach (var envelope in pendingEnvelopes)
+        {
+            nextGlobalPosition++;
+            var committed = envelope with { GlobalPosition = nextGlobalPosition };
+            set.Add(ToRecord(committed));
+            committedEnvelopes.Add(committed);
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return committedEnvelopes;
     }
