@@ -14,6 +14,7 @@ dotnet add package Krackend.EventSourcing
 dotnet add package Krackend.EventSourcing.EntityFrameworkCore
 dotnet add package Krackend.EventSourcing.Analyzers
 dotnet add package Krackend.EventSourcing.Testing
+dotnet add package Krackend.Testing
 ```
 
 Optional event sourcing packages:
@@ -88,3 +89,25 @@ Samples:
 - `samples/Krackend.EventSourcing.Sqlite.Sample`: typed event-sourced write model with SQLite.
 - `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store with SQLite.
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
+
+## Testing
+
+`Krackend.Testing` provides an in-memory event store for testing event flow behavior without a real event store:
+
+```csharp
+services.AddKrackendTesting();
+
+var eventStore = provider.GetRequiredService<IKrackendTestEventStore>();
+var stream = EventStreamReference.Create("customers", customerId);
+
+await eventStore.AppendAsync(stream, [new CustomerCreated(customerId)]);
+
+eventStore.ShouldHaveEvent<CustomerCreated>("customers", customerId);
+eventStore.ShouldHaveVersion("customers", customerId, 1);
+```
+
+External test host integrations can use:
+
+```csharp
+services.AddKrackendTestingAdapter();
+```
