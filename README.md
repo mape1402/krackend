@@ -92,7 +92,7 @@ Samples:
 
 ## Testing
 
-`Krackend.Testing` provides an in-memory event store for testing event flow behavior without a real event store:
+`Krackend.Testing` provides an in-memory event store for testing event flow behavior without a real event store. It is meant for application tests, package adapters, and external test hosts that need to assert event sourcing behavior without booting EF Core, SQL Server, SQLite, or a production event store.
 
 ```csharp
 services.AddKrackendTesting();
@@ -106,8 +106,42 @@ eventStore.ShouldHaveEvent<CustomerCreated>("customers", customerId);
 eventStore.ShouldHaveVersion("customers", customerId, 1);
 ```
 
+Append with expected-version behavior and metadata:
+
+```csharp
+await eventStore.AppendAsync(
+    stream,
+    ExpectedVersion.NoStream,
+    [new CustomerCreated(customerId)],
+    new Dictionary<string, object?>
+    {
+        ["correlation-id"] = correlationId
+    });
+```
+
+Available assertions include:
+
+- stream existence
+- event type
+- event order
+- stream version
+- metadata
+- serialized payload
+
+Failure simulation:
+
+```csharp
+eventStore.FailNextAppendWithConcurrencyConflict(stream);
+```
+
 External test host integrations can use:
 
 ```csharp
 services.AddKrackendTestingAdapter();
+```
+
+That adapter-friendly registration allows wrappers such as:
+
+```csharp
+testHost.UseKrackendTesting();
 ```
