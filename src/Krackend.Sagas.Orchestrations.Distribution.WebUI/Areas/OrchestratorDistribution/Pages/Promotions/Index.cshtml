@@ -1,0 +1,1028 @@
+@page
+@model Krackend.Sagas.Orchestrations.Distribution.WebUI.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
+@{
+    ViewData["Title"] = "Releases";
+    var releaseRows = Model.Rows
+        .OrderByDescending(x => x.CreatedAtUtc)
+        .ToArray();
+    var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+    var runtimeNodesById = Model.RuntimeNodes.ToDictionary(x => x.Id, StringComparer.Ordinal);
+
+    string DisplayStageStatus(string status)
+    {
+        var normalized = (status ?? string.Empty).Trim();
+        return normalized.ToLowerInvariant() switch
+        {
+            "inprogress" => "Queued",
+            "pushscheduled" => "Queued",
+            "pending" => "Queued",
+            "availableforpull" => "Pending",
+            _ => string.IsNullOrWhiteSpace(normalized) ? "Pending" : normalized
+        };
+    }
+
+    string ReleaseStatusClass(string status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "inprogress" or "draft" => "od-status-queued",
+            "completed" => "od-status-completed",
+            "failed" or "cancelled" => "od-status-failed",
+            _ => "od-status-queued"
+        };
+    }
+
+    bool IsActivated(string status)
+        => string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
+
+    string ResolveReleaseStatus(Krackend.Sagas.Orchestrations.Distribution.Interaction.ReleaseModel release)
+    {
+        var targetStatuses = release.Targets
+            .Select(target =>
+            {
+                Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{release.Id}|{target.RuntimeNodeId}", out var releaseTarget);
+                return releaseTarget?.Status ?? target.Status;
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+
+        if (targetStatuses.Length == 0)
+        {
+            return release.Status;
+        }
+
+        if (targetStatuses.All(x => string.Equals(x, "Activated", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Completed";
+        }
+
+        if (targetStatuses.Any(x => string.Equals(x, "Failed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Failed";
+        }
+
+        return release.Status;
+    }
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">
+            @(string.IsNullOrWhiteSpace(Model.OrchestrationId)
+                ? "Releases"
+                : $"Releases - {Model.SelectedOrchestration?.Name}")
+        </h1>
+        <p class="od-page-subtitle">Select an orchestration to view and create releases.</p>
+    </div>
+    <div class="d-flex gap-2">
+        @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        {
+            <button type="button" class="btn btn-outline-secondary" id="openRuntimeNodesModalButton">Allowed Nodes</button>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        {
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createReleaseModal">Create release</button>
+        }
+    </div>
+</div>
+
+@if (!ViewContext.ModelState.IsValid && !string.IsNullOrWhiteSpace(Model.OrchestrationId))
+{
+    <div class="alert alert-danger">
+        @foreach (var error in ViewContext.ModelState.Values.SelectMany(x => x.Errors))
+        {
+            <div>@error.ErrorMessage</div>
+        }
+    </div>
+}
+
+<section class="od-release-split">
+    <aside class="od-list-shell od-release-left">
+        @if (!Model.Orchestrations.Any())
+        {
+            <p class="od-empty">No orchestrations available in distribution mirror.</p>
+        }
+        else
+        {
+            <div class="od-vertical-cards">
+                @foreach (var orchestration in Model.Orchestrations.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    var isSelected = string.Equals(Model.OrchestrationId, orchestration.Id, StringComparison.Ordinal);
+                    <a class="od-item-card od-orch-card text-decoration-none @(isSelected ? "od-selected" : string.Empty)"
+                       asp-area="OrchestratorDistribution"
+                       asp-page="/Promotions/Index"
+                       asp-route-orchestrationId="@orchestration.Id">
+                        <div class="od-item-top">
+                            <div>
+                                <h2 class="od-item-title od-orch-title">@orchestration.Name</h2>
+                                <p class="od-item-meta">@orchestration.Key</p>
+                            </div>
+                            <span class="od-status @(orchestration.IsActive ? "od-status-active" : "od-status-inactive")">
+                                @(orchestration.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </aside>
+
+    <div class="od-list-shell od-release-right">
+        @if (string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        {
+            <p class="od-empty">Select a pipeline to view its releases.</p>
+        }
+        else if (!releaseRows.Any())
+        {
+            <div class="od-empty-state">
+                <p class="od-empty">No releases found for this orchestration.</p>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createReleaseModal">
+                    Create release
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="od-release-board">
+                @foreach (var item in releaseRows)
+                {
+                    var artifact = Model.Artifacts.FirstOrDefault(x => x.Id == item.ArtifactId);
+                    var releaseStatus = ResolveReleaseStatus(item);
+                    <article class="od-release-row">
+                        <div class="od-release-row-main">
+                            <div class="od-release-row-head">
+                                <span class="od-status @ReleaseStatusClass(releaseStatus)">@DisplayStageStatus(releaseStatus)</span>
+                                <p class="od-item-meta od-release-id">@item.Id</p>
+                            </div>
+                            <div class="od-chip-row">
+                                <span class="od-meta-chip">Artifact: @(artifact is null ? "N/A" : $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "N/A" : artifact.VersionLabel)}")</span>
+                                <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                            </div>
+                            <div class="od-release-stages">
+                                @foreach (var target in item.Targets.OrderBy(x => x.CreatedAtUtc))
+                                {
+                                    var nodeName = target.RuntimeNodeId;
+                                    var nodeCode = "N/A";
+                                    var nodeMode = "N/A";
+                                    if (runtimeNodesById.TryGetValue(target.RuntimeNodeId, out var runtimeNode))
+                                    {
+                                        nodeName = runtimeNode.Name;
+                                        nodeCode = runtimeNode.Code;
+                                        nodeMode = runtimeNode.DistributionMode;
+                                    }
+                                    Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{item.Id}|{target.RuntimeNodeId}", out var releaseTarget);
+                                    var targetStatus = releaseTarget?.Status ?? target.Status;
+                                    var canPushTarget = string.Equals(nodeMode, "Push", StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals(nodeMode, "Hybrid", StringComparison.OrdinalIgnoreCase);
+                                    var isActivated = IsActivated(targetStatus);
+                                    <div class="od-release-stage">
+                                        <div class="od-release-stage-name">@nodeName</div>
+                                        <div class="od-release-stage-meta">@nodeCode · @nodeMode</div>
+                                        <div class="od-release-stage-status">@DisplayStageStatus(targetStatus)</div>
+                                        @if (canPushTarget && releaseTarget is not null && !isActivated)
+                                        {
+                                            <form method="post"
+                                                  asp-page-handler="Push"
+                                                  class="mt-2"
+                                                  data-confirm="true"
+                                                  data-confirm-title="Promote artifact"
+                                                  data-confirm-message="Push this artifact to @nodeName?"
+                                                  data-confirm-accept="Push"
+                                                  data-confirm-type="warning">
+                                                <input type="hidden" name="releaseTargetId" value="@releaseTarget.Id" />
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <button type="submit" class="btn btn-sm btn-primary w-100">Push</button>
+                                            </form>
+                                        }
+                                        else if (isActivated)
+                                        {
+                                            <div class="od-release-stage-note">Promoted</div>
+                                        }
+                                        else if (string.Equals(nodeMode, "Pull", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <div class="od-release-stage-note">Pull from runtime</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="od-release-row-actions">
+                            <button type="button"
+                                    class="btn btn-sm od-release-details-btn js-open-release-details"
+                                    data-release-id="@item.Id">
+                                View details
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
+{
+    <div class="modal fade" id="createReleaseModal" tabindex="-1" aria-labelledby="createReleaseModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form method="post" asp-page-handler="Create">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="createReleaseModalLabel">Create release</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input asp-for="Input.Strategy" type="hidden" value="Immediate" />
+                        <input asp-for="Input.OrchestrationDefinitionId" type="hidden" value="@Model.OrchestrationId" />
+                        <input asp-for="Input.RequestedBy" type="hidden" />
+                        <input asp-for="Input.Notes" type="hidden" />
+                        <div class="row g-3">
+                            <div class="col-md-12">
+                                <label asp-for="Input.ArtifactId" class="form-label"></label>
+                                <select asp-for="Input.ArtifactId" class="form-select" id="releaseArtifactSelect">
+                                    <option value="">Select artifact</option>
+                                    @foreach (var artifact in Model.SelectedArtifacts)
+                                    {
+                                        <option value="@artifact.Id"
+                                                data-orchestration-id="@artifact.OrchestrationDefinitionId">
+                                            @artifact.OrchestrationDisplayName - @artifact.ArtifactType, @artifact.VersionNumber - @(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "N/A" : artifact.VersionLabel)
+                                        </option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Target runtime nodes</label>
+                                <div class="border rounded p-3" style="max-height: 260px; overflow-y: auto;">
+                                    @if (!Model.RuntimeNodes.Any())
+                                    {
+                                        <div class="text-muted small">No enabled runtime nodes found.</div>
+                                    }
+                                    else
+                                    {
+                                        <div id="releaseAllowedNodesWarning" class="alert alert-warning py-2 px-3 mb-2 d-none">
+                                            No node policy configured for this orchestration. Release is blocked by default.
+                                        </div>
+                                        <div class="od-stage-picker">
+                                            @for (var i = 0; i < Model.RuntimeNodes.Count; i++)
+                                            {
+                                                var node = Model.RuntimeNodes.ElementAt(i);
+                                                <div class="od-stage-option-wrap form-check">
+                                                    <input class="form-check-input js-runtime-node-option od-stage-checkbox"
+                                                           type="checkbox"
+                                                           name="Input.RuntimeNodeIds"
+                                                           value="@node.Id"
+                                                           data-runtime-node-id="@node.Id"
+                                                           id="runtimeNode_@i" />
+                                                    <label class="od-stage-option" for="runtimeNode_@i">
+                                                        <span class="od-stage-name">@node.Name</span>
+                                                        <span class="od-stage-meta">@node.Code · @node.EnvironmentName</span>
+                                                    </label>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="createReleaseSubmitButton">Create release</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="modal fade" id="allowedNodesModal" tabindex="-1" aria-labelledby="allowedNodesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="SaveAllowedNodes">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="allowedNodesModalLabel">Allowed nodes</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input asp-for="AllowedNodes.OrchestrationDefinitionId" type="hidden" id="allowedNodesOrchestrationId" />
+                    <input asp-for="AllowedNodes.UpdatedBy" type="hidden" />
+                    <p class="text-muted small mb-2">Only selected nodes will be eligible for releases of this orchestration.</p>
+                    <div id="allowedNodesSelectionWarning" class="alert alert-warning py-2 px-3 mb-2 d-none">
+                        Orchestration is required to configure runtime nodes.
+                    </div>
+                    <div class="border rounded p-2" style="max-height: 260px; overflow-y: auto;">
+                        @if (!Model.RuntimeNodes.Any())
+                        {
+                            <div class="text-muted small">No enabled runtime nodes found.</div>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < Model.RuntimeNodes.Count; i++)
+                            {
+                                var node = Model.RuntimeNodes.ElementAt(i);
+                                <div class="form-check">
+                                    <input class="form-check-input js-allowed-node-option"
+                                           type="checkbox"
+                                           name="AllowedNodes.RuntimeNodeIds"
+                                           value="@node.Id"
+                                           id="allowedPolicyNode_@i" />
+                                    <label class="form-check-label" for="allowedPolicyNode_@i">@node.Name (@node.Code) - @node.EnvironmentName</label>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="allowedNodesCancelButton" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveAllowedNodesButton">Save policy</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="releaseDetailsModal" tabindex="-1" aria-labelledby="releaseDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="releaseDetailsModalLabel">Release details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="od-release-detail-head">
+                    <div>
+                        <div class="od-release-detail-title" id="releaseDetailsOrchestrationName"></div>
+                        <div class="od-release-detail-sub" id="releaseDetailsReleaseId"></div>
+                    </div>
+                    <div class="od-release-detail-meta">
+                        <span class="od-meta-chip" id="releaseDetailsArtifact"></span>
+                        <span class="od-meta-chip" id="releaseDetailsCreated"></span>
+                    </div>
+                </div>
+                <div class="od-stage-grid" id="releaseDetailsTargets"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const artifactSelect = document.getElementById('releaseArtifactSelect');
+    const nodeCheckboxes = Array.from(document.querySelectorAll('.js-runtime-node-option'));
+    const warning = document.getElementById('releaseAllowedNodesWarning');
+    const submitButton = document.getElementById('createReleaseSubmitButton');
+    const allowedNodesModalElement = document.getElementById('allowedNodesModal');
+    const allowedNodesModalLabel = document.getElementById('allowedNodesModalLabel');
+    const allowedNodesOrchestrationIdInput = document.getElementById('allowedNodesOrchestrationId');
+    const allowedNodesWarning = document.getElementById('allowedNodesSelectionWarning');
+    const allowedNodesCheckboxes = Array.from(document.querySelectorAll('.js-allowed-node-option'));
+    const saveAllowedNodesButton = document.getElementById('saveAllowedNodesButton');
+    const openRuntimeNodesModalButton = document.getElementById('openRuntimeNodesModalButton');
+    const releaseDetailsModalElement = document.getElementById('releaseDetailsModal');
+    const releaseDetailsTargetsElement = document.getElementById('releaseDetailsTargets');
+    const releaseDetailsOrchestrationNameElement = document.getElementById('releaseDetailsOrchestrationName');
+    const releaseDetailsReleaseIdElement = document.getElementById('releaseDetailsReleaseId');
+    const releaseDetailsArtifactElement = document.getElementById('releaseDetailsArtifact');
+    const releaseDetailsCreatedElement = document.getElementById('releaseDetailsCreated');
+    const releaseDetailButtons = Array.from(document.querySelectorAll('.js-open-release-details'));
+
+    if (!window.bootstrap?.Modal) {
+        return;
+    }
+
+    const allowedNodeIdsByOrchestration = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.AllowedNodeIdsByOrchestrationId));
+    const allowedNodesModal = allowedNodesModalElement ? window.bootstrap.Modal.getOrCreateInstance(allowedNodesModalElement) : null;
+    const releaseDetailsModal = releaseDetailsModalElement ? window.bootstrap.Modal.getOrCreateInstance(releaseDetailsModalElement) : null;
+    const selectedOrchestrationId = '@Model.OrchestrationId';
+    const releases = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Rows, jsonOptions));
+    const artifacts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Artifacts, jsonOptions));
+    const runtimeNodes = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.RuntimeNodes, jsonOptions));
+    const releaseTargetsByReleaseAndNode = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ReleaseTargetByReleaseAndNode, jsonOptions));
+
+    const getSelectedOrchestrationId = () => selectedOrchestrationId;
+    const artifactById = new Map(artifacts.map(x => [x.id, x]));
+    const runtimeNodeById = new Map(runtimeNodes.map(x => [x.id, x]));
+    const releaseById = new Map(releases.map(x => [x.id, x]));
+
+    const updateNodeVisibility = () => {
+        if (!artifactSelect || !warning || !submitButton || nodeCheckboxes.length === 0) {
+            return;
+        }
+
+        const orchestrationId = getSelectedOrchestrationId();
+        const allowedNodes = orchestrationId ? (allowedNodeIdsByOrchestration[orchestrationId] ?? []) : [];
+        const allowedSet = new Set(allowedNodes);
+
+        if (!orchestrationId || allowedNodes.length === 0) {
+            warning.classList.remove('d-none');
+            submitButton.disabled = true;
+        } else {
+            warning.classList.add('d-none');
+            submitButton.disabled = false;
+        }
+
+        nodeCheckboxes.forEach(checkbox => {
+            const nodeId = checkbox.getAttribute('data-runtime-node-id') ?? '';
+            const isAllowed = orchestrationId && allowedSet.has(nodeId);
+
+            checkbox.checked = isAllowed ? checkbox.checked : false;
+            checkbox.disabled = !isAllowed;
+            const wrapper = checkbox.closest('.form-check');
+            if (!wrapper) return;
+            wrapper.classList.toggle('d-none', !isAllowed);
+        });
+    };
+
+    const loadAllowedNodesForOrchestration = async (orchestrationId) => {
+        if (!orchestrationId) {
+            return [];
+        }
+
+        const url = `${window.location.pathname}?handler=AllowedNodes&orchestrationId=${encodeURIComponent(orchestrationId)}`;
+        const response = await fetch(url, { method: 'GET' });
+        if (!response.ok) {
+            return allowedNodeIdsByOrchestration[orchestrationId] ?? [];
+        }
+
+        const payload = await response.json();
+        return payload.runtimeNodeIds ?? [];
+    };
+
+    const openAllowedNodesForOrchestration = async (orchestrationId) => {
+        if (!allowedNodesModal || !allowedNodesOrchestrationIdInput || !allowedNodesWarning || !saveAllowedNodesButton || !allowedNodesModalLabel) {
+            return false;
+        }
+
+        allowedNodesOrchestrationIdInput.value = orchestrationId || '';
+        allowedNodesModalLabel.textContent = 'Allowed nodes';
+        if (!orchestrationId) {
+            allowedNodesWarning.classList.remove('d-none');
+            saveAllowedNodesButton.disabled = true;
+            allowedNodesCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+                checkbox.disabled = true;
+            });
+            allowedNodesModal.show();
+            return false;
+        }
+
+        allowedNodesWarning.classList.add('d-none');
+        saveAllowedNodesButton.disabled = false;
+
+        const selectedNodes = new Set(await loadAllowedNodesForOrchestration(orchestrationId));
+        allowedNodesCheckboxes.forEach(checkbox => {
+            checkbox.disabled = false;
+            checkbox.checked = selectedNodes.has(checkbox.value);
+        });
+
+        allowedNodesModal.show();
+        return true;
+    };
+
+    const escapeHtml = (value) => {
+        return (value ?? '').toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    const getStatusVariant = (status) => {
+        const s = (status || '').toLowerCase();
+        if (s === 'pending' || s === 'availableforpull') return 'warning';
+        if (s === 'inprogress' || s === 'pushscheduled') return 'info';
+        if (s === 'delivered' || s === 'acknowledged' || s === 'activated') return 'success';
+        if (s === 'failed' || s === 'cancelled') return 'danger';
+        return 'neutral';
+    };
+
+    const getDisplayStatus = (status) => {
+        const s = (status || '').toLowerCase();
+        if (s === 'inprogress' || s === 'pushscheduled') return 'Queued';
+        if (s === 'availableforpull') return 'Pending';
+        return status || 'Pending';
+    };
+
+    const isFinalStatus = (status) => {
+        const s = (status || '').toLowerCase();
+        return s === 'delivered' || s === 'acknowledged' || s === 'activated' || s === 'failed' || s === 'cancelled';
+    };
+
+    const canPush = (mode, status) => {
+        const modeValue = (mode || '').toLowerCase();
+        const isPushMode = modeValue === 'push' || modeValue === 'hybrid';
+        return isPushMode;
+    };
+
+    const showReleaseDetails = (releaseId) => {
+        if (!releaseDetailsModal || !releaseDetailsTargetsElement || !releaseById.has(releaseId)) {
+            return;
+        }
+
+        const release = releaseById.get(releaseId);
+        const artifact = artifactById.get(release.artifactId);
+        releaseDetailsOrchestrationNameElement.textContent = artifact?.orchestrationDisplayName || 'Release';
+        releaseDetailsReleaseIdElement.textContent = `ReleaseId: ${release.id}`;
+        releaseDetailsArtifactElement.textContent = `Artifact: ${artifact ? `${artifact.versionNumber} - ${artifact.versionLabel || 'N/A'}` : 'N/A'}`;
+        releaseDetailsCreatedElement.textContent = `Created: ${release.createdAtUtc?.replace('T', ' ').slice(0, 16) || ''}`;
+
+        const targets = Array.isArray(release.targets) ? [...release.targets] : [];
+        targets.sort((a, b) => {
+            const aFinal = isFinalStatus(a.status);
+            const bFinal = isFinalStatus(b.status);
+            if (aFinal !== bFinal) {
+                return aFinal ? 1 : -1;
+            }
+            return (a.createdAtUtc || '').localeCompare(b.createdAtUtc || '');
+        });
+
+        releaseDetailsTargetsElement.innerHTML = targets.map(target => {
+            const node = runtimeNodeById.get(target.runtimeNodeId);
+            const mode = node?.distributionMode || 'N/A';
+            const releaseTarget = releaseTargetsByReleaseAndNode[`${release.id}|${target.runtimeNodeId}`];
+            const actualStatus = releaseTarget?.status || target.status;
+            const statusVariant = getStatusVariant(actualStatus);
+            const displayStatus = getDisplayStatus(actualStatus);
+            const pushAllowed = canPush(mode, actualStatus);
+            const isPullOnly = (mode || '').toLowerCase() === 'pull';
+
+            return `
+                <article class="od-stage-card">
+                    <div class="od-stage-card-head">
+                        <div>
+                            <h6 class="od-stage-card-title">${escapeHtml(node?.name || target.runtimeNodeId)}</h6>
+                            <p class="od-stage-card-meta">${escapeHtml(node ? `${node.code} · ${node.environmentName}` : target.runtimeNodeId)}</p>
+                        </div>
+                        <span class="od-stage-badge od-stage-badge-${statusVariant}">${escapeHtml(displayStatus)}</span>
+                    </div>
+                    <div class="od-stage-card-body">
+                        <div class="od-stage-kv"><span>Mode</span><strong>${escapeHtml(mode)}</strong></div>
+                    </div>
+                    <div class="od-stage-card-foot">
+                        ${pushAllowed
+                            ? `<span class="od-stage-note">Push from release board</span>`
+                            : isPullOnly
+                                ? `<span class="od-stage-note">Pull by runtime</span>`
+                                : `<span class="od-stage-note">No manual action</span>`}
+                    </div>
+                </article>
+            `;
+        }).join('');
+
+        releaseDetailsModal.show();
+    };
+
+    if (openRuntimeNodesModalButton) {
+        openRuntimeNodesModalButton.addEventListener('click', async () => {
+            await openAllowedNodesForOrchestration(selectedOrchestrationId);
+        });
+    }
+
+    releaseDetailButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const releaseId = button.getAttribute('data-release-id');
+            if (!releaseId) return;
+            showReleaseDetails(releaseId);
+        });
+    });
+
+    if (artifactSelect) {
+        artifactSelect.addEventListener('change', updateNodeVisibility);
+    }
+    updateNodeVisibility();
+})();
+</script>
+<style>
+.od-orch-card {
+    min-height: 0 !important;
+    padding: 0.75rem 0.9rem;
+}
+
+.od-selected {
+    border-color: #7e90ff !important;
+    box-shadow: 0 0 0 2px rgba(126, 144, 255, 0.16);
+}
+
+.od-release-split {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: stretch;
+    min-height: calc(100vh - 190px);
+    height: calc(100vh - 190px);
+}
+
+.od-release-left,
+.od-release-right {
+    border: 1px solid #dbe4f3;
+    border-radius: 0.65rem;
+    padding: 0.55rem;
+    min-height: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+.od-release-left {
+    background: #edf3fb;
+    border-right: 2px solid #cfdaee;
+    max-height: 100%;
+}
+
+.od-release-right {
+    background: #f1f6ff;
+    min-height: 100%;
+}
+
+.od-empty-state {
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7rem;
+}
+
+.od-orch-title {
+    color: #111111;
+}
+
+.od-release-id {
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+}
+
+.od-release-card {
+    min-height: 0 !important;
+    padding: 0.62rem 0.7rem;
+}
+
+.od-release-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.35rem;
+}
+
+.od-release-board {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.od-release-row {
+    border: 1px solid #d4ddef;
+    border-radius: 0.75rem;
+    background: #ffffff;
+    padding: 0.9rem 0.85rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.95rem;
+    align-items: center;
+}
+
+.od-release-row-head {
+    display: flex;
+    justify-content: flex-start;
+    gap: 0.8rem;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+
+.od-release-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: end;
+    padding-left: 0.35rem;
+}
+
+.od-release-row .od-status {
+    align-self: center;
+    white-space: nowrap;
+    font-size: 0.74rem;
+    padding: 0.18rem 0.62rem;
+    border-radius: 999px;
+}
+
+.od-status-queued {
+    background: #fff4db;
+    border: 1px solid #f0d48f;
+    color: #7c5a08;
+}
+
+.od-status-completed {
+    background: #e7f8ef;
+    border: 1px solid #a7dfc1;
+    color: #1f7a4f;
+}
+
+.od-status-failed {
+    background: #fde9eb;
+    border: 1px solid #f3bcc3;
+    color: #9d2130;
+}
+
+.od-release-stages {
+    margin-top: 0.8rem;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.65rem;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+    scrollbar-width: thin;
+}
+
+.od-release-stage {
+    flex: 0 0 168px;
+    width: 168px;
+    padding: 0.62rem 0.65rem;
+    border: 1px solid #cfdaf0;
+    border-radius: 0.6rem;
+    background: #f7faff;
+}
+
+.od-release-stage-name {
+    font-size: 0.84rem;
+    font-weight: 650;
+    color: #1e2d4b;
+    line-height: 1.3;
+}
+
+.od-release-stage-meta {
+    margin-top: 0.22rem;
+    font-size: 0.73rem;
+    color: #5f7195;
+}
+
+.od-release-stage-status {
+    margin-top: 0.38rem;
+    font-size: 0.74rem;
+    color: #2f4f85;
+    font-weight: 600;
+}
+
+.od-release-stage-note {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: #5b6e92;
+    font-weight: 600;
+}
+
+.od-release-details-btn {
+    border: 1px solid #9eb3d8;
+    background: #f8fbff;
+    color: #2a456d;
+    border-radius: 0.5rem;
+    padding: 0.24rem 0.58rem;
+    line-height: 1.2;
+    font-weight: 600;
+}
+
+.od-release-details-btn:hover {
+    background: #eef4ff;
+    border-color: #87a3d2;
+    color: #1d3557;
+}
+
+.od-release-stage-status-queued {
+    color: #8a620d;
+}
+
+.od-release-stage-status-success {
+    color: #23714e;
+}
+
+.od-release-stage-status-failed {
+    color: #9d2130;
+}
+
+.od-stage-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.od-stage-option-wrap {
+    margin: 0;
+    padding: 0;
+}
+
+.od-stage-checkbox {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.od-stage-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+    min-width: 210px;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #c8d4ec;
+    border-radius: 0.65rem;
+    background: #f8fbff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.od-stage-name {
+    font-weight: 600;
+    color: #1d2d4b;
+    line-height: 1.2;
+}
+
+.od-stage-meta {
+    font-size: 0.8rem;
+    color: #5d6f92;
+}
+
+.od-stage-checkbox:checked + .od-stage-option {
+    border-color: #6b7cff;
+    background: #eef1ff;
+    box-shadow: 0 0 0 2px rgba(107, 124, 255, 0.16);
+}
+
+.od-stage-checkbox:disabled + .od-stage-option {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.od-release-detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.od-release-detail-title {
+    font-size: 1.15rem;
+    font-weight: 650;
+    color: #192946;
+}
+
+.od-release-detail-sub {
+    color: #4b5f86;
+    font-size: 0.82rem;
+    font-family: Consolas, "Courier New", monospace;
+}
+
+.od-release-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+}
+
+.od-stage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 0.7rem;
+}
+
+.od-stage-card {
+    border: 1px solid #c9d5ea;
+    border-radius: 0.75rem;
+    background: #f9fbff;
+    padding: 0.72rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.od-stage-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.65rem;
+}
+
+.od-stage-card-title {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 650;
+    color: #1d2d4b;
+}
+
+.od-stage-card-meta {
+    margin: 0.12rem 0 0;
+    font-size: 0.78rem;
+    color: #5b6e92;
+}
+
+.od-stage-card-body {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+}
+
+.od-stage-kv {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+}
+
+.od-stage-kv span {
+    color: #5b6e92;
+}
+
+.od-stage-kv strong {
+    color: #1f2d4f;
+    font-weight: 600;
+}
+
+.od-stage-card-foot {
+    display: flex;
+    justify-content: space-between;
+    min-height: 30px;
+    align-items: center;
+}
+
+.od-stage-note {
+    font-size: 0.75rem;
+    color: #5b6e92;
+    font-weight: 600;
+}
+
+.od-stage-badge {
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+    height: fit-content;
+}
+
+.od-stage-badge-warning {
+    background: #fff4db;
+    color: #7c5a08;
+    border-color: #f0d48f;
+}
+
+.od-stage-badge-info {
+    background: #e8f1ff;
+    color: #1f4fa0;
+    border-color: #b8cff3;
+}
+
+.od-stage-badge-success {
+    background: #e7f8ef;
+    color: #1f7a4f;
+    border-color: #a7dfc1;
+}
+
+.od-stage-badge-danger {
+    background: #fde9eb;
+    color: #9d2130;
+    border-color: #f3bcc3;
+}
+
+.od-stage-badge-neutral {
+    background: #f0f3f8;
+    color: #455a80;
+    border-color: #d0d8e8;
+}
+
+@@media (max-width: 991.98px) {
+    .od-release-split {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: auto;
+    }
+
+    .od-release-left {
+        max-height: none;
+        min-height: auto;
+        height: auto;
+        border-right: 1px solid #dbe4f3;
+    }
+    .od-release-right {
+        min-height: auto;
+        height: auto;
+    }
+
+    .od-release-detail-head {
+        flex-direction: column;
+    }
+
+    .od-release-row {
+        grid-template-columns: 1fr;
+    }
+
+    .od-release-row-actions {
+        justify-content: flex-end;
+    }
+}
+</style>
+}

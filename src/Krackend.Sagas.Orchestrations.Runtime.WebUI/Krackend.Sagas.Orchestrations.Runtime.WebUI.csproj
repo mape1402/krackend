@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <Nullable>disable</Nullable>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Description>Runtime Razor Pages UI module for Krackend Sagas Orchestrations.</Description>
+    <PackageTags>krackend;sagas;orchestrations;runtime;webui</PackageTags>
+    <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations\Krackend.Sagas.Orchestrations.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Web\Krackend.Sagas.Orchestrations.Web.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
+  </ItemGroup>
+</Project>
