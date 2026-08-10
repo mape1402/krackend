@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Krackend.Sagas.Orchestrations.Web</PackageId>
+    <Description>Krackend.Sagas.Orchestrations.Web provides minimal API endpoints and host integration for saga orchestration runtimes.</Description>
+    <PackageTags>saga;orchestration;minimal-api;web;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Messaging.Abstractions\Krackend.Sagas.Orchestrations.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations\Krackend.Sagas.Orchestrations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

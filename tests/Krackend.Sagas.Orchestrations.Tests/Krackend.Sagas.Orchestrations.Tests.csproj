@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Messaging.Abstractions\Krackend.Sagas.Orchestrations.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Messaging.Pigeon.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations\Krackend.Sagas.Orchestrations.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Web\Krackend.Sagas.Orchestrations.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>
