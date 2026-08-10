@@ -37,7 +37,7 @@ dotnet add package Krackend.EventSourcing.Abstractions
 - `Krackend.EventSourcing`: core runtime, serializers, schema registries, reducers, state rehydration, snapshots, metadata, stream routing, in-memory store, and DI.
 - `Krackend.EventSourcing.EntityFrameworkCore`: EF Core event store, snapshot store, snapshot candidate store, model builder integration, and app `DbContext` integration.
 - `Krackend.EventSourcing.Analyzers`: Roslyn diagnostics for schema and reducer mistakes.
-- `Krackend.EventSourcing.Testing`: test helpers for event streams, reducers, deciders, and initial states.
+- `Krackend.EventSourcing.Testing`: test helpers for event streams, reducers, deciders, initial states, and DI-friendly in-memory event sourcing test stores.
 
 ## Mental Model
 
@@ -776,6 +776,29 @@ var events = await DeciderTest.DecideAsync(
     new CreateCustomerDecider(),
     CustomerState.Empty,
     new CreateCustomer("customer-001", "Sample Customer", "customer@example.test"));
+```
+
+Register the DI-friendly in-memory test store when an application test or external test host needs event-store behavior without a real storage adapter:
+
+```csharp
+services.AddKrackendEventSourcingTesting();
+
+var eventStore = provider.GetRequiredService<IEventSourcingTestEventStore>();
+var assertions = provider.GetRequiredService<IEventSourcingTestAssertions>();
+var stream = EventStreamReference.Create("customers", "customer-001");
+
+await eventStore.AppendAsync(stream, [new CustomerCreated("customer-001", "Sample Customer", "customer@example.test")]);
+
+await assertions.ShouldHaveEventAsync<CustomerCreated>("customers", "customer-001");
+await assertions.ShouldHaveVersionAsync("customers", "customer-001", 1);
+```
+
+External test hosts can use the adapter registration and wrap it with their own host-specific API:
+
+```csharp
+services.AddKrackendEventSourcingTestingAdapter();
+
+var adapter = provider.GetRequiredService<IEventSourcingTestingAdapter>();
 ```
 
 ## Complete Example

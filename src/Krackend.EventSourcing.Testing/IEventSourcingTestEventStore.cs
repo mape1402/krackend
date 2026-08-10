@@ -1,17 +1,17 @@
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
 
-namespace Krackend.Testing;
+namespace Krackend.EventSourcing.Testing;
 
 /// <summary>
 /// Provides an in-memory event store for testing event sourcing flows without a real event store.
 /// </summary>
-public interface IKrackendTestEventStore
+public interface IEventSourcingTestEventStore
 {
     /// <summary>
     /// Appends events to a stream without an optimistic concurrency precondition.
     /// </summary>
-    Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default);
@@ -19,7 +19,7 @@ public interface IKrackendTestEventStore
     /// <summary>
     /// Appends events to a stream with metadata and without an optimistic concurrency precondition.
     /// </summary>
-    Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         IReadOnlyCollection<object> events,
         IReadOnlyDictionary<string, object?> metadata,
@@ -28,7 +28,7 @@ public interface IKrackendTestEventStore
     /// <summary>
     /// Appends events to a stream using the specified optimistic concurrency precondition.
     /// </summary>
-    Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
@@ -37,7 +37,7 @@ public interface IKrackendTestEventStore
     /// <summary>
     /// Appends events to a stream using the specified optimistic concurrency precondition and metadata.
     /// </summary>
-    Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
@@ -47,14 +47,14 @@ public interface IKrackendTestEventStore
     /// <summary>
     /// Reads events from a stream in stream-version order.
     /// </summary>
-    Task<IReadOnlyCollection<TestEventEnvelope>> ReadAsync(
+    Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> ReadAsync(
         EventStreamReference stream,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reads all events in append order.
     /// </summary>
-    Task<IReadOnlyCollection<TestEventEnvelope>> ReadAllAsync(
+    Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> ReadAllAsync(
         CancellationToken cancellationToken = default);
 
     /// <summary>

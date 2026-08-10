@@ -14,7 +14,6 @@ dotnet add package Krackend.EventSourcing
 dotnet add package Krackend.EventSourcing.EntityFrameworkCore
 dotnet add package Krackend.EventSourcing.Analyzers
 dotnet add package Krackend.EventSourcing.Testing
-dotnet add package Krackend.Testing
 ```
 
 Optional event sourcing packages:
@@ -90,20 +89,21 @@ Samples:
 - `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store with SQLite.
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
 
-## Testing
+## Event Sourcing Testing
 
-`Krackend.Testing` provides an in-memory event store for testing event flow behavior without a real event store. It is meant for application tests, package adapters, and external test hosts that need to assert event sourcing behavior without booting EF Core, SQL Server, SQLite, or a production event store.
+`Krackend.EventSourcing.Testing` provides reducer/decider helpers and DI-friendly services for testing event sourcing flows without a real event store. It is meant for application tests, package adapters, and external test hosts that need to assert event sourcing behavior without booting EF Core, SQL Server, SQLite, or a production event store.
 
 ```csharp
-services.AddKrackendTesting();
+services.AddKrackendEventSourcingTesting();
 
-var eventStore = provider.GetRequiredService<IKrackendTestEventStore>();
+var eventStore = provider.GetRequiredService<IEventSourcingTestEventStore>();
+var assertions = provider.GetRequiredService<IEventSourcingTestAssertions>();
 var stream = EventStreamReference.Create("customers", customerId);
 
 await eventStore.AppendAsync(stream, [new CustomerCreated(customerId)]);
 
-eventStore.ShouldHaveEvent<CustomerCreated>("customers", customerId);
-eventStore.ShouldHaveVersion("customers", customerId, 1);
+await assertions.ShouldHaveEventAsync<CustomerCreated>("customers", customerId);
+await assertions.ShouldHaveVersionAsync("customers", customerId, 1);
 ```
 
 Append with expected-version behavior and metadata:
@@ -137,7 +137,7 @@ eventStore.FailNextAppendWithConcurrencyConflict(stream);
 External test host integrations can use:
 
 ```csharp
-services.AddKrackendTestingAdapter();
+services.AddKrackendEventSourcingTestingAdapter();
 ```
 
 That adapter-friendly registration allows wrappers such as:

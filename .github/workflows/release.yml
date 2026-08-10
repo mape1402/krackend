@@ -99,7 +99,6 @@ jobs:
             "src/Krackend.EventSourcing.EntityFrameworkCore/Krackend.EventSourcing.EntityFrameworkCore.csproj"
             "src/Krackend.EventSourcing.Analyzers/Krackend.EventSourcing.Analyzers.csproj"
             "src/Krackend.EventSourcing.Testing/Krackend.EventSourcing.Testing.csproj"
-            "src/Krackend.Testing/Krackend.Testing.csproj"
           )
 
           for project in "${projects[@]}"; do
