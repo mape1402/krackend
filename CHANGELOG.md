@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v1.2.1] - 2026-08-10
+
+- ### Fixed
+
+  - Corrected the event sourcing testing release surface to keep DI-friendly testing adapter APIs in `Krackend.EventSourcing.Testing` and avoid publishing a separate `Krackend.Testing` package.
+
+------
+
 ## [v1.2.0] - 2026-08-09
 
 - ### Added
