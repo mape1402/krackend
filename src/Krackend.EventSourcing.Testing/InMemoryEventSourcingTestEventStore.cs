@@ -2,27 +2,27 @@ using System.Text.Json;
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
 
-namespace Krackend.Testing;
+namespace Krackend.EventSourcing.Testing;
 
 /// <summary>
-/// In-memory implementation of <see cref="IKrackendTestEventStore"/>.
+/// In-memory implementation of <see cref="IEventSourcingTestEventStore"/>.
 /// </summary>
-public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
+public sealed class InMemoryEventSourcingTestEventStore : IEventSourcingTestEventStore
 {
     private readonly object _syncRoot = new();
-    private readonly Dictionary<EventStreamReference, List<TestEventEnvelope>> _streams = [];
+    private readonly Dictionary<EventStreamReference, List<EventSourcingTestEventEnvelope>> _streams = [];
     private readonly HashSet<EventStreamReference> _failedAppends = [];
     private long _globalPosition;
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         IReadOnlyCollection<object> events,
         CancellationToken cancellationToken = default)
         => AppendAsync(stream, ExpectedVersion.Any, events, EmptyMetadata(), cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         IReadOnlyCollection<object> events,
         IReadOnlyDictionary<string, object?> metadata,
@@ -30,7 +30,7 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
         => AppendAsync(stream, ExpectedVersion.Any, events, metadata, cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
@@ -38,7 +38,7 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
         => AppendAsync(stream, expectedVersion, events, EmptyMetadata(), cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<TestEventEnvelope>> AppendAsync(
+    public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
         EventStreamReference stream,
         ExpectedVersion expectedVersion,
         IReadOnlyCollection<object> events,
@@ -65,7 +65,7 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
 
             EnsureExpectedVersion(stream, expectedVersion, actualVersion);
 
-            var appended = new List<TestEventEnvelope>(events.Count);
+            var appended = new List<EventSourcingTestEventEnvelope>(events.Count);
             var version = actualVersion;
             var occurredAt = DateTimeOffset.UtcNow;
             var eventMetadata = new Dictionary<string, object?>(metadata, StringComparer.Ordinal);
@@ -77,7 +77,7 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
                 version++;
                 _globalPosition++;
 
-                var envelope = new TestEventEnvelope(
+                var envelope = new EventSourcingTestEventEnvelope(
                     EventId: Guid.NewGuid(),
                     Stream: stream,
                     StreamVersion: version,
@@ -93,12 +93,12 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
                 appended.Add(envelope);
             }
 
-            return Task.FromResult<IReadOnlyCollection<TestEventEnvelope>>(appended);
+            return Task.FromResult<IReadOnlyCollection<EventSourcingTestEventEnvelope>>(appended);
         }
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<TestEventEnvelope>> ReadAsync(
+    public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> ReadAsync(
         EventStreamReference stream,
         CancellationToken cancellationToken = default)
     {
@@ -107,7 +107,7 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
 
         lock (_syncRoot)
         {
-            return Task.FromResult<IReadOnlyCollection<TestEventEnvelope>>(
+            return Task.FromResult<IReadOnlyCollection<EventSourcingTestEventEnvelope>>(
                 _streams.TryGetValue(stream, out var events)
                     ? events.OrderBy(x => x.StreamVersion).ToArray()
                     : []);
@@ -115,13 +115,13 @@ public sealed class InMemoryKrackendTestEventStore : IKrackendTestEventStore
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyCollection<TestEventEnvelope>> ReadAllAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> ReadAllAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         lock (_syncRoot)
         {
-            return Task.FromResult<IReadOnlyCollection<TestEventEnvelope>>(
+            return Task.FromResult<IReadOnlyCollection<EventSourcingTestEventEnvelope>>(
                 _streams
                     .SelectMany(x => x.Value)
                     .OrderBy(x => x.GlobalPosition)

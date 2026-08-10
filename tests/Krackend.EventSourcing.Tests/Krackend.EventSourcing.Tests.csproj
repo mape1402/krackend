@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\src\Krackend.EventSourcing.Abstractions\Krackend.EventSourcing.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.EventSourcing.EntityFrameworkCore\Krackend.EventSourcing.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\Krackend.EventSourcing\Krackend.EventSourcing.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.EventSourcing.Testing\Krackend.EventSourcing.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

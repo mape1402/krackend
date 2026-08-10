@@ -1,11 +1,11 @@
 using Krackend.EventSourcing.Streams;
 
-namespace Krackend.Testing;
+namespace Krackend.EventSourcing.Testing;
 
 /// <summary>
-/// Represents one event captured by the in-memory test event store.
+/// Represents one event captured by the in-memory event sourcing test store.
 /// </summary>
-public sealed record TestEventEnvelope(
+public sealed record EventSourcingTestEventEnvelope(
     Guid EventId,
     EventStreamReference Stream,
     long StreamVersion,
