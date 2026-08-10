@@ -22,6 +22,22 @@ Optional event sourcing packages:
 dotnet add package Krackend.EventSourcing.Abstractions
 ```
 
+Saga orchestration packages:
+
+```bash
+dotnet add package Krackend.Sagas.Orchestrations
+dotnet add package Krackend.Sagas.Orchestrations.Abstractions
+dotnet add package Krackend.Sagas.Orchestrations.Messaging.Abstractions
+dotnet add package Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer
+dotnet add package Krackend.Sagas.Orchestrations.Web
+```
+
+Optional saga orchestration packages:
+
+```bash
+dotnet add package Krackend.Sagas.Orchestrations.Messaging.Pigeon
+```
+
 ## Event Sourcing
 
 `Krackend.EventSourcing` provides a modular write-model runtime for event sourcing:
@@ -88,6 +104,39 @@ Samples:
 - `samples/Krackend.EventSourcing.Sqlite.Sample`: typed event-sourced write model with SQLite.
 - `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store with SQLite.
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
+- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample`: minimal host that mounts saga orchestration runtime libraries.
+
+## Sagas Orchestrations
+
+`Krackend.Sagas.Orchestrations` provides the runtime core for saga orchestration execution as composable libraries. Hosts can reference only the pieces they need:
+
+- `Krackend.Sagas.Orchestrations.Abstractions` for artifact, primitive, runtime and storage contracts
+- `Krackend.Sagas.Orchestrations` for runtime services, in-memory trigger intake and engine execution
+- `Krackend.Sagas.Orchestrations.Messaging.Abstractions` for broker-neutral publishing, consuming and orchestration metadata
+- `Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer` for SQL Server runtime storage
+- `Krackend.Sagas.Orchestrations.Web` for minimal API host endpoints
+- `Krackend.Sagas.Orchestrations.Messaging.Pigeon` for the optional Pigeon messaging adapter
+
+Minimal host setup:
+
+```csharp
+builder.Services.AddKrackendSagasOrchestrationsRuntime(options =>
+{
+    options.EnvironmentKey = "local";
+});
+
+builder.Services.AddKrackendSagasOrchestrationsEngine();
+builder.Services.AddKrackendSagasOrchestrationsInMemoryIntakeBuffer();
+builder.Services.AddKrackendSagasOrchestrationsMessaging();
+builder.Services.AddKrackendSagasOrchestrationsSqlServer(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("SagasRuntime"));
+});
+builder.Services.AddKrackendSagasOrchestrationsWeb();
+
+app.MapKrackendSagasOrchestrationsArtifactEndpoints();
+app.MapKrackendSagasOrchestrationsEngineEndpoints();
+```
 
 ## Event Sourcing Testing
 
