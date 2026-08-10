@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Infrastructure;
 
 #nullable disable
 
-namespace Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Migrations
+namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeStorage
 {
     [DbContext(typeof(RuntimeStorageDbContext))]
-    partial class RuntimeStorageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720210418_RuntimeArtifactDistributionUi")]
+    partial class RuntimeArtifactDistributionUi
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -365,11 +368,6 @@ namespace Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("ArtifactType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
                     b.Property<DateTime>("DeployedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -412,7 +410,7 @@ namespace Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Migrations
 
                     b.HasIndex("EnvironmentKey", "OrchestrationDefinitionKey", "IsActive");
 
-                    b.HasIndex("EnvironmentKey", "OrchestrationDefinitionKey", "Version", "ArtifactType")
+                    b.HasIndex("EnvironmentKey", "OrchestrationDefinitionKey", "Version")
                         .IsUnique();
 
                     b.ToTable("Artifacts", "Runtime");

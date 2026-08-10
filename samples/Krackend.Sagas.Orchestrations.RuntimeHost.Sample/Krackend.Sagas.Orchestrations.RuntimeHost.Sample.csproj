@@ -6,6 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.7">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer\Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Messaging.Abstractions\Krackend.Sagas.Orchestrations.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />

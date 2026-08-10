@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Migrations
+namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeStorage
 {
     /// <inheritdoc />
     public partial class RuntimeArtifactDistributionUi : Migration

@@ -35,7 +35,9 @@ builder.Services.AddKrackendSagasOrchestrationsWeb(options =>
     options.RuntimeNodeId = builder.Configuration["Runtime:ArtifactPull:RuntimeNodeId"];
 });
 builder.Services.AddKrackendSagasOrchestrationsSqlServer(db =>
-    db.UseSqlServer(runtimeConnection));
+    db.UseSqlServer(
+        runtimeConnection,
+        sqlOptions => sqlOptions.MigrationsAssembly("Krackend.Sagas.Orchestrations.RuntimeHost.Sample")));
 builder.Services.AddKrackendSagasOrchestrationsEngine();
 builder.Services.AddOrchestratorRuntimeWebUI(options =>
 {
