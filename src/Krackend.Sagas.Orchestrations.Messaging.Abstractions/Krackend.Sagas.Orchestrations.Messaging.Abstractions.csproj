@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Krackend.Sagas.Orchestrations.Messaging.Abstractions</PackageId>
+    <Description>Krackend.Sagas.Orchestrations.Messaging.Abstractions provides messaging facade contracts for saga orchestration runtimes.</Description>
+    <PackageTags>saga;orchestration;messaging;contracts;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
