@@ -1,0 +1,48 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Messaging.Abstractions;
+using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Publishing;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+
+namespace Krackend.Sagas.Orchestrations.Engine;
+
+/// <summary>
+/// Registers runtime engine services.
+/// </summary>
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds the runtime engine and its default messaging facade implementation.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <returns>Configured service collection.</returns>
+    public static IServiceCollection AddKrackendSagasOrchestrationsEngine(this IServiceCollection services)
+    {
+        services.AddKrackendSagasOrchestrationsMessaging();
+        services.TryAddSingleton<IMessagePublisher, InMemoryMessagePublisher>();
+        services.AddScoped<IMessagingCommandDispatcher, MessagingCommandDispatcher>();
+        services.AddScoped<IArtifactResolver, ArtifactResolver>();
+        services.AddScoped<ITriggerPromoter, TriggerPromoter>();
+        services.AddScoped(CreateRuntimeEngineDependencies);
+        services.AddScoped<IRuntimeEngine, RuntimeEngine>();
+        return services;
+    }
+
+    private static RuntimeEngineDependencies CreateRuntimeEngineDependencies(IServiceProvider provider)
+    {
+        return new RuntimeEngineDependencies
+        {
+            IntakeBuffer = provider.GetRequiredService<ITriggerIntakeBuffer>(),
+            TriggerPromoter = provider.GetRequiredService<ITriggerPromoter>(),
+            ArtifactRepository = provider.GetRequiredService<IRuntimeArtifactRepository>(),
+            StageRepository = provider.GetRequiredService<IStageExecutionRepository>(),
+            TaskRepository = provider.GetRequiredService<ITaskExecutionRepository>(),
+            AttemptRepository = provider.GetRequiredService<ITaskExecutionAttemptRepository>(),
+            DispatchRepository = provider.GetRequiredService<ITaskDispatchRepository>(),
+            InstanceRepository = provider.GetRequiredService<IOrchestrationInstanceRepository>(),
+            TimelineRepository = provider.GetRequiredService<IExecutionTransitionRepository>(),
+            MessagingDispatcher = provider.GetRequiredService<IMessagingCommandDispatcher>()
+        };
+    }
+}
