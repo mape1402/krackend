@@ -145,3 +145,22 @@ Migrate the old singular `Krackend.Sagas.Orchestration` package into the new plu
 - Full Control Plane migration: Design, Distribution, Security, WebUI.
 - Client SDK and Client.Pigeon.
 - Compatibility shims for old namespaces are intentionally not planned unless requested later.
+
+## Execution Status
+
+- Step 1 completed in `b45b791`: repository preparation, `agents/` ignore rule, tracked roadmap.
+- Step 2 completed in `7a3aa4c`: removed the singular `Krackend.Sagas.Orchestration` surface and dependent old tests.
+- Step 3 completed in `a85997f`: added plural package skeletons and first compile checks.
+- Step 4 completed in `c228482`: migrated abstractions, primitives, runtime contracts, intake contracts, and messaging facade contracts.
+- Step 5 completed in `62429f4`: migrated runtime core, in-memory intake, and engine.
+- Step 6 completed in `6cf6ad3`: migrated SQL Server runtime storage adapter.
+- Step 7 completed in `ca454f7`: added explicit messaging metadata facade coverage.
+- Step 8 completed in `ec86401`: migrated Pigeon messaging adapter.
+- Step 9 completed in `0d3e23f`: migrated minimal API runtime host integration.
+- Step 10 completed in `5634d07`: documented NuGet package usage and added a runtime host sample.
+- Step 11 completed after `5c69684`: solution build and tests passed.
+
+Final validation:
+
+- `dotnet build Krackend.sln --no-restore`: passed with 0 warnings and 0 errors.
+- `dotnet test Krackend.sln --no-build`: passed 72 total tests.
