@@ -1,0 +1,2071 @@
+@page
+@model Krackend.Sagas.Orchestrations.Design.WebUI.Areas.OrchestratorDesign.Pages.OrchestrationStages.DetailsModel
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@using Krackend.Sagas.Orchestrations.Design.Core
+@using Krackend.Sagas.Orchestrations.Design.Core.ConditionConfigurations
+@using Krackend.Sagas.Orchestrations.Design.Core.RetryStrategies
+@using Krackend.Sagas.Orchestrations.Design.Core.TimeoutBehaviorPolicies
+@using Krackend.Sagas.Orchestrations.Abstractions.Primitives
+@{
+    ViewData["Title"] = "Stage tasks";
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">@Model.Stage?.Name</h1>
+        <p class="od-page-subtitle">@Model.Stage?.Key | Stage tasks</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-area="OrchestratorDesign" asp-page="/OrchestrationVersions/Details" asp-route-orchestrationId="@Model.OrchestrationId" asp-route-versionId="@Model.VersionId" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<section class="od-list-shell">
+    <div class="od-panel-head">
+        <h2 class="od-panel-title">Tasks</h2>
+        <span class="od-item-meta">Drag cards to reorder</span>
+    </div>
+
+    @if (!Model.Tasks.Any())
+    {
+        <p class="od-empty">No tasks yet.</p>
+    }
+
+    @{
+        var orderedTasks = Model.Tasks.OrderBy(t => t.Order).ToList();
+        var renderedGroups = new HashSet<string>(StringComparer.Ordinal);
+    }
+    <div id="taskPipeline" class="od-pipeline">
+        @foreach (var task in orderedTasks)
+        {
+            var grouped = task.ExecutionMode == TaskExecutionMode.Parallel && !string.IsNullOrWhiteSpace(task.ParallelGroupId);
+            if (grouped)
+            {
+                var groupId = task.ParallelGroupId!;
+                if (!renderedGroups.Add(groupId))
+                {
+                    continue;
+                }
+
+                var groupTasks = orderedTasks
+                    .Where(x => x.ExecutionMode == TaskExecutionMode.Parallel && string.Equals(x.ParallelGroupId, groupId, StringComparison.Ordinal))
+                    .ToList();
+                var groupName = Model.ParallelGroups
+                    .FirstOrDefault(x => string.Equals(x.Id, groupId, StringComparison.Ordinal))?.Name;
+                groupName = string.IsNullOrWhiteSpace(groupName) ? "Parallel group" : groupName;
+
+                <article class="od-parallel-group" data-group-id="@groupId" draggable="true">
+                    <div class="od-parallel-group-head">
+                        <div>
+                            <h3 class="od-item-title">@groupName</h3>
+                        </div>
+                        <div class="dropdown">
+                            <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Parallel group actions">&#8942;</button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li>
+                                    <button type="button" class="dropdown-item js-edit-group">Edit group</button>
+                                </li>
+                                <li><hr class="dropdown-divider" /></li>
+                                <li>
+                                    <button type="button" class="dropdown-item text-danger js-remove-group">Remove group</button>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="od-group-task-list" data-group-id="@groupId">
+                        @foreach (var groupedTask in groupTasks)
+                        {
+                            var groupedTaskHasExecutionCondition = groupedTask.ExecutionCondition is not null;
+                            var groupedTaskHasTransformation = groupedTask.Transformation is not null;
+
+                            <article class="od-pipeline-item" data-task-id="@groupedTask.Id" draggable="true">
+                                <div class="od-pipeline-card od-task-card @(groupedTask.IsEnabled ? string.Empty : "od-task-disabled")">
+                                    <button type="button"
+                                            class="od-task-side-btn od-task-exec-btn js-task-execution-btn @(groupedTaskHasExecutionCondition ? "od-task-exec-btn-active" : "od-task-exec-btn-inactive")"
+                                            title="Execution condition"
+                                            aria-label="Execution condition"
+                                            data-task-id="@groupedTask.Id">
+                                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                            <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
+                                        </svg>
+                                    </button>
+                                    <button type="button"
+                                            class="od-task-side-btn od-task-transform-btn js-task-transformation-btn @(groupedTaskHasTransformation ? "od-task-transform-btn-active" : "od-task-transform-btn-inactive")"
+                                            title="Transformation"
+                                            aria-label="Transformation"
+                                            data-task-id="@groupedTask.Id">
+                                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                            <path d="M1 3a.5.5 0 0 1 .5-.5h11.793L11.146.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 1 1-.708-.708L13.293 3.5H1.5A.5.5 0 0 1 1 3Zm14 10a.5.5 0 0 1-.5.5H2.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L2.707 12.5H14.5a.5.5 0 0 1 .5.5Z" />
+                                        </svg>
+                                    </button>
+                                    <div class="od-item-top">
+                                        <div>
+                                            <h3 class="od-item-title">@groupedTask.Key</h3>
+                                            <p class="od-item-meta">@groupedTask.Name</p>
+                                            <p class="od-item-meta">@groupedTask.Kind</p>
+                                        </div>
+                                        <div class="dropdown">
+                                            <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Task actions">&#8942;</button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li>
+                                                    <button type="button"
+                                                            class="dropdown-item js-open-task-modal"
+                                                            data-task-mode="edit"
+                                                            data-task-id="@groupedTask.Id">
+                                                        Edit task
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider" /></li>
+                                                <li>
+                                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form">
+                                                        <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                        <input type="hidden" name="versionId" value="@Model.VersionId" />
+                                                        <input type="hidden" name="stageId" value="@Model.StageId" />
+                                                        <input type="hidden" name="taskId" value="@groupedTask.Id" />
+                                                        <button type="submit" class="dropdown-item text-danger">Delete task</button>
+                                                    </form>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    <div class="od-task-toggle-row">
+                                        <span class="od-task-toggle-label">Enabled</span>
+                                        <div class="form-check form-switch od-task-toggle">
+                                            <input class="form-check-input js-task-enabled-toggle" type="checkbox" role="switch" data-task-id="@groupedTask.Id" @(groupedTask.IsEnabled ? "checked" : null) aria-label="Toggle task enabled" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </article>
+                        }
+                        <p class="od-group-empty @(groupTasks.Count > 0 ? "d-none" : string.Empty)">Drop tasks here</p>
+                    </div>
+                </article>
+                continue;
+            }
+
+            var taskHasExecutionCondition = task.ExecutionCondition is not null;
+            var taskHasTransformation = task.Transformation is not null;
+
+            <article class="od-pipeline-item" data-task-id="@task.Id" draggable="true">
+                <div class="od-pipeline-card od-task-card @(task.IsEnabled ? string.Empty : "od-task-disabled")">
+                    <button type="button"
+                            class="od-task-side-btn od-task-exec-btn js-task-execution-btn @(taskHasExecutionCondition ? "od-task-exec-btn-active" : "od-task-exec-btn-inactive")"
+                            title="Execution condition"
+                            aria-label="Execution condition"
+                            data-task-id="@task.Id">
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
+                        </svg>
+                    </button>
+                    <button type="button"
+                            class="od-task-side-btn od-task-transform-btn js-task-transformation-btn @(taskHasTransformation ? "od-task-transform-btn-active" : "od-task-transform-btn-inactive")"
+                            title="Transformation"
+                            aria-label="Transformation"
+                            data-task-id="@task.Id">
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M1 3a.5.5 0 0 1 .5-.5h11.793L11.146.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L13.293 3.5H1.5A.5.5 0 0 1 1 3Zm14 10a.5.5 0 0 1-.5.5H2.707l2.147 2.146a.5.5 0 1 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L2.707 12.5H14.5a.5.5 0 0 1 .5.5Z" />
+                        </svg>
+                    </button>
+                    <div class="od-item-top">
+                        <div>
+                            <h3 class="od-item-title">@task.Key</h3>
+                            <p class="od-item-meta">@task.Name</p>
+                            <p class="od-item-meta">@task.Kind</p>
+                        </div>
+                        <div class="dropdown">
+                            <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Task actions">&#8942;</button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li>
+                                    <button type="button"
+                                            class="dropdown-item js-open-task-modal"
+                                            data-task-mode="edit"
+                                            data-task-id="@task.Id">
+                                        Edit task
+                                    </button>
+                                </li>
+                                <li><hr class="dropdown-divider" /></li>
+                                <li>
+                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form">
+                                        <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                        <input type="hidden" name="versionId" value="@Model.VersionId" />
+                                        <input type="hidden" name="stageId" value="@Model.StageId" />
+                                        <input type="hidden" name="taskId" value="@task.Id" />
+                                        <button type="submit" class="dropdown-item text-danger">Delete task</button>
+                                    </form>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="od-task-toggle-row">
+                        <span class="od-task-toggle-label">Enabled</span>
+                        <div class="form-check form-switch od-task-toggle">
+                            <input class="form-check-input js-task-enabled-toggle" type="checkbox" role="switch" data-task-id="@task.Id" @(task.IsEnabled ? "checked" : null) aria-label="Toggle task enabled" />
+                        </div>
+                    </div>
+                </div>
+            </article>
+        }
+
+        <article class="od-pipeline-item od-add-item od-add-group-item od-add-actions-item">
+            <div class="od-pipeline-card od-add-actions-card">
+                <a href="#" id="addParallelGroupButton" class="od-add-link">+ Add parallel group</a>
+                <span class="od-add-actions-separator" aria-hidden="true"></span>
+                <a href="#" class="od-add-link js-open-task-modal" data-task-mode="create" data-bs-toggle="modal" data-bs-target="#newTaskModal">+ Add task</a>
+            </div>
+        </article>
+    </div>
+</section>
+
+<div class="modal fade" id="taskExecutionConditionModal" tabindex="-1" aria-labelledby="taskExecutionConditionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="taskExecutionConditionModalLabel">Execution condition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="taskExecutionConditionTaskId" />
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="taskHasExecutionConditionQuick" />
+                    <label class="form-check-label" for="taskHasExecutionConditionQuick">Enable execution condition</label>
+                </div>
+
+                <div id="taskExecutionConditionSectionQuick" class="row g-2">
+                    <div class="col-md-12">
+                        <label class="form-label" for="taskConditionEngineQuick">Condition engine</label>
+                        <select class="form-select" id="taskConditionEngineQuick" asp-items="Model.EngineTypes"></select>
+                    </div>
+
+                    <div class="task-condition-config-block col-12" data-engine="DSL">
+                        <label class="form-label" for="taskConditionDslExpressionQuick">DSL expression</label>
+                        <input class="form-control" id="taskConditionDslExpressionQuick" placeholder="true" />
+                    </div>
+                </div>
+
+                <div id="taskConditionUnsupportedEngineWarningQuick" class="alert alert-warning mt-3 d-none mb-0">
+                    Selected condition engine does not define specific configuration fields yet.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="taskExecutionConditionSaveButton">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="taskTransformationModal" tabindex="-1" aria-labelledby="taskTransformationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="taskTransformationModalLabel">Transformation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="taskTransformationTaskId" />
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="taskHasTransformationQuick" />
+                    <label class="form-check-label" for="taskHasTransformationQuick">Enable transformation</label>
+                </div>
+
+                <div id="taskTransformationSectionQuick" class="row g-2">
+                    <div class="col-md-12">
+                        <label class="form-label" for="taskTransformationEngineQuick">Transformation engine</label>
+                        <select class="form-select" id="taskTransformationEngineQuick" asp-items="Model.EngineTypes"></select>
+                    </div>
+
+                    <div class="task-transformation-config-block col-12" data-engine="DSL">
+                        <div class="alert alert-secondary mb-0">
+                            DSL transformation does not require additional fields.
+                        </div>
+                    </div>
+                </div>
+
+                <div id="taskTransformationUnsupportedEngineWarningQuick" class="alert alert-warning mt-3 d-none mb-0">
+                    Selected transformation engine does not define specific configuration fields yet.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="taskTransformationSaveButton">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editParallelGroupModal" tabindex="-1" aria-labelledby="editParallelGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editParallelGroupModalLabel">Edit parallel group</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editParallelGroupId" />
+                <div class="mb-3">
+                    <label for="editParallelGroupName" class="form-label">Name</label>
+                    <input type="text" class="form-control" id="editParallelGroupName" maxlength="128" />
+                </div>
+                <div class="mb-3">
+                    <label for="editParallelGroupJoinPolicy" class="form-label">Join policy</label>
+                    <select class="form-select" id="editParallelGroupJoinPolicy">
+                        <option value="WaitAll">WaitAll</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="editParallelGroupMaxParallelAgents" class="form-label">Max parallel agents</label>
+                    <input type="number" class="form-control" id="editParallelGroupMaxParallelAgents" min="1" step="1" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveParallelGroupButton">Save group</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="newTaskModal" tabindex="-1" aria-labelledby="newTaskModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl od-task-modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="CreateTask" class="od-task-modal-form">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="newTaskModalLabel">Create task</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                    <input type="hidden" name="versionId" value="@Model.VersionId" />
+                    <input type="hidden" name="NewTask.StageId" value="@Model.StageId" />
+                    <input asp-for="NewTask.TaskId" type="hidden" id="taskModalTaskId" />
+                    <input type="hidden" name="taskId" id="taskModalTaskIdRaw" />
+                    <ul class="nav nav-tabs mb-3" id="taskCreateTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="task-general-tab" data-bs-toggle="tab" data-bs-target="#task-general-pane" type="button" role="tab" aria-controls="task-general-pane" aria-selected="true">General</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="task-policies-tab" data-bs-toggle="tab" data-bs-target="#task-policies-pane" type="button" role="tab" aria-controls="task-policies-pane" aria-selected="false">Policies</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="task-compensation-tab" data-bs-toggle="tab" data-bs-target="#task-compensation-pane" type="button" role="tab" aria-controls="task-compensation-pane" aria-selected="false">Compensation</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="taskCreateTabsContent">
+                        <div class="tab-pane fade show active" id="task-general-pane" role="tabpanel" aria-labelledby="task-general-tab" tabindex="0">
+                            <div class="row g-3 mb-2">
+                                <div class="col-md-4">
+                                    <label asp-for="NewTask.Key" class="form-label">Key</label>
+                                    <input asp-for="NewTask.Key" class="form-control" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label asp-for="NewTask.Name" class="form-label">Name</label>
+                                    <input asp-for="NewTask.Name" class="form-control" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label asp-for="NewTask.Kind" class="form-label">Task type</label>
+                                    <select asp-for="NewTask.Kind" class="form-select" asp-items="Model.TaskKinds" id="taskKindSelector"></select>
+                                </div>
+                            </div>
+                            <hr />
+                            <h6 class="mb-2">Task configuration (selected type)</h6>
+                            <div class="task-config-block mb-2" data-kind="Http">
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.HttpBaseUrlVariableRef" class="form-label">Base URL variable</label>
+                                        <input asp-for="NewTask.HttpBaseUrlVariableRef" class="form-control" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.HttpRelativePath" class="form-label">Relative path</label>
+                                        <input asp-for="NewTask.HttpRelativePath" class="form-control" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="NewTask.HttpMethod" class="form-label">Method</label>
+                                        <input asp-for="NewTask.HttpMethod" class="form-control" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.HttpExpectedStatusCodes" class="form-label">Expected status codes</label>
+                                        <input asp-for="NewTask.HttpExpectedStatusCodes" class="form-control" placeholder="200,202" />
+                                    </div>
+                                    <div class="col-md-12 form-check mt-3 ms-2">
+                                        <input asp-for="NewTask.HttpAllowSyncResponse" class="form-check-input" />
+                                        <label asp-for="NewTask.HttpAllowSyncResponse" class="form-check-label">Allow sync response</label>
+                                    </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label asp-for="NewTask.HttpSchemaContractKey" class="form-label">Contract key</label>
+                                        <input asp-for="NewTask.HttpSchemaContractKey" class="form-control" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.HttpSchemaContractVersion" class="form-label">Contract version</label>
+                                        <input asp-for="NewTask.HttpSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-label">Registry provider id</label>
+                                        <input asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                    </div>
+                                    <div class="col-md-12 form-check mt-2 ms-2">
+                                        <input asp-for="NewTask.HttpSchemaStrictMode" class="form-check-input" />
+                                        <label asp-for="NewTask.HttpSchemaStrictMode" class="form-check-label">Strict mode</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="task-config-block mb-2" data-kind="Messaging">
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.MessagingTopic" class="form-label">Topic</label>
+                                        <input asp-for="NewTask.MessagingTopic" class="form-control" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.MessagingVersion" class="form-label">Version</label>
+                                        <input asp-for="NewTask.MessagingVersion" class="form-control" placeholder="1.0.0" />
+                                    </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label asp-for="NewTask.MessagingSchemaContractKey" class="form-label">Contract key</label>
+                                        <input asp-for="NewTask.MessagingSchemaContractKey" class="form-control" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.MessagingSchemaContractVersion" class="form-label">Contract version</label>
+                                        <input asp-for="NewTask.MessagingSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-label">Registry provider id</label>
+                                        <input asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                    </div>
+                                    <div class="col-md-12 form-check mt-2 ms-2">
+                                        <input asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-input" />
+                                        <label asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-label">Strict mode</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="task-config-block mb-2" data-kind="Plugin">
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.PluginId" class="form-label">Plugin id</label>
+                                        <input asp-for="NewTask.PluginId" class="form-control" placeholder="ULID (optional)" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="task-config-block alert alert-secondary mb-2" data-kind="HumanApproval">
+                                Human approval has no additional typed fields for now.
+                            </div>
+                            <hr />
+                            <h6 class="mb-2">Execution settings</h6>
+                            <div class="row g-2 mb-3">
+                                <input asp-for="NewTask.ExecutionMode" type="hidden" />
+                                <input asp-for="NewTask.ParallelGroupId" type="hidden" />
+                                <div class="col-md-3">
+                                    <label asp-for="NewTask.DispatchType" class="form-label">Dispatch type</label>
+                                    <select asp-for="NewTask.DispatchType" class="form-select" asp-items="Model.DispatchTypes" id="taskDispatchTypeSelector"></select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label asp-for="NewTask.OnErrorPolicy" class="form-label">On error policy</label>
+                                    <select asp-for="NewTask.OnErrorPolicy" class="form-select" asp-items="Model.OnErrorPolicies"></select>
+                                </div>
+                            </div>
+                            <hr />
+                            <div class="row g-2">
+                                <div class="col-md-12">
+                                    <label asp-for="NewTask.Notes" class="form-label">Notes</label>
+                                    <textarea asp-for="NewTask.Notes" class="form-control" rows="3"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="task-policies-pane" role="tabpanel" aria-labelledby="task-policies-tab" tabindex="0">
+                            <input asp-for="NewTask.HasExecutionCondition" type="hidden" id="hasExecutionCondition" />
+                            <input asp-for="NewTask.ConditionEngine" type="hidden" id="conditionEngineSelector" />
+                            <input asp-for="NewTask.ConditionDslExpression" type="hidden" />
+                            <hr />
+                            <div class="form-check form-switch mb-2 d-none">
+                                <input asp-for="NewTask.HasTransformation" class="form-check-input" id="hasTransformation" />
+                                <label asp-for="NewTask.HasTransformation" class="form-check-label">Enable transformation</label>
+                            </div>
+                            <input asp-for="NewTask.TransformationEngine" type="hidden" id="transformationEngineSelector" />
+                            <hr />
+                            <div class="form-check form-switch mb-2">
+                                <input asp-for="NewTask.HasRetryPolicy" class="form-check-input" id="hasRetryPolicy" />
+                                <label asp-for="NewTask.HasRetryPolicy" class="form-check-label">Enable retry policy</label>
+                            </div>
+                            <div id="retryPolicySection">
+                                <h6 class="mb-2">Retry policy</h6>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.RetryStrategyType" class="form-label">Retry strategy</label>
+                                        <select asp-for="NewTask.RetryStrategyType" class="form-select" asp-items="Model.RetryStrategyTypes" id="retryStrategySelector"></select>
+                                    </div>
+                                    <div class="col-md-3 retry-strategy-block" data-retry="Fixed">
+                                        <label asp-for="NewTask.RetryDelaySeconds" class="form-label">Retry delay (sec)</label>
+                                        <input asp-for="NewTask.RetryDelaySeconds" class="form-control" type="number" min="0" step="0.1" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.RetryMaxRetries" class="form-label">Retries</label>
+                                        <input asp-for="NewTask.RetryMaxRetries" class="form-control" type="number" min="0" />
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label asp-for="NewTask.RetryableErrorCodes" class="form-label">Retry errors</label>
+                                        <input asp-for="NewTask.RetryableErrorCodes" type="hidden" id="retryErrorCodesHidden" />
+                                        <div class="od-chip-editor" data-chip-editor-for="retryErrorCodesHidden">
+                                            <div class="od-chip-list"></div>
+                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-12 form-check mt-3 ms-2">
+                                        <input asp-for="NewTask.RetryStopOnNonRetryableError" class="form-check-input" />
+                                        <label asp-for="NewTask.RetryStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <div id="retryFallbackWarning" class="alert alert-warning d-none mb-0">Some retry strategy types still have no concrete model. Current implementation uses fixed strategy fallback while preserving selected type metadata.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <hr />
+                            <div class="form-check form-switch mb-2">
+                                <input asp-for="NewTask.HasTimeoutPolicy" class="form-check-input" id="hasTimeoutPolicy" />
+                                <label asp-for="NewTask.HasTimeoutPolicy" class="form-check-label">Enable timeout policy</label>
+                            </div>
+                            <div id="timeoutPolicySection">
+                                <h6 class="mb-2">Timeout policy</h6>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.TimeoutSeconds" class="form-label">Timeout (sec)</label>
+                                        <input asp-for="NewTask.TimeoutSeconds" class="form-control" type="number" min="1" step="0.1" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.TimeoutBehavior" class="form-label">Timeout behavior</label>
+                                        <select asp-for="NewTask.TimeoutBehavior" class="form-select" asp-items="Model.TimeoutBehaviors" id="timeoutBehaviorSelector"></select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.TimeoutAction" class="form-label">Action on timeout</label>
+                                        <select asp-for="NewTask.TimeoutAction" class="form-select" asp-items="Model.TimeoutActions"></select>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2 timeout-behavior-block" data-timeout="Fail">
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.TimeoutFailErrorCode" class="form-label">Fail error code</label>
+                                        <input asp-for="NewTask.TimeoutFailErrorCode" class="form-control" />
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2 timeout-behavior-block" data-timeout="Wait">
+                                    <div class="col-md-6">
+                                        <label asp-for="NewTask.TimeoutWaitSeconds" class="form-label">Wait seconds</label>
+                                        <input asp-for="NewTask.TimeoutWaitSeconds" class="form-control" type="number" min="1" step="0.1" />
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-3 timeout-behavior-block" data-timeout="Reconcile">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.TimeoutReconcileRetryStrategyType" class="form-label">Reconcile retry strategy</label>
+                                        <select asp-for="NewTask.TimeoutReconcileRetryStrategyType" class="form-select" asp-items="Model.RetryStrategyTypes" id="timeoutReconcileRetryStrategySelector"></select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.TimeoutReconcileRetries" class="form-label">Reconcile retries</label>
+                                        <input asp-for="NewTask.TimeoutReconcileRetries" class="form-control" type="number" min="0" />
+                                    </div>
+                                    <div class="col-md-3 timeout-reconcile-strategy-block" data-timeout-reconcile-retry="Fixed">
+                                        <label asp-for="NewTask.TimeoutReconcileDelaySeconds" class="form-label">Reconcile delay (sec)</label>
+                                        <input asp-for="NewTask.TimeoutReconcileDelaySeconds" class="form-control" type="number" min="1" step="0.1" />
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label asp-for="NewTask.TimeoutReconcileRetryableErrorCodes" class="form-label">Reconcile retry errors</label>
+                                        <input asp-for="NewTask.TimeoutReconcileRetryableErrorCodes" type="hidden" id="timeoutReconcileRetryableErrorCodesHidden" />
+                                        <div class="od-chip-editor" data-chip-editor-for="timeoutReconcileRetryableErrorCodesHidden">
+                                            <div class="od-chip-list"></div>
+                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-12 form-check mt-2 ms-2">
+                                        <input asp-for="NewTask.TimeoutReconcileStopOnNonRetryableError" class="form-check-input" />
+                                        <label asp-for="NewTask.TimeoutReconcileStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="task-compensation-pane" role="tabpanel" aria-labelledby="task-compensation-tab" tabindex="0">
+                            <input asp-for="NewTask.HasCompensation" type="hidden" id="hasCompensation" />
+                            <div class="row g-2" id="compensationSection">
+                                <div class="col-md-6">
+                                    <label asp-for="NewTask.CompensationKind" class="form-label">Compensation task type</label>
+                                    <select asp-for="NewTask.CompensationKind" class="form-select" asp-items="Model.TaskKinds" id="compensationKindSelector"></select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="NewTask.CompensationDispatchType" class="form-label">Dispatch type</label>
+                                    <select asp-for="NewTask.CompensationDispatchType" class="form-select" asp-items="Model.DispatchTypes" id="compensationDispatchTypeSelector"></select>
+                                </div>
+                                <div class="col-md-12">
+                                    <h6 class="mb-2 mt-1">Compensation task configuration</h6>
+                                </div>
+                                <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Http">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label asp-for="NewTask.CompensationHttpBaseUrlVariableRef" class="form-label">Base URL variable</label>
+                                            <input asp-for="NewTask.CompensationHttpBaseUrlVariableRef" class="form-control" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label asp-for="NewTask.CompensationHttpRelativePath" class="form-label">Relative path</label>
+                                            <input asp-for="NewTask.CompensationHttpRelativePath" class="form-control" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label asp-for="NewTask.CompensationHttpMethod" class="form-label">Method</label>
+                                            <input asp-for="NewTask.CompensationHttpMethod" class="form-control" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label asp-for="NewTask.CompensationHttpExpectedStatusCodes" class="form-label">Expected status codes</label>
+                                            <input asp-for="NewTask.CompensationHttpExpectedStatusCodes" class="form-control" placeholder="200,202" />
+                                        </div>
+                                        <div class="col-md-12 form-check mt-3 ms-2">
+                                            <input asp-for="NewTask.CompensationHttpAllowSyncResponse" class="form-check-input" />
+                                            <label asp-for="NewTask.CompensationHttpAllowSyncResponse" class="form-check-label">Allow sync response</label>
+                                        </div>
+                                        <div class="col-12"><hr class="my-2" /></div>
+                                        <div class="col-12">
+                                            <h6 class="mb-2">Schema binding</h6>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label asp-for="NewTask.CompensationHttpSchemaContractKey" class="form-label">Contract key</label>
+                                            <input asp-for="NewTask.CompensationHttpSchemaContractKey" class="form-control" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-label">Contract version</label>
+                                            <input asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-label">Registry provider id</label>
+                                            <input asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                        </div>
+                                        <div class="col-md-12 form-check mt-2 ms-2">
+                                            <input asp-for="NewTask.CompensationHttpSchemaStrictMode" class="form-check-input" />
+                                            <label asp-for="NewTask.CompensationHttpSchemaStrictMode" class="form-check-label">Strict mode</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Messaging">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label asp-for="NewTask.CompensationMessagingTopic" class="form-label">Topic</label>
+                                            <input asp-for="NewTask.CompensationMessagingTopic" class="form-control" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label asp-for="NewTask.CompensationMessagingVersion" class="form-label">Version</label>
+                                            <input asp-for="NewTask.CompensationMessagingVersion" class="form-control" placeholder="1.0.0" />
+                                        </div>
+                                        <div class="col-12"><hr class="my-2" /></div>
+                                        <div class="col-12">
+                                            <h6 class="mb-2">Schema binding</h6>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label asp-for="NewTask.CompensationMessagingSchemaContractKey" class="form-label">Contract key</label>
+                                            <input asp-for="NewTask.CompensationMessagingSchemaContractKey" class="form-control" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-label">Contract version</label>
+                                            <input asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-label">Registry provider id</label>
+                                            <input asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                        </div>
+                                        <div class="col-md-12 form-check mt-2 ms-2">
+                                            <input asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-input" />
+                                            <label asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-label">Strict mode</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Plugin">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label asp-for="NewTask.CompensationPluginId" class="form-label">Plugin id</label>
+                                            <input asp-for="NewTask.CompensationPluginId" class="form-control" placeholder="ULID (optional)" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-12 comp-task-config-block alert alert-secondary mb-2" data-comp-kind="HumanApproval">
+                                    Human approval has no additional typed fields for now.
+                                </div>
+
+                                <div class="col-12"><hr class="my-2" /></div>
+                                <div class="col-md-12">
+                                    <div class="form-check form-switch">
+                                        <input asp-for="NewTask.HasCompensationExecutionCondition" class="form-check-input" id="hasCompensationExecutionCondition" />
+                                        <label asp-for="NewTask.HasCompensationExecutionCondition" class="form-check-label">Enable execution condition</label>
+                                    </div>
+                                </div>
+                                <div id="compensationExecutionConditionSection" class="row g-2">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationConditionEngine" class="form-label">Condition engine</label>
+                                        <select asp-for="NewTask.CompensationConditionEngine" class="form-select" asp-items="Model.EngineTypes"></select>
+                                    </div>
+                                    <div class="col-md-9">
+                                        <label asp-for="NewTask.CompensationConditionDslExpression" class="form-label">Condition DSL expression</label>
+                                        <input asp-for="NewTask.CompensationConditionDslExpression" class="form-control" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12"><hr class="my-2" /></div>
+                                <div class="col-md-12">
+                                    <div class="form-check form-switch">
+                                        <input asp-for="NewTask.HasCompensationTransformation" class="form-check-input" id="hasCompensationTransformation" />
+                                        <label asp-for="NewTask.HasCompensationTransformation" class="form-check-label">Enable transformation</label>
+                                    </div>
+                                </div>
+                                <div id="compensationTransformationSection" class="row g-2">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationTransformationEngine" class="form-label">Transformation engine</label>
+                                        <select asp-for="NewTask.CompensationTransformationEngine" class="form-select" asp-items="Model.EngineTypes"></select>
+                                    </div>
+                                </div>
+
+                                <div class="col-12"><hr class="my-2" /></div>
+                                <div class="col-md-12">
+                                    <div class="form-check form-switch">
+                                        <input asp-for="NewTask.HasCompensationRetryPolicy" class="form-check-input" id="hasCompensationRetryPolicy" />
+                                        <label asp-for="NewTask.HasCompensationRetryPolicy" class="form-check-label">Enable retry policy</label>
+                                    </div>
+                                </div>
+                                <div id="compensationRetrySection" class="row g-2">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationRetryStrategyType" class="form-label">Retry strategy</label>
+                                        <select asp-for="NewTask.CompensationRetryStrategyType" class="form-select" asp-items="Model.RetryStrategyTypes" id="compensationRetryStrategySelector"></select>
+                                    </div>
+                                    <div class="col-md-3 compensation-retry-strategy-block" data-comp-retry="Fixed">
+                                        <label asp-for="NewTask.CompensationRetryDelaySeconds" class="form-label">Retry delay (sec)</label>
+                                        <input asp-for="NewTask.CompensationRetryDelaySeconds" class="form-control" type="number" min="0" step="0.1" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationRetryMaxRetries" class="form-label">Retries</label>
+                                        <input asp-for="NewTask.CompensationRetryMaxRetries" class="form-control" type="number" min="0" />
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label asp-for="NewTask.CompensationRetryableErrorCodes" class="form-label">Retry errors</label>
+                                        <input asp-for="NewTask.CompensationRetryableErrorCodes" type="hidden" id="compensationRetryErrorCodesHidden" />
+                                        <div class="od-chip-editor" data-chip-editor-for="compensationRetryErrorCodesHidden">
+                                            <div class="od-chip-list"></div>
+                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-12 form-check mt-2 ms-2">
+                                        <input asp-for="NewTask.CompensationRetryStopOnNonRetryableError" class="form-check-input" />
+                                        <label asp-for="NewTask.CompensationRetryStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                    </div>
+                                </div>
+
+                                <div class="col-12"><hr class="my-2" /></div>
+                                <div class="col-md-12">
+                                    <div class="form-check form-switch">
+                                        <input asp-for="NewTask.HasCompensationTimeoutPolicy" class="form-check-input" id="hasCompensationTimeoutPolicy" />
+                                        <label asp-for="NewTask.HasCompensationTimeoutPolicy" class="form-check-label">Enable timeout policy</label>
+                                    </div>
+                                </div>
+                                <div id="compensationTimeoutSection" class="row g-2">
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationTimeoutSeconds" class="form-label">Timeout (sec)</label>
+                                        <input asp-for="NewTask.CompensationTimeoutSeconds" class="form-control" type="number" min="1" step="0.1" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationTimeoutBehavior" class="form-label">Timeout behavior</label>
+                                        <select asp-for="NewTask.CompensationTimeoutBehavior" class="form-select" asp-items="Model.TimeoutBehaviors" id="compensationTimeoutBehaviorSelector"></select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label asp-for="NewTask.CompensationTimeoutAction" class="form-label">Action on timeout</label>
+                                        <select asp-for="NewTask.CompensationTimeoutAction" class="form-select" asp-items="Model.TimeoutActions"></select>
+                                    </div>
+                                    <div class="col-md-6 compensation-timeout-behavior-block" data-comp-timeout="Fail">
+                                        <label asp-for="NewTask.CompensationTimeoutFailErrorCode" class="form-label">Fail error code</label>
+                                        <input asp-for="NewTask.CompensationTimeoutFailErrorCode" class="form-control" />
+                                    </div>
+                                    <div class="col-md-6 compensation-timeout-behavior-block" data-comp-timeout="Wait">
+                                        <label asp-for="NewTask.CompensationTimeoutWaitSeconds" class="form-label">Wait seconds</label>
+                                        <input asp-for="NewTask.CompensationTimeoutWaitSeconds" class="form-control" type="number" min="1" step="0.1" />
+                                    </div>
+                                    <div class="col-md-3 compensation-timeout-behavior-block" data-comp-timeout="Reconcile">
+                                        <label asp-for="NewTask.CompensationTimeoutReconcileRetryStrategyType" class="form-label">Reconcile retry strategy</label>
+                                        <select asp-for="NewTask.CompensationTimeoutReconcileRetryStrategyType" class="form-select" asp-items="Model.RetryStrategyTypes" id="compensationTimeoutReconcileRetryStrategySelector"></select>
+                                    </div>
+                                    <div class="col-md-3 compensation-timeout-behavior-block" data-comp-timeout="Reconcile">
+                                        <label asp-for="NewTask.CompensationTimeoutReconcileRetries" class="form-label">Reconcile retries</label>
+                                        <input asp-for="NewTask.CompensationTimeoutReconcileRetries" class="form-control" type="number" min="0" />
+                                    </div>
+                                    <div class="col-md-3 compensation-timeout-behavior-block compensation-timeout-reconcile-strategy-block" data-comp-timeout="Reconcile" data-comp-timeout-reconcile-retry="Fixed">
+                                        <label asp-for="NewTask.CompensationTimeoutReconcileDelaySeconds" class="form-label">Reconcile delay (sec)</label>
+                                        <input asp-for="NewTask.CompensationTimeoutReconcileDelaySeconds" class="form-control" type="number" min="1" step="0.1" />
+                                    </div>
+                                    <div class="col-md-12 compensation-timeout-behavior-block" data-comp-timeout="Reconcile">
+                                        <label asp-for="NewTask.CompensationTimeoutReconcileRetryableErrorCodes" class="form-label">Reconcile retry errors</label>
+                                        <input asp-for="NewTask.CompensationTimeoutReconcileRetryableErrorCodes" type="hidden" id="compensationTimeoutReconcileRetryableErrorCodesHidden" />
+                                        <div class="od-chip-editor" data-chip-editor-for="compensationTimeoutReconcileRetryableErrorCodesHidden">
+                                            <div class="od-chip-list"></div>
+                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                        </div>
+                                    </div>
+                                    <div class="col-md-12 form-check mt-2 ms-2 compensation-timeout-behavior-block" data-comp-timeout="Reconcile">
+                                        <input asp-for="NewTask.CompensationTimeoutReconcileStopOnNonRetryableError" class="form-check-input" />
+                                        <label asp-for="NewTask.CompensationTimeoutReconcileStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="taskModalSubmitButton">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<meta name="request-verification-token" content="@Antiforgery.GetAndStoreTokens(HttpContext).RequestToken" />
+@if (Model.ShouldOpenEditModal)
+{
+    <script>
+        window.__odServerEditTaskPayload = @Html.Raw(Model.EditTaskPayloadJson);
+    </script>
+}
+
+@section Scripts {
+<script>
+(() => {
+    const pipeline = document.getElementById('taskPipeline');
+    if (!pipeline) return;
+
+    const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
+    const addParallelGroupButton = document.getElementById('addParallelGroupButton');
+    const editGroupModalElement = document.getElementById('editParallelGroupModal');
+    const editGroupIdInput = document.getElementById('editParallelGroupId');
+    const editGroupNameInput = document.getElementById('editParallelGroupName');
+    const editGroupJoinPolicyInput = document.getElementById('editParallelGroupJoinPolicy');
+    const editGroupMaxParallelAgentsInput = document.getElementById('editParallelGroupMaxParallelAgents');
+    const saveParallelGroupButton = document.getElementById('saveParallelGroupButton');
+    const executionConditionModalElement = document.getElementById('taskExecutionConditionModal');
+    const executionConditionTaskIdInput = document.getElementById('taskExecutionConditionTaskId');
+    const executionConditionEnabledInput = document.getElementById('taskHasExecutionConditionQuick');
+    const executionConditionEngineInput = document.getElementById('taskConditionEngineQuick');
+    const executionConditionDslExpressionInput = document.getElementById('taskConditionDslExpressionQuick');
+    const executionConditionSection = document.getElementById('taskExecutionConditionSectionQuick');
+    const executionConditionWarning = document.getElementById('taskConditionUnsupportedEngineWarningQuick');
+    const saveExecutionConditionButton = document.getElementById('taskExecutionConditionSaveButton');
+    const transformationModalElement = document.getElementById('taskTransformationModal');
+    const transformationTaskIdInput = document.getElementById('taskTransformationTaskId');
+    const transformationEnabledInput = document.getElementById('taskHasTransformationQuick');
+    const transformationEngineInput = document.getElementById('taskTransformationEngineQuick');
+    const transformationSection = document.getElementById('taskTransformationSectionQuick');
+    const transformationWarning = document.getElementById('taskTransformationUnsupportedEngineWarningQuick');
+    const saveTransformationButton = document.getElementById('taskTransformationSaveButton');
+    let draggedTask = null;
+    let draggedGroup = null;
+    let groupNameCounter = getInitialGroupNameCounter();
+
+    function getSortableTasksInGroup(groupList) {
+        return Array.from(groupList.querySelectorAll(':scope > .od-pipeline-item[data-task-id]:not(.dragging)'));
+    }
+
+    function getAfterElement(listItems, y) {
+        let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+        listItems.forEach(element => {
+            const box = element.getBoundingClientRect();
+            const offset = y - (box.top + box.height / 2);
+            if (offset < 0 && offset > closest.offset) {
+                closest = { offset, element };
+            }
+        });
+
+        return closest.element;
+    }
+
+    function updateGroupEmptyStates() {
+        pipeline.querySelectorAll('.od-parallel-group').forEach(group => {
+            const groupList = group.querySelector('.od-group-task-list');
+            const emptyHint = group.querySelector('.od-group-empty');
+            if (!groupList || !emptyHint) {
+                return;
+            }
+
+            const hasTasks = groupList.querySelector('.od-pipeline-item[data-task-id]') !== null;
+            emptyHint.classList.toggle('d-none', hasTasks);
+        });
+    }
+
+    function getInitialGroupNameCounter() {
+        let maxNumber = 0;
+        pipeline.querySelectorAll('.od-parallel-group .od-item-title').forEach(title => {
+            const text = (title.textContent || '').trim();
+            const match = /^Group(\d+)$/i.exec(text);
+            if (!match) {
+                return;
+            }
+
+            const number = Number.parseInt(match[1], 10);
+            if (Number.isFinite(number) && number > maxNumber) {
+                maxNumber = number;
+            }
+        });
+
+        return maxNumber;
+    }
+
+    function getNextDefaultGroupName() {
+        groupNameCounter += 1;
+        return `Group${groupNameCounter}`;
+    }
+
+    function normalizeGroupName(value, fallback = 'Parallel group') {
+        const normalized = (value || '').trim();
+        if (!normalized) {
+            return fallback;
+        }
+
+        return normalized.length > 128 ? normalized.substring(0, 128) : normalized;
+    }
+
+    function createParallelGroupElement(groupData) {
+        const group = document.createElement('article');
+        group.className = 'od-parallel-group';
+        group.dataset.groupId = groupData.id;
+        group.draggable = true;
+        const groupName = normalizeGroupName(groupData.name, 'Parallel group');
+        group.innerHTML = `
+            <div class="od-parallel-group-head">
+                <div>
+                    <h3 class="od-item-title">${groupName}</h3>
+                </div>
+                <div class="dropdown">
+                    <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Parallel group actions">&#8942;</button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <button type="button" class="dropdown-item js-edit-group">Edit group</button>
+                        </li>
+                        <li><hr class="dropdown-divider" /></li>
+                        <li>
+                            <button type="button" class="dropdown-item text-danger js-remove-group">Remove group</button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="od-group-task-list" data-group-id="${groupData.id}">
+                <p class="od-group-empty">Drop tasks here</p>
+            </div>`;
+
+        return group;
+    }
+
+    async function postJson(handler, payload) {
+        const response = await fetch(`${window.location.pathname}?handler=${handler}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': antiForgeryToken
+            },
+            body: JSON.stringify(payload || {})
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        return response.json();
+    }
+
+    function refreshExecutionConditionConfigByEngine() {
+        if (!executionConditionEngineInput || !executionConditionEnabledInput || !executionConditionWarning) {
+            return;
+        }
+
+        const selectedEngine = (executionConditionEngineInput.value || '').toLowerCase();
+        let hasVisibleConfig = false;
+        document.querySelectorAll('.task-condition-config-block[data-engine]').forEach(element => {
+            const currentEngine = (element.getAttribute('data-engine') || '').toLowerCase();
+            const visible = currentEngine === selectedEngine;
+            element.classList.toggle('d-none', !visible);
+            hasVisibleConfig = hasVisibleConfig || visible;
+        });
+
+        executionConditionWarning.classList.toggle('d-none', hasVisibleConfig || !executionConditionEnabledInput.checked);
+    }
+
+    function refreshExecutionConditionSectionVisibility() {
+        if (!executionConditionSection || !executionConditionEnabledInput || !executionConditionWarning) {
+            return;
+        }
+
+        executionConditionSection.classList.toggle('d-none', !executionConditionEnabledInput.checked);
+        if (!executionConditionEnabledInput.checked) {
+            executionConditionWarning.classList.add('d-none');
+            return;
+        }
+
+        refreshExecutionConditionConfigByEngine();
+    }
+
+    async function openTaskExecutionConditionModal(taskId) {
+        if (!executionConditionTaskIdInput || !executionConditionEnabledInput || !executionConditionEngineInput || !executionConditionDslExpressionInput || !executionConditionModalElement || !window.bootstrap?.Modal) {
+            return;
+        }
+
+        const response = await fetch(`${window.location.pathname}?handler=TaskExecutionConditionForEdit&taskId=${encodeURIComponent(taskId)}`);
+        if (!response.ok) {
+            return;
+        }
+
+        const payload = await response.json();
+        executionConditionTaskIdInput.value = payload.taskId || taskId;
+        executionConditionEnabledInput.checked = !!payload.hasExecutionCondition;
+        executionConditionEngineInput.value = payload.conditionEngine || 'DSL';
+        executionConditionDslExpressionInput.value = payload.conditionDslExpression || 'true';
+        refreshExecutionConditionSectionVisibility();
+        window.bootstrap.Modal.getOrCreateInstance(executionConditionModalElement).show();
+    }
+
+    function refreshTransformationConfigByEngine() {
+        if (!transformationEngineInput || !transformationEnabledInput || !transformationWarning) {
+            return;
+        }
+
+        const selectedEngine = (transformationEngineInput.value || '').toLowerCase();
+        let hasVisibleConfig = false;
+        document.querySelectorAll('.task-transformation-config-block[data-engine]').forEach(element => {
+            const currentEngine = (element.getAttribute('data-engine') || '').toLowerCase();
+            const visible = currentEngine === selectedEngine;
+            element.classList.toggle('d-none', !visible);
+            hasVisibleConfig = hasVisibleConfig || visible;
+        });
+
+        transformationWarning.classList.toggle('d-none', hasVisibleConfig || !transformationEnabledInput.checked);
+    }
+
+    function refreshTransformationSectionVisibility() {
+        if (!transformationSection || !transformationEnabledInput || !transformationWarning) {
+            return;
+        }
+
+        transformationSection.classList.toggle('d-none', !transformationEnabledInput.checked);
+        if (!transformationEnabledInput.checked) {
+            transformationWarning.classList.add('d-none');
+            return;
+        }
+
+        refreshTransformationConfigByEngine();
+    }
+
+    async function openTaskTransformationModal(taskId) {
+        if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationModalElement || !window.bootstrap?.Modal) {
+            return;
+        }
+
+        const response = await fetch(`${window.location.pathname}?handler=TaskTransformationForEdit&taskId=${encodeURIComponent(taskId)}`);
+        if (!response.ok) {
+            return;
+        }
+
+        const payload = await response.json();
+        transformationTaskIdInput.value = payload.taskId || taskId;
+        transformationEnabledInput.checked = !!payload.hasTransformation;
+        transformationEngineInput.value = payload.transformationEngine || 'DSL';
+        refreshTransformationSectionVisibility();
+        window.bootstrap.Modal.getOrCreateInstance(transformationModalElement).show();
+    }
+
+    function getRootDropTarget(target) {
+        if (!target) {
+            return null;
+        }
+
+        const candidate = target.closest('.od-parallel-group, .od-pipeline-item');
+        if (!candidate || !pipeline.contains(candidate) || candidate.classList.contains('dragging')) {
+            return null;
+        }
+
+        if (candidate.classList.contains('od-parallel-group')) {
+            return candidate;
+        }
+
+        if (candidate.matches('.od-pipeline-item[data-task-id]')) {
+            return candidate;
+        }
+
+        if (candidate.classList.contains('od-add-item') || candidate.classList.contains('od-add-group-item')) {
+            return candidate;
+        }
+
+        return null;
+    }
+
+    function insertInRootByTarget(item, target, x) {
+        if (!item) {
+            return;
+        }
+
+        if (!target) {
+            const addGroupCard = pipeline.querySelector('.od-add-group-item');
+            if (addGroupCard) {
+                pipeline.insertBefore(item, addGroupCard);
+            } else {
+                pipeline.appendChild(item);
+            }
+
+            return;
+        }
+
+        if (target === item) {
+            return;
+        }
+
+        if (target.classList.contains('od-add-item') || target.classList.contains('od-add-group-item')) {
+            pipeline.insertBefore(item, target);
+            return;
+        }
+
+        const targetRect = target.getBoundingClientRect();
+        const shouldPlaceBefore = x < targetRect.left + (targetRect.width / 2);
+        pipeline.insertBefore(item, shouldPlaceBefore ? target : target.nextSibling);
+    }
+
+    function insertInGroupByPointer(groupList, y) {
+        const candidates = getSortableTasksInGroup(groupList);
+        const after = getAfterElement(candidates, y);
+        if (!after) {
+            groupList.appendChild(draggedTask);
+            return;
+        }
+
+        groupList.insertBefore(draggedTask, after);
+    }
+
+    pipeline.addEventListener('dragstart', event => {
+        const task = event.target.closest('.od-pipeline-item[data-task-id]');
+        if (task) {
+            draggedTask = task;
+            draggedGroup = null;
+            draggedTask.classList.add('dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', task.dataset.taskId || '');
+            return;
+        }
+
+        const group = event.target.closest('.od-parallel-group');
+        if (!group || !pipeline.contains(group)) {
+            event.preventDefault();
+            return;
+        }
+
+        draggedGroup = group;
+        draggedTask = null;
+        draggedGroup.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', group.dataset.groupId || '');
+    });
+
+    pipeline.addEventListener('dragover', event => {
+        if (!draggedTask && !draggedGroup) {
+            return;
+        }
+
+        event.preventDefault();
+        const groupList = draggedTask ? event.target.closest('.od-group-task-list') : null;
+        if (groupList) {
+            insertInGroupByPointer(groupList, event.clientY);
+            updateGroupEmptyStates();
+            return;
+        }
+
+        const rootTarget = getRootDropTarget(event.target);
+        insertInRootByTarget(draggedGroup || draggedTask, rootTarget, event.clientX);
+        updateGroupEmptyStates();
+    });
+
+    pipeline.addEventListener('dragend', async () => {
+        if (!draggedTask && !draggedGroup) {
+            return;
+        }
+
+        if (draggedTask) {
+            draggedTask.classList.remove('dragging');
+            draggedTask = null;
+        }
+
+        if (draggedGroup) {
+            draggedGroup.classList.remove('dragging');
+            draggedGroup = null;
+        }
+
+        updateGroupEmptyStates();
+        await persistOrder();
+    });
+
+    pipeline.addEventListener('click', async event => {
+        const executionConditionButton = event.target.closest('.js-task-execution-btn');
+        if (executionConditionButton) {
+            event.preventDefault();
+            const taskId = executionConditionButton.getAttribute('data-task-id') || '';
+            if (!taskId) {
+                return;
+            }
+
+            await openTaskExecutionConditionModal(taskId);
+            return;
+        }
+
+        const transformationButton = event.target.closest('.js-task-transformation-btn');
+        if (transformationButton) {
+            event.preventDefault();
+            const taskId = transformationButton.getAttribute('data-task-id') || '';
+            if (!taskId) {
+                return;
+            }
+
+            await openTaskTransformationModal(taskId);
+            return;
+        }
+
+        const editButton = event.target.closest('.js-edit-group');
+        if (editButton) {
+            event.preventDefault();
+            const group = editButton.closest('.od-parallel-group');
+            const groupId = group?.getAttribute('data-group-id') || '';
+            if (!groupId) {
+                return;
+            }
+
+            const response = await fetch(`${window.location.pathname}?handler=ParallelGroupForEdit&groupId=${encodeURIComponent(groupId)}`);
+            if (!response.ok) {
+                return;
+            }
+
+            const payload = await response.json();
+            if (!editGroupIdInput || !editGroupNameInput || !editGroupJoinPolicyInput || !editGroupMaxParallelAgentsInput) {
+                return;
+            }
+
+            editGroupIdInput.value = payload.id || groupId;
+            editGroupNameInput.value = normalizeGroupName(payload.name, 'Parallel group');
+            editGroupJoinPolicyInput.value = payload.joinPolicy || 'WaitAll';
+            editGroupMaxParallelAgentsInput.value = payload.maxParallelAgents == null ? '' : payload.maxParallelAgents;
+
+            if (editGroupModalElement && window.bootstrap?.Modal) {
+                window.bootstrap.Modal.getOrCreateInstance(editGroupModalElement).show();
+            }
+
+            return;
+        }
+
+        const removeButton = event.target.closest('.js-remove-group');
+        if (!removeButton) {
+            return;
+        }
+
+        event.preventDefault();
+        const group = removeButton.closest('.od-parallel-group');
+        if (!group) {
+            return;
+        }
+        const groupId = group.getAttribute('data-group-id') || '';
+        if (!groupId) {
+            return;
+        }
+
+        const deleteResult = await postJson('DeleteParallelGroup', { stageId: '@Model.StageId', groupId });
+        if (!deleteResult?.success) {
+            return;
+        }
+
+        const tasks = Array.from(group.querySelectorAll('.od-pipeline-item[data-task-id]'));
+        const addGroupCard = pipeline.querySelector('.od-add-group-item');
+        tasks.forEach(task => {
+            if (addGroupCard) {
+                pipeline.insertBefore(task, addGroupCard);
+            } else {
+                pipeline.appendChild(task);
+            }
+        });
+
+        group.remove();
+        updateGroupEmptyStates();
+        await persistOrder();
+    });
+
+    pipeline.addEventListener('change', async event => {
+        const toggle = event.target.closest('.js-task-enabled-toggle');
+        if (!toggle) {
+            return;
+        }
+
+        const taskId = toggle.getAttribute('data-task-id') || '';
+        if (!taskId) {
+            return;
+        }
+
+        const previousValue = !toggle.checked;
+        const card = toggle.closest('.od-pipeline-card');
+        toggle.disabled = true;
+        const updateResult = await postJson('SetTaskEnabled', {
+            taskId,
+            isEnabled: toggle.checked
+        });
+
+        if (!updateResult?.success) {
+            toggle.checked = previousValue;
+        } else if (card) {
+            card.classList.toggle('od-task-disabled', !toggle.checked);
+        }
+
+        toggle.disabled = false;
+    });
+
+    if (executionConditionEnabledInput) {
+        executionConditionEnabledInput.addEventListener('change', refreshExecutionConditionSectionVisibility);
+    }
+
+    if (executionConditionEngineInput) {
+        executionConditionEngineInput.addEventListener('change', refreshExecutionConditionConfigByEngine);
+    }
+
+    if (saveExecutionConditionButton) {
+        saveExecutionConditionButton.addEventListener('click', async () => {
+            if (!executionConditionTaskIdInput || !executionConditionEnabledInput || !executionConditionEngineInput || !executionConditionDslExpressionInput || !executionConditionModalElement || !window.bootstrap?.Modal) {
+                return;
+            }
+
+            const taskId = executionConditionTaskIdInput.value || '';
+            if (!taskId) {
+                return;
+            }
+
+            saveExecutionConditionButton.disabled = true;
+            try {
+                const result = await postJson('SetTaskExecutionCondition', {
+                    taskId: taskId,
+                    hasExecutionCondition: !!executionConditionEnabledInput.checked,
+                    conditionEngine: executionConditionEngineInput.value || 'DSL',
+                    conditionDslExpression: executionConditionDslExpressionInput.value || 'true'
+                });
+
+                if (!result?.success) {
+                    return;
+                }
+
+                window.location.reload();
+            } finally {
+                saveExecutionConditionButton.disabled = false;
+            }
+        });
+    }
+
+    if (transformationEnabledInput) {
+        transformationEnabledInput.addEventListener('change', refreshTransformationSectionVisibility);
+    }
+
+    if (transformationEngineInput) {
+        transformationEngineInput.addEventListener('change', refreshTransformationConfigByEngine);
+    }
+
+    if (saveTransformationButton) {
+        saveTransformationButton.addEventListener('click', async () => {
+            if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationModalElement || !window.bootstrap?.Modal) {
+                return;
+            }
+
+            const taskId = transformationTaskIdInput.value || '';
+            if (!taskId) {
+                return;
+            }
+
+            saveTransformationButton.disabled = true;
+            try {
+                const result = await postJson('SetTaskTransformation', {
+                    taskId: taskId,
+                    hasTransformation: !!transformationEnabledInput.checked,
+                    transformationEngine: transformationEngineInput.value || 'DSL'
+                });
+
+                if (!result?.success) {
+                    return;
+                }
+
+                window.location.reload();
+            } finally {
+                saveTransformationButton.disabled = false;
+            }
+        });
+    }
+
+    if (saveParallelGroupButton) {
+        saveParallelGroupButton.addEventListener('click', async () => {
+            if (!editGroupIdInput || !editGroupNameInput || !editGroupJoinPolicyInput || !editGroupMaxParallelAgentsInput) {
+                return;
+            }
+
+            const groupId = editGroupIdInput.value || '';
+            if (!groupId) {
+                return;
+            }
+
+            const name = normalizeGroupName(editGroupNameInput.value, 'Parallel group');
+            const joinPolicy = editGroupJoinPolicyInput.value || 'WaitAll';
+            const maxParallelAgentsText = (editGroupMaxParallelAgentsInput.value || '').trim();
+            const maxParallelAgents = maxParallelAgentsText.length === 0
+                ? null
+                : Number.parseInt(maxParallelAgentsText, 10);
+
+            const updateResult = await postJson('UpdateParallelGroup', {
+                stageId: '@Model.StageId',
+                groupId,
+                name,
+                joinPolicy,
+                maxParallelAgents: Number.isFinite(maxParallelAgents) && maxParallelAgents > 0 ? maxParallelAgents : null
+            });
+
+            if (!updateResult?.success) {
+                return;
+            }
+
+            const groupElement = pipeline.querySelector(`.od-parallel-group[data-group-id="${groupId}"]`);
+            const title = groupElement?.querySelector('.od-item-title');
+            if (title) {
+                title.textContent = name;
+            }
+
+            if (editGroupModalElement && window.bootstrap?.Modal) {
+                window.bootstrap.Modal.getOrCreateInstance(editGroupModalElement).hide();
+            }
+        });
+    }
+
+    if (addParallelGroupButton) {
+        addParallelGroupButton.addEventListener('click', async event => {
+            event.preventDefault();
+            const defaultName = getNextDefaultGroupName();
+            const createResult = await postJson('CreateParallelGroup', {
+                stageId: '@Model.StageId',
+                name: defaultName
+            });
+
+            if (!createResult?.success || !createResult.group) {
+                return;
+            }
+
+            const groupElement = createParallelGroupElement(createResult.group);
+            const addGroupCard = pipeline.querySelector('.od-add-group-item');
+            if (addGroupCard) {
+                pipeline.insertBefore(groupElement, addGroupCard);
+            } else {
+                pipeline.appendChild(groupElement);
+            }
+
+            updateGroupEmptyStates();
+        });
+    }
+
+    async function persistOrder() {
+        const items = [];
+        const rootItems = Array.from(pipeline.children).filter(
+            x => !x.classList.contains('od-add-item') && !x.classList.contains('od-add-group-item'));
+
+        rootItems.forEach(element => {
+            if (element.matches('.od-pipeline-item[data-task-id]')) {
+                items.push({
+                    taskId: element.dataset.taskId || '',
+                    parallelGroupId: ''
+                });
+
+                return;
+            }
+
+            if (element.classList.contains('od-parallel-group')) {
+                const groupId = element.getAttribute('data-group-id') || '';
+                const groupTasks = element.querySelectorAll('.od-group-task-list > .od-pipeline-item[data-task-id]');
+                groupTasks.forEach(task => {
+                    items.push({
+                        taskId: task.getAttribute('data-task-id') || '',
+                        parallelGroupId: groupId
+                    });
+                });
+            }
+        });
+
+        if (items.length === 0) {
+            return;
+        }
+
+        await postJson('ReorderTasks', { stageId: '@Model.StageId', items });
+    }
+
+    updateGroupEmptyStates();
+})();
+
+(() => {
+    const modalTitle = document.getElementById('newTaskModalLabel');
+    const submitButton = document.getElementById('taskModalSubmitButton');
+    const serverEditPayload = window.__odServerEditTaskPayload || null;
+    const modalElement = document.getElementById('newTaskModal');
+    const taskIdInput = document.getElementById('taskModalTaskId');
+    const taskIdRawInput = document.getElementById('taskModalTaskIdRaw');
+    const defaultValues = {
+        TaskId: '',
+        Key: '',
+        Name: '',
+        Kind: 'HumanApproval',
+        ExecutionMode: 'Sequential',
+        DispatchType: 'FireAndWait',
+        OnErrorPolicy: 'Stop',
+        ParallelGroupId: '',
+        IsEnabled: true,
+        Notes: '',
+        HasExecutionCondition: false,
+        ConditionEngine: 'DSL',
+        ConditionDslExpression: 'true',
+        HasTransformation: false,
+        TransformationEngine: 'DSL',
+        HttpBaseUrlVariableRef: 'vars.baseUrl',
+        HttpRelativePath: '/',
+        HttpMethod: 'GET',
+        HttpExpectedStatusCodes: '200',
+        HttpAllowSyncResponse: false,
+        HttpSchemaContractKey: 'contract.placeholder',
+        HttpSchemaContractVersion: '1.0.0',
+        HttpSchemaRegistryProviderId: '',
+        HttpSchemaStrictMode: false,
+        MessagingTopic: 'orchestrator.topic',
+        MessagingVersion: '1.0.0',
+        MessagingSchemaContractKey: 'contract.placeholder',
+        MessagingSchemaContractVersion: '1.0.0',
+        MessagingSchemaRegistryProviderId: '',
+        MessagingSchemaStrictMode: false,
+        PluginId: '',
+        RetryStrategyType: 'Fixed',
+        RetryMaxRetries: 0,
+        RetryDelaySeconds: 1,
+        RetryableErrorCodes: '',
+        RetryStopOnNonRetryableError: false,
+        HasRetryPolicy: false,
+        TimeoutSeconds: 30,
+        TimeoutBehavior: 'Fail',
+        TimeoutFailErrorCode: 'TIMEOUT',
+        TimeoutWaitSeconds: 15,
+        TimeoutAction: 'Block',
+        TimeoutReconcileRetryStrategyType: 'Fixed',
+        TimeoutReconcileRetries: 3,
+        TimeoutReconcileDelaySeconds: 5,
+        TimeoutReconcileRetryableErrorCodes: '',
+        TimeoutReconcileStopOnNonRetryableError: false,
+        HasTimeoutPolicy: false,
+        CompensationKind: 'HumanApproval',
+        HasCompensation: false,
+        HasCompensationExecutionCondition: false,
+        HasCompensationTransformation: false,
+        HasCompensationRetryPolicy: false,
+        HasCompensationTimeoutPolicy: false,
+        CompensationHttpBaseUrlVariableRef: 'vars.baseUrl',
+        CompensationHttpRelativePath: '/',
+        CompensationHttpMethod: 'GET',
+        CompensationHttpExpectedStatusCodes: '200',
+        CompensationHttpAllowSyncResponse: false,
+        CompensationHttpSchemaContractKey: 'contract.placeholder',
+        CompensationHttpSchemaContractVersion: '1.0.0',
+        CompensationHttpSchemaRegistryProviderId: '',
+        CompensationHttpSchemaStrictMode: false,
+        CompensationMessagingTopic: 'orchestrator.topic',
+        CompensationMessagingVersion: '1.0.0',
+        CompensationMessagingSchemaContractKey: 'contract.placeholder',
+        CompensationMessagingSchemaContractVersion: '1.0.0',
+        CompensationMessagingSchemaRegistryProviderId: '',
+        CompensationMessagingSchemaStrictMode: false,
+        CompensationPluginId: '',
+        CompensationDispatchType: 'FireAndWait',
+        CompensationConditionEngine: 'DSL',
+        CompensationConditionDslExpression: 'true',
+        CompensationTransformationEngine: 'DSL',
+        CompensationRetryStrategyType: 'Fixed',
+        CompensationRetryMaxRetries: 0,
+        CompensationRetryDelaySeconds: 1,
+        CompensationRetryableErrorCodes: '',
+        CompensationRetryStopOnNonRetryableError: false,
+        CompensationTimeoutSeconds: 30,
+        CompensationTimeoutBehavior: 'Fail',
+        CompensationTimeoutFailErrorCode: 'TIMEOUT',
+        CompensationTimeoutWaitSeconds: 15,
+        CompensationTimeoutAction: 'Block',
+        CompensationTimeoutReconcileRetryStrategyType: 'Fixed',
+        CompensationTimeoutReconcileRetries: 3,
+        CompensationTimeoutReconcileDelaySeconds: 5,
+        CompensationTimeoutReconcileRetryableErrorCodes: '',
+        CompensationTimeoutReconcileStopOnNonRetryableError: false
+    };
+
+    const fieldIdOverrides = {
+        Kind: 'taskKindSelector',
+        DispatchType: 'taskDispatchTypeSelector',
+        ConditionEngine: 'conditionEngineSelector',
+        TransformationEngine: 'transformationEngineSelector',
+        RetryStrategyType: 'retryStrategySelector',
+        TimeoutBehavior: 'timeoutBehaviorSelector',
+        HasExecutionCondition: 'hasExecutionCondition',
+        HasTransformation: 'hasTransformation',
+        HasRetryPolicy: 'hasRetryPolicy',
+        HasTimeoutPolicy: 'hasTimeoutPolicy',
+        HasCompensation: 'hasCompensation',
+        HasCompensationExecutionCondition: 'hasCompensationExecutionCondition',
+        HasCompensationTransformation: 'hasCompensationTransformation',
+        HasCompensationRetryPolicy: 'hasCompensationRetryPolicy',
+        HasCompensationTimeoutPolicy: 'hasCompensationTimeoutPolicy',
+        CompensationKind: 'compensationKindSelector',
+        CompensationDispatchType: 'compensationDispatchTypeSelector',
+        CompensationRetryStrategyType: 'compensationRetryStrategySelector',
+        CompensationTimeoutBehavior: 'compensationTimeoutBehaviorSelector',
+        RetryableErrorCodes: 'retryErrorCodesHidden',
+        CompensationRetryableErrorCodes: 'compensationRetryErrorCodesHidden',
+        TimeoutReconcileRetryableErrorCodes: 'timeoutReconcileRetryableErrorCodesHidden',
+        CompensationTimeoutReconcileRetryableErrorCodes: 'compensationTimeoutReconcileRetryableErrorCodesHidden',
+    };
+
+    function setInputValue(propertyName, value) {
+        const elementId = fieldIdOverrides[propertyName] ?? `NewTask_${propertyName}`;
+        const element = document.getElementById(elementId);
+        if (!element) {
+            return;
+        }
+
+        const type = (element.getAttribute('type') || '').toLowerCase();
+        if (type === 'checkbox') {
+            element.checked = value === true || value === 'true' || value === 1;
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+        }
+
+        element.value = value ?? '';
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function applyPayload(payload) {
+        Object.keys(defaultValues).forEach(key => setInputValue(key, defaultValues[key]));
+        Object.keys(payload || {}).forEach(key => setInputValue(key, payload[key]));
+
+        if (taskIdInput) {
+            taskIdInput.value = payload?.TaskId || '';
+        }
+
+        if (taskIdRawInput) {
+            taskIdRawInput.value = payload?.TaskId || '';
+        }
+
+        document.querySelectorAll('.od-chip-editor[data-chip-editor-for]').forEach(editor => {
+            const targetId = editor.getAttribute('data-chip-editor-for');
+            const hidden = targetId ? document.getElementById(targetId) : null;
+            if (hidden) {
+                hidden.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+    }
+
+    function openModal() {
+        if (!modalElement || !window.bootstrap || !window.bootstrap.Modal) {
+            return;
+        }
+
+        window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    }
+
+    document.querySelectorAll('.js-open-task-modal').forEach(button => {
+        button.addEventListener('click', async () => {
+            if (!modalTitle || !submitButton || !taskIdInput || !taskIdRawInput) {
+                return;
+            }
+
+            const mode = button.getAttribute('data-task-mode') || 'create';
+            if (mode === 'edit') {
+                const taskId = button.getAttribute('data-task-id') || '';
+                if (!taskId) {
+                    return;
+                }
+
+                const response = await fetch(`${window.location.pathname}?handler=TaskForEdit&taskId=${encodeURIComponent(taskId)}`);
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                modalTitle.textContent = 'Edit task';
+                submitButton.textContent = 'Save';
+                applyPayload(payload);
+                openModal();
+                return;
+            }
+
+            modalTitle.textContent = 'Create task';
+            submitButton.textContent = 'Create';
+            applyPayload({});
+        });
+    });
+
+    if (serverEditPayload && modalTitle && submitButton) {
+        modalTitle.textContent = 'Edit task';
+        submitButton.textContent = 'Save';
+        applyPayload(serverEditPayload);
+
+        openModal();
+    }
+})();
+
+(() => {
+    const kindSelector = document.getElementById('taskKindSelector');
+    const onErrorPolicySelector = document.getElementById('NewTask_OnErrorPolicy');
+    const generalTabButton = document.getElementById('task-general-tab');
+    const compensationTabButton = document.getElementById('task-compensation-tab');
+    const compensationTabItem = compensationTabButton ? compensationTabButton.closest('.nav-item') : null;
+    const compensationTabPane = document.getElementById('task-compensation-pane');
+    const compensationKindSelector = document.getElementById('compensationKindSelector');
+    const taskDispatchTypeSelector = document.getElementById('taskDispatchTypeSelector');
+    const compensationDispatchTypeSelector = document.getElementById('compensationDispatchTypeSelector');
+    const timeoutSelector = document.getElementById('timeoutBehaviorSelector');
+    const retrySelector = document.getElementById('retryStrategySelector');
+    const compensationRetrySelector = document.getElementById('compensationRetryStrategySelector');
+    const timeoutReconcileRetrySelector = document.getElementById('timeoutReconcileRetryStrategySelector');
+    const compensationTimeoutReconcileRetrySelector = document.getElementById('compensationTimeoutReconcileRetryStrategySelector');
+    const conditionEngineSelector = document.getElementById('conditionEngineSelector');
+    const transformationEngineSelector = document.getElementById('transformationEngineSelector');
+    const compensationTimeoutSelector = document.getElementById('compensationTimeoutBehaviorSelector');
+    const engineFallbackWarning = document.getElementById('engineFallbackWarning');
+    const retryFallbackWarning = document.getElementById('retryFallbackWarning');
+    const hasRetryPolicy = document.getElementById('hasRetryPolicy');
+    const hasTimeoutPolicy = document.getElementById('hasTimeoutPolicy');
+    const hasExecutionCondition = document.getElementById('hasExecutionCondition');
+    const hasTransformation = document.getElementById('hasTransformation');
+    const hasCompensation = document.getElementById('hasCompensation');
+    const hasCompensationExecutionCondition = document.getElementById('hasCompensationExecutionCondition');
+    const hasCompensationTransformation = document.getElementById('hasCompensationTransformation');
+    const hasCompensationRetryPolicy = document.getElementById('hasCompensationRetryPolicy');
+    const hasCompensationTimeoutPolicy = document.getElementById('hasCompensationTimeoutPolicy');
+    const retryPolicySection = document.getElementById('retryPolicySection');
+    const timeoutPolicySection = document.getElementById('timeoutPolicySection');
+    const executionConditionSection = document.getElementById('executionConditionSection');
+    const transformationSection = document.getElementById('transformationSection');
+    const compensationSection = document.getElementById('compensationSection');
+    const compensationExecutionConditionSection = document.getElementById('compensationExecutionConditionSection');
+    const compensationTransformationSection = document.getElementById('compensationTransformationSection');
+    const compensationRetrySection = document.getElementById('compensationRetrySection');
+    const compensationTimeoutSection = document.getElementById('compensationTimeoutSection');
+    const chipEditors = document.querySelectorAll('.od-chip-editor[data-chip-editor-for]');
+
+    if (!kindSelector) {
+        return;
+    }
+
+    function toggleBySelector(selector, blockSelector, attributeName) {
+        if (!selector) {
+            return;
+        }
+
+        const selected = selector.value;
+        document.querySelectorAll(blockSelector).forEach(element => {
+            element.classList.toggle('d-none', element.getAttribute(attributeName) !== selected);
+        });
+    }
+
+    function refreshKind() {
+        toggleBySelector(kindSelector, '.task-config-block', 'data-kind');
+    }
+
+    function refreshCompensationKind() {
+        if (!compensationKindSelector) {
+            return;
+        }
+
+        toggleBySelector(compensationKindSelector, '.comp-task-config-block', 'data-comp-kind');
+    }
+
+    function allowedDispatchTypesByKind(kind) {
+        switch (kind) {
+            case 'HumanApproval':
+                return ['FireAndWaitCallback'];
+            case 'Messaging':
+                return ['FireAndForget', 'FireAndWaitCallback'];
+            case 'Http':
+            case 'Plugin':
+                return ['FireAndWait', 'FireAndForget', 'FireAndWaitCallback'];
+            default:
+                return ['FireAndWait', 'FireAndForget', 'FireAndWaitCallback'];
+        }
+    }
+
+    function refreshDispatchOptions(kindSelect, dispatchSelect) {
+        if (!kindSelect || !dispatchSelect) {
+            return;
+        }
+
+        const allowed = allowedDispatchTypesByKind(kindSelect.value);
+        let firstAllowed = '';
+        Array.from(dispatchSelect.options).forEach(option => {
+            const isAllowed = allowed.includes(option.value);
+            option.hidden = !isAllowed;
+            option.disabled = !isAllowed;
+            if (isAllowed && firstAllowed.length === 0) {
+                firstAllowed = option.value;
+            }
+        });
+
+        if (!allowed.includes(dispatchSelect.value) && firstAllowed.length > 0) {
+            dispatchSelect.value = firstAllowed;
+        }
+    }
+
+    function refreshTimeout() {
+        toggleBySelector(timeoutSelector, '.timeout-behavior-block', 'data-timeout');
+        refreshTimeoutReconcileRetryFields();
+    }
+
+    function refreshRetryFields() {
+        toggleBySelector(retrySelector, '.retry-strategy-block', 'data-retry');
+    }
+
+    function refreshCompensationRetryFields() {
+        if (!compensationRetrySelector) {
+            return;
+        }
+
+        toggleBySelector(compensationRetrySelector, '.compensation-retry-strategy-block', 'data-comp-retry');
+    }
+
+    function refreshCompensationTimeout() {
+        if (!compensationTimeoutSelector) {
+            return;
+        }
+
+        toggleBySelector(compensationTimeoutSelector, '.compensation-timeout-behavior-block', 'data-comp-timeout');
+        refreshCompensationTimeoutReconcileRetryFields();
+    }
+
+    function refreshTimeoutReconcileRetryFields() {
+        if (!timeoutReconcileRetrySelector) {
+            return;
+        }
+
+        toggleBySelector(timeoutReconcileRetrySelector, '.timeout-reconcile-strategy-block', 'data-timeout-reconcile-retry');
+    }
+
+    function refreshCompensationTimeoutReconcileRetryFields() {
+        if (!compensationTimeoutReconcileRetrySelector) {
+            return;
+        }
+
+        toggleBySelector(compensationTimeoutReconcileRetrySelector, '.compensation-timeout-reconcile-strategy-block', 'data-comp-timeout-reconcile-retry');
+    }
+
+    function toggleSection(checkbox, section) {
+        if (!checkbox || !section) {
+            return;
+        }
+
+        section.classList.toggle('d-none', !checkbox.checked);
+    }
+
+    function shouldEnableCompensation() {
+        return onErrorPolicySelector && onErrorPolicySelector.value === 'StopAndCompensate';
+    }
+
+    function refreshOptionalPolicies() {
+        const compensationEnabled = shouldEnableCompensation();
+
+        toggleSection(hasRetryPolicy, retryPolicySection);
+        toggleSection(hasTimeoutPolicy, timeoutPolicySection);
+        toggleSection(hasExecutionCondition, executionConditionSection);
+        toggleSection(hasTransformation, transformationSection);
+        if (hasCompensation) {
+            hasCompensation.value = compensationEnabled ? 'true' : 'false';
+        }
+        if (compensationTabItem) {
+            compensationTabItem.classList.toggle('d-none', !compensationEnabled);
+        }
+        if (compensationTabPane) {
+            compensationTabPane.classList.toggle('d-none', !compensationEnabled);
+
+            if (!compensationEnabled && (compensationTabPane.classList.contains('active') || compensationTabPane.classList.contains('show'))) {
+                if (generalTabButton && window.bootstrap && window.bootstrap.Tab) {
+                    window.bootstrap.Tab.getOrCreateInstance(generalTabButton).show();
+                } else {
+                    compensationTabPane.classList.remove('active', 'show');
+                }
+            }
+        }
+        toggleSection(hasCompensationExecutionCondition, compensationExecutionConditionSection);
+        toggleSection(hasCompensationTransformation, compensationTransformationSection);
+        toggleSection(hasCompensationRetryPolicy, compensationRetrySection);
+        toggleSection(hasCompensationTimeoutPolicy, compensationTimeoutSection);
+    }
+
+    function refreshWarnings() {
+        if (retryFallbackWarning && hasRetryPolicy) {
+            if (!hasRetryPolicy.checked) {
+                retryFallbackWarning.classList.add('d-none');
+            } else {
+            retryFallbackWarning.classList.toggle('d-none', retrySelector.value === 'Fixed');
+            }
+        }
+
+        if (engineFallbackWarning && (hasExecutionCondition || hasTransformation)) {
+            if ((hasExecutionCondition && !hasExecutionCondition.checked) && (hasTransformation && !hasTransformation.checked)) {
+                engineFallbackWarning.classList.add('d-none');
+            } else {
+            const unsupportedEngine = conditionEngineSelector.value !== 'DSL' || transformationEngineSelector.value !== 'DSL';
+            engineFallbackWarning.classList.toggle('d-none', !unsupportedEngine);
+            }
+        }
+    }
+
+    function initializeChipEditors() {
+        chipEditors.forEach(editor => {
+            const targetId = editor.getAttribute('data-chip-editor-for');
+            const hiddenInput = document.getElementById(targetId);
+            const list = editor.querySelector('.od-chip-list');
+            const input = editor.querySelector('.od-chip-input');
+            if (!hiddenInput || !list || !input) {
+                return;
+            }
+
+            const values = new Set(
+                (hiddenInput.value || '')
+                    .split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0));
+
+            function loadFromHidden() {
+                values.clear();
+                (hiddenInput.value || '')
+                    .split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0)
+                    .forEach(x => values.add(x));
+            }
+
+            function syncHidden() {
+                hiddenInput.value = Array.from(values).join(',');
+            }
+
+            function render() {
+                list.innerHTML = '';
+
+                values.forEach(value => {
+                    const chip = document.createElement('span');
+                    chip.className = 'od-input-chip';
+
+                    const label = document.createElement('span');
+                    label.textContent = value;
+                    chip.appendChild(label);
+
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'od-chip-remove';
+                    remove.setAttribute('aria-label', `Remove ${value}`);
+                    remove.textContent = '×';
+                    remove.addEventListener('click', () => {
+                        values.delete(value);
+                        syncHidden();
+                        render();
+                    });
+
+                    chip.appendChild(remove);
+                    list.appendChild(chip);
+                });
+            }
+
+            function addFromInput() {
+                const raw = input.value || '';
+                const pieces = raw.split(',').map(x => x.trim()).filter(x => x.length > 0);
+                if (pieces.length === 0) {
+                    input.value = '';
+                    return;
+                }
+
+                pieces.forEach(piece => values.add(piece));
+                input.value = '';
+                syncHidden();
+                render();
+            }
+
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ',') {
+                    event.preventDefault();
+                    addFromInput();
+                }
+            });
+
+            input.addEventListener('blur', addFromInput);
+            hiddenInput.addEventListener('change', () => {
+                loadFromHidden();
+                render();
+            });
+            loadFromHidden();
+            syncHidden();
+            render();
+        });
+    }
+
+    refreshKind();
+    refreshCompensationKind();
+    refreshDispatchOptions(kindSelector, taskDispatchTypeSelector);
+    refreshDispatchOptions(compensationKindSelector, compensationDispatchTypeSelector);
+    refreshTimeout();
+    refreshRetryFields();
+    refreshCompensationRetryFields();
+    refreshCompensationTimeout();
+    refreshTimeoutReconcileRetryFields();
+    refreshCompensationTimeoutReconcileRetryFields();
+    refreshOptionalPolicies();
+    refreshWarnings();
+    initializeChipEditors();
+
+    kindSelector.addEventListener('change', () => {
+        refreshKind();
+        refreshDispatchOptions(kindSelector, taskDispatchTypeSelector);
+    });
+    if (compensationKindSelector) {
+        compensationKindSelector.addEventListener('change', () => {
+            refreshCompensationKind();
+            refreshDispatchOptions(compensationKindSelector, compensationDispatchTypeSelector);
+        });
+    }
+    timeoutSelector.addEventListener('change', refreshTimeout);
+    retrySelector.addEventListener('change', () => { refreshRetryFields(); refreshWarnings(); });
+    if (compensationRetrySelector) {
+        compensationRetrySelector.addEventListener('change', refreshCompensationRetryFields);
+    }
+    if (compensationTimeoutSelector) {
+        compensationTimeoutSelector.addEventListener('change', refreshCompensationTimeout);
+    }
+    if (timeoutReconcileRetrySelector) {
+        timeoutReconcileRetrySelector.addEventListener('change', refreshTimeoutReconcileRetryFields);
+    }
+    if (compensationTimeoutReconcileRetrySelector) {
+        compensationTimeoutReconcileRetrySelector.addEventListener('change', refreshCompensationTimeoutReconcileRetryFields);
+    }
+    conditionEngineSelector.addEventListener('change', refreshWarnings);
+    transformationEngineSelector.addEventListener('change', refreshWarnings);
+    hasRetryPolicy.addEventListener('change', () => { refreshOptionalPolicies(); refreshWarnings(); });
+    hasTimeoutPolicy.addEventListener('change', refreshOptionalPolicies);
+    hasExecutionCondition.addEventListener('change', () => { refreshOptionalPolicies(); refreshWarnings(); });
+    hasTransformation.addEventListener('change', () => { refreshOptionalPolicies(); refreshWarnings(); });
+    if (onErrorPolicySelector) {
+        onErrorPolicySelector.addEventListener('change', refreshOptionalPolicies);
+    }
+    if (hasCompensationExecutionCondition) {
+        hasCompensationExecutionCondition.addEventListener('change', refreshOptionalPolicies);
+    }
+    if (hasCompensationTransformation) {
+        hasCompensationTransformation.addEventListener('change', refreshOptionalPolicies);
+    }
+    if (hasCompensationRetryPolicy) {
+        hasCompensationRetryPolicy.addEventListener('change', refreshOptionalPolicies);
+    }
+    if (hasCompensationTimeoutPolicy) {
+        hasCompensationTimeoutPolicy.addEventListener('change', refreshOptionalPolicies);
+    }
+})();
+</script>
+}

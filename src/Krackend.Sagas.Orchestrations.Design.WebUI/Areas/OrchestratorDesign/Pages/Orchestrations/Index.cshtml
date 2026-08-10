@@ -1,0 +1,466 @@
+@page
+@model Krackend.Sagas.Orchestrations.Design.WebUI.Areas.OrchestratorDesign.Pages.Orchestrations.IndexModel
+@{
+    ViewData["Title"] = "Orchestrations";
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Orchestrations</h1>
+        <p class="od-page-subtitle">Roadmaps and versions managed by Design Core.</p>
+    </div>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrchestrationModal">Create orchestration</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+@if (!Model.Rows.Any())
+{
+    <section class="od-panel">
+        <p class="od-empty">No orchestrations found.</p>
+    </section>
+}
+else
+{
+    <section class="od-list-shell">
+        <div class="od-grid">
+            @foreach (var item in Model.Rows)
+            {
+                var statusClass = item.IsActive ? "od-status od-status-active" : "od-status od-status-inactive";
+                var tagsValue = string.Join(',', item.Tags ?? Array.Empty<string>());
+                <article class="od-item-card js-orchestration-card"
+                         data-orchestration-id="@item.Id"
+                         data-open-url="@Url.Page("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId = item.Id })"
+                         data-orchestration-key="@item.Key"
+                         data-orchestration-name="@item.Name"
+                         data-orchestration-domain-id="@item.DomainId"
+                         data-orchestration-domain-display="@(!string.IsNullOrWhiteSpace(item.DomainDisplayName) ? item.DomainDisplayName : item.Domain)"
+                         data-orchestration-owner-team-id="@item.OwnerTeamId"
+                         data-orchestration-owner-team-display="@(!string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) ? item.OwnerTeamDisplayName : item.OwnerTeam)"
+                         data-orchestration-description="@item.Description"
+                         data-orchestration-tags="@tagsValue">
+                    <div class="od-item-top">
+                        <div>
+                            <h2 class="od-item-title">@item.Name</h2>
+                            <p class="od-item-meta">@item.Key</p>
+                        </div>
+                        <div class="d-flex align-items-start gap-2">
+                            <span class="@statusClass">@(item.IsActive ? "Active" : "Inactive")</span>
+                            <div class="dropdown">
+                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li>
+                                        <a class="dropdown-item" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Details" asp-route-orchestrationId="@item.Id">Open</a>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item js-open-orchestration-modal" data-mode="edit">Edit</button>
+                                    </li>
+                                    <li><hr class="dropdown-divider" /></li>
+                                    <li>
+                                        <form method="post" asp-page-handler="@(item.IsActive ? "SetInactive" : "SetActive")" class="od-inline-form">
+                                            <input type="hidden" name="orchestrationId" value="@item.Id" />
+                                            <button type="submit" class="dropdown-item">@(item.IsActive ? "Set inactive" : "Set active")</button>
+                                        </form>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="od-item-description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
+                    <div class="od-chip-row">
+                        <span class="od-meta-chip">Domain: @(!string.IsNullOrWhiteSpace(item.DomainDisplayName) ? item.DomainDisplayName : item.Domain)</span>
+                        @if (!string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) || !string.IsNullOrWhiteSpace(item.OwnerTeam))
+                        {
+                            <span class="od-meta-chip">Team: @(!string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) ? item.OwnerTeamDisplayName : item.OwnerTeam)</span>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@if (Model.TotalPages > 1)
+{
+    <nav class="mt-3">
+        <ul class="pagination">
+            @for (var pageIndex = 1; pageIndex <= Model.TotalPages; pageIndex++)
+            {
+                <li class="page-item @(pageIndex == Model.PageNumber ? "active" : string.Empty)">
+                    <a class="page-link" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index" asp-route-pageNumber="@pageIndex">@pageIndex</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+<div class="modal fade" id="createOrchestrationModal" tabindex="-1" aria-labelledby="createOrchestrationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="Upsert">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createOrchestrationModalLabel">Create orchestration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input asp-for="NewOrchestration.OrchestrationId" type="hidden" id="orchestrationModalOrchestrationId" />
+                    <input asp-for="NewOrchestration.UpdatedBy" type="hidden" id="orchestrationModalUpdatedBy" />
+                    <div class="row g-3">
+                        <div class="col-md-6 position-relative">
+                            <label asp-for="NewOrchestration.Key" class="form-label"></label>
+                            <input asp-for="NewOrchestration.Key" class="form-control" id="orchestrationModalKey" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="NewOrchestration.Name" class="form-label"></label>
+                            <input asp-for="NewOrchestration.Name" class="form-control" id="orchestrationModalName" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="NewOrchestration.DomainText" class="form-label"></label>
+                            <input asp-for="NewOrchestration.DomainText" class="form-control js-domain-autocomplete-input" id="orchestrationModalDomainText" autocomplete="off" data-domain-suggestions-container="orchestrationDomainSuggestions" />
+                            <input asp-for="NewOrchestration.DomainId" type="hidden" id="orchestrationModalDomainId" class="js-domain-id-input" />
+                            <div id="orchestrationDomainSuggestions" class="od-autocomplete-list d-none"></div>
+                            <span asp-validation-for="NewOrchestration.DomainId" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6 position-relative">
+                            <label asp-for="NewOrchestration.OwnerTeamText" class="form-label"></label>
+                            <input asp-for="NewOrchestration.OwnerTeamText" class="form-control js-team-autocomplete-input" id="orchestrationModalOwnerTeamText" autocomplete="off" data-team-suggestions-container="orchestrationTeamSuggestions" />
+                            <input asp-for="NewOrchestration.OwnerTeamId" type="hidden" id="orchestrationModalOwnerTeamId" class="js-team-id-input" />
+                            <div id="orchestrationTeamSuggestions" class="od-autocomplete-list d-none"></div>
+                            <span asp-validation-for="NewOrchestration.OwnerTeamId" class="text-danger"></span>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="NewOrchestration.Description" class="form-label"></label>
+                            <textarea asp-for="NewOrchestration.Description" rows="3" class="form-control" id="orchestrationModalDescription"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="NewOrchestration.Tags" class="form-label"></label>
+                            <input asp-for="NewOrchestration.Tags" type="hidden" id="orchestrationModalTagsHidden" />
+                            <div class="od-chip-editor" data-chip-editor-for="orchestrationModalTagsHidden">
+                                <div class="od-chip-list"></div>
+                                <input type="text" class="od-chip-input" placeholder="billing + Enter" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="orchestrationModalSubmitButton">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const modalElement = document.getElementById('createOrchestrationModal');
+    const modalTitle = document.getElementById('createOrchestrationModalLabel');
+    const submitButton = document.getElementById('orchestrationModalSubmitButton');
+    const orchestrationIdInput = document.getElementById('orchestrationModalOrchestrationId');
+    const updatedByInput = document.getElementById('orchestrationModalUpdatedBy');
+    const keyInput = document.getElementById('orchestrationModalKey');
+    const nameInput = document.getElementById('orchestrationModalName');
+    const domainInput = document.getElementById('orchestrationModalDomainText');
+    const domainIdInput = document.getElementById('orchestrationModalDomainId');
+    const ownerTeamTextInput = document.getElementById('orchestrationModalOwnerTeamText');
+    const ownerTeamIdInput = document.getElementById('orchestrationModalOwnerTeamId');
+    const descriptionInput = document.getElementById('orchestrationModalDescription');
+    const tagsHiddenInput = document.getElementById('orchestrationModalTagsHidden');
+    if (!modalElement || !modalTitle || !submitButton || !orchestrationIdInput || !updatedByInput || !keyInput || !nameInput || !domainInput || !domainIdInput || !ownerTeamTextInput || !ownerTeamIdInput || !descriptionInput || !tagsHiddenInput || !window.bootstrap?.Modal) {
+        return;
+    }
+
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
+    const createButton = document.querySelector('[data-bs-target="#createOrchestrationModal"]');
+
+    function normalize(value) {
+        return (value || '').trim();
+    }
+
+    function initializeChipEditors() {
+        document.querySelectorAll('.od-chip-editor[data-chip-editor-for]').forEach(editor => {
+            const targetId = editor.getAttribute('data-chip-editor-for');
+            const hiddenInput = targetId ? document.getElementById(targetId) : null;
+            const list = editor.querySelector('.od-chip-list');
+            const input = editor.querySelector('.od-chip-input');
+            if (!hiddenInput || !list || !input) {
+                return;
+            }
+
+            const values = new Set(
+                (hiddenInput.value || '')
+                    .split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0));
+
+            function loadFromHidden() {
+                values.clear();
+                (hiddenInput.value || '')
+                    .split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0)
+                    .forEach(x => values.add(x));
+            }
+
+            function syncHidden() {
+                hiddenInput.value = Array.from(values).join(',');
+            }
+
+            function render() {
+                list.innerHTML = '';
+
+                values.forEach(value => {
+                    const chip = document.createElement('span');
+                    chip.className = 'od-input-chip';
+
+                    const label = document.createElement('span');
+                    label.textContent = value;
+                    chip.appendChild(label);
+
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'od-chip-remove';
+                    remove.setAttribute('aria-label', `Remove ${value}`);
+                    remove.textContent = 'x';
+                    remove.addEventListener('click', () => {
+                        values.delete(value);
+                        syncHidden();
+                        render();
+                    });
+
+                    chip.appendChild(remove);
+                    list.appendChild(chip);
+                });
+            }
+
+            function addFromInput() {
+                const raw = input.value || '';
+                const pieces = raw.split(',').map(x => x.trim()).filter(x => x.length > 0);
+                if (pieces.length === 0) {
+                    input.value = '';
+                    return;
+                }
+
+                pieces.forEach(piece => values.add(piece));
+                input.value = '';
+                syncHidden();
+                render();
+            }
+
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ',') {
+                    event.preventDefault();
+                    addFromInput();
+                }
+            });
+
+            input.addEventListener('blur', addFromInput);
+            hiddenInput.addEventListener('change', () => {
+                loadFromHidden();
+                render();
+            });
+
+            loadFromHidden();
+            syncHidden();
+            render();
+        });
+    }
+
+    function openCreateMode() {
+        modalTitle.textContent = 'Create orchestration';
+        submitButton.textContent = 'Create';
+        orchestrationIdInput.value = '';
+        updatedByInput.value = 'web-ui';
+        keyInput.readOnly = false;
+        keyInput.value = '';
+        nameInput.value = '';
+        domainInput.value = '';
+        domainIdInput.value = '';
+        ownerTeamTextInput.value = '';
+        ownerTeamIdInput.value = '';
+        descriptionInput.value = '';
+        tagsHiddenInput.value = '';
+        tagsHiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+        modal.show();
+    }
+
+    function openEditMode(card) {
+        if (!card) {
+            return;
+        }
+
+        modalTitle.textContent = 'Edit orchestration';
+        submitButton.textContent = 'Save';
+        orchestrationIdInput.value = normalize(card.getAttribute('data-orchestration-id'));
+        updatedByInput.value = 'web-ui';
+        keyInput.value = normalize(card.getAttribute('data-orchestration-key'));
+        keyInput.readOnly = true;
+        nameInput.value = normalize(card.getAttribute('data-orchestration-name'));
+        domainInput.value = normalize(card.getAttribute('data-orchestration-domain-display'));
+        domainIdInput.value = normalize(card.getAttribute('data-orchestration-domain-id'));
+        ownerTeamTextInput.value = normalize(card.getAttribute('data-orchestration-owner-team-display'));
+        ownerTeamIdInput.value = normalize(card.getAttribute('data-orchestration-owner-team-id'));
+        descriptionInput.value = card.getAttribute('data-orchestration-description') || '';
+        tagsHiddenInput.value = normalize(card.getAttribute('data-orchestration-tags'));
+        tagsHiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+        modal.show();
+    }
+
+    if (createButton) {
+        createButton.addEventListener('click', event => {
+            event.preventDefault();
+            openCreateMode();
+        });
+    }
+
+    document.querySelectorAll('.js-open-orchestration-modal[data-mode="edit"]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            const card = button.closest('.js-orchestration-card');
+            openEditMode(card);
+        });
+    });
+
+    modalElement.addEventListener('hidden.bs.modal', () => {
+        keyInput.readOnly = false;
+    });
+
+    document.querySelectorAll('.js-orchestration-card[data-open-url]').forEach(card => {
+        card.addEventListener('click', event => {
+            if (event.target.closest('a, button, input, textarea, select, label, form, .dropdown, .od-chip-editor')) {
+                return;
+            }
+
+            const openUrl = card.getAttribute('data-open-url') || '';
+            if (!openUrl) {
+                return;
+            }
+
+            window.location.href = openUrl;
+        });
+    });
+
+    initializeChipEditors();
+
+    const domainSuggestions = document.getElementById(domainInput.getAttribute('data-domain-suggestions-container') || '');
+    const teamSuggestions = document.getElementById(ownerTeamTextInput.getAttribute('data-team-suggestions-container') || '');
+    if (!domainSuggestions || !teamSuggestions) {
+        return;
+    }
+
+    const escapeHtml = (value) => (value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const hideSuggestions = () => {
+        domainSuggestions.classList.add('d-none');
+        domainSuggestions.innerHTML = '';
+    };
+
+    const renderSuggestions = (rows) => {
+        if (!rows.length) {
+            hideSuggestions();
+            return;
+        }
+
+        domainSuggestions.innerHTML = rows.map(x => `
+            <button type="button" class="od-autocomplete-item"
+                data-id="${escapeHtml(x.id)}"
+                data-value="${escapeHtml(`${x.displayName} (${x.key})`)}">
+                <span class="od-autocomplete-title">${escapeHtml(x.displayName)} (${escapeHtml(x.key)})</span>
+                <span class="od-autocomplete-meta">${escapeHtml(x.description || '')}</span>
+            </button>`).join('');
+        domainSuggestions.classList.remove('d-none');
+    };
+
+    let domainSearchToken = 0;
+    const fetchDomainSuggestions = async () => {
+        const q = domainInput.value.trim();
+        if (!q) {
+            domainIdInput.value = '';
+            hideSuggestions();
+            return;
+        }
+
+        const currentToken = ++domainSearchToken;
+        const url = `${window.location.pathname}?handler=DomainSuggestions&term=${encodeURIComponent(q)}`;
+        const response = await fetch(url);
+        if (!response.ok || currentToken !== domainSearchToken) return;
+        renderSuggestions(await response.json());
+    };
+
+    domainInput.addEventListener('input', () => {
+        domainIdInput.value = '';
+        fetchDomainSuggestions();
+    });
+
+    domainInput.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+
+    domainSuggestions.addEventListener('click', event => {
+        const item = event.target.closest('.od-autocomplete-item');
+        if (!item) return;
+        domainIdInput.value = item.getAttribute('data-id') || '';
+        domainInput.value = item.getAttribute('data-value') || '';
+        hideSuggestions();
+    });
+
+    const hideTeamSuggestions = () => {
+        teamSuggestions.classList.add('d-none');
+        teamSuggestions.innerHTML = '';
+    };
+
+    const renderTeamSuggestions = (rows) => {
+        if (!rows.length) {
+            hideTeamSuggestions();
+            return;
+        }
+
+        teamSuggestions.innerHTML = rows.map(x => `
+            <button type="button" class="od-autocomplete-item"
+                data-id="${escapeHtml(x.id)}"
+                data-value="${escapeHtml(`${x.displayName} (${x.key})`)}">
+                <span class="od-autocomplete-title">${escapeHtml(x.displayName)} (${escapeHtml(x.key)})</span>
+            </button>`).join('');
+        teamSuggestions.classList.remove('d-none');
+    };
+
+    let teamSearchToken = 0;
+    const fetchTeamSuggestions = async () => {
+        const q = ownerTeamTextInput.value.trim();
+        if (!q) {
+            ownerTeamIdInput.value = '';
+            hideTeamSuggestions();
+            return;
+        }
+
+        const currentToken = ++teamSearchToken;
+        const url = `${window.location.pathname}?handler=TeamSuggestions&term=${encodeURIComponent(q)}`;
+        const response = await fetch(url);
+        if (!response.ok || currentToken !== teamSearchToken) return;
+        renderTeamSuggestions(await response.json());
+    };
+
+    ownerTeamTextInput.addEventListener('input', () => {
+        ownerTeamIdInput.value = '';
+        fetchTeamSuggestions();
+    });
+
+    ownerTeamTextInput.addEventListener('blur', () => setTimeout(hideTeamSuggestions, 150));
+
+    teamSuggestions.addEventListener('click', event => {
+        const item = event.target.closest('.od-autocomplete-item');
+        if (!item) return;
+        ownerTeamIdInput.value = item.getAttribute('data-id') || '';
+        ownerTeamTextInput.value = item.getAttribute('data-value') || '';
+        hideTeamSuggestions();
+    });
+})();
+</script>
+}
