@@ -1,5 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 
+#nullable enable
+
 namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 
 /// <summary>

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 
+#nullable enable
+
 namespace Krackend.Sagas.Orchestrations.Runtime.Intake.InMemory;
 
 /// <summary>
