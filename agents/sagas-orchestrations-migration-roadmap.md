@@ -38,13 +38,20 @@ Migrate the old singular `Krackend.Sagas.Orchestration` package into the new plu
 6. `Krackend.Sagas.Orchestrations.Web`
    - Runtime/backend endpoint mapping extensions, without Razor UI.
 
-7. Later phases, once runtime core is stable:
-   - `Krackend.Sagas.Orchestrations.Design`
-   - `Krackend.Sagas.Orchestrations.Distribution`
-   - `Krackend.Sagas.Orchestrations.Security`
-   - `Krackend.Sagas.Orchestrations.WebUI`
-   - `Krackend.Sagas.Orchestrations.Client`
-   - `Krackend.Sagas.Orchestrations.Client.Pigeon`
+7. `Krackend.Sagas.Orchestrations.Design`
+   - Design domain, interaction services, SQL Server storage and Razor UI.
+
+8. `Krackend.Sagas.Orchestrations.Distribution`
+   - Distribution domain, artifact delivery, interaction services, SQL Server storage and Razor UI.
+
+9. `Krackend.Sagas.Orchestrations.Security`
+   - Teams/security domain, interaction services, SQL Server storage and Razor UI.
+
+10. `Krackend.Sagas.Orchestrations.WebUI.Shell`
+   - Shared Razor shell, navigation registry and static assets.
+
+11. `Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap`
+   - Host composition for Design, Distribution, Security, WebUI shell and in-process integration events.
 
 ## Step 1 - Repository Preparation
 
@@ -142,8 +149,7 @@ Migrate the old singular `Krackend.Sagas.Orchestration` package into the new plu
 
 ## Deferred Work
 
-- Full Control Plane migration: Design, Distribution, Security, WebUI.
-- Client SDK and Client.Pigeon.
+- Client SDK and Client.Pigeon were not present as concrete source projects in `C:\dmx\Dmx.Orchestrator\src`, so no client packages were migrated in this pass.
 - Compatibility shims for old namespaces are intentionally not planned unless requested later.
 
 ## Execution Status
@@ -159,6 +165,9 @@ Migrate the old singular `Krackend.Sagas.Orchestration` package into the new plu
 - Step 9 completed in `0d3e23f`: migrated minimal API runtime host integration.
 - Step 10 completed in `5634d07`: documented NuGet package usage and added a runtime host sample.
 - Step 11 completed after `5c69684`: solution build and tests passed.
+- Control-plane core packages completed in `6dab101`: migrated Contracts, Design, Distribution and Security domains, interaction layers and SQL Server storage.
+- WebUI and bootstrap completed in `220536a`: migrated shared shell, Design WebUI, Distribution WebUI, Security WebUI, Runtime WebUI and ControlPlane Bootstrap.
+- Host samples completed in `f8c514d`: migrated the control-plane host with EF migrations and expanded the runtime host sample with Runtime WebUI.
 
 Final validation:
 
