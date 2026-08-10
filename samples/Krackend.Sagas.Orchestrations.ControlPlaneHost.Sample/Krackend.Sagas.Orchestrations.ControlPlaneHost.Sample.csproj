@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>8c406447-c89a-4e39-9b85-5bcfaa87e052</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+    <PackageReference Include="Ulid" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.Interaction\Krackend.Sagas.Orchestrations.Design.Interaction.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.Storage.SqlServer\Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.WebUI\Krackend.Sagas.Orchestrations.Design.WebUI.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.Interaction\Krackend.Sagas.Orchestrations.Distribution.Interaction.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer\Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.WebUI\Krackend.Sagas.Orchestrations.Distribution.WebUI.csproj" />
+  </ItemGroup>
+
+</Project>
