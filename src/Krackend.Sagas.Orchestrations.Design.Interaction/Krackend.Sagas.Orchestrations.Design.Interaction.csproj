@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>
+    <PackageId>Krackend.Sagas.Orchestrations.Design.Interaction</PackageId>
+    <Description>Application interaction layer for Krackend saga orchestration design workflows.</Description>
+    <PackageTags>saga;orchestration;design;interaction;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Contracts\Krackend.Sagas.Orchestrations.Contracts.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Design\Krackend.Sagas.Orchestrations.Design.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" Version="12.1.1" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.0" />
+    <PackageReference Include="Pelican.Mediator" Version="1.1.2" />
+  </ItemGroup>
+</Project>

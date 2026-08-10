@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>
+    <PackageId>Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer</PackageId>
+    <Description>SQL Server storage adapter for Krackend saga orchestration distribution data.</Description>
+    <PackageTags>saga;orchestration;distribution;sql-server;entity-framework-core;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Design.Storage.SqlServer\Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Design\Krackend.Sagas.Orchestrations.Design.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Distribution\Krackend.Sagas.Orchestrations.Distribution.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Sieve" Version="3.0.0-beta0013" />
+  </ItemGroup>
+</Project>
