@@ -161,7 +161,7 @@ app.MapKrackendSagasOrchestrationsArtifactEndpoints();
 app.MapKrackendSagasOrchestrationsEngineEndpoints();
 ```
 
-See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full package, function, endpoint, storage, WebUI, bootstrap, and migration-ownership reference.
+See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full package, function, endpoint, storage, WebUI, bootstrap, and migration-ownership reference. See [docs/sagas-orchestrations-end-to-end.md](docs/sagas-orchestrations-end-to-end.md) for the complete Orchestrator walkthrough with models, lifecycle steps, distribution flow, runtime execution, playbooks, risks, and diagnostics.
 
 ## Event Sourcing Testing
 

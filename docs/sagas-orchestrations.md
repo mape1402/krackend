@@ -2,6 +2,8 @@
 
 This document is the precise reference for the current `Krackend.Sagas.Orchestrations.*` package family. It describes what each package does, which public host functions are available, what those functions register or map, what runtime/control-plane features exist today, and how migrations must be handled.
 
+For the complete start-to-finish Orchestrator walkthrough, including all major models, lifecycle steps, distribution flow, runtime execution, playbooks, risks, and diagnostics, see [sagas-orchestrations-end-to-end.md](sagas-orchestrations-end-to-end.md).
+
 ## Current Package Family
 
 | Package | Purpose | Depends on host migrations? |
