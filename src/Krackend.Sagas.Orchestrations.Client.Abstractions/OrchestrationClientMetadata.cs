@@ -46,6 +46,11 @@ public sealed class OrchestrationClientMetadata
     public required string CorrelationId { get; init; }
 
     /// <summary>
+    /// Gets the runtime orchestration state snapshot carried by the transport adapter.
+    /// </summary>
+    public required object CurrentState { get; init; }
+
+    /// <summary>
     /// Gets the topic or queue where orchestration output should be published.
     /// </summary>
     public required string ResponseTopic { get; init; }
