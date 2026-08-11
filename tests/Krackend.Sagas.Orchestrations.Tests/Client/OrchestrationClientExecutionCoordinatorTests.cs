@@ -134,6 +134,7 @@ public sealed class OrchestrationClientExecutionCoordinatorTests
             TaskExecutionId = "task-1",
             DispatchId = "dispatch-1",
             CorrelationId = "correlation-1",
+            CurrentState = new { Status = "Running" },
             ResponseTopic = responseTopic,
             ResponseVersion = responseVersion,
             Environment = "dev"
