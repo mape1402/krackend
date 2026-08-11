@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Abstractions\Krackend.Sagas.Orchestrations.Client.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Contracts\Krackend.Sagas.Orchestrations.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.Interaction\Krackend.Sagas.Orchestrations.Design.Interaction.csproj" />

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Krackend.Sagas.Orchestrations.Client.Abstractions</PackageId>
+    <Description>Krackend.Sagas.Orchestrations.Client.Abstractions provides client-side contracts for services participating in saga orchestrations.</Description>
+    <PackageTags>saga;orchestration;client;contracts;dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+</Project>
