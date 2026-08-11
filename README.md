@@ -161,6 +161,8 @@ app.MapKrackendSagasOrchestrationsArtifactEndpoints();
 app.MapKrackendSagasOrchestrationsEngineEndpoints();
 ```
 
+See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full package, function, endpoint, storage, WebUI, bootstrap, and migration-ownership reference.
+
 ## Event Sourcing Testing
 
 `Krackend.EventSourcing.Testing` provides reducer/decider helpers and DI-friendly services for testing event sourcing flows without a real event store. It is meant for application tests, package adapters, and external test hosts that need to assert event sourcing behavior without booting EF Core, SQL Server, SQLite, or a production event store.
