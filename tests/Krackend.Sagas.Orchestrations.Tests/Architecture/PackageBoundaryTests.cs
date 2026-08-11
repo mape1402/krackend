@@ -46,6 +46,7 @@ public sealed class PackageBoundaryTests
         {
             "Krackend.Sagas.Orchestrations",
             "Krackend.Sagas.Orchestrations.Abstractions",
+            "Krackend.Sagas.Orchestrations.Client",
             "Krackend.Sagas.Orchestrations.Client.Abstractions",
             "Krackend.Sagas.Orchestrations.Contracts",
             "Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap",
