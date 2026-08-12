@@ -327,6 +327,17 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(string environmentKey, int take = 50, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(store.Instances.Values.ToArray());
+
+        public Task<RuntimeInstanceSummary> GetSummary(string environmentKey, DateTime recentSinceUtc, CancellationToken cancellationToken = default)
+        {
+            var instances = store.Instances.Values.Where(x => x.EnvironmentKey == environmentKey).ToArray();
+            return Task.FromResult(new RuntimeInstanceSummary(
+                instances.Count(x => x.Status is OrchestrationInstanceStatus.Running or OrchestrationInstanceStatus.Waiting),
+                instances.Count(x => x.Status == OrchestrationInstanceStatus.Waiting),
+                instances.Count(x => x.Status == OrchestrationInstanceStatus.Completed && x.LastUpdatedOnUtc >= recentSinceUtc),
+                instances.Count(x => x.Status == OrchestrationInstanceStatus.Failed && x.LastUpdatedOnUtc >= recentSinceUtc),
+                recentSinceUtc));
+        }
     }
 
     private sealed class StageRepositoryStub(RuntimeStore store) : IStageExecutionRepository
@@ -432,6 +443,18 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(string environmentKey, int take = 250, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>(store.Transitions.Take(take).ToArray());
+
+        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<RuntimeTrafficPoint>>(
+                store.Transitions
+                    .Where(x => x.OccurredOnUtc >= sinceUtc)
+                    .GroupBy(x => new DateTime(x.OccurredOnUtc.Year, x.OccurredOnUtc.Month, x.OccurredOnUtc.Day, x.OccurredOnUtc.Hour, x.OccurredOnUtc.Minute, 0, DateTimeKind.Utc))
+                    .Select(x => new RuntimeTrafficPoint(
+                        x.Key,
+                        x.Count(item => item.TransitionType == "InstanceStarted"),
+                        x.Count(item => item.TransitionType == "InstanceCompleted"),
+                        x.Count(item => item.TransitionType == "InstanceFailed")))
+                    .ToArray());
     }
 
     private sealed class RuntimeArtifactRepositoryStub : IRuntimeArtifactRepository

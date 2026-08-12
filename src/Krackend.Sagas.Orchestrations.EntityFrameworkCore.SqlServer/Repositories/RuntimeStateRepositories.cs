@@ -88,13 +88,43 @@ public sealed class OrchestrationInstanceRepository : IOrchestrationInstanceRepo
         int take = 50,
         CancellationToken cancellationToken = default)
     {
-        var limit = Math.Clamp(take, 1, 250);
+        var limit = Math.Clamp(take, 1, 1000);
         return await _dbContext.OrchestrationInstances.AsNoTracking()
             .Where(x => x.EnvironmentKey == environmentKey)
             .OrderByDescending(x => x.LastUpdatedOnUtc)
             .Take(limit)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
             .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<RuntimeInstanceSummary> GetSummary(
+        string environmentKey,
+        DateTime recentSinceUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.EnvironmentKey == environmentKey);
+
+        var active = await query.CountAsync(
+            x => x.Status == OrchestrationInstanceStatus.Running ||
+                 x.Status == OrchestrationInstanceStatus.Waiting,
+            cancellationToken);
+
+        var waiting = await query.CountAsync(
+            x => x.Status == OrchestrationInstanceStatus.Waiting,
+            cancellationToken);
+
+        var completedRecent = await query.CountAsync(
+            x => x.Status == OrchestrationInstanceStatus.Completed &&
+                 x.LastUpdatedOnUtc >= recentSinceUtc,
+            cancellationToken);
+
+        var failedRecent = await query.CountAsync(
+            x => x.Status == OrchestrationInstanceStatus.Failed &&
+                 x.LastUpdatedOnUtc >= recentSinceUtc,
+            cancellationToken);
+
+        return new RuntimeInstanceSummary(active, waiting, completedRecent, failedRecent, recentSinceUtc);
     }
 }
 
@@ -262,6 +292,42 @@ public sealed class ExecutionTransitionRepository : IExecutionTransitionReposito
             .OrderByDescending(x => x.OccurredOnUtc)
             .Take(limit)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(
+        string environmentKey,
+        DateTime sinceUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.ExecutionTransitions.AsNoTracking()
+            .Join(
+                _dbContext.OrchestrationInstances.AsNoTracking().Where(x => x.EnvironmentKey == environmentKey),
+                transition => transition.OrchestrationInstanceId,
+                instance => instance.Id,
+                (transition, _) => transition)
+            .Where(x => x.OccurredOnUtc >= sinceUtc &&
+                (x.TransitionType == "InstanceStarted" ||
+                 x.TransitionType == "InstanceCompleted" ||
+                 x.TransitionType == "InstanceFailed"))
+            .GroupBy(x => new
+            {
+                x.OccurredOnUtc.Year,
+                x.OccurredOnUtc.Month,
+                x.OccurredOnUtc.Day,
+                x.OccurredOnUtc.Hour,
+                x.OccurredOnUtc.Minute
+            })
+            .OrderBy(x => x.Key.Year)
+            .ThenBy(x => x.Key.Month)
+            .ThenBy(x => x.Key.Day)
+            .ThenBy(x => x.Key.Hour)
+            .ThenBy(x => x.Key.Minute)
+            .Select(x => new RuntimeTrafficPoint(
+                new DateTime(x.Key.Year, x.Key.Month, x.Key.Day, x.Key.Hour, x.Key.Minute, 0, DateTimeKind.Utc),
+                x.Count(item => item.TransitionType == "InstanceStarted"),
+                x.Count(item => item.TransitionType == "InstanceCompleted"),
+                x.Count(item => item.TransitionType == "InstanceFailed")))
             .ToArrayAsync(cancellationToken);
     }
 }
