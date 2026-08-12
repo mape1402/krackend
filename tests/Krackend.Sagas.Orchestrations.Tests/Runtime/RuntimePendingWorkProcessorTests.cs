@@ -14,7 +14,7 @@ public sealed class RuntimePendingWorkProcessorTests
     public async Task ProcessDueWork_ReturnsWaitingTasksAttemptsAndPendingCompensations()
     {
         var now = DateTime.UtcNow;
-        var store = RuntimePendingWorkStore.Create(now, withTimeoutPolicy: false);
+        var store = RuntimePendingWorkStore.Create(now, TimeoutScenario.None);
         var compensation = PendingCompensation(store.Instance.Id, store.Task.Id);
         store.Compensations.Add(compensation);
 
@@ -33,7 +33,7 @@ public sealed class RuntimePendingWorkProcessorTests
     public async Task ProcessDueWork_DoesNotReturnWaitingItemsNewerThanScanInstant()
     {
         var now = DateTime.UtcNow;
-        var store = RuntimePendingWorkStore.Create(now.AddMinutes(1), withTimeoutPolicy: false);
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(1), TimeoutScenario.None);
 
         var result = await CreateProcessor(store).ProcessDueWork(now);
 
@@ -44,7 +44,7 @@ public sealed class RuntimePendingWorkProcessorTests
     public async Task ProcessDueWork_DoesNotReturnCompletedResponses()
     {
         var now = DateTime.UtcNow;
-        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), withTimeoutPolicy: true);
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.Fail);
         store.Task.Status = TaskExecutionStatus.Completed;
         store.Attempt.Status = TaskExecutionStatus.Completed;
 
@@ -57,7 +57,7 @@ public sealed class RuntimePendingWorkProcessorTests
     public async Task ProcessDueWork_AppliesFailTimeoutPolicyAndStopsInstance()
     {
         var now = DateTime.UtcNow;
-        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), withTimeoutPolicy: true);
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.Fail);
 
         await CreateProcessor(store).ProcessDueWork(now);
 
@@ -68,6 +68,25 @@ public sealed class RuntimePendingWorkProcessorTests
         Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimedOut");
         Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimeoutPolicyApplied");
         Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceFailed");
+    }
+
+    [Fact]
+    public async Task ProcessDueWork_AppliesWaitBlockTimeoutPolicyWithoutClosingWaitingTask()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.WaitBlock);
+
+        await CreateProcessor(store).ProcessDueWork(now);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Attempt.Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Task.Status);
+        Assert.Equal(StageExecutionStatus.Running, store.Stage.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Waiting, store.Instance.Status);
+        Assert.Equal("Wait", store.Task.Metadata["timeoutBehavior"]!.GetValue<string>());
+        Assert.Equal("Block", store.Task.Metadata["timeoutAction"]!.GetValue<string>());
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimedOut");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimeoutPolicyApplied");
+        Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "InstanceFailed");
     }
 
     private static RuntimePendingWorkProcessor CreateProcessor(RuntimePendingWorkStore store)
@@ -104,7 +123,7 @@ public sealed class RuntimePendingWorkProcessorTests
         public List<CompensationExecution> Compensations { get; } = new();
         public List<ExecutionTransition> Transitions { get; } = new();
 
-        public static RuntimePendingWorkStore Create(DateTime waitingSinceUtc, bool withTimeoutPolicy)
+        public static RuntimePendingWorkStore Create(DateTime waitingSinceUtc, TimeoutScenario timeoutScenario)
         {
             var artifactId = Id.New();
             var instanceId = Id.New();
@@ -164,7 +183,7 @@ public sealed class RuntimePendingWorkProcessorTests
                     ArtifactType = "orchestration",
                     Version = new SemanticVersion(1, 0, 0),
                     ArtifactChecksum = new Checksum("checksum"),
-                    ArtifactPayload = BuildArtifactPayload(withTimeoutPolicy),
+                    ArtifactPayload = BuildArtifactPayload(timeoutScenario),
                     IsActive = true,
                     DeployedOnUtc = waitingSinceUtc,
                     ActivatedOnUtc = waitingSinceUtc
@@ -172,7 +191,7 @@ public sealed class RuntimePendingWorkProcessorTests
             };
         }
 
-        private static JsonNode BuildArtifactPayload(bool withTimeoutPolicy)
+        private static JsonNode BuildArtifactPayload(TimeoutScenario timeoutScenario)
             => JsonNode.Parse($$"""
             {
               "Key": "order.fulfillment",
@@ -190,13 +209,28 @@ public sealed class RuntimePendingWorkProcessorTests
                       "OnErrorPolicy": {{(int)OnErrorPolicy.Stop}},
                       "IsEnabled": true,
                       "Configuration": { "Topic": "inventory.reserve", "Version": { "Major": 1, "Minor": 0, "Patch": 0 } },
-                      "TimeoutPolicy": {{(withTimeoutPolicy ? """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 0, "TimeoutBehaviorPolicy": { "ErrorCode": "ReserveTimeout" } }""" : "{}")}}
+                      "TimeoutPolicy": {{TimeoutPolicyJson(timeoutScenario)}}
                     }
                   ]
                 }
               ]
             }
             """)!;
+
+        private static string TimeoutPolicyJson(TimeoutScenario timeoutScenario)
+            => timeoutScenario switch
+            {
+                TimeoutScenario.Fail => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 0, "TimeoutBehaviorPolicy": { "ErrorCode": "ReserveTimeout" } }""",
+                TimeoutScenario.WaitBlock => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 1, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0, "WaitingTime": { "Value": "00:00:05" } } }""",
+                _ => "{}"
+            };
+    }
+
+    private enum TimeoutScenario
+    {
+        None,
+        Fail,
+        WaitBlock
     }
 
     private sealed class TaskRepositoryStub(RuntimePendingWorkStore store) : ITaskExecutionRepository
