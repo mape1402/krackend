@@ -65,6 +65,11 @@ public sealed class RuntimeEngineDependencies
     public required IRuntimeConditionEvaluator ConditionEvaluator { get; init; }
 
     /// <summary>
+    /// Gets the runtime payload transformer.
+    /// </summary>
+    public required IRuntimePayloadTransformer PayloadTransformer { get; init; }
+
+    /// <summary>
     /// Gets the reactive event publisher.
     /// </summary>
     public required IRuntimeReactiveEventPublisher ReactiveEventPublisher { get; init; }

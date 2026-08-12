@@ -14,6 +14,7 @@ public static class RuntimeReactiveEventNames
     public const string StageFailed = "stage.failed";
     public const string StageSkipped = "stage.skipped";
     public const string TaskStarted = "task.started";
+    public const string TaskInputTransformed = "task.input.transformed";
     public const string TaskCompleted = "task.completed";
     public const string TaskFailed = "task.failed";
     public const string TaskSkipped = "task.skipped";

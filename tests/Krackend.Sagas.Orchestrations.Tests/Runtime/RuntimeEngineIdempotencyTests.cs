@@ -296,6 +296,7 @@ public sealed class RuntimeEngineIdempotencyTests
             TimelineRepository = new TransitionRepositoryStub(store),
             TaskDispatcherResolver = new ThrowingTaskDispatcherResolver(),
             ConditionEvaluator = new RuntimeConditionEvaluator(),
+            PayloadTransformer = new RuntimePayloadTransformer(),
             ReactiveEventPublisher = new NoopRuntimeReactiveEventPublisher()
         });
 

@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeTaskDispatcher, MessagingRuntimeTaskDispatcher>();
         services.AddScoped<IRuntimeTaskDispatcherResolver, RuntimeTaskDispatcherResolver>();
         services.AddScoped<IRuntimeConditionEvaluator, RuntimeConditionEvaluator>();
+        services.AddScoped<IRuntimePayloadTransformer, RuntimePayloadTransformer>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
@@ -49,6 +50,7 @@ public static class ServiceCollectionExtensions
             TimelineRepository = provider.GetRequiredService<IExecutionTransitionRepository>(),
             TaskDispatcherResolver = provider.GetRequiredService<IRuntimeTaskDispatcherResolver>(),
             ConditionEvaluator = provider.GetRequiredService<IRuntimeConditionEvaluator>(),
+            PayloadTransformer = provider.GetRequiredService<IRuntimePayloadTransformer>(),
             ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
         };
     }
