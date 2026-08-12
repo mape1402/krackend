@@ -230,6 +230,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
             if (taskExecution.Status == TaskExecutionStatus.Failed)
             {
+                if (await TryContinueAfterTaskFailure(context, stageExecution, taskExecution, cancellationToken))
+                    continue;
+
                 stageExecution.Status = StageExecutionStatus.Failed;
                 stageExecution.FailedOnUtc = DateTime.UtcNow;
                 stageExecution.ErrorSummary = taskExecution.ErrorSummary();
@@ -510,6 +513,23 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskRetryStarted", TaskExecutionStatus.Retrying, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
     }
 
+    private async Task<bool> TryContinueAfterTaskFailure(
+        RuntimeStageExecutionContext context,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        CancellationToken cancellationToken)
+    {
+        if (taskExecution.OnErrorPolicy != OnErrorPolicy.Continue)
+            return false;
+
+        taskExecution.Status = TaskExecutionStatus.CompletedWithErrors;
+        taskExecution.CompletedOnUtc = DateTime.UtcNow;
+        taskExecution.Metadata["errorPolicyApplied"] = OnErrorPolicy.Continue.ToString();
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskErrorPolicyApplied", TaskExecutionStatus.Failed, taskExecution.Status, stageExecution, taskExecution), cancellationToken);
+        return true;
+    }
+
     private async Task<TaskExecution> FailDispatch(RuntimeTaskDispatchFailure failure, CancellationToken cancellationToken)
     {
         var context = failure.Context;
@@ -648,6 +668,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "TaskSkipped" => RuntimeReactiveEventNames.TaskSkipped,
             "TaskRetryScheduled" => RuntimeReactiveEventNames.TaskRetryScheduled,
             "TaskRetryStarted" => RuntimeReactiveEventNames.TaskRetryStarted,
+            "TaskErrorPolicyApplied" => RuntimeReactiveEventNames.TaskErrorPolicyApplied,
             "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
             "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
             _ => RuntimeReactiveEventNames.TransitionRecorded
@@ -699,6 +720,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
             if (taskExecution.Status == TaskExecutionStatus.Failed)
             {
+                if (await TryContinueAfterTaskFailure(new RuntimeStageExecutionContext
+                {
+                    Instance = instance,
+                    OrchestrationVersion = resume.Document.Version,
+                    Stage = resume.CurrentStage
+                }, stageExecution, taskExecution, cancellationToken))
+                    continue;
+
                 await FailCurrentStage(instance, stageExecution, taskExecution, cancellationToken);
                 return;
             }
