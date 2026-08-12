@@ -19,4 +19,14 @@ public interface ITaskExecutionRepository
     Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(
         Id instanceId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets tasks still waiting for response whose waiting timestamp is older than or equal to the provided cutoff.
+    /// </summary>
+    /// <param name="dueBeforeUtc">Maximum waiting timestamp to include.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Waiting response task executions.</returns>
+    Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(
+        DateTime dueBeforeUtc,
+        CancellationToken cancellationToken = default);
 }

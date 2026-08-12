@@ -28,4 +28,11 @@ public interface ICompensationExecutionRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Compensation executions.</returns>
     Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets compensation executions waiting to be processed.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Pending compensation executions.</returns>
+    Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default);
 }

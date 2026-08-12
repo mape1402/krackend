@@ -389,6 +389,13 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<TaskExecution>>(store.Tasks.Values.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
+
+        public Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskExecution>>(store.Tasks.Values
+                .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                            x.WaitingSinceUtc.HasValue &&
+                            x.WaitingSinceUtc.Value <= dueBeforeUtc)
+                .ToArray());
     }
 
     private sealed class AttemptRepositoryStub(RuntimeStore store) : ITaskExecutionAttemptRepository
@@ -410,6 +417,13 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempts.Values.Where(x => x.TaskExecutionId == taskExecutionId).ToArray());
+
+        public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempts.Values
+                .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                            x.WaitingSinceUtc.HasValue &&
+                            x.WaitingSinceUtc.Value <= dueBeforeUtc)
+                .ToArray());
     }
 
     private sealed class DispatchRepositoryStub(RuntimeStore store) : ITaskDispatchRepository
@@ -455,6 +469,9 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(store.Compensations.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
+
+        public Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(store.Compensations.Where(x => x.Status == "Pending").ToArray());
     }
 
     private sealed class TransitionRepositoryStub(RuntimeStore store) : IExecutionTransitionRepository
