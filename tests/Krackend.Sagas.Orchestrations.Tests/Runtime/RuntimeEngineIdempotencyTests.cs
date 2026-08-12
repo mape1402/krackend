@@ -66,11 +66,25 @@ public sealed class RuntimeEngineIdempotencyTests
             RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}"""),
             ResponsePayload = JsonNode.Parse("""{"reserved":true}""")
         };
+        var dispatch = new TaskDispatch
+        {
+            Id = attempt.DispatchId.Value,
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Messaging",
+            Destination = "inventory.reserve",
+            RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}"""),
+            DispatchStatus = "Dispatched",
+            CommandId = Id.New().ToString(),
+            CorrelationId = task.CorrelationId,
+            SentOnUtc = DateTime.UtcNow.AddSeconds(-30),
+            AcknowledgedOnUtc = DateTime.UtcNow.AddSeconds(-30)
+        };
 
         store.Instances[instance.Id] = instance;
         store.Stages[stage.Id] = stage;
         store.Tasks[task.Id] = task;
         store.Attempts[attempt.Id] = attempt;
+        store.Dispatches[dispatch.Id] = dispatch;
 
         var engine = CreateEngine(store);
         var result = await engine.ContinueFromResponse(new RuntimeMessageResponseCommand
@@ -89,6 +103,184 @@ public sealed class RuntimeEngineIdempotencyTests
         Assert.Single(store.Stages);
         Assert.Equal(TaskExecutionStatus.Completed, store.Tasks[task.Id].Status);
     }
+
+    [Fact]
+    public async Task ContinueFromResponse_WhenTaskBelongsToAnotherInstance_RejectsTraceWithoutWritingTransitions()
+    {
+        var trace = CreateWaitingTrace();
+        var foreignInstance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            EnvironmentKey = trace.Instance.EnvironmentKey,
+            OrchestrationDefinitionKey = trace.Instance.OrchestrationDefinitionKey,
+            RuntimeOrchestrationArtifactId = trace.Instance.RuntimeOrchestrationArtifactId,
+            CorrelationId = "order-2",
+            ExecutionKey = "order.fulfillment::order-2",
+            Status = OrchestrationInstanceStatus.Waiting,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastUpdatedOnUtc = DateTime.UtcNow,
+            WaitingSinceUtc = DateTime.UtcNow
+        };
+        trace.Store.Instances[foreignInstance.Id] = foreignInstance;
+
+        var engine = CreateEngine(trace.Store);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = foreignInstance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        }));
+
+        Assert.Contains("does not belong to orchestration instance", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(trace.Store.Transitions);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.Task.Id].Status);
+    }
+
+    [Fact]
+    public async Task ContinueFromResponse_WhenCorrelationDoesNotMatchTask_RejectsTraceWithoutWritingTransitions()
+    {
+        var trace = CreateWaitingTrace();
+        var engine = CreateEngine(trace.Store);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = "order-1:other-task",
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        }));
+
+        Assert.Contains("does not match task correlation", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(trace.Store.Transitions);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.Task.Id].Status);
+    }
+
+    [Fact]
+    public async Task ContinueFromResponse_WhenCorrelationDoesNotMatchDispatch_RejectsTraceWithoutWritingTransitions()
+    {
+        var trace = CreateWaitingTrace();
+        trace.Store.Dispatches[trace.Dispatch.Id].CorrelationId = "order-1:other-dispatch";
+
+        var engine = CreateEngine(trace.Store);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        }));
+
+        Assert.Contains("does not match dispatch correlation", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(trace.Store.Transitions);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.Task.Id].Status);
+    }
+
+    [Fact]
+    public async Task ContinueFromResponse_WhenDispatchBelongsToAnotherAttempt_RejectsTraceWithoutWritingTransitions()
+    {
+        var trace = CreateWaitingTrace();
+        trace.Store.Dispatches[trace.Dispatch.Id].TaskExecutionAttemptId = Id.New();
+
+        var engine = CreateEngine(trace.Store);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        }));
+
+        Assert.Contains("does not belong to task attempt", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(trace.Store.Transitions);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.Task.Id].Status);
+    }
+
+    private static RuntimeTraceFixture CreateWaitingTrace()
+    {
+        var store = new RuntimeStore();
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            RuntimeOrchestrationArtifactId = Id.New(),
+            CorrelationId = "order-1",
+            ExecutionKey = "order.fulfillment::order-1",
+            Status = OrchestrationInstanceStatus.Waiting,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastUpdatedOnUtc = DateTime.UtcNow,
+            WaitingSinceUtc = DateTime.UtcNow,
+            SnapshotPayload = JsonNode.Parse("""{"orderId":"order-1"}""")
+        };
+        var stage = new StageExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageKey = "reserve-inventory",
+            Order = 1,
+            Status = StageExecutionStatus.Running,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = stage.Id,
+            TaskKey = "reserve-stock",
+            TaskKind = TaskKind.Messaging,
+            Status = TaskExecutionStatus.WaitingResponse,
+            AwaitResponse = true,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            WaitingSinceUtc = DateTime.UtcNow.AddSeconds(-30),
+            LastAttemptNumber = 1,
+            CorrelationId = "order-1:reserve-stock"
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.WaitingResponse,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            WaitingSinceUtc = DateTime.UtcNow.AddSeconds(-30),
+            DispatchId = Id.New(),
+            RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}""")
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = attempt.DispatchId.Value,
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Messaging",
+            Destination = "inventory.reserve",
+            RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}"""),
+            DispatchStatus = "Dispatched",
+            CommandId = Id.New().ToString(),
+            CorrelationId = task.CorrelationId,
+            SentOnUtc = DateTime.UtcNow.AddSeconds(-30),
+            AcknowledgedOnUtc = DateTime.UtcNow.AddSeconds(-30)
+        };
+
+        store.Instances[instance.Id] = instance;
+        store.Stages[stage.Id] = stage;
+        store.Tasks[task.Id] = task;
+        store.Attempts[attempt.Id] = attempt;
+        store.Dispatches[dispatch.Id] = dispatch;
+
+        return new RuntimeTraceFixture(store, instance, stage, task, attempt, dispatch);
+    }
+
+    private sealed record RuntimeTraceFixture(
+        RuntimeStore Store,
+        OrchestrationInstance Instance,
+        StageExecution Stage,
+        TaskExecution Task,
+        TaskExecutionAttempt Attempt,
+        TaskDispatch Dispatch);
 
     private static RuntimeEngine CreateEngine(RuntimeStore store)
         => new(new RuntimeEngineDependencies
