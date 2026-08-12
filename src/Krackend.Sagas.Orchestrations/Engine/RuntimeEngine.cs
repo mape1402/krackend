@@ -25,6 +25,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IRuntimeConditionEvaluator _conditionEvaluator;
     private readonly IRuntimePayloadTransformer _payloadTransformer;
     private readonly IRuntimeRetryPolicyEvaluator _retryPolicyEvaluator;
+    private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
@@ -47,6 +48,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _conditionEvaluator = dependencies.ConditionEvaluator;
         _payloadTransformer = dependencies.PayloadTransformer;
         _retryPolicyEvaluator = dependencies.RetryPolicyEvaluator;
+        _errorPolicyResolver = dependencies.ErrorPolicyResolver;
         _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
     }
 
@@ -519,12 +521,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
         TaskExecution taskExecution,
         CancellationToken cancellationToken)
     {
-        if (taskExecution.OnErrorPolicy != OnErrorPolicy.Continue)
+        var decision = _errorPolicyResolver.Resolve(taskExecution.OnErrorPolicy);
+        if (decision.Action != RuntimeErrorPolicyAction.Continue)
             return false;
 
         taskExecution.Status = TaskExecutionStatus.CompletedWithErrors;
         taskExecution.CompletedOnUtc = DateTime.UtcNow;
-        taskExecution.Metadata["errorPolicyApplied"] = OnErrorPolicy.Continue.ToString();
+        taskExecution.Metadata["errorPolicyApplied"] = decision.Policy.ToString();
+        taskExecution.Metadata["errorPolicyAction"] = decision.Action.ToString();
         await _taskRepository.Update(taskExecution, cancellationToken);
         await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskErrorPolicyApplied", TaskExecutionStatus.Failed, taskExecution.Status, stageExecution, taskExecution), cancellationToken);
         return true;

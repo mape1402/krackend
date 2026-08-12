@@ -75,6 +75,11 @@ public sealed class RuntimeEngineDependencies
     public required IRuntimeRetryPolicyEvaluator RetryPolicyEvaluator { get; init; }
 
     /// <summary>
+    /// Gets the runtime error policy resolver.
+    /// </summary>
+    public required IRuntimeErrorPolicyResolver ErrorPolicyResolver { get; init; }
+
+    /// <summary>
     /// Gets the reactive event publisher.
     /// </summary>
     public required IRuntimeReactiveEventPublisher ReactiveEventPublisher { get; init; }
