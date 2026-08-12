@@ -301,7 +301,10 @@
             <tr data-instance-id="${escapeHtml(row.id)}" data-instance-status="${escapeHtml(row.status)}" tabindex="0">
             <td>
                 <strong>${escapeHtml(row.orchestrationDefinitionKey)}</strong>
-                <small><span>${escapeHtml(row.correlationId)}</span><span>${escapeHtml(row.id)}</span></small>
+                <small>
+                    <span><b>Trace</b>${escapeHtml(row.correlationId)}</span>
+                    <span><b>Saga</b>${escapeHtml(row.id)}</span>
+                </small>
             </td>
             <td><span class="od-status ${statusClass(row.status)}" data-instance-status-label>${escapeHtml(row.status)}</span></td>
             <td data-instance-stage>${escapeHtml(row.currentStageKey || "-")}</td>
