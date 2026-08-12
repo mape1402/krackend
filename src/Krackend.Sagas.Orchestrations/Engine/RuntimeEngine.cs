@@ -111,12 +111,12 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId, nameof(command.OrchestrationInstanceId)), cancellationToken);
         var taskExecution = await _taskRepository.GetById(ParseId(command.TaskExecutionId, nameof(command.TaskExecutionId)), cancellationToken);
         var stageExecution = await _stageRepository.GetById(taskExecution.StageExecutionId, cancellationToken);
-        var attempt = await ResolveResponseAttempt(taskExecution, command, cancellationToken);
+        var trace = await ResolveResponseTrace(instance, stageExecution, taskExecution, command, cancellationToken);
 
-        if (!CanContinueFromResponse(instance, taskExecution, attempt))
+        if (!CanContinueFromResponse(instance, taskExecution, trace.Attempt))
             return DuplicateResponseIgnored(instance);
 
-        await CompleteResponse(instance, stageExecution, taskExecution, attempt, command, cancellationToken);
+        await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
         await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
 
         return new RuntimeEngineProcessResult
@@ -646,13 +646,58 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await WriteTransition(RuntimeTransition.ForStage(instance, "InstanceFailed", OrchestrationInstanceStatus.Running, instance.Status, stageExecution), cancellationToken);
     }
 
-    private async Task<TaskExecutionAttempt> ResolveResponseAttempt(TaskExecution taskExecution, RuntimeMessageResponseCommand command, CancellationToken cancellationToken)
+    private async Task<RuntimeResponseTrace> ResolveResponseTrace(
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        RuntimeMessageResponseCommand command,
+        CancellationToken cancellationToken)
     {
         var dispatchId = ParseId(command.DispatchId, nameof(command.DispatchId));
+        var dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
         var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
         var attempt = attempts.OrderByDescending(x => x.AttemptNumber).FirstOrDefault(x => x.DispatchId == dispatchId);
-        return attempt ?? throw new InvalidOperationException($"No task attempt found for dispatch '{command.DispatchId}'.");
+        if (attempt is null)
+            throw new InvalidOperationException($"No task attempt found for dispatch '{command.DispatchId}'.");
+
+        ValidateResponseTrace(instance, stageExecution, taskExecution, attempt, dispatch, command);
+        return new RuntimeResponseTrace(attempt, dispatch);
     }
+
+    private static void ValidateResponseTrace(
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        RuntimeMessageResponseCommand command)
+    {
+        if (taskExecution.OrchestrationInstanceId != instance.Id)
+            throw new InvalidOperationException($"Task execution '{taskExecution.Id}' does not belong to orchestration instance '{instance.Id}'.");
+
+        if (stageExecution.OrchestrationInstanceId != instance.Id)
+            throw new InvalidOperationException($"Stage execution '{stageExecution.Id}' does not belong to orchestration instance '{instance.Id}'.");
+
+        if (taskExecution.StageExecutionId != stageExecution.Id)
+            throw new InvalidOperationException($"Task execution '{taskExecution.Id}' does not belong to stage execution '{stageExecution.Id}'.");
+
+        if (attempt.TaskExecutionId != taskExecution.Id)
+            throw new InvalidOperationException($"Task attempt '{attempt.Id}' does not belong to task execution '{taskExecution.Id}'.");
+
+        if (attempt.DispatchId != dispatch.Id)
+            throw new InvalidOperationException($"Task attempt '{attempt.Id}' is not correlated with dispatch '{dispatch.Id}'.");
+
+        if (dispatch.TaskExecutionAttemptId != attempt.Id)
+            throw new InvalidOperationException($"Dispatch '{dispatch.Id}' does not belong to task attempt '{attempt.Id}'.");
+
+        if (!string.Equals(taskExecution.CorrelationId, command.CorrelationId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Response correlation '{command.CorrelationId}' does not match task correlation '{taskExecution.CorrelationId}'.");
+
+        if (!string.Equals(dispatch.CorrelationId, command.CorrelationId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Response correlation '{command.CorrelationId}' does not match dispatch correlation '{dispatch.CorrelationId}'.");
+    }
+
+    private sealed record RuntimeResponseTrace(TaskExecutionAttempt Attempt, TaskDispatch Dispatch);
 
     private static RuntimeResumeContext CreateResumeContext(RuntimeOrchestrationArtifact artifact, StageExecution stageExecution, TaskExecution taskExecution)
     {
