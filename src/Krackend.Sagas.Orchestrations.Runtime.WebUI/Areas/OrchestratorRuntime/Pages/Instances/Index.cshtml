@@ -14,7 +14,7 @@
 }
 
 @section Head {
-    <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-4" />
 }
 
 <div class="od-page-head">
@@ -142,5 +142,5 @@
         window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js" asp-append-version="true"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-4"></script>
 }
