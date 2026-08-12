@@ -83,7 +83,7 @@ public sealed class TaskDefinition
     public OnErrorPolicy OnErrorPolicy { get; set; } = OnErrorPolicy.Stop;
 
     /// <summary>
-    /// Gets or sets compensation definition.
+    /// Gets or sets rollback definition executed only if this task completed before compensation starts.
     /// </summary>
     public CompensationDefinition CompensationDefinition { get; set; }
 

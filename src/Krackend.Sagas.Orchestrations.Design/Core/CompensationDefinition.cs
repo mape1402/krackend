@@ -3,12 +3,12 @@ namespace Krackend.Sagas.Orchestrations.Design.Core;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 
 /// <summary>
-/// Represents compensation behavior executed when a task must be rolled back or recovered.
+/// Represents rollback behavior for a task that completed before the orchestration entered compensation.
 /// </summary>
 public sealed class CompensationDefinition
 {
     /// <summary>
-    /// Gets or sets compensation task kind.
+    /// Gets or sets rollback task kind.
     /// </summary>
     public TaskKind CompensationTaskKind { get; set; }
 
@@ -38,7 +38,7 @@ public sealed class CompensationDefinition
     public TimeoutPolicy TimeoutPolicy { get; set; }
 
     /// <summary>
-    /// Gets or sets Dispatch type.
+    /// Gets or sets dispatch type.
     /// </summary>
     public TaskDispatchType DispatchType { get; set; }
 }
