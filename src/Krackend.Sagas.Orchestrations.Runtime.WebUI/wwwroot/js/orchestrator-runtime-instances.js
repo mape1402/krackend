@@ -349,7 +349,6 @@
 
     function renderStageStep(stage, index, total) {
         const taskCount = (stage.tasks || []).length;
-        const isSelected = stage.id === selectedStageId;
         const waitingTask = (stage.tasks || []).find(task => task.status === "Waiting" || task.status === "WaitingResponse" || task.waitingSinceUtc);
         const stateClass = stage.status === "Completed"
             ? "is-completed"
@@ -358,12 +357,11 @@
                 : stage.status === "Failed"
                     ? "is-failed"
                     : "is-pending";
-        const selectedClass = isSelected ? "is-selected" : "";
         const marker = stage.status === "Completed"
             ? `<i class="bi bi-check-lg"></i>`
             : `<span></span>`;
         return `
-            <button type="button" class="od-process-step ${stateClass} ${selectedClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
+            <button type="button" class="od-process-step ${stateClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
                 <span class="od-process-line" aria-hidden="true"></span>
                 <span class="od-process-marker">${marker}</span>
                 <span class="od-process-copy">
