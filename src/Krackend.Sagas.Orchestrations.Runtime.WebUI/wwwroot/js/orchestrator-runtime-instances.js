@@ -367,9 +367,8 @@
                 <span class="od-process-line" aria-hidden="true"></span>
                 <span class="od-process-marker">${marker}</span>
                 <span class="od-process-copy">
-                    <strong>Step ${escapeHtml(stage.order)}</strong>
-                    <span>${escapeHtml(stage.stageKey)}</span>
-                    <small>${escapeHtml(stage.status)} | ${taskCount} task${taskCount === 1 ? "" : "s"}</small>
+                    <strong>${escapeHtml(stage.stageKey)}</strong>
+                    <span>${escapeHtml(stage.status)} | ${taskCount} task${taskCount === 1 ? "" : "s"}</span>
                     ${waitingTask ? `<em>Waiting: ${escapeHtml(waitingTask.taskKey)}</em>` : ""}
                 </span>
             </button>`;
