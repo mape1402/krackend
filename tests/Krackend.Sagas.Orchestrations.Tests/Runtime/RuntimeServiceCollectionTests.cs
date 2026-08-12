@@ -62,4 +62,17 @@ public sealed class RuntimeServiceCollectionTests
 
         Assert.IsType<MessagingRuntimeTaskDispatcher>(dispatcher);
     }
+
+    [Fact]
+    public void EngineRegistersRuntimeConditionEvaluatorByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<RuntimeConditionEvaluator>(
+            provider.GetRequiredService<IRuntimeConditionEvaluator>());
+    }
 }
