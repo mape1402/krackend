@@ -30,5 +30,5 @@ internal sealed class RuntimeTaskDispatchFailure
     /// <summary>
     /// Gets the dispatcher failure result.
     /// </summary>
-    public required MessagingDispatchResult DispatchResult { get; init; }
+    public required RuntimeTaskDispatchResult DispatchResult { get; init; }
 }

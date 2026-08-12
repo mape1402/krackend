@@ -294,7 +294,7 @@ public sealed class RuntimeEngineIdempotencyTests
             DispatchRepository = new DispatchRepositoryStub(store),
             InstanceRepository = new InstanceRepositoryStub(store),
             TimelineRepository = new TransitionRepositoryStub(store),
-            MessagingDispatcher = new ThrowingMessagingDispatcher(),
+            TaskDispatcherResolver = new ThrowingTaskDispatcherResolver(),
             ReactiveEventPublisher = new NoopRuntimeReactiveEventPublisher()
         });
 
@@ -473,10 +473,10 @@ public sealed class RuntimeEngineIdempotencyTests
             => throw new NotImplementedException();
     }
 
-    private sealed class ThrowingMessagingDispatcher : IMessagingCommandDispatcher
+    private sealed class ThrowingTaskDispatcherResolver : IRuntimeTaskDispatcherResolver
     {
-        public Task<MessagingDispatchResult> Dispatch(MessagingDispatchCommand command, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Duplicate responses must not dispatch messages.");
+        public IRuntimeTaskDispatcher Resolve(string taskKind)
+            => throw new InvalidOperationException("Duplicate responses must not dispatch tasks.");
     }
 
     private sealed class ThrowingTriggerPromoter : ITriggerPromoter
