@@ -1,6 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +14,8 @@ public sealed class IndexModel : PageModel
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IStageExecutionRepository _stageRepository;
     private readonly ITaskExecutionRepository _taskRepository;
+    private readonly ITaskExecutionAttemptRepository _attemptRepository;
+    private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
     private readonly RuntimeEnvironmentDescriptor _runtimeEnvironment;
     private readonly OrchestratorRuntimeWebUIOptions _options;
@@ -19,6 +24,8 @@ public sealed class IndexModel : PageModel
         IOrchestrationInstanceRepository instanceRepository,
         IStageExecutionRepository stageRepository,
         ITaskExecutionRepository taskRepository,
+        ITaskExecutionAttemptRepository attemptRepository,
+        ITaskDispatchRepository dispatchRepository,
         IExecutionTransitionRepository transitionRepository,
         RuntimeEnvironmentDescriptor runtimeEnvironment,
         IOptions<OrchestratorRuntimeWebUIOptions> options)
@@ -26,6 +33,8 @@ public sealed class IndexModel : PageModel
         _instanceRepository = instanceRepository;
         _stageRepository = stageRepository;
         _taskRepository = taskRepository;
+        _attemptRepository = attemptRepository;
+        _dispatchRepository = dispatchRepository;
         _transitionRepository = transitionRepository;
         _runtimeEnvironment = runtimeEnvironment;
         _options = options.Value;
@@ -42,36 +51,90 @@ public sealed class IndexModel : PageModel
         }
     }
 
-    public IReadOnlyCollection<OrchestrationInstance> Instances { get; private set; } = Array.Empty<OrchestrationInstance>();
+    public IReadOnlyCollection<InstanceRowModel> Instances { get; private set; } = Array.Empty<InstanceRowModel>();
 
-    public OrchestrationInstance SelectedInstance { get; private set; }
+    public IReadOnlyCollection<TrafficPointModel> Traffic { get; private set; } = Array.Empty<TrafficPointModel>();
 
-    public IReadOnlyCollection<StageExecution> Stages { get; private set; } = Array.Empty<StageExecution>();
-
-    public IReadOnlyCollection<TaskExecution> Tasks { get; private set; } = Array.Empty<TaskExecution>();
-
-    public IReadOnlyCollection<ExecutionTransition> Transitions { get; private set; } = Array.Empty<ExecutionTransition>();
-
-    public async Task OnGetAsync(string instanceId = null, CancellationToken cancellationToken = default)
+    public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        Instances = await _instanceRepository.GetRecent(EnvironmentKey, 50, cancellationToken);
-        SelectedInstance = await ResolveSelectedInstance(instanceId, cancellationToken);
+        var instances = await _instanceRepository.GetRecent(EnvironmentKey, 75, cancellationToken);
+        Instances = instances.Select(ToRow).ToArray();
 
-        if (SelectedInstance is null)
-            return;
-
-        Stages = await _stageRepository.GetByInstanceId(SelectedInstance.Id, cancellationToken);
-        Tasks = await _taskRepository.GetByInstanceId(SelectedInstance.Id, cancellationToken);
-        Transitions = await _transitionRepository.GetByInstanceId(SelectedInstance.Id, cancellationToken);
+        var transitions = await _transitionRepository.GetRecent(EnvironmentKey, 250, cancellationToken);
+        Traffic = transitions
+            .GroupBy(x => new DateTime(x.OccurredOnUtc.Year, x.OccurredOnUtc.Month, x.OccurredOnUtc.Day, x.OccurredOnUtc.Hour, x.OccurredOnUtc.Minute, 0, DateTimeKind.Utc))
+            .OrderBy(x => x.Key)
+            .Select(x => new TrafficPointModel(x.Key, x.Count()))
+            .ToArray();
     }
 
-    public int ActiveCount => Instances.Count(x => x.Status is OrchestrationInstanceStatus.Running or OrchestrationInstanceStatus.Waiting);
+    public async Task<IActionResult> OnGetDetailAsync(string instanceId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId))
+            return BadRequest();
 
-    public int CompletedCount => Instances.Count(x => x.Status == OrchestrationInstanceStatus.Completed);
+        var id = ParseId(instanceId);
+        var instance = await _instanceRepository.GetById(id, cancellationToken);
+        var stages = (await _stageRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.Order).ToArray();
+        var tasks = (await _taskRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
+        var transitions = (await _transitionRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.OccurredOnUtc).ToArray();
 
-    public int FailedCount => Instances.Count(x => x.Status == OrchestrationInstanceStatus.Failed);
+        var taskDetails = new List<TaskDetailModel>();
+        foreach (var task in tasks)
+        {
+            var attempts = (await _attemptRepository.GetByTaskExecutionId(task.Id, cancellationToken)).OrderBy(x => x.AttemptNumber).ToArray();
+            var attemptDetails = new List<TaskAttemptDetailModel>();
+            foreach (var attempt in attempts)
+            {
+                var dispatch = attempt.DispatchId is null
+                    ? await _dispatchRepository.GetByAttemptId(attempt.Id, cancellationToken)
+                    : await _dispatchRepository.GetById(attempt.DispatchId.Value, cancellationToken);
 
-    public int WaitingCount => Instances.Count(x => x.Status == OrchestrationInstanceStatus.Waiting);
+                attemptDetails.Add(new TaskAttemptDetailModel(
+                    attempt.Id.ToString(),
+                    attempt.AttemptNumber,
+                    attempt.Status.ToString(),
+                    attempt.StartedOnUtc,
+                    attempt.WaitingSinceUtc,
+                    attempt.CompletedOnUtc,
+                    attempt.FailedOnUtc,
+                    attempt.TimedOutOnUtc,
+                    FormatJson(attempt.RequestPayload),
+                    FormatJson(attempt.ResponsePayload),
+                    attempt.ErrorCode,
+                    attempt.ErrorMessage,
+                    dispatch is null ? null : ToDispatch(dispatch),
+                    FormatJson(attempt.Metadata)));
+            }
+
+            taskDetails.Add(new TaskDetailModel(
+                task.Id.ToString(),
+                task.StageExecutionId.ToString(),
+                task.TaskKey,
+                task.TaskKind.ToString(),
+                task.ExecutionMode.ToString(),
+                task.Status.ToString(),
+                task.AwaitResponse,
+                task.CorrelationId,
+                task.StartedOnUtc,
+                task.WaitingSinceUtc,
+                task.CompletedOnUtc,
+                task.FailedOnUtc,
+                task.TimedOutOnUtc,
+                task.LastAttemptNumber,
+                FormatJson(task.OutputVariablesPayload),
+                FormatJson(task.Metadata),
+                attemptDetails));
+        }
+
+        return new JsonResult(new InstanceDetailModel(
+            ToRow(instance),
+            stages.Select(stage => ToStage(stage, taskDetails)).ToArray(),
+            taskDetails,
+            transitions.Select(ToTransition).ToArray(),
+            FormatJson(instance.SnapshotPayload),
+            FormatJson(instance.Metadata)));
+    }
 
     public static string StatusClass(string status)
     {
@@ -85,14 +148,182 @@ public sealed class IndexModel : PageModel
         };
     }
 
-    private async Task<OrchestrationInstance> ResolveSelectedInstance(string instanceId, CancellationToken cancellationToken)
+    private static InstanceRowModel ToRow(OrchestrationInstance instance)
     {
-        if (!string.IsNullOrWhiteSpace(instanceId))
-        {
-            var selectedId = new Id(Ulid.Parse(instanceId));
-            return await _instanceRepository.GetById(selectedId, cancellationToken);
-        }
-
-        return Instances.FirstOrDefault();
+        return new InstanceRowModel(
+            instance.Id.ToString(),
+            instance.OrchestrationDefinitionKey,
+            instance.CorrelationId,
+            instance.ExecutionKey,
+            instance.Status.ToString(),
+            StatusClass(instance.Status.ToString()),
+            instance.CurrentStageKey,
+            instance.CurrentTaskKey,
+            instance.StartedOnUtc,
+            instance.LastUpdatedOnUtc,
+            instance.WaitingSinceUtc,
+            instance.CompletedOnUtc,
+            instance.FailedOnUtc,
+            instance.ErrorSummary);
     }
+
+    private static StageDetailModel ToStage(StageExecution stage, IReadOnlyCollection<TaskDetailModel> tasks)
+    {
+        return new StageDetailModel(
+            stage.Id.ToString(),
+            stage.StageKey,
+            stage.Order,
+            stage.Status.ToString(),
+            StatusClass(stage.Status.ToString()),
+            stage.StartedOnUtc,
+            stage.CompletedOnUtc,
+            stage.FailedOnUtc,
+            stage.ErrorSummary,
+            FormatJson(stage.Metadata),
+            tasks.Where(x => x.StageExecutionId == stage.Id.ToString()).ToArray());
+    }
+
+    private static DispatchDetailModel ToDispatch(TaskDispatch dispatch)
+    {
+        return new DispatchDetailModel(
+            dispatch.Id.ToString(),
+            dispatch.DispatchType,
+            dispatch.Destination,
+            dispatch.DispatchStatus,
+            dispatch.CommandId,
+            dispatch.CorrelationId,
+            dispatch.SentOnUtc,
+            dispatch.AcknowledgedOnUtc,
+            dispatch.FailedOnUtc,
+            dispatch.FailureReason,
+            FormatJson(dispatch.RequestPayload),
+            FormatJson(dispatch.Metadata));
+    }
+
+    private static TransitionDetailModel ToTransition(ExecutionTransition transition)
+    {
+        return new TransitionDetailModel(
+            transition.Id.ToString(),
+            transition.TransitionType,
+            transition.FromStatus,
+            transition.ToStatus,
+            transition.OccurredOnUtc,
+            transition.StageExecutionId?.ToString(),
+            transition.TaskExecutionId?.ToString(),
+            transition.TaskExecutionAttemptId?.ToString(),
+            transition.Message,
+            transition.ProducedBy,
+            FormatJson(transition.Payload));
+    }
+
+    private static string FormatJson(JsonNode node)
+        => node?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) ?? string.Empty;
+
+    private static string FormatJson(Dictionary<string, JsonNode> values)
+        => values is null || values.Count == 0
+            ? string.Empty
+            : JsonSerializer.Serialize(values.ToDictionary(x => x.Key, x => x.Value), new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+    private static Id ParseId(string value) => new(Ulid.Parse(value));
 }
+
+public sealed record InstanceRowModel(
+    string Id,
+    string OrchestrationDefinitionKey,
+    string CorrelationId,
+    string ExecutionKey,
+    string Status,
+    string StatusClass,
+    string CurrentStageKey,
+    string CurrentTaskKey,
+    DateTime StartedOnUtc,
+    DateTime LastUpdatedOnUtc,
+    DateTime? WaitingSinceUtc,
+    DateTime? CompletedOnUtc,
+    DateTime? FailedOnUtc,
+    string ErrorSummary);
+
+public sealed record TrafficPointModel(DateTime BucketUtc, int Count);
+
+public sealed record InstanceDetailModel(
+    InstanceRowModel Instance,
+    IReadOnlyCollection<StageDetailModel> Stages,
+    IReadOnlyCollection<TaskDetailModel> Tasks,
+    IReadOnlyCollection<TransitionDetailModel> Transitions,
+    string SnapshotPayload,
+    string Metadata);
+
+public sealed record StageDetailModel(
+    string Id,
+    string StageKey,
+    int Order,
+    string Status,
+    string StatusClass,
+    DateTime? StartedOnUtc,
+    DateTime? CompletedOnUtc,
+    DateTime? FailedOnUtc,
+    string ErrorSummary,
+    string Metadata,
+    IReadOnlyCollection<TaskDetailModel> Tasks);
+
+public sealed record TaskDetailModel(
+    string Id,
+    string StageExecutionId,
+    string TaskKey,
+    string TaskKind,
+    string ExecutionMode,
+    string Status,
+    bool AwaitResponse,
+    string CorrelationId,
+    DateTime? StartedOnUtc,
+    DateTime? WaitingSinceUtc,
+    DateTime? CompletedOnUtc,
+    DateTime? FailedOnUtc,
+    DateTime? TimedOutOnUtc,
+    int LastAttemptNumber,
+    string OutputVariablesPayload,
+    string Metadata,
+    IReadOnlyCollection<TaskAttemptDetailModel> Attempts);
+
+public sealed record TaskAttemptDetailModel(
+    string Id,
+    int AttemptNumber,
+    string Status,
+    DateTime? StartedOnUtc,
+    DateTime? WaitingSinceUtc,
+    DateTime? CompletedOnUtc,
+    DateTime? FailedOnUtc,
+    DateTime? TimedOutOnUtc,
+    string RequestPayload,
+    string ResponsePayload,
+    string ErrorCode,
+    string ErrorMessage,
+    DispatchDetailModel Dispatch,
+    string Metadata);
+
+public sealed record DispatchDetailModel(
+    string Id,
+    string DispatchType,
+    string Destination,
+    string DispatchStatus,
+    string CommandId,
+    string CorrelationId,
+    DateTime? SentOnUtc,
+    DateTime? AcknowledgedOnUtc,
+    DateTime? FailedOnUtc,
+    string FailureReason,
+    string RequestPayload,
+    string Metadata);
+
+public sealed record TransitionDetailModel(
+    string Id,
+    string TransitionType,
+    string FromStatus,
+    string ToStatus,
+    DateTime OccurredOnUtc,
+    string StageExecutionId,
+    string TaskExecutionId,
+    string TaskExecutionAttemptId,
+    string Message,
+    string ProducedBy,
+    string Payload);
