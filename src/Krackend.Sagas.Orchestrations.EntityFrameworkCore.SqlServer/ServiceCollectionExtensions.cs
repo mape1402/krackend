@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITaskExecutionRepository, TaskExecutionRepository>();
         services.AddScoped<ITaskExecutionAttemptRepository, TaskExecutionAttemptRepository>();
         services.AddScoped<ITaskDispatchRepository, TaskDispatchRepository>();
+        services.AddScoped<ICompensationExecutionRepository, CompensationExecutionRepository>();
         services.AddScoped<IExecutionTransitionRepository, ExecutionTransitionRepository>();
         services.AddScoped<IInstanceVariableRepository, InstanceVariableRepository>();
         services.AddScoped<IEnvironmentVariableRepository, EnvironmentVariableRepository>();
