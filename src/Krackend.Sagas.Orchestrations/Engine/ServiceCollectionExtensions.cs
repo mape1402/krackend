@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeConditionEvaluator, RuntimeConditionEvaluator>();
         services.AddScoped<IRuntimePayloadTransformer, RuntimePayloadTransformer>();
         services.AddScoped<IRuntimeRetryPolicyEvaluator, RuntimeRetryPolicyEvaluator>();
+        services.AddScoped<IRuntimeErrorPolicyResolver, RuntimeErrorPolicyResolver>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
@@ -53,6 +54,7 @@ public static class ServiceCollectionExtensions
             ConditionEvaluator = provider.GetRequiredService<IRuntimeConditionEvaluator>(),
             PayloadTransformer = provider.GetRequiredService<IRuntimePayloadTransformer>(),
             RetryPolicyEvaluator = provider.GetRequiredService<IRuntimeRetryPolicyEvaluator>(),
+            ErrorPolicyResolver = provider.GetRequiredService<IRuntimeErrorPolicyResolver>(),
             ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
         };
     }
