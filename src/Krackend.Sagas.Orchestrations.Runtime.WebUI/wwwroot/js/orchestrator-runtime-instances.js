@@ -9,15 +9,24 @@
     const grid = document.querySelector("[data-instance-grid]");
     const instanceCount = document.querySelector("[data-instance-count]");
     const chartCanvas = document.querySelector("[data-traffic-chart]");
+
     const detailModalElement = document.getElementById("runtimeInstanceModal");
     const detailTitle = document.querySelector("[data-detail-title]");
     const detailSubtitle = document.querySelector("[data-detail-subtitle]");
     const detailBody = document.querySelector("[data-detail-body]");
     const detailModal = detailModalElement && window.bootstrap ? new bootstrap.Modal(detailModalElement) : null;
 
+    const timelineModalElement = document.getElementById("runtimeTimelineModal");
+    const timelineTitle = document.querySelector("[data-timeline-title]");
+    const timelineSubtitle = document.querySelector("[data-timeline-subtitle]");
+    const timelineBody = document.querySelector("[data-timeline-body]");
+    const timelineModal = timelineModalElement && window.bootstrap ? new bootstrap.Modal(timelineModalElement) : null;
+
     const instances = new Map();
     const traffic = new Map();
     let selectedInstanceId = null;
+    let selectedStageId = null;
+    let currentDetail = null;
     let detailRefreshTimer = null;
 
     (config.instances || []).forEach(item => instances.set(item.id, normalizeRow(item)));
@@ -49,10 +58,7 @@
     }
 
     function setLiveState(state, label) {
-        if (liveState) {
-            liveState.setAttribute("data-live-state", state);
-        }
-
+        liveState?.setAttribute("data-live-state", state);
         if (liveLabel) {
             liveLabel.textContent = label;
         }
@@ -227,6 +233,9 @@
 
     async function openDetail(instanceId) {
         selectedInstanceId = instanceId;
+        selectedStageId = null;
+        currentDetail = null;
+
         if (detailTitle) {
             detailTitle.textContent = "Loading trace";
         }
@@ -236,13 +245,14 @@
         if (detailBody) {
             detailBody.innerHTML = `<p class="od-empty">Loading full execution trace...</p>`;
         }
+
         detailModal?.show();
         await loadDetail(instanceId);
     }
 
     function scheduleDetailRefresh(instanceId) {
         window.clearTimeout(detailRefreshTimer);
-        detailRefreshTimer = window.setTimeout(() => loadDetail(instanceId, true), 150);
+        detailRefreshTimer = window.setTimeout(() => loadDetail(instanceId, true), 80);
     }
 
     async function loadDetail(instanceId, silent) {
@@ -254,6 +264,7 @@
             if (!response.ok) {
                 throw new Error(`Detail request failed: ${response.status}`);
             }
+
             renderDetail(await response.json());
         } catch (error) {
             if (!silent && detailBody) {
@@ -263,85 +274,164 @@
     }
 
     function renderDetail(detail) {
+        currentDetail = detail;
         const instance = detail.instance;
+        const stages = detail.stages || [];
+        const previousStageStillExists = stages.some(stage => stage.id === selectedStageId);
+        selectedStageId = previousStageStillExists ? selectedStageId : getPreferredStageId(detail);
+
         if (detailTitle) {
             detailTitle.textContent = instance.orchestrationDefinitionKey;
         }
         if (detailSubtitle) {
-            detailSubtitle.textContent = `${instance.id} · ${instance.status} · ${instance.correlationId}`;
+            detailSubtitle.textContent = `${instance.id} | ${instance.status} | ${instance.correlationId}`;
         }
         if (!detailBody) {
             return;
         }
 
         detailBody.innerHTML = `
-            <section class="od-detail-summary">
-                ${field("Status", badge(instance.status))}
-                ${field("Current stage", instance.currentStageKey || "-")}
-                ${field("Current task", instance.currentTaskKey || "-")}
-                ${field("Execution key", instance.executionKey || "-")}
-                ${field("Started", formatDate(instance.startedOnUtc))}
-                ${field("Updated", formatDate(instance.lastUpdatedOnUtc))}
-            </section>
-            <section class="od-detail-split">
-                <article>
-                    <h3>Snapshot payload</h3>
-                    ${codeBlock(detail.snapshotPayload)}
-                </article>
-                <article>
-                    <h3>Instance metadata</h3>
-                    ${codeBlock(detail.metadata)}
-                </article>
-            </section>
-            <section class="od-detail-stages">
-                ${detail.stages.map(renderStage).join("")}
-            </section>
-            <section class="od-collapse-block">
-                <button type="button" class="od-collapse-toggle" data-collapse-target="runtimeTimeline">
-                    Timeline (${detail.transitions.length})
-                </button>
-                <div id="runtimeTimeline" class="od-collapse-content" hidden>
-                    ${detail.transitions.map(renderTransition).join("")}
+            <section class="od-trace-shell">
+                <div class="od-trace-actions">
+                    <div class="od-trace-summary">
+                        ${field("Status", badge(instance.status), true)}
+                        ${field("Current stage", instance.currentStageKey || "-")}
+                        ${field("Current task", instance.currentTaskKey || "-")}
+                        ${field("Execution key", instance.executionKey || "-")}
+                        ${field("Started", formatDate(instance.startedOnUtc))}
+                        ${field("Updated", formatDate(instance.lastUpdatedOnUtc))}
+                    </div>
+                    <button type="button" class="btn btn-outline-primary od-icon-action" data-open-timeline>
+                        Timeline (${(detail.transitions || []).length})
+                    </button>
+                </div>
+                <div class="od-trace-layout">
+                    <aside class="od-stage-stepper" aria-label="Stages">
+                        ${stages.map(renderStageStep).join("") || `<p class="od-empty">No stages recorded.</p>`}
+                    </aside>
+                    <section class="od-stage-focus" data-stage-focus>
+                        ${renderStageFocus(selectedStageId)}
+                    </section>
                 </div>
             </section>`;
     }
 
-    function renderStage(stage) {
+    function getPreferredStageId(detail) {
+        const instance = detail.instance;
+        const stages = detail.stages || [];
+        const current = stages.find(stage => stage.stageKey === instance.currentStageKey);
+        const active = stages.find(stage => stage.status === "Running" || stage.status === "Waiting");
+        return (current || active || stages[0])?.id || null;
+    }
+
+    function renderStageStep(stage) {
+        const taskCount = (stage.tasks || []).length;
+        const activeClass = stage.id === selectedStageId ? "active" : "";
         return `
-            <article class="od-detail-stage">
-                <header>
+            <button type="button" class="od-stage-step ${activeClass}" data-stage-step="${escapeHtml(stage.id)}">
+                <span class="od-stage-step-marker">${escapeHtml(stage.order)}</span>
+                <span class="od-stage-step-copy">
+                    <strong>${escapeHtml(stage.stageKey)}</strong>
+                    <small>${taskCount} task${taskCount === 1 ? "" : "s"} | ${formatDate(stage.startedOnUtc)}</small>
+                </span>
+                ${badge(stage.status)}
+            </button>`;
+    }
+
+    function renderStageFocus(stageId) {
+        const stage = findStage(stageId);
+        if (!stage) {
+            return `<p class="od-empty">No stage selected.</p>`;
+        }
+
+        const tasks = stage.tasks || [];
+        return `
+            <article class="od-stage-focus-card">
+                <header class="od-stage-focus-head">
                     <div>
+                        <p class="od-kicker">Stage ${escapeHtml(stage.order)}</p>
                         <h3>${escapeHtml(stage.stageKey)}</h3>
-                        <small>Order ${stage.order} · ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}</small>
+                        <small>${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}</small>
                     </div>
                     ${badge(stage.status)}
                 </header>
                 ${stage.errorSummary ? `<p class="od-runtime-error">${escapeHtml(stage.errorSummary)}</p>` : ""}
-                <div class="od-detail-task-list">
-                    ${stage.tasks.map(renderTask).join("") || `<p class="od-empty">No task executions recorded.</p>`}
+                <div class="od-detail-grid od-stage-stats">
+                    ${field("Started", formatDate(stage.startedOnUtc))}
+                    ${field("Completed", formatDate(stage.completedOnUtc))}
+                    ${field("Failed", formatDate(stage.failedOnUtc))}
+                    ${field("Tasks", String(tasks.length))}
+                </div>
+                <div class="od-stage-payload-strip">
+                    <details>
+                        <summary>Stage metadata</summary>
+                        ${codeBlock(stage.metadata)}
+                    </details>
+                </div>
+                <div class="od-task-list">
+                    ${tasks.map(renderTaskRow).join("") || `<p class="od-empty">No task executions recorded for this stage.</p>`}
                 </div>
             </article>`;
     }
 
-    function renderTask(task) {
+    function renderTaskRow(task) {
+        const attempts = task.attempts || [];
+        const latestAttempt = attempts[attempts.length - 1];
+        const windowText = `${formatDate(task.startedOnUtc)} -> ${formatDate(task.completedOnUtc || task.failedOnUtc || task.waitingSinceUtc)}`;
         return `
-            <article class="od-detail-task">
-                <header>
-                    <div>
-                        <h4>${escapeHtml(task.taskKey)}</h4>
-                        <small>${escapeHtml(task.taskKind)} · ${escapeHtml(task.executionMode)} · correlation ${escapeHtml(task.correlationId || "-")}</small>
-                    </div>
+            <button type="button" class="od-task-card" data-open-task="${escapeHtml(task.id)}">
+                <span class="od-task-main">
+                    <strong>${escapeHtml(task.taskKey)}</strong>
+                    <small>${escapeHtml(task.taskKind)} | ${escapeHtml(task.executionMode)} | ${windowText}</small>
+                    ${task.errorSummary ? `<em>${escapeHtml(task.errorSummary)}</em>` : ""}
+                </span>
+                <span class="od-task-side">
                     ${badge(task.status)}
-                </header>
-                <div class="od-detail-grid">
-                    ${field("Await response", task.awaitResponse ? "yes" : "no")}
-                    ${field("Started", formatDate(task.startedOnUtc))}
-                    ${field("Waiting", formatDate(task.waitingSinceUtc))}
-                    ${field("Completed", formatDate(task.completedOnUtc))}
-                    ${field("Failed", formatDate(task.failedOnUtc))}
-                    ${field("Last attempt", String(task.lastAttemptNumber))}
+                    <small>${attempts.length} attempt${attempts.length === 1 ? "" : "s"}</small>
+                    <small>${escapeHtml(latestAttempt?.correlationId || task.correlationId || "-")}</small>
+                </span>
+            </button>`;
+    }
+
+    function openTask(taskId) {
+        const task = findTask(taskId);
+        const stage = findStageForTask(taskId);
+        const focus = detailBody?.querySelector("[data-stage-focus]");
+        if (!task || !stage || !focus) {
+            return;
+        }
+
+        selectedStageId = stage.id;
+        const attempts = task.attempts || [];
+        detailBody.querySelectorAll("[data-stage-step]").forEach(step => step.classList.toggle("active", step.getAttribute("data-stage-step") === selectedStageId));
+        focus.innerHTML = `
+            <section class="od-task-detail-shell">
+                <button type="button" class="btn btn-outline-secondary od-back-action" data-back-stage="${escapeHtml(stage.id)}">
+                    Back to ${escapeHtml(stage.stageKey)}
+                </button>
+                <div class="od-task-detail-head">
+                    <header class="od-stage-focus-head">
+                        <div>
+                            <p class="od-kicker">${escapeHtml(stage.stageKey)}</p>
+                            <h3>${escapeHtml(task.taskKey)}</h3>
+                            <small>${escapeHtml(task.correlationId || "-")}</small>
+                        </div>
+                        ${badge(task.status)}
+                    </header>
+                    <div class="od-detail-grid">
+                        ${field("Status", badge(task.status), true)}
+                        ${field("Kind", task.taskKind || "-")}
+                        ${field("Mode", task.executionMode || "-")}
+                        ${field("Await response", task.awaitResponse ? "yes" : "no")}
+                        ${field("Started", formatDate(task.startedOnUtc))}
+                        ${field("Waiting", formatDate(task.waitingSinceUtc))}
+                        ${field("Completed", formatDate(task.completedOnUtc))}
+                        ${field("Failed", formatDate(task.failedOnUtc))}
+                        ${field("Last attempt", String(task.lastAttemptNumber))}
+                    </div>
                 </div>
-                <div class="od-detail-split">
+                ${task.errorSummary ? `<p class="od-runtime-error">${escapeHtml(task.errorSummary)}</p>` : ""}
+                <section class="od-detail-split">
                     <article>
                         <h5>Task output variables</h5>
                         ${codeBlock(task.outputVariablesPayload)}
@@ -350,18 +440,22 @@
                         <h5>Task metadata</h5>
                         ${codeBlock(task.metadata)}
                     </article>
-                </div>
-                <div class="od-attempts">
-                    ${task.attempts.map(renderAttempt).join("") || `<p class="od-empty">No attempts recorded.</p>`}
-                </div>
-            </article>`;
+                </section>
+                <section class="od-attempt-stack">
+                    <h3>Attempts</h3>
+                    ${attempts.map(renderAttemptDetail).join("") || `<p class="od-empty">No attempts recorded.</p>`}
+                </section>
+            </section>`;
     }
 
-    function renderAttempt(attempt) {
+    function renderAttemptDetail(attempt) {
         return `
-            <article class="od-attempt">
+            <article class="od-attempt-card">
                 <header>
-                    <strong>Attempt ${attempt.attemptNumber}</strong>
+                    <div>
+                        <strong>Attempt ${attempt.attemptNumber}</strong>
+                        <small>${formatDate(attempt.startedOnUtc)} -> ${formatDate(attempt.completedOnUtc || attempt.failedOnUtc || attempt.waitingSinceUtc)}</small>
+                    </div>
                     ${badge(attempt.status)}
                 </header>
                 <div class="od-detail-grid">
@@ -413,21 +507,70 @@
             </section>`;
     }
 
-    function renderTransition(transition) {
+    function openTimeline() {
+        if (!currentDetail || !timelineBody) {
+            return;
+        }
+
+        const instance = currentDetail.instance;
+        const transitions = currentDetail.transitions || [];
+        if (timelineTitle) {
+            timelineTitle.textContent = "Execution timeline";
+        }
+        if (timelineSubtitle) {
+            timelineSubtitle.textContent = `${instance.id} | ${instance.status}`;
+        }
+
+        timelineBody.innerHTML = `
+            <section class="od-timeline-control">
+                ${transitions.map(renderTimelineEntry).join("") || `<p class="od-empty">No transitions recorded.</p>`}
+            </section>`;
+        timelineModal?.show();
+    }
+
+    function renderTimelineEntry(transition, index) {
         return `
-            <article class="od-timeline-item">
-                <div>
-                    <strong>${escapeHtml(transition.transitionType)}</strong>
-                    <span>${escapeHtml(transition.fromStatus || "")} -> ${escapeHtml(transition.toStatus || "")}</span>
-                    <span>${escapeHtml(transition.message || "")}</span>
+            <article class="od-timeline-entry">
+                <div class="od-timeline-marker">
+                    <span>${index + 1}</span>
                 </div>
-                <time>${formatDate(transition.occurredOnUtc)}</time>
-                ${transition.payload ? codeBlock(transition.payload) : ""}
+                <div class="od-timeline-content">
+                    <header>
+                        <div>
+                            <strong>${escapeHtml(transition.transitionType)}</strong>
+                            <small>${escapeHtml(transition.fromStatus || "-")} -> ${escapeHtml(transition.toStatus || "-")}</small>
+                        </div>
+                        <time>${formatDate(transition.occurredOnUtc)}</time>
+                    </header>
+                    ${transition.message ? `<p>${escapeHtml(transition.message)}</p>` : ""}
+                    ${transition.stageKey || transition.taskKey ? `<div class="od-chip-row">${transition.stageKey ? `<span class="od-meta-chip">${escapeHtml(transition.stageKey)}</span>` : ""}${transition.taskKey ? `<span class="od-meta-chip">${escapeHtml(transition.taskKey)}</span>` : ""}</div>` : ""}
+                    ${transition.payload ? `<details><summary>Payload</summary>${codeBlock(transition.payload)}</details>` : ""}
+                </div>
             </article>`;
     }
 
-    function field(label, value) {
-        return `<div class="od-detail-field"><span>${escapeHtml(label)}</span><strong>${typeof value === "string" ? escapeHtml(value) : value}</strong></div>`;
+    function findStage(stageId) {
+        return (currentDetail?.stages || []).find(stage => stage.id === stageId);
+    }
+
+    function findTask(taskId) {
+        for (const stage of currentDetail?.stages || []) {
+            const task = (stage.tasks || []).find(item => item.id === taskId);
+            if (task) {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
+    function findStageForTask(taskId) {
+        return (currentDetail?.stages || []).find(stage => (stage.tasks || []).some(task => task.id === taskId));
+    }
+
+    function field(label, value, allowHtml) {
+        const content = allowHtml ? value : escapeHtml(value);
+        return `<div class="od-detail-field"><span>${escapeHtml(label)}</span><strong>${content}</strong></div>`;
     }
 
     function badge(status) {
@@ -469,12 +612,37 @@
             return;
         }
 
-        const toggle = event.target.closest("[data-collapse-target]");
-        if (toggle) {
-            const content = document.getElementById(toggle.getAttribute("data-collapse-target"));
-            if (content) {
-                content.hidden = !content.hidden;
+        const stageStep = event.target.closest("[data-stage-step]");
+        if (stageStep) {
+            selectedStageId = stageStep.getAttribute("data-stage-step");
+            detailBody.querySelectorAll("[data-stage-step]").forEach(step => step.classList.toggle("active", step === stageStep));
+            const focus = detailBody.querySelector("[data-stage-focus]");
+            if (focus) {
+                focus.innerHTML = renderStageFocus(selectedStageId);
             }
+            return;
+        }
+
+        const taskTrigger = event.target.closest("[data-open-task]");
+        if (taskTrigger) {
+            openTask(taskTrigger.getAttribute("data-open-task"));
+            return;
+        }
+
+        const backToStage = event.target.closest("[data-back-stage]");
+        if (backToStage) {
+            selectedStageId = backToStage.getAttribute("data-back-stage");
+            detailBody.querySelectorAll("[data-stage-step]").forEach(step => step.classList.toggle("active", step.getAttribute("data-stage-step") === selectedStageId));
+            const focus = detailBody.querySelector("[data-stage-focus]");
+            if (focus) {
+                focus.innerHTML = renderStageFocus(selectedStageId);
+            }
+            return;
+        }
+
+        const timelineTrigger = event.target.closest("[data-open-timeline]");
+        if (timelineTrigger) {
+            openTimeline();
         }
     });
 
