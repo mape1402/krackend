@@ -632,10 +632,21 @@
 }
 
 .od-instance-table small span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.od-instance-table small b {
+    flex: 0 0 auto;
+    color: #4856d7;
+    font-size: 0.62rem;
+    font-weight: 750;
+    text-transform: uppercase;
 }
 
 .od-instance-table small span:first-child {
