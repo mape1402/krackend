@@ -302,28 +302,23 @@
 
         detailBody.innerHTML = `
             <section class="od-trace-shell">
-                <div class="od-trace-actions">
-                    <div class="od-trace-summary">
-                        ${field("Status", badge(instance.status), true)}
-                        ${field("Current stage", instance.currentStageKey || "-")}
-                        ${field("Current task", instance.currentTaskKey || "-")}
-                        ${field("Execution key", instance.executionKey || "-")}
-                        ${field("Started", formatDate(instance.startedOnUtc))}
-                        ${field("Updated", formatDate(instance.lastUpdatedOnUtc))}
+                <div class="od-trace-toolbar">
+                    <div class="od-trace-meta">
+                        ${badge(instance.status)}
+                        ${metaPill("Stage", instance.currentStageKey || "-")}
+                        ${metaPill("Task", instance.currentTaskKey || "-")}
+                        ${metaPill("Started", formatDate(instance.startedOnUtc))}
+                        ${metaPill("Updated", formatDate(instance.lastUpdatedOnUtc))}
                     </div>
-                    <button type="button" class="btn btn-outline-primary od-icon-action" data-open-timeline>
+                    <button type="button" class="od-timeline-action" data-open-timeline>
+                        <i class="bi bi-clock-history"></i>
                         Timeline (${(detail.transitions || []).length})
                     </button>
                 </div>
-                <div class="od-trace-layout">
-                    <aside class="od-stage-stepper" aria-label="Stages">
-                        ${stages.map(renderStageStep).join("") || `<p class="od-empty">No stages recorded.</p>`}
-                    </aside>
-                    <section class="od-stepper-hint">
-                        <strong>Click a stage to inspect its tasks.</strong>
-                        <span>Each stage opens with attempts, dispatch, input and output without crowding this view.</span>
-                    </section>
-                </div>
+                <div class="od-execution-key" title="${escapeHtml(instance.executionKey || "-")}">${escapeHtml(instance.executionKey || "-")}</div>
+                <section class="od-process-track" aria-label="Stages">
+                    ${stages.map((stage, index) => renderStageStep(stage, index, stages.length)).join("") || `<p class="od-empty">No stages recorded.</p>`}
+                </section>
             </section>`;
     }
 
@@ -335,19 +330,31 @@
         return (current || active || stages[0])?.id || null;
     }
 
-    function renderStageStep(stage) {
+    function renderStageStep(stage, index, total) {
         const taskCount = (stage.tasks || []).length;
-        const activeClass = stage.id === selectedStageId ? "active" : "";
+        const isSelected = stage.id === selectedStageId;
         const waitingTask = (stage.tasks || []).find(task => task.status === "Waiting" || task.status === "WaitingResponse" || task.waitingSinceUtc);
+        const stateClass = stage.status === "Completed"
+            ? "is-completed"
+            : stage.status === "Running" || stage.status === "Waiting"
+                ? "is-current"
+                : stage.status === "Failed"
+                    ? "is-failed"
+                    : "is-pending";
+        const selectedClass = isSelected ? "is-selected" : "";
+        const marker = stage.status === "Completed"
+            ? `<i class="bi bi-check-lg"></i>`
+            : `<span></span>`;
         return `
-            <button type="button" class="od-stage-step ${activeClass}" data-open-stage="${escapeHtml(stage.id)}">
-                <span class="od-stage-step-marker">${escapeHtml(stage.order)}</span>
-                <span class="od-stage-step-copy">
-                    <strong>${escapeHtml(stage.stageKey)}</strong>
-                    <small>${taskCount} task${taskCount === 1 ? "" : "s"} | ${formatDate(stage.startedOnUtc)}</small>
+            <button type="button" class="od-process-step ${stateClass} ${selectedClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
+                <span class="od-process-line" aria-hidden="true"></span>
+                <span class="od-process-marker">${marker}</span>
+                <span class="od-process-copy">
+                    <strong>Step ${escapeHtml(stage.order)}</strong>
+                    <span>${escapeHtml(stage.stageKey)}</span>
+                    <small>${escapeHtml(stage.status)} | ${taskCount} task${taskCount === 1 ? "" : "s"}</small>
                     ${waitingTask ? `<em>Waiting: ${escapeHtml(waitingTask.taskKey)}</em>` : ""}
                 </span>
-                ${badge(stage.status)}
             </button>`;
     }
 
@@ -693,6 +700,14 @@
     function field(label, value, allowHtml) {
         const content = allowHtml ? value : escapeHtml(value);
         return `<div class="od-detail-field"><span>${escapeHtml(label)}</span><strong>${content}</strong></div>`;
+    }
+
+    function metaPill(label, value) {
+        return `
+            <span class="od-meta-pill">
+                <small>${escapeHtml(label)}</small>
+                <strong>${escapeHtml(value)}</strong>
+            </span>`;
     }
 
     function badge(status) {
