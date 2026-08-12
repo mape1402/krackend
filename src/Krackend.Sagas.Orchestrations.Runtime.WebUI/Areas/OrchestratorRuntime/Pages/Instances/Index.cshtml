@@ -11,10 +11,13 @@
         traffic = Model.Traffic,
         instances = Model.Instances
     };
+    var initialPageSummary = Model.Instances.Count == 0
+        ? "0-0 of 0"
+        : $"1-{Math.Min(Model.Instances.Count, 25)} of {Model.Instances.Count}";
 }
 
 @section Head {
-    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-6" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-9" />
 }
 
 <div class="od-page-head">
@@ -53,6 +56,27 @@
         <span class="od-item-meta"><span data-instance-count>@Model.Instances.Count</span> visible</span>
     </div>
 
+    <div class="od-instance-controls">
+        <label class="od-instance-search">
+            <i class="bi bi-search"></i>
+            <input type="search" data-instance-search placeholder="Search trace, saga or orchestration" autocomplete="off" />
+        </label>
+        <div class="od-instance-pager">
+            <label>
+                <span>Rows</span>
+                <select data-page-size>
+                    <option value="15">15</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="75">75</option>
+                </select>
+            </label>
+            <button type="button" data-page-prev aria-label="Previous page"><i class="bi bi-chevron-left"></i></button>
+            <span data-page-summary>@initialPageSummary</span>
+            <button type="button" data-page-next aria-label="Next page"><i class="bi bi-chevron-right"></i></button>
+        </div>
+    </div>
+
     <div class="od-instance-table-wrap">
         <table class="od-instance-table">
             <thead>
@@ -71,8 +95,7 @@
                     <tr data-instance-id="@instance.Id" data-instance-status="@instance.Status" tabindex="0">
                         <td>
                             <strong>@instance.OrchestrationDefinitionKey</strong>
-                            <small>@instance.CorrelationId</small>
-                            <small>@instance.Id</small>
+                            <small><span>@instance.CorrelationId</span><span>@instance.Id</span></small>
                         </td>
                         <td><span class="od-status @instance.StatusClass" data-instance-status-label>@instance.Status</span></td>
                         <td data-instance-stage>@(instance.CurrentStageKey ?? "-")</td>
@@ -142,5 +165,5 @@
         window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-6"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-9"></script>
 }
