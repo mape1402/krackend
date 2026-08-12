@@ -57,7 +57,7 @@ public sealed class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        var instances = await _instanceRepository.GetRecent(EnvironmentKey, 75, cancellationToken);
+        var instances = await _instanceRepository.GetRecent(EnvironmentKey, 500, cancellationToken);
         Instances = instances.Select(ToRow).ToArray();
 
         var transitions = await _transitionRepository.GetRecent(EnvironmentKey, 250, cancellationToken);

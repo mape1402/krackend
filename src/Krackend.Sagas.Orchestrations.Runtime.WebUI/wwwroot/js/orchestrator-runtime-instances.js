@@ -9,6 +9,11 @@
     const grid = document.querySelector("[data-instance-grid]");
     const instanceCount = document.querySelector("[data-instance-count]");
     const chartCanvas = document.querySelector("[data-traffic-chart]");
+    const searchInput = document.querySelector("[data-instance-search]");
+    const pageSizeInput = document.querySelector("[data-page-size]");
+    const pagePrev = document.querySelector("[data-page-prev]");
+    const pageNext = document.querySelector("[data-page-next]");
+    const pageSummary = document.querySelector("[data-page-summary]");
 
     const detailModalElement = document.getElementById("runtimeInstanceModal");
     const detailTitle = document.querySelector("[data-detail-title]");
@@ -34,6 +39,9 @@
     let selectedStageId = null;
     let currentDetail = null;
     let detailRefreshTimer = null;
+    let searchTerm = "";
+    let currentPage = 1;
+    let pageSize = Number(pageSizeInput?.value || 25);
 
     (config.instances || []).forEach(item => {
         const row = normalizeRow(item);
@@ -50,6 +58,7 @@
     });
 
     renderCounters();
+    renderGrid();
     drawTraffic();
 
     function normalizeRow(item) {
@@ -116,9 +125,6 @@
         setCounter("waiting", rows.filter(row => row.status === "Waiting").length);
         setCounter("completed", rows.filter(row => row.status === "Completed").length);
         setCounter("failed", rows.filter(row => row.status === "Failed").length);
-        if (instanceCount) {
-            instanceCount.textContent = rows.length;
-        }
     }
 
     function setCounter(name, value) {
@@ -215,12 +221,12 @@
         });
 
         instances.set(id, row);
-        upsertGridRow(row, true);
 
         const bucket = bucketKey(eventData.occurredOnUtc);
         traffic.set(bucket, (traffic.get(bucket) || 0) + 1);
 
         renderCounters();
+        renderGrid();
         drawTraffic();
 
         if (selectedInstanceId === id) {
@@ -228,34 +234,81 @@
         }
     }
 
-    function upsertGridRow(row, moveToTop) {
+    function getFilteredRows() {
+        const term = searchTerm.trim().toLowerCase();
+        const rows = Array.from(instances.values()).sort((left, right) => {
+            const leftTime = new Date(left.lastUpdatedOnUtc || left.startedOnUtc || 0).getTime();
+            const rightTime = new Date(right.lastUpdatedOnUtc || right.startedOnUtc || 0).getTime();
+            return rightTime - leftTime;
+        });
+
+        if (!term) {
+            return rows;
+        }
+
+        return rows.filter(row => getSearchText(row).includes(term));
+    }
+
+    function getSearchText(row) {
+        return [
+            row.id,
+            row.correlationId,
+            row.executionKey,
+            row.orchestrationDefinitionKey,
+            row.currentStageKey,
+            row.currentTaskKey,
+            row.status
+        ].join(" ").toLowerCase();
+    }
+
+    function renderGrid() {
         if (!grid) {
             return;
         }
 
-        let element = grid.querySelector(`[data-instance-id="${row.id}"]`);
-        if (!element) {
-            element = document.createElement("tr");
-            element.setAttribute("data-instance-id", row.id);
-            element.setAttribute("tabindex", "0");
-            grid.prepend(element);
-        } else if (moveToTop) {
-            grid.prepend(element);
+        const rows = getFilteredRows();
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        currentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+        const start = (currentPage - 1) * pageSize;
+        const pageRows = rows.slice(start, start + pageSize);
+
+        if (instanceCount) {
+            instanceCount.textContent = rows.length;
         }
 
-        element.setAttribute("data-instance-status", row.status);
-        element.classList.add("live");
-        element.innerHTML = `
+        if (pageSummary) {
+            const first = rows.length === 0 ? 0 : start + 1;
+            const last = Math.min(start + pageRows.length, rows.length);
+            pageSummary.textContent = `${first}-${last} of ${rows.length}`;
+        }
+
+        if (pagePrev) {
+            pagePrev.disabled = currentPage <= 1;
+        }
+
+        if (pageNext) {
+            pageNext.disabled = currentPage >= totalPages;
+        }
+
+        grid.innerHTML = pageRows.length === 0
+            ? `<tr class="od-empty-row"><td colspan="6">No instances found.</td></tr>`
+            : pageRows.map(renderGridRow).join("");
+    }
+
+    function renderGridRow(row) {
+        return `
+            <tr data-instance-id="${escapeHtml(row.id)}" data-instance-status="${escapeHtml(row.status)}" tabindex="0">
             <td>
                 <strong>${escapeHtml(row.orchestrationDefinitionKey)}</strong>
-                <small>${escapeHtml(row.correlationId)}</small>
-                <small>${escapeHtml(row.id)}</small>
+                <small><span>${escapeHtml(row.correlationId)}</span><span>${escapeHtml(row.id)}</span></small>
             </td>
             <td><span class="od-status ${statusClass(row.status)}" data-instance-status-label>${escapeHtml(row.status)}</span></td>
             <td data-instance-stage>${escapeHtml(row.currentStageKey || "-")}</td>
             <td data-instance-task>${escapeHtml(row.currentTaskKey || "-")}</td>
             <td>${formatDate(row.startedOnUtc)}</td>
-            <td data-instance-updated>${formatDate(row.lastUpdatedOnUtc)}</td>`;
+            <td data-instance-updated>${formatDate(row.lastUpdatedOnUtc)}</td>
+            </tr>`;
     }
 
     async function openDetail(instanceId) {
@@ -755,6 +808,32 @@
             .replaceAll("\"", "&quot;")
             .replaceAll("'", "&#039;");
     }
+
+    function syncSearch() {
+        searchTerm = searchInput.value;
+        currentPage = 1;
+        renderGrid();
+    }
+
+    searchInput?.addEventListener("input", syncSearch);
+    searchInput?.addEventListener("search", syncSearch);
+    searchInput?.addEventListener("change", syncSearch);
+
+    pageSizeInput?.addEventListener("change", function () {
+        pageSize = Number(pageSizeInput.value || 25);
+        currentPage = 1;
+        renderGrid();
+    });
+
+    pagePrev?.addEventListener("click", function () {
+        currentPage -= 1;
+        renderGrid();
+    });
+
+    pageNext?.addEventListener("click", function () {
+        currentPage += 1;
+        renderGrid();
+    });
 
     document.addEventListener("click", function (event) {
         const row = event.target.closest("[data-instance-id]");
