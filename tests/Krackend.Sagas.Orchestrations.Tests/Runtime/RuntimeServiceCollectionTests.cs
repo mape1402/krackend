@@ -116,6 +116,19 @@ public sealed class RuntimeServiceCollectionTests
     }
 
     [Fact]
+    public void EngineRegistersRuntimeTimeoutPolicyEvaluatorByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<RuntimeTimeoutPolicyEvaluator>(
+            provider.GetRequiredService<IRuntimeTimeoutPolicyEvaluator>());
+    }
+
+    [Fact]
     public void EngineRegistersRuntimeCompensationPlanBuilderByDefault()
     {
         var services = new ServiceCollection();

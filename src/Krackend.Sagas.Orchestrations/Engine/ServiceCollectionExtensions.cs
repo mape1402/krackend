@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeConditionEvaluator, RuntimeConditionEvaluator>();
         services.AddScoped<IRuntimePayloadTransformer, RuntimePayloadTransformer>();
         services.AddScoped<IRuntimeRetryPolicyEvaluator, RuntimeRetryPolicyEvaluator>();
+        services.AddScoped<IRuntimeTimeoutPolicyEvaluator, RuntimeTimeoutPolicyEvaluator>();
         services.AddScoped<IRuntimeErrorPolicyResolver, RuntimeErrorPolicyResolver>();
         services.AddScoped<IRuntimeCompensationPlanBuilder, RuntimeCompensationPlanBuilder>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
