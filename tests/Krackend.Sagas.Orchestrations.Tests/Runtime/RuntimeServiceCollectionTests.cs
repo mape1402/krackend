@@ -114,4 +114,17 @@ public sealed class RuntimeServiceCollectionTests
         Assert.IsType<RuntimeErrorPolicyResolver>(
             provider.GetRequiredService<IRuntimeErrorPolicyResolver>());
     }
+
+    [Fact]
+    public void EngineRegistersRuntimeCompensationPlanBuilderByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<RuntimeCompensationPlanBuilder>(
+            provider.GetRequiredService<IRuntimeCompensationPlanBuilder>());
+    }
 }

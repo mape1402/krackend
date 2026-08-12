@@ -29,6 +29,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimePayloadTransformer, RuntimePayloadTransformer>();
         services.AddScoped<IRuntimeRetryPolicyEvaluator, RuntimeRetryPolicyEvaluator>();
         services.AddScoped<IRuntimeErrorPolicyResolver, RuntimeErrorPolicyResolver>();
+        services.AddScoped<IRuntimeCompensationPlanBuilder, RuntimeCompensationPlanBuilder>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
