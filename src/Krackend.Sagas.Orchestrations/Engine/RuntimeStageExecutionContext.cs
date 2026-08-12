@@ -18,6 +18,11 @@ internal sealed class RuntimeStageExecutionContext
     public required string OrchestrationVersion { get; init; }
 
     /// <summary>
+    /// Gets the runtime artifact document being executed.
+    /// </summary>
+    public required RuntimeArtifactDocument Document { get; init; }
+
+    /// <summary>
     /// Gets the runtime stage definition.
     /// </summary>
     public required RuntimeStageDocument Stage { get; init; }

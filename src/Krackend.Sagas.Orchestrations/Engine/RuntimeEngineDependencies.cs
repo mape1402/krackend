@@ -45,6 +45,11 @@ public sealed class RuntimeEngineDependencies
     public required ITaskDispatchRepository DispatchRepository { get; init; }
 
     /// <summary>
+    /// Gets the compensation execution repository.
+    /// </summary>
+    public required ICompensationExecutionRepository CompensationRepository { get; init; }
+
+    /// <summary>
     /// Gets the orchestration instance repository.
     /// </summary>
     public required IOrchestrationInstanceRepository InstanceRepository { get; init; }

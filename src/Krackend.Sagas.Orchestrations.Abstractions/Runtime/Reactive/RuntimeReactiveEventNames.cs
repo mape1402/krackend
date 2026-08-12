@@ -7,6 +7,7 @@ public static class RuntimeReactiveEventNames
 {
     public const string OrchestrationStarted = "orchestration.started";
     public const string OrchestrationWaiting = "orchestration.waiting";
+    public const string OrchestrationCompensating = "orchestration.compensating";
     public const string OrchestrationCompleted = "orchestration.completed";
     public const string OrchestrationFailed = "orchestration.failed";
     public const string StageStarted = "stage.started";
@@ -23,5 +24,6 @@ public static class RuntimeReactiveEventNames
     public const string TaskErrorPolicyApplied = "task.error.policy.applied";
     public const string TaskWaiting = "task.waiting";
     public const string TaskResponseReceived = "task.response.received";
+    public const string CompensationScheduled = "compensation.scheduled";
     public const string TransitionRecorded = "transition.recorded";
 }
