@@ -299,6 +299,7 @@ public sealed class RuntimeEngineIdempotencyTests
             ConditionEvaluator = new RuntimeConditionEvaluator(),
             PayloadTransformer = new RuntimePayloadTransformer(),
             RetryPolicyEvaluator = new RuntimeRetryPolicyEvaluator(),
+            TimeoutPolicyEvaluator = new RuntimeTimeoutPolicyEvaluator(),
             ErrorPolicyResolver = new RuntimeErrorPolicyResolver(),
             ReactiveEventPublisher = new NoopRuntimeReactiveEventPublisher()
         });

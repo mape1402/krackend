@@ -738,6 +738,8 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "TaskSkipped" => RuntimeReactiveEventNames.TaskSkipped,
             "TaskRetryScheduled" => RuntimeReactiveEventNames.TaskRetryScheduled,
             "TaskRetryStarted" => RuntimeReactiveEventNames.TaskRetryStarted,
+            "TaskTimedOut" => RuntimeReactiveEventNames.TaskTimedOut,
+            "TaskTimeoutPolicyApplied" => RuntimeReactiveEventNames.TaskTimeoutPolicyApplied,
             "TaskErrorPolicyApplied" => RuntimeReactiveEventNames.TaskErrorPolicyApplied,
             "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
             "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
