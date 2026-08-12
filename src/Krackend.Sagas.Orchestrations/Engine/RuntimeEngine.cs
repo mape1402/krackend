@@ -112,6 +112,10 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var taskExecution = await _taskRepository.GetById(ParseId(command.TaskExecutionId, nameof(command.TaskExecutionId)), cancellationToken);
         var stageExecution = await _stageRepository.GetById(taskExecution.StageExecutionId, cancellationToken);
         var attempt = await ResolveResponseAttempt(taskExecution, command, cancellationToken);
+
+        if (!CanContinueFromResponse(instance, taskExecution, attempt))
+            return DuplicateResponseIgnored(instance);
+
         await CompleteResponse(instance, stageExecution, taskExecution, attempt, command, cancellationToken);
         await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
 
@@ -123,6 +127,23 @@ public sealed class RuntimeEngine : IRuntimeEngine
             InstanceId = instance.Id.ToString()
         };
     }
+
+    private static bool CanContinueFromResponse(
+        OrchestrationInstance instance,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt)
+        => instance.Status == OrchestrationInstanceStatus.Waiting
+            && taskExecution.Status == TaskExecutionStatus.WaitingResponse
+            && attempt.Status == TaskExecutionStatus.WaitingResponse;
+
+    private static RuntimeEngineProcessResult DuplicateResponseIgnored(OrchestrationInstance instance)
+        => new()
+        {
+            Succeeded = true,
+            Status = instance.Status.ToString(),
+            Message = "Runtime response ignored because the correlated task is no longer waiting.",
+            InstanceId = instance.Id.ToString()
+        };
 
     private async Task Execute(TriggerPromotionResult promotion, CancellationToken cancellationToken)
     {
