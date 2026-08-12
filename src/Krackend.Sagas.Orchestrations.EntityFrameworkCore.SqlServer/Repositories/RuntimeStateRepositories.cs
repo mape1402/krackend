@@ -191,6 +191,17 @@ public sealed class TaskExecutionRepository : ITaskExecutionRepository
             .Where(x => x.OrchestrationInstanceId == instanceId)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(
+        DateTime dueBeforeUtc,
+        CancellationToken cancellationToken = default)
+        => await _dbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                        x.WaitingSinceUtc.HasValue &&
+                        x.WaitingSinceUtc.Value <= dueBeforeUtc)
+            .OrderBy(x => x.WaitingSinceUtc)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
 }
 
 public sealed class TaskExecutionAttemptRepository : ITaskExecutionAttemptRepository
@@ -219,6 +230,17 @@ public sealed class TaskExecutionAttemptRepository : ITaskExecutionAttemptReposi
         => await _dbContext.TaskExecutionAttempts.AsNoTracking()
             .Where(x => x.TaskExecutionId == taskExecutionId)
             .OrderBy(x => x.AttemptNumber)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskExecutionAttempt>> GetWaitingResponseOlderThan(
+        DateTime dueBeforeUtc,
+        CancellationToken cancellationToken = default)
+        => await _dbContext.TaskExecutionAttempts.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                        x.WaitingSinceUtc.HasValue &&
+                        x.WaitingSinceUtc.Value <= dueBeforeUtc)
+            .OrderBy(x => x.WaitingSinceUtc)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
             .ToArrayAsync(cancellationToken);
 }
@@ -280,6 +302,13 @@ public sealed class CompensationExecutionRepository : ICompensationExecutionRepo
     public async Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
         => await _dbContext.CompensationExecutions.AsNoTracking()
             .Where(x => x.OrchestrationInstanceId == instanceId)
+            .OrderBy(x => x.StartedOnUtc)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
+        => await _dbContext.CompensationExecutions.AsNoTracking()
+            .Where(x => x.Status == "Pending")
             .OrderBy(x => x.StartedOnUtc)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
             .ToArrayAsync(cancellationToken);

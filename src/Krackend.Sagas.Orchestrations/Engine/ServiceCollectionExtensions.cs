@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeTimeoutPolicyEvaluator, RuntimeTimeoutPolicyEvaluator>();
         services.AddScoped<IRuntimeErrorPolicyResolver, RuntimeErrorPolicyResolver>();
         services.AddScoped<IRuntimeCompensationPlanBuilder, RuntimeCompensationPlanBuilder>();
+        services.AddScoped<IRuntimePendingWorkProcessor, RuntimePendingWorkProcessor>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();

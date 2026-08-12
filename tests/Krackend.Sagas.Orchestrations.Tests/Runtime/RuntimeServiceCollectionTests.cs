@@ -140,4 +140,16 @@ public sealed class RuntimeServiceCollectionTests
         Assert.IsType<RuntimeCompensationPlanBuilder>(
             provider.GetRequiredService<IRuntimeCompensationPlanBuilder>());
     }
+
+    [Fact]
+    public void EngineRegistersRuntimePendingWorkProcessorByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRuntimePendingWorkProcessor) &&
+            descriptor.ImplementationType == typeof(RuntimePendingWorkProcessor));
+    }
 }
