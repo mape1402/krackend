@@ -24,6 +24,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
     private readonly IRuntimeConditionEvaluator _conditionEvaluator;
     private readonly IRuntimePayloadTransformer _payloadTransformer;
+    private readonly IRuntimeRetryPolicyEvaluator _retryPolicyEvaluator;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
@@ -45,6 +46,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _taskDispatcherResolver = dependencies.TaskDispatcherResolver;
         _conditionEvaluator = dependencies.ConditionEvaluator;
         _payloadTransformer = dependencies.PayloadTransformer;
+        _retryPolicyEvaluator = dependencies.RetryPolicyEvaluator;
         _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
     }
 
@@ -275,23 +277,43 @@ public sealed class RuntimeEngine : IRuntimeEngine
         if (_taskDispatcherResolver.Resolve(context.Task.Kind) is null)
             return await FailUnsupportedTask(context, taskExecution, cancellationToken);
 
-        var attempt = await CreateAttempt(context, taskExecution, started, cancellationToken);
-        await WriteTransition(RuntimeTransition.ForAttemptPayload(context.Instance, "TaskInputTransformed", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt, attempt.RequestPayload), cancellationToken);
-        var dispatch = await CreateDispatch(context, taskExecution, attempt, cancellationToken);
-        var dispatchResult = await DispatchTask(context, taskExecution, attempt, dispatch, started, cancellationToken);
+        var retryPolicy = _retryPolicyEvaluator.Evaluate(context.Task.RetryPolicy);
+        RuntimeTaskDispatchFailure dispatchFailure = null;
+        for (var attemptNumber = 1; attemptNumber <= retryPolicy.MaxAttempts; attemptNumber++)
+        {
+            if (attemptNumber > 1)
+                await MarkTaskRetryStarted(context, taskExecution, attemptNumber, cancellationToken);
 
-        if (!dispatchResult.Succeeded)
-            return await FailDispatch(CreateDispatchFailure(context, taskExecution, attempt, dispatch, dispatchResult), cancellationToken);
+            var attempt = await CreateAttempt(context, taskExecution, started, attemptNumber, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttemptPayload(context.Instance, "TaskInputTransformed", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt, attempt.RequestPayload), cancellationToken);
+            var dispatch = await CreateDispatch(context, taskExecution, attempt, cancellationToken);
+            var dispatchResult = await DispatchTask(context, taskExecution, attempt, dispatch, started, cancellationToken);
 
-        await MarkDispatchAccepted(dispatch, cancellationToken);
-        await MarkTaskDispatchAccepted(context, taskExecution, attempt, dispatch, cancellationToken);
+            if (!dispatchResult.Succeeded)
+            {
+                dispatchFailure = CreateDispatchFailure(context, taskExecution, attempt, dispatch, dispatchResult);
+                await MarkFailedDispatchAttempt(dispatchFailure, cancellationToken);
+                if (attemptNumber < retryPolicy.MaxAttempts)
+                {
+                    await MarkTaskRetryScheduled(context, taskExecution, attempt, attemptNumber, retryPolicy, cancellationToken);
+                    continue;
+                }
 
-        if (context.Task.AwaitResponse)
-            await MarkTaskWaiting(context, taskExecution, attempt, cancellationToken);
-        else
-            await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskCompleted", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
+                return await FailDispatch(dispatchFailure, cancellationToken);
+            }
 
-        return taskExecution;
+            await MarkDispatchAccepted(dispatch, cancellationToken);
+            await MarkTaskDispatchAccepted(context, taskExecution, attempt, dispatch, cancellationToken);
+
+            if (context.Task.AwaitResponse)
+                await MarkTaskWaiting(context, taskExecution, attempt, cancellationToken);
+            else
+                await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskCompleted", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
+
+            return taskExecution;
+        }
+
+        return await FailDispatch(dispatchFailure, cancellationToken);
     }
 
     private static TaskExecution CreateTaskExecution(RuntimeTaskExecutionContext context, DateTime started)
@@ -382,14 +404,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
         return taskExecution;
     }
 
-    private async Task<TaskExecutionAttempt> CreateAttempt(RuntimeTaskExecutionContext context, TaskExecution taskExecution, DateTime started, CancellationToken cancellationToken)
+    private async Task<TaskExecutionAttempt> CreateAttempt(RuntimeTaskExecutionContext context, TaskExecution taskExecution, DateTime started, int attemptNumber, CancellationToken cancellationToken)
     {
         var transformation = _payloadTransformer.Transform(context.Task.Transformation, context.Instance.SnapshotPayload);
         var attempt = new TaskExecutionAttempt
         {
             Id = Id.New(),
             TaskExecutionId = taskExecution.Id,
-            AttemptNumber = 1,
+            AttemptNumber = attemptNumber,
             Status = TaskExecutionStatus.Running,
             StartedOnUtc = started,
             RequestPayload = transformation.Payload,
@@ -399,6 +421,8 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 ["wasTransformed"] = transformation.WasTransformed
             }
         };
+        taskExecution.LastAttemptNumber = attemptNumber;
+        await _taskRepository.Update(taskExecution, cancellationToken);
         await _attemptRepository.Create(attempt, cancellationToken);
         return attempt;
     }
@@ -437,6 +461,53 @@ public sealed class RuntimeEngine : IRuntimeEngine
             StartedOnUtc = started
         });
         return dispatcher.Dispatch(command, cancellationToken);
+    }
+
+    private async Task MarkFailedDispatchAttempt(RuntimeTaskDispatchFailure failure, CancellationToken cancellationToken)
+    {
+        var dispatch = failure.Dispatch;
+        var attempt = failure.Attempt;
+        var dispatchResult = failure.DispatchResult;
+
+        dispatch.DispatchStatus = "Failed";
+        dispatch.FailedOnUtc = DateTime.UtcNow;
+        dispatch.FailureReason = dispatchResult.FailureReason;
+        await _dispatchRepository.Update(dispatch, cancellationToken);
+
+        attempt.Status = TaskExecutionStatus.Failed;
+        attempt.FailedOnUtc = dispatch.FailedOnUtc;
+        attempt.ErrorCode = "MessagingDispatchFailed";
+        attempt.ErrorMessage = dispatchResult.FailureReason;
+        attempt.DispatchId = dispatch.Id;
+        await _attemptRepository.Update(attempt, cancellationToken);
+    }
+
+    private async Task MarkTaskRetryScheduled(
+        RuntimeTaskExecutionContext context,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        int attemptNumber,
+        RuntimeRetryPolicy retryPolicy,
+        CancellationToken cancellationToken)
+    {
+        taskExecution.Status = TaskExecutionStatus.Retrying;
+        taskExecution.Metadata["retryAttempt"] = attemptNumber;
+        taskExecution.Metadata["maxRetries"] = retryPolicy.MaxRetries;
+        taskExecution.Metadata["retryStrategy"] = retryPolicy.StrategyType ?? string.Empty;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskRetryScheduled", TaskExecutionStatus.Failed, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
+    }
+
+    private async Task MarkTaskRetryStarted(
+        RuntimeTaskExecutionContext context,
+        TaskExecution taskExecution,
+        int attemptNumber,
+        CancellationToken cancellationToken)
+    {
+        taskExecution.Status = TaskExecutionStatus.Running;
+        taskExecution.Metadata["retryAttempt"] = attemptNumber;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskRetryStarted", TaskExecutionStatus.Retrying, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
     }
 
     private async Task<TaskExecution> FailDispatch(RuntimeTaskDispatchFailure failure, CancellationToken cancellationToken)
@@ -575,6 +646,8 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "TaskCompleted" => RuntimeReactiveEventNames.TaskCompleted,
             "TaskFailed" => RuntimeReactiveEventNames.TaskFailed,
             "TaskSkipped" => RuntimeReactiveEventNames.TaskSkipped,
+            "TaskRetryScheduled" => RuntimeReactiveEventNames.TaskRetryScheduled,
+            "TaskRetryStarted" => RuntimeReactiveEventNames.TaskRetryStarted,
             "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
             "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
             _ => RuntimeReactiveEventNames.TransitionRecorded

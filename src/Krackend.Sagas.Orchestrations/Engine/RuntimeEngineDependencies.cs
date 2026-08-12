@@ -70,6 +70,11 @@ public sealed class RuntimeEngineDependencies
     public required IRuntimePayloadTransformer PayloadTransformer { get; init; }
 
     /// <summary>
+    /// Gets the runtime retry policy evaluator.
+    /// </summary>
+    public required IRuntimeRetryPolicyEvaluator RetryPolicyEvaluator { get; init; }
+
+    /// <summary>
     /// Gets the reactive event publisher.
     /// </summary>
     public required IRuntimeReactiveEventPublisher ReactiveEventPublisher { get; init; }

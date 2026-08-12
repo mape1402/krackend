@@ -27,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeTaskDispatcherResolver, RuntimeTaskDispatcherResolver>();
         services.AddScoped<IRuntimeConditionEvaluator, RuntimeConditionEvaluator>();
         services.AddScoped<IRuntimePayloadTransformer, RuntimePayloadTransformer>();
+        services.AddScoped<IRuntimeRetryPolicyEvaluator, RuntimeRetryPolicyEvaluator>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
@@ -51,6 +52,7 @@ public static class ServiceCollectionExtensions
             TaskDispatcherResolver = provider.GetRequiredService<IRuntimeTaskDispatcherResolver>(),
             ConditionEvaluator = provider.GetRequiredService<IRuntimeConditionEvaluator>(),
             PayloadTransformer = provider.GetRequiredService<IRuntimePayloadTransformer>(),
+            RetryPolicyEvaluator = provider.GetRequiredService<IRuntimeRetryPolicyEvaluator>(),
             ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
         };
     }
