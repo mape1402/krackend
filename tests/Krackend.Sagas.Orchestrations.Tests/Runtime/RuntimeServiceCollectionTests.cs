@@ -101,4 +101,17 @@ public sealed class RuntimeServiceCollectionTests
         Assert.IsType<RuntimeRetryPolicyEvaluator>(
             provider.GetRequiredService<IRuntimeRetryPolicyEvaluator>());
     }
+
+    [Fact]
+    public void EngineRegistersRuntimeErrorPolicyResolverByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<RuntimeErrorPolicyResolver>(
+            provider.GetRequiredService<IRuntimeErrorPolicyResolver>());
+    }
 }
