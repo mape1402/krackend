@@ -16,6 +16,12 @@
     const detailBody = document.querySelector("[data-detail-body]");
     const detailModal = detailModalElement && window.bootstrap ? new bootstrap.Modal(detailModalElement) : null;
 
+    const stageModalElement = document.getElementById("runtimeStageModal");
+    const stageTitle = document.querySelector("[data-stage-title]");
+    const stageSubtitle = document.querySelector("[data-stage-subtitle]");
+    const stageBody = document.querySelector("[data-stage-body]");
+    const stageModal = stageModalElement && window.bootstrap ? new bootstrap.Modal(stageModalElement) : null;
+
     const timelineModalElement = document.getElementById("runtimeTimelineModal");
     const timelineTitle = document.querySelector("[data-timeline-title]");
     const timelineSubtitle = document.querySelector("[data-timeline-subtitle]");
@@ -75,6 +81,10 @@
     }
 
     function formatDate(value) {
+        if (!value) {
+            return "-";
+        }
+
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) {
             return "-";
@@ -309,8 +319,9 @@
                     <aside class="od-stage-stepper" aria-label="Stages">
                         ${stages.map(renderStageStep).join("") || `<p class="od-empty">No stages recorded.</p>`}
                     </aside>
-                    <section class="od-stage-focus" data-stage-focus>
-                        ${renderStageFocus(selectedStageId)}
+                    <section class="od-stepper-hint">
+                        <strong>Click a stage to inspect its tasks.</strong>
+                        <span>Each stage opens with attempts, dispatch, input and output without crowding this view.</span>
                     </section>
                 </div>
             </section>`;
@@ -327,23 +338,38 @@
     function renderStageStep(stage) {
         const taskCount = (stage.tasks || []).length;
         const activeClass = stage.id === selectedStageId ? "active" : "";
+        const waitingTask = (stage.tasks || []).find(task => task.status === "Waiting" || task.status === "WaitingResponse" || task.waitingSinceUtc);
         return `
-            <button type="button" class="od-stage-step ${activeClass}" data-stage-step="${escapeHtml(stage.id)}">
+            <button type="button" class="od-stage-step ${activeClass}" data-open-stage="${escapeHtml(stage.id)}">
                 <span class="od-stage-step-marker">${escapeHtml(stage.order)}</span>
                 <span class="od-stage-step-copy">
                     <strong>${escapeHtml(stage.stageKey)}</strong>
                     <small>${taskCount} task${taskCount === 1 ? "" : "s"} | ${formatDate(stage.startedOnUtc)}</small>
+                    ${waitingTask ? `<em>Waiting: ${escapeHtml(waitingTask.taskKey)}</em>` : ""}
                 </span>
                 ${badge(stage.status)}
             </button>`;
     }
 
-    function renderStageFocus(stageId) {
+    function openStage(stageId) {
         const stage = findStage(stageId);
-        if (!stage) {
-            return `<p class="od-empty">No stage selected.</p>`;
+        if (!stage || !stageBody) {
+            return;
         }
 
+        selectedStageId = stage.id;
+        detailBody?.querySelectorAll("[data-open-stage]").forEach(step => step.classList.toggle("active", step.getAttribute("data-open-stage") === selectedStageId));
+        if (stageTitle) {
+            stageTitle.textContent = stage.stageKey;
+        }
+        if (stageSubtitle) {
+            stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
+        }
+        stageBody.innerHTML = renderStageDetail(stage);
+        stageModal?.show();
+    }
+
+    function renderStageDetail(stage) {
         const tasks = stage.tasks || [];
         return `
             <article class="od-stage-focus-card">
@@ -396,15 +422,19 @@
     function openTask(taskId) {
         const task = findTask(taskId);
         const stage = findStageForTask(taskId);
-        const focus = detailBody?.querySelector("[data-stage-focus]");
-        if (!task || !stage || !focus) {
+        if (!task || !stage || !stageBody) {
             return;
         }
 
         selectedStageId = stage.id;
         const attempts = task.attempts || [];
-        detailBody.querySelectorAll("[data-stage-step]").forEach(step => step.classList.toggle("active", step.getAttribute("data-stage-step") === selectedStageId));
-        focus.innerHTML = `
+        if (stageTitle) {
+            stageTitle.textContent = task.taskKey;
+        }
+        if (stageSubtitle) {
+            stageSubtitle.textContent = `${stage.stageKey} | ${task.status} | ${task.correlationId || "-"}`;
+        }
+        stageBody.innerHTML = `
             <section class="od-task-detail-shell">
                 <button type="button" class="btn btn-outline-secondary od-back-action" data-back-stage="${escapeHtml(stage.id)}">
                     Back to ${escapeHtml(stage.stageKey)}
@@ -446,6 +476,7 @@
                     ${attempts.map(renderAttemptDetail).join("") || `<p class="od-empty">No attempts recorded.</p>`}
                 </section>
             </section>`;
+        stageModal?.show();
     }
 
     function renderAttemptDetail(attempt) {
@@ -529,6 +560,7 @@
     }
 
     function renderTimelineEntry(transition, index) {
+        const context = describeTransition(transition);
         return `
             <article class="od-timeline-entry">
                 <div class="od-timeline-marker">
@@ -538,15 +570,59 @@
                     <header>
                         <div>
                             <strong>${escapeHtml(transition.transitionType)}</strong>
-                            <small>${escapeHtml(transition.fromStatus || "-")} -> ${escapeHtml(transition.toStatus || "-")}</small>
+                            <small>${escapeHtml(context.summary)}</small>
                         </div>
                         <time>${formatDate(transition.occurredOnUtc)}</time>
                     </header>
-                    ${transition.message ? `<p>${escapeHtml(transition.message)}</p>` : ""}
-                    ${transition.stageKey || transition.taskKey ? `<div class="od-chip-row">${transition.stageKey ? `<span class="od-meta-chip">${escapeHtml(transition.stageKey)}</span>` : ""}${transition.taskKey ? `<span class="od-meta-chip">${escapeHtml(transition.taskKey)}</span>` : ""}</div>` : ""}
+                    <div class="od-transition-status">${escapeHtml(transition.fromStatus || "-")} -> ${escapeHtml(transition.toStatus || "-")}</div>
+                    ${shouldRenderTransitionMessage(transition, context) ? `<p>${escapeHtml(transition.message)}</p>` : ""}
+                    ${context.chips.length ? `<div class="od-chip-row">${context.chips.map(chip => `<span class="od-meta-chip">${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
                     ${transition.payload ? `<details><summary>Payload</summary>${codeBlock(transition.payload)}</details>` : ""}
                 </div>
             </article>`;
+    }
+
+    function describeTransition(transition) {
+        const stage = transition.stageExecutionId ? findStage(transition.stageExecutionId) : findStageForTask(transition.taskExecutionId);
+        const inferredTask = findTaskForAttempt(transition.taskExecutionAttemptId) || findPreviousTaskForTransition(transition);
+        const task = transition.taskExecutionId ? findTask(transition.taskExecutionId) : inferredTask;
+        const attempt = transition.taskExecutionAttemptId ? findAttempt(transition.taskExecutionAttemptId) : null;
+        const dispatch = attempt?.dispatch;
+        const chips = [];
+
+        if (stage) {
+            chips.push(`Stage: ${stage.stageKey}`);
+        }
+        if (task) {
+            chips.push(`Task: ${task.taskKey}`);
+        }
+        if (attempt) {
+            chips.push(`Attempt: ${attempt.attemptNumber}`);
+        }
+        if (dispatch?.destination) {
+            chips.push(`Destination: ${dispatch.destination}`);
+        }
+
+        let summary = transition.message || transition.transitionType;
+        if (transition.transitionType?.startsWith("Stage") && stage) {
+            summary = `${stage.stageKey} | ${transition.transitionType}`;
+        } else if (transition.transitionType?.startsWith("Task") && task) {
+            summary = `${task.taskKey} | ${transition.transitionType}`;
+        } else if (transition.transitionType === "InstanceWaitingResponse" && task) {
+            summary = `Instance waiting for ${task.taskKey}`;
+        } else if (transition.transitionType === "InstanceStarted") {
+            summary = `Instance started: ${currentDetail?.instance?.orchestrationDefinitionKey || "-"}`;
+        }
+
+        return { summary, chips };
+    }
+
+    function shouldRenderTransitionMessage(transition, context) {
+        if (!transition.message) {
+            return false;
+        }
+
+        return transition.message !== transition.transitionType && transition.message !== context.summary;
     }
 
     function findStage(stageId) {
@@ -554,6 +630,10 @@
     }
 
     function findTask(taskId) {
+        if (!taskId) {
+            return null;
+        }
+
         for (const stage of currentDetail?.stages || []) {
             const task = (stage.tasks || []).find(item => item.id === taskId);
             if (task) {
@@ -564,7 +644,49 @@
         return null;
     }
 
+    function findTaskForAttempt(attemptId) {
+        if (!attemptId) {
+            return null;
+        }
+
+        for (const stage of currentDetail?.stages || []) {
+            const task = (stage.tasks || []).find(item => (item.attempts || []).some(attempt => attempt.id === attemptId));
+            if (task) {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
+    function findAttempt(attemptId) {
+        const task = findTaskForAttempt(attemptId);
+        return (task?.attempts || []).find(attempt => attempt.id === attemptId) || null;
+    }
+
+    function findPreviousTaskForTransition(transition) {
+        const transitions = currentDetail?.transitions || [];
+        const index = transitions.findIndex(item => item.id === transition.id);
+        if (index < 1) {
+            return null;
+        }
+
+        for (let i = index - 1; i >= 0; i--) {
+            const candidate = transitions[i];
+            const task = candidate.taskExecutionId ? findTask(candidate.taskExecutionId) : findTaskForAttempt(candidate.taskExecutionAttemptId);
+            if (task) {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
     function findStageForTask(taskId) {
+        if (!taskId) {
+            return null;
+        }
+
         return (currentDetail?.stages || []).find(stage => (stage.tasks || []).some(task => task.id === taskId));
     }
 
@@ -612,14 +734,9 @@
             return;
         }
 
-        const stageStep = event.target.closest("[data-stage-step]");
+        const stageStep = event.target.closest("[data-open-stage]");
         if (stageStep) {
-            selectedStageId = stageStep.getAttribute("data-stage-step");
-            detailBody.querySelectorAll("[data-stage-step]").forEach(step => step.classList.toggle("active", step === stageStep));
-            const focus = detailBody.querySelector("[data-stage-focus]");
-            if (focus) {
-                focus.innerHTML = renderStageFocus(selectedStageId);
-            }
+            openStage(stageStep.getAttribute("data-open-stage"));
             return;
         }
 
@@ -632,10 +749,15 @@
         const backToStage = event.target.closest("[data-back-stage]");
         if (backToStage) {
             selectedStageId = backToStage.getAttribute("data-back-stage");
-            detailBody.querySelectorAll("[data-stage-step]").forEach(step => step.classList.toggle("active", step.getAttribute("data-stage-step") === selectedStageId));
-            const focus = detailBody.querySelector("[data-stage-focus]");
-            if (focus) {
-                focus.innerHTML = renderStageFocus(selectedStageId);
+            const stage = findStage(selectedStageId);
+            if (stage && stageBody) {
+                if (stageTitle) {
+                    stageTitle.textContent = stage.stageKey;
+                }
+                if (stageSubtitle) {
+                    stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
+                }
+                stageBody.innerHTML = renderStageDetail(stage);
             }
             return;
         }
