@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
             ConditionEvaluator = provider.GetRequiredService<IRuntimeConditionEvaluator>(),
             PayloadTransformer = provider.GetRequiredService<IRuntimePayloadTransformer>(),
             RetryPolicyEvaluator = provider.GetRequiredService<IRuntimeRetryPolicyEvaluator>(),
+            TimeoutPolicyEvaluator = provider.GetRequiredService<IRuntimeTimeoutPolicyEvaluator>(),
             ErrorPolicyResolver = provider.GetRequiredService<IRuntimeErrorPolicyResolver>(),
             ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
         };
