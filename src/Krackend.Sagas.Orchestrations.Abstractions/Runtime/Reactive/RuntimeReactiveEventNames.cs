@@ -20,6 +20,7 @@ public static class RuntimeReactiveEventNames
     public const string TaskSkipped = "task.skipped";
     public const string TaskRetryScheduled = "task.retry.scheduled";
     public const string TaskRetryStarted = "task.retry.started";
+    public const string TaskErrorPolicyApplied = "task.error.policy.applied";
     public const string TaskWaiting = "task.waiting";
     public const string TaskResponseReceived = "task.response.received";
     public const string TransitionRecorded = "transition.recorded";
