@@ -88,4 +88,17 @@ public sealed class RuntimeServiceCollectionTests
         Assert.IsType<RuntimePayloadTransformer>(
             provider.GetRequiredService<IRuntimePayloadTransformer>());
     }
+
+    [Fact]
+    public void EngineRegistersRuntimeRetryPolicyEvaluatorByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<RuntimeRetryPolicyEvaluator>(
+            provider.GetRequiredService<IRuntimeRetryPolicyEvaluator>());
+    }
 }
