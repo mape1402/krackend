@@ -21,7 +21,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IExecutionTransitionRepository _timelineRepository;
-    private readonly IMessagingCommandDispatcher _messagingDispatcher;
+    private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
@@ -40,7 +40,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _dispatchRepository = dependencies.DispatchRepository;
         _instanceRepository = dependencies.InstanceRepository;
         _timelineRepository = dependencies.TimelineRepository;
-        _messagingDispatcher = dependencies.MessagingDispatcher;
+        _taskDispatcherResolver = dependencies.TaskDispatcherResolver;
         _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
     }
 
@@ -244,7 +244,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await MarkInstanceTaskStarted(context, started, cancellationToken);
         await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskStarted", TaskExecutionStatus.Pending, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
 
-        if (!context.Task.IsMessaging)
+        if (_taskDispatcherResolver.Resolve(context.Task.Kind) is null)
             return await FailUnsupportedTask(context, taskExecution, cancellationToken);
 
         var attempt = await CreateAttempt(context, taskExecution, started, cancellationToken);
@@ -273,8 +273,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
             OrchestrationInstanceId = context.Instance.Id,
             StageExecutionId = context.StageExecution.Id,
             TaskKey = context.Task.Key,
-            TaskKind = context.Task.IsMessaging ? TaskKind.Messaging : TaskKind.Plugin,
+            TaskKind = ParseTaskKind(context.Task.Kind),
+            ExecutionMode = ParseTaskExecutionMode(context.Task.ExecutionMode),
             Status = TaskExecutionStatus.Running,
+            ParallelGroupId = ParseOptionalId(context.Task.ParallelGroupId),
+            OnErrorPolicy = ParseOnErrorPolicy(context.Task.OnErrorPolicy),
             AwaitResponse = context.Task.AwaitResponse,
             StartedOnUtc = started,
             LastAttemptNumber = 1,
@@ -282,10 +285,23 @@ public sealed class RuntimeEngine : IRuntimeEngine
             Metadata = new Dictionary<string, JsonNode>
             {
                 ["destination"] = context.Task.Destination ?? string.Empty,
-                ["executionMode"] = context.Task.ExecutionMode ?? string.Empty
+                ["executionMode"] = context.Task.ExecutionMode ?? string.Empty,
+                ["dispatchType"] = context.Task.DispatchType ?? string.Empty
             }
         };
     }
+
+    private static TaskKind ParseTaskKind(string value)
+        => Enum.TryParse<TaskKind>(value, true, out var parsed) ? parsed : TaskKind.Plugin;
+
+    private static TaskExecutionMode ParseTaskExecutionMode(string value)
+        => Enum.TryParse<TaskExecutionMode>(value, true, out var parsed) ? parsed : TaskExecutionMode.Sequential;
+
+    private static OnErrorPolicy ParseOnErrorPolicy(string value)
+        => Enum.TryParse<OnErrorPolicy>(value, true, out var parsed) ? parsed : OnErrorPolicy.Stop;
+
+    private static Id? ParseOptionalId(string value)
+        => Ulid.TryParse(value, out var parsed) ? new Id(parsed) : null;
 
     private static RuntimeStageExecutionContext CreateStageContext(OrchestrationInstance instance, string orchestrationVersion, RuntimeStageDocument stage)
     {
@@ -308,7 +324,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         };
     }
 
-    private static RuntimeTaskDispatchFailure CreateDispatchFailure(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, MessagingDispatchResult result)
+    private static RuntimeTaskDispatchFailure CreateDispatchFailure(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, RuntimeTaskDispatchResult result)
     {
         return new RuntimeTaskDispatchFailure
         {
@@ -358,7 +374,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         {
             Id = Id.New(),
             TaskExecutionAttemptId = attempt.Id,
-            DispatchType = "Messaging",
+            DispatchType = context.Task.Kind ?? string.Empty,
             Destination = context.Task.Destination ?? string.Empty,
             RequestPayload = attempt.RequestPayload.DeepClone(),
             DispatchStatus = "Pending",
@@ -369,9 +385,12 @@ public sealed class RuntimeEngine : IRuntimeEngine
         return dispatch;
     }
 
-    private Task<MessagingDispatchResult> DispatchTask(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, DateTime started, CancellationToken cancellationToken)
+    private Task<RuntimeTaskDispatchResult> DispatchTask(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, DateTime started, CancellationToken cancellationToken)
     {
-        var command = CreateDispatchCommand(new MessagingDispatchCommandSource
+        var dispatcher = _taskDispatcherResolver.Resolve(context.Task.Kind)
+            ?? throw new InvalidOperationException($"Task kind '{context.Task.Kind}' is not supported by the runtime dispatcher registry.");
+
+        var command = CreateDispatchRequest(new MessagingDispatchCommandSource
         {
             Instance = context.Instance,
             OrchestrationVersion = context.OrchestrationVersion,
@@ -382,7 +401,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             Task = context.Task,
             StartedOnUtc = started
         });
-        return _messagingDispatcher.Dispatch(command, cancellationToken);
+        return dispatcher.Dispatch(command, cancellationToken);
     }
 
     private async Task<TaskExecution> FailDispatch(RuntimeTaskDispatchFailure failure, CancellationToken cancellationToken)
@@ -524,12 +543,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
         };
     }
 
-    private static MessagingDispatchCommand CreateDispatchCommand(MessagingDispatchCommandSource source)
+    private static RuntimeTaskDispatchRequest CreateDispatchRequest(MessagingDispatchCommandSource source)
     {
-        return new MessagingDispatchCommand
+        return new RuntimeTaskDispatchRequest
         {
             CommandId = source.Dispatch.CommandId,
             CorrelationId = source.TaskExecution.CorrelationId,
+            TaskKind = source.Task.Kind,
+            DispatchType = source.Task.DispatchType,
             Destination = source.Task.Destination ?? string.Empty,
             MessageVersion = string.IsNullOrWhiteSpace(source.Task.MessageVersion) ? "1.0.0" : source.Task.MessageVersion,
             Payload = source.Dispatch.RequestPayload.DeepClone(),

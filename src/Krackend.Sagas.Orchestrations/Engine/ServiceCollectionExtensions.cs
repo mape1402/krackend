@@ -23,6 +23,8 @@ public static class ServiceCollectionExtensions
         services.AddKrackendSagasOrchestrationsMessaging();
         services.TryAddSingleton<IMessagePublisher, InMemoryMessagePublisher>();
         services.AddScoped<IMessagingCommandDispatcher, MessagingCommandDispatcher>();
+        services.AddScoped<IRuntimeTaskDispatcher, MessagingRuntimeTaskDispatcher>();
+        services.AddScoped<IRuntimeTaskDispatcherResolver, RuntimeTaskDispatcherResolver>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
@@ -44,7 +46,7 @@ public static class ServiceCollectionExtensions
             DispatchRepository = provider.GetRequiredService<ITaskDispatchRepository>(),
             InstanceRepository = provider.GetRequiredService<IOrchestrationInstanceRepository>(),
             TimelineRepository = provider.GetRequiredService<IExecutionTransitionRepository>(),
-            MessagingDispatcher = provider.GetRequiredService<IMessagingCommandDispatcher>(),
+            TaskDispatcherResolver = provider.GetRequiredService<IRuntimeTaskDispatcherResolver>(),
             ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
         };
     }
