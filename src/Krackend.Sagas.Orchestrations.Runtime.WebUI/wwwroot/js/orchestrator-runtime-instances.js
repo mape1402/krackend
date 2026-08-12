@@ -73,6 +73,8 @@
     function updateInstanceRow(eventData) {
         const row = document.querySelector(`[data-instance-id="${eventData.orchestrationInstanceId}"]`);
         if (!row) {
+            addInstanceRow(eventData);
+            updateCounters();
             return;
         }
 
@@ -80,6 +82,69 @@
         const label = row.querySelector("[data-instance-status-label]");
         if (label) {
             label.textContent = eventData.instanceStatus || eventData.toStatus || "";
+        }
+
+        updateCounters();
+    }
+
+    function addInstanceRow(eventData) {
+        const list = document.querySelector(".od-instance-list");
+        if (!list) {
+            return;
+        }
+
+        const id = eventData.orchestrationInstanceId;
+        const status = eventData.instanceStatus || eventData.toStatus || "";
+        const row = document.createElement("a");
+        row.className = "od-instance-row live";
+        row.href = `/runtime/instances?instanceId=${encodeURIComponent(id)}`;
+        row.setAttribute("data-instance-id", id);
+        row.setAttribute("data-instance-status", status);
+        row.innerHTML = `
+            <span>
+                <strong>${eventData.orchestrationDefinitionKey || ""}</strong>
+                <small>${eventData.correlationId || ""}</small>
+            </span>
+            <span class="od-status ${statusClass(status)}" data-instance-status-label>${status}</span>`;
+        list.prepend(row);
+    }
+
+    function statusClass(status) {
+        switch (status) {
+            case "Running":
+                return "od-status-running";
+            case "Waiting":
+                return "od-status-waiting";
+            case "Completed":
+                return "od-status-active";
+            case "Failed":
+                return "od-status-danger";
+            default:
+                return "od-status-inactive";
+        }
+    }
+
+    function updateCounters() {
+        const rows = Array.from(document.querySelectorAll("[data-instance-id]"));
+        const active = rows.filter(isActive).length;
+        const waiting = rows.filter(row => row.getAttribute("data-instance-status") === "Waiting").length;
+        const completed = rows.filter(row => row.getAttribute("data-instance-status") === "Completed").length;
+        const failed = rows.filter(row => row.getAttribute("data-instance-status") === "Failed").length;
+        setCounter("active", active);
+        setCounter("waiting", waiting);
+        setCounter("completed", completed);
+        setCounter("failed", failed);
+    }
+
+    function isActive(row) {
+        const status = row.getAttribute("data-instance-status");
+        return status === "Running" || status === "Waiting";
+    }
+
+    function setCounter(name, value) {
+        const element = document.querySelector(`[data-counter="${name}"]`);
+        if (element) {
+            element.textContent = value;
         }
     }
 
