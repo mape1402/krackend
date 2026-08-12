@@ -22,6 +22,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IExecutionTransitionRepository _timelineRepository;
     private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
+    private readonly IRuntimeConditionEvaluator _conditionEvaluator;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
@@ -41,6 +42,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _instanceRepository = dependencies.InstanceRepository;
         _timelineRepository = dependencies.TimelineRepository;
         _taskDispatcherResolver = dependencies.TaskDispatcherResolver;
+        _conditionEvaluator = dependencies.ConditionEvaluator;
         _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
     }
 
@@ -189,18 +191,29 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private async Task<StageExecution> ExecuteStage(RuntimeStageExecutionContext context, CancellationToken cancellationToken)
     {
         var started = DateTime.UtcNow;
+        var condition = _conditionEvaluator.Evaluate(context.Stage.ExecutionCondition, context.Instance.SnapshotPayload);
         var stageExecution = new StageExecution
         {
             Id = Id.New(),
             OrchestrationInstanceId = context.Instance.Id,
             StageKey = context.Stage.Key,
             Order = context.Stage.Order,
-            Status = StageExecutionStatus.Running,
-            StartedOnUtc = started,
-            ParallelGroupCount = 0
+            Status = condition.ShouldExecute ? StageExecutionStatus.Running : StageExecutionStatus.Skipped,
+            WasSkipped = !condition.ShouldExecute,
+            SkipReason = condition.Reason,
+            ExecutionConditionResult = condition.ShouldExecute,
+            StartedOnUtc = condition.ShouldExecute ? started : null,
+            CompletedOnUtc = condition.ShouldExecute ? null : started,
+            ParallelGroupCount = context.Stage.ParallelGroups.Count
         };
 
         await _stageRepository.Create(stageExecution, cancellationToken);
+        if (!condition.ShouldExecute)
+        {
+            await WriteTransition(RuntimeTransition.ForStage(context.Instance, "StageSkipped", StageExecutionStatus.Pending, stageExecution.Status, stageExecution), cancellationToken);
+            return stageExecution;
+        }
+
         context.Instance.CurrentStageKey = context.Stage.Key;
         context.Instance.LastUpdatedOnUtc = started;
         await _instanceRepository.Update(context.Instance, cancellationToken);
@@ -238,7 +251,20 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private async Task<TaskExecution> ExecuteTask(RuntimeTaskExecutionContext context, CancellationToken cancellationToken)
     {
         var started = DateTime.UtcNow;
+        var condition = _conditionEvaluator.Evaluate(context.Task.ExecutionCondition, context.Instance.SnapshotPayload);
         var taskExecution = CreateTaskExecution(context, started);
+        taskExecution.ExecutionConditionResult = condition.ShouldExecute;
+        if (!condition.ShouldExecute)
+        {
+            taskExecution.Status = TaskExecutionStatus.Skipped;
+            taskExecution.WasSkipped = true;
+            taskExecution.SkipReason = condition.Reason;
+            taskExecution.StartedOnUtc = null;
+            taskExecution.CompletedOnUtc = started;
+            await _taskRepository.Create(taskExecution, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskSkipped", TaskExecutionStatus.Pending, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
+            return taskExecution;
+        }
 
         await _taskRepository.Create(taskExecution, cancellationToken);
         await MarkInstanceTaskStarted(context, started, cancellationToken);
@@ -534,9 +560,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "StageStarted" => RuntimeReactiveEventNames.StageStarted,
             "StageCompleted" => RuntimeReactiveEventNames.StageCompleted,
             "StageFailed" => RuntimeReactiveEventNames.StageFailed,
+            "StageSkipped" => RuntimeReactiveEventNames.StageSkipped,
             "TaskStarted" => RuntimeReactiveEventNames.TaskStarted,
             "TaskCompleted" => RuntimeReactiveEventNames.TaskCompleted,
             "TaskFailed" => RuntimeReactiveEventNames.TaskFailed,
+            "TaskSkipped" => RuntimeReactiveEventNames.TaskSkipped,
             "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
             "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
             _ => RuntimeReactiveEventNames.TransitionRecorded

@@ -60,6 +60,11 @@ public sealed class RuntimeEngineDependencies
     public required IRuntimeTaskDispatcherResolver TaskDispatcherResolver { get; init; }
 
     /// <summary>
+    /// Gets the runtime condition evaluator.
+    /// </summary>
+    public required IRuntimeConditionEvaluator ConditionEvaluator { get; init; }
+
+    /// <summary>
     /// Gets the reactive event publisher.
     /// </summary>
     public required IRuntimeReactiveEventPublisher ReactiveEventPublisher { get; init; }
