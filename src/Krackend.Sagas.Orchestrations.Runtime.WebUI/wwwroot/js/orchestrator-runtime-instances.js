@@ -35,32 +35,49 @@
     let currentDetail = null;
     let detailRefreshTimer = null;
 
-    (config.instances || []).forEach(item => instances.set(item.id, normalizeRow(item)));
+    (config.instances || []).forEach(item => {
+        const row = normalizeRow(item);
+        if (row.id) {
+            instances.set(row.id, row);
+        }
+    });
     (config.traffic || []).forEach(item => {
-        const bucket = bucketKey(item.bucketUtc);
-        traffic.set(bucket, (traffic.get(bucket) || 0) + item.count);
+        const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"));
+        const count = Number(read(item, "count", "Count") || 0);
+        if (bucket) {
+            traffic.set(bucket, (traffic.get(bucket) || 0) + count);
+        }
     });
 
     renderCounters();
     drawTraffic();
 
     function normalizeRow(item) {
+        const status = read(item, "status", "Status") || "";
         return {
-            id: item.id,
-            orchestrationDefinitionKey: item.orchestrationDefinitionKey || "",
-            correlationId: item.correlationId || "",
-            executionKey: item.executionKey || "",
-            status: item.status || "",
-            statusClass: item.statusClass || statusClass(item.status),
-            currentStageKey: item.currentStageKey || "",
-            currentTaskKey: item.currentTaskKey || "",
-            startedOnUtc: item.startedOnUtc,
-            lastUpdatedOnUtc: item.lastUpdatedOnUtc,
-            waitingSinceUtc: item.waitingSinceUtc,
-            completedOnUtc: item.completedOnUtc,
-            failedOnUtc: item.failedOnUtc,
-            errorSummary: item.errorSummary || ""
+            id: read(item, "id", "Id"),
+            orchestrationDefinitionKey: read(item, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || "",
+            correlationId: read(item, "correlationId", "CorrelationId") || "",
+            executionKey: read(item, "executionKey", "ExecutionKey") || "",
+            status,
+            statusClass: read(item, "statusClass", "StatusClass") || statusClass(status),
+            currentStageKey: read(item, "currentStageKey", "CurrentStageKey") || "",
+            currentTaskKey: read(item, "currentTaskKey", "CurrentTaskKey") || "",
+            startedOnUtc: read(item, "startedOnUtc", "StartedOnUtc"),
+            lastUpdatedOnUtc: read(item, "lastUpdatedOnUtc", "LastUpdatedOnUtc"),
+            waitingSinceUtc: read(item, "waitingSinceUtc", "WaitingSinceUtc"),
+            completedOnUtc: read(item, "completedOnUtc", "CompletedOnUtc"),
+            failedOnUtc: read(item, "failedOnUtc", "FailedOnUtc"),
+            errorSummary: read(item, "errorSummary", "ErrorSummary") || ""
         };
+    }
+
+    function read(item, camelName, pascalName) {
+        if (!item) {
+            return undefined;
+        }
+
+        return item[camelName] ?? item[pascalName];
     }
 
     function setLiveState(state, label) {
