@@ -292,7 +292,7 @@
         }
 
         grid.innerHTML = pageRows.length === 0
-            ? `<tr class="od-empty-row"><td colspan="6">No instances found.</td></tr>`
+            ? `<tr class="od-empty-row"><td colspan="8">No instances found.</td></tr>`
             : pageRows.map(renderGridRow).join("");
     }
 
@@ -301,10 +301,18 @@
             <tr data-instance-id="${escapeHtml(row.id)}" data-instance-status="${escapeHtml(row.status)}" tabindex="0">
             <td>
                 <strong>${escapeHtml(row.orchestrationDefinitionKey)}</strong>
-                <small>
-                    <span><b>Trace</b>${escapeHtml(row.correlationId)}</span>
-                    <span><b>Saga</b>${escapeHtml(row.id)}</span>
-                </small>
+            </td>
+            <td class="od-id-cell">
+                <span class="od-id-copy">
+                    <span class="od-copy-value">${escapeHtml(row.correlationId)}</span>
+                    <button type="button" class="od-copy-button" data-copy-value="${escapeHtml(row.correlationId)}" aria-label="Copy correlation id" title="Copy CorrelationId"><i class="bi bi-copy"></i></button>
+                </span>
+            </td>
+            <td class="od-id-cell">
+                <span class="od-id-copy">
+                    <span class="od-copy-value">${escapeHtml(row.id)}</span>
+                    <button type="button" class="od-copy-button" data-copy-value="${escapeHtml(row.id)}" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
+                </span>
             </td>
             <td><span class="od-status ${statusClass(row.status)}" data-instance-status-label>${escapeHtml(row.status)}</span></td>
             <td data-instance-stage>${escapeHtml(row.currentStageKey || "-")}</td>
@@ -812,6 +820,34 @@
             .replaceAll("'", "&#039;");
     }
 
+    async function copyToClipboard(button) {
+        const value = button.getAttribute("data-copy-value") || "";
+        if (!value) {
+            return;
+        }
+
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+        } else {
+            const input = document.createElement("textarea");
+            input.value = value;
+            input.setAttribute("readonly", "");
+            input.style.position = "fixed";
+            input.style.opacity = "0";
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand("copy");
+            input.remove();
+        }
+
+        button.classList.add("copied");
+        button.setAttribute("title", "Copied");
+        window.setTimeout(() => {
+            button.classList.remove("copied");
+            button.setAttribute("title", button.getAttribute("aria-label") || "Copy");
+        }, 1200);
+    }
+
     function syncSearch() {
         searchTerm = searchInput.value;
         currentPage = 1;
@@ -839,6 +875,17 @@
     });
 
     document.addEventListener("click", function (event) {
+        const copyButton = event.target.closest("[data-copy-value]");
+        if (copyButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            copyToClipboard(copyButton).catch(() => {
+                copyButton.classList.add("copy-failed");
+                window.setTimeout(() => copyButton.classList.remove("copy-failed"), 1200);
+            });
+            return;
+        }
+
         const row = event.target.closest("[data-instance-id]");
         if (row && row.closest("[data-instance-grid]")) {
             openDetail(row.getAttribute("data-instance-id"));
@@ -881,6 +928,10 @@
 
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Enter") {
+            return;
+        }
+
+        if (event.target.closest("[data-copy-value]")) {
             return;
         }
 
