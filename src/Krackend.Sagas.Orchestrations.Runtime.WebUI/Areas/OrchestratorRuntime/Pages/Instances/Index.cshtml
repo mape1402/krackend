@@ -17,7 +17,7 @@
 }
 
 @section Head {
-    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-10" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-11" />
 }
 
 <div class="od-page-head">
@@ -59,7 +59,7 @@
     <div class="od-instance-controls">
         <label class="od-instance-search">
             <i class="bi bi-search"></i>
-            <input type="search" data-instance-search placeholder="Search trace, saga or orchestration" autocomplete="off" />
+            <input type="search" data-instance-search placeholder="Search correlation, saga or orchestration" autocomplete="off" />
         </label>
         <div class="od-instance-pager">
             <label>
@@ -81,7 +81,9 @@
         <table class="od-instance-table">
             <thead>
                 <tr>
-                    <th>Instance</th>
+                    <th>Orchestration</th>
+                    <th>CorrelationId</th>
+                    <th>SagaId</th>
                     <th>Status</th>
                     <th>Stage</th>
                     <th>Task</th>
@@ -95,10 +97,18 @@
                     <tr data-instance-id="@instance.Id" data-instance-status="@instance.Status" tabindex="0">
                         <td>
                             <strong>@instance.OrchestrationDefinitionKey</strong>
-                            <small>
-                                <span><b>Trace</b>@instance.CorrelationId</span>
-                                <span><b>Saga</b>@instance.Id</span>
-                            </small>
+                        </td>
+                        <td class="od-id-cell">
+                            <span class="od-id-copy">
+                                <span class="od-copy-value">@instance.CorrelationId</span>
+                                <button type="button" class="od-copy-button" data-copy-value="@instance.CorrelationId" aria-label="Copy correlation id" title="Copy CorrelationId"><i class="bi bi-copy"></i></button>
+                            </span>
+                        </td>
+                        <td class="od-id-cell">
+                            <span class="od-id-copy">
+                                <span class="od-copy-value">@instance.Id</span>
+                                <button type="button" class="od-copy-button" data-copy-value="@instance.Id" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
+                            </span>
                         </td>
                         <td><span class="od-status @instance.StatusClass" data-instance-status-label>@instance.Status</span></td>
                         <td data-instance-stage>@(instance.CurrentStageKey ?? "-")</td>
@@ -168,5 +178,5 @@
         window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-10"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-11"></script>
 }

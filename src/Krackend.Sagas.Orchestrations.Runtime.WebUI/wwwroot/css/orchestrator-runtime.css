@@ -545,7 +545,7 @@
 
 .od-instance-table {
     width: 100%;
-    min-width: 860px;
+    min-width: 1120px;
     border-collapse: collapse;
     table-layout: fixed;
     background: var(--od-surface);
@@ -553,26 +553,39 @@
 
 .od-instance-table th:nth-child(1),
 .od-instance-table td:nth-child(1) {
-    width: 34%;
+    width: 15%;
 }
 
 .od-instance-table th:nth-child(2),
 .od-instance-table td:nth-child(2) {
-    width: 13%;
+    width: 19%;
 }
 
 .od-instance-table th:nth-child(3),
-.od-instance-table td:nth-child(3),
-.od-instance-table th:nth-child(4),
-.od-instance-table td:nth-child(4) {
+.od-instance-table td:nth-child(3) {
     width: 16%;
 }
 
+.od-instance-table th:nth-child(4),
+.od-instance-table td:nth-child(4) {
+    width: 9%;
+}
+
 .od-instance-table th:nth-child(5),
-.od-instance-table td:nth-child(5),
+.od-instance-table td:nth-child(5) {
+    width: 13%;
+}
+
 .od-instance-table th:nth-child(6),
 .od-instance-table td:nth-child(6) {
-    width: 11.5%;
+    width: 12%;
+}
+
+.od-instance-table th:nth-child(7),
+.od-instance-table td:nth-child(7),
+.od-instance-table th:nth-child(8),
+.od-instance-table td:nth-child(8) {
+    width: 8%;
 }
 
 .od-instance-table th,
@@ -607,22 +620,6 @@
     outline: none;
 }
 
-.od-instance-table strong,
-.od-instance-table small {
-    display: block;
-}
-
-.od-instance-table small {
-    display: flex;
-    gap: 0.45rem;
-    max-width: 100%;
-    overflow: hidden;
-    color: var(--od-muted);
-    font-size: 0.7rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .od-instance-table strong {
     display: block;
     max-width: 100%;
@@ -631,30 +628,59 @@
     white-space: nowrap;
 }
 
-.od-instance-table small span {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.25rem;
+.od-id-cell {
+    white-space: nowrap;
+}
+
+.od-id-copy {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.od-copy-value {
+    display: block;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
+    color: var(--od-muted);
+    font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 0.7rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.od-instance-table small b {
+.od-copy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
+    width: 25px;
+    height: 25px;
+    border: 1px solid var(--od-border);
+    border-radius: 7px;
+    background: var(--od-surface);
+    color: var(--od-muted);
+    font-size: 0.78rem;
+}
+
+.od-copy-button:hover,
+.od-copy-button:focus-visible {
+    border-color: #b7c1ff;
     color: #4856d7;
-    font-size: 0.62rem;
-    font-weight: 750;
-    text-transform: uppercase;
+    outline: none;
 }
 
-.od-instance-table small span:first-child {
-    flex: 1 1 52%;
+.od-copy-button.copied {
+    border-color: #bde9d2;
+    color: #0e7a4d;
+    background: #e6f7ef;
 }
 
-.od-instance-table small span:last-child {
-    flex: 1 1 48%;
+.od-copy-button.copy-failed {
+    border-color: #f3bdc5;
+    color: #a52c3b;
+    background: #fdecef;
 }
 
 .od-instance-table .od-status {
