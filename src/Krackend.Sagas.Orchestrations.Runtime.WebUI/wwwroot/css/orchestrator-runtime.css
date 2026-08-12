@@ -468,7 +468,32 @@
     width: 100%;
     min-width: 860px;
     border-collapse: collapse;
+    table-layout: fixed;
     background: var(--od-surface);
+}
+
+.od-instance-table th:nth-child(1),
+.od-instance-table td:nth-child(1) {
+    width: 32%;
+}
+
+.od-instance-table th:nth-child(2),
+.od-instance-table td:nth-child(2) {
+    width: 13%;
+}
+
+.od-instance-table th:nth-child(3),
+.od-instance-table td:nth-child(3),
+.od-instance-table th:nth-child(4),
+.od-instance-table td:nth-child(4) {
+    width: 16%;
+}
+
+.od-instance-table th:nth-child(5),
+.od-instance-table td:nth-child(5),
+.od-instance-table th:nth-child(6),
+.od-instance-table td:nth-child(6) {
+    width: 11.5%;
 }
 
 .od-instance-table th,
@@ -753,13 +778,13 @@
     font-weight: 700;
 }
 
-.od-trace-shell {
+.od-runtime-detail-dialog .od-trace-shell {
     display: flex;
     flex-direction: column;
     gap: 1.15rem;
 }
 
-.od-trace-toolbar {
+.od-runtime-detail-dialog .od-trace-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -768,7 +793,7 @@
     border-bottom: 1px solid rgba(217, 222, 238, 0.8);
 }
 
-.od-trace-meta {
+.od-runtime-detail-dialog .od-trace-meta {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -776,7 +801,7 @@
     min-width: 0;
 }
 
-.od-meta-pill {
+.od-runtime-detail-dialog .od-meta-pill {
     display: inline-flex;
     align-items: baseline;
     gap: 0.35rem;
@@ -786,13 +811,13 @@
     white-space: nowrap;
 }
 
-.od-meta-pill small {
+.od-runtime-detail-dialog .od-meta-pill small {
     color: #7b839d;
     font-size: 0.72rem;
     text-transform: uppercase;
 }
 
-.od-meta-pill strong {
+.od-runtime-detail-dialog .od-meta-pill strong {
     min-width: 0;
     overflow: hidden;
     color: var(--od-text);
@@ -801,7 +826,7 @@
     text-overflow: ellipsis;
 }
 
-.od-timeline-action {
+.od-runtime-detail-dialog .od-timeline-action {
     display: inline-flex;
     align-items: center;
     gap: 0.42rem;
@@ -816,12 +841,12 @@
     white-space: nowrap;
 }
 
-.od-timeline-action:hover {
+.od-runtime-detail-dialog .od-timeline-action:hover {
     border-color: var(--od-primary);
     background: #f7f8ff;
 }
 
-.od-execution-key {
+.od-runtime-detail-dialog .od-execution-key {
     max-width: 100%;
     overflow: hidden;
     color: var(--od-muted);
@@ -830,7 +855,7 @@
     white-space: nowrap;
 }
 
-.od-process-track {
+.od-runtime-detail-dialog .od-process-track {
     --step-size: 58px;
     --step-gap: 3.8rem;
     display: grid;
@@ -848,22 +873,22 @@
     scrollbar-color: #aab3d6 #eef1f8;
 }
 
-.od-process-track::-webkit-scrollbar {
+.od-runtime-detail-dialog .od-process-track::-webkit-scrollbar {
     height: 9px;
 }
 
-.od-process-track::-webkit-scrollbar-track {
+.od-runtime-detail-dialog .od-process-track::-webkit-scrollbar-track {
     border-radius: 999px;
     background: #eef1f8;
 }
 
-.od-process-track::-webkit-scrollbar-thumb {
+.od-runtime-detail-dialog .od-process-track::-webkit-scrollbar-thumb {
     border: 2px solid #eef1f8;
     border-radius: 999px;
     background: #aab3d6;
 }
 
-.od-process-step {
+.od-runtime-detail-dialog .od-process-step {
     position: relative;
     display: grid;
     justify-items: center;
@@ -876,13 +901,13 @@
     text-align: center;
 }
 
-.od-process-step:focus-visible {
+.od-runtime-detail-dialog .od-process-step:focus-visible {
     outline: 2px solid rgba(72, 86, 215, 0.35);
     outline-offset: 8px;
     border-radius: 10px;
 }
 
-.od-process-line {
+.od-runtime-detail-dialog .od-process-line {
     position: absolute;
     top: calc(var(--step-size) / 2);
     left: calc(50% + var(--step-size) / 2);
@@ -892,15 +917,15 @@
     transform: translateY(-50%);
 }
 
-.od-process-step:last-child .od-process-line {
+.od-runtime-detail-dialog .od-process-step:last-child .od-process-line {
     display: none;
 }
 
-.od-process-step.is-completed .od-process-line {
+.od-runtime-detail-dialog .od-process-step.is-completed .od-process-line {
     background: linear-gradient(90deg, #6d4bdc, #6d4bdc);
 }
 
-.od-process-marker {
+.od-runtime-detail-dialog .od-process-marker {
     position: relative;
     z-index: 1;
     display: inline-flex;
@@ -915,76 +940,76 @@
     box-shadow: 0 0 0 0 rgba(109, 75, 220, 0);
 }
 
-.od-process-marker span {
+.od-runtime-detail-dialog .od-process-marker span {
     width: 16px;
     height: 16px;
     border-radius: 50%;
     background: currentColor;
 }
 
-.od-process-step.is-completed .od-process-marker {
+.od-runtime-detail-dialog .od-process-step.is-completed .od-process-marker {
     border-color: #6d4bdc;
     background: #6d4bdc;
     color: #fff;
 }
 
-.od-process-step.is-current .od-process-marker,
-.od-process-step.is-selected .od-process-marker {
+.od-runtime-detail-dialog .od-process-step.is-current .od-process-marker,
+.od-runtime-detail-dialog .od-process-step.is-selected .od-process-marker {
     border-color: #6d4bdc;
     color: #6d4bdc;
     box-shadow: 0 0 0 8px rgba(109, 75, 220, 0.13);
 }
 
-.od-process-step.is-completed.is-selected .od-process-marker {
+.od-runtime-detail-dialog .od-process-step.is-completed.is-selected .od-process-marker {
     color: #fff;
 }
 
-.od-process-step.is-failed .od-process-marker {
+.od-runtime-detail-dialog .od-process-step.is-failed .od-process-marker {
     border-color: var(--od-danger);
     color: var(--od-danger);
     box-shadow: 0 0 0 8px rgba(196, 61, 77, 0.1);
 }
 
-.od-process-copy {
+.od-runtime-detail-dialog .od-process-copy {
     display: grid;
     gap: 0.12rem;
     width: 100%;
     min-width: 0;
 }
 
-.od-process-copy strong,
-.od-process-copy span,
-.od-process-copy small,
-.od-process-copy em {
+.od-runtime-detail-dialog .od-process-copy strong,
+.od-runtime-detail-dialog .od-process-copy span,
+.od-runtime-detail-dialog .od-process-copy small,
+.od-runtime-detail-dialog .od-process-copy em {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.od-process-copy strong {
+.od-runtime-detail-dialog .od-process-copy strong {
     color: #354058;
     font-size: 1rem;
     font-weight: 750;
 }
 
-.od-process-step.is-current .od-process-copy strong,
-.od-process-step.is-selected .od-process-copy strong {
+.od-runtime-detail-dialog .od-process-step.is-current .od-process-copy strong,
+.od-runtime-detail-dialog .od-process-step.is-selected .od-process-copy strong {
     color: #6d4bdc;
 }
 
-.od-process-copy span {
+.od-runtime-detail-dialog .od-process-copy span {
     color: #4d5971;
     font-size: 0.92rem;
     font-weight: 500;
 }
 
-.od-process-copy small {
+.od-runtime-detail-dialog .od-process-copy small {
     color: var(--od-muted);
     font-size: 0.72rem;
 }
 
-.od-process-copy em {
+.od-runtime-detail-dialog .od-process-copy em {
     color: var(--od-warning);
     font-size: 0.72rem;
     font-style: normal;
@@ -1320,13 +1345,12 @@
         max-width: none;
     }
 
-    .od-trace-toolbar,
-    .od-detail-split {
+    .od-runtime-detail-dialog .od-trace-toolbar {
         align-items: flex-start;
         flex-direction: column;
     }
 
-    .od-timeline-action {
+    .od-runtime-detail-dialog .od-timeline-action {
         align-self: flex-start;
     }
 }
