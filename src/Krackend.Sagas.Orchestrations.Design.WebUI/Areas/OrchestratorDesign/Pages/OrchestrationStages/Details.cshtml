@@ -352,7 +352,7 @@
                             <button class="nav-link" id="task-policies-tab" data-bs-toggle="tab" data-bs-target="#task-policies-pane" type="button" role="tab" aria-controls="task-policies-pane" aria-selected="false">Policies</button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="task-compensation-tab" data-bs-toggle="tab" data-bs-target="#task-compensation-pane" type="button" role="tab" aria-controls="task-compensation-pane" aria-selected="false">Compensation</button>
+                            <button class="nav-link" id="task-compensation-tab" data-bs-toggle="tab" data-bs-target="#task-compensation-pane" type="button" role="tab" aria-controls="task-compensation-pane" aria-selected="false">Rollback</button>
                         </li>
                     </ul>
                     <div class="tab-content" id="taskCreateTabsContent">
@@ -591,10 +591,16 @@
                             </div>
                         </div>
                         <div class="tab-pane fade" id="task-compensation-pane" role="tabpanel" aria-labelledby="task-compensation-tab" tabindex="0">
-                            <input asp-for="NewTask.HasCompensation" type="hidden" id="hasCompensation" />
+                            <div class="form-check form-switch mb-2">
+                                <input asp-for="NewTask.HasCompensation" class="form-check-input" id="hasCompensation" />
+                                <label asp-for="NewTask.HasCompensation" class="form-check-label">Enable rollback for this completed task</label>
+                            </div>
+                            <div class="alert alert-secondary py-2 mb-3">
+                                Rollback belongs to this task after it completes. It runs later only when a downstream failure starts compensation.
+                            </div>
                             <div class="row g-2" id="compensationSection">
                                 <div class="col-md-6">
-                                    <label asp-for="NewTask.CompensationKind" class="form-label">Compensation task type</label>
+                                    <label asp-for="NewTask.CompensationKind" class="form-label">Rollback task type</label>
                                     <select asp-for="NewTask.CompensationKind" class="form-select" asp-items="Model.TaskKinds" id="compensationKindSelector"></select>
                                 </div>
                                 <div class="col-md-6">
@@ -602,7 +608,7 @@
                                     <select asp-for="NewTask.CompensationDispatchType" class="form-select" asp-items="Model.DispatchTypes" id="compensationDispatchTypeSelector"></select>
                                 </div>
                                 <div class="col-md-12">
-                                    <h6 class="mb-2 mt-1">Compensation task configuration</h6>
+                                    <h6 class="mb-2 mt-1">Rollback task configuration</h6>
                                 </div>
                                 <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Http">
                                     <div class="row g-2">
@@ -1866,34 +1872,14 @@
         section.classList.toggle('d-none', !checkbox.checked);
     }
 
-    function shouldEnableCompensation() {
-        return onErrorPolicySelector && onErrorPolicySelector.value === 'StopAndCompensate';
-    }
-
     function refreshOptionalPolicies() {
-        const compensationEnabled = shouldEnableCompensation();
+        const compensationEnabled = hasCompensation && hasCompensation.checked;
 
         toggleSection(hasRetryPolicy, retryPolicySection);
         toggleSection(hasTimeoutPolicy, timeoutPolicySection);
         toggleSection(hasExecutionCondition, executionConditionSection);
         toggleSection(hasTransformation, transformationSection);
-        if (hasCompensation) {
-            hasCompensation.value = compensationEnabled ? 'true' : 'false';
-        }
-        if (compensationTabItem) {
-            compensationTabItem.classList.toggle('d-none', !compensationEnabled);
-        }
-        if (compensationTabPane) {
-            compensationTabPane.classList.toggle('d-none', !compensationEnabled);
-
-            if (!compensationEnabled && (compensationTabPane.classList.contains('active') || compensationTabPane.classList.contains('show'))) {
-                if (generalTabButton && window.bootstrap && window.bootstrap.Tab) {
-                    window.bootstrap.Tab.getOrCreateInstance(generalTabButton).show();
-                } else {
-                    compensationTabPane.classList.remove('active', 'show');
-                }
-            }
-        }
+        toggleSection(hasCompensation, compensationSection);
         toggleSection(hasCompensationExecutionCondition, compensationExecutionConditionSection);
         toggleSection(hasCompensationTransformation, compensationTransformationSection);
         toggleSection(hasCompensationRetryPolicy, compensationRetrySection);
@@ -2053,6 +2039,9 @@
     hasTransformation.addEventListener('change', () => { refreshOptionalPolicies(); refreshWarnings(); });
     if (onErrorPolicySelector) {
         onErrorPolicySelector.addEventListener('change', refreshOptionalPolicies);
+    }
+    if (hasCompensation) {
+        hasCompensation.addEventListener('change', refreshOptionalPolicies);
     }
     if (hasCompensationExecutionCondition) {
         hasCompensationExecutionCondition.addEventListener('change', refreshOptionalPolicies);
