@@ -258,6 +258,33 @@ public sealed class TaskDispatchRepository : ITaskDispatchRepository
     }
 }
 
+public sealed class CompensationExecutionRepository : ICompensationExecutionRepository
+{
+    private readonly RuntimeStorageDbContext _dbContext;
+
+    public CompensationExecutionRepository(RuntimeStorageDbContext dbContext) => _dbContext = dbContext;
+
+    public async Task Create(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
+    {
+        _dbContext.CompensationExecutions.Add(RuntimeStorageMapper.ToEntity(compensationExecution));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.CompensationExecutions.FirstAsync(x => x.Id == compensationExecution.Id, cancellationToken);
+        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(compensationExecution));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+        => await _dbContext.CompensationExecutions.AsNoTracking()
+            .Where(x => x.OrchestrationInstanceId == instanceId)
+            .OrderBy(x => x.StartedOnUtc)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
+}
+
 public sealed class ExecutionTransitionRepository : IExecutionTransitionRepository
 {
     private readonly RuntimeStorageDbContext _dbContext;
