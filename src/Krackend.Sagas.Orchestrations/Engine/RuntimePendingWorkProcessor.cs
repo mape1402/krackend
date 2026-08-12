@@ -59,7 +59,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
 
         foreach (var task in waitingTasks)
         {
-            await TryApplyFailTimeout(task, nowUtc, cancellationToken);
+            await TryApplyTimeout(task, nowUtc, cancellationToken);
         }
 
         var items = waitingTasks
@@ -90,7 +90,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         return new RuntimePendingWorkResult(nowUtc, items);
     }
 
-    private async Task<bool> TryApplyFailTimeout(TaskExecution taskExecution, DateTime nowUtc, CancellationToken cancellationToken)
+    private async Task<bool> TryApplyTimeout(TaskExecution taskExecution, DateTime nowUtc, CancellationToken cancellationToken)
     {
         var instance = await _instanceRepository.GetById(taskExecution.OrchestrationInstanceId, cancellationToken);
         if (instance.Status != OrchestrationInstanceStatus.Waiting ||
@@ -102,8 +102,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         var document = RuntimeArtifactDocument.Parse(artifact.ArtifactPayload, artifact.Version.ToString());
         var taskDocument = FindTaskDocument(document, stageExecution.StageKey, taskExecution.TaskKey);
         var timeoutPolicy = _timeoutPolicyEvaluator.Evaluate(taskDocument.TimeoutPolicy);
-        if (!timeoutPolicy.IsConfigured ||
-            !string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Fail), StringComparison.OrdinalIgnoreCase))
+        if (!timeoutPolicy.IsConfigured)
             return false;
 
         var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
@@ -111,6 +110,43 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse)
             .OrderByDescending(x => x.AttemptNumber)
             .FirstOrDefault();
+
+        if (string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Wait), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(timeoutPolicy.OrchestrationAction, nameof(OrchestrationActionOnTimeout.Block), StringComparison.OrdinalIgnoreCase))
+        {
+            if (attempt is not null)
+            {
+                attempt.TimedOutOnUtc = nowUtc;
+                attempt.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+                attempt.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+                await _attemptRepository.Update(attempt, cancellationToken);
+                await WriteTransition(RuntimeTransition.ForAttempt(
+                    instance,
+                    "TaskTimedOut",
+                    TaskExecutionStatus.WaitingResponse,
+                    attempt.Status,
+                    stageExecution,
+                    taskExecution,
+                    attempt), cancellationToken);
+            }
+
+            taskExecution.TimedOutOnUtc = nowUtc;
+            taskExecution.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+            taskExecution.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+            taskExecution.Metadata["timeoutPolicyApplied"] = "Blocked";
+            await _taskRepository.Update(taskExecution, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForTask(
+                instance,
+                "TaskTimeoutPolicyApplied",
+                TaskExecutionStatus.WaitingResponse,
+                taskExecution.Status,
+                stageExecution,
+                taskExecution), cancellationToken);
+            return true;
+        }
+
+        if (!string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Fail), StringComparison.OrdinalIgnoreCase))
+            return false;
 
         if (attempt is not null)
         {
