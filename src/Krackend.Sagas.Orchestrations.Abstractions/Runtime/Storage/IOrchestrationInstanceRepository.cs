@@ -13,4 +13,9 @@ public interface IOrchestrationInstanceRepository
     Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default);
 
     Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(
+        string environmentKey,
+        int take = 50,
+        CancellationToken cancellationToken = default);
 }

@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Engine;
@@ -21,6 +22,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IExecutionTransitionRepository _timelineRepository;
     private readonly IMessagingCommandDispatcher _messagingDispatcher;
+    private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeEngine"/> class.
@@ -39,6 +41,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _instanceRepository = dependencies.InstanceRepository;
         _timelineRepository = dependencies.TimelineRepository;
         _messagingDispatcher = dependencies.MessagingDispatcher;
+        _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
     }
 
     /// <inheritdoc/>
@@ -421,7 +424,8 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task WriteTransition(RuntimeTransition transition, CancellationToken cancellationToken)
     {
-        await _timelineRepository.Create(new ExecutionTransition
+        var occurredOnUtc = DateTime.UtcNow;
+        var executionTransition = new ExecutionTransition
         {
             Id = Id.New(),
             OrchestrationInstanceId = transition.Instance.Id,
@@ -431,11 +435,72 @@ public sealed class RuntimeEngine : IRuntimeEngine
             TransitionType = transition.Type,
             FromStatus = transition.FromStatus,
             ToStatus = transition.ToStatus,
-            OccurredOnUtc = DateTime.UtcNow,
+            OccurredOnUtc = occurredOnUtc,
             Message = transition.Type,
             Payload = transition.Payload?.DeepClone(),
             ProducedBy = "Krackend.Sagas.Orchestrations.Engine"
-        }, cancellationToken);
+        };
+
+        await _timelineRepository.Create(executionTransition, cancellationToken);
+        try
+        {
+            await _reactiveEventPublisher.Publish(CreateReactiveEvent(transition, executionTransition), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Runtime execution state is already persisted; a live observer outage must not fail the orchestration.
+        }
+    }
+
+    private static RuntimeReactiveEvent CreateReactiveEvent(RuntimeTransition transition, ExecutionTransition executionTransition)
+    {
+        return new RuntimeReactiveEvent
+        {
+            Id = executionTransition.Id,
+            EventName = ResolveReactiveEventName(transition.Type),
+            TransitionType = transition.Type,
+            EnvironmentKey = transition.Instance.EnvironmentKey,
+            OrchestrationDefinitionKey = transition.Instance.OrchestrationDefinitionKey,
+            OrchestrationInstanceId = transition.Instance.Id,
+            CorrelationId = transition.Instance.CorrelationId,
+            ExecutionKey = transition.Instance.ExecutionKey,
+            StageExecutionId = transition.StageExecution?.Id,
+            StageKey = transition.StageExecution?.StageKey,
+            TaskExecutionId = transition.TaskExecution?.Id,
+            TaskKey = transition.TaskExecution?.TaskKey,
+            TaskExecutionAttemptId = transition.Attempt?.Id,
+            FromStatus = executionTransition.FromStatus,
+            ToStatus = executionTransition.ToStatus,
+            InstanceStatus = transition.Instance.Status.ToString(),
+            OccurredOnUtc = executionTransition.OccurredOnUtc,
+            Message = executionTransition.Message,
+            Payload = executionTransition.Payload?.DeepClone(),
+            ProducedBy = executionTransition.ProducedBy
+        };
+    }
+
+    private static string ResolveReactiveEventName(string transitionType)
+    {
+        return transitionType switch
+        {
+            "InstanceStarted" => RuntimeReactiveEventNames.OrchestrationStarted,
+            "InstanceWaitingResponse" => RuntimeReactiveEventNames.OrchestrationWaiting,
+            "InstanceCompleted" => RuntimeReactiveEventNames.OrchestrationCompleted,
+            "InstanceFailed" => RuntimeReactiveEventNames.OrchestrationFailed,
+            "StageStarted" => RuntimeReactiveEventNames.StageStarted,
+            "StageCompleted" => RuntimeReactiveEventNames.StageCompleted,
+            "StageFailed" => RuntimeReactiveEventNames.StageFailed,
+            "TaskStarted" => RuntimeReactiveEventNames.TaskStarted,
+            "TaskCompleted" => RuntimeReactiveEventNames.TaskCompleted,
+            "TaskFailed" => RuntimeReactiveEventNames.TaskFailed,
+            "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
+            "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
+            _ => RuntimeReactiveEventNames.TransitionRecorded
+        };
     }
 
     private static MessagingDispatchCommand CreateDispatchCommand(MessagingDispatchCommandSource source)

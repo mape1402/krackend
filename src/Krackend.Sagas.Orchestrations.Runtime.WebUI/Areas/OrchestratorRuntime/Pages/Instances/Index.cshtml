@@ -1,0 +1,152 @@
+@page
+@using System.Text.Json
+@using Krackend.Sagas.Orchestrations.Abstractions.Runtime
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.IndexModel
+@{
+    ViewData["Title"] = "Runtime Instances";
+    var instances = Model.Instances.OrderByDescending(x => x.LastUpdatedOnUtc).ToArray();
+    var stages = Model.Stages.OrderBy(x => x.Order).ToArray();
+    var tasks = Model.Tasks.ToArray();
+    var transitions = Model.Transitions.OrderByDescending(x => x.OccurredOnUtc).ToArray();
+    var selectedId = Model.SelectedInstance?.Id.ToString();
+    var dashboardConfig = new
+    {
+        environmentKey = Model.EnvironmentKey,
+        selectedInstanceId = selectedId,
+        hubPath = Model.LiveHubPath
+    };
+}
+
+@section Head {
+    <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Runtime Instances</h1>
+        <p class="od-page-subtitle">Environment: @Model.EnvironmentKey</p>
+    </div>
+    <div class="od-live-indicator" data-live-state="connecting">
+        <span class="od-live-dot"></span>
+        <span data-live-label>Connecting</span>
+    </div>
+</div>
+
+<section class="od-metric-grid" aria-label="Runtime counters">
+    <div class="od-metric">
+        <span class="od-metric-label">Active</span>
+        <strong data-counter="active">@Model.ActiveCount</strong>
+    </div>
+    <div class="od-metric">
+        <span class="od-metric-label">Waiting</span>
+        <strong data-counter="waiting">@Model.WaitingCount</strong>
+    </div>
+    <div class="od-metric">
+        <span class="od-metric-label">Completed</span>
+        <strong data-counter="completed">@Model.CompletedCount</strong>
+    </div>
+    <div class="od-metric">
+        <span class="od-metric-label">Failed</span>
+        <strong data-counter="failed">@Model.FailedCount</strong>
+    </div>
+</section>
+
+@if (!instances.Any())
+{
+    <section class="od-panel">
+        <p class="od-empty">No runtime instances have been recorded for this environment.</p>
+    </section>
+}
+else
+{
+    <section class="od-diagnostics-layout">
+        <aside class="od-instance-list" aria-label="Runtime instances">
+            @foreach (var instance in instances)
+            {
+                var id = instance.Id.ToString();
+                var active = string.Equals(id, selectedId, StringComparison.OrdinalIgnoreCase);
+                <a class="od-instance-row @(active ? "active" : string.Empty)"
+                   data-instance-id="@id"
+                   data-instance-status="@instance.Status"
+                   asp-area="OrchestratorRuntime"
+                   asp-page="/Instances/Index"
+                   asp-route-instanceId="@id">
+                    <span>
+                        <strong>@instance.OrchestrationDefinitionKey</strong>
+                        <small>@instance.CorrelationId</small>
+                    </span>
+                    <span class="od-status @IndexModel.StatusClass(instance.Status.ToString())" data-instance-status-label>@instance.Status</span>
+                </a>
+            }
+        </aside>
+
+        <div class="od-diagnostics-main">
+            @if (Model.SelectedInstance is not null)
+            {
+                <section class="od-panel od-instance-summary" data-selected-instance="@selectedId">
+                    <div>
+                        <h2 class="od-section-title">@Model.SelectedInstance.OrchestrationDefinitionKey</h2>
+                        <p class="od-item-meta">@Model.SelectedInstance.Id</p>
+                    </div>
+                    <div class="od-chip-row">
+                        <span class="od-meta-chip">Status: <span data-selected-status>@Model.SelectedInstance.Status</span></span>
+                        <span class="od-meta-chip">Stage: <span data-selected-stage>@(Model.SelectedInstance.CurrentStageKey ?? "-")</span></span>
+                        <span class="od-meta-chip">Task: <span data-selected-task>@(Model.SelectedInstance.CurrentTaskKey ?? "-")</span></span>
+                        <span class="od-meta-chip">Updated: <span data-selected-updated>@Model.SelectedInstance.LastUpdatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</span></span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(Model.SelectedInstance.ErrorSummary))
+                    {
+                        <p class="od-runtime-error">@Model.SelectedInstance.ErrorSummary</p>
+                    }
+                </section>
+
+                <section class="od-stage-board" aria-label="Execution stages">
+                    @foreach (var stage in stages)
+                    {
+                        var stageTasks = tasks.Where(x => x.StageExecutionId == stage.Id).OrderBy(x => x.StartedOnUtc).ToArray();
+                        <article class="od-stage-column" data-stage-id="@stage.Id">
+                            <div class="od-stage-header">
+                                <h3>@stage.StageKey</h3>
+                                <span class="od-status @IndexModel.StatusClass(stage.Status.ToString())">@stage.Status</span>
+                            </div>
+                            @foreach (var task in stageTasks)
+                            {
+                                <div class="od-task-row" data-task-id="@task.Id">
+                                    <span>@task.TaskKey</span>
+                                    <span class="od-status @IndexModel.StatusClass(task.Status.ToString())">@task.Status</span>
+                                </div>
+                            }
+                        </article>
+                    }
+                </section>
+
+                <section class="od-panel">
+                    <div class="od-section-head">
+                        <h2 class="od-section-title">Live Timeline</h2>
+                        <span class="od-item-meta">@transitions.Length transitions</span>
+                    </div>
+                    <div class="od-timeline" data-timeline>
+                        @foreach (var item in transitions)
+                        {
+                            <article class="od-timeline-item">
+                                <div>
+                                    <strong>@item.TransitionType</strong>
+                                    <span>@item.FromStatus -> @item.ToStatus</span>
+                                </div>
+                                <time>@item.OccurredOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</time>
+                            </article>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    </section>
+}
+
+@section Scripts {
+    <script>
+        window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <script src="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js" asp-append-version="true"></script>
+}

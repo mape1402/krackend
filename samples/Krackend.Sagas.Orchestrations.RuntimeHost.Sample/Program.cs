@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer;
 using Krackend.Sagas.Orchestrations.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Intake.InMemory;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.Web;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +64,7 @@ app.MapGet("/", (RuntimeEnvironmentDescriptor runtime) => Results.Ok(new
 
 app.MapKrackendSagasOrchestrationsArtifactEndpoints();
 app.MapKrackendSagasOrchestrationsEngineEndpoints();
+app.MapOrchestratorRuntimeReactiveHub();
 app.MapRazorPages()
    .WithStaticAssets();
 app.MapHealthChecks("/health/live", new HealthCheckOptions

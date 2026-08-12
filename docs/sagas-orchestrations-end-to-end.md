@@ -590,9 +590,11 @@ builder.Services.AddKrackendSagasOrchestrationsWeb(options =>
     options.DistributionBaseUri = builder.Configuration["Runtime:ArtifactPull:DistributionBaseUri"];
     options.RuntimeNodeId = builder.Configuration["Runtime:ArtifactPull:RuntimeNodeId"];
 });
+builder.Services.AddOrchestratorRuntimeWebUI(options => options.RoutePrefix = "runtime");
 
 app.MapKrackendSagasOrchestrationsArtifactEndpoints();
 app.MapKrackendSagasOrchestrationsEngineEndpoints();
+app.MapOrchestratorRuntimeReactiveHub();
 ```
 
 ## Migrations y storage

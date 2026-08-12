@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Engine;
@@ -57,4 +58,9 @@ public sealed class RuntimeEngineDependencies
     /// Gets the messaging command dispatcher.
     /// </summary>
     public required IMessagingCommandDispatcher MessagingDispatcher { get; init; }
+
+    /// <summary>
+    /// Gets the reactive event publisher.
+    /// </summary>
+    public required IRuntimeReactiveEventPublisher ReactiveEventPublisher { get; init; }
 }

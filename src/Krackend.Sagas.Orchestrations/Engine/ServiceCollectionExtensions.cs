@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Publishing;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
@@ -24,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMessagingCommandDispatcher, MessagingCommandDispatcher>();
         services.AddScoped<IArtifactResolver, ArtifactResolver>();
         services.AddScoped<ITriggerPromoter, TriggerPromoter>();
+        services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
         services.AddScoped(CreateRuntimeEngineDependencies);
         services.AddScoped<IRuntimeEngine, RuntimeEngine>();
         return services;
@@ -42,7 +44,8 @@ public static class ServiceCollectionExtensions
             DispatchRepository = provider.GetRequiredService<ITaskDispatchRepository>(),
             InstanceRepository = provider.GetRequiredService<IOrchestrationInstanceRepository>(),
             TimelineRepository = provider.GetRequiredService<IExecutionTransitionRepository>(),
-            MessagingDispatcher = provider.GetRequiredService<IMessagingCommandDispatcher>()
+            MessagingDispatcher = provider.GetRequiredService<IMessagingCommandDispatcher>(),
+            ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
         };
     }
 }

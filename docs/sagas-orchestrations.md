@@ -23,7 +23,7 @@ For the complete start-to-finish Orchestrator walkthrough, including all major m
 | `Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer` | EF Core SQL Server adapter for runtime storage repositories. | No |
 | `Krackend.Sagas.Orchestrations.Messaging.Abstractions` | Broker-neutral message publisher/consumer contracts and scoped orchestration metadata context. | No |
 | `Krackend.Sagas.Orchestrations.Messaging.Pigeon` | Optional Pigeon adapter for the messaging facade. Adds Pigeon publish/consume metadata interceptors. | No |
-| `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Razor Pages UI for runtime artifacts. Adds runtime UI routes and navigation. | No |
+| `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Razor Pages UI for runtime artifacts and live orchestration diagnostics. Adds runtime UI routes, SignalR reactive publishing, and navigation. | No |
 | `Krackend.Sagas.Orchestrations.Security` | Control-plane security domain: teams and team members. | No |
 | `Krackend.Sagas.Orchestrations.Security.Interaction` | Security services, commands, queries, validators, and team membership operations. | No |
 | `Krackend.Sagas.Orchestrations.Security.Storage.SqlServer` | EF Core SQL Server adapter for Security repositories. | No |
@@ -76,6 +76,7 @@ Runtime host with Razor UI:
 
 ```csharp
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 
 builder.Services.AddRazorPages();
 builder.Services.AddOrchestratorRuntimeWebUI(options =>
@@ -84,6 +85,7 @@ builder.Services.AddOrchestratorRuntimeWebUI(options =>
 });
 
 app.MapStaticAssets();
+app.MapOrchestratorRuntimeReactiveHub();
 app.MapRazorPages().WithStaticAssets();
 ```
 
@@ -127,7 +129,7 @@ app.MapRazorPages().WithStaticAssets();
 | --- | --- | --- | --- | --- |
 | `AddKrackendSagasOrchestrationsRuntime(Action<RuntimeModuleOptions>)` | `Krackend.Sagas.Orchestrations` | Registers `RuntimeEnvironmentDescriptor` as a singleton. | `EnvironmentKey` must be non-empty. | Throws `ArgumentNullException` when configure is null. Throws `InvalidOperationException` when `EnvironmentKey` is blank. |
 | `AddKrackendSagasOrchestrationsInMemoryIntakeBuffer(Action<InMemoryTriggerIntakeBufferOptions>? = null)` | `Krackend.Sagas.Orchestrations` | Registers `InMemoryTriggerIntakeBufferOptions` and `ITriggerIntakeBuffer` backed by `InMemoryTriggerIntakeBuffer`. | Optional capacity. Default is defined by `InMemoryTriggerIntakeBufferOptions`. | Throws `InvalidOperationException` when capacity is less than or equal to zero. |
-| `AddKrackendSagasOrchestrationsEngine()` | `Krackend.Sagas.Orchestrations` | Registers messaging metadata, default `IMessagePublisher`, `IMessagingCommandDispatcher`, `IArtifactResolver`, `ITriggerPromoter`, `RuntimeEngineDependencies`, and `IRuntimeEngine`. | Runtime storage repositories and intake buffer must also be registered for runtime execution to resolve. | Missing dependencies fail at service resolution time. |
+| `AddKrackendSagasOrchestrationsEngine()` | `Krackend.Sagas.Orchestrations` | Registers messaging metadata, default `IMessagePublisher`, default no-op `IRuntimeReactiveEventPublisher`, `IMessagingCommandDispatcher`, `IArtifactResolver`, `ITriggerPromoter`, `RuntimeEngineDependencies`, and `IRuntimeEngine`. | Runtime storage repositories and intake buffer must also be registered for runtime execution to resolve. | Missing dependencies fail at service resolution time. |
 
 ### Runtime Storage
 
@@ -198,8 +200,9 @@ Pigeon registration throws `ArgumentNullException` when configuration or configu
 | Function | Package | What it registers |
 | --- | --- | --- |
 | `AddOrchestratorWebUIShell()` | `Krackend.Sagas.Orchestrations.WebUI.Shell` | Singleton `OrchestratorNavigationRegistry`. |
-| `AddOrchestratorRuntimeWebUI()` | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Shared shell, runtime Razor Pages route conventions, and Runtime navigation contributor. |
+| `AddOrchestratorRuntimeWebUI()` | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Shared shell, SignalR services, SignalR `IRuntimeReactiveEventPublisher`, runtime Razor Pages route conventions, and Runtime navigation contributor. |
 | `AddOrchestratorRuntimeWebUI(Action<OrchestratorRuntimeWebUIOptions>)` | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Same as above, with custom route prefix. |
+| `MapOrchestratorRuntimeReactiveHub()` | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Maps the runtime live hub at `/{RoutePrefix}/live`. Required for the live Instances dashboard. |
 
 ## HTTP Endpoints
 
@@ -541,7 +544,7 @@ Current queries:
 
 ## WebUI Modules
 
-All WebUI packages are Razor class libraries. Hosts must call `AddRazorPages`, `MapStaticAssets`, and `MapRazorPages().WithStaticAssets()` when serving the pages.
+All WebUI packages are Razor class libraries. Hosts must call `AddRazorPages`, `MapStaticAssets`, and `MapRazorPages().WithStaticAssets()` when serving the pages. Runtime WebUI hosts must also call `MapOrchestratorRuntimeReactiveHub()` for live orchestration diagnostics.
 
 ### Shared Shell
 
@@ -566,6 +569,7 @@ All WebUI packages are Razor class libraries. Hosts must call `AddRazorPages`, `
 | Distribution | `Artifacts` | `OrchestratorDistribution` | `/ArtifactReleases/Index` | 22 |
 | Distribution | `Releases` | `OrchestratorDistribution` | `/Promotions/Index` | 23 |
 | Security | `Teams` | `OrchestratorSecurity` | `/Teams/Index` | 30 |
+| Runtime | `Instances` | `OrchestratorRuntime` | `/Instances/Index` | 35 |
 | Runtime | `Artifacts` | `OrchestratorRuntime` | `/Artifacts/Index` | 40 |
 
 ### Route Prefix Defaults
