@@ -8,6 +8,7 @@ public sealed class RuntimeNavigationContributor : IOrchestratorNavigationContri
     {
         return
         [
+            new OrchestratorNavigationItem { Label = "Instances", Area = "OrchestratorRuntime", Page = "/Instances/Index", Order = 35 },
             new OrchestratorNavigationItem { Label = "Artifacts", Area = "OrchestratorRuntime", Page = "/Artifacts/Index", Order = 40 }
         ];
     }

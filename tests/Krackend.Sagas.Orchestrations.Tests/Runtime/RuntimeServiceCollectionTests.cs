@@ -1,3 +1,5 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
+using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Metadata;
@@ -31,5 +33,18 @@ public sealed class RuntimeServiceCollectionTests
         Assert.Equal("local", runtime.EnvironmentKey);
         Assert.NotNull(intake);
         Assert.Same(metadataAccessor, metadataWriter);
+    }
+
+    [Fact]
+    public void EngineRegistersNoopReactivePublisherByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<NoopRuntimeReactiveEventPublisher>(
+            provider.GetRequiredService<IRuntimeReactiveEventPublisher>());
     }
 }

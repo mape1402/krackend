@@ -82,6 +82,20 @@ public sealed class OrchestrationInstanceRepository : IOrchestrationInstanceRepo
 
     public async Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
         => RuntimeStorageMapper.ToDomain(await _dbContext.OrchestrationInstances.AsNoTracking().FirstAsync(x => x.Id == instanceId, cancellationToken));
+
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(
+        string environmentKey,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var limit = Math.Clamp(take, 1, 250);
+        return await _dbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.EnvironmentKey == environmentKey)
+            .OrderByDescending(x => x.LastUpdatedOnUtc)
+            .Take(limit)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
+    }
 }
 
 public sealed class StageExecutionRepository : IStageExecutionRepository

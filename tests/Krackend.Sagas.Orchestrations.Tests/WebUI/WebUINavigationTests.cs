@@ -1,7 +1,9 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Design.WebUI;
 using Krackend.Sagas.Orchestrations.Distribution.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Security.WebUI;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +39,7 @@ public sealed class WebUINavigationTests
             item => AssertNavigation(item, "Artifacts", "OrchestratorDistribution", "/ArtifactReleases/Index", 22),
             item => AssertNavigation(item, "Releases", "OrchestratorDistribution", "/Promotions/Index", 23),
             item => AssertNavigation(item, "Teams", "OrchestratorSecurity", "/Teams/Index", 30),
+            item => AssertNavigation(item, "Instances", "OrchestratorRuntime", "/Instances/Index", 35),
             item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 40));
     }
 
@@ -45,12 +48,29 @@ public sealed class WebUINavigationTests
     {
         var services = new ServiceCollection();
 
+        services.AddLogging();
         RuntimeWebUiServices.AddOrchestratorRuntimeWebUI(services);
 
         using var provider = services.BuildServiceProvider();
 
         Assert.NotNull(provider.GetRequiredService<OrchestratorNavigationRegistry>());
         Assert.Single(provider.GetServices<IOrchestratorNavigationContributor>());
+    }
+
+    [Fact]
+    public void RuntimeWebUiRegistersSignalRReactivePublisher()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        RuntimeWebUiServices.AddOrchestratorRuntimeWebUI(services);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<SignalRRuntimeReactiveEventPublisher>(
+            provider.GetRequiredService<IRuntimeReactiveEventPublisher>());
+        Assert.NotNull(typeof(RuntimeReactiveEndpointRouteBuilderExtensions)
+            .GetMethod(nameof(RuntimeReactiveEndpointRouteBuilderExtensions.MapOrchestratorRuntimeReactiveHub)));
     }
 
     private static void AssertNavigation(

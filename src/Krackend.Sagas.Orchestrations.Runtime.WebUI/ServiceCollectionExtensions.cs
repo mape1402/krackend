@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Navigation;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 
@@ -18,7 +20,9 @@ public static class ServiceCollectionExtensions
         Action<OrchestratorRuntimeWebUIOptions> configureOptions)
     {
         services.AddOrchestratorWebUIShell();
+        services.AddSignalR();
         services.Configure(configureOptions);
+        services.Replace(ServiceDescriptor.Singleton<IRuntimeReactiveEventPublisher, SignalRRuntimeReactiveEventPublisher>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureRuntimeAreaRoutes>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, RuntimeNavigationContributor>());
         return services;
@@ -36,6 +40,7 @@ public static class ServiceCollectionExtensions
         public void Configure(RazorPagesOptions options)
         {
             var prefix = string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "runtime" : _options.RoutePrefix.Trim('/');
+            options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Instances/Index", $"{prefix}/instances");
             options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Artifacts/Index", prefix);
             options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Artifacts/Index", $"{prefix}/artifacts");
         }
