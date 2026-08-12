@@ -75,4 +75,17 @@ public sealed class RuntimeServiceCollectionTests
         Assert.IsType<RuntimeConditionEvaluator>(
             provider.GetRequiredService<IRuntimeConditionEvaluator>());
     }
+
+    [Fact]
+    public void EngineRegistersRuntimePayloadTransformerByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<RuntimePayloadTransformer>(
+            provider.GetRequiredService<IRuntimePayloadTransformer>());
+    }
 }

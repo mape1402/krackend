@@ -23,6 +23,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IExecutionTransitionRepository _timelineRepository;
     private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
     private readonly IRuntimeConditionEvaluator _conditionEvaluator;
+    private readonly IRuntimePayloadTransformer _payloadTransformer;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
@@ -43,6 +44,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _timelineRepository = dependencies.TimelineRepository;
         _taskDispatcherResolver = dependencies.TaskDispatcherResolver;
         _conditionEvaluator = dependencies.ConditionEvaluator;
+        _payloadTransformer = dependencies.PayloadTransformer;
         _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
     }
 
@@ -274,6 +276,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             return await FailUnsupportedTask(context, taskExecution, cancellationToken);
 
         var attempt = await CreateAttempt(context, taskExecution, started, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForAttemptPayload(context.Instance, "TaskInputTransformed", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt, attempt.RequestPayload), cancellationToken);
         var dispatch = await CreateDispatch(context, taskExecution, attempt, cancellationToken);
         var dispatchResult = await DispatchTask(context, taskExecution, attempt, dispatch, started, cancellationToken);
 
@@ -381,6 +384,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task<TaskExecutionAttempt> CreateAttempt(RuntimeTaskExecutionContext context, TaskExecution taskExecution, DateTime started, CancellationToken cancellationToken)
     {
+        var transformation = _payloadTransformer.Transform(context.Task.Transformation, context.Instance.SnapshotPayload);
         var attempt = new TaskExecutionAttempt
         {
             Id = Id.New(),
@@ -388,7 +392,12 @@ public sealed class RuntimeEngine : IRuntimeEngine
             AttemptNumber = 1,
             Status = TaskExecutionStatus.Running,
             StartedOnUtc = started,
-            RequestPayload = context.Instance.SnapshotPayload?.DeepClone() ?? new JsonObject()
+            RequestPayload = transformation.Payload,
+            Metadata = new Dictionary<string, JsonNode>
+            {
+                ["transformationEngine"] = transformation.Engine,
+                ["wasTransformed"] = transformation.WasTransformed
+            }
         };
         await _attemptRepository.Create(attempt, cancellationToken);
         return attempt;
@@ -562,6 +571,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "StageFailed" => RuntimeReactiveEventNames.StageFailed,
             "StageSkipped" => RuntimeReactiveEventNames.StageSkipped,
             "TaskStarted" => RuntimeReactiveEventNames.TaskStarted,
+            "TaskInputTransformed" => RuntimeReactiveEventNames.TaskInputTransformed,
             "TaskCompleted" => RuntimeReactiveEventNames.TaskCompleted,
             "TaskFailed" => RuntimeReactiveEventNames.TaskFailed,
             "TaskSkipped" => RuntimeReactiveEventNames.TaskSkipped,
