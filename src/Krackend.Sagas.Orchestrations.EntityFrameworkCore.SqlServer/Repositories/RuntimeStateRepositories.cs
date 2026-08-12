@@ -220,6 +220,12 @@ public sealed class TaskDispatchRepository : ITaskDispatchRepository
         var entity = await _dbContext.TaskDispatches.AsNoTracking().FirstOrDefaultAsync(x => x.CommandId == commandId, cancellationToken);
         return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
     }
+
+    public async Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.TaskDispatches.AsNoTracking().FirstOrDefaultAsync(x => x.TaskExecutionAttemptId == taskExecutionAttemptId, cancellationToken);
+        return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
+    }
 }
 
 public sealed class ExecutionTransitionRepository : IExecutionTransitionRepository
@@ -240,6 +246,24 @@ public sealed class ExecutionTransitionRepository : IExecutionTransitionReposito
             .OrderBy(x => x.OccurredOnUtc)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(
+        string environmentKey,
+        int take = 250,
+        CancellationToken cancellationToken = default)
+    {
+        var limit = Math.Clamp(take, 1, 1000);
+        return await _dbContext.ExecutionTransitions.AsNoTracking()
+            .Join(
+                _dbContext.OrchestrationInstances.AsNoTracking().Where(x => x.EnvironmentKey == environmentKey),
+                transition => transition.OrchestrationInstanceId,
+                instance => instance.Id,
+                (transition, _) => transition)
+            .OrderByDescending(x => x.OccurredOnUtc)
+            .Take(limit)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
+    }
 }
 
 public sealed class InstanceVariableRepository : IInstanceVariableRepository

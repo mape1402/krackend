@@ -1,19 +1,15 @@
 @page
 @using System.Text.Json
-@using Krackend.Sagas.Orchestrations.Abstractions.Runtime
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.IndexModel
 @{
-    ViewData["Title"] = "Runtime Instances";
-    var instances = Model.Instances.OrderByDescending(x => x.LastUpdatedOnUtc).ToArray();
-    var stages = Model.Stages.OrderBy(x => x.Order).ToArray();
-    var tasks = Model.Tasks.ToArray();
-    var transitions = Model.Transitions.OrderByDescending(x => x.OccurredOnUtc).ToArray();
-    var selectedId = Model.SelectedInstance?.Id.ToString();
+    ViewData["Title"] = "Runtime Diagnostics";
     var dashboardConfig = new
     {
         environmentKey = Model.EnvironmentKey,
-        selectedInstanceId = selectedId,
-        hubPath = Model.LiveHubPath
+        hubPath = Model.LiveHubPath,
+        detailPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Detail" }),
+        traffic = Model.Traffic,
+        instances = Model.Instances
     };
 }
 
@@ -23,7 +19,7 @@
 
 <div class="od-page-head">
     <div>
-        <h1 class="od-page-title">Runtime Instances</h1>
+        <h1 class="od-page-title">Runtime Diagnostics</h1>
         <p class="od-page-subtitle">Environment: @Model.EnvironmentKey</p>
     </div>
     <div class="od-live-indicator" data-live-state="connecting">
@@ -32,116 +28,80 @@
     </div>
 </div>
 
-<section class="od-metric-grid" aria-label="Runtime counters">
-    <div class="od-metric">
-        <span class="od-metric-label">Active</span>
-        <strong data-counter="active">@Model.ActiveCount</strong>
+<section class="od-runtime-hero" aria-label="Runtime traffic">
+    <div class="od-chart-head">
+        <div>
+            <h2 class="od-section-title">Traffic</h2>
+            <p class="od-item-meta">Reactive transitions per minute</p>
+        </div>
+        <div class="od-metric-strip">
+            <span>Active <strong data-counter="active">0</strong></span>
+            <span>Waiting <strong data-counter="waiting">0</strong></span>
+            <span>Completed <strong data-counter="completed">0</strong></span>
+            <span>Failed <strong data-counter="failed">0</strong></span>
+        </div>
     </div>
-    <div class="od-metric">
-        <span class="od-metric-label">Waiting</span>
-        <strong data-counter="waiting">@Model.WaitingCount</strong>
+    <canvas class="od-traffic-chart" data-traffic-chart height="170"></canvas>
+</section>
+
+<section class="od-panel od-instances-panel">
+    <div class="od-section-head">
+        <div>
+            <h2 class="od-section-title">Instances</h2>
+            <p class="od-item-meta">Click an instance to inspect stages, tasks, attempts, input, output, dispatch and timeline.</p>
+        </div>
+        <span class="od-item-meta"><span data-instance-count>@Model.Instances.Count</span> visible</span>
     </div>
-    <div class="od-metric">
-        <span class="od-metric-label">Completed</span>
-        <strong data-counter="completed">@Model.CompletedCount</strong>
-    </div>
-    <div class="od-metric">
-        <span class="od-metric-label">Failed</span>
-        <strong data-counter="failed">@Model.FailedCount</strong>
+
+    <div class="od-instance-table-wrap">
+        <table class="od-instance-table">
+            <thead>
+                <tr>
+                    <th>Instance</th>
+                    <th>Status</th>
+                    <th>Stage</th>
+                    <th>Task</th>
+                    <th>Started</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody data-instance-grid>
+                @foreach (var instance in Model.Instances)
+                {
+                    <tr data-instance-id="@instance.Id" data-instance-status="@instance.Status" tabindex="0">
+                        <td>
+                            <strong>@instance.OrchestrationDefinitionKey</strong>
+                            <small>@instance.CorrelationId</small>
+                            <small>@instance.Id</small>
+                        </td>
+                        <td><span class="od-status @instance.StatusClass" data-instance-status-label>@instance.Status</span></td>
+                        <td data-instance-stage>@(instance.CurrentStageKey ?? "-")</td>
+                        <td data-instance-task>@(instance.CurrentTaskKey ?? "-")</td>
+                        <td>@instance.StartedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td data-instance-updated>@instance.LastUpdatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 </section>
 
-@if (!instances.Any())
-{
-    <section class="od-panel">
-        <p class="od-empty">No runtime instances have been recorded for this environment.</p>
-    </section>
-}
-else
-{
-    <section class="od-diagnostics-layout">
-        <aside class="od-instance-list" aria-label="Runtime instances">
-            @foreach (var instance in instances)
-            {
-                var id = instance.Id.ToString();
-                var active = string.Equals(id, selectedId, StringComparison.OrdinalIgnoreCase);
-                <a class="od-instance-row @(active ? "active" : string.Empty)"
-                   data-instance-id="@id"
-                   data-instance-status="@instance.Status"
-                   asp-area="OrchestratorRuntime"
-                   asp-page="/Instances/Index"
-                   asp-route-instanceId="@id">
-                    <span>
-                        <strong>@instance.OrchestrationDefinitionKey</strong>
-                        <small>@instance.CorrelationId</small>
-                    </span>
-                    <span class="od-status @IndexModel.StatusClass(instance.Status.ToString())" data-instance-status-label>@instance.Status</span>
-                </a>
-            }
-        </aside>
-
-        <div class="od-diagnostics-main">
-            @if (Model.SelectedInstance is not null)
-            {
-                <section class="od-panel od-instance-summary" data-selected-instance="@selectedId">
-                    <div>
-                        <h2 class="od-section-title">@Model.SelectedInstance.OrchestrationDefinitionKey</h2>
-                        <p class="od-item-meta">@Model.SelectedInstance.Id</p>
-                    </div>
-                    <div class="od-chip-row">
-                        <span class="od-meta-chip">Status: <span data-selected-status>@Model.SelectedInstance.Status</span></span>
-                        <span class="od-meta-chip">Stage: <span data-selected-stage>@(Model.SelectedInstance.CurrentStageKey ?? "-")</span></span>
-                        <span class="od-meta-chip">Task: <span data-selected-task>@(Model.SelectedInstance.CurrentTaskKey ?? "-")</span></span>
-                        <span class="od-meta-chip">Updated: <span data-selected-updated>@Model.SelectedInstance.LastUpdatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</span></span>
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(Model.SelectedInstance.ErrorSummary))
-                    {
-                        <p class="od-runtime-error">@Model.SelectedInstance.ErrorSummary</p>
-                    }
-                </section>
-
-                <section class="od-stage-board" aria-label="Execution stages">
-                    @foreach (var stage in stages)
-                    {
-                        var stageTasks = tasks.Where(x => x.StageExecutionId == stage.Id).OrderBy(x => x.StartedOnUtc).ToArray();
-                        <article class="od-stage-column" data-stage-id="@stage.Id">
-                            <div class="od-stage-header">
-                                <h3>@stage.StageKey</h3>
-                                <span class="od-status @IndexModel.StatusClass(stage.Status.ToString())">@stage.Status</span>
-                            </div>
-                            @foreach (var task in stageTasks)
-                            {
-                                <div class="od-task-row" data-task-id="@task.Id">
-                                    <span>@task.TaskKey</span>
-                                    <span class="od-status @IndexModel.StatusClass(task.Status.ToString())">@task.Status</span>
-                                </div>
-                            }
-                        </article>
-                    }
-                </section>
-
-                <section class="od-panel">
-                    <div class="od-section-head">
-                        <h2 class="od-section-title">Live Timeline</h2>
-                        <span class="od-item-meta">@transitions.Length transitions</span>
-                    </div>
-                    <div class="od-timeline" data-timeline>
-                        @foreach (var item in transitions)
-                        {
-                            <article class="od-timeline-item">
-                                <div>
-                                    <strong>@item.TransitionType</strong>
-                                    <span>@item.FromStatus -> @item.ToStatus</span>
-                                </div>
-                                <time>@item.OccurredOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</time>
-                            </article>
-                        }
-                    </div>
-                </section>
-            }
+<div class="modal fade od-detail-modal" id="runtimeInstanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title" data-detail-title>Instance detail</h2>
+                    <p class="od-item-meta" data-detail-subtitle></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" data-detail-body>
+                <p class="od-empty">Select an instance to inspect its trace.</p>
+            </div>
         </div>
-    </section>
-}
+    </div>
+</div>
 
 @section Scripts {
     <script>

@@ -13,4 +13,9 @@ public interface IExecutionTransitionRepository
     Task<IReadOnlyCollection<ExecutionTransition>> GetByInstanceId(
         Id instanceId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(
+        string environmentKey,
+        int take = 250,
+        CancellationToken cancellationToken = default);
 }

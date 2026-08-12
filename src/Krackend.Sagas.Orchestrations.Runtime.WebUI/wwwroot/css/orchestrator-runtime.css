@@ -405,3 +405,317 @@
         flex-direction: column;
     }
 }
+
+.od-runtime-hero {
+    width: 100%;
+    margin-bottom: 0.85rem;
+    padding: 1rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    background: var(--od-surface);
+    box-shadow: var(--od-shadow);
+}
+
+.od-chart-head,
+.od-metric-strip,
+.od-instances-panel .od-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.od-metric-strip {
+    align-items: stretch;
+}
+
+.od-metric-strip span {
+    min-width: 88px;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    color: var(--od-muted);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+}
+
+.od-metric-strip strong {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--od-text);
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.od-traffic-chart {
+    display: block;
+    width: 100%;
+    margin-top: 0.85rem;
+}
+
+.od-instances-panel {
+    padding: 1rem;
+}
+
+.od-instance-table-wrap {
+    width: 100%;
+    overflow: auto;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+}
+
+.od-instance-table {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
+    background: var(--od-surface);
+}
+
+.od-instance-table th,
+.od-instance-table td {
+    padding: 0.7rem 0.75rem;
+    border-bottom: 1px solid rgba(217, 222, 238, 0.7);
+    text-align: left;
+    vertical-align: middle;
+    font-size: 0.86rem;
+}
+
+.od-instance-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8f9ff;
+    color: var(--od-muted);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0;
+}
+
+.od-instance-table tbody tr {
+    cursor: pointer;
+}
+
+.od-instance-table tbody tr:hover,
+.od-instance-table tbody tr:focus,
+.od-instance-table tbody tr.live {
+    background: #f5f7ff;
+    outline: none;
+}
+
+.od-instance-table strong,
+.od-instance-table small {
+    display: block;
+}
+
+.od-instance-table small {
+    max-width: 280px;
+    overflow: hidden;
+    color: var(--od-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.od-detail-modal .modal-content {
+    border: 0;
+    border-radius: 8px;
+}
+
+.od-detail-modal .modal-header {
+    align-items: flex-start;
+    border-bottom: 1px solid var(--od-border);
+    background: #f8f9ff;
+}
+
+.od-detail-modal .modal-title {
+    margin: 0;
+    color: var(--od-text);
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.od-detail-summary,
+.od-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.55rem;
+}
+
+.od-detail-summary {
+    margin-bottom: 0.85rem;
+}
+
+.od-detail-field {
+    min-height: 58px;
+    padding: 0.6rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    background: var(--od-surface-2);
+}
+
+.od-detail-field span {
+    display: block;
+    color: var(--od-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+}
+
+.od-detail-field strong {
+    display: block;
+    margin-top: 0.18rem;
+    overflow-wrap: anywhere;
+    color: var(--od-text);
+    font-size: 0.85rem;
+    font-weight: 650;
+}
+
+.od-detail-split {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.od-detail-split article,
+.od-dispatch,
+.od-attempt,
+.od-detail-task,
+.od-detail-stage {
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    background: var(--od-surface);
+}
+
+.od-detail-split article,
+.od-dispatch,
+.od-attempt {
+    padding: 0.75rem;
+}
+
+.od-detail-split h3,
+.od-detail-split h5,
+.od-dispatch h5 {
+    margin: 0 0 0.5rem;
+    color: var(--od-text);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.od-detail-stage {
+    margin-top: 0.85rem;
+}
+
+.od-detail-stage > header,
+.od-detail-task > header,
+.od-attempt > header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--od-border);
+    background: #f8f9ff;
+}
+
+.od-detail-stage h3,
+.od-detail-task h4 {
+    margin: 0;
+    color: var(--od-text);
+    font-size: 0.98rem;
+    font-weight: 700;
+}
+
+.od-detail-stage small,
+.od-detail-task small {
+    color: var(--od-muted);
+    font-size: 0.78rem;
+}
+
+.od-detail-task-list,
+.od-attempts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+}
+
+.od-detail-task {
+    overflow: hidden;
+}
+
+.od-detail-task > .od-detail-grid,
+.od-detail-task > .od-detail-split,
+.od-detail-task > .od-attempts {
+    margin: 0.75rem;
+}
+
+.od-attempt {
+    background: #fcfdff;
+}
+
+.od-attempt > header {
+    margin: -0.75rem -0.75rem 0.75rem;
+}
+
+.od-json {
+    max-height: 280px;
+    margin: 0;
+    overflow: auto;
+    padding: 0.75rem;
+    border: 1px solid #d8e0ff;
+    border-radius: 8px;
+    background: #f7f9ff;
+    color: #172033;
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.od-collapse-block {
+    margin-top: 0.85rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.od-collapse-toggle {
+    width: 100%;
+    padding: 0.75rem;
+    border: 0;
+    background: #f8f9ff;
+    color: var(--od-text);
+    text-align: left;
+    font-weight: 700;
+}
+
+.od-collapse-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 520px;
+    overflow: auto;
+    padding: 0.75rem;
+}
+
+.od-collapse-content .od-timeline-item {
+    display: block;
+}
+
+.od-collapse-content .od-timeline-item time {
+    margin-top: 0.25rem;
+}
+
+@media (max-width: 980px) {
+    .od-chart-head,
+    .od-metric-strip,
+    .od-instances-panel .od-section-head,
+    .od-detail-split {
+        grid-template-columns: 1fr;
+        flex-direction: column;
+    }
+
+    .od-metric-strip {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
