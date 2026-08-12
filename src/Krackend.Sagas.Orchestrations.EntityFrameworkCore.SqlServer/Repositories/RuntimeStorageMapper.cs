@@ -342,6 +342,38 @@ internal static class RuntimeStorageMapper
         Metadata = ParseJsonDictionary(x.MetadataJson)
     };
 
+    public static CompensationExecutionEntity ToEntity(CompensationExecution x) => new()
+    {
+        Id = x.Id,
+        OrchestrationInstanceId = x.OrchestrationInstanceId,
+        SourceTaskExecutionId = x.SourceTaskExecutionId,
+        CompensationTaskKey = x.CompensationTaskKey,
+        Status = x.Status,
+        StartedOnUtc = x.StartedOnUtc,
+        CompletedOnUtc = x.CompletedOnUtc,
+        FailedOnUtc = x.FailedOnUtc,
+        RequestPayloadJson = ToJson(x.RequestPayload),
+        ResponsePayloadJson = ToJson(x.ResponsePayload),
+        ErrorMessage = x.ErrorMessage,
+        MetadataJson = ToJson(x.Metadata)
+    };
+
+    public static CompensationExecution ToDomain(CompensationExecutionEntity x) => new()
+    {
+        Id = x.Id,
+        OrchestrationInstanceId = x.OrchestrationInstanceId,
+        SourceTaskExecutionId = x.SourceTaskExecutionId,
+        CompensationTaskKey = x.CompensationTaskKey,
+        Status = x.Status,
+        StartedOnUtc = x.StartedOnUtc,
+        CompletedOnUtc = x.CompletedOnUtc,
+        FailedOnUtc = x.FailedOnUtc,
+        RequestPayload = ParseJson(x.RequestPayloadJson),
+        ResponsePayload = ParseJson(x.ResponsePayloadJson),
+        ErrorMessage = x.ErrorMessage,
+        Metadata = ParseJsonDictionary(x.MetadataJson)
+    };
+
     public static ExecutionTransitionEntity ToEntity(ExecutionTransition x) => new()
     {
         Id = x.Id,

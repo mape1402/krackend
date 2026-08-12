@@ -17,6 +17,7 @@ public sealed class SqlServerRegistrationTests
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITriggerIntakeRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IOrchestrationInstanceRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITaskDispatchRepository));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ICompensationExecutionRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IExecutionTransitionRepository));
     }
 }
