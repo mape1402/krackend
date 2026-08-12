@@ -55,9 +55,9 @@ public sealed class RuntimeEngineDependencies
     public required IExecutionTransitionRepository TimelineRepository { get; init; }
 
     /// <summary>
-    /// Gets the messaging command dispatcher.
+    /// Gets the runtime task dispatcher resolver.
     /// </summary>
-    public required IMessagingCommandDispatcher MessagingDispatcher { get; init; }
+    public required IRuntimeTaskDispatcherResolver TaskDispatcherResolver { get; init; }
 
     /// <summary>
     /// Gets the reactive event publisher.

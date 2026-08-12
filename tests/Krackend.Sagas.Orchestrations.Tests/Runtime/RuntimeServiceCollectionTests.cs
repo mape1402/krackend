@@ -47,4 +47,19 @@ public sealed class RuntimeServiceCollectionTests
         Assert.IsType<NoopRuntimeReactiveEventPublisher>(
             provider.GetRequiredService<IRuntimeReactiveEventPublisher>());
     }
+
+    [Fact]
+    public void EngineRegistersMessagingRuntimeTaskDispatcherByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        using var provider = services.BuildServiceProvider();
+
+        var resolver = provider.GetRequiredService<IRuntimeTaskDispatcherResolver>();
+        var dispatcher = resolver.Resolve("Messaging");
+
+        Assert.IsType<MessagingRuntimeTaskDispatcher>(dispatcher);
+    }
 }
