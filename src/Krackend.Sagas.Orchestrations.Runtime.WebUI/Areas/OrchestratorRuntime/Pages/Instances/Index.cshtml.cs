@@ -55,17 +55,58 @@ public sealed class IndexModel : PageModel
 
     public IReadOnlyCollection<TrafficPointModel> Traffic { get; private set; } = Array.Empty<TrafficPointModel>();
 
+    public RuntimeSummaryModel Summary { get; private set; } = new(0, 0, 0, 0, 0, 0, DateTime.UtcNow, DateTime.UtcNow);
+
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        var instances = await _instanceRepository.GetRecent(EnvironmentKey, 500, cancellationToken);
-        Instances = instances.Select(ToRow).ToArray();
+        var snapshot = await BuildSnapshot(cancellationToken);
+        Instances = snapshot.Instances;
+        Traffic = snapshot.Traffic;
+        Summary = snapshot.Summary;
+    }
 
-        var transitions = await _transitionRepository.GetRecent(EnvironmentKey, 250, cancellationToken);
-        Traffic = transitions
-            .GroupBy(x => new DateTime(x.OccurredOnUtc.Year, x.OccurredOnUtc.Month, x.OccurredOnUtc.Day, x.OccurredOnUtc.Hour, x.OccurredOnUtc.Minute, 0, DateTimeKind.Utc))
-            .OrderBy(x => x.Key)
-            .Select(x => new TrafficPointModel(x.Key, x.Count()))
-            .ToArray();
+    public async Task<IActionResult> OnGetSnapshotAsync(CancellationToken cancellationToken = default)
+        => new JsonResult(await BuildSnapshot(cancellationToken));
+
+    public async Task<IActionResult> OnGetSummaryAsync(CancellationToken cancellationToken = default)
+    {
+        var summary = await BuildRuntimeSummary(cancellationToken);
+        var traffic = await _transitionRepository.GetTraffic(EnvironmentKey, DateTime.UtcNow.AddHours(-1), cancellationToken);
+
+        return new JsonResult(new RuntimeDashboardSummaryModel(
+            summary,
+            traffic.Select(ToTraffic).ToArray()));
+    }
+
+    private async Task<RuntimeDashboardSnapshotModel> BuildSnapshot(CancellationToken cancellationToken)
+    {
+        var summary = await BuildRuntimeSummary(cancellationToken);
+        var instances = await _instanceRepository.GetRecent(EnvironmentKey, 1000, cancellationToken);
+        var traffic = await _transitionRepository.GetTraffic(EnvironmentKey, DateTime.UtcNow.AddHours(-1), cancellationToken);
+
+        return new RuntimeDashboardSnapshotModel(
+            summary,
+            instances.Select(ToRow).ToArray(),
+            traffic.Select(ToTraffic).ToArray());
+    }
+
+    private async Task<RuntimeSummaryModel> BuildRuntimeSummary(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var minuteSinceUtc = now.AddMinutes(-1);
+        var hourSinceUtc = now.AddHours(-1);
+        var minute = await _instanceRepository.GetSummary(EnvironmentKey, minuteSinceUtc, cancellationToken);
+        var hour = await _instanceRepository.GetSummary(EnvironmentKey, hourSinceUtc, cancellationToken);
+
+        return new RuntimeSummaryModel(
+            minute.Active,
+            minute.Waiting,
+            minute.CompletedRecent,
+            minute.FailedRecent,
+            hour.CompletedRecent,
+            hour.FailedRecent,
+            minuteSinceUtc,
+            hourSinceUtc);
     }
 
     public async Task<IActionResult> OnGetDetailAsync(string instanceId, CancellationToken cancellationToken = default)
@@ -216,6 +257,9 @@ public sealed class IndexModel : PageModel
             FormatJson(transition.Payload));
     }
 
+    private static TrafficPointModel ToTraffic(RuntimeTrafficPoint point)
+        => new(point.BucketUtc, point.Started, point.Completed, point.Failed);
+
     private static string FormatJson(JsonNode node)
         => node?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) ?? string.Empty;
 
@@ -243,7 +287,30 @@ public sealed record InstanceRowModel(
     DateTime? FailedOnUtc,
     string ErrorSummary);
 
-public sealed record TrafficPointModel(DateTime BucketUtc, int Count);
+public sealed record TrafficPointModel(
+    DateTime BucketUtc,
+    int Started,
+    int Completed,
+    int Failed);
+
+public sealed record RuntimeSummaryModel(
+    int Active,
+    int Waiting,
+    int CompletedLastMinute,
+    int FailedLastMinute,
+    int CompletedLastHour,
+    int FailedLastHour,
+    DateTime MinuteSinceUtc,
+    DateTime HourSinceUtc);
+
+public sealed record RuntimeDashboardSnapshotModel(
+    RuntimeSummaryModel Summary,
+    IReadOnlyCollection<InstanceRowModel> Instances,
+    IReadOnlyCollection<TrafficPointModel> Traffic);
+
+public sealed record RuntimeDashboardSummaryModel(
+    RuntimeSummaryModel Summary,
+    IReadOnlyCollection<TrafficPointModel> Traffic);
 
 public sealed record InstanceDetailModel(
     InstanceRowModel Instance,

@@ -8,8 +8,11 @@
         environmentKey = Model.EnvironmentKey,
         hubPath = Model.LiveHubPath,
         detailPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Detail" }),
+        snapshotPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Snapshot" }),
+        summaryPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Summary" }),
         traffic = Model.Traffic,
-        instances = Model.Instances
+        instances = Model.Instances,
+        summary = Model.Summary
     };
     var initialPageSummary = Model.Instances.Count == 0
         ? "0-0 of 0"
@@ -17,7 +20,7 @@
 }
 
 @section Head {
-    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-11" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-14" />
 }
 
 <div class="od-page-head">
@@ -35,13 +38,15 @@
     <div class="od-chart-head">
         <div>
             <h2 class="od-section-title">Traffic</h2>
-            <p class="od-item-meta">Reactive transitions per minute</p>
+            <p class="od-item-meta">Instances started, completed and failed per minute</p>
         </div>
         <div class="od-metric-strip">
-            <span>Active <strong data-counter="active">0</strong></span>
-            <span>Waiting <strong data-counter="waiting">0</strong></span>
-            <span>Completed <strong data-counter="completed">0</strong></span>
-            <span>Failed <strong data-counter="failed">0</strong></span>
+            <span>Active now <strong data-counter="active">@Model.Summary.Active</strong></span>
+            <span>Waiting now <strong data-counter="waiting">@Model.Summary.Waiting</strong></span>
+            <span>Completed/min <strong data-counter="completed-minute">@Model.Summary.CompletedLastMinute</strong></span>
+            <span>Failed/min <strong data-counter="failed-minute">@Model.Summary.FailedLastMinute</strong></span>
+            <span>Completed/hr <strong data-counter="completed-hour">@Model.Summary.CompletedLastHour</strong></span>
+            <span>Failed/hr <strong data-counter="failed-hour">@Model.Summary.FailedLastHour</strong></span>
         </div>
     </div>
     <canvas class="od-traffic-chart" data-traffic-chart height="170"></canvas>
@@ -178,5 +183,5 @@
         window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-11"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-14"></script>
 }

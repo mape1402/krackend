@@ -18,4 +18,15 @@ public interface IExecutionTransitionRepository
         string environmentKey,
         int take = 250,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(
+        string environmentKey,
+        DateTime sinceUtc,
+        CancellationToken cancellationToken = default);
 }
+
+public sealed record RuntimeTrafficPoint(
+    DateTime BucketUtc,
+    int Started,
+    int Completed,
+    int Failed);

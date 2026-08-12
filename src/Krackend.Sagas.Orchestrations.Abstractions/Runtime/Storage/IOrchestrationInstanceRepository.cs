@@ -18,4 +18,16 @@ public interface IOrchestrationInstanceRepository
         string environmentKey,
         int take = 50,
         CancellationToken cancellationToken = default);
+
+    Task<RuntimeInstanceSummary> GetSummary(
+        string environmentKey,
+        DateTime recentSinceUtc,
+        CancellationToken cancellationToken = default);
 }
+
+public sealed record RuntimeInstanceSummary(
+    int Active,
+    int Waiting,
+    int CompletedRecent,
+    int FailedRecent,
+    DateTime RecentSinceUtc);

@@ -35,10 +35,17 @@
 
     const instances = new Map();
     const traffic = new Map();
+    let summary = normalizeSummary(config.summary || config.Summary);
     let selectedInstanceId = null;
     let selectedStageId = null;
     let currentDetail = null;
     let detailRefreshTimer = null;
+    let snapshotTimer = null;
+    let snapshotInFlight = false;
+    let summaryTimer = null;
+    let summaryInFlight = false;
+    let summaryPending = false;
+    let lastSummaryRefreshAt = 0;
     let searchTerm = "";
     let currentPage = 1;
     let pageSize = Number(pageSizeInput?.value || 25);
@@ -51,9 +58,8 @@
     });
     (config.traffic || []).forEach(item => {
         const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"));
-        const count = Number(read(item, "count", "Count") || 0);
         if (bucket) {
-            traffic.set(bucket, (traffic.get(bucket) || 0) + count);
+            traffic.set(bucket, normalizeTrafficPoint(item));
         }
     });
 
@@ -81,12 +87,46 @@
         };
     }
 
+    function normalizeSummary(item) {
+        return {
+            active: Number(read(item, "active", "Active") || 0),
+            waiting: Number(read(item, "waiting", "Waiting") || 0),
+            completedLastMinute: Number(read(item, "completedLastMinute", "CompletedLastMinute") || read(item, "completedRecent", "CompletedRecent") || 0),
+            failedLastMinute: Number(read(item, "failedLastMinute", "FailedLastMinute") || read(item, "failedRecent", "FailedRecent") || 0),
+            completedLastHour: Number(read(item, "completedLastHour", "CompletedLastHour") || 0),
+            failedLastHour: Number(read(item, "failedLastHour", "FailedLastHour") || 0),
+            minuteSinceUtc: read(item, "minuteSinceUtc", "MinuteSinceUtc"),
+            hourSinceUtc: read(item, "hourSinceUtc", "HourSinceUtc")
+        };
+    }
+
+    function normalizeTrafficPoint(item) {
+        return {
+            started: Number(read(item, "started", "Started") || read(item, "count", "Count") || 0),
+            completed: Number(read(item, "completed", "Completed") || 0),
+            failed: Number(read(item, "failed", "Failed") || 0)
+        };
+    }
+
     function read(item, camelName, pascalName) {
         if (!item) {
             return undefined;
         }
 
         return item[camelName] ?? item[pascalName];
+    }
+
+    function readId(item, camelName, pascalName) {
+        const value = read(item, camelName, pascalName);
+        if (!value) {
+            return "";
+        }
+
+        if (typeof value === "string") {
+            return value;
+        }
+
+        return value.value || value.Value || String(value);
     }
 
     function setLiveState(state, label) {
@@ -120,11 +160,12 @@
     }
 
     function renderCounters() {
-        const rows = Array.from(instances.values());
-        setCounter("active", rows.filter(row => row.status === "Running" || row.status === "Waiting").length);
-        setCounter("waiting", rows.filter(row => row.status === "Waiting").length);
-        setCounter("completed", rows.filter(row => row.status === "Completed").length);
-        setCounter("failed", rows.filter(row => row.status === "Failed").length);
+        setCounter("active", summary.active);
+        setCounter("waiting", summary.waiting);
+        setCounter("completed-minute", summary.completedLastMinute);
+        setCounter("failed-minute", summary.failedLastMinute);
+        setCounter("completed-hour", summary.completedLastHour);
+        setCounter("failed-hour", summary.failedLastHour);
     }
 
     function setCounter(name, value) {
@@ -148,8 +189,8 @@
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
         context.clearRect(0, 0, width, height);
 
-        const points = Array.from(traffic.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-24);
-        const max = Math.max(1, ...points.map(x => x[1]));
+        const points = Array.from(traffic.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-60);
+        const max = Math.max(1, ...points.flatMap(x => [x[1].started, x[1].completed, x[1].failed]));
         const padding = { top: 16, right: 18, bottom: 28, left: 34 };
         const plotWidth = Math.max(1, width - padding.left - padding.right);
         const plotHeight = Math.max(1, height - padding.top - padding.bottom);
@@ -171,12 +212,26 @@
             return;
         }
 
-        context.strokeStyle = "#4856d7";
-        context.lineWidth = 2.5;
+        drawTrafficSeries(context, points, "started", "#4856d7", padding, plotWidth, plotHeight, max);
+        drawTrafficSeries(context, points, "completed", "#0f8c55", padding, plotWidth, plotHeight, max);
+        drawTrafficSeries(context, points, "failed", "#d64a4a", padding, plotWidth, plotHeight, max);
+
+        context.fillStyle = "#5f6687";
+        context.font = "11px system-ui";
+        context.fillText(String(max), 6, padding.top + 4);
+        context.fillText("0", 18, padding.top + plotHeight + 4);
+        context.fillText("now", width - padding.right - 20, height - 8);
+
+        drawLegend(context, width, padding);
+    }
+
+    function drawTrafficSeries(context, points, key, color, padding, plotWidth, plotHeight, max) {
+        context.strokeStyle = color;
+        context.lineWidth = key === "failed" ? 1.8 : 2.5;
         context.beginPath();
         points.forEach((point, index) => {
             const x = padding.left + (points.length === 1 ? plotWidth : (plotWidth / (points.length - 1)) * index);
-            const y = padding.top + plotHeight - (point[1] / max) * plotHeight;
+            const y = padding.top + plotHeight - ((point[1][key] || 0) / max) * plotHeight;
             if (index === 0) {
                 context.moveTo(x, y);
             } else {
@@ -184,53 +239,193 @@
             }
         });
         context.stroke();
+    }
 
-        context.fillStyle = "#0f8c55";
-        points.forEach((point, index) => {
-            const x = padding.left + (points.length === 1 ? plotWidth : (plotWidth / (points.length - 1)) * index);
-            const y = padding.top + plotHeight - (point[1] / max) * plotHeight;
-            context.beginPath();
-            context.arc(x, y, 3.5, 0, Math.PI * 2);
-            context.fill();
-        });
-
-        context.fillStyle = "#5f6687";
+    function drawLegend(context, width, padding) {
+        const items = [
+            ["started", "#4856d7"],
+            ["completed", "#0f8c55"],
+            ["failed", "#d64a4a"]
+        ];
+        let x = Math.max(padding.left, width - 245);
         context.font = "11px system-ui";
-        context.fillText(String(max), 6, padding.top + 4);
-        context.fillText("0", 18, padding.top + plotHeight + 4);
-        context.fillText("now", width - padding.right - 20, height - 8);
+        items.forEach(([label, color]) => {
+            context.fillStyle = color;
+            context.fillRect(x, padding.top - 8, 8, 8);
+            context.fillStyle = "#5f6687";
+            context.fillText(label, x + 12, padding.top);
+            x += 78;
+        });
     }
 
     function applyEvent(eventData) {
-        const id = eventData.orchestrationInstanceId;
+        const id = readId(eventData, "orchestrationInstanceId", "OrchestrationInstanceId");
+        if (!id) {
+            scheduleSummaryRefresh(0);
+            return;
+        }
+
         const existing = instances.get(id);
         const row = normalizeRow({
             id,
-            orchestrationDefinitionKey: eventData.orchestrationDefinitionKey || existing?.orchestrationDefinitionKey,
-            correlationId: eventData.correlationId || existing?.correlationId,
-            executionKey: eventData.executionKey || existing?.executionKey,
-            status: eventData.instanceStatus || eventData.toStatus || existing?.status,
-            currentStageKey: eventData.stageKey || existing?.currentStageKey,
-            currentTaskKey: eventData.taskKey || existing?.currentTaskKey,
-            startedOnUtc: existing?.startedOnUtc || eventData.occurredOnUtc,
-            lastUpdatedOnUtc: eventData.occurredOnUtc,
+            orchestrationDefinitionKey: read(eventData, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || existing?.orchestrationDefinitionKey,
+            correlationId: read(eventData, "correlationId", "CorrelationId") || existing?.correlationId,
+            executionKey: read(eventData, "executionKey", "ExecutionKey") || existing?.executionKey,
+            status: read(eventData, "instanceStatus", "InstanceStatus") || read(eventData, "toStatus", "ToStatus") || existing?.status,
+            currentStageKey: read(eventData, "stageKey", "StageKey") || existing?.currentStageKey,
+            currentTaskKey: read(eventData, "taskKey", "TaskKey") || existing?.currentTaskKey,
+            startedOnUtc: existing?.startedOnUtc || read(eventData, "occurredOnUtc", "OccurredOnUtc"),
+            lastUpdatedOnUtc: read(eventData, "occurredOnUtc", "OccurredOnUtc"),
             waitingSinceUtc: existing?.waitingSinceUtc,
-            completedOnUtc: eventData.instanceStatus === "Completed" ? eventData.occurredOnUtc : existing?.completedOnUtc,
-            failedOnUtc: eventData.instanceStatus === "Failed" ? eventData.occurredOnUtc : existing?.failedOnUtc,
+            completedOnUtc: read(eventData, "instanceStatus", "InstanceStatus") === "Completed" ? read(eventData, "occurredOnUtc", "OccurredOnUtc") : existing?.completedOnUtc,
+            failedOnUtc: read(eventData, "instanceStatus", "InstanceStatus") === "Failed" ? read(eventData, "occurredOnUtc", "OccurredOnUtc") : existing?.failedOnUtc,
             errorSummary: existing?.errorSummary
         });
 
         instances.set(id, row);
 
-        const bucket = bucketKey(eventData.occurredOnUtc);
-        traffic.set(bucket, (traffic.get(bucket) || 0) + 1);
+        const bucket = bucketKey(read(eventData, "occurredOnUtc", "OccurredOnUtc"));
+        const currentTraffic = traffic.get(bucket) || { started: 0, completed: 0, failed: 0 };
+        const transitionType = read(eventData, "transitionType", "TransitionType");
+        if (transitionType === "InstanceStarted") {
+            currentTraffic.started += 1;
+        } else if (transitionType === "InstanceCompleted") {
+            currentTraffic.completed += 1;
+        } else if (transitionType === "InstanceFailed") {
+            currentTraffic.failed += 1;
+        }
+        traffic.set(bucket, currentTraffic);
 
-        renderCounters();
         renderGrid();
         drawTraffic();
+        scheduleSummaryRefresh(250);
 
         if (selectedInstanceId === id) {
             scheduleDetailRefresh(id);
+        }
+    }
+
+    function applySnapshot(snapshot) {
+        applySummary(snapshot);
+
+        const nextInstances = read(snapshot, "instances", "Instances") || [];
+        instances.clear();
+        nextInstances.forEach(item => {
+            const row = normalizeRow(item);
+            if (row.id) {
+                instances.set(row.id, row);
+            }
+        });
+
+        renderGrid();
+
+        if (selectedInstanceId && instances.has(selectedInstanceId)) {
+            scheduleDetailRefresh(selectedInstanceId);
+        }
+    }
+
+    function applySummary(snapshot) {
+        const nextSummary = read(snapshot, "summary", "Summary");
+        if (nextSummary) {
+            summary = normalizeSummary(nextSummary);
+        }
+
+        const nextTraffic = read(snapshot, "traffic", "Traffic") || [];
+        traffic.clear();
+        nextTraffic.forEach(item => {
+            const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"));
+            if (bucket) {
+                traffic.set(bucket, normalizeTrafficPoint(item));
+            }
+        });
+
+        renderCounters();
+        drawTraffic();
+    }
+
+    function scheduleSnapshotRefresh(delay) {
+        if (!config.snapshotPath) {
+            return;
+        }
+
+        if (snapshotTimer || snapshotInFlight) {
+            return;
+        }
+
+        snapshotTimer = window.setTimeout(refreshSnapshot, delay);
+    }
+
+    async function refreshSnapshot() {
+        snapshotTimer = null;
+        if (!config.snapshotPath || snapshotInFlight || document.visibilityState === "hidden") {
+            return;
+        }
+
+        snapshotInFlight = true;
+        try {
+            const response = await fetch(config.snapshotPath, {
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+            });
+            if (!response.ok) {
+                throw new Error(`Snapshot request failed: ${response.status}`);
+            }
+
+            applySnapshot(await response.json());
+        } catch {
+            // SignalR keeps feeding the board; the snapshot is only a reconciliation path.
+        } finally {
+            snapshotInFlight = false;
+        }
+    }
+
+    function scheduleSummaryRefresh(delay) {
+        if (!config.summaryPath) {
+            scheduleSnapshotRefresh(delay);
+            return;
+        }
+
+        if (summaryInFlight) {
+            summaryPending = true;
+            return;
+        }
+
+        if (summaryTimer) {
+            return;
+        }
+
+        const elapsed = Date.now() - lastSummaryRefreshAt;
+        const throttleWait = Math.max(0, 1000 - elapsed);
+        summaryTimer = window.setTimeout(refreshSummary, Math.max(delay, throttleWait));
+    }
+
+    async function refreshSummary() {
+        if (!config.summaryPath || document.visibilityState === "hidden") {
+            summaryTimer = null;
+            return;
+        }
+
+        summaryTimer = null;
+        summaryInFlight = true;
+        try {
+            const response = await fetch(config.summaryPath, {
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+            });
+            if (!response.ok) {
+                throw new Error(`Summary request failed: ${response.status}`);
+            }
+
+            lastSummaryRefreshAt = Date.now();
+            applySummary(await response.json());
+        } catch {
+            scheduleSnapshotRefresh(0);
+        } finally {
+            summaryInFlight = false;
+            if (summaryPending) {
+                summaryPending = false;
+                scheduleSummaryRefresh(0);
+            }
         }
     }
 
@@ -942,6 +1137,22 @@
     });
 
     window.addEventListener("resize", drawTraffic);
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState !== "hidden") {
+            scheduleSummaryRefresh(0);
+            scheduleSnapshotRefresh(0);
+        }
+    });
+    window.setInterval(function () {
+        if (connection.state === signalR.HubConnectionState.Connected) {
+            scheduleSummaryRefresh(0);
+        }
+    }, 2000);
+    window.setInterval(function () {
+        if (connection.state === signalR.HubConnectionState.Connected) {
+            scheduleSnapshotRefresh(0);
+        }
+    }, 10000);
 
     const connection = new signalR.HubConnectionBuilder()
         .withUrl(config.hubPath)
@@ -960,12 +1171,16 @@
         if (selectedInstanceId) {
             await connection.invoke("WatchInstance", selectedInstanceId);
         }
+        scheduleSummaryRefresh(0);
+        scheduleSnapshotRefresh(0);
     });
 
     connection.start()
         .then(async function () {
             setLiveState("connected", "Live");
             await connection.invoke("WatchEnvironment", config.environmentKey);
+            scheduleSummaryRefresh(0);
+            scheduleSnapshotRefresh(0);
         })
         .catch(function () {
             setLiveState("disconnected", "Offline");
