@@ -49,6 +49,7 @@ public static class ServiceCollectionExtensions
             TaskRepository = provider.GetRequiredService<ITaskExecutionRepository>(),
             AttemptRepository = provider.GetRequiredService<ITaskExecutionAttemptRepository>(),
             DispatchRepository = provider.GetRequiredService<ITaskDispatchRepository>(),
+            CompensationRepository = provider.GetRequiredService<ICompensationExecutionRepository>(),
             InstanceRepository = provider.GetRequiredService<IOrchestrationInstanceRepository>(),
             TimelineRepository = provider.GetRequiredService<IExecutionTransitionRepository>(),
             TaskDispatcherResolver = provider.GetRequiredService<IRuntimeTaskDispatcherResolver>(),

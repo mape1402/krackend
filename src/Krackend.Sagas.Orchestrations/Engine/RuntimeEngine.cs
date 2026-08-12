@@ -19,6 +19,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly ITaskExecutionRepository _taskRepository;
     private readonly ITaskExecutionAttemptRepository _attemptRepository;
     private readonly ITaskDispatchRepository _dispatchRepository;
+    private readonly ICompensationExecutionRepository _compensationRepository;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IExecutionTransitionRepository _timelineRepository;
     private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
@@ -26,6 +27,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IRuntimePayloadTransformer _payloadTransformer;
     private readonly IRuntimeRetryPolicyEvaluator _retryPolicyEvaluator;
     private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
+    private readonly IRuntimeCompensationPlanBuilder _compensationPlanBuilder = new RuntimeCompensationPlanBuilder();
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
 
     /// <summary>
@@ -42,6 +44,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _taskRepository = dependencies.TaskRepository;
         _attemptRepository = dependencies.AttemptRepository;
         _dispatchRepository = dependencies.DispatchRepository;
+        _compensationRepository = dependencies.CompensationRepository;
         _instanceRepository = dependencies.InstanceRepository;
         _timelineRepository = dependencies.TimelineRepository;
         _taskDispatcherResolver = dependencies.TaskDispatcherResolver;
@@ -166,10 +169,13 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         foreach (var stage in document.Stages)
         {
-            var stageContext = CreateStageContext(instance, document.Version, stage);
+            var stageContext = CreateStageContext(instance, document, stage);
             var stageExecution = await ExecuteStage(stageContext, cancellationToken);
             if (stageExecution.Status == StageExecutionStatus.Failed)
             {
+                if (instance.Status == OrchestrationInstanceStatus.Compensating)
+                    return;
+
                 instance.Status = OrchestrationInstanceStatus.Failed;
                 instance.FailedOnUtc = DateTime.UtcNow;
                 instance.ErrorSummary = stageExecution.ErrorSummary;
@@ -234,6 +240,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
             {
                 if (await TryContinueAfterTaskFailure(context, stageExecution, taskExecution, cancellationToken))
                     continue;
+
+                if (await TryStartCompensationAfterTaskFailure(context, stageExecution, taskExecution, cancellationToken))
+                    return stageExecution;
 
                 stageExecution.Status = StageExecutionStatus.Failed;
                 stageExecution.FailedOnUtc = DateTime.UtcNow;
@@ -359,12 +368,13 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private static Id? ParseOptionalId(string value)
         => Ulid.TryParse(value, out var parsed) ? new Id(parsed) : null;
 
-    private static RuntimeStageExecutionContext CreateStageContext(OrchestrationInstance instance, string orchestrationVersion, RuntimeStageDocument stage)
+    private static RuntimeStageExecutionContext CreateStageContext(OrchestrationInstance instance, RuntimeArtifactDocument document, RuntimeStageDocument stage)
     {
         return new RuntimeStageExecutionContext
         {
             Instance = instance,
-            OrchestrationVersion = orchestrationVersion,
+            OrchestrationVersion = document.Version,
+            Document = document,
             Stage = stage
         };
     }
@@ -534,6 +544,61 @@ public sealed class RuntimeEngine : IRuntimeEngine
         return true;
     }
 
+    private async Task<bool> TryStartCompensationAfterTaskFailure(
+        RuntimeStageExecutionContext context,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        CancellationToken cancellationToken)
+    {
+        var decision = _errorPolicyResolver.Resolve(taskExecution.OnErrorPolicy);
+        if (decision.Action != RuntimeErrorPolicyAction.StartCompensation)
+            return false;
+
+        taskExecution.Metadata["errorPolicyApplied"] = decision.Policy.ToString();
+        taskExecution.Metadata["errorPolicyAction"] = decision.Action.ToString();
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskErrorPolicyApplied", TaskExecutionStatus.Failed, taskExecution.Status, stageExecution, taskExecution), cancellationToken);
+
+        stageExecution.Status = StageExecutionStatus.Failed;
+        stageExecution.FailedOnUtc = DateTime.UtcNow;
+        stageExecution.ErrorSummary = taskExecution.ErrorSummary();
+        await _stageRepository.Update(stageExecution, cancellationToken);
+
+        context.Instance.Status = OrchestrationInstanceStatus.Compensating;
+        context.Instance.CompensationStartedOnUtc = DateTime.UtcNow;
+        context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
+        context.Instance.ErrorSummary = taskExecution.ErrorSummary();
+        await _instanceRepository.Update(context.Instance, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForStage(context.Instance, "InstanceCompensating", OrchestrationInstanceStatus.Running, context.Instance.Status, stageExecution), cancellationToken);
+
+        var completedTasks = await _taskRepository.GetByInstanceId(context.Instance.Id, cancellationToken);
+        var plan = _compensationPlanBuilder.Build(context.Document, completedTasks);
+        foreach (var item in plan)
+        {
+            await _compensationRepository.Create(new CompensationExecution
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = context.Instance.Id,
+                SourceTaskExecutionId = item.SourceTaskExecutionId,
+                CompensationTaskKey = item.CompensationTaskKey,
+                Status = "Pending",
+                RequestPayload = item.RequestPayload?.DeepClone(),
+                Metadata = item.Metadata.ToDictionary(x => x.Key, x => x.Value?.DeepClone())
+            }, cancellationToken);
+
+            await WriteTransition(RuntimeTransition.ForInstancePayload(
+                context.Instance,
+                "CompensationScheduled",
+                OrchestrationInstanceStatus.Compensating,
+                OrchestrationInstanceStatus.Compensating,
+                item.Metadata.ToJsonObject()), cancellationToken);
+        }
+
+        context.Instance.Metadata["compensationPlanCount"] = plan.Count;
+        await _instanceRepository.Update(context.Instance, cancellationToken);
+        return true;
+    }
+
     private async Task<TaskExecution> FailDispatch(RuntimeTaskDispatchFailure failure, CancellationToken cancellationToken)
     {
         var context = failure.Context;
@@ -659,6 +724,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         {
             "InstanceStarted" => RuntimeReactiveEventNames.OrchestrationStarted,
             "InstanceWaitingResponse" => RuntimeReactiveEventNames.OrchestrationWaiting,
+            "InstanceCompensating" => RuntimeReactiveEventNames.OrchestrationCompensating,
             "InstanceCompleted" => RuntimeReactiveEventNames.OrchestrationCompleted,
             "InstanceFailed" => RuntimeReactiveEventNames.OrchestrationFailed,
             "StageStarted" => RuntimeReactiveEventNames.StageStarted,
@@ -675,6 +741,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "TaskErrorPolicyApplied" => RuntimeReactiveEventNames.TaskErrorPolicyApplied,
             "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
             "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
+            "CompensationScheduled" => RuntimeReactiveEventNames.CompensationScheduled,
             _ => RuntimeReactiveEventNames.TransitionRecorded
         };
     }
@@ -728,9 +795,19 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 {
                     Instance = instance,
                     OrchestrationVersion = resume.Document.Version,
+                    Document = resume.Document,
                     Stage = resume.CurrentStage
                 }, stageExecution, taskExecution, cancellationToken))
                     continue;
+
+                if (await TryStartCompensationAfterTaskFailure(new RuntimeStageExecutionContext
+                {
+                    Instance = instance,
+                    OrchestrationVersion = resume.Document.Version,
+                    Document = resume.Document,
+                    Stage = resume.CurrentStage
+                }, stageExecution, taskExecution, cancellationToken))
+                    return;
 
                 await FailCurrentStage(instance, stageExecution, taskExecution, cancellationToken);
                 return;
@@ -746,7 +823,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var nextStageIndex = resume.StageIndex + 1;
         for (var i = nextStageIndex; i < resume.Document.Stages.Count; i++)
         {
-            var stageExecution = await ExecuteStage(CreateStageContext(instance, resume.Document.Version, resume.Document.Stages.ElementAt(i)), cancellationToken);
+            var stageExecution = await ExecuteStage(CreateStageContext(instance, resume.Document, resume.Document.Stages.ElementAt(i)), cancellationToken);
             if (stageExecution.Status == StageExecutionStatus.Failed || instance.Status == OrchestrationInstanceStatus.Waiting)
                 return;
         }

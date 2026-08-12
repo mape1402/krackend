@@ -292,6 +292,7 @@ public sealed class RuntimeEngineIdempotencyTests
             TaskRepository = new TaskRepositoryStub(store),
             AttemptRepository = new AttemptRepositoryStub(store),
             DispatchRepository = new DispatchRepositoryStub(store),
+            CompensationRepository = new CompensationRepositoryStub(store),
             InstanceRepository = new InstanceRepositoryStub(store),
             TimelineRepository = new TransitionRepositoryStub(store),
             TaskDispatcherResolver = new ThrowingTaskDispatcherResolver(),
@@ -310,6 +311,7 @@ public sealed class RuntimeEngineIdempotencyTests
         public Dictionary<Id, TaskExecutionAttempt> Attempts { get; } = new();
         public Dictionary<Id, TaskDispatch> Dispatches { get; } = new();
         public List<ExecutionTransition> Transitions { get; } = new();
+        public List<CompensationExecution> Compensations { get; } = new();
     }
 
     private sealed class InstanceRepositoryStub(RuntimeStore store) : IOrchestrationInstanceRepository
@@ -432,6 +434,27 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Duplicate responses must resolve dispatches by id.");
+    }
+
+    private sealed class CompensationRepositoryStub(RuntimeStore store) : ICompensationExecutionRepository
+    {
+        public Task Create(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
+        {
+            store.Compensations.Add(compensationExecution);
+            return Task.CompletedTask;
+        }
+
+        public Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
+        {
+            var index = store.Compensations.FindIndex(x => x.Id == compensationExecution.Id);
+            if (index >= 0)
+                store.Compensations[index] = compensationExecution;
+
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(store.Compensations.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
     }
 
     private sealed class TransitionRepositoryStub(RuntimeStore store) : IExecutionTransitionRepository
