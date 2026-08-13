@@ -18,6 +18,12 @@ public interface IRuntimeArtifactRepository
 
     Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default);
 
+    Task<RuntimeOrchestrationArtifact> GetByVersion(
+        string environmentKey,
+        string orchestrationDefinitionKey,
+        SemanticVersion version,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(
         string environmentKey,
         CancellationToken cancellationToken = default);

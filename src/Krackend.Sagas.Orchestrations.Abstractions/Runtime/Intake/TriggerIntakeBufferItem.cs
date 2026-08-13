@@ -23,6 +23,12 @@ public sealed class TriggerIntakeBufferItem
     public required string TriggerKey { get; set; }
 
     /// <summary>
+    /// Gets or sets the optional runtime artifact version requested by the trigger.
+    /// When omitted, the active artifact for the trigger key is used.
+    /// </summary>
+    public string ArtifactVersion { get; set; }
+
+    /// <summary>
     /// Gets or sets environment key.
     /// </summary>
     public required string EnvironmentKey { get; set; }

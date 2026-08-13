@@ -65,6 +65,25 @@ public sealed class RuntimeArtifactRepository : IRuntimeArtifactRepository
         return RuntimeStorageMapper.ToDomain(entity);
     }
 
+    public async Task<RuntimeOrchestrationArtifact> GetByVersion(
+        string environmentKey,
+        string orchestrationDefinitionKey,
+        SemanticVersion version,
+        CancellationToken cancellationToken = default)
+    {
+        var artifactVersion = version.ToString();
+        var entity = await _dbContext.Artifacts
+            .AsNoTracking()
+            .OrderByDescending(x => x.ActivatedOnUtc ?? x.DeployedOnUtc)
+            .FirstOrDefaultAsync(x => x.EnvironmentKey == environmentKey
+                && x.OrchestrationDefinitionKey == orchestrationDefinitionKey
+                && x.Version == artifactVersion
+                && x.ArtifactType == "orchestration.deploy",
+                cancellationToken);
+
+        return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
+    }
+
     public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(
         string environmentKey,
         CancellationToken cancellationToken = default)
