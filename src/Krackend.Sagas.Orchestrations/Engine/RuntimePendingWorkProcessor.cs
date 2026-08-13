@@ -20,6 +20,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     private readonly IExecutionTransitionRepository _transitionRepository;
     private readonly IRuntimeTimeoutPolicyEvaluator _timeoutPolicyEvaluator;
     private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
+    private readonly IRuntimeCompensationExecutor _compensationExecutor;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
     private readonly IRuntimeCompensationPlanBuilder _compensationPlanBuilder = new RuntimeCompensationPlanBuilder();
 
@@ -36,6 +37,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         IExecutionTransitionRepository transitionRepository,
         IRuntimeTimeoutPolicyEvaluator timeoutPolicyEvaluator,
         IRuntimeErrorPolicyResolver errorPolicyResolver,
+        IRuntimeCompensationExecutor compensationExecutor,
         IRuntimeReactiveEventPublisher reactiveEventPublisher)
     {
         _taskRepository = taskRepository;
@@ -47,6 +49,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         _transitionRepository = transitionRepository;
         _timeoutPolicyEvaluator = timeoutPolicyEvaluator;
         _errorPolicyResolver = errorPolicyResolver;
+        _compensationExecutor = compensationExecutor;
         _reactiveEventPublisher = reactiveEventPublisher;
     }
 
@@ -60,6 +63,11 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         foreach (var task in waitingTasks)
         {
             await TryApplyTimeout(task, nowUtc, cancellationToken);
+        }
+
+        foreach (var compensation in compensations)
+        {
+            await _compensationExecutor.Execute(compensation, cancellationToken);
         }
 
         var items = waitingTasks
@@ -423,6 +431,11 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             "TaskReconciliationUnsupported" => RuntimeReactiveEventNames.TaskReconciliationUnsupported,
             "TaskErrorPolicyApplied" => RuntimeReactiveEventNames.TaskErrorPolicyApplied,
             "CompensationScheduled" => RuntimeReactiveEventNames.CompensationScheduled,
+            "CompensationStarted" => RuntimeReactiveEventNames.CompensationStarted,
+            "CompensationDispatched" => RuntimeReactiveEventNames.CompensationDispatched,
+            "CompensationCompleted" => RuntimeReactiveEventNames.CompensationCompleted,
+            "CompensationFailed" => RuntimeReactiveEventNames.CompensationFailed,
+            "InstanceCompensated" => RuntimeReactiveEventNames.OrchestrationCompensated,
             _ => RuntimeReactiveEventNames.TransitionRecorded
         };
 }

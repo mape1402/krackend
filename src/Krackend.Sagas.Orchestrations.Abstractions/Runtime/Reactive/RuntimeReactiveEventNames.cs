@@ -28,5 +28,10 @@ public static class RuntimeReactiveEventNames
     public const string TaskWaiting = "task.waiting";
     public const string TaskResponseReceived = "task.response.received";
     public const string CompensationScheduled = "compensation.scheduled";
+    public const string CompensationStarted = "compensation.started";
+    public const string CompensationDispatched = "compensation.dispatched";
+    public const string CompensationCompleted = "compensation.completed";
+    public const string CompensationFailed = "compensation.failed";
+    public const string OrchestrationCompensated = "orchestration.compensated";
     public const string TransitionRecorded = "transition.recorded";
 }
