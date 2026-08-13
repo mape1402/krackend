@@ -32,6 +32,27 @@ public sealed class TriggerPromoterVersionResolutionTests
         Assert.Equal("1.0.0", explicitV1.Instance.Metadata["artifactVersion"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task Promote_AllowsDistinctIdempotencyKeysToShareCorrelationId()
+    {
+        var store = new VersionedTriggerStore();
+        var artifact = CreateArtifact("1.0.0", isActive: true);
+        store.Artifacts[artifact.Id] = artifact;
+        var promoter = CreatePromoter(store);
+
+        var first = await promoter.Promote(CreateItem("shared-correlation", "1.0.0", "first-idempotency"), CancellationToken.None);
+        var second = await promoter.Promote(CreateItem("shared-correlation", "1.0.0", "second-idempotency"), CancellationToken.None);
+        var replay = await promoter.Promote(CreateItem("shared-correlation", "1.0.0", "first-idempotency"), CancellationToken.None);
+
+        Assert.Equal("shared-correlation", first.Instance.CorrelationId);
+        Assert.Equal("shared-correlation", second.Instance.CorrelationId);
+        Assert.NotEqual(first.Instance.Id, second.Instance.Id);
+        Assert.NotEqual(first.Instance.ExecutionKey, second.Instance.ExecutionKey);
+        Assert.Equal(first.Instance.Id, replay.Instance.Id);
+        Assert.EndsWith(first.Intake.Id.ToString(), first.Instance.ExecutionKey);
+        Assert.EndsWith(second.Intake.Id.ToString(), second.Instance.ExecutionKey);
+    }
+
     private static TriggerPromoter CreatePromoter(VersionedTriggerStore store)
         => new(
             new ArtifactResolver(new RuntimeArtifactRepositoryStub(store)),
@@ -39,7 +60,7 @@ public sealed class TriggerPromoterVersionResolutionTests
             new InstanceRepositoryStub(store),
             new TransitionRepositoryStub(store));
 
-    private static TriggerIntakeBufferItem CreateItem(string correlationId, string artifactVersion)
+    private static TriggerIntakeBufferItem CreateItem(string correlationId, string artifactVersion, string idempotencyKey = "")
         => new()
         {
             TriggerType = TriggerType.Event,
@@ -47,7 +68,7 @@ public sealed class TriggerPromoterVersionResolutionTests
             ArtifactVersion = artifactVersion,
             EnvironmentKey = "local",
             CorrelationId = correlationId,
-            IdempotencyKey = correlationId,
+            IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? correlationId : idempotencyKey,
             SourceMessageId = $"msg-{correlationId}",
             PayloadJson = """{"orderId":"A1"}"""
         };
