@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Design.WebUI;
 using Krackend.Sagas.Orchestrations.Distribution.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
 using Krackend.Sagas.Orchestrations.Security.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
@@ -55,6 +56,7 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(provider.GetRequiredService<OrchestratorNavigationRegistry>());
         Assert.Single(provider.GetServices<IOrchestratorNavigationContributor>());
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IRuntimeDiagnosticsReader));
     }
 
     [Fact]
