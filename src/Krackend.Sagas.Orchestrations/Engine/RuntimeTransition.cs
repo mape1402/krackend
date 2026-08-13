@@ -73,6 +73,12 @@ internal sealed class RuntimeTransition
         => new() { Instance = instance, Type = type, FromStatus = fromStatus?.ToString(), ToStatus = toStatus?.ToString(), StageExecution = stageExecution, TaskExecution = taskExecution };
 
     /// <summary>
+    /// Creates a task-level transition with a payload.
+    /// </summary>
+    public static RuntimeTransition ForTaskPayload<TFrom, TTo>(OrchestrationInstance instance, string type, TFrom fromStatus, TTo toStatus, StageExecution stageExecution, TaskExecution taskExecution, JsonNode payload)
+        => new() { Instance = instance, Type = type, FromStatus = fromStatus?.ToString(), ToStatus = toStatus?.ToString(), StageExecution = stageExecution, TaskExecution = taskExecution, Payload = payload };
+
+    /// <summary>
     /// Creates an attempt-level transition.
     /// </summary>
     public static RuntimeTransition ForAttempt<TFrom, TTo>(OrchestrationInstance instance, string type, TFrom fromStatus, TTo toStatus, StageExecution stageExecution, TaskExecution taskExecution, TaskExecutionAttempt attempt)
