@@ -12,6 +12,81 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class RuntimeEngineIdempotencyTests
 {
     [Fact]
+    public async Task ProcessNext_CreatesTaskCorrelationScopedByInstanceId()
+    {
+        var store = new RuntimeStore();
+        var artifactId = Id.New();
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            RuntimeOrchestrationArtifactId = artifactId,
+            TriggerIntakeId = Id.New(),
+            CorrelationId = "shared-trace",
+            ExecutionKey = "order.fulfillment::shared-trace::intake",
+            Status = OrchestrationInstanceStatus.Created,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastUpdatedOnUtc = DateTime.UtcNow,
+            SnapshotPayload = JsonNode.Parse("""{"orderId":"shared-trace"}""")
+        };
+        var artifact = CreateArtifact(artifactId, """
+        {
+          "Key": "order.fulfillment",
+          "Version": { "Major": 1, "Minor": 0, "Patch": 0 },
+          "StageDefinitions": [
+            {
+              "Key": "reserve-inventory",
+              "Order": 1,
+              "TaskDefinitions": [
+                {
+                  "Key": "reserve-stock",
+                  "Order": 1,
+                  "Kind": 0,
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "inventory.reserve", "Version": "1.0.0" },
+                  "IsEnabled": true
+                }
+              ]
+            }
+          ]
+        }
+        """);
+        var intake = new TriggerIntake
+        {
+            Id = instance.TriggerIntakeId,
+            TriggerType = TriggerType.Event,
+            TriggerKey = instance.OrchestrationDefinitionKey,
+            EnvironmentKey = instance.EnvironmentKey,
+            CorrelationId = instance.CorrelationId,
+            RawPayload = instance.SnapshotPayload!.DeepClone(),
+            NormalizedPayload = instance.SnapshotPayload.DeepClone(),
+            Status = TriggerIntakeStatus.PromotedToRuntime,
+            PersistenceLevel = "Primary",
+            BufferLocation = "InMemory",
+            ResolvedArtifactId = artifact.Id,
+            PromotedInstanceId = instance.Id,
+            ReceivedOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+        store.Instances[instance.Id] = instance;
+        store.Artifacts[artifact.Id] = artifact;
+        var dispatcher = new RecordingTaskDispatcher();
+        var engine = CreateEngine(
+            store,
+            new SingleItemIntakeBuffer(),
+            new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
+            new RecordingTaskDispatcherResolver(dispatcher));
+
+        var result = await engine.ProcessNext();
+
+        Assert.True(result.Succeeded);
+        var task = Assert.Single(store.Tasks.Values);
+        Assert.Equal($"shared-trace:{instance.Id}:reserve-stock", task.CorrelationId);
+        Assert.Equal(task.CorrelationId, Assert.Single(store.Dispatches.Values).CorrelationId);
+        Assert.Equal(task.CorrelationId, Assert.Single(dispatcher.Requests).CorrelationId);
+    }
+
+    [Fact]
     public async Task ContinueFromResponse_WhenTaskAlreadyCompleted_IgnoresDuplicateWithoutWritingTransitions()
     {
         var store = new RuntimeStore();
@@ -444,11 +519,15 @@ public sealed class RuntimeEngineIdempotencyTests
         TaskExecutionAttempt Attempt,
         TaskDispatch Dispatch);
 
-    private static RuntimeEngine CreateEngine(RuntimeStore store)
+    private static RuntimeEngine CreateEngine(
+        RuntimeStore store,
+        ITriggerIntakeBuffer? intakeBuffer = null,
+        ITriggerPromoter? triggerPromoter = null,
+        IRuntimeTaskDispatcherResolver? taskDispatcherResolver = null)
         => new(new RuntimeEngineDependencies
         {
-            IntakeBuffer = new ThrowingIntakeBuffer(),
-            TriggerPromoter = new ThrowingTriggerPromoter(),
+            IntakeBuffer = intakeBuffer ?? new ThrowingIntakeBuffer(),
+            TriggerPromoter = triggerPromoter ?? new ThrowingTriggerPromoter(),
             ArtifactRepository = new RuntimeArtifactRepositoryStub(store),
             StageRepository = new StageRepositoryStub(store),
             TaskRepository = new TaskRepositoryStub(store),
@@ -457,7 +536,7 @@ public sealed class RuntimeEngineIdempotencyTests
             CompensationRepository = new CompensationRepositoryStub(store),
             InstanceRepository = new InstanceRepositoryStub(store),
             TimelineRepository = new TransitionRepositoryStub(store),
-            TaskDispatcherResolver = new ThrowingTaskDispatcherResolver(),
+            TaskDispatcherResolver = taskDispatcherResolver ?? new ThrowingTaskDispatcherResolver(),
             ConditionEvaluator = new RuntimeConditionEvaluator(),
             PayloadTransformer = new RuntimePayloadTransformer(),
             RetryPolicyEvaluator = new RuntimeRetryPolicyEvaluator(),
@@ -690,10 +769,39 @@ public sealed class RuntimeEngineIdempotencyTests
             => throw new InvalidOperationException("Duplicate responses must not dispatch tasks.");
     }
 
+    private sealed class RecordingTaskDispatcherResolver(IRuntimeTaskDispatcher dispatcher) : IRuntimeTaskDispatcherResolver
+    {
+        public IRuntimeTaskDispatcher Resolve(string taskKind) => dispatcher;
+    }
+
+    private sealed class RecordingTaskDispatcher : IRuntimeTaskDispatcher
+    {
+        public List<RuntimeTaskDispatchRequest> Requests { get; } = new();
+
+        public bool CanDispatch(string taskKind) => string.Equals(taskKind, "Messaging", StringComparison.OrdinalIgnoreCase);
+
+        public Task<RuntimeTaskDispatchResult> Dispatch(RuntimeTaskDispatchRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new RuntimeTaskDispatchResult
+            {
+                Succeeded = true,
+                Status = "Dispatched",
+                ExternalReference = "test"
+            });
+        }
+    }
+
     private sealed class ThrowingTriggerPromoter : ITriggerPromoter
     {
         public Task<TriggerPromotionResult> Promote(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+    }
+
+    private sealed class InlineTriggerPromoter(TriggerPromotionResult result) : ITriggerPromoter
+    {
+        public Task<TriggerPromotionResult> Promote(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
+            => Task.FromResult(result);
     }
 
     private sealed class ThrowingIntakeBuffer : ITriggerIntakeBuffer
@@ -712,5 +820,44 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<TriggerIntakeBufferResult> MarkFailed(Id bufferItemId, string leaseId, string errorMessage, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+    }
+
+    private sealed class SingleItemIntakeBuffer : ITriggerIntakeBuffer
+    {
+        private readonly TriggerIntakeBufferItem _item = new()
+        {
+            BufferItemId = Id.New(),
+            TriggerType = TriggerType.Event,
+            TriggerKey = "order.fulfillment",
+            ArtifactVersion = "1.0.0",
+            EnvironmentKey = "local",
+            CorrelationId = "shared-trace",
+            IdempotencyKey = "shared-trace-a",
+            PayloadJson = """{"orderId":"shared-trace"}""",
+            ReceivedOnUtc = DateTime.UtcNow
+        };
+
+        private bool _leased;
+
+        public Task<TriggerIntakeBufferResult> Enqueue(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<TriggerIntakeBufferLease> TryDequeue(CancellationToken cancellationToken = default)
+        {
+            if (_leased)
+                return Task.FromResult<TriggerIntakeBufferLease>(null!);
+
+            _leased = true;
+            return Task.FromResult(new TriggerIntakeBufferLease(_item, "lease", DateTime.UtcNow));
+        }
+
+        public Task<TriggerIntakeBufferItem> Peek(CancellationToken cancellationToken = default)
+            => Task.FromResult(_leased ? null! : _item);
+
+        public Task<TriggerIntakeBufferResult> MarkCompleted(Id bufferItemId, string leaseId, CancellationToken cancellationToken = default)
+            => Task.FromResult(TriggerIntakeBufferResult.Accept(bufferItemId));
+
+        public Task<TriggerIntakeBufferResult> MarkFailed(Id bufferItemId, string leaseId, string errorMessage, CancellationToken cancellationToken = default)
+            => Task.FromResult(TriggerIntakeBufferResult.Reject(errorMessage));
     }
 }
