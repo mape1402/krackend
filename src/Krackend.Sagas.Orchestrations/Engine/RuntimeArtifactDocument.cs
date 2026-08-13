@@ -48,6 +48,7 @@ internal sealed class RuntimeArtifactDocument
             .Select(ParseStage)
             .OrderBy(x => x.Order)
             .ToArray();
+        ValidateTopology(key, stages);
 
         return new RuntimeArtifactDocument
         {
@@ -76,6 +77,28 @@ internal sealed class RuntimeArtifactDocument
                 .OrderBy(x => x.Order)
                 .ToArray()
         };
+    }
+
+    private static void ValidateTopology(string key, IReadOnlyCollection<RuntimeStageDocument> stages)
+    {
+        var duplicatedStageOrder = stages
+            .GroupBy(stage => stage.Order)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicatedStageOrder is not null)
+        {
+            throw new ArgumentException($"Runtime artifact '{key}' has duplicated stage order '{duplicatedStageOrder.Key}'.");
+        }
+
+        foreach (var stage in stages)
+        {
+            var duplicatedTaskOrder = stage.Tasks
+                .GroupBy(task => task.Order)
+                .FirstOrDefault(group => group.Count() > 1);
+            if (duplicatedTaskOrder is not null)
+            {
+                throw new ArgumentException($"Runtime artifact '{key}' stage '{stage.Key}' has duplicated task order '{duplicatedTaskOrder.Key}'.");
+            }
+        }
     }
 
     private static RuntimeTaskDocument ParseTask(JsonNode node)

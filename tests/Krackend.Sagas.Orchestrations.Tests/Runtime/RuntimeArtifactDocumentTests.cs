@@ -133,4 +133,71 @@ public sealed class RuntimeArtifactDocumentTests
         Assert.Equal(nameof(TaskDispatchType.FireAndForget), task.DispatchType);
         Assert.False(task.AwaitResponse);
     }
+
+    [Fact]
+    public void Parse_RejectsDuplicatedStageOrder()
+    {
+        var payload = JsonNode.Parse("""
+        {
+          "Key": "order.structure",
+          "StageDefinitions": [
+            { "Key": "first", "Order": 1, "TaskDefinitions": [] },
+            { "Key": "second", "Order": 1, "TaskDefinitions": [] }
+          ]
+        }
+        """);
+
+        var exception = Assert.Throws<ArgumentException>(() => RuntimeArtifactDocument.Parse(payload!, "1.0.0"));
+
+        Assert.Contains("duplicated stage order '1'", exception.Message);
+    }
+
+    [Fact]
+    public void Parse_RejectsDuplicatedEnabledTaskOrderWithinStage()
+    {
+        var payload = JsonNode.Parse($$"""
+        {
+          "Key": "order.structure",
+          "StageDefinitions": [
+            {
+              "Key": "duplicate-task-order",
+              "Order": 1,
+              "TaskDefinitions": [
+                { "Key": "first", "Order": 1, "Kind": {{(int)TaskKind.Messaging}}, "DispatchType": {{(int)TaskDispatchType.FireAndWaitCallback}}, "Configuration": { "Topic": "inventory.reserve", "Version": "1.0.0" }, "IsEnabled": true },
+                { "Key": "second", "Order": 1, "Kind": {{(int)TaskKind.Messaging}}, "DispatchType": {{(int)TaskDispatchType.FireAndWaitCallback}}, "Configuration": { "Topic": "billing.charge", "Version": "1.0.0" }, "IsEnabled": true }
+              ]
+            }
+          ]
+        }
+        """);
+
+        var exception = Assert.Throws<ArgumentException>(() => RuntimeArtifactDocument.Parse(payload!, "1.0.0"));
+
+        Assert.Contains("duplicated task order '1'", exception.Message);
+    }
+
+    [Fact]
+    public void Parse_IgnoresDuplicatedTaskOrderWhenOneTaskIsDisabled()
+    {
+        var payload = JsonNode.Parse($$"""
+        {
+          "Key": "order.structure",
+          "StageDefinitions": [
+            {
+              "Key": "task-disabled",
+              "Order": 1,
+              "TaskDefinitions": [
+                { "Key": "disabled", "Order": 1, "Kind": {{(int)TaskKind.Messaging}}, "DispatchType": {{(int)TaskDispatchType.FireAndWaitCallback}}, "Configuration": { "Topic": "demo.dispatch-fail", "Version": "1.0.0" }, "IsEnabled": false },
+                { "Key": "enabled", "Order": 1, "Kind": {{(int)TaskKind.Messaging}}, "DispatchType": {{(int)TaskDispatchType.FireAndWaitCallback}}, "Configuration": { "Topic": "billing.charge", "Version": "1.0.0" }, "IsEnabled": true }
+              ]
+            }
+          ]
+        }
+        """);
+
+        var document = RuntimeArtifactDocument.Parse(payload!, "1.0.0");
+        var task = Assert.Single(Assert.Single(document.Stages).Tasks);
+
+        Assert.Equal("enabled", task.Key);
+    }
 }
