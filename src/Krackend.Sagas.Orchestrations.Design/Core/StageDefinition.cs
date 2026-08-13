@@ -43,6 +43,11 @@ public sealed class StageDefinition
     public ExecutionCondition ExecutionCondition { get; set; }
 
     /// <summary>
+    /// Gets or sets whether execution condition is enabled.
+    /// </summary>
+    public bool HasExecutionCondition { get; set; }
+
+    /// <summary>
     /// Gets or sets task definitions.
     /// </summary>
     public List<TaskDefinition> TaskDefinitions { get; set; } = new();

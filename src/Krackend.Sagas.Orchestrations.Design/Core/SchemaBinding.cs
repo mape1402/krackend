@@ -49,4 +49,9 @@ public sealed class SchemaBinding
     /// Gets or sets strict mode.
     /// </summary>
     public bool StrictMode { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether schema validation is enabled.
+    /// </summary>
+    public bool IsValidationEnabled { get; set; }
 }

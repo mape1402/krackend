@@ -31,4 +31,9 @@ public sealed class MessagingTaskConfiguration : ITaskConfiguration
     /// <remarks>This property allows customization of how the data model interacts with the underlying
     /// schema. Ensure that the schema binding is correctly configured to avoid runtime errors.</remarks>
     public SchemaBinding SchemaBinding { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether schema validation is enabled for this task.
+    /// </summary>
+    public bool HasSchemaValidation { get; set; }
 }

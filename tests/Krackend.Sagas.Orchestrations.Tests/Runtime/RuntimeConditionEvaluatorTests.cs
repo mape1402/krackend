@@ -34,6 +34,24 @@ public sealed class RuntimeConditionEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_WhenConditionIsDisabled_AllowsExecutionWithoutEvaluatingExpression()
+    {
+        var evaluator = new RuntimeConditionEvaluator();
+        var condition = JsonNode.Parse("""
+        {
+          "IsEnabled": false,
+          "Configuration": {
+            "Expression": "payload.total > 0"
+          }
+        }
+        """)!.AsObject();
+
+        var result = evaluator.Evaluate(condition, JsonNode.Parse("""{"total":0}"""));
+
+        Assert.True(result.ShouldExecute);
+    }
+
+    [Fact]
     public void Evaluate_WhenExpressionIsUnsupported_FailsExplicitly()
     {
         var evaluator = new RuntimeConditionEvaluator();

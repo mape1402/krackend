@@ -9,6 +9,14 @@ namespace Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.JsonModels;
 public sealed class CompensationDefinitionJsonModel
 {
     /// <summary>
+    /// Gets or sets whether the rollback execution condition is enabled.
+    /// </summary>
+    public bool HasExecutionCondition { get; set; }
+    /// <summary>
+    /// Gets or sets whether the rollback transformation is enabled.
+    /// </summary>
+    public bool HasTransformation { get; set; }
+    /// <summary>
     /// Gets or sets CompensationTaskKind.
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]

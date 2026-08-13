@@ -13,4 +13,10 @@ public sealed record SchemaBindingArtifact(
     string ContractKey,
     SemanticVersion ContractVersion,
     Id RegistryProviderId,
-    bool StrictMode);
+    bool StrictMode)
+{
+    /// <summary>
+    /// Gets whether schema validation is enabled.
+    /// </summary>
+    public bool IsValidationEnabled { get; init; }
+}

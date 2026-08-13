@@ -45,7 +45,9 @@ public sealed class CreateTaskDefinitionCommandHandler : IRequestHandler<CreateT
                 ? null
                 : PrimitiveParser.ParseId(request.ParallelGroupId),
             ExecutionCondition = request.ExecutionCondition,
+            HasExecutionCondition = request.ExecutionCondition is not null,
             Transformation = request.Transformation,
+            HasTransformation = request.Transformation is not null,
             Configuration = request.Configuration,
             RetryPolicy = request.RetryPolicy,
             TimeoutPolicy = request.TimeoutPolicy,

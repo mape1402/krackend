@@ -13,6 +13,9 @@ public sealed class RuntimeConditionEvaluator : IRuntimeConditionEvaluator
         if (condition is null || condition.Count == 0)
             return RuntimeConditionEvaluation.Execute();
 
+        if (!ReadBool(condition, true, "IsEnabled", "isEnabled"))
+            return RuntimeConditionEvaluation.Execute("disabled");
+
         var expression = ReadExpression(condition);
         if (string.IsNullOrWhiteSpace(expression))
             return RuntimeConditionEvaluation.Execute();
@@ -51,4 +54,22 @@ public sealed class RuntimeConditionEvaluator : IRuntimeConditionEvaluator
 
     private static JsonObject ReadObject(JsonObject obj, params string[] names)
         => names.Select(name => obj[name]).OfType<JsonObject>().FirstOrDefault();
+
+    private static bool ReadBool(JsonObject obj, bool fallback, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var node = obj[name];
+            if (node is JsonValue value)
+            {
+                if (value.TryGetValue<bool>(out var boolean))
+                    return boolean;
+
+                if (value.TryGetValue<string>(out var text) && bool.TryParse(text, out var parsed))
+                    return parsed;
+            }
+        }
+
+        return fallback;
+    }
 }
