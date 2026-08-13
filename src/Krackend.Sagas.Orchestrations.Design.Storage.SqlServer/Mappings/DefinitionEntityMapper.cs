@@ -128,7 +128,7 @@ internal static class DefinitionEntityMapper
             Name = definition.Name,
             Order = definition.Order,
             Description = definition.Description,
-            ExecutionCondition = ToOptionalJson(definition.ExecutionCondition),
+            ExecutionCondition = ToOptionalJson(definition.ExecutionCondition, definition.HasExecutionCondition),
         };
     }
 
@@ -210,6 +210,7 @@ internal static class DefinitionEntityMapper
             Description = entity.Description,
             Order = entity.Order,
             ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
+            HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
         };
     }
 
@@ -232,8 +233,8 @@ internal static class DefinitionEntityMapper
             DispatchType = definition.DispatchType,
             IsEnabled = definition.IsEnabled,
             Notes = definition.Notes,
-            ExecutionCondition = ToOptionalJson(definition.ExecutionCondition),
-            Transformation = ToOptionalJson(definition.Transformation),
+            ExecutionCondition = ToOptionalJson(definition.ExecutionCondition, definition.HasExecutionCondition),
+            Transformation = ToOptionalJson(definition.Transformation, definition.HasTransformation),
             Configuration = ToJson(definition.Configuration),
             RetryPolicy = ToOptionalJson(definition.RetryPolicy),
             TimeoutPolicy = ToOptionalJson(definition.TimeoutPolicy),
@@ -258,7 +259,9 @@ internal static class DefinitionEntityMapper
             ExecutionMode = entity.ExecutionMode,
             ParallelGroupId = entity.ParallelGroupId,
             ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
+            HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
             Transformation = ToOptionalModel(entity.Transformation),
+            HasTransformation = IsTransformationEnabled(entity.Transformation),
             Configuration = ToModel(entity.Configuration),
             RetryPolicy = ToOptionalModel(entity.RetryPolicy),
             TimeoutPolicy = ToOptionalModel(entity.TimeoutPolicy),
@@ -412,6 +415,7 @@ internal static class DefinitionEntityMapper
     private static ExecutionConditionJsonModel ToJson(ExecutionCondition source)
         => new()
         {
+            IsEnabled = true,
             Engine = source.Engine,
             Configuration = source.Configuration switch
             {
@@ -429,6 +433,23 @@ internal static class DefinitionEntityMapper
     /// </summary>
     private static ExecutionConditionJsonModel ToOptionalJson(ExecutionCondition source)
         => source is null ? null : ToJson(source);
+
+    /// <summary>
+    /// Executes ToOptionalJson.
+    /// </summary>
+    private static ExecutionConditionJsonModel ToOptionalJson(ExecutionCondition source, bool isEnabled)
+    {
+        if (!isEnabled)
+        {
+            var json = source is null ? new ExecutionConditionJsonModel() : ToJson(source);
+            json.IsEnabled = false;
+            return json;
+        }
+
+        return source is null
+            ? null
+            : ToJson(source);
+    }
 
     /// <summary>
     /// Executes ToModel.
@@ -566,6 +587,7 @@ internal static class DefinitionEntityMapper
     private static TransformationDefinitionJsonModel ToJson(TransformationDefinition source)
         => new()
         {
+            IsEnabled = true,
             Engine = source.Engine,
             Configuration = source.Configuration switch
             {
@@ -583,6 +605,23 @@ internal static class DefinitionEntityMapper
     /// </summary>
     private static TransformationDefinitionJsonModel ToOptionalJson(TransformationDefinition source)
         => source is null ? null : ToJson(source);
+
+    /// <summary>
+    /// Executes ToOptionalJson.
+    /// </summary>
+    private static TransformationDefinitionJsonModel ToOptionalJson(TransformationDefinition source, bool isEnabled)
+    {
+        if (!isEnabled)
+        {
+            var json = source is null ? new TransformationDefinitionJsonModel() : ToJson(source);
+            json.IsEnabled = false;
+            return json;
+        }
+
+        return source is null
+            ? null
+            : ToJson(source);
+    }
 
     /// <summary>
     /// Executes ToModel.
@@ -609,7 +648,7 @@ internal static class DefinitionEntityMapper
                 Type = "http",
                 Http = new HttpTaskConfigurationJsonModel
                 {
-                SchemaBinding = ToJson(http.SchemaBinding),
+                SchemaBinding = ToJson(http.SchemaBinding, http.HasSchemaValidation),
                 BaseUrlVariableRef = http.BaseUrlVariableRef,
                 RelativePath = http.RelativePath,
                 Method = http.Method,
@@ -626,7 +665,7 @@ internal static class DefinitionEntityMapper
                 {
                     Topic = messaging.Topic,
                     Version = messaging.Version.ToString(),
-                    SchemaBinding = ToJson(messaging.SchemaBinding),
+                    SchemaBinding = ToJson(messaging.SchemaBinding, messaging.HasSchemaValidation),
                 },
             },
             PluginTaskConfiguration plugin => new TaskConfigurationEnvelopeJsonModel
@@ -660,6 +699,7 @@ internal static class DefinitionEntityMapper
             "http" => new HttpTaskConfiguration
             {
                 SchemaBinding = ToModel(source.Http?.SchemaBinding),
+                HasSchemaValidation = IsSchemaValidationEnabled(source.Http?.SchemaBinding),
                 BaseUrlVariableRef = source.Http?.BaseUrlVariableRef,
                 RelativePath = source.Http?.RelativePath,
                 Method = source.Http?.Method,
@@ -673,6 +713,7 @@ internal static class DefinitionEntityMapper
                 Topic = source.Messaging?.Topic,
                 Version = ParseSemanticVersion(source.Messaging?.Version),
                 SchemaBinding = ToModel(source.Messaging?.SchemaBinding),
+                HasSchemaValidation = IsSchemaValidationEnabled(source.Messaging?.SchemaBinding),
             },
             "plugin" => new PluginTaskConfiguration
             {
@@ -689,8 +730,10 @@ internal static class DefinitionEntityMapper
         => new()
         {
             CompensationTaskKind = source.CompensationTaskKind,
-            Transformation = ToOptionalJson(source.Transformation),
-            ExecutionCondition = ToOptionalJson(source.ExecutionCondition),
+            HasTransformation = source.HasTransformation,
+            HasExecutionCondition = source.HasExecutionCondition,
+            Transformation = ToOptionalJson(source.Transformation, source.HasTransformation),
+            ExecutionCondition = ToOptionalJson(source.ExecutionCondition, source.HasExecutionCondition),
             Configuration = ToJson(source.Configuration),
             RetryPolicy = ToOptionalJson(source.RetryPolicy),
             TimeoutPolicy = ToOptionalJson(source.TimeoutPolicy),
@@ -711,7 +754,9 @@ internal static class DefinitionEntityMapper
         {
             CompensationTaskKind = source?.CompensationTaskKind ?? TaskKind.Http,
             Transformation = ToOptionalModel(source?.Transformation),
+            HasTransformation = source?.HasTransformation ?? false,
             ExecutionCondition = ToOptionalModel(source?.ExecutionCondition),
+            HasExecutionCondition = source?.HasExecutionCondition ?? false,
             Configuration = ToModel(source?.Configuration),
             RetryPolicy = ToOptionalModel(source?.RetryPolicy),
             TimeoutPolicy = ToOptionalModel(source?.TimeoutPolicy),
@@ -723,7 +768,7 @@ internal static class DefinitionEntityMapper
     /// </summary>
     private static ExecutionCondition ToOptionalModel(ExecutionConditionJsonModel source)
     {
-        if (source is null)
+        if (!IsExecutionConditionEnabled(source))
         {
             return null;
         }
@@ -749,7 +794,7 @@ internal static class DefinitionEntityMapper
     /// Executes ToOptionalModel.
     /// </summary>
     private static TransformationDefinition ToOptionalModel(TransformationDefinitionJsonModel source)
-        => source is null ? null : ToModel(source);
+        => IsTransformationEnabled(source) ? ToModel(source) : null;
 
     /// <summary>
     /// Executes ToOptionalModel.
@@ -780,7 +825,7 @@ internal static class DefinitionEntityMapper
                 Type = "event",
                 Event = new EventTriggerChannelJsonModel
                 {
-                    SchemaBinding = ToJson(evt.SchemaBinding),
+                    SchemaBinding = ToJson(evt.SchemaBinding, evt.HasSchemaValidation),
                     Topic = evt.Topic,
                     Version = evt.Version.ToString(),
                 },
@@ -797,6 +842,7 @@ internal static class DefinitionEntityMapper
             "event" => new EventTriggerChannel
             {
                 SchemaBinding = ToModel(source.Event?.SchemaBinding),
+                HasSchemaValidation = IsSchemaValidationEnabled(source.Event?.SchemaBinding),
                 Topic = source.Event?.Topic,
                 Version = ParseSemanticVersion(source.Event?.Version),
             },
@@ -817,7 +863,25 @@ internal static class DefinitionEntityMapper
             ContractVersion = source.ContractVersion.ToString(),
             RegistryProviderId = source.RegistryProviderId.ToString(),
             StrictMode = source.StrictMode,
+            IsValidationEnabled = source.IsValidationEnabled,
         };
+
+    /// <summary>
+    /// Executes ToJson.
+    /// </summary>
+    private static SchemaBindingJsonModel ToJson(SchemaBinding source, bool isValidationEnabled)
+    {
+        if (!isValidationEnabled)
+        {
+            var disabledJson = source is null ? new SchemaBindingJsonModel() : ToJson(source);
+            disabledJson.IsValidationEnabled = false;
+            return disabledJson;
+        }
+
+        var json = source is null ? new SchemaBindingJsonModel() : ToJson(source);
+        json.IsValidationEnabled = true;
+        return json;
+    }
 
     /// <summary>
     /// Executes ToModel.
@@ -833,7 +897,38 @@ internal static class DefinitionEntityMapper
             ContractVersion = ParseSemanticVersion(source?.ContractVersion),
             RegistryProviderId = ParseId(source?.RegistryProviderId),
             StrictMode = source?.StrictMode ?? false,
+            IsValidationEnabled = IsSchemaValidationEnabled(source),
         };
+
+    private static bool IsExecutionConditionEnabled(ExecutionConditionJsonModel source)
+    {
+        if (source is null)
+        {
+            return false;
+        }
+
+        return source.IsEnabled;
+    }
+
+    private static bool IsTransformationEnabled(TransformationDefinitionJsonModel source)
+    {
+        if (source is null)
+        {
+            return false;
+        }
+
+        return source.IsEnabled;
+    }
+
+    private static bool IsSchemaValidationEnabled(SchemaBindingJsonModel source)
+    {
+        if (source is null)
+        {
+            return false;
+        }
+
+        return source.IsValidationEnabled;
+    }
 
     /// <summary>
     /// Executes ParseId.

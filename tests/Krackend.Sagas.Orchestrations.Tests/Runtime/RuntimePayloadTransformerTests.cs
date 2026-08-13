@@ -32,6 +32,21 @@ public sealed class RuntimePayloadTransformerTests
     }
 
     [Fact]
+    public void Transform_WhenTransformationIsDisabled_ReturnsPayloadCloneWithoutTransforming()
+    {
+        var transformer = new RuntimePayloadTransformer();
+        var source = JsonNode.Parse("""{"orderId":"order-1"}""")!;
+        var transformation = JsonNode.Parse("""{"IsEnabled":false,"Engine":"Scripting"}""")!.AsObject();
+
+        var result = transformer.Transform(transformation, source);
+
+        Assert.False(result.WasTransformed);
+        Assert.Equal("disabled", result.Engine);
+        Assert.Equal("""{"orderId":"order-1"}""", result.Payload.ToJsonString());
+        Assert.NotSame(source, result.Payload);
+    }
+
+    [Fact]
     public void Transform_WhenEngineIsUnsupported_FailsExplicitly()
     {
         var transformer = new RuntimePayloadTransformer();

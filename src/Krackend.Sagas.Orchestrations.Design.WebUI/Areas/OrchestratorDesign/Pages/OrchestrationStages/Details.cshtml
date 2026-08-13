@@ -80,8 +80,8 @@
                     <div class="od-group-task-list" data-group-id="@groupId">
                         @foreach (var groupedTask in groupTasks)
                         {
-                            var groupedTaskHasExecutionCondition = groupedTask.ExecutionCondition is not null;
-                            var groupedTaskHasTransformation = groupedTask.Transformation is not null;
+                            var groupedTaskHasExecutionCondition = groupedTask.HasExecutionCondition;
+                            var groupedTaskHasTransformation = groupedTask.HasTransformation;
 
                             <article class="od-pipeline-item" data-task-id="@groupedTask.Id" draggable="true">
                                 <div class="od-pipeline-card od-task-card @(groupedTask.IsEnabled ? string.Empty : "od-task-disabled")">
@@ -148,8 +148,8 @@
                 continue;
             }
 
-            var taskHasExecutionCondition = task.ExecutionCondition is not null;
-            var taskHasTransformation = task.Transformation is not null;
+            var taskHasExecutionCondition = task.HasExecutionCondition;
+            var taskHasTransformation = task.HasTransformation;
 
             <article class="od-pipeline-item" data-task-id="@task.Id" draggable="true">
                 <div class="od-pipeline-card od-task-card @(task.IsEnabled ? string.Empty : "od-task-disabled")">
@@ -399,6 +399,10 @@
                                     <div class="col-12">
                                         <h6 class="mb-2">Schema binding</h6>
                                     </div>
+                                    <div class="col-md-12 form-check form-switch ms-2">
+                                        <input asp-for="NewTask.HasHttpSchemaValidation" class="form-check-input" />
+                                        <label asp-for="NewTask.HasHttpSchemaValidation" class="form-check-label">Enable schema validation</label>
+                                    </div>
                                     <div class="col-md-5">
                                         <label asp-for="NewTask.HttpSchemaContractKey" class="form-label">Contract key</label>
                                         <input asp-for="NewTask.HttpSchemaContractKey" class="form-control" />
@@ -430,6 +434,10 @@
                                     <div class="col-12"><hr class="my-2" /></div>
                                     <div class="col-12">
                                         <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <div class="col-md-12 form-check form-switch ms-2">
+                                        <input asp-for="NewTask.HasMessagingSchemaValidation" class="form-check-input" />
+                                        <label asp-for="NewTask.HasMessagingSchemaValidation" class="form-check-label">Enable schema validation</label>
                                     </div>
                                     <div class="col-md-5">
                                         <label asp-for="NewTask.MessagingSchemaContractKey" class="form-label">Contract key</label>
@@ -636,6 +644,10 @@
                                         <div class="col-12">
                                             <h6 class="mb-2">Schema binding</h6>
                                         </div>
+                                        <div class="col-md-12 form-check form-switch ms-2">
+                                            <input asp-for="NewTask.HasCompensationHttpSchemaValidation" class="form-check-input" />
+                                            <label asp-for="NewTask.HasCompensationHttpSchemaValidation" class="form-check-label">Enable schema validation</label>
+                                        </div>
                                         <div class="col-md-5">
                                             <label asp-for="NewTask.CompensationHttpSchemaContractKey" class="form-label">Contract key</label>
                                             <input asp-for="NewTask.CompensationHttpSchemaContractKey" class="form-control" />
@@ -667,6 +679,10 @@
                                         <div class="col-12"><hr class="my-2" /></div>
                                         <div class="col-12">
                                             <h6 class="mb-2">Schema binding</h6>
+                                        </div>
+                                        <div class="col-md-12 form-check form-switch ms-2">
+                                            <input asp-for="NewTask.HasCompensationMessagingSchemaValidation" class="form-check-input" />
+                                            <label asp-for="NewTask.HasCompensationMessagingSchemaValidation" class="form-check-label">Enable schema validation</label>
                                         </div>
                                         <div class="col-md-5">
                                             <label asp-for="NewTask.CompensationMessagingSchemaContractKey" class="form-label">Contract key</label>
@@ -1535,12 +1551,14 @@
         HttpMethod: 'GET',
         HttpExpectedStatusCodes: '200',
         HttpAllowSyncResponse: false,
+        HasHttpSchemaValidation: false,
         HttpSchemaContractKey: 'contract.placeholder',
         HttpSchemaContractVersion: '1.0.0',
         HttpSchemaRegistryProviderId: '',
         HttpSchemaStrictMode: false,
         MessagingTopic: 'orchestrator.topic',
         MessagingVersion: '1.0.0',
+        HasMessagingSchemaValidation: false,
         MessagingSchemaContractKey: 'contract.placeholder',
         MessagingSchemaContractVersion: '1.0.0',
         MessagingSchemaRegistryProviderId: '',
@@ -1574,12 +1592,14 @@
         CompensationHttpMethod: 'GET',
         CompensationHttpExpectedStatusCodes: '200',
         CompensationHttpAllowSyncResponse: false,
+        HasCompensationHttpSchemaValidation: false,
         CompensationHttpSchemaContractKey: 'contract.placeholder',
         CompensationHttpSchemaContractVersion: '1.0.0',
         CompensationHttpSchemaRegistryProviderId: '',
         CompensationHttpSchemaStrictMode: false,
         CompensationMessagingTopic: 'orchestrator.topic',
         CompensationMessagingVersion: '1.0.0',
+        HasCompensationMessagingSchemaValidation: false,
         CompensationMessagingSchemaContractKey: 'contract.placeholder',
         CompensationMessagingSchemaContractVersion: '1.0.0',
         CompensationMessagingSchemaRegistryProviderId: '',

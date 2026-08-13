@@ -587,20 +587,20 @@ public sealed class DetailsModel : PageModel
             ["ParallelGroupId"] = task.ParallelGroupId ?? string.Empty,
             ["IsEnabled"] = task.IsEnabled,
             ["Notes"] = task.Notes ?? string.Empty,
-            ["HasExecutionCondition"] = task.ExecutionCondition is not null,
+            ["HasExecutionCondition"] = task.HasExecutionCondition,
             ["ConditionEngine"] = task.ExecutionCondition?.Engine.ToString() ?? EngineType.DSL.ToString(),
             ["ConditionDslExpression"] = (task.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
-            ["HasTransformation"] = task.Transformation is not null,
+            ["HasTransformation"] = task.HasTransformation,
             ["TransformationEngine"] = task.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
             ["HasRetryPolicy"] = task.RetryPolicy is not null,
             ["HasTimeoutPolicy"] = task.TimeoutPolicy is not null,
             ["HasCompensation"] = task.CompensationDefinition is not null,
             ["CompensationKind"] = task.CompensationDefinition?.CompensationTaskKind.ToString() ?? TaskKind.HumanApproval.ToString(),
             ["CompensationDispatchType"] = task.CompensationDefinition?.DispatchType.ToString() ?? TaskDispatchType.FireAndWait.ToString(),
-            ["HasCompensationExecutionCondition"] = task.CompensationDefinition?.ExecutionCondition is not null,
+            ["HasCompensationExecutionCondition"] = task.CompensationDefinition?.HasExecutionCondition ?? false,
             ["CompensationConditionEngine"] = task.CompensationDefinition?.ExecutionCondition?.Engine.ToString() ?? EngineType.DSL.ToString(),
             ["CompensationConditionDslExpression"] = (task.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
-            ["HasCompensationTransformation"] = task.CompensationDefinition?.Transformation is not null,
+            ["HasCompensationTransformation"] = task.CompensationDefinition?.HasTransformation ?? false,
             ["CompensationTransformationEngine"] = task.CompensationDefinition?.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
             ["HasCompensationRetryPolicy"] = task.CompensationDefinition?.RetryPolicy is not null,
             ["HasCompensationTimeoutPolicy"] = task.CompensationDefinition?.TimeoutPolicy is not null,
@@ -613,6 +613,7 @@ public sealed class DetailsModel : PageModel
             payload["HttpMethod"] = http.Method ?? "GET";
             payload["HttpExpectedStatusCodes"] = string.Join(',', http.ExpectedStatusCodes ?? new List<int> { 200 });
             payload["HttpAllowSyncResponse"] = http.AllowSyncResponse;
+            payload["HasHttpSchemaValidation"] = http.HasSchemaValidation;
             payload["HttpSchemaContractKey"] = http.SchemaBinding?.ContractKey ?? "contract.placeholder";
             payload["HttpSchemaContractVersion"] = http.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
             payload["HttpSchemaRegistryProviderId"] = http.SchemaBinding is null ? string.Empty : http.SchemaBinding.RegistryProviderId.ToString();
@@ -622,6 +623,7 @@ public sealed class DetailsModel : PageModel
         {
             payload["MessagingTopic"] = messaging.Topic ?? "orchestrator.topic";
             payload["MessagingVersion"] = messaging.Version.ToString();
+            payload["HasMessagingSchemaValidation"] = messaging.HasSchemaValidation;
             payload["MessagingSchemaContractKey"] = messaging.SchemaBinding?.ContractKey ?? "contract.placeholder";
             payload["MessagingSchemaContractVersion"] = messaging.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
             payload["MessagingSchemaRegistryProviderId"] = messaging.SchemaBinding is null ? string.Empty : messaging.SchemaBinding.RegistryProviderId.ToString();
@@ -675,6 +677,7 @@ public sealed class DetailsModel : PageModel
                 payload["CompensationHttpMethod"] = compHttp.Method ?? "GET";
                 payload["CompensationHttpExpectedStatusCodes"] = string.Join(',', compHttp.ExpectedStatusCodes ?? new List<int> { 200 });
                 payload["CompensationHttpAllowSyncResponse"] = compHttp.AllowSyncResponse;
+                payload["HasCompensationHttpSchemaValidation"] = compHttp.HasSchemaValidation;
                 payload["CompensationHttpSchemaContractKey"] = compHttp.SchemaBinding?.ContractKey ?? "contract.placeholder";
                 payload["CompensationHttpSchemaContractVersion"] = compHttp.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
                 payload["CompensationHttpSchemaRegistryProviderId"] = compHttp.SchemaBinding is null ? string.Empty : compHttp.SchemaBinding.RegistryProviderId.ToString();
@@ -684,6 +687,7 @@ public sealed class DetailsModel : PageModel
             {
                 payload["CompensationMessagingTopic"] = compMsg.Topic ?? "orchestrator.topic";
                 payload["CompensationMessagingVersion"] = compMsg.Version.ToString();
+                payload["HasCompensationMessagingSchemaValidation"] = compMsg.HasSchemaValidation;
                 payload["CompensationMessagingSchemaContractKey"] = compMsg.SchemaBinding?.ContractKey ?? "contract.placeholder";
                 payload["CompensationMessagingSchemaContractVersion"] = compMsg.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
                 payload["CompensationMessagingSchemaRegistryProviderId"] = compMsg.SchemaBinding is null ? string.Empty : compMsg.SchemaBinding.RegistryProviderId.ToString();
@@ -736,7 +740,7 @@ public sealed class DetailsModel : PageModel
     {
         var dsl = task.ExecutionCondition?.Configuration as DslConditionConfiguration;
         var expressionText = dsl?.Expression.ToString() ?? "true";
-        var hasExecutionCondition = task.ExecutionCondition is not null;
+        var hasExecutionCondition = task.HasExecutionCondition;
 
         return new
         {
@@ -752,7 +756,7 @@ public sealed class DetailsModel : PageModel
         return new
         {
             taskId = task.Id,
-            hasTransformation = task.Transformation is not null,
+            hasTransformation = task.HasTransformation,
             transformationEngine = task.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
         };
     }
@@ -909,6 +913,7 @@ public sealed class DetailsModel : PageModel
         {
             TaskKind.Http => new HttpTaskConfiguration
             {
+                HasSchemaValidation = input.HasHttpSchemaValidation,
                 BaseUrlVariableRef = string.IsNullOrWhiteSpace(input.HttpBaseUrlVariableRef) ? "vars.baseUrl" : input.HttpBaseUrlVariableRef,
                 RelativePath = string.IsNullOrWhiteSpace(input.HttpRelativePath) ? "/" : input.HttpRelativePath,
                 Method = string.IsNullOrWhiteSpace(input.HttpMethod) ? "GET" : input.HttpMethod.ToUpperInvariant(),
@@ -919,10 +924,12 @@ public sealed class DetailsModel : PageModel
                     input.HttpSchemaContractKey,
                     input.HttpSchemaContractVersion,
                     input.HttpSchemaRegistryProviderId,
-                    input.HttpSchemaStrictMode)
+                    input.HttpSchemaStrictMode,
+                    input.HasHttpSchemaValidation)
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
+                HasSchemaValidation = input.HasMessagingSchemaValidation,
                 Topic = string.IsNullOrWhiteSpace(input.MessagingTopic) ? "orchestrator.topic" : input.MessagingTopic,
                 Version = ParseSemanticVersion(input.MessagingVersion, new SemanticVersion(1, 0, 0)),
                 SchemaBinding = CreateSchemaBinding(
@@ -930,7 +937,8 @@ public sealed class DetailsModel : PageModel
                     input.MessagingSchemaContractKey,
                     input.MessagingSchemaContractVersion,
                     input.MessagingSchemaRegistryProviderId,
-                    input.MessagingSchemaStrictMode)
+                    input.MessagingSchemaStrictMode,
+                    input.HasMessagingSchemaValidation)
             },
             TaskKind.Plugin => new PluginTaskConfiguration
             {
@@ -946,6 +954,7 @@ public sealed class DetailsModel : PageModel
         {
             TaskKind.Http => new HttpTaskConfiguration
             {
+                HasSchemaValidation = input.HasCompensationHttpSchemaValidation,
                 BaseUrlVariableRef = string.IsNullOrWhiteSpace(input.CompensationHttpBaseUrlVariableRef) ? "vars.baseUrl" : input.CompensationHttpBaseUrlVariableRef,
                 RelativePath = string.IsNullOrWhiteSpace(input.CompensationHttpRelativePath) ? "/" : input.CompensationHttpRelativePath,
                 Method = string.IsNullOrWhiteSpace(input.CompensationHttpMethod) ? "GET" : input.CompensationHttpMethod.ToUpperInvariant(),
@@ -956,10 +965,12 @@ public sealed class DetailsModel : PageModel
                     input.CompensationHttpSchemaContractKey,
                     input.CompensationHttpSchemaContractVersion,
                     input.CompensationHttpSchemaRegistryProviderId,
-                    input.CompensationHttpSchemaStrictMode)
+                    input.CompensationHttpSchemaStrictMode,
+                    input.HasCompensationHttpSchemaValidation)
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
+                HasSchemaValidation = input.HasCompensationMessagingSchemaValidation,
                 Topic = string.IsNullOrWhiteSpace(input.CompensationMessagingTopic) ? "orchestrator.topic" : input.CompensationMessagingTopic,
                 Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
                 SchemaBinding = CreateSchemaBinding(
@@ -967,7 +978,8 @@ public sealed class DetailsModel : PageModel
                     input.CompensationMessagingSchemaContractKey,
                     input.CompensationMessagingSchemaContractVersion,
                     input.CompensationMessagingSchemaRegistryProviderId,
-                    input.CompensationMessagingSchemaStrictMode)
+                    input.CompensationMessagingSchemaStrictMode,
+                    input.HasCompensationMessagingSchemaValidation)
             },
             TaskKind.Plugin => new PluginTaskConfiguration
             {
@@ -1071,9 +1083,11 @@ public sealed class DetailsModel : PageModel
         compensation.ExecutionCondition = input.HasCompensationExecutionCondition
             ? BuildExecutionCondition(input.CompensationConditionEngine, input.CompensationConditionDslExpression)
             : null;
+        compensation.HasExecutionCondition = input.HasCompensationExecutionCondition;
         compensation.Transformation = input.HasCompensationTransformation
             ? BuildTransformation(input.CompensationTransformationEngine)
             : null;
+        compensation.HasTransformation = input.HasCompensationTransformation;
         compensation.Configuration = BuildCompensationTaskConfiguration(compensationKind, input);
         compensation.RetryPolicy = input.HasCompensationRetryPolicy
             ? BuildRetryPolicy(
@@ -1180,7 +1194,8 @@ public sealed class DetailsModel : PageModel
         string contractKey,
         string contractVersion,
         string registryProviderId,
-        bool strictMode)
+        bool strictMode,
+        bool isValidationEnabled = true)
     {
         return new SchemaBinding
         {
@@ -1191,7 +1206,8 @@ public sealed class DetailsModel : PageModel
             ContractKey = string.IsNullOrWhiteSpace(contractKey) ? "contract.placeholder" : contractKey,
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
-            StrictMode = strictMode
+            StrictMode = strictMode,
+            IsValidationEnabled = isValidationEnabled
         };
     }
 
@@ -1248,6 +1264,8 @@ public sealed class DetailsModel : PageModel
 
         public bool HttpAllowSyncResponse { get; set; }
 
+        public bool HasHttpSchemaValidation { get; set; }
+
         public string HttpSchemaContractKey { get; set; } = "contract.placeholder";
 
         public string HttpSchemaContractVersion { get; set; } = "1.0.0";
@@ -1259,6 +1277,8 @@ public sealed class DetailsModel : PageModel
         public string MessagingTopic { get; set; } = "orchestrator.topic";
 
         public string MessagingVersion { get; set; } = "1.0.0";
+
+        public bool HasMessagingSchemaValidation { get; set; }
 
         public string MessagingSchemaContractKey { get; set; } = "contract.placeholder";
 
@@ -1331,6 +1351,8 @@ public sealed class DetailsModel : PageModel
 
         public bool CompensationHttpAllowSyncResponse { get; set; }
 
+        public bool HasCompensationHttpSchemaValidation { get; set; }
+
         public string CompensationHttpSchemaContractKey { get; set; } = "contract.placeholder";
 
         public string CompensationHttpSchemaContractVersion { get; set; } = "1.0.0";
@@ -1342,6 +1364,8 @@ public sealed class DetailsModel : PageModel
         public string CompensationMessagingTopic { get; set; } = "orchestrator.topic";
 
         public string CompensationMessagingVersion { get; set; } = "1.0.0";
+
+        public bool HasCompensationMessagingSchemaValidation { get; set; }
 
         public string CompensationMessagingSchemaContractKey { get; set; } = "contract.placeholder";
 

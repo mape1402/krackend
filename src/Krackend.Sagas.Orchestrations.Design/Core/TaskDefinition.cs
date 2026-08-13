@@ -58,9 +58,19 @@ public sealed class TaskDefinition
     public ExecutionCondition ExecutionCondition { get; set; }
 
     /// <summary>
+    /// Gets or sets whether execution condition is enabled.
+    /// </summary>
+    public bool HasExecutionCondition { get; set; }
+
+    /// <summary>
     /// Gets or sets transformation.
     /// </summary>
     public TransformationDefinition Transformation { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether transformation is enabled.
+    /// </summary>
+    public bool HasTransformation { get; set; }
 
     /// <summary>
     /// Gets or sets configuration.
