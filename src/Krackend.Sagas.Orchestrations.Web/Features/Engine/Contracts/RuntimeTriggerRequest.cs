@@ -4,6 +4,7 @@ public sealed class RuntimeTriggerRequest
 {
     public string TriggerType { get; set; } = "Event";
     public string TriggerKey { get; set; }
+    public string ArtifactVersion { get; set; }
     public string EnvironmentKey { get; set; }
     public string CorrelationId { get; set; }
     public string IdempotencyKey { get; set; }

@@ -42,9 +42,10 @@ public sealed class RuntimeTriggerInteractionService : IRuntimeTriggerInteractio
             BufferItemId = Id.New(),
             TriggerType = ParseTriggerType(request.TriggerType),
             TriggerKey = request.TriggerKey.Trim(),
+            ArtifactVersion = request.ArtifactVersion?.Trim(),
             EnvironmentKey = request.EnvironmentKey.Trim(),
             CorrelationId = request.CorrelationId?.Trim(),
-            IdempotencyKey = request.IdempotencyKey?.Trim(),
+            IdempotencyKey = BuildVersionScopedIdempotencyKey(request.IdempotencyKey, request.ArtifactVersion),
             SourceMessageId = request.SourceMessageId?.Trim(),
             PayloadJson = request.PayloadJson.Trim(),
             ReceivedOnUtc = DateTime.UtcNow
@@ -114,4 +115,15 @@ public sealed class RuntimeTriggerInteractionService : IRuntimeTriggerInteractio
             : Enum.TryParse<TriggerType>(value, true, out var parsed)
                 ? parsed
                 : throw new ArgumentException($"TriggerType '{value}' is not supported.");
+
+    private static string BuildVersionScopedIdempotencyKey(string idempotencyKey, string artifactVersion)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return null;
+
+        var trimmed = idempotencyKey.Trim();
+        return string.IsNullOrWhiteSpace(artifactVersion)
+            ? trimmed
+            : $"{trimmed}::artifact-version:{artifactVersion.Trim()}";
+    }
 }
