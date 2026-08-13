@@ -148,7 +148,50 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             return ex.Message;
         }
 
+        var topologyError = ValidateExecutableTopology(request, payload);
+        if (topologyError is not null)
+        {
+            return topologyError;
+        }
+
         return payload is null ? "PayloadJson must contain JSON." : null;
+    }
+
+    private static string ValidateExecutableTopology(RuntimeArtifactDeploymentRequest request, JsonNode payload)
+    {
+        if (payload is null || !ActivatesRuntimeConfiguration(NormalizeArtifactType(request.ArtifactType)))
+        {
+            return null;
+        }
+
+        var root = payload.AsObject();
+        var stages = ReadArray(root, "StageDefinitions", "stageDefinitions", "Stages", "stages")
+            .OfType<JsonObject>()
+            .ToArray();
+        var duplicatedStageOrder = stages
+            .GroupBy(stage => ReadInt(stage, "Order", "order"))
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicatedStageOrder is not null)
+        {
+            return $"Runtime artifact '{request.OrchestrationDefinitionKey}' has duplicated stage order '{duplicatedStageOrder.Key}'.";
+        }
+
+        foreach (var stage in stages)
+        {
+            var enabledTasks = ReadArray(stage, "TaskDefinitions", "taskDefinitions", "Tasks", "tasks")
+                .OfType<JsonObject>()
+                .Where(task => ReadBool(task, true, "IsEnabled", "isEnabled"))
+                .ToArray();
+            var duplicatedTaskOrder = enabledTasks
+                .GroupBy(task => ReadInt(task, "Order", "order"))
+                .FirstOrDefault(group => group.Count() > 1);
+            if (duplicatedTaskOrder is not null)
+            {
+                return $"Runtime artifact '{request.OrchestrationDefinitionKey}' stage '{ReadString(stage, "Key", "key")}' has duplicated task order '{duplicatedTaskOrder.Key}'.";
+            }
+        }
+
+        return null;
     }
 
     private static Id ParseIdOrNew(string value)
@@ -192,4 +235,76 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
 
     private static bool ActivatesRuntimeConfiguration(string artifactType)
         => string.Equals(artifactType, "orchestration.deploy", StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<JsonNode> ReadArray(JsonObject obj, params string[] names)
+        => names.Select(name => obj[name]).OfType<JsonArray>().FirstOrDefault() ?? Enumerable.Empty<JsonNode>();
+
+    private static int ReadInt(JsonObject obj, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var node = obj[name];
+            if (node is null)
+            {
+                continue;
+            }
+
+            if (node is JsonValue jsonValue && jsonValue.TryGetValue<int>(out var intValue))
+            {
+                return intValue;
+            }
+
+            if (int.TryParse(node.ToString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool ReadBool(JsonObject obj, bool defaultValue, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var node = obj[name];
+            if (node is null)
+            {
+                continue;
+            }
+
+            if (node is JsonValue jsonValue && jsonValue.TryGetValue<bool>(out var boolValue))
+            {
+                return boolValue;
+            }
+
+            if (bool.TryParse(node.ToString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return defaultValue;
+    }
+
+    private static string ReadString(JsonObject obj, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var node = obj[name];
+            if (node is null)
+            {
+                continue;
+            }
+
+            if (node is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var stringValue))
+            {
+                return stringValue ?? string.Empty;
+            }
+
+            return node.ToString();
+        }
+
+        return string.Empty;
+    }
 }
