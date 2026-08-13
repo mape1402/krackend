@@ -73,7 +73,7 @@ public sealed class TriggerPromoter : ITriggerPromoter
             RuntimeOrchestrationArtifactId = artifact.Id,
             TriggerIntakeId = intake.Id,
             CorrelationId = intake.CorrelationId,
-            ExecutionKey = $"{item.TriggerKey.Trim()}::{intake.CorrelationId}",
+            ExecutionKey = BuildExecutionKey(item.TriggerKey, intake),
             Status = OrchestrationInstanceStatus.Created,
             StartedOnUtc = now,
             LastUpdatedOnUtc = now,
@@ -153,4 +153,7 @@ public sealed class TriggerPromoter : ITriggerPromoter
         => string.IsNullOrWhiteSpace(item.CorrelationId)
             ? item.BufferItemId.ToString()
             : item.CorrelationId.Trim();
+
+    private static string BuildExecutionKey(string triggerKey, TriggerIntake intake)
+        => $"{triggerKey.Trim()}::{intake.CorrelationId}::{intake.Id}";
 }

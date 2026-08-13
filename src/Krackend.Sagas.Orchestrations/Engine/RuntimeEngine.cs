@@ -449,7 +449,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             AwaitResponse = context.Task.AwaitResponse,
             StartedOnUtc = started,
             LastAttemptNumber = 1,
-            CorrelationId = $"{context.Instance.CorrelationId}:{context.Task.Key}",
+            CorrelationId = BuildTaskCorrelationId(context.Instance, context.Task.Key),
             Metadata = new Dictionary<string, JsonNode>
             {
                 ["destination"] = context.Task.Destination ?? string.Empty,
@@ -467,6 +467,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private static OnErrorPolicy ParseOnErrorPolicy(string value)
         => Enum.TryParse<OnErrorPolicy>(value, true, out var parsed) ? parsed : OnErrorPolicy.Stop;
+
+    private static string BuildTaskCorrelationId(OrchestrationInstance instance, string taskKey)
+        => $"{instance.CorrelationId}:{instance.Id}:{taskKey}";
 
     private static Id? ParseOptionalId(string value)
         => Ulid.TryParse(value, out var parsed) ? new Id(parsed) : null;
