@@ -142,6 +142,18 @@ public sealed class RuntimeServiceCollectionTests
     }
 
     [Fact]
+    public void EngineRegistersRuntimeCompensationExecutorByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRuntimeCompensationExecutor) &&
+            descriptor.ImplementationType == typeof(RuntimeCompensationExecutor));
+    }
+
+    [Fact]
     public void EngineRegistersRuntimePendingWorkProcessorByDefault()
     {
         var services = new ServiceCollection();

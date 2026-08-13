@@ -744,6 +744,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "TaskWaitingResponse" => RuntimeReactiveEventNames.TaskWaiting,
             "TaskResponseReceived" => RuntimeReactiveEventNames.TaskResponseReceived,
             "CompensationScheduled" => RuntimeReactiveEventNames.CompensationScheduled,
+            "CompensationStarted" => RuntimeReactiveEventNames.CompensationStarted,
+            "CompensationDispatched" => RuntimeReactiveEventNames.CompensationDispatched,
+            "CompensationCompleted" => RuntimeReactiveEventNames.CompensationCompleted,
+            "CompensationFailed" => RuntimeReactiveEventNames.CompensationFailed,
+            "InstanceCompensated" => RuntimeReactiveEventNames.OrchestrationCompensated,
             _ => RuntimeReactiveEventNames.TransitionRecorded
         };
     }

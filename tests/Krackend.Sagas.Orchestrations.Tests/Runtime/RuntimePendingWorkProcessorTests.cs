@@ -137,6 +137,7 @@ public sealed class RuntimePendingWorkProcessorTests
             new TransitionRepositoryStub(store),
             new RuntimeTimeoutPolicyEvaluator(),
             new RuntimeErrorPolicyResolver(),
+            new NoopCompensationExecutor(),
             new NoopRuntimeReactiveEventPublisher());
 
     private static CompensationExecution PendingCompensation(Id instanceId, Id sourceTaskExecutionId)
@@ -365,5 +366,11 @@ public sealed class RuntimePendingWorkProcessorTests
         public Task<IReadOnlyCollection<ExecutionTransition>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>(store.Transitions);
         public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(string environmentKey, int take = 250, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoopCompensationExecutor : IRuntimeCompensationExecutor
+    {
+        public Task<RuntimeCompensationExecutionResult> Execute(CompensationExecution compensation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RuntimeCompensationExecutionResult(true, compensation.Status, "Noop"));
     }
 }
