@@ -6,6 +6,8 @@ using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Intake.InMemory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
@@ -175,5 +177,26 @@ public sealed class RuntimeServiceCollectionTests
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IRuntimePendingWorkProcessor) &&
             descriptor.ImplementationType == typeof(RuntimePendingWorkProcessor));
+    }
+
+    [Fact]
+    public void RuntimeRecoveryRegistersHostedServiceAndOptions()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsRuntimeRecovery(options =>
+        {
+            options.ScanInterval = TimeSpan.FromMilliseconds(250);
+            options.MinimumScanInterval = TimeSpan.FromSeconds(2);
+        });
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(RuntimeRecoveryHostedService));
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<RuntimeRecoveryOptions>>().Value;
+        Assert.Equal(TimeSpan.FromMilliseconds(250), options.ScanInterval);
+        Assert.Equal(TimeSpan.FromSeconds(2), options.MinimumScanInterval);
     }
 }
