@@ -126,7 +126,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var stageExecution = await _stageRepository.GetById(taskExecution.StageExecutionId, cancellationToken);
         var trace = await ResolveResponseTrace(instance, stageExecution, taskExecution, command, cancellationToken);
 
-        if (!CanContinueFromResponse(instance, taskExecution, trace.Attempt))
+        if (!CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
             return DuplicateResponseIgnored(instance);
 
         await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
@@ -143,9 +143,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private static bool CanContinueFromResponse(
         OrchestrationInstance instance,
+        StageExecution stageExecution,
         TaskExecution taskExecution,
         TaskExecutionAttempt attempt)
         => instance.Status == OrchestrationInstanceStatus.Waiting
+            && stageExecution.Status == StageExecutionStatus.Running
             && taskExecution.Status == TaskExecutionStatus.WaitingResponse
             && attempt.Status == TaskExecutionStatus.WaitingResponse;
 
@@ -330,8 +332,17 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 stageExecution.FailedOnUtc = DateTime.UtcNow;
                 stageExecution.ErrorSummary = taskExecution.ErrorSummary();
                 await _stageRepository.Update(stageExecution, cancellationToken);
+
+                context.Instance.Status = OrchestrationInstanceStatus.Failed;
+                context.Instance.FailedOnUtc = DateTime.UtcNow;
+                context.Instance.ErrorSummary = stageExecution.ErrorSummary;
+                context.Instance.WaitingSinceUtc = null;
+                context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
+                await _instanceRepository.Update(context.Instance, cancellationToken);
+
                 await WriteTransition(RuntimeTransition.ForTask(context.Instance, "ParallelGroupFailed", StageExecutionStatus.Running, stageExecution.Status, stageExecution, taskExecution), cancellationToken);
                 await WriteTransition(RuntimeTransition.ForTask(context.Instance, "StageFailed", StageExecutionStatus.Running, stageExecution.Status, stageExecution, taskExecution), cancellationToken);
+                await WriteTransition(RuntimeTransition.ForStage(context.Instance, "InstanceFailed", OrchestrationInstanceStatus.Running, context.Instance.Status, stageExecution), cancellationToken);
                 return ParallelGroupExecutionResult.Failed;
             }
         }
