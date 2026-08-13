@@ -14,6 +14,9 @@ public sealed class RuntimePayloadTransformer : IRuntimePayloadTransformer
         if (transformation is null || transformation.Count == 0)
             return new RuntimePayloadTransformation { Payload = clone };
 
+        if (!ReadBool(transformation, true, "IsEnabled", "isEnabled"))
+            return new RuntimePayloadTransformation { Payload = clone, Engine = "disabled" };
+
         var engine = ReadEngine(transformation);
         if (string.IsNullOrWhiteSpace(engine) || string.Equals(engine, "DSL", StringComparison.OrdinalIgnoreCase) || engine == "0")
             return new RuntimePayloadTransformation
@@ -42,5 +45,23 @@ public sealed class RuntimePayloadTransformer : IRuntimePayloadTransformer
         }
 
         return node.ToString();
+    }
+
+    private static bool ReadBool(JsonObject obj, bool fallback, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var node = obj[name];
+            if (node is JsonValue value)
+            {
+                if (value.TryGetValue<bool>(out var boolean))
+                    return boolean;
+
+                if (value.TryGetValue<string>(out var text) && bool.TryParse(text, out var parsed))
+                    return parsed;
+            }
+        }
+
+        return fallback;
     }
 }

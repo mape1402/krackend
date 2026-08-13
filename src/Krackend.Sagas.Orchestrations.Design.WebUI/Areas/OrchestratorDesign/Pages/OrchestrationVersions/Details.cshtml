@@ -95,7 +95,7 @@
         <div id="stagePipeline" class="od-pipeline">
             @foreach (var stage in Model.Stages.OrderBy(s => s.Order))
             {
-                var hasStageExecutionCondition = stage.ExecutionCondition is not null;
+                var hasStageExecutionCondition = stage.HasExecutionCondition;
 
                 <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="true">
                     <div class="od-pipeline-card od-stage-card">
@@ -275,6 +275,10 @@
                             <div class="col-12"><hr class="my-2" /></div>
                             <div class="col-12">
                                 <h6 class="mb-2">Schema binding</h6>
+                            </div>
+                            <div class="col-md-12 form-check form-switch ms-2">
+                                <input asp-for="TriggerInput.HasEventSchemaValidation" class="form-check-input" />
+                                <label asp-for="TriggerInput.HasEventSchemaValidation" class="form-check-label">Enable schema validation</label>
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="TriggerInput.EventSchemaContractKey" class="form-label">Contract key</label>
@@ -617,6 +621,7 @@
         Description: '',
         EventTopic: 'orchestrator.trigger.topic',
         EventVersion: '1.0.0',
+        HasEventSchemaValidation: false,
         EventSchemaContractKey: 'contract.placeholder',
         EventSchemaContractVersion: '1.0.0',
         EventSchemaRegistryProviderId: '',
@@ -629,6 +634,7 @@
         description: 'Description',
         eventTopic: 'EventTopic',
         eventVersion: 'EventVersion',
+        hasEventSchemaValidation: 'HasEventSchemaValidation',
         eventSchemaContractKey: 'EventSchemaContractKey',
         eventSchemaContractVersion: 'EventSchemaContractVersion',
         eventSchemaRegistryProviderId: 'EventSchemaRegistryProviderId',

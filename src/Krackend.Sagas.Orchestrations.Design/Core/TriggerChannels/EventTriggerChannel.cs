@@ -18,6 +18,11 @@ public class EventTriggerChannel : ITriggerChannel
     public SchemaBinding SchemaBinding { get; set; }
 
     /// <summary>
+    /// Gets or sets whether incoming event payload validation is enabled.
+    /// </summary>
+    public bool HasSchemaValidation { get; set; }
+
+    /// <summary>
     /// Gets or sets the topic used to subscribe or publish orchestration trigger events.
     /// </summary>
     public string Topic { get; set; }

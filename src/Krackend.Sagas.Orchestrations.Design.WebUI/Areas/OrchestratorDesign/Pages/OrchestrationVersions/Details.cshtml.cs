@@ -443,6 +443,7 @@ public sealed class DetailsModel : PageModel
             Description = trigger.Description ?? string.Empty,
             EventTopic = eventChannel?.Topic ?? string.Empty,
             EventVersion = eventChannel?.Version.ToString() ?? "1.0.0",
+            HasEventSchemaValidation = eventChannel?.HasSchemaValidation ?? false,
             EventSchemaContractKey = schema?.ContractKey ?? "contract.placeholder",
             EventSchemaContractVersion = schema?.ContractVersion.ToString() ?? "1.0.0",
             EventSchemaRegistryProviderId = schema is null || schema.RegistryProviderId == default ? string.Empty : schema.RegistryProviderId.ToString(),
@@ -454,7 +455,7 @@ public sealed class DetailsModel : PageModel
     {
         var dsl = stage.ExecutionCondition?.Configuration as DslConditionConfiguration;
         var expressionText = dsl?.Expression.ToString() ?? "true";
-        var hasExecutionCondition = stage.ExecutionCondition is not null;
+        var hasExecutionCondition = stage.HasExecutionCondition;
 
         return new StageExecutionConditionPayload
         {
@@ -508,6 +509,7 @@ public sealed class DetailsModel : PageModel
         {
             TriggerType.Event => new EventTriggerChannel
             {
+                HasSchemaValidation = input.HasEventSchemaValidation,
                 Topic = string.IsNullOrWhiteSpace(input.EventTopic) ? "orchestrator.trigger.topic" : input.EventTopic,
                 Version = ParseSemanticVersion(input.EventVersion, new SemanticVersion(1, 0, 0)),
                 SchemaBinding = CreateSchemaBinding(
@@ -515,16 +517,19 @@ public sealed class DetailsModel : PageModel
                     input.EventSchemaContractVersion,
                     input.EventSchemaRegistryProviderId,
                     input.EventSchemaStrictMode,
+                    input.HasEventSchemaValidation,
                     orchestrationId),
             },
             _ => new EventTriggerChannel
             {
+                HasSchemaValidation = false,
                 Topic = "orchestrator.trigger.topic",
                 Version = new SemanticVersion(1, 0, 0),
                 SchemaBinding = CreateSchemaBinding(
                     "contract.placeholder",
                     "1.0.0",
                     string.Empty,
+                    false,
                     false,
                     orchestrationId),
             },
@@ -536,6 +541,7 @@ public sealed class DetailsModel : PageModel
         string contractVersion,
         string registryProviderId,
         bool strictMode,
+        bool isValidationEnabled,
         string orchestrationId)
     {
         return new SchemaBinding
@@ -548,6 +554,7 @@ public sealed class DetailsModel : PageModel
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
             StrictMode = strictMode,
+            IsValidationEnabled = isValidationEnabled,
         };
     }
 
@@ -613,6 +620,8 @@ public sealed class DetailsModel : PageModel
         public string EventTopic { get; set; } = "orchestrator.trigger.topic";
 
         public string EventVersion { get; set; } = "1.0.0";
+
+        public bool HasEventSchemaValidation { get; set; }
 
         public string EventSchemaContractKey { get; set; } = "contract.placeholder";
 

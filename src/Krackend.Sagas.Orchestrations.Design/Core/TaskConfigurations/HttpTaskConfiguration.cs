@@ -22,6 +22,11 @@ public sealed class HttpTaskConfiguration : ITaskConfiguration
     public SchemaBinding SchemaBinding { get; set; }
 
     /// <summary>
+    /// Gets or sets whether schema validation is enabled for this task.
+    /// </summary>
+    public bool HasSchemaValidation { get; set; }
+
+    /// <summary>
     /// Gets or sets base url variable ref.
     /// </summary>
     public required string BaseUrlVariableRef { get; set; }

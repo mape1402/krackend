@@ -23,6 +23,7 @@ public sealed class StageDefinitionInteractionMapper : IStageDefinitionInteracti
             Description = source.Description ?? string.Empty,
             Order = source.Order,
             ExecutionCondition = source.ExecutionCondition,
+            HasExecutionCondition = source.HasExecutionCondition,
         };
     }
 }

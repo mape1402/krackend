@@ -39,7 +39,9 @@ public sealed class UpdateTaskDefinitionCommandHandler : IRequestHandler<UpdateT
             ? null
             : PrimitiveParser.ParseId(request.ParallelGroupId);
         current.ExecutionCondition = request.ExecutionCondition;
+        current.HasExecutionCondition = request.ExecutionCondition is not null;
         current.Transformation = request.Transformation;
+        current.HasTransformation = request.Transformation is not null;
         current.Configuration = request.Configuration;
         current.RetryPolicy = request.RetryPolicy;
         current.TimeoutPolicy = request.TimeoutPolicy;

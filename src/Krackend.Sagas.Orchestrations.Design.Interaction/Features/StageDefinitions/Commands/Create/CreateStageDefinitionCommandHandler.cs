@@ -40,6 +40,7 @@ public sealed class CreateStageDefinitionCommandHandler : IRequestHandler<Create
             Description = request.Description,
             Order = request.Order,
             ExecutionCondition = request.ExecutionCondition,
+            HasExecutionCondition = request.ExecutionCondition is not null,
         };
 
         await _repository.Create(model, cancellationToken);

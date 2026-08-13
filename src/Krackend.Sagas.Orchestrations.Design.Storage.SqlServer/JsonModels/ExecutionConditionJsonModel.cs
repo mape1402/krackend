@@ -9,6 +9,11 @@ namespace Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.JsonModels;
 public sealed class ExecutionConditionJsonModel
 {
     /// <summary>
+    /// Gets or sets whether the condition is enabled.
+    /// </summary>
+    public bool IsEnabled { get; set; }
+
+    /// <summary>
     /// Gets or sets Engine.
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]

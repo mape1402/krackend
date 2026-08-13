@@ -29,6 +29,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Single(artifact["VariableDefinitions"]!.AsArray());
 
         Assert.Equal("reserve-inventory", stage["Key"]!.GetValue<string>());
+        Assert.True(stage["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal((int)EngineType.DSL, stage["ExecutionCondition"]!["Engine"]!.GetValue<int>());
         Assert.Single(stage["ParallelGroups"]!.AsArray());
         Assert.Single(stage["BranchRules"]!.AsArray());
@@ -39,14 +40,20 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Equal((int)TaskDispatchType.FireAndWaitCallback, task["DispatchType"]!.GetValue<int>());
         Assert.True(task["IsEnabled"]!.GetValue<bool>());
         Assert.Equal((int)OnErrorPolicy.StopAndCompensate, task["OnErrorPolicy"]!.GetValue<int>());
+        Assert.True(task["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.True(task["Transformation"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("inventory.reserve", task["Configuration"]!["Topic"]!.GetValue<string>());
+        Assert.True(task["Configuration"]!["SchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
         Assert.Equal(1, task["Configuration"]!["Version"]!["Major"]!.GetValue<int>());
         Assert.Equal((int)RetryStrategyType.Fixed, task["RetryPolicy"]!["StrategyType"]!.GetValue<int>());
         Assert.Equal(3, task["RetryPolicy"]!["MaxRetries"]!.GetValue<int>());
         Assert.Equal((int)TimeoutBehavior.Reconcile, task["TimeoutPolicy"]!["TimeoutBehavior"]!.GetValue<int>());
 
         Assert.Equal((int)TaskKind.Messaging, compensation["CompensationTaskKind"]!.GetValue<int>());
+        Assert.True(compensation["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.True(compensation["Transformation"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("inventory.release", compensation["Configuration"]!["Topic"]!.GetValue<string>());
+        Assert.True(compensation["Configuration"]!["SchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
         Assert.Equal((int)RetryStrategyType.Fixed, compensation["RetryPolicy"]!["StrategyType"]!.GetValue<int>());
     }
 
@@ -95,6 +102,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                     {
                         Topic = "orders.created",
                         Version = new SemanticVersion(1, 0, 0),
+                        HasSchemaValidation = true,
                         SchemaBinding = CreateSchemaBinding(ElementType.Orchestration, definitionId, "orders.created")
                     },
                     IsEnabled = true,
@@ -128,6 +136,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                     Description = "Reserve stock before payment.",
                     Order = 1,
                     ExecutionCondition = DslCondition("payload.total > 0"),
+                    HasExecutionCondition = true,
                     ParallelGroups =
                     [
                         new ParallelGroupDefinition
@@ -165,11 +174,14 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                             ExecutionMode = TaskExecutionMode.Parallel,
                             ParallelGroupId = parallelGroupId,
                             ExecutionCondition = DslCondition("payload.items.length > 0"),
+                            HasExecutionCondition = true,
                             Transformation = DslTransformation(),
+                            HasTransformation = true,
                             Configuration = new MessagingTaskConfiguration
                             {
                                 Topic = "inventory.reserve",
                                 Version = new SemanticVersion(1, 0, 0),
+                                HasSchemaValidation = true,
                                 SchemaBinding = CreateSchemaBinding(ElementType.Task, taskId, "inventory.reserve")
                             },
                             RetryPolicy = RetryPolicy(3),
@@ -179,11 +191,14 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                             {
                                 CompensationTaskKind = TaskKind.Messaging,
                                 Transformation = DslTransformation(),
+                                HasTransformation = true,
                                 ExecutionCondition = DslCondition("outputs.reserveStock.reserved == true"),
+                                HasExecutionCondition = true,
                                 Configuration = new MessagingTaskConfiguration
                                 {
                                     Topic = "inventory.release",
                                     Version = new SemanticVersion(1, 0, 0),
+                                    HasSchemaValidation = true,
                                     SchemaBinding = CreateSchemaBinding(ElementType.Task, taskId, "inventory.release")
                                 },
                                 RetryPolicy = RetryPolicy(2),
@@ -253,6 +268,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
             ContractKey = contractKey,
             ContractVersion = new SemanticVersion(1, 0, 0),
             RegistryProviderId = Id.New(),
-            StrictMode = true
+            StrictMode = true,
+            IsValidationEnabled = true
         };
 }

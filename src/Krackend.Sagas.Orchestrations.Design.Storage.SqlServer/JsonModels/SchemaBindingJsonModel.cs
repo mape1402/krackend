@@ -41,4 +41,8 @@ public sealed class SchemaBindingJsonModel
     /// Gets or sets StrictMode.
     /// </summary>
     public bool StrictMode { get; set; }
+    /// <summary>
+    /// Gets or sets whether schema validation is enabled.
+    /// </summary>
+    public bool IsValidationEnabled { get; set; }
 }

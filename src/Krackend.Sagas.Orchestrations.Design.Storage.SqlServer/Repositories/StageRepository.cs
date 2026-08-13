@@ -70,6 +70,7 @@ public sealed class StageRepository : IStageRepository
                 Order = current.Order,
                 Description = current.Description,
                 ExecutionCondition = executionCondition,
+                HasExecutionCondition = true,
                 TaskDefinitions = new List<TaskDefinition>(),
                 ParallelGroups = new List<ParallelGroupDefinition>(),
                 BranchRules = new List<BranchRuleDefinition>()

@@ -7,4 +7,10 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 /// </summary>
 public sealed record ExecutionConditionArtifact(
     EngineType Engine,
-    IConditionConfigurationArtifact Configuration);
+    IConditionConfigurationArtifact Configuration)
+{
+    /// <summary>
+    /// Gets whether the condition is enabled.
+    /// </summary>
+    public bool IsEnabled { get; init; }
+}
