@@ -239,8 +239,28 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await _instanceRepository.Update(context.Instance, cancellationToken);
         await WriteTransition(RuntimeTransition.ForStage(context.Instance, "StageStarted", StageExecutionStatus.Pending, stageExecution.Status, stageExecution), cancellationToken);
 
-        foreach (var task in context.Stage.Tasks)
+        var tasks = context.Stage.Tasks.ToArray();
+        for (var taskIndex = 0; taskIndex < tasks.Length; taskIndex++)
         {
+            var task = tasks[taskIndex];
+            if (IsParallelGroupTask(task))
+            {
+                var groupTasks = GetContiguousParallelGroupTasks(tasks, taskIndex).ToArray();
+                var groupResult = await ExecuteParallelGroup(context, stageExecution, groupTasks, cancellationToken);
+                taskIndex += groupTasks.Length - 1;
+
+                if (groupResult == ParallelGroupExecutionResult.Continue)
+                    continue;
+
+                if (groupResult == ParallelGroupExecutionResult.Waiting)
+                {
+                    await _stageRepository.Update(stageExecution, cancellationToken);
+                    return stageExecution;
+                }
+
+                return stageExecution;
+            }
+
             var taskContext = CreateTaskContext(context, stageExecution, task);
             var taskExecution = await ExecuteTask(taskContext, cancellationToken);
 
@@ -272,6 +292,70 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await _stageRepository.Update(stageExecution, cancellationToken);
         await WriteTransition(RuntimeTransition.ForStage(context.Instance, "StageCompleted", StageExecutionStatus.Running, stageExecution.Status, stageExecution), cancellationToken);
         return stageExecution;
+    }
+
+    private async Task<ParallelGroupExecutionResult> ExecuteParallelGroup(
+        RuntimeStageExecutionContext context,
+        StageExecution stageExecution,
+        IReadOnlyCollection<RuntimeTaskDocument> groupTasks,
+        CancellationToken cancellationToken)
+    {
+        var groupId = groupTasks.First().ParallelGroupId;
+        context.Instance.CurrentParallelGroupKey = groupId;
+        context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
+        await _instanceRepository.Update(context.Instance, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForStagePayload(
+            context.Instance,
+            "ParallelGroupStarted",
+            StageExecutionStatus.Running,
+            StageExecutionStatus.Running,
+            stageExecution,
+            BuildParallelGroupPayload(context.Stage, groupId, groupTasks)), cancellationToken);
+
+        var taskExecutions = new List<TaskExecution>();
+        foreach (var task in groupTasks)
+        {
+            var taskExecution = await ExecuteTask(CreateTaskContext(context, stageExecution, task), cancellationToken);
+            taskExecutions.Add(taskExecution);
+
+            if (taskExecution.Status == TaskExecutionStatus.Failed)
+            {
+                if (await TryContinueAfterTaskFailure(context, stageExecution, taskExecution, cancellationToken))
+                    continue;
+
+                if (await TryStartCompensationAfterTaskFailure(context, stageExecution, taskExecution, cancellationToken))
+                    return ParallelGroupExecutionResult.Failed;
+
+                stageExecution.Status = StageExecutionStatus.Failed;
+                stageExecution.FailedOnUtc = DateTime.UtcNow;
+                stageExecution.ErrorSummary = taskExecution.ErrorSummary();
+                await _stageRepository.Update(stageExecution, cancellationToken);
+                await WriteTransition(RuntimeTransition.ForTask(context.Instance, "ParallelGroupFailed", StageExecutionStatus.Running, stageExecution.Status, stageExecution, taskExecution), cancellationToken);
+                await WriteTransition(RuntimeTransition.ForTask(context.Instance, "StageFailed", StageExecutionStatus.Running, stageExecution.Status, stageExecution, taskExecution), cancellationToken);
+                return ParallelGroupExecutionResult.Failed;
+            }
+        }
+
+        if (taskExecutions.Any(x => x.Status == TaskExecutionStatus.WaitingResponse))
+        {
+            context.Instance.Status = OrchestrationInstanceStatus.Waiting;
+            context.Instance.WaitingSinceUtc = DateTime.UtcNow;
+            context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
+            await _instanceRepository.Update(context.Instance, cancellationToken);
+            return ParallelGroupExecutionResult.Waiting;
+        }
+
+        context.Instance.CurrentParallelGroupKey = string.Empty;
+        context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
+        await _instanceRepository.Update(context.Instance, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForStagePayload(
+            context.Instance,
+            "ParallelGroupCompleted",
+            StageExecutionStatus.Running,
+            StageExecutionStatus.Running,
+            stageExecution,
+            BuildParallelGroupPayload(context.Stage, groupId, groupTasks)), cancellationToken);
+        return ParallelGroupExecutionResult.Continue;
     }
 
     private async Task<TaskExecution> ExecuteTask(RuntimeTaskExecutionContext context, CancellationToken cancellationToken)
@@ -761,6 +845,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "BranchTaken" => RuntimeReactiveEventNames.BranchTaken,
             "BranchNotTaken" => RuntimeReactiveEventNames.BranchNotTaken,
             "BranchUnsupported" => RuntimeReactiveEventNames.BranchUnsupported,
+            "ParallelGroupStarted" => RuntimeReactiveEventNames.ParallelGroupStarted,
+            "ParallelGroupCompleted" => RuntimeReactiveEventNames.ParallelGroupCompleted,
+            "ParallelGroupFailed" => RuntimeReactiveEventNames.ParallelGroupFailed,
             _ => RuntimeReactiveEventNames.TransitionRecorded
         };
     }
@@ -777,6 +864,41 @@ public sealed class RuntimeEngine : IRuntimeEngine
             ["targetStageIndex"] = decision.TargetStageIndex,
             ["reason"] = decision.Reason
         };
+
+    private static JsonObject BuildParallelGroupPayload(RuntimeStageDocument stage, string parallelGroupId, IReadOnlyCollection<RuntimeTaskDocument> groupTasks)
+        => new()
+        {
+            ["stageKey"] = stage.Key,
+            ["parallelGroupId"] = parallelGroupId,
+            ["taskCount"] = groupTasks.Count,
+            ["taskKeys"] = new JsonArray(groupTasks.Select(task => JsonValue.Create(task.Key)).ToArray<JsonNode>())
+        };
+
+    private static bool IsParallelGroupTask(RuntimeTaskDocument task)
+        => !string.IsNullOrWhiteSpace(task.ParallelGroupId)
+           && string.Equals(task.ExecutionMode, nameof(TaskExecutionMode.Parallel), StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<RuntimeTaskDocument> GetContiguousParallelGroupTasks(IReadOnlyList<RuntimeTaskDocument> tasks, int startIndex)
+    {
+        var groupId = tasks[startIndex].ParallelGroupId;
+        for (var i = startIndex; i < tasks.Count; i++)
+        {
+            if (!IsParallelGroupTask(tasks[i]) ||
+                !string.Equals(tasks[i].ParallelGroupId, groupId, StringComparison.OrdinalIgnoreCase))
+                yield break;
+
+            yield return tasks[i];
+        }
+    }
+
+    private enum ParallelGroupExecutionResult
+    {
+        Continue,
+        Waiting,
+        Failed
+    }
+
+    private sealed record ParallelGroupResumeDecision(bool CanContinue, int NextTaskIndex);
 
     private static RuntimeTaskDispatchRequest CreateDispatchRequest(MessagingDispatchCommandSource source)
     {
@@ -814,9 +936,37 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private async Task ContinueCurrentStage(RuntimeResumeContext resume, OrchestrationInstance instance, StageExecution stageExecution, CancellationToken cancellationToken)
     {
         var nextTaskIndex = resume.TaskIndex + 1;
+        if (IsParallelGroupTask(resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex)))
+        {
+            var groupDecision = await TryContinueAfterParallelTaskResponse(resume, instance, stageExecution, cancellationToken);
+            if (!groupDecision.CanContinue)
+                return;
+
+            nextTaskIndex = groupDecision.NextTaskIndex;
+        }
+
         for (var i = nextTaskIndex; i < resume.CurrentStage.Tasks.Count; i++)
         {
             var task = resume.CurrentStage.Tasks.ElementAt(i);
+            if (IsParallelGroupTask(task))
+            {
+                var stageContext = new RuntimeStageExecutionContext
+                {
+                    Instance = instance,
+                    OrchestrationVersion = resume.Document.Version,
+                    Document = resume.Document,
+                    Stage = resume.CurrentStage
+                };
+                var groupTasks = GetContiguousParallelGroupTasks(resume.CurrentStage.Tasks.ToArray(), i).ToArray();
+                var groupResult = await ExecuteParallelGroup(stageContext, stageExecution, groupTasks, cancellationToken);
+                i += groupTasks.Length - 1;
+
+                if (groupResult == ParallelGroupExecutionResult.Continue)
+                    continue;
+
+                return;
+            }
+
             var taskExecution = await ExecuteTask(CreateTaskContext(instance, resume.Document.Version, stageExecution, task), cancellationToken);
             if (taskExecution.Status == TaskExecutionStatus.WaitingResponse)
                 return;
@@ -848,6 +998,53 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         await CompleteCurrentStage(stageExecution, instance, cancellationToken);
         await ContinueNextStages(resume, instance, cancellationToken);
+    }
+
+    private async Task<ParallelGroupResumeDecision> TryContinueAfterParallelTaskResponse(
+        RuntimeResumeContext resume,
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        CancellationToken cancellationToken)
+    {
+        var currentTask = resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex);
+        var groupTasks = resume.CurrentStage.Tasks
+            .Where(x => string.Equals(x.ParallelGroupId, currentTask.ParallelGroupId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Order)
+            .ToArray();
+        var executions = await _taskRepository.GetByInstanceId(instance.Id, cancellationToken);
+        var groupKeys = groupTasks.Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groupExecutions = executions
+            .Where(x => x.StageExecutionId == stageExecution.Id && groupKeys.Contains(x.TaskKey))
+            .ToArray();
+
+        if (groupExecutions.Length < groupTasks.Length ||
+            groupExecutions.Any(x => x.Status is TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Running))
+        {
+            instance.Status = OrchestrationInstanceStatus.Waiting;
+            instance.WaitingSinceUtc = DateTime.UtcNow;
+            instance.CurrentParallelGroupKey = currentTask.ParallelGroupId;
+            instance.LastUpdatedOnUtc = DateTime.UtcNow;
+            await _instanceRepository.Update(instance, cancellationToken);
+            return new ParallelGroupResumeDecision(false, resume.TaskIndex + 1);
+        }
+
+        if (groupExecutions.Any(x => x.Status == TaskExecutionStatus.Failed))
+            return new ParallelGroupResumeDecision(true, resume.TaskIndex + 1);
+
+        instance.CurrentParallelGroupKey = string.Empty;
+        instance.LastUpdatedOnUtc = DateTime.UtcNow;
+        await _instanceRepository.Update(instance, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForStagePayload(
+            instance,
+            "ParallelGroupCompleted",
+            StageExecutionStatus.Running,
+            StageExecutionStatus.Running,
+            stageExecution,
+            BuildParallelGroupPayload(resume.CurrentStage, currentTask.ParallelGroupId, groupTasks)), cancellationToken);
+
+        var taskIndexes = resume.CurrentStage.Tasks.ToList();
+        var lastGroupIndex = groupTasks.Max(groupTask => taskIndexes.FindIndex(x => string.Equals(x.Key, groupTask.Key, StringComparison.OrdinalIgnoreCase)));
+        return new ParallelGroupResumeDecision(true, lastGroupIndex + 1);
     }
 
     private async Task ContinueNextStages(RuntimeResumeContext resume, OrchestrationInstance instance, CancellationToken cancellationToken)

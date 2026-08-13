@@ -200,6 +200,31 @@ public sealed class RuntimeEngineIdempotencyTests
         Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.Task.Id].Status);
     }
 
+    [Fact]
+    public async Task ContinueFromResponse_WhenParallelGroupStillHasWaitingTasks_DoesNotAdvanceStage()
+    {
+        var trace = CreateParallelWaitingTrace();
+        var engine = CreateEngine(trace.Store);
+
+        var result = await engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Waiting", result.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Waiting, trace.Store.Instances[trace.Instance.Id].Status);
+        Assert.Equal(TaskExecutionStatus.Completed, trace.Store.Tasks[trace.Task.Id].Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.OtherTask.Id].Status);
+        Assert.DoesNotContain(trace.Store.Transitions, x => x.TransitionType == "ParallelGroupCompleted");
+        Assert.DoesNotContain(trace.Store.Transitions, x => x.TransitionType == "StageCompleted");
+        Assert.DoesNotContain(trace.Store.Transitions, x => x.TransitionType == "InstanceCompleted");
+    }
+
     private static RuntimeTraceFixture CreateWaitingTrace()
     {
         var store = new RuntimeStore();
@@ -266,6 +291,28 @@ public sealed class RuntimeEngineIdempotencyTests
         };
 
         store.Instances[instance.Id] = instance;
+        store.Artifacts[instance.RuntimeOrchestrationArtifactId] = CreateArtifact(instance.RuntimeOrchestrationArtifactId, """
+        {
+          "Key": "order.fulfillment",
+          "Version": { "Major": 1, "Minor": 0, "Patch": 0 },
+          "StageDefinitions": [
+            {
+              "Key": "reserve-inventory",
+              "Order": 1,
+              "TaskDefinitions": [
+                {
+                  "Key": "reserve-stock",
+                  "Order": 1,
+                  "Kind": 0,
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "inventory.reserve", "Version": "1.0.0" },
+                  "IsEnabled": true
+                }
+              ]
+            }
+          ]
+        }
+        """);
         store.Stages[stage.Id] = stage;
         store.Tasks[task.Id] = task;
         store.Attempts[attempt.Id] = attempt;
@@ -273,6 +320,112 @@ public sealed class RuntimeEngineIdempotencyTests
 
         return new RuntimeTraceFixture(store, instance, stage, task, attempt, dispatch);
     }
+
+    private static RuntimeParallelTraceFixture CreateParallelWaitingTrace()
+    {
+        var baseTrace = CreateWaitingTrace();
+        var groupId = Id.New();
+        baseTrace.Task.ExecutionMode = TaskExecutionMode.Parallel;
+        baseTrace.Task.ParallelGroupId = groupId;
+
+        var otherTask = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = baseTrace.Instance.Id,
+            StageExecutionId = baseTrace.Stage.Id,
+            TaskKey = "reserve-promo",
+            TaskKind = TaskKind.Messaging,
+            ExecutionMode = TaskExecutionMode.Parallel,
+            ParallelGroupId = groupId,
+            Status = TaskExecutionStatus.WaitingResponse,
+            AwaitResponse = true,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            WaitingSinceUtc = DateTime.UtcNow.AddSeconds(-25),
+            LastAttemptNumber = 1,
+            CorrelationId = "order-1:reserve-promo"
+        };
+        var otherAttempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = otherTask.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.WaitingResponse,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            WaitingSinceUtc = DateTime.UtcNow.AddSeconds(-25),
+            DispatchId = Id.New(),
+            RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}""")
+        };
+        var otherDispatch = new TaskDispatch
+        {
+            Id = otherAttempt.DispatchId.Value,
+            TaskExecutionAttemptId = otherAttempt.Id,
+            DispatchType = "Messaging",
+            Destination = "inventory.reserve-promo",
+            RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}"""),
+            DispatchStatus = "Dispatched",
+            CommandId = Id.New().ToString(),
+            CorrelationId = otherTask.CorrelationId,
+            SentOnUtc = DateTime.UtcNow.AddSeconds(-25),
+            AcknowledgedOnUtc = DateTime.UtcNow.AddSeconds(-25)
+        };
+
+        baseTrace.Store.Artifacts[baseTrace.Instance.RuntimeOrchestrationArtifactId] = CreateArtifact(baseTrace.Instance.RuntimeOrchestrationArtifactId, $$"""
+        {
+          "Key": "order.fulfillment",
+          "Version": { "Major": 1, "Minor": 0, "Patch": 0 },
+          "StageDefinitions": [
+            {
+              "Key": "reserve-inventory",
+              "Order": 1,
+              "ParallelGroups": [
+                { "Id": "{{groupId}}", "JoinPolicy": 0, "MaxParallelAgents": 2 }
+              ],
+              "TaskDefinitions": [
+                {
+                  "Key": "reserve-stock",
+                  "Order": 1,
+                  "Kind": 0,
+                  "ExecutionMode": 1,
+                  "ParallelGroupId": "{{groupId}}",
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "inventory.reserve", "Version": "1.0.0" },
+                  "IsEnabled": true
+                },
+                {
+                  "Key": "reserve-promo",
+                  "Order": 2,
+                  "Kind": 0,
+                  "ExecutionMode": 1,
+                  "ParallelGroupId": "{{groupId}}",
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "inventory.reserve-promo", "Version": "1.0.0" },
+                  "IsEnabled": true
+                }
+              ]
+            }
+          ]
+        }
+        """);
+        baseTrace.Store.Tasks[otherTask.Id] = otherTask;
+        baseTrace.Store.Attempts[otherAttempt.Id] = otherAttempt;
+        baseTrace.Store.Dispatches[otherDispatch.Id] = otherDispatch;
+        return new RuntimeParallelTraceFixture(baseTrace.Store, baseTrace.Instance, baseTrace.Stage, baseTrace.Task, otherTask, baseTrace.Attempt, baseTrace.Dispatch);
+    }
+
+    private static RuntimeOrchestrationArtifact CreateArtifact(Id artifactId, string payload)
+        => new()
+        {
+            Id = artifactId,
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            ArtifactType = "orchestration",
+            Version = new SemanticVersion(1, 0, 0),
+            ArtifactChecksum = new Checksum("checksum"),
+            ArtifactPayload = JsonNode.Parse(payload),
+            IsActive = true,
+            DeployedOnUtc = DateTime.UtcNow.AddMinutes(-5),
+            ActivatedOnUtc = DateTime.UtcNow.AddMinutes(-5)
+        };
 
     private sealed record RuntimeTraceFixture(
         RuntimeStore Store,
@@ -282,12 +435,21 @@ public sealed class RuntimeEngineIdempotencyTests
         TaskExecutionAttempt Attempt,
         TaskDispatch Dispatch);
 
+    private sealed record RuntimeParallelTraceFixture(
+        RuntimeStore Store,
+        OrchestrationInstance Instance,
+        StageExecution Stage,
+        TaskExecution Task,
+        TaskExecution OtherTask,
+        TaskExecutionAttempt Attempt,
+        TaskDispatch Dispatch);
+
     private static RuntimeEngine CreateEngine(RuntimeStore store)
         => new(new RuntimeEngineDependencies
         {
             IntakeBuffer = new ThrowingIntakeBuffer(),
             TriggerPromoter = new ThrowingTriggerPromoter(),
-            ArtifactRepository = new RuntimeArtifactRepositoryStub(),
+            ArtifactRepository = new RuntimeArtifactRepositoryStub(store),
             StageRepository = new StageRepositoryStub(store),
             TaskRepository = new TaskRepositoryStub(store),
             AttemptRepository = new AttemptRepositoryStub(store),
@@ -311,6 +473,7 @@ public sealed class RuntimeEngineIdempotencyTests
         public Dictionary<Id, TaskExecution> Tasks { get; } = new();
         public Dictionary<Id, TaskExecutionAttempt> Attempts { get; } = new();
         public Dictionary<Id, TaskDispatch> Dispatches { get; } = new();
+        public Dictionary<Id, RuntimeOrchestrationArtifact> Artifacts { get; } = new();
         public List<ExecutionTransition> Transitions { get; } = new();
         public List<CompensationExecution> Compensations { get; } = new();
     }
@@ -502,14 +665,14 @@ public sealed class RuntimeEngineIdempotencyTests
                     .ToArray());
     }
 
-    private sealed class RuntimeArtifactRepositoryStub : IRuntimeArtifactRepository
+    private sealed class RuntimeArtifactRepositoryStub(RuntimeStore store) : IRuntimeArtifactRepository
     {
         public Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Duplicate responses must not resolve runtime artifacts.");
+            => Task.FromResult(store.Artifacts[artifactId]);
 
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(string environmentKey, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(Array.Empty<RuntimeOrchestrationArtifact>());
