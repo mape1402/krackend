@@ -105,11 +105,17 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         if (!timeoutPolicy.IsConfigured)
             return false;
 
+        if (IsTimeoutPolicyAlreadyApplied(taskExecution))
+            return false;
+
         var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
         var attempt = attempts
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse)
             .OrderByDescending(x => x.AttemptNumber)
             .FirstOrDefault();
+
+        if (string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Reconcile), StringComparison.OrdinalIgnoreCase))
+            return await ApplyUnsupportedReconcileTimeout(instance, stageExecution, taskExecution, attempt, timeoutPolicy, nowUtc, cancellationToken);
 
         if (string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Wait), StringComparison.OrdinalIgnoreCase) &&
             string.Equals(timeoutPolicy.OrchestrationAction, nameof(OrchestrationActionOnTimeout.Block), StringComparison.OrdinalIgnoreCase))
@@ -181,6 +187,73 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             taskExecution), cancellationToken);
 
         await ApplyTimeoutErrorPolicy(document, instance, stageExecution, taskExecution, cancellationToken);
+        return true;
+    }
+
+    private async Task<bool> ApplyUnsupportedReconcileTimeout(
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        RuntimeTimeoutPolicy timeoutPolicy,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (attempt is not null)
+        {
+            attempt.TimedOutOnUtc = nowUtc;
+            attempt.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+            attempt.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+            attempt.Metadata["reconciliationStatus"] = "Unsupported";
+            attempt.Metadata["reconciliationReason"] = "Reconcile timeout behavior has no executable destination or transport in the promoted artifact.";
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttempt(
+                instance,
+                "TaskTimedOut",
+                TaskExecutionStatus.WaitingResponse,
+                attempt.Status,
+                stageExecution,
+                taskExecution,
+                attempt), cancellationToken);
+        }
+
+        taskExecution.TimedOutOnUtc = nowUtc;
+        taskExecution.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+        taskExecution.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+        taskExecution.Metadata["timeoutPolicyApplied"] = "ReconciliationUnsupported";
+        taskExecution.Metadata["reconciliationStatus"] = "Unsupported";
+        taskExecution.Metadata["reconciliationReason"] = "Reconcile timeout behavior has no executable destination or transport in the promoted artifact.";
+        await _taskRepository.Update(taskExecution, cancellationToken);
+
+        instance.Metadata["reconciliationStatus"] = "Unsupported";
+        instance.Metadata["reconciliationTaskKey"] = taskExecution.TaskKey;
+        instance.Metadata["reconciliationReason"] = "Reconcile timeout behavior has no executable destination or transport in the promoted artifact.";
+        instance.LastUpdatedOnUtc = nowUtc;
+        await _instanceRepository.Update(instance, cancellationToken);
+
+        var payload = new Dictionary<string, JsonNode>
+        {
+            ["timeoutBehavior"] = timeoutPolicy.Behavior,
+            ["timeoutAction"] = timeoutPolicy.OrchestrationAction,
+            ["reconciliationStatus"] = "Unsupported",
+            ["reason"] = "Reconcile timeout behavior has no executable destination or transport in the promoted artifact."
+        }.ToJsonObject();
+
+        await WriteTransition(RuntimeTransition.ForTaskPayload(
+            instance,
+            "TaskReconciliationUnsupported",
+            TaskExecutionStatus.WaitingResponse,
+            taskExecution.Status,
+            stageExecution,
+            taskExecution,
+            payload), cancellationToken);
+        await WriteTransition(RuntimeTransition.ForTask(
+            instance,
+            "TaskTimeoutPolicyApplied",
+            TaskExecutionStatus.WaitingResponse,
+            taskExecution.Status,
+            stageExecution,
+            taskExecution), cancellationToken);
         return true;
     }
 
@@ -273,6 +346,17 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             ?? throw new InvalidOperationException($"Task '{taskKey}' was not found in stage '{stageKey}'.");
     }
 
+    private static bool IsTimeoutPolicyAlreadyApplied(TaskExecution taskExecution)
+    {
+        if (taskExecution.Metadata.TryGetValue("timeoutPolicyApplied", out var applied) &&
+            applied is JsonValue value &&
+            value.TryGetValue<string>(out var text) &&
+            !string.IsNullOrWhiteSpace(text))
+            return true;
+
+        return false;
+    }
+
     private async Task WriteTransition(RuntimeTransition transition, CancellationToken cancellationToken)
     {
         var executionTransition = new ExecutionTransition
@@ -336,6 +420,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             "StageFailed" => RuntimeReactiveEventNames.StageFailed,
             "TaskTimedOut" => RuntimeReactiveEventNames.TaskTimedOut,
             "TaskTimeoutPolicyApplied" => RuntimeReactiveEventNames.TaskTimeoutPolicyApplied,
+            "TaskReconciliationUnsupported" => RuntimeReactiveEventNames.TaskReconciliationUnsupported,
             "TaskErrorPolicyApplied" => RuntimeReactiveEventNames.TaskErrorPolicyApplied,
             "CompensationScheduled" => RuntimeReactiveEventNames.CompensationScheduled,
             _ => RuntimeReactiveEventNames.TransitionRecorded
