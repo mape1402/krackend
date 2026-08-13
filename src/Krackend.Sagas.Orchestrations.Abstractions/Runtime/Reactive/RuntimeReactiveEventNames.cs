@@ -33,5 +33,9 @@ public static class RuntimeReactiveEventNames
     public const string CompensationCompleted = "compensation.completed";
     public const string CompensationFailed = "compensation.failed";
     public const string OrchestrationCompensated = "orchestration.compensated";
+    public const string BranchEvaluated = "branch.evaluated";
+    public const string BranchTaken = "branch.taken";
+    public const string BranchNotTaken = "branch.not.taken";
+    public const string BranchUnsupported = "branch.unsupported";
     public const string TransitionRecorded = "transition.recorded";
 }

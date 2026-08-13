@@ -24,6 +24,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IExecutionTransitionRepository _timelineRepository;
     private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
     private readonly IRuntimeConditionEvaluator _conditionEvaluator;
+    private readonly IRuntimeBranchRuleEvaluator _branchRuleEvaluator;
     private readonly IRuntimePayloadTransformer _payloadTransformer;
     private readonly IRuntimeRetryPolicyEvaluator _retryPolicyEvaluator;
     private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
@@ -49,6 +50,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _timelineRepository = dependencies.TimelineRepository;
         _taskDispatcherResolver = dependencies.TaskDispatcherResolver;
         _conditionEvaluator = dependencies.ConditionEvaluator;
+        _branchRuleEvaluator = new RuntimeBranchRuleEvaluator(_conditionEvaluator);
         _payloadTransformer = dependencies.PayloadTransformer;
         _retryPolicyEvaluator = dependencies.RetryPolicyEvaluator;
         _errorPolicyResolver = dependencies.ErrorPolicyResolver;
@@ -167,8 +169,10 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await _instanceRepository.Update(instance, cancellationToken);
         await WriteTransition(RuntimeTransition.ForInstance(instance, "InstanceStarted", OrchestrationInstanceStatus.Created, instance.Status), cancellationToken);
 
-        foreach (var stage in document.Stages)
+        var stages = document.Stages.ToArray();
+        for (var stageIndex = 0; stageIndex < stages.Length; stageIndex++)
         {
+            var stage = stages[stageIndex];
             var stageContext = CreateStageContext(instance, document, stage);
             var stageExecution = await ExecuteStage(stageContext, cancellationToken);
             if (stageExecution.Status == StageExecutionStatus.Failed)
@@ -190,6 +194,10 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 await WriteTransition(RuntimeTransition.ForStage(instance, "InstanceWaitingResponse", OrchestrationInstanceStatus.Running, instance.Status, stageExecution), cancellationToken);
                 return;
             }
+
+            var targetStageIndex = await TryApplyStageBranch(document, stage, stageIndex, instance, cancellationToken);
+            if (targetStageIndex.HasValue)
+                stageIndex = targetStageIndex.Value - 1;
         }
 
         instance.Status = OrchestrationInstanceStatus.Completed;
@@ -749,9 +757,26 @@ public sealed class RuntimeEngine : IRuntimeEngine
             "CompensationCompleted" => RuntimeReactiveEventNames.CompensationCompleted,
             "CompensationFailed" => RuntimeReactiveEventNames.CompensationFailed,
             "InstanceCompensated" => RuntimeReactiveEventNames.OrchestrationCompensated,
+            "BranchEvaluated" => RuntimeReactiveEventNames.BranchEvaluated,
+            "BranchTaken" => RuntimeReactiveEventNames.BranchTaken,
+            "BranchNotTaken" => RuntimeReactiveEventNames.BranchNotTaken,
+            "BranchUnsupported" => RuntimeReactiveEventNames.BranchUnsupported,
             _ => RuntimeReactiveEventNames.TransitionRecorded
         };
     }
+
+    private static JsonObject BuildBranchPayload(RuntimeStageDocument stage, RuntimeBranchDecision decision)
+        => new()
+        {
+            ["stageKey"] = stage.Key,
+            ["stageId"] = stage.Id,
+            ["ruleId"] = decision.RuleId,
+            ["isTaken"] = decision.IsTaken,
+            ["isSupported"] = decision.IsSupported,
+            ["targetStageKey"] = decision.TargetStageKey,
+            ["targetStageIndex"] = decision.TargetStageIndex,
+            ["reason"] = decision.Reason
+        };
 
     private static RuntimeTaskDispatchRequest CreateDispatchRequest(MessagingDispatchCommandSource source)
     {
@@ -828,14 +853,81 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private async Task ContinueNextStages(RuntimeResumeContext resume, OrchestrationInstance instance, CancellationToken cancellationToken)
     {
         var nextStageIndex = resume.StageIndex + 1;
-        for (var i = nextStageIndex; i < resume.Document.Stages.Count; i++)
+        var stages = resume.Document.Stages.ToArray();
+        for (var i = nextStageIndex; i < stages.Length; i++)
         {
-            var stageExecution = await ExecuteStage(CreateStageContext(instance, resume.Document, resume.Document.Stages.ElementAt(i)), cancellationToken);
+            var stage = stages[i];
+            var stageExecution = await ExecuteStage(CreateStageContext(instance, resume.Document, stage), cancellationToken);
             if (stageExecution.Status == StageExecutionStatus.Failed || instance.Status == OrchestrationInstanceStatus.Waiting)
                 return;
+
+            var targetStageIndex = await TryApplyStageBranch(resume.Document, stage, i, instance, cancellationToken);
+            if (targetStageIndex.HasValue)
+                i = targetStageIndex.Value - 1;
         }
 
         await CompleteInstance(instance, cancellationToken);
+    }
+
+    private async Task<int?> TryApplyStageBranch(
+        RuntimeArtifactDocument document,
+        RuntimeStageDocument stage,
+        int currentStageIndex,
+        OrchestrationInstance instance,
+        CancellationToken cancellationToken)
+    {
+        var decision = _branchRuleEvaluator.EvaluateStage(document, stage, instance.SnapshotPayload);
+        if (!decision.HasRules)
+            return null;
+
+        await WriteTransition(RuntimeTransition.ForInstancePayload(
+            instance,
+            "BranchEvaluated",
+            instance.Status,
+            instance.Status,
+            BuildBranchPayload(stage, decision)), cancellationToken);
+
+        if (!decision.IsSupported)
+        {
+            await WriteTransition(RuntimeTransition.ForInstancePayload(
+                instance,
+                "BranchUnsupported",
+                instance.Status,
+                instance.Status,
+                BuildBranchPayload(stage, decision)), cancellationToken);
+            return null;
+        }
+
+        if (!decision.IsTaken)
+        {
+            await WriteTransition(RuntimeTransition.ForInstancePayload(
+                instance,
+                "BranchNotTaken",
+                instance.Status,
+                instance.Status,
+                BuildBranchPayload(stage, decision)), cancellationToken);
+            return null;
+        }
+
+        if (decision.TargetStageIndex <= currentStageIndex)
+        {
+            var unsupported = RuntimeBranchDecision.Unsupported(decision.RuleId, "Backward or same-stage branch navigation is not supported in this runtime cut.");
+            await WriteTransition(RuntimeTransition.ForInstancePayload(
+                instance,
+                "BranchUnsupported",
+                instance.Status,
+                instance.Status,
+                BuildBranchPayload(stage, unsupported)), cancellationToken);
+            return null;
+        }
+
+        await WriteTransition(RuntimeTransition.ForInstancePayload(
+            instance,
+            "BranchTaken",
+            stage.Key,
+            decision.TargetStageKey,
+            BuildBranchPayload(stage, decision)), cancellationToken);
+        return decision.TargetStageIndex;
     }
 
     private async Task CompleteResponse(OrchestrationInstance instance, StageExecution stageExecution, TaskExecution taskExecution, TaskExecutionAttempt attempt, RuntimeMessageResponseCommand command, CancellationToken cancellationToken)

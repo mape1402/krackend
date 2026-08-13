@@ -8,6 +8,11 @@ using System.Text.Json.Nodes;
 internal sealed class RuntimeStageDocument
 {
     /// <summary>
+    /// Gets the design stage identifier.
+    /// </summary>
+    public string Id { get; init; }
+
+    /// <summary>
     /// Gets the stable stage key.
     /// </summary>
     public string Key { get; init; }

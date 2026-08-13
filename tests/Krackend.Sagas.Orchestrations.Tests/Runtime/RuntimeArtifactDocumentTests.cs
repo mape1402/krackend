@@ -27,6 +27,7 @@ public sealed class RuntimeArtifactDocumentTests
           ],
           "StageDefinitions": [
             {
+              "Id": "01K00000000000000000000002",
               "Key": "reserve-inventory",
               "Order": 1,
               "ExecutionCondition": { "Engine": {{(int)EngineType.DSL}}, "Configuration": { "Expression": { "Value": "payload.total > 0" } } },
@@ -80,6 +81,7 @@ public sealed class RuntimeArtifactDocumentTests
         Assert.Single(document.TriggerBindings);
         Assert.Single(document.VariableDefinitions);
         Assert.Equal("reserve-inventory", stage.Key);
+        Assert.Equal("01K00000000000000000000002", stage.Id);
         Assert.False(stage.ExecutionCondition.Count == 0);
         Assert.Single(stage.ParallelGroups);
         Assert.Single(stage.BranchRules);
