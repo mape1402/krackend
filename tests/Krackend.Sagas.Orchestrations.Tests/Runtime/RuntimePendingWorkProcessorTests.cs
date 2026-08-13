@@ -89,6 +89,43 @@ public sealed class RuntimePendingWorkProcessorTests
         Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "InstanceFailed");
     }
 
+    [Fact]
+    public async Task ProcessDueWork_MarksReconcileTimeoutAsUnsupportedAndKeepsInstanceBlocked()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
+
+        await CreateProcessor(store).ProcessDueWork(now);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Attempt.Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Task.Status);
+        Assert.Equal(StageExecutionStatus.Running, store.Stage.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Waiting, store.Instance.Status);
+        Assert.Equal("Reconcile", store.Task.Metadata["timeoutBehavior"]!.GetValue<string>());
+        Assert.Equal("Block", store.Task.Metadata["timeoutAction"]!.GetValue<string>());
+        Assert.Equal("ReconciliationUnsupported", store.Task.Metadata["timeoutPolicyApplied"]!.GetValue<string>());
+        Assert.Equal("Unsupported", store.Task.Metadata["reconciliationStatus"]!.GetValue<string>());
+        Assert.Equal("Unsupported", store.Instance.Metadata["reconciliationStatus"]!.GetValue<string>());
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimedOut");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskReconciliationUnsupported");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimeoutPolicyApplied");
+        Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "InstanceFailed");
+    }
+
+    [Fact]
+    public async Task ProcessDueWork_DoesNotReapplyBlockingTimeoutPolicy()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
+        var processor = CreateProcessor(store);
+
+        await processor.ProcessDueWork(now);
+        var transitionCount = store.Transitions.Count;
+        await processor.ProcessDueWork(now.AddMinutes(1));
+
+        Assert.Equal(transitionCount, store.Transitions.Count);
+    }
+
     private static RuntimePendingWorkProcessor CreateProcessor(RuntimePendingWorkStore store)
         => new(
             new TaskRepositoryStub(store),
@@ -222,6 +259,7 @@ public sealed class RuntimePendingWorkProcessorTests
             {
                 TimeoutScenario.Fail => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 0, "TimeoutBehaviorPolicy": { "ErrorCode": "ReserveTimeout" } }""",
                 TimeoutScenario.WaitBlock => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 1, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0, "WaitingTime": { "Value": "00:00:05" } } }""",
+                TimeoutScenario.ReconcileBlock => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 2, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0 } }""",
                 _ => "{}"
             };
     }
@@ -230,7 +268,8 @@ public sealed class RuntimePendingWorkProcessorTests
     {
         None,
         Fail,
-        WaitBlock
+        WaitBlock,
+        ReconcileBlock
     }
 
     private sealed class TaskRepositoryStub(RuntimePendingWorkStore store) : ITaskExecutionRepository
