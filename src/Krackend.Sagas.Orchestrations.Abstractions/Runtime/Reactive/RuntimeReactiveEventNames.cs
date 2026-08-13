@@ -37,5 +37,8 @@ public static class RuntimeReactiveEventNames
     public const string BranchTaken = "branch.taken";
     public const string BranchNotTaken = "branch.not.taken";
     public const string BranchUnsupported = "branch.unsupported";
+    public const string ParallelGroupStarted = "parallel.group.started";
+    public const string ParallelGroupCompleted = "parallel.group.completed";
+    public const string ParallelGroupFailed = "parallel.group.failed";
     public const string TransitionRecorded = "transition.recorded";
 }
