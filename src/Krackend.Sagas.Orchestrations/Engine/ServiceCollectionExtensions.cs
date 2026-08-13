@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions;
@@ -39,6 +40,23 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
         services.AddScoped(CreateRuntimeEngineDependencies);
         services.AddScoped<IRuntimeEngine, RuntimeEngine>();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the runtime background recovery worker.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configureOptions">Recovery options.</param>
+    /// <returns>Configured service collection.</returns>
+    public static IServiceCollection AddKrackendSagasOrchestrationsRuntimeRecovery(
+        this IServiceCollection services,
+        Action<RuntimeRecoveryOptions> configureOptions = null)
+    {
+        if (configureOptions is not null)
+            services.Configure(configureOptions);
+
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeRecoveryHostedService>());
         return services;
     }
 
