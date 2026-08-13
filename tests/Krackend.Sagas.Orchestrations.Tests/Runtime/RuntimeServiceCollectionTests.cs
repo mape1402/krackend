@@ -77,6 +77,18 @@ public sealed class RuntimeServiceCollectionTests
     }
 
     [Fact]
+    public void EngineRegistersRuntimeBranchRuleEvaluatorByDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendSagasOrchestrationsEngine();
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IRuntimeBranchRuleEvaluator) &&
+            descriptor.ImplementationType == typeof(RuntimeBranchRuleEvaluator));
+    }
+
+    [Fact]
     public void EngineRegistersRuntimePayloadTransformerByDefault()
     {
         var services = new ServiceCollection();

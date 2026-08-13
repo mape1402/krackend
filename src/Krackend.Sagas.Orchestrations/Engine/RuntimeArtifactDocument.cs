@@ -64,6 +64,7 @@ internal sealed class RuntimeArtifactDocument
         var obj = node.AsObject();
         return new RuntimeStageDocument
         {
+            Id = ReadString(obj, "Id", "id"),
             Key = ReadString(obj, "Key", "key"),
             Order = ReadInt(obj, "Order", "order"),
             ExecutionCondition = CloneObject(ReadObject(obj, "ExecutionCondition", "executionCondition")),
