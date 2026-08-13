@@ -40,7 +40,7 @@ public sealed class TriggerPromoter : ITriggerPromoter
         if (existing?.PromotedInstanceId is not null)
             return await CreateExistingPromotionResult(item, existing, cancellationToken);
 
-        var artifact = await _artifactResolver.ResolveActive(item.EnvironmentKey, item.TriggerKey, cancellationToken);
+        var artifact = await _artifactResolver.Resolve(item.EnvironmentKey, item.TriggerKey, item.ArtifactVersion, cancellationToken);
 
         var now = DateTime.UtcNow;
         var intake = existing ?? new TriggerIntake
@@ -81,7 +81,8 @@ public sealed class TriggerPromoter : ITriggerPromoter
             Metadata = new Dictionary<string, JsonNode>
             {
                 ["triggerType"] = item.TriggerType.ToString(),
-                ["bufferItemId"] = item.BufferItemId.ToString()
+                ["bufferItemId"] = item.BufferItemId.ToString(),
+                ["artifactVersion"] = artifact.Version.ToString()
             }
         };
 
@@ -116,7 +117,9 @@ public sealed class TriggerPromoter : ITriggerPromoter
 
     private async Task<TriggerPromotionResult> CreateExistingPromotionResult(TriggerIntakeBufferItem item, TriggerIntake existing, CancellationToken cancellationToken)
     {
-        var existingArtifact = await _artifactResolver.ResolveActive(item.EnvironmentKey, existing.TriggerKey, cancellationToken);
+        var existingArtifact = existing.ResolvedArtifactId is null
+            ? await _artifactResolver.Resolve(item.EnvironmentKey, existing.TriggerKey, item.ArtifactVersion, cancellationToken)
+            : await _artifactResolver.ResolveById(existing.ResolvedArtifactId.Value, cancellationToken);
         var existingInstance = await _instanceRepository.GetById(existing.PromotedInstanceId.Value, cancellationToken);
 
         return new TriggerPromotionResult

@@ -674,6 +674,9 @@ public sealed class RuntimeEngineIdempotencyTests
         public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Artifacts[artifactId]);
 
+        public Task<RuntimeOrchestrationArtifact> GetByVersion(string environmentKey, string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default)
+            => Task.FromResult<RuntimeOrchestrationArtifact>(store.Artifacts.Values.FirstOrDefault(x => x.EnvironmentKey == environmentKey && x.OrchestrationDefinitionKey == orchestrationDefinitionKey && x.Version.ToString() == version.ToString())!);
+
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(string environmentKey, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(Array.Empty<RuntimeOrchestrationArtifact>());
 

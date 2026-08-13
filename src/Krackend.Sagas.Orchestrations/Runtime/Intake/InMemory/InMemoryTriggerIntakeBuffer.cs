@@ -190,7 +190,11 @@ public sealed class InMemoryTriggerIntakeBuffer : ITriggerIntakeBuffer
             return null;
         }
 
-        return $"{item.EnvironmentKey.Trim()}::{item.IdempotencyKey.Trim()}";
+        var artifactVersion = string.IsNullOrWhiteSpace(item.ArtifactVersion)
+            ? string.Empty
+            : $"::{item.ArtifactVersion.Trim()}";
+
+        return $"{item.EnvironmentKey.Trim()}::{item.IdempotencyKey.Trim()}{artifactVersion}";
     }
 
     private sealed class BufferedItem
