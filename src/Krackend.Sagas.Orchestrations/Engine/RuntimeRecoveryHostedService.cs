@@ -42,8 +42,13 @@ public sealed class RuntimeRecoveryHostedService : BackgroundService
     private async Task Recover(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var processor = scope.ServiceProvider.GetRequiredService<IRuntimePendingWorkProcessor>();
-        await processor.ProcessDueWork(DateTime.UtcNow, cancellationToken);
+        var scheduler = scope.ServiceProvider.GetRequiredService<IRuntimeDurableWorkScheduler>();
+        var nowUtc = DateTime.UtcNow;
+        await scheduler.ScheduleReconcile(new RuntimeReconcileRequest
+        {
+            ReconcileKey = BuildReconcileKey(nowUtc, GetScanInterval()),
+            DueOnUtc = nowUtc
+        }, cancellationToken);
     }
 
     private TimeSpan GetScanInterval()
@@ -52,5 +57,11 @@ public sealed class RuntimeRecoveryHostedService : BackgroundService
         return options.ScanInterval < options.MinimumScanInterval
             ? options.MinimumScanInterval
             : options.ScanInterval;
+    }
+
+    private static string BuildReconcileKey(DateTime nowUtc, TimeSpan scanInterval)
+    {
+        var intervalTicks = scanInterval.Ticks <= 0 ? TimeSpan.FromSeconds(1).Ticks : scanInterval.Ticks;
+        return $"runtime-reconcile:{nowUtc.Ticks / intervalTicks}";
     }
 }

@@ -84,6 +84,28 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
     }
 
     [Fact]
+    public async Task ScheduleReconcile_Should_Use_Reconcile_Action_With_Metadata()
+    {
+        var mule = new CapturingMuleClient();
+        var scheduler = new MuleRuntimeDurableWorkScheduler(mule);
+        var request = new RuntimeReconcileRequest
+        {
+            ReconcileKey = "runtime-reconcile:123",
+            DueOnUtc = new DateTime(2026, 8, 14, 1, 2, 3, DateTimeKind.Utc),
+            RequestedBy = "test"
+        };
+
+        await scheduler.ScheduleReconcile(request);
+
+        Assert.Equal(RuntimeDurableWorkActionKeys.Reconcile, mule.CapturedKey);
+        Assert.Same(request, mule.CapturedPayload);
+        Assert.Equal("runtime-reconcile:123", mule.CapturedCorrelationId);
+        Assert.Equal("runtime-reconcile:123", mule.CapturedDeduplicationKey);
+        Assert.Equal("krackend.runtime.reconcile", mule.CapturedMetadata["runtime.action"]);
+        Assert.Equal("2026-08-14T01:02:03.0000000Z", mule.CapturedMetadata["runtime.reconcile.dueOnUtc"]);
+    }
+
+    [Fact]
     public void AddMuleDurableWork_Should_Register_Runtime_Scheduler()
     {
         var services = new ServiceCollection();

@@ -55,6 +55,24 @@ public sealed class MuleRuntimeDurableWorkScheduler : IRuntimeDurableWorkSchedul
             cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request == null)
+            throw new ArgumentNullException(nameof(request));
+
+        return await _muleClient.EnqueueAsync(
+            RuntimeDurableWorkActionKeys.Reconcile,
+            request,
+            options =>
+            {
+                options.CorrelationId = request.ReconcileKey;
+                options.DeduplicationKey = request.ReconcileKey;
+                AddReconcileMetadata(options.Metadata, request);
+            },
+            cancellationToken);
+    }
+
     private static void AddIngressMetadata(IDictionary<string, string> metadata, RuntimeIngressEnvelope envelope)
     {
         Add(metadata, "runtime.action", RuntimeDurableWorkActionKeys.ProcessIngress.Value);
@@ -87,6 +105,14 @@ public sealed class MuleRuntimeDurableWorkScheduler : IRuntimeDurableWorkSchedul
         Add(metadata, "runtime.transport", envelope.Destination?.Kind.ToString());
         Add(metadata, "runtime.transport.address", envelope.Destination?.Address);
         Add(metadata, "runtime.transport.version", envelope.Destination?.Version);
+    }
+
+    private static void AddReconcileMetadata(IDictionary<string, string> metadata, RuntimeReconcileRequest request)
+    {
+        Add(metadata, "runtime.action", RuntimeDurableWorkActionKeys.Reconcile.Value);
+        Add(metadata, "runtime.reconcile.key", request.ReconcileKey);
+        Add(metadata, "runtime.reconcile.dueOnUtc", request.DueOnUtc.ToString("O"));
+        Add(metadata, "runtime.reconcile.requestedBy", request.RequestedBy);
     }
 
     private static void Add(IDictionary<string, string> metadata, string key, string value)
