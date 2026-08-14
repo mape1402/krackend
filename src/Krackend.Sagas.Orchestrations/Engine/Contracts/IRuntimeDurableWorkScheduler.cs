@@ -17,4 +17,9 @@ public interface IRuntimeDurableWorkScheduler
     /// Schedules a canonical dispatch envelope for durable publishing.
     /// </summary>
     ValueTask<Guid> ScheduleDispatchTask(RuntimeDispatchEnvelope envelope, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Schedules a durable reconciliation scan.
+    /// </summary>
+    ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default);
 }

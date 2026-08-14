@@ -61,5 +61,8 @@ public sealed class DurableRuntimeTaskDispatcherTests
             DispatchEnvelope = envelope;
             return ValueTask.FromResult(Guid.NewGuid());
         }
+
+        public ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 }

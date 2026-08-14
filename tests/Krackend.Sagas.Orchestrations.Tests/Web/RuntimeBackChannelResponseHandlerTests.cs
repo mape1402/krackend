@@ -93,5 +93,8 @@ public sealed class RuntimeBackChannelResponseHandlerTests
 
         public ValueTask<Guid> ScheduleDispatchTask(RuntimeDispatchEnvelope envelope, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+
+        public ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 }
