@@ -99,6 +99,7 @@ public static class RuntimeCanonicalEnvelopeMapper
             TaskExecutionId = request.TaskExecutionId,
             Attempt = request.Attempt,
             Payload = request.Payload,
+            Metadata = request.Metadata.ToDictionary(x => x.Key, x => x.Value?.DeepClone()),
             CreatedOnUtc = request.StartedOnUtc,
             Destination = new RuntimeTransportDescriptor
             {

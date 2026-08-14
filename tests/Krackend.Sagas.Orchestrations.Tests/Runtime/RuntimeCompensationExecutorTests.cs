@@ -79,6 +79,44 @@ public sealed class RuntimeCompensationExecutorTests
         Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceCompensated");
     }
 
+    [Fact]
+    public async Task Execute_WhenDispatcherSchedulesDurableWork_KeepsCompensationStarted()
+    {
+        var store = RuntimeCompensationStore.Create(nameof(TaskDispatchType.FireAndForget));
+        var dispatcher = new RecordingDispatcher(new RuntimeTaskDispatchResult
+        {
+            Succeeded = true,
+            Status = "Scheduled",
+            ExternalReference = "mule-action-1"
+        });
+
+        var result = await CreateExecutor(store, dispatcher).Execute(store.Compensation);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Started", store.Compensation.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Compensating, store.Instance.Status);
+        Assert.Equal("Scheduled", store.Compensation.Metadata["dispatchStatus"]!.GetValue<string>());
+        Assert.Equal("mule-action-1", store.Compensation.Metadata["externalReference"]!.GetValue<string>());
+        Assert.Equal(store.Compensation.Id.ToString(), dispatcher.Request!.Metadata["compensationExecutionId"]!.GetValue<string>());
+        Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "CompensationCompleted");
+        Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "InstanceCompensated");
+    }
+
+    [Fact]
+    public async Task Execute_WhenStartedCompensationIsAlreadyScheduled_DoesNotRedispatch()
+    {
+        var store = RuntimeCompensationStore.Create(nameof(TaskDispatchType.FireAndForget), "Started");
+        store.Compensation.Metadata["dispatchStatus"] = "Scheduled";
+        store.Compensation.Metadata["externalReference"] = "mule-action-1";
+        var dispatcher = new RecordingDispatcher(new RuntimeTaskDispatchResult { Succeeded = true, Status = "Dispatched" });
+
+        var result = await CreateExecutor(store, dispatcher).Execute(store.Compensation);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Started", store.Compensation.Status);
+        Assert.Null(dispatcher.Request);
+    }
+
     private static RuntimeCompensationExecutor CreateExecutor(RuntimeCompensationStore store, RecordingDispatcher dispatcher)
         => new(
             new CompensationRepositoryStub(store),
@@ -181,6 +219,9 @@ public sealed class RuntimeCompensationExecutorTests
             store.Compensation.Metadata = compensationExecution.Metadata;
             return Task.CompletedTask;
         }
+
+        public Task<CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Compensation.Id == compensationExecutionId ? store.Compensation : null!);
 
         public Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<CompensationExecution>>([store.Compensation]);
