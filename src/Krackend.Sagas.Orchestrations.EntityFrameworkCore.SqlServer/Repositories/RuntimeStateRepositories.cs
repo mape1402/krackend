@@ -358,7 +358,7 @@ public sealed class CompensationExecutionRepository : ICompensationExecutionRepo
 
     public async Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
         => await _dbContext.CompensationExecutions.AsNoTracking()
-            .Where(x => x.Status == "Pending")
+            .Where(x => x.Status == "Pending" || x.Status == "Started")
             .OrderBy(x => x.StartedOnUtc)
             .Select(x => RuntimeStorageMapper.ToDomain(x))
             .ToArrayAsync(cancellationToken);

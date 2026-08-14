@@ -54,6 +54,31 @@ public sealed class RuntimeCompensationExecutorTests
         Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceFailed");
     }
 
+    [Fact]
+    public async Task Execute_ResumesStartedMessagingCompensationAndMarksInstanceCompensated()
+    {
+        var store = RuntimeCompensationStore.Create(nameof(TaskDispatchType.FireAndForget), "Started");
+        store.Compensation.StartedOnUtc = DateTime.UtcNow.AddMinutes(-5);
+        store.Compensation.Metadata["dispatchId"] = "existing-dispatch";
+        store.Compensation.Metadata["commandId"] = $"compensation:{store.Compensation.Id}";
+        var dispatcher = new RecordingDispatcher(new RuntimeTaskDispatchResult
+        {
+            Succeeded = true,
+            Status = "Dispatched",
+            ExternalReference = "rabbit:rollback-resumed"
+        });
+
+        var result = await CreateExecutor(store, dispatcher).Execute(store.Compensation);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Completed", store.Compensation.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, store.Instance.Status);
+        Assert.Equal("existing-dispatch", dispatcher.Request!.DispatchId);
+        Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "CompensationStarted");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "CompensationCompleted");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceCompensated");
+    }
+
     private static RuntimeCompensationExecutor CreateExecutor(RuntimeCompensationStore store, RecordingDispatcher dispatcher)
         => new(
             new CompensationRepositoryStub(store),
@@ -70,7 +95,7 @@ public sealed class RuntimeCompensationExecutorTests
         public required CompensationExecution Compensation { get; init; }
         public List<ExecutionTransition> Transitions { get; } = new();
 
-        public static RuntimeCompensationStore Create(string dispatchType)
+        public static RuntimeCompensationStore Create(string dispatchType, string compensationStatus = "Pending")
         {
             var instanceId = Id.New();
             var sourceTaskId = Id.New();
@@ -103,7 +128,7 @@ public sealed class RuntimeCompensationExecutorTests
                     OrchestrationInstanceId = instanceId,
                     SourceTaskExecutionId = sourceTaskId,
                     CompensationTaskKey = "compensate:reserve-stock",
-                    Status = "Pending",
+                    Status = compensationStatus,
                     RequestPayload = JsonNode.Parse("""{"orderId":"order-1"}"""),
                     Metadata = new Dictionary<string, JsonNode>
                     {
@@ -161,7 +186,8 @@ public sealed class RuntimeCompensationExecutorTests
             => Task.FromResult<IReadOnlyCollection<CompensationExecution>>([store.Compensation]);
 
         public Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(store.Compensation.Status == "Pending" ? [store.Compensation] : []);
+            => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(
+                store.Compensation.Status is "Pending" or "Started" ? [store.Compensation] : []);
     }
 
     private sealed class InstanceRepositoryStub(RuntimeCompensationStore store) : IOrchestrationInstanceRepository
