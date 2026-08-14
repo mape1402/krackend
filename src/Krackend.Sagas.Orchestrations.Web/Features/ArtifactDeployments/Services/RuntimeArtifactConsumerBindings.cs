@@ -50,7 +50,7 @@ internal sealed class RuntimeArtifactConsumerBindings
         if (string.IsNullOrWhiteSpace(topic))
             topic = BuildBackChannelTopic(ReadString(payload, "Domain", "domain"), ReadOrchestrationKey(artifact, payload));
 
-        return new RuntimeArtifactConsumerBinding { Topic = topic, Version = version };
+        return new RuntimeArtifactConsumerBinding { Topic = AppendVersion(topic, version), Version = version };
     }
 
     private static string ReadOrchestrationKey(RuntimeOrchestrationArtifact artifact, JsonObject payload)
@@ -117,6 +117,18 @@ internal sealed class RuntimeArtifactConsumerBindings
             .Select(x => x.Trim().Replace(" ", "_"));
 
         return string.Join(".", parts).ToLowerInvariant();
+    }
+
+    private static string AppendVersion(string topic, string version)
+    {
+        var normalizedTopic = topic.Trim().Replace(" ", "_").ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(version))
+            return normalizedTopic;
+
+        var suffix = $".v{version.Trim().Replace(".", "-")}".ToLowerInvariant();
+        return normalizedTopic.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            ? normalizedTopic
+            : $"{normalizedTopic}{suffix}";
     }
 
     private static JsonObject ReadObject(JsonObject obj, params string[] names)
