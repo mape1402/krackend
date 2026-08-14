@@ -395,9 +395,14 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             return true;
         }
 
-        dispatch.DispatchStatus = "Dispatched";
-        dispatch.SentOnUtc = DateTime.UtcNow;
-        dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
+        dispatch.DispatchStatus = string.IsNullOrWhiteSpace(result.Status) ? "Accepted" : result.Status;
+        dispatch.Metadata["externalReference"] = result.ExternalReference ?? string.Empty;
+        if (IsTransportSentStatus(dispatch.DispatchStatus))
+        {
+            dispatch.SentOnUtc = DateTime.UtcNow;
+            dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
+        }
+
         await _dispatchRepository.Update(dispatch, cancellationToken);
 
         retryAttempt.DispatchId = dispatch.Id;
@@ -632,6 +637,11 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             UpdatedOnUtc = DateTime.UtcNow
         };
     }
+
+    private static bool IsTransportSentStatus(string status)
+        => string.Equals(status, "Dispatched", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "Published", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "Sent", StringComparison.OrdinalIgnoreCase);
 
     private async Task WriteTransition(RuntimeTransition transition, CancellationToken cancellationToken)
     {
