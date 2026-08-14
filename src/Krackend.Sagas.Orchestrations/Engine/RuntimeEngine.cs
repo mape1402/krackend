@@ -12,6 +12,10 @@ namespace Krackend.Sagas.Orchestrations.Engine;
 /// </summary>
 public sealed class RuntimeEngine : IRuntimeEngine
 {
+    private static readonly TimeSpan InstanceMutationLeaseDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan InstanceMutationLeaseWaitTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan InstanceMutationLeaseRetryDelay = TimeSpan.FromMilliseconds(50);
+
     private readonly ITriggerIntakeBuffer _intakeBuffer;
     private readonly ITriggerPromoter _triggerPromoter;
     private readonly IRuntimeArtifactRepository _artifactRepository;
@@ -121,24 +125,57 @@ public sealed class RuntimeEngine : IRuntimeEngine
         if (command is null)
             throw new ArgumentNullException(nameof(command));
 
-        var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId, nameof(command.OrchestrationInstanceId)), cancellationToken);
-        var taskExecution = await _taskRepository.GetById(ParseId(command.TaskExecutionId, nameof(command.TaskExecutionId)), cancellationToken);
-        var stageExecution = await _stageRepository.GetById(taskExecution.StageExecutionId, cancellationToken);
-        var trace = await ResolveResponseTrace(instance, stageExecution, taskExecution, command, cancellationToken);
-
-        if (!CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
-            return DuplicateResponseIgnored(instance);
-
-        await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
-        await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
-
-        return new RuntimeEngineProcessResult
+        var instanceId = ParseId(command.OrchestrationInstanceId, nameof(command.OrchestrationInstanceId));
+        var lease = await AcquireInstanceMutationLease(instanceId, cancellationToken);
+        try
         {
-            Succeeded = true,
-            Status = instance.Status.ToString(),
-            Message = "Runtime response processed.",
-            InstanceId = instance.Id.ToString()
-        };
+            var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+            var taskExecution = await _taskRepository.GetById(ParseId(command.TaskExecutionId, nameof(command.TaskExecutionId)), cancellationToken);
+            var stageExecution = await _stageRepository.GetById(taskExecution.StageExecutionId, cancellationToken);
+            var trace = await ResolveResponseTrace(instance, stageExecution, taskExecution, command, cancellationToken);
+
+            if (trace is null || !CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
+                return DuplicateResponseIgnored(instance);
+
+            await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
+            await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
+
+            return new RuntimeEngineProcessResult
+            {
+                Succeeded = true,
+                Status = instance.Status.ToString(),
+                Message = "Runtime response processed.",
+                InstanceId = instance.Id.ToString()
+            };
+        }
+        finally
+        {
+            await _instanceRepository.ReleaseLease(instanceId, lease.LeaseId, CancellationToken.None);
+        }
+    }
+
+    private async Task<OrchestrationInstanceLease> AcquireInstanceMutationLease(Id instanceId, CancellationToken cancellationToken)
+    {
+        var leaseId = Id.New().ToString();
+        var deadline = DateTime.UtcNow.Add(InstanceMutationLeaseWaitTimeout);
+        while (true)
+        {
+            var now = DateTime.UtcNow;
+            var lease = await _instanceRepository.TryAcquireLease(
+                instanceId,
+                leaseId,
+                now,
+                now.Add(InstanceMutationLeaseDuration),
+                cancellationToken);
+
+            if (lease is not null)
+                return lease;
+
+            if (DateTime.UtcNow >= deadline)
+                throw new InvalidOperationException($"Orchestration instance '{instanceId}' is busy processing another response.");
+
+            await Task.Delay(InstanceMutationLeaseRetryDelay, cancellationToken);
+        }
     }
 
     private static bool CanContinueFromResponse(
@@ -1247,7 +1284,10 @@ public sealed class RuntimeEngine : IRuntimeEngine
         CancellationToken cancellationToken)
     {
         var dispatchId = ParseId(command.DispatchId, nameof(command.DispatchId));
-        var dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
+        var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
+        if (dispatch is null)
+            return null;
+
         var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
         var attempt = attempts.OrderByDescending(x => x.AttemptNumber).FirstOrDefault(x => x.DispatchId == dispatchId);
         if (attempt is null)

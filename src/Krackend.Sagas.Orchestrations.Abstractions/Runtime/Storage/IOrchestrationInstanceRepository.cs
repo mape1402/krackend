@@ -14,6 +14,18 @@ public interface IOrchestrationInstanceRepository
 
     Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default);
 
+    Task<OrchestrationInstanceLease> TryAcquireLease(
+        Id instanceId,
+        string leaseId,
+        DateTime nowUtc,
+        DateTime expiresOnUtc,
+        CancellationToken cancellationToken = default);
+
+    Task ReleaseLease(
+        Id instanceId,
+        string leaseId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(
         string environmentKey,
         int take = 50,
