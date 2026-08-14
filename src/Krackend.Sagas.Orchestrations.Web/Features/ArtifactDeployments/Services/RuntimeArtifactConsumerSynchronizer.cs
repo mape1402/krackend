@@ -1,7 +1,9 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
+using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Consuming;
 
 namespace Krackend.Sagas.Orchestrations.Web;
@@ -11,19 +13,19 @@ namespace Krackend.Sagas.Orchestrations.Web;
 /// </summary>
 public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsumerSynchronizer
 {
-    private readonly ITriggerIntakeBuffer _intakeBuffer;
+    private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
     private readonly IRuntimeBackChannelResponseHandler _backChannelResponseHandler;
     private readonly IReadOnlyCollection<IMessageConsumerRegistry> _registries;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactConsumerSynchronizer"/> class.
     /// </summary>
-    /// <param name="intakeBuffer">Runtime intake buffer used by trigger consumers.</param>
+    /// <param name="durableWorkScheduler">Runtime durable work scheduler used by trigger consumers.</param>
     /// <param name="backChannelResponseHandler">Handler used by response consumers.</param>
     /// <param name="registries">Available messaging consumer registries.</param>
-    public RuntimeArtifactConsumerSynchronizer(ITriggerIntakeBuffer intakeBuffer, IRuntimeBackChannelResponseHandler backChannelResponseHandler, IEnumerable<IMessageConsumerRegistry> registries)
+    public RuntimeArtifactConsumerSynchronizer(IRuntimeDurableWorkScheduler durableWorkScheduler, IRuntimeBackChannelResponseHandler backChannelResponseHandler, IEnumerable<IMessageConsumerRegistry> registries)
     {
-        _intakeBuffer = intakeBuffer ?? throw new ArgumentNullException(nameof(intakeBuffer));
+        _durableWorkScheduler = durableWorkScheduler ?? throw new ArgumentNullException(nameof(durableWorkScheduler));
         _backChannelResponseHandler = backChannelResponseHandler ?? throw new ArgumentNullException(nameof(backChannelResponseHandler));
         _registries = registries?.ToArray() ?? Array.Empty<IMessageConsumerRegistry>();
     }
@@ -101,16 +103,38 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
 
     private Task EnqueueTrigger(RuntimeOrchestrationArtifact artifact, MessageConsumeContext context, CancellationToken cancellationToken)
     {
-        return _intakeBuffer.Enqueue(new TriggerIntakeBufferItem
+        var envelope = new RuntimeIngressEnvelope
         {
-            TriggerType = TriggerType.Event,
-            TriggerKey = artifact.OrchestrationDefinitionKey,
+            IngressId = Id.New().ToString(),
+            Kind = RuntimeIngressKind.Trigger,
             EnvironmentKey = artifact.EnvironmentKey,
+            OrchestrationName = artifact.OrchestrationDefinitionKey,
+            OrchestrationVersion = artifact.Version.ToString(),
             CorrelationId = context.Metadata?.CorrelationId,
-            IdempotencyKey = context.Metadata?.CorrelationId,
-            SourceMessageId = context.Metadata?.DispatchId,
-            PayloadJson = (context.Message ?? new JsonObject()).ToJsonString(),
-            ReceivedOnUtc = context.CreatedOnUtc.UtcDateTime
-        }, cancellationToken);
+            SagaId = context.Metadata?.SagaId,
+            IdempotencyKey = BuildTriggerIdempotencyKey(context),
+            Payload = context.Message ?? new JsonObject(),
+            ReceivedOnUtc = context.CreatedOnUtc.UtcDateTime,
+            Source = new RuntimeTransportDescriptor
+            {
+                Kind = RuntimeTransportKind.Message,
+                Address = context.Topic,
+                Version = context.Version,
+                MessageId = context.Metadata?.DispatchId ?? context.Metadata?.CorrelationId
+            }
+        };
+
+        return _durableWorkScheduler.ScheduleProcessIngress(envelope, cancellationToken).AsTask();
+    }
+
+    private static string BuildTriggerIdempotencyKey(MessageConsumeContext context)
+    {
+        if (!string.IsNullOrWhiteSpace(context.Metadata?.CorrelationId))
+            return context.Metadata.CorrelationId;
+
+        if (!string.IsNullOrWhiteSpace(context.Metadata?.DispatchId))
+            return context.Metadata.DispatchId;
+
+        return $"{context.Topic}|{context.Version}|{context.CreatedOnUtc.UtcTicks}|{Id.New()}";
     }
 }
