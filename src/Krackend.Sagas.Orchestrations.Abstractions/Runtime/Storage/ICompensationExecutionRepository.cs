@@ -22,6 +22,14 @@ public interface ICompensationExecutionRepository
     Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a compensation execution by id.
+    /// </summary>
+    /// <param name="compensationExecutionId">Compensation execution id.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Compensation execution, or null when it does not exist.</returns>
+    Task<CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets compensation executions for an orchestration instance.
     /// </summary>
     /// <param name="instanceId">Orchestration instance id.</param>

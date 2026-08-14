@@ -254,6 +254,7 @@ public sealed class RuntimeDiagnosticsReaderTests
     {
         public Task Create(CompensationExecution compensationExecution, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default) => Task.FromResult(store.Compensation);
         public Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<CompensationExecution>>([store.Compensation]);
         public Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(Array.Empty<CompensationExecution>());
     }

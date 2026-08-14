@@ -450,6 +450,8 @@ public sealed class RuntimePendingWorkProcessorTests
             return Task.CompletedTask;
         }
         public Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Compensations.FirstOrDefault(x => x.Id == compensationExecutionId)!);
         public Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<CompensationExecution>>(store.Compensations.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
         public Task<IReadOnlyCollection<CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
