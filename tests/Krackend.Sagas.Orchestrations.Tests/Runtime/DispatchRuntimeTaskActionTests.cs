@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Engine.DurableWork;
@@ -14,21 +16,27 @@ public sealed class DispatchRuntimeTaskActionTests
     public async Task ExecuteAsync_Should_Publish_Message_Dispatch()
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
-        var action = new DispatchRuntimeTaskAction(dispatcher);
+        var dispatchRepository = new CapturingTaskDispatchRepository();
+        var action = new DispatchRuntimeTaskAction(dispatcher, dispatchRepository);
+        var envelope = CreateEnvelope();
+        dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
 
-        await action.ExecuteAsync(CreateContext(CreateEnvelope()), CancellationToken.None);
+        await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
 
         Assert.Equal("orders.payment", dispatcher.Command.Destination);
         Assert.Equal("1.0.0", dispatcher.Command.MessageVersion);
         Assert.Equal("local", dispatcher.Command.EnvironmentKey);
-        Assert.Equal("dispatch-1", dispatcher.Command.DispatchId);
+        Assert.Equal(envelope.DispatchId, dispatcher.Command.DispatchId);
+        Assert.Equal("Published", dispatchRepository.Dispatch.DispatchStatus);
+        Assert.NotNull(dispatchRepository.Dispatch.SentOnUtc);
+        Assert.Equal("message-1", dispatchRepository.Dispatch.Metadata["externalReference"]!.GetValue<string>());
     }
 
     [Fact]
     public async Task ExecuteAsync_Should_Reject_Unsupported_Transport()
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
-        var action = new DispatchRuntimeTaskAction(dispatcher);
+        var action = new DispatchRuntimeTaskAction(dispatcher, new CapturingTaskDispatchRepository());
         var envelope = CreateEnvelope();
         envelope.Destination.Kind = RuntimeTransportKind.Http;
 
@@ -40,7 +48,7 @@ public sealed class DispatchRuntimeTaskActionTests
     private static RuntimeDispatchEnvelope CreateEnvelope()
         => new()
         {
-            DispatchId = "dispatch-1",
+            DispatchId = Id.New().ToString(),
             OrchestrationInstanceId = "instance-1",
             ExecutionKey = "cmd-1",
             CorrelationId = "corr-1",
@@ -92,5 +100,44 @@ public sealed class DispatchRuntimeTaskActionTests
                 ExternalReference = "message-1"
             });
         }
+    }
+
+    private sealed class CapturingTaskDispatchRepository : ITaskDispatchRepository
+    {
+        public Abstractions.Runtime.TaskDispatch Dispatch { get; } = new()
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            Destination = "orders.payment",
+            DispatchStatus = "Scheduled",
+            Metadata = new Dictionary<string, JsonNode>()
+        };
+
+        public Task Create(Abstractions.Runtime.TaskDispatch dispatch, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task Update(Abstractions.Runtime.TaskDispatch dispatch, CancellationToken cancellationToken = default)
+        {
+            Dispatch.DispatchStatus = dispatch.DispatchStatus;
+            Dispatch.SentOnUtc = dispatch.SentOnUtc;
+            Dispatch.AcknowledgedOnUtc = dispatch.AcknowledgedOnUtc;
+            Dispatch.FailedOnUtc = dispatch.FailedOnUtc;
+            Dispatch.FailureReason = dispatch.FailureReason;
+            Dispatch.Metadata = dispatch.Metadata;
+            return Task.CompletedTask;
+        }
+
+        public Task<Abstractions.Runtime.TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Dispatch);
+
+        public Task<Abstractions.Runtime.TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(dispatchId == Dispatch.Id ? Dispatch : null!);
+
+        public Task<Abstractions.Runtime.TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<Abstractions.Runtime.TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 }

@@ -474,7 +474,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 return await FailDispatch(dispatchFailure, cancellationToken);
             }
 
-            await MarkDispatchAccepted(dispatch, cancellationToken);
+            await MarkDispatchAccepted(dispatch, dispatchResult, cancellationToken);
 
             if (context.Task.AwaitResponse)
                 return taskExecution;
@@ -828,13 +828,23 @@ public sealed class RuntimeEngine : IRuntimeEngine
         return taskExecution;
     }
 
-    private async Task MarkDispatchAccepted(TaskDispatch dispatch, CancellationToken cancellationToken)
+    private async Task MarkDispatchAccepted(TaskDispatch dispatch, RuntimeTaskDispatchResult dispatchResult, CancellationToken cancellationToken)
     {
-        dispatch.DispatchStatus = "Dispatched";
-        dispatch.SentOnUtc = DateTime.UtcNow;
-        dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
+        dispatch.DispatchStatus = string.IsNullOrWhiteSpace(dispatchResult.Status) ? "Accepted" : dispatchResult.Status;
+        dispatch.Metadata["externalReference"] = dispatchResult.ExternalReference ?? string.Empty;
+        if (IsTransportSentStatus(dispatch.DispatchStatus))
+        {
+            dispatch.SentOnUtc = DateTime.UtcNow;
+            dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
+        }
+
         await _dispatchRepository.Update(dispatch, cancellationToken);
     }
+
+    private static bool IsTransportSentStatus(string status)
+        => string.Equals(status, "Dispatched", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "Published", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "Sent", StringComparison.OrdinalIgnoreCase);
 
     private async Task MarkTaskDispatchAccepted(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, CancellationToken cancellationToken)
     {
