@@ -965,6 +965,14 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Duplicate responses must resolve dispatches by id.");
+
+        public Task<IReadOnlyCollection<TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(store.Dispatches.Values
+                .Where(x => string.Equals(x.DispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase) &&
+                            x.ScheduledOnUtc <= dueBeforeUtc &&
+                            x.SentOnUtc == null &&
+                            x.FailedOnUtc == null)
+                .ToArray());
     }
 
     private sealed class CompensationRepositoryStub(RuntimeStore store) : ICompensationExecutionRepository

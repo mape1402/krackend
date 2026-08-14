@@ -328,6 +328,18 @@ public sealed class TaskDispatchRepository : ITaskDispatchRepository
         var entity = await _dbContext.TaskDispatches.AsNoTracking().FirstOrDefaultAsync(x => x.TaskExecutionAttemptId == taskExecutionAttemptId, cancellationToken);
         return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
     }
+
+    public async Task<IReadOnlyCollection<TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+        => await _dbContext.TaskDispatches.AsNoTracking()
+            .Where(x =>
+                x.DispatchStatus == "Scheduled" &&
+                x.ScheduledOnUtc != null &&
+                x.ScheduledOnUtc <= dueBeforeUtc &&
+                x.SentOnUtc == null &&
+                x.FailedOnUtc == null)
+            .OrderBy(x => x.ScheduledOnUtc)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .ToArrayAsync(cancellationToken);
 }
 
 public sealed class CompensationExecutionRepository : ICompensationExecutionRepository

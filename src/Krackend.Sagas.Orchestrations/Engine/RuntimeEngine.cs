@@ -832,6 +832,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
     {
         dispatch.DispatchStatus = string.IsNullOrWhiteSpace(dispatchResult.Status) ? "Accepted" : dispatchResult.Status;
         dispatch.Metadata["externalReference"] = dispatchResult.ExternalReference ?? string.Empty;
+        if (string.Equals(dispatch.DispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase))
+            dispatch.ScheduledOnUtc ??= DateTime.UtcNow;
+
         if (IsTransportSentStatus(dispatch.DispatchStatus))
         {
             dispatch.SentOnUtc = DateTime.UtcNow;

@@ -17,15 +17,18 @@ public sealed class RuntimePendingWorkProcessorTests
         var store = RuntimePendingWorkStore.Create(now, TimeoutScenario.None);
         var compensation = PendingCompensation(store.Instance.Id, store.Task.Id);
         store.Compensations.Add(compensation);
+        store.Dispatches.Add(ScheduledDispatch(store.Attempt.Id, now));
 
         var result = await CreateProcessor(store).ProcessDueWork(now);
 
-        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(4, result.TotalCount);
         Assert.Equal(1, result.WaitingTaskCount);
         Assert.Equal(1, result.WaitingAttemptCount);
+        Assert.Equal(1, result.ScheduledDispatchCount);
         Assert.Equal(1, result.PendingCompensationCount);
         Assert.Contains(result.Items, x => x.WorkType == RuntimePendingWorkTypes.WaitingTaskTimeout && x.Id == store.Task.Id);
         Assert.Contains(result.Items, x => x.WorkType == RuntimePendingWorkTypes.WaitingAttemptTimeout && x.Id == store.Attempt.Id);
+        Assert.Contains(result.Items, x => x.WorkType == RuntimePendingWorkTypes.ScheduledDispatch);
         Assert.Contains(result.Items, x => x.WorkType == RuntimePendingWorkTypes.PendingCompensation && x.Id == compensation.Id);
     }
 
@@ -345,6 +348,19 @@ public sealed class RuntimePendingWorkProcessorTests
         ReconcileNoRetries
     }
 
+    private static TaskDispatch ScheduledDispatch(Id attemptId, DateTime scheduledOnUtc)
+        => new()
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attemptId,
+            DispatchType = "Messaging",
+            Destination = "inventory.reserve",
+            DispatchStatus = "Scheduled",
+            ScheduledOnUtc = scheduledOnUtc,
+            CommandId = Id.New().ToString(),
+            CorrelationId = "order-1:reserve-stock"
+        };
+
     private sealed class TaskRepositoryStub(RuntimePendingWorkStore store) : ITaskExecutionRepository
     {
         public Task Create(TaskExecution taskExecution, CancellationToken cancellationToken = default) => throw new NotImplementedException();
@@ -416,6 +432,14 @@ public sealed class RuntimePendingWorkProcessorTests
 
         public Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Dispatches.Single(x => x.TaskExecutionAttemptId == taskExecutionAttemptId));
+
+        public Task<IReadOnlyCollection<TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(store.Dispatches
+                .Where(x => string.Equals(x.DispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase) &&
+                            x.ScheduledOnUtc <= dueBeforeUtc &&
+                            x.SentOnUtc == null &&
+                            x.FailedOnUtc == null)
+                .ToArray());
     }
 
     private sealed class CompensationRepositoryStub(RuntimePendingWorkStore store) : ICompensationExecutionRepository

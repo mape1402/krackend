@@ -247,6 +247,7 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
         public Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
         public Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
+        public Task<IReadOnlyCollection<TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(Array.Empty<TaskDispatch>());
     }
 
     private sealed class CompensationRepositoryStub(RuntimeDiagnosticsStore store) : ICompensationExecutionRepository
