@@ -176,5 +176,17 @@ public sealed class PigeonOrchestrationClientTests
 
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask PublishAsync<T>(T message, string exchange, string routingKey, PigeonSemanticVersion version, CancellationToken cancellationToken = default)
+            where T : class
+            => PublishAsync(message, routingKey, version, cancellationToken);
+
+        public ValueTask PublishRawAsync<T>(T message, string topic, CancellationToken cancellationToken = default)
+            where T : class
+            => PublishAsync(message, topic, cancellationToken);
+
+        public ValueTask PublishRawAsync<T>(T message, string exchange, string routingKey, CancellationToken cancellationToken = default)
+            where T : class
+            => PublishAsync(message, routingKey, cancellationToken);
     }
 }
