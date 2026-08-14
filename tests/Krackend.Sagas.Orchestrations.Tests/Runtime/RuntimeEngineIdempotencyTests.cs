@@ -340,6 +340,50 @@ public sealed class RuntimeEngineIdempotencyTests
     }
 
     [Fact]
+    public async Task ContinueFromResponse_AcquiresAndReleasesInstanceMutationLease()
+    {
+        var trace = CreateWaitingTrace();
+        var engine = CreateEngine(trace.Store);
+
+        var result = await engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, trace.Store.LeasesAcquired);
+        Assert.Equal(1, trace.Store.LeasesReleased);
+        Assert.Null(trace.Store.Instances[trace.Instance.Id].ActiveLeaseId);
+        Assert.Null(trace.Store.Instances[trace.Instance.Id].ActiveLeaseExpiresOnUtc);
+    }
+
+    [Fact]
+    public async Task ContinueFromResponse_WhenDispatchNoLongerExists_IgnoresOrphanResponse()
+    {
+        var trace = CreateWaitingTrace();
+        trace.Store.Dispatches.Remove(trace.Dispatch.Id);
+        var engine = CreateEngine(trace.Store);
+
+        var result = await engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("ignored", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(trace.Store.Transitions);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.Task.Id].Status);
+    }
+
+    [Fact]
     public async Task ContinueFromResponse_WhenTaskBelongsToAnotherInstance_RejectsTraceWithoutWritingTransitions()
     {
         var trace = CreateWaitingTrace();
@@ -740,6 +784,8 @@ public sealed class RuntimeEngineIdempotencyTests
         public Dictionary<Id, RuntimeOrchestrationArtifact> Artifacts { get; } = new();
         public List<ExecutionTransition> Transitions { get; } = new();
         public List<CompensationExecution> Compensations { get; } = new();
+        public int LeasesAcquired { get; set; }
+        public int LeasesReleased { get; set; }
     }
 
     private sealed class InstanceRepositoryStub(RuntimeStore store) : IOrchestrationInstanceRepository
@@ -758,6 +804,36 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Instances[instanceId]);
+
+        public Task<OrchestrationInstanceLease> TryAcquireLease(
+            Id instanceId,
+            string leaseId,
+            DateTime nowUtc,
+            DateTime expiresOnUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var instance = store.Instances[instanceId];
+            if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) && instance.ActiveLeaseExpiresOnUtc > nowUtc)
+                return Task.FromResult<OrchestrationInstanceLease>(null!);
+
+            instance.ActiveLeaseId = leaseId;
+            instance.ActiveLeaseExpiresOnUtc = expiresOnUtc;
+            store.LeasesAcquired++;
+            return Task.FromResult(new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc));
+        }
+
+        public Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
+        {
+            var instance = store.Instances[instanceId];
+            if (string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal))
+            {
+                instance.ActiveLeaseId = null;
+                instance.ActiveLeaseExpiresOnUtc = null;
+                store.LeasesReleased++;
+            }
+
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(string environmentKey, int take = 50, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(store.Instances.Values.ToArray());
@@ -870,6 +946,9 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Dispatches[dispatchId]);
+
+        public Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Dispatches.TryGetValue(dispatchId, out var dispatch) ? dispatch : null!);
 
         public Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Duplicate responses must not resolve dispatches by command id.");

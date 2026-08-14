@@ -83,6 +83,36 @@ public sealed class OrchestrationInstanceRepository : IOrchestrationInstanceRepo
     public async Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
         => RuntimeStorageMapper.ToDomain(await _dbContext.OrchestrationInstances.AsNoTracking().FirstAsync(x => x.Id == instanceId, cancellationToken));
 
+    public async Task<OrchestrationInstanceLease> TryAcquireLease(
+        Id instanceId,
+        string leaseId,
+        DateTime nowUtc,
+        DateTime expiresOnUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var instanceIdBytes = instanceId.Value.ToByteArray();
+        var affected = await _dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE [Runtime].[OrchestrationInstances]
+            SET [ActiveLeaseId] = {leaseId}, [ActiveLeaseExpiresOnUtc] = {expiresOnUtc}
+            WHERE [Id] = {instanceIdBytes}
+              AND ([ActiveLeaseId] IS NULL OR [ActiveLeaseExpiresOnUtc] IS NULL OR [ActiveLeaseExpiresOnUtc] <= {nowUtc})
+            """, cancellationToken);
+
+        return affected == 1
+            ? new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc)
+            : null;
+    }
+
+    public async Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
+    {
+        var instanceIdBytes = instanceId.Value.ToByteArray();
+        await _dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE [Runtime].[OrchestrationInstances]
+            SET [ActiveLeaseId] = NULL, [ActiveLeaseExpiresOnUtc] = NULL
+            WHERE [Id] = {instanceIdBytes} AND [ActiveLeaseId] = {leaseId}
+            """, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(
         string environmentKey,
         int take = 50,
@@ -266,6 +296,12 @@ public sealed class TaskDispatchRepository : ITaskDispatchRepository
 
     public async Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
         => RuntimeStorageMapper.ToDomain(await _dbContext.TaskDispatches.AsNoTracking().FirstAsync(x => x.Id == dispatchId, cancellationToken));
+
+    public async Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.TaskDispatches.AsNoTracking().FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken);
+        return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
+    }
 
     public async Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default)
     {
