@@ -39,6 +39,8 @@ builder.Services.AddKrackendSagasOrchestrationsSqlServer(db =>
     db.UseSqlServer(
         runtimeConnection,
         sqlOptions => sqlOptions.MigrationsAssembly("Krackend.Sagas.Orchestrations.RuntimeHost.Sample")));
+builder.Services.AddMule(mule => mule.UseKrackendSagasOrchestrationsRuntimeStorage());
+builder.Services.AddKrackendSagasOrchestrationsMuleDurableWork();
 builder.Services.AddKrackendSagasOrchestrationsEngine();
 builder.Services.AddOrchestratorRuntimeWebUI(options =>
 {
