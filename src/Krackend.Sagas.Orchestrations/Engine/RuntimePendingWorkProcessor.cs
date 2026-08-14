@@ -64,6 +64,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     {
         var waitingTasks = await _taskRepository.GetWaitingResponseOlderThan(nowUtc, cancellationToken);
         var waitingAttempts = await _attemptRepository.GetWaitingResponseOlderThan(nowUtc, cancellationToken);
+        var scheduledDispatches = await _dispatchRepository.GetScheduledOlderThan(nowUtc, cancellationToken);
         var compensations = await _compensationRepository.GetPending(cancellationToken);
 
         foreach (var task in waitingTasks)
@@ -91,6 +92,13 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
                 x.TaskExecutionId,
                 x.WaitingSinceUtc,
                 x.Status.ToString())))
+            .Concat(scheduledDispatches.Select(x => new RuntimePendingWorkItem(
+                RuntimePendingWorkTypes.ScheduledDispatch,
+                x.Id,
+                null,
+                x.TaskExecutionAttemptId,
+                x.ScheduledOnUtc,
+                x.DispatchStatus)))
             .Concat(compensations.Select(x => new RuntimePendingWorkItem(
                 RuntimePendingWorkTypes.PendingCompensation,
                 x.Id,
@@ -397,6 +405,9 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
 
         dispatch.DispatchStatus = string.IsNullOrWhiteSpace(result.Status) ? "Accepted" : result.Status;
         dispatch.Metadata["externalReference"] = result.ExternalReference ?? string.Empty;
+        if (string.Equals(dispatch.DispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase))
+            dispatch.ScheduledOnUtc ??= DateTime.UtcNow;
+
         if (IsTransportSentStatus(dispatch.DispatchStatus))
         {
             dispatch.SentOnUtc = DateTime.UtcNow;

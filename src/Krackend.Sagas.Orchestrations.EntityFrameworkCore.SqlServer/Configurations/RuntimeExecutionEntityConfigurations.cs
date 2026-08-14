@@ -128,6 +128,7 @@ internal sealed class TaskDispatchEntityConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.MetadataJson).HasColumnType("nvarchar(max)").IsRequired(false);
         builder.HasIndex(x => x.CommandId);
         builder.HasIndex(x => x.CorrelationId);
+        builder.HasIndex(x => new { x.DispatchStatus, x.ScheduledOnUtc });
     }
 }
 

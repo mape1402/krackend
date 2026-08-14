@@ -120,6 +120,7 @@ public sealed class DispatchRuntimeTaskActionTests
         public Task Update(Abstractions.Runtime.TaskDispatch dispatch, CancellationToken cancellationToken = default)
         {
             Dispatch.DispatchStatus = dispatch.DispatchStatus;
+            Dispatch.ScheduledOnUtc = dispatch.ScheduledOnUtc;
             Dispatch.SentOnUtc = dispatch.SentOnUtc;
             Dispatch.AcknowledgedOnUtc = dispatch.AcknowledgedOnUtc;
             Dispatch.FailedOnUtc = dispatch.FailedOnUtc;
@@ -139,5 +140,8 @@ public sealed class DispatchRuntimeTaskActionTests
 
         public Task<Abstractions.Runtime.TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskDispatch>>(Array.Empty<Abstractions.Runtime.TaskDispatch>());
     }
 }

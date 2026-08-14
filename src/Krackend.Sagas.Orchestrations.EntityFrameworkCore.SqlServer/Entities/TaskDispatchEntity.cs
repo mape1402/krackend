@@ -12,6 +12,7 @@ public sealed class TaskDispatchEntity
     public string DispatchStatus { get; set; }
     public string CommandId { get; set; }
     public string CorrelationId { get; set; }
+    public DateTime? ScheduledOnUtc { get; set; }
     public DateTime? SentOnUtc { get; set; }
     public DateTime? AcknowledgedOnUtc { get; set; }
     public DateTime? FailedOnUtc { get; set; }
