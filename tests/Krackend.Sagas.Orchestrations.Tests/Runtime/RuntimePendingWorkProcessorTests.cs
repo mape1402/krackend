@@ -95,7 +95,7 @@ public sealed class RuntimePendingWorkProcessorTests
         var now = DateTime.UtcNow;
         var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
 
-        await CreateProcessor(store).ProcessDueWork(now);
+        await CreateProcessor(store, dispatcher: null).ProcessDueWork(now);
 
         Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Attempt.Status);
         Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Task.Status);
@@ -113,6 +113,69 @@ public sealed class RuntimePendingWorkProcessorTests
     }
 
     [Fact]
+    public async Task ProcessDueWork_ReconcilesTimedOutMessagingTaskByRedispatching()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
+        store.Attempt.RequestPayload = JsonNode.Parse("""{"orderId":"order-1","reserved":true}""");
+        var dispatcher = new RecordingTaskDispatcher();
+
+        await CreateProcessor(store, dispatcher).ProcessDueWork(now);
+
+        Assert.Equal(TaskExecutionStatus.TimedOut, store.Attempts[0].Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Attempts[1].Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Task.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Waiting, store.Instance.Status);
+        Assert.Equal(2, store.Task.LastAttemptNumber);
+        Assert.Equal("ReconciliationRedispatched", store.Task.Metadata["timeoutPolicyApplied"]!.GetValue<string>());
+        Assert.Equal("Redispatched", store.Instance.Metadata["reconciliationStatus"]!.GetValue<string>());
+        Assert.Equal(store.Task.CorrelationId, Assert.Single(store.Dispatches).CorrelationId);
+        Assert.Equal(store.Dispatches[0].Id, store.Attempts[1].DispatchId);
+        Assert.Equal("inventory.reserve", Assert.Single(dispatcher.Requests).Destination);
+        Assert.Equal(store.Task.CorrelationId, Assert.Single(dispatcher.Requests).CorrelationId);
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskReconciliationRedispatched");
+    }
+
+    [Fact]
+    public async Task ProcessDueWork_FailsReconcileTimeoutWhenAttemptsAreExhausted()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileNoRetries);
+        var dispatcher = new RecordingTaskDispatcher();
+
+        await CreateProcessor(store, dispatcher).ProcessDueWork(now);
+
+        Assert.Equal(TaskExecutionStatus.TimedOut, store.Attempt.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, store.Task.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, store.Instance.Status);
+        Assert.Equal("ReconciliationExhausted", store.Task.Metadata["timeoutPolicyApplied"]!.GetValue<string>());
+        Assert.Empty(store.Dispatches);
+        Assert.Empty(dispatcher.Requests);
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskReconciliationExhausted");
+    }
+
+    [Fact]
+    public async Task ProcessDueWork_ReconcileRetryCanRunUntilRetryPolicyIsExhausted()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
+        var dispatcher = new RecordingTaskDispatcher();
+        var processor = CreateProcessor(store, dispatcher);
+
+        await processor.ProcessDueWork(now);
+        store.Attempt.WaitingSinceUtc = now.AddMinutes(1);
+        await processor.ProcessDueWork(now.AddMinutes(6));
+        store.Attempt.WaitingSinceUtc = now.AddMinutes(7);
+        await processor.ProcessDueWork(now.AddMinutes(12));
+
+        Assert.Equal(3, store.Attempts.Count);
+        Assert.Equal(2, dispatcher.Requests.Count);
+        Assert.Equal(TaskExecutionStatus.Failed, store.Task.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, store.Instance.Status);
+        Assert.Equal("ReconciliationExhausted", store.Task.Metadata["timeoutPolicyApplied"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task ProcessDueWork_DoesNotReapplyBlockingTimeoutPolicy()
     {
         var now = DateTime.UtcNow;
@@ -126,15 +189,17 @@ public sealed class RuntimePendingWorkProcessorTests
         Assert.Equal(transitionCount, store.Transitions.Count);
     }
 
-    private static RuntimePendingWorkProcessor CreateProcessor(RuntimePendingWorkStore store)
+    private static RuntimePendingWorkProcessor CreateProcessor(RuntimePendingWorkStore store, IRuntimeTaskDispatcher? dispatcher = null)
         => new(
             new TaskRepositoryStub(store),
             new AttemptRepositoryStub(store),
+            new DispatchRepositoryStub(store),
             new CompensationRepositoryStub(store),
             new InstanceRepositoryStub(store),
             new StageRepositoryStub(store),
             new ArtifactRepositoryStub(store),
             new TransitionRepositoryStub(store),
+            new DispatcherResolverStub(dispatcher),
             new RuntimeTimeoutPolicyEvaluator(),
             new RuntimeErrorPolicyResolver(),
             new NoopCompensationExecutor(),
@@ -157,6 +222,8 @@ public sealed class RuntimePendingWorkProcessorTests
         public required StageExecution Stage { get; set; }
         public required TaskExecution Task { get; set; }
         public required TaskExecutionAttempt Attempt { get; set; }
+        public List<TaskExecutionAttempt> Attempts { get; } = new();
+        public List<TaskDispatch> Dispatches { get; } = new();
         public required RuntimeOrchestrationArtifact Artifact { get; set; }
         public List<CompensationExecution> Compensations { get; } = new();
         public List<ExecutionTransition> Transitions { get; } = new();
@@ -167,7 +234,15 @@ public sealed class RuntimePendingWorkProcessorTests
             var instanceId = Id.New();
             var stageId = Id.New();
             var taskId = Id.New();
-            return new RuntimePendingWorkStore
+            var attempt = new TaskExecutionAttempt
+            {
+                Id = Id.New(),
+                TaskExecutionId = taskId,
+                AttemptNumber = 1,
+                Status = TaskExecutionStatus.WaitingResponse,
+                WaitingSinceUtc = waitingSinceUtc
+            };
+            var store = new RuntimePendingWorkStore
             {
                 Instance = new OrchestrationInstance
                 {
@@ -205,14 +280,7 @@ public sealed class RuntimePendingWorkProcessorTests
                     OnErrorPolicy = OnErrorPolicy.Stop,
                     CorrelationId = "order-1:reserve-stock"
                 },
-                Attempt = new TaskExecutionAttempt
-                {
-                    Id = Id.New(),
-                    TaskExecutionId = taskId,
-                    AttemptNumber = 1,
-                    Status = TaskExecutionStatus.WaitingResponse,
-                    WaitingSinceUtc = waitingSinceUtc
-                },
+                Attempt = attempt,
                 Artifact = new RuntimeOrchestrationArtifact
                 {
                     Id = artifactId,
@@ -227,6 +295,8 @@ public sealed class RuntimePendingWorkProcessorTests
                     ActivatedOnUtc = waitingSinceUtc
                 }
             };
+            store.Attempts.Add(attempt);
+            return store;
         }
 
         private static JsonNode BuildArtifactPayload(TimeoutScenario timeoutScenario)
@@ -260,7 +330,8 @@ public sealed class RuntimePendingWorkProcessorTests
             {
                 TimeoutScenario.Fail => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 0, "TimeoutBehaviorPolicy": { "ErrorCode": "ReserveTimeout" } }""",
                 TimeoutScenario.WaitBlock => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 1, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0, "WaitingTime": { "Value": "00:00:05" } } }""",
-                TimeoutScenario.ReconcileBlock => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 2, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0 } }""",
+                TimeoutScenario.ReconcileBlock => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 2, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0, "RetryPolicy": { "MaxRetries": 2, "StrategyType": 0 } } }""",
+                TimeoutScenario.ReconcileNoRetries => """{ "Timeout": { "Value": "00:00:01" }, "TimeoutBehavior": 2, "TimeoutBehaviorPolicy": { "OrchestrationAction": 0, "RetryPolicy": { "MaxRetries": 0, "StrategyType": 0 } } }""",
                 _ => "{}"
             };
     }
@@ -270,7 +341,8 @@ public sealed class RuntimePendingWorkProcessorTests
         None,
         Fail,
         WaitBlock,
-        ReconcileBlock
+        ReconcileBlock,
+        ReconcileNoRetries
     }
 
     private sealed class TaskRepositoryStub(RuntimePendingWorkStore store) : ITaskExecutionRepository
@@ -293,19 +365,53 @@ public sealed class RuntimePendingWorkProcessorTests
 
     private sealed class AttemptRepositoryStub(RuntimePendingWorkStore store) : ITaskExecutionAttemptRepository
     {
-        public Task Create(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task Create(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
+        {
+            store.Attempt = attempt;
+            store.Attempts.Add(attempt);
+            return Task.CompletedTask;
+        }
         public Task Update(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
         {
             store.Attempt = attempt;
+            var index = store.Attempts.FindIndex(x => x.Id == attempt.Id);
+            if (index >= 0)
+                store.Attempts[index] = attempt;
             return Task.CompletedTask;
         }
         public Task<TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default) => Task.FromResult(store.Attempt);
-        public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>([store.Attempt]);
+        public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempts.Where(x => x.TaskExecutionId == taskExecutionId).ToArray());
         public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempt.Status == TaskExecutionStatus.WaitingResponse &&
-                                                                          store.Attempt.WaitingSinceUtc <= dueBeforeUtc
-                ? [store.Attempt]
-                : []);
+            => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempts
+                .Where(x => x.Status == TaskExecutionStatus.WaitingResponse && x.WaitingSinceUtc <= dueBeforeUtc)
+                .ToArray());
+    }
+
+    private sealed class DispatchRepositoryStub(RuntimePendingWorkStore store) : ITaskDispatchRepository
+    {
+        public Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default)
+        {
+            store.Dispatches.Add(dispatch);
+            return Task.CompletedTask;
+        }
+
+        public Task Update(TaskDispatch dispatch, CancellationToken cancellationToken = default)
+        {
+            var index = store.Dispatches.FindIndex(x => x.Id == dispatch.Id);
+            if (index >= 0)
+                store.Dispatches[index] = dispatch;
+            return Task.CompletedTask;
+        }
+
+        public Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Dispatches.Single(x => x.Id == dispatchId));
+
+        public Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Dispatches.Single(x => x.CommandId == commandId));
+
+        public Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Dispatches.Single(x => x.TaskExecutionAttemptId == taskExecutionAttemptId));
     }
 
     private sealed class CompensationRepositoryStub(RuntimePendingWorkStore store) : ICompensationExecutionRepository
@@ -373,5 +479,30 @@ public sealed class RuntimePendingWorkProcessorTests
     {
         public Task<RuntimeCompensationExecutionResult> Execute(CompensationExecution compensation, CancellationToken cancellationToken = default)
             => Task.FromResult(new RuntimeCompensationExecutionResult(true, compensation.Status, "Noop"));
+    }
+
+    private sealed class DispatcherResolverStub(IRuntimeTaskDispatcher? dispatcher) : IRuntimeTaskDispatcherResolver
+    {
+        public IRuntimeTaskDispatcher? Resolve(string taskKind)
+            => dispatcher?.CanDispatch(taskKind) == true ? dispatcher : null;
+    }
+
+    private sealed class RecordingTaskDispatcher : IRuntimeTaskDispatcher
+    {
+        public List<RuntimeTaskDispatchRequest> Requests { get; } = new();
+
+        public bool CanDispatch(string taskKind)
+            => string.Equals(taskKind, "Messaging", StringComparison.OrdinalIgnoreCase);
+
+        public Task<RuntimeTaskDispatchResult> Dispatch(RuntimeTaskDispatchRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new RuntimeTaskDispatchResult
+            {
+                Succeeded = true,
+                Status = "Dispatched",
+                ExternalReference = request.CommandId
+            });
+        }
     }
 }

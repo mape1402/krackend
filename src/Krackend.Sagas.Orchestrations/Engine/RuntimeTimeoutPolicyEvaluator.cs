@@ -28,7 +28,22 @@ public sealed class RuntimeTimeoutPolicyEvaluator : IRuntimeTimeoutPolicyEvaluat
                 : ReadDuration(policy["WaitingTime"] ?? policy["waitingTime"]),
             ErrorCode = policy is null
                 ? string.Empty
-                : ReadString(policy, "ErrorCode", "errorCode")
+                : ReadString(policy, "ErrorCode", "errorCode"),
+            ReconcileRetryPolicy = policy is null
+                ? new RuntimeRetryPolicy()
+                : ReadRetryPolicy(ReadObject(policy, "RetryPolicy", "retryPolicy"))
+        };
+    }
+
+    private static RuntimeRetryPolicy ReadRetryPolicy(JsonObject retryPolicy)
+    {
+        if (retryPolicy is null || retryPolicy.Count == 0)
+            return new RuntimeRetryPolicy();
+
+        return new RuntimeRetryPolicy
+        {
+            MaxRetries = Math.Max(0, ReadInt(retryPolicy, "MaxRetries", "maxRetries")),
+            StrategyType = ReadString(retryPolicy, "StrategyType", "strategyType")
         };
     }
 
@@ -44,6 +59,17 @@ public sealed class RuntimeTimeoutPolicyEvaluator : IRuntimeTimeoutPolicyEvaluat
         }
 
         return string.Empty;
+    }
+
+    private static int ReadInt(JsonObject obj, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (obj[name] is JsonValue value && value.TryGetValue<int>(out var result))
+                return result;
+        }
+
+        return 0;
     }
 
     private static TimeSpan ReadDuration(JsonNode node)
