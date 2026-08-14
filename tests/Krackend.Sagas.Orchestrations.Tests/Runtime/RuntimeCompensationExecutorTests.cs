@@ -197,6 +197,7 @@ public sealed class RuntimeCompensationExecutorTests
         public Task Update(TaskExecution taskExecution, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<TaskExecution> GetById(Id taskExecutionId, CancellationToken cancellationToken = default) => Task.FromResult(store.SourceTask);
         public Task<TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<TaskExecution> GetByStageAndKey(Id stageExecutionId, string taskKey, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskExecution>>([store.SourceTask]);
         public Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
