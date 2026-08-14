@@ -31,6 +31,11 @@ public sealed class RuntimeTimeoutPolicy
     public string ErrorCode { get; init; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets retry policy used by reconcile timeout handling.
+    /// </summary>
+    public RuntimeRetryPolicy ReconcileRetryPolicy { get; init; } = new();
+
+    /// <summary>
     /// Gets a value indicating whether timeout handling is configured.
     /// </summary>
     public bool IsConfigured => Timeout > TimeSpan.Zero;
