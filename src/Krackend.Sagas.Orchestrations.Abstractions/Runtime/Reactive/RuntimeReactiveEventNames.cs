@@ -27,6 +27,8 @@ public static class RuntimeReactiveEventNames
     public const string TaskErrorPolicyApplied = "task.error.policy.applied";
     public const string TaskWaiting = "task.waiting";
     public const string TaskResponseReceived = "task.response.received";
+    public const string DispatchPublished = "dispatch.published";
+    public const string DispatchFailed = "dispatch.failed";
     public const string CompensationScheduled = "compensation.scheduled";
     public const string CompensationStarted = "compensation.started";
     public const string CompensationDispatched = "compensation.dispatched";

@@ -75,6 +75,7 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
             await _dispatchRepository.Update(dispatch, cancellationToken);
         }
 
+        await PublishDispatchEvent(envelope, dispatch, RuntimeReactiveEventNames.DispatchPublished, "DispatchPublished", "Scheduled", result.Status, result.ExternalReference, cancellationToken);
         await MarkCompensationCompleted(envelope, result, cancellationToken);
     }
 
@@ -90,7 +91,64 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
             await _dispatchRepository.Update(dispatch, cancellationToken);
         }
 
+        await PublishDispatchEvent(envelope, dispatch, RuntimeReactiveEventNames.DispatchFailed, "DispatchFailed", "Scheduled", "Failed", result.ExternalReference, cancellationToken);
         await MarkCompensationFailed(envelope, result, cancellationToken);
+    }
+
+    private async Task PublishDispatchEvent(
+        RuntimeDispatchEnvelope envelope,
+        Abstractions.Runtime.TaskDispatch dispatch,
+        string eventName,
+        string transitionType,
+        string fromStatus,
+        string toStatus,
+        string externalReference,
+        CancellationToken cancellationToken)
+    {
+        if (!Ulid.TryParse(envelope.OrchestrationInstanceId, out var instanceId))
+            return;
+
+        var eventId = Id.New();
+        var payload = new JsonObject
+        {
+            ["dispatchId"] = envelope.DispatchId,
+            ["destination"] = envelope.Destination?.Address ?? string.Empty,
+            ["transport"] = envelope.Destination?.Kind.ToString() ?? string.Empty,
+            ["externalReference"] = externalReference ?? string.Empty
+        };
+
+        try
+        {
+            await _reactiveEventPublisher.Publish(new RuntimeReactiveEvent
+            {
+                Id = eventId,
+                EventName = eventName,
+                TransitionType = transitionType,
+                EnvironmentKey = envelope.EnvironmentKey,
+                OrchestrationDefinitionKey = envelope.OrchestrationName,
+                OrchestrationInstanceId = new Id(instanceId),
+                CorrelationId = envelope.CorrelationId,
+                ExecutionKey = envelope.ExecutionKey ?? envelope.DispatchId,
+                TaskExecutionId = TryParseId(envelope.TaskExecutionId),
+                TaskKey = envelope.TaskKey,
+                TaskExecutionAttemptId = dispatch?.TaskExecutionAttemptId,
+                FromStatus = fromStatus,
+                ToStatus = string.IsNullOrWhiteSpace(toStatus) ? transitionType : toStatus,
+                InstanceStatus = "Running",
+                OccurredOnUtc = DateTime.UtcNow,
+                Message = transitionType,
+                Payload = payload,
+                ProducedBy = "Krackend.Sagas.Orchestrations.Engine"
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Dispatch state is persisted; live telemetry must not break durable outbox execution.
+        }
     }
 
     private async Task MarkCompensationCompleted(RuntimeDispatchEnvelope envelope, MessagingDispatchResult result, CancellationToken cancellationToken)
@@ -286,6 +344,9 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
         value = text;
         return true;
     }
+
+    private static Id? TryParseId(string id)
+        => Ulid.TryParse(id, out var ulid) ? new Id(ulid) : null;
 
     private static JsonObject BuildCompensationPayload(CompensationExecution compensation)
     {
