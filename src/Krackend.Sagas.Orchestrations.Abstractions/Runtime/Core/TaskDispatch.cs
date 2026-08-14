@@ -54,6 +54,11 @@ public sealed class TaskDispatch
     public DateTime? SentOnUtc { get; set; }
 
     /// <summary>
+    /// Gets or sets scheduled on utc.
+    /// </summary>
+    public DateTime? ScheduledOnUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets acknowledged on utc.
     /// </summary>
     public DateTime? AcknowledgedOnUtc { get; set; }

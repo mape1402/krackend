@@ -25,6 +25,11 @@ public sealed record RuntimePendingWorkResult(
     public int WaitingAttemptCount => Items.Count(x => x.WorkType == RuntimePendingWorkTypes.WaitingAttemptTimeout);
 
     /// <summary>
+    /// Gets scheduled dispatch count.
+    /// </summary>
+    public int ScheduledDispatchCount => Items.Count(x => x.WorkType == RuntimePendingWorkTypes.ScheduledDispatch);
+
+    /// <summary>
     /// Gets pending compensation count.
     /// </summary>
     public int PendingCompensationCount => Items.Count(x => x.WorkType == RuntimePendingWorkTypes.PendingCompensation);
