@@ -16,6 +16,7 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
     private const string Started = "Started";
     private const string Completed = "Completed";
     private const string Failed = "Failed";
+    private const string Scheduled = "Scheduled";
     private const string Unsupported = "Unsupported";
 
     private readonly ICompensationExecutionRepository _compensationRepository;
@@ -54,6 +55,9 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
         var isStarted = string.Equals(compensation.Status, Started, StringComparison.OrdinalIgnoreCase);
         if (!isPending && !isStarted)
             return new RuntimeCompensationExecutionResult(true, compensation.Status, "Compensation is not pending.");
+
+        if (isStarted && IsScheduled(ReadMetadata(compensation, "dispatchStatus")))
+            return new RuntimeCompensationExecutionResult(true, compensation.Status, "Compensation dispatch is already scheduled.");
 
         var instance = await _instanceRepository.GetById(compensation.OrchestrationInstanceId, cancellationToken);
         if (instance.Status != OrchestrationInstanceStatus.Compensating)
@@ -118,7 +122,13 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
             CurrentStatus = instance.Status.ToString(),
             Attempt = 1,
             StartedOnUtc = compensation.StartedOnUtc ?? DateTime.UtcNow,
-            UpdatedOnUtc = DateTime.UtcNow
+            UpdatedOnUtc = DateTime.UtcNow,
+            Metadata = new Dictionary<string, JsonNode>
+            {
+                ["dispatchPurpose"] = "Compensation",
+                ["compensationExecutionId"] = compensation.Id.ToString(),
+                ["sourceTaskExecutionId"] = compensation.SourceTaskExecutionId.ToString()
+            }
         }, cancellationToken);
 
         compensation.Metadata["dispatchStatus"] = result.Status;
@@ -127,11 +137,17 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
             instance,
             "CompensationDispatched",
             Started,
-            result.Succeeded ? Completed : Failed,
+            result.Succeeded && !IsScheduled(result.Status) ? Completed : compensation.Status,
             BuildTransitionPayload(compensation)), cancellationToken);
 
         if (!result.Succeeded)
             return await MarkFailed(instance, sourceTask, compensation, result.FailureReason, cancellationToken);
+
+        if (IsScheduled(result.Status))
+        {
+            await _compensationRepository.Update(compensation, cancellationToken);
+            return new RuntimeCompensationExecutionResult(true, compensation.Status, "Compensation dispatch scheduled.");
+        }
 
         compensation.Status = Completed;
         compensation.CompletedOnUtc = DateTime.UtcNow;
@@ -333,4 +349,7 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
 
         return defaultValue;
     }
+
+    private static bool IsScheduled(string status)
+        => string.Equals(status, Scheduled, StringComparison.OrdinalIgnoreCase);
 }

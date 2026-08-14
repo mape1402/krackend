@@ -44,4 +44,6 @@ public sealed class RuntimeTaskDispatchRequest
     public DateTime StartedOnUtc { get; init; }
 
     public DateTime UpdatedOnUtc { get; init; }
+
+    public Dictionary<string, JsonNode> Metadata { get; init; } = new();
 }

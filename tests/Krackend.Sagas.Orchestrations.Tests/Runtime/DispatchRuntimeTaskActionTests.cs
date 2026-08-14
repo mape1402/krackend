@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 using Krackend.Sagas.Orchestrations.Engine;
@@ -17,7 +19,7 @@ public sealed class DispatchRuntimeTaskActionTests
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
         var dispatchRepository = new CapturingTaskDispatchRepository();
-        var action = new DispatchRuntimeTaskAction(dispatcher, dispatchRepository);
+        var action = CreateAction(dispatcher, dispatchRepository);
         var envelope = CreateEnvelope();
         dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
 
@@ -36,7 +38,7 @@ public sealed class DispatchRuntimeTaskActionTests
     public async Task ExecuteAsync_Should_Reject_Unsupported_Transport()
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
-        var action = new DispatchRuntimeTaskAction(dispatcher, new CapturingTaskDispatchRepository());
+        var action = CreateAction(dispatcher, new CapturingTaskDispatchRepository());
         var envelope = CreateEnvelope();
         envelope.Destination.Kind = RuntimeTransportKind.Http;
 
@@ -44,6 +46,47 @@ public sealed class DispatchRuntimeTaskActionTests
 
         Assert.Equal("Runtime dispatch transport 'Http' is not supported yet.", ex.Message);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenCompensationMetadataExists_CompletesCompensationAfterPublish()
+    {
+        var dispatcher = new CapturingMessagingCommandDispatcher();
+        var dispatchRepository = new CapturingTaskDispatchRepository();
+        var compensationRepository = new CapturingCompensationRepository();
+        var instanceRepository = new CapturingInstanceRepository();
+        var transitionRepository = new CapturingTransitionRepository();
+        var action = new DispatchRuntimeTaskAction(
+            dispatcher,
+            dispatchRepository,
+            compensationRepository,
+            instanceRepository,
+            transitionRepository,
+            new NoopRuntimeReactiveEventPublisher());
+        var envelope = CreateEnvelope();
+        dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
+        envelope.OrchestrationInstanceId = instanceRepository.Instance.Id.ToString();
+        envelope.Metadata["compensationExecutionId"] = compensationRepository.Compensation.Id.ToString();
+
+        await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
+
+        Assert.Equal("Completed", compensationRepository.Compensation.Status);
+        Assert.NotNull(compensationRepository.Compensation.CompletedOnUtc);
+        Assert.Equal("Published", compensationRepository.Compensation.Metadata["dispatchStatus"]!.GetValue<string>());
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, instanceRepository.Instance.Status);
+        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "CompensationCompleted");
+        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "InstanceCompensated");
+    }
+
+    private static DispatchRuntimeTaskAction CreateAction(
+        IMessagingCommandDispatcher dispatcher,
+        ITaskDispatchRepository dispatchRepository)
+        => new(
+            dispatcher,
+            dispatchRepository,
+            new CapturingCompensationRepository(),
+            new CapturingInstanceRepository(),
+            new CapturingTransitionRepository(),
+            new NoopRuntimeReactiveEventPublisher());
 
     private static RuntimeDispatchEnvelope CreateEnvelope()
         => new()
@@ -143,5 +186,95 @@ public sealed class DispatchRuntimeTaskActionTests
 
         public Task<IReadOnlyCollection<Abstractions.Runtime.TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskDispatch>>(Array.Empty<Abstractions.Runtime.TaskDispatch>());
+    }
+
+    private sealed class CapturingCompensationRepository : ICompensationExecutionRepository
+    {
+        public Abstractions.Runtime.CompensationExecution Compensation { get; private set; } = new()
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = Id.New(),
+            SourceTaskExecutionId = Id.New(),
+            CompensationTaskKey = "compensate:charge-payment",
+            Status = "Started",
+            Metadata = new Dictionary<string, JsonNode>()
+        };
+
+        public Task Create(Abstractions.Runtime.CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task Update(Abstractions.Runtime.CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
+        {
+            Compensation = compensationExecution;
+            return Task.CompletedTask;
+        }
+
+        public Task<Abstractions.Runtime.CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(compensationExecutionId == Compensation.Id ? Compensation : null!);
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.CompensationExecution>>([Compensation]);
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.CompensationExecution>>([]);
+    }
+
+    private sealed class CapturingInstanceRepository : IOrchestrationInstanceRepository
+    {
+        public Abstractions.Runtime.OrchestrationInstance Instance { get; private set; } = new()
+        {
+            Id = Id.New(),
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            CorrelationId = "corr-1",
+            ExecutionKey = "order.fulfillment::corr-1",
+            Status = OrchestrationInstanceStatus.Compensating,
+            StartedOnUtc = DateTime.UtcNow,
+            LastUpdatedOnUtc = DateTime.UtcNow
+        };
+
+        public Task Create(Abstractions.Runtime.OrchestrationInstance instance, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task Update(Abstractions.Runtime.OrchestrationInstance instance, CancellationToken cancellationToken = default)
+        {
+            Instance = instance;
+            return Task.CompletedTask;
+        }
+
+        public Task<Abstractions.Runtime.OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult(instanceId == Instance.Id ? Instance : null!);
+
+        public Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.OrchestrationInstance>> GetRecent(string environmentKey, int take = 50, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<RuntimeInstanceSummary> GetSummary(string environmentKey, DateTime recentSinceUtc, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+    }
+
+    private sealed class CapturingTransitionRepository : IExecutionTransitionRepository
+    {
+        public List<Abstractions.Runtime.ExecutionTransition> Transitions { get; } = new();
+
+        public Task Create(Abstractions.Runtime.ExecutionTransition transition, CancellationToken cancellationToken = default)
+        {
+            Transitions.Add(transition);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.ExecutionTransition>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.ExecutionTransition>>(Transitions);
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.ExecutionTransition>> GetRecent(string environmentKey, int take = 250, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 }

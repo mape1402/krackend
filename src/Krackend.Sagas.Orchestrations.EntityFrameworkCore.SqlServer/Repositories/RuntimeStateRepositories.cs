@@ -361,6 +361,12 @@ public sealed class CompensationExecutionRepository : ICompensationExecutionRepo
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default)
+        => await _dbContext.CompensationExecutions.AsNoTracking()
+            .Where(x => x.Id == compensationExecutionId)
+            .Select(x => RuntimeStorageMapper.ToDomain(x))
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task<IReadOnlyCollection<CompensationExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
         => await _dbContext.CompensationExecutions.AsNoTracking()
             .Where(x => x.OrchestrationInstanceId == instanceId)
