@@ -18,5 +18,5 @@ public sealed class RuntimeTaskDispatcherResolver : IRuntimeTaskDispatcherResolv
 
     /// <inheritdoc/>
     public IRuntimeTaskDispatcher Resolve(string taskKind)
-        => _dispatchers.FirstOrDefault(x => x.CanDispatch(taskKind));
+        => _dispatchers.LastOrDefault(x => x.CanDispatch(taskKind));
 }

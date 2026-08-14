@@ -57,6 +57,7 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
             OrchestrationInstanceId = "instance-1",
             CorrelationId = "corr-1",
             SagaId = "saga-1",
+            EnvironmentKey = "local",
             OrchestrationName = "order.fulfillment",
             OrchestrationVersion = "1.0.0",
             StageKey = "payment",

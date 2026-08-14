@@ -19,6 +19,7 @@ public static class RuntimeDurableWorkServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddScoped<IRuntimeDurableWorkScheduler, MuleRuntimeDurableWorkScheduler>();
+        services.AddScoped<IRuntimeTaskDispatcher, DurableRuntimeTaskDispatcher>();
         return services;
     }
 
