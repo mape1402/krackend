@@ -460,6 +460,31 @@ public sealed class RuntimeEngineIdempotencyTests
         Assert.DoesNotContain(trace.Store.Transitions, x => x.TransitionType == "InstanceCompleted");
     }
 
+    [Fact]
+    public async Task ContinueFromResponse_WhenParallelResponseArrivesWhileInstanceIsRunning_ProcessesWaitingTask()
+    {
+        var trace = CreateParallelWaitingTrace();
+        trace.Instance.Status = OrchestrationInstanceStatus.Running;
+        trace.Instance.WaitingSinceUtc = null;
+        var engine = CreateEngine(trace.Store);
+
+        var result = await engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Waiting", result.Status);
+        Assert.Equal(TaskExecutionStatus.Completed, trace.Store.Tasks[trace.Task.Id].Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, trace.Store.Tasks[trace.OtherTask.Id].Status);
+        Assert.Contains(trace.Store.Transitions, x => x.TransitionType == "TaskResponseReceived");
+        Assert.DoesNotContain(trace.Store.Transitions, x => x.TransitionType == "ParallelGroupCompleted");
+    }
+
     private static RuntimeTraceFixture CreateWaitingTrace()
     {
         var store = new RuntimeStore();

@@ -146,7 +146,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         StageExecution stageExecution,
         TaskExecution taskExecution,
         TaskExecutionAttempt attempt)
-        => instance.Status == OrchestrationInstanceStatus.Waiting
+        => instance.Status is OrchestrationInstanceStatus.Waiting or OrchestrationInstanceStatus.Running
             && stageExecution.Status == StageExecutionStatus.Running
             && taskExecution.Status == TaskExecutionStatus.WaitingResponse
             && attempt.Status == TaskExecutionStatus.WaitingResponse;
