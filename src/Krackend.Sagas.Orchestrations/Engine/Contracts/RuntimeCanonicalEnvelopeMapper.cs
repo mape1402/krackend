@@ -91,6 +91,7 @@ public static class RuntimeCanonicalEnvelopeMapper
             OrchestrationInstanceId = request.OrchestrationInstanceId,
             ExecutionKey = request.CommandId,
             CorrelationId = request.CorrelationId,
+            EnvironmentKey = request.EnvironmentKey,
             OrchestrationName = request.OrchestrationDefinitionKey,
             OrchestrationVersion = request.OrchestrationVersion,
             StageKey = request.StageKey,
