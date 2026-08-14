@@ -68,12 +68,12 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
 
         foreach (var task in waitingTasks)
         {
-            await TryApplyTimeout(task, nowUtc, cancellationToken);
+            await TryApplyTimeout(task, nowUtc, CancellationToken.None);
         }
 
         foreach (var compensation in compensations)
         {
-            await _compensationExecutor.Execute(compensation, cancellationToken);
+            await _compensationExecutor.Execute(compensation, CancellationToken.None);
         }
 
         var items = waitingTasks

@@ -50,7 +50,9 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
         if (compensation is null)
             throw new ArgumentNullException(nameof(compensation));
 
-        if (!string.Equals(compensation.Status, Pending, StringComparison.OrdinalIgnoreCase))
+        var isPending = string.Equals(compensation.Status, Pending, StringComparison.OrdinalIgnoreCase);
+        var isStarted = string.Equals(compensation.Status, Started, StringComparison.OrdinalIgnoreCase);
+        if (!isPending && !isStarted)
             return new RuntimeCompensationExecutionResult(true, compensation.Status, "Compensation is not pending.");
 
         var instance = await _instanceRepository.GetById(compensation.OrchestrationInstanceId, cancellationToken);
@@ -76,17 +78,25 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
         if (dispatcher is null)
             return await MarkUnsupported(instance, sourceTask, compensation, $"No dispatcher registered for compensation kind '{kind}'.", cancellationToken);
 
-        compensation.Status = Started;
-        compensation.StartedOnUtc ??= DateTime.UtcNow;
-        compensation.Metadata["dispatchId"] = Id.New().ToString();
-        compensation.Metadata["commandId"] = $"compensation:{compensation.Id}";
-        await _compensationRepository.Update(compensation, cancellationToken);
-        await WriteTransition(RuntimeTransition.ForInstancePayload(
-            instance,
-            "CompensationStarted",
-            Pending,
-            compensation.Status,
-            BuildTransitionPayload(compensation)), cancellationToken);
+        if (isPending)
+        {
+            compensation.Status = Started;
+            compensation.StartedOnUtc ??= DateTime.UtcNow;
+            compensation.Metadata["dispatchId"] = Id.New().ToString();
+            compensation.Metadata["commandId"] = $"compensation:{compensation.Id}";
+            await _compensationRepository.Update(compensation, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForInstancePayload(
+                instance,
+                "CompensationStarted",
+                Pending,
+                compensation.Status,
+                BuildTransitionPayload(compensation)), cancellationToken);
+        }
+        else
+        {
+            compensation.Metadata.TryAdd("dispatchId", Id.New().ToString());
+            compensation.Metadata.TryAdd("commandId", $"compensation:{compensation.Id}");
+        }
 
         var result = await dispatcher.Dispatch(new RuntimeTaskDispatchRequest
         {
@@ -138,7 +148,7 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
             compensation.Status,
             BuildTransitionPayload(compensation)), cancellationToken);
 
-        await CompleteInstanceIfAllCompensationsFinished(instance, cancellationToken);
+        await CompleteInstanceIfAllCompensationsFinished(instance, compensation, cancellationToken);
         return new RuntimeCompensationExecutionResult(true, compensation.Status, "Compensation completed.");
     }
 
@@ -187,9 +197,17 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
         return new RuntimeCompensationExecutionResult(false, compensation.Status, compensation.ErrorMessage);
     }
 
-    private async Task CompleteInstanceIfAllCompensationsFinished(OrchestrationInstance instance, CancellationToken cancellationToken)
+    private async Task CompleteInstanceIfAllCompensationsFinished(
+        OrchestrationInstance instance,
+        CompensationExecution currentCompensation,
+        CancellationToken cancellationToken)
     {
         var compensations = await _compensationRepository.GetByInstanceId(instance.Id, cancellationToken);
+        compensations = compensations
+            .Where(x => x.Id != currentCompensation.Id)
+            .Append(currentCompensation)
+            .ToArray();
+
         if (compensations.Any(x => string.Equals(x.Status, Pending, StringComparison.OrdinalIgnoreCase) ||
                                    string.Equals(x.Status, Started, StringComparison.OrdinalIgnoreCase)))
             return;
