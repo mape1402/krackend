@@ -867,6 +867,11 @@ public sealed class RuntimeEngineIdempotencyTests
         public Task<StageExecution> GetById(Id stageExecutionId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Stages[stageExecutionId]);
 
+        public Task<StageExecution> GetByInstanceAndKey(Id instanceId, string stageKey, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Stages.Values.FirstOrDefault(x =>
+                x.OrchestrationInstanceId == instanceId &&
+                string.Equals(x.StageKey, stageKey, StringComparison.OrdinalIgnoreCase))!);
+
         public Task<IReadOnlyCollection<StageExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<StageExecution>>(store.Stages.Values.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
     }
@@ -890,6 +895,11 @@ public sealed class RuntimeEngineIdempotencyTests
 
         public Task<TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Duplicate responses must resolve tasks by id.");
+
+        public Task<TaskExecution> GetByStageAndKey(Id stageExecutionId, string taskKey, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Tasks.Values.FirstOrDefault(x =>
+                x.StageExecutionId == stageExecutionId &&
+                string.Equals(x.TaskKey, taskKey, StringComparison.OrdinalIgnoreCase))!);
 
         public Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<TaskExecution>>(store.Tasks.Values.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());

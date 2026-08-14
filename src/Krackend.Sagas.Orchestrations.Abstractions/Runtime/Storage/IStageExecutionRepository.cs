@@ -14,6 +14,11 @@ public interface IStageExecutionRepository
 
     Task<StageExecution> GetById(Id stageExecutionId, CancellationToken cancellationToken = default);
 
+    Task<StageExecution> GetByInstanceAndKey(
+        Id instanceId,
+        string stageKey,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<StageExecution>> GetByInstanceId(
         Id instanceId,
         CancellationToken cancellationToken = default);

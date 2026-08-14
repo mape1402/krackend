@@ -16,6 +16,11 @@ public interface ITaskExecutionRepository
 
     Task<TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default);
 
+    Task<TaskExecution> GetByStageAndKey(
+        Id stageExecutionId,
+        string taskKey,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(
         Id instanceId,
         CancellationToken cancellationToken = default);
