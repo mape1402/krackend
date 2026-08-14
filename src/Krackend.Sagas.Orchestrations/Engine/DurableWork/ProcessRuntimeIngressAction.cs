@@ -1,0 +1,95 @@
+namespace Krackend.Sagas.Orchestrations.Engine.DurableWork;
+
+using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Mule;
+
+/// <summary>
+/// Mule action that processes canonical runtime ingress outside the transport handler.
+/// </summary>
+[MuleAction("krackend.runtime.process-ingress")]
+public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnvelope>
+{
+    private readonly ITriggerIntakeBuffer _triggerIntakeBuffer;
+    private readonly IRuntimeEngine _runtimeEngine;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ProcessRuntimeIngressAction"/> class.
+    /// </summary>
+    public ProcessRuntimeIngressAction(ITriggerIntakeBuffer triggerIntakeBuffer, IRuntimeEngine runtimeEngine)
+    {
+        _triggerIntakeBuffer = triggerIntakeBuffer ?? throw new ArgumentNullException(nameof(triggerIntakeBuffer));
+        _runtimeEngine = runtimeEngine ?? throw new ArgumentNullException(nameof(runtimeEngine));
+    }
+
+    /// <inheritdoc />
+    public async ValueTask ExecuteAsync(MuleActionContext<RuntimeIngressEnvelope> context, CancellationToken cancellationToken)
+    {
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
+        switch (context.Payload.Kind)
+        {
+            case RuntimeIngressKind.Trigger:
+                await ProcessTrigger(context.Payload, cancellationToken);
+                return;
+            case RuntimeIngressKind.TaskResponse:
+                await ProcessTaskResponse(context.Payload, cancellationToken);
+                return;
+            default:
+                throw new InvalidOperationException($"Runtime ingress kind '{context.Payload.Kind}' is not supported.");
+        }
+    }
+
+    private async Task ProcessTrigger(RuntimeIngressEnvelope envelope, CancellationToken cancellationToken)
+    {
+        var item = new TriggerIntakeBufferItem
+        {
+            BufferItemId = Id.New(),
+            TriggerType = TriggerType.Event,
+            TriggerKey = envelope.OrchestrationName,
+            ArtifactVersion = envelope.OrchestrationVersion,
+            EnvironmentKey = envelope.EnvironmentKey,
+            CorrelationId = envelope.CorrelationId,
+            IdempotencyKey = RuntimeIngressIdempotency.Build(envelope),
+            SourceMessageId = envelope.Source?.MessageId,
+            PayloadJson = (envelope.Payload ?? new JsonObject()).ToJsonString(),
+            ReceivedOnUtc = envelope.ReceivedOnUtc == default ? DateTime.UtcNow : envelope.ReceivedOnUtc
+        };
+
+        var result = await _triggerIntakeBuffer.Enqueue(item, cancellationToken);
+        if (result.Accepted)
+            await _runtimeEngine.ProcessNext(cancellationToken);
+    }
+
+    private async Task ProcessTaskResponse(RuntimeIngressEnvelope envelope, CancellationToken cancellationToken)
+    {
+        ValidateTaskResponse(envelope);
+
+        await _runtimeEngine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = envelope.OrchestrationInstanceId,
+            TaskExecutionId = envelope.TaskExecutionId,
+            DispatchId = envelope.DispatchId,
+            CorrelationId = envelope.CorrelationId,
+            Payload = envelope.Payload
+        }, cancellationToken);
+    }
+
+    private static void ValidateTaskResponse(RuntimeIngressEnvelope envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.OrchestrationInstanceId))
+            throw new InvalidOperationException("Runtime task response ingress must include orchestration instance id.");
+
+        if (string.IsNullOrWhiteSpace(envelope.DispatchId))
+            throw new InvalidOperationException("Runtime task response ingress must include dispatch id.");
+
+        if (string.IsNullOrWhiteSpace(envelope.TaskExecutionId))
+            throw new InvalidOperationException("Runtime task response ingress must include task execution id.");
+
+        if (string.IsNullOrWhiteSpace(envelope.CorrelationId))
+            throw new InvalidOperationException("Runtime task response ingress must include correlation id.");
+    }
+}
