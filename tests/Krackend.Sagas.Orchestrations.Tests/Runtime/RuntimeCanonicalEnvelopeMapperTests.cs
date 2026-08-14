@@ -91,6 +91,7 @@ public sealed class RuntimeCanonicalEnvelopeMapperTests
         var envelope = request.ToDispatchEnvelope();
 
         Assert.Equal("dispatch-1", envelope.DispatchId);
+        Assert.Equal("local", envelope.EnvironmentKey);
         Assert.Equal(RuntimeTransportKind.Message, envelope.Destination.Kind);
         Assert.Equal("orders.reserve", envelope.Destination.Address);
         Assert.Equal("1.2.3", envelope.Destination.Version);
