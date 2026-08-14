@@ -19,9 +19,12 @@ public sealed class DispatchRuntimeTaskActionTests
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
         var dispatchRepository = new CapturingTaskDispatchRepository();
-        var action = CreateAction(dispatcher, dispatchRepository);
+        var reactivePublisher = new CapturingReactiveEventPublisher();
+        var action = CreateAction(dispatcher, dispatchRepository, reactivePublisher);
         var envelope = CreateEnvelope();
         dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
+        envelope.OrchestrationInstanceId = Id.New().ToString();
+        envelope.TaskExecutionId = Id.New().ToString();
 
         await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
 
@@ -32,6 +35,9 @@ public sealed class DispatchRuntimeTaskActionTests
         Assert.Equal("Published", dispatchRepository.Dispatch.DispatchStatus);
         Assert.NotNull(dispatchRepository.Dispatch.SentOnUtc);
         Assert.Equal("message-1", dispatchRepository.Dispatch.Metadata["externalReference"]!.GetValue<string>());
+        Assert.Equal(RuntimeReactiveEventNames.DispatchPublished, reactivePublisher.Event!.EventName);
+        Assert.Equal("DispatchPublished", reactivePublisher.Event.TransitionType);
+        Assert.Equal(envelope.DispatchId, reactivePublisher.Event.Payload!["dispatchId"]!.GetValue<string>());
     }
 
     [Fact]
@@ -80,13 +86,19 @@ public sealed class DispatchRuntimeTaskActionTests
     private static DispatchRuntimeTaskAction CreateAction(
         IMessagingCommandDispatcher dispatcher,
         ITaskDispatchRepository dispatchRepository)
+        => CreateAction(dispatcher, dispatchRepository, new NoopRuntimeReactiveEventPublisher());
+
+    private static DispatchRuntimeTaskAction CreateAction(
+        IMessagingCommandDispatcher dispatcher,
+        ITaskDispatchRepository dispatchRepository,
+        IRuntimeReactiveEventPublisher reactiveEventPublisher)
         => new(
             dispatcher,
             dispatchRepository,
             new CapturingCompensationRepository(),
             new CapturingInstanceRepository(),
             new CapturingTransitionRepository(),
-            new NoopRuntimeReactiveEventPublisher());
+            reactiveEventPublisher);
 
     private static RuntimeDispatchEnvelope CreateEnvelope()
         => new()
@@ -276,5 +288,16 @@ public sealed class DispatchRuntimeTaskActionTests
 
         public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+    }
+
+    private sealed class CapturingReactiveEventPublisher : IRuntimeReactiveEventPublisher
+    {
+        public RuntimeReactiveEvent Event { get; private set; } = null!;
+
+        public Task Publish(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default)
+        {
+            Event = eventData;
+            return Task.CompletedTask;
+        }
     }
 }
