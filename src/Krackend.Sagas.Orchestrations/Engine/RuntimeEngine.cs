@@ -404,6 +404,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             var attempt = await CreateAttempt(context, taskExecution, started, attemptNumber, cancellationToken);
             await WriteTransition(RuntimeTransition.ForAttemptPayload(context.Instance, "TaskInputTransformed", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt, attempt.RequestPayload), cancellationToken);
             var dispatch = await CreateDispatch(context, taskExecution, attempt, cancellationToken);
+            await PrepareTaskDispatch(context, taskExecution, attempt, dispatch, cancellationToken);
             var dispatchResult = await DispatchTask(context, taskExecution, attempt, dispatch, started, cancellationToken);
 
             if (!dispatchResult.Succeeded)
@@ -420,12 +421,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
             }
 
             await MarkDispatchAccepted(dispatch, cancellationToken);
-            await MarkTaskDispatchAccepted(context, taskExecution, attempt, dispatch, cancellationToken);
 
             if (context.Task.AwaitResponse)
-                await MarkTaskWaiting(context, taskExecution, attempt, cancellationToken);
+                return taskExecution;
             else
+            {
+                await MarkTaskDispatchAccepted(context, taskExecution, attempt, dispatch, cancellationToken);
                 await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskCompleted", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
+            }
 
             return taskExecution;
         }
@@ -631,6 +634,33 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskRetryStarted", TaskExecutionStatus.Retrying, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
     }
 
+    private async Task PrepareTaskDispatch(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, CancellationToken cancellationToken)
+    {
+        attempt.DispatchId = dispatch.Id;
+
+        if (context.Task.AwaitResponse)
+        {
+            var waitingSince = DateTime.UtcNow;
+            attempt.Status = TaskExecutionStatus.WaitingResponse;
+            attempt.WaitingSinceUtc = waitingSince;
+            await _attemptRepository.Update(attempt, cancellationToken);
+
+            taskExecution.Status = TaskExecutionStatus.WaitingResponse;
+            taskExecution.WaitingSinceUtc = waitingSince;
+            await _taskRepository.Update(taskExecution, cancellationToken);
+
+            context.Instance.Status = OrchestrationInstanceStatus.Waiting;
+            context.Instance.WaitingSinceUtc = waitingSince;
+            context.Instance.LastUpdatedOnUtc = waitingSince;
+            await _instanceRepository.Update(context.Instance, cancellationToken);
+
+            await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskWaitingResponse", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
+            return;
+        }
+
+        await _attemptRepository.Update(attempt, cancellationToken);
+    }
+
     private async Task<bool> TryContinueAfterTaskFailure(
         RuntimeStageExecutionContext context,
         StageExecution stageExecution,
@@ -720,6 +750,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         attempt.Status = TaskExecutionStatus.Failed;
         attempt.FailedOnUtc = dispatch.FailedOnUtc;
+        attempt.WaitingSinceUtc = null;
         attempt.ErrorCode = "MessagingDispatchFailed";
         attempt.ErrorMessage = dispatchResult.FailureReason;
         attempt.DispatchId = dispatch.Id;
@@ -727,8 +758,18 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         taskExecution.Status = TaskExecutionStatus.Failed;
         taskExecution.FailedOnUtc = dispatch.FailedOnUtc;
+        taskExecution.WaitingSinceUtc = null;
         taskExecution.Metadata["failureReason"] = dispatchResult.FailureReason;
         await _taskRepository.Update(taskExecution, cancellationToken);
+
+        if (context.Instance.Status == OrchestrationInstanceStatus.Waiting)
+        {
+            context.Instance.Status = OrchestrationInstanceStatus.Running;
+            context.Instance.WaitingSinceUtc = null;
+            context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
+            await _instanceRepository.Update(context.Instance, cancellationToken);
+        }
+
         await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskFailed", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
         return taskExecution;
     }

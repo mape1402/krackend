@@ -87,6 +87,166 @@ public sealed class RuntimeEngineIdempotencyTests
     }
 
     [Fact]
+    public async Task ProcessNext_PersistsWaitingCorrelationBeforeDispatchingAwaitedTask()
+    {
+        var store = new RuntimeStore();
+        var artifactId = Id.New();
+        var artifact = CreateArtifact(artifactId, """
+        {
+          "Key": "order.fulfillment",
+          "Version": { "Major": 1, "Minor": 0, "Patch": 0 },
+          "StageDefinitions": [
+            {
+              "Key": "reserve-inventory",
+              "Order": 1,
+              "TaskDefinitions": [
+                {
+                  "Key": "reserve-stock",
+                  "Order": 1,
+                  "Kind": 0,
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "inventory.reserve", "Version": "1.0.0" },
+                  "IsEnabled": true
+                }
+              ]
+            }
+          ]
+        }
+        """);
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            RuntimeOrchestrationArtifactId = artifactId,
+            TriggerIntakeId = Id.New(),
+            CorrelationId = "fast-response",
+            ExecutionKey = "order.fulfillment::fast-response",
+            Status = OrchestrationInstanceStatus.Created,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastUpdatedOnUtc = DateTime.UtcNow,
+            SnapshotPayload = JsonNode.Parse("""{"orderId":"fast-response"}""")
+        };
+        var intake = new TriggerIntake
+        {
+            Id = Id.New(),
+            TriggerType = TriggerType.Event,
+            TriggerKey = instance.OrchestrationDefinitionKey,
+            EnvironmentKey = instance.EnvironmentKey,
+            CorrelationId = instance.CorrelationId,
+            RawPayload = instance.SnapshotPayload!.DeepClone(),
+            NormalizedPayload = instance.SnapshotPayload.DeepClone(),
+            Status = TriggerIntakeStatus.PromotedToRuntime,
+            PersistenceLevel = "Primary",
+            BufferLocation = "InMemory",
+            ResolvedArtifactId = artifact.Id,
+            PromotedInstanceId = instance.Id,
+            ReceivedOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+        store.Instances[instance.Id] = instance;
+        store.Artifacts[artifact.Id] = artifact;
+
+        var dispatcher = new RecordingTaskDispatcher(request =>
+        {
+            var task = Assert.Single(store.Tasks.Values);
+            var attempt = Assert.Single(store.Attempts.Values);
+            Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
+            Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
+            Assert.Equal(request.DispatchId, attempt.DispatchId?.ToString());
+            Assert.Equal(task.CorrelationId, request.CorrelationId);
+        });
+        var engine = CreateEngine(
+            store,
+            new SingleItemIntakeBuffer(),
+            new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
+            new RecordingTaskDispatcherResolver(dispatcher));
+
+        await engine.ProcessNext();
+
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task ProcessNext_WhenAwaitedDispatchFailsWithContinuePolicy_CompletesInstanceWithoutWaiting()
+    {
+        var store = new RuntimeStore();
+        var artifactId = Id.New();
+        var artifact = CreateArtifact(artifactId, """
+        {
+          "Key": "order.fulfillment",
+          "Version": { "Major": 1, "Minor": 0, "Patch": 0 },
+          "StageDefinitions": [
+            {
+              "Key": "optional-failure",
+              "Order": 1,
+              "TaskDefinitions": [
+                {
+                  "Key": "optional-failure",
+                  "Order": 1,
+                  "Kind": 0,
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "demo.dispatch-fail", "Version": "1.0.0" },
+                  "OnErrorPolicy": "Continue",
+                  "IsEnabled": true
+                }
+              ]
+            }
+          ]
+        }
+        """);
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            RuntimeOrchestrationArtifactId = artifactId,
+            TriggerIntakeId = Id.New(),
+            CorrelationId = "continue-after-dispatch-failure",
+            ExecutionKey = "order.fulfillment::continue-after-dispatch-failure",
+            Status = OrchestrationInstanceStatus.Created,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastUpdatedOnUtc = DateTime.UtcNow,
+            SnapshotPayload = JsonNode.Parse("""{"orderId":"continue-after-dispatch-failure"}""")
+        };
+        var intake = new TriggerIntake
+        {
+            Id = instance.TriggerIntakeId,
+            TriggerType = TriggerType.Event,
+            TriggerKey = instance.OrchestrationDefinitionKey,
+            EnvironmentKey = instance.EnvironmentKey,
+            CorrelationId = instance.CorrelationId,
+            RawPayload = instance.SnapshotPayload!.DeepClone(),
+            NormalizedPayload = instance.SnapshotPayload.DeepClone(),
+            Status = TriggerIntakeStatus.PromotedToRuntime,
+            PersistenceLevel = "Primary",
+            BufferLocation = "InMemory",
+            ResolvedArtifactId = artifact.Id,
+            PromotedInstanceId = instance.Id,
+            ReceivedOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+        store.Instances[instance.Id] = instance;
+        store.Artifacts[artifact.Id] = artifact;
+        var engine = CreateEngine(
+            store,
+            new SingleItemIntakeBuffer(),
+            new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
+            new RecordingTaskDispatcherResolver(new FailingTaskDispatcher()));
+
+        var result = await engine.ProcessNext();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(OrchestrationInstanceStatus.Completed, store.Instances[instance.Id].Status);
+        Assert.Null(store.Instances[instance.Id].WaitingSinceUtc);
+        Assert.Equal(StageExecutionStatus.Completed, Assert.Single(store.Stages.Values).Status);
+        var task = Assert.Single(store.Tasks.Values);
+        Assert.Equal(TaskExecutionStatus.CompletedWithErrors, task.Status);
+        Assert.Null(task.WaitingSinceUtc);
+        var attempt = Assert.Single(store.Attempts.Values);
+        Assert.Equal(TaskExecutionStatus.Failed, attempt.Status);
+        Assert.Null(attempt.WaitingSinceUtc);
+    }
+
+    [Fact]
     public async Task ContinueFromResponse_WhenTaskAlreadyCompleted_IgnoresDuplicateWithoutWritingTransitions()
     {
         var store = new RuntimeStore();
@@ -776,12 +936,20 @@ public sealed class RuntimeEngineIdempotencyTests
 
     private sealed class RecordingTaskDispatcher : IRuntimeTaskDispatcher
     {
+        private readonly Action<RuntimeTaskDispatchRequest>? _onDispatch;
+
+        public RecordingTaskDispatcher(Action<RuntimeTaskDispatchRequest>? onDispatch = null)
+        {
+            _onDispatch = onDispatch;
+        }
+
         public List<RuntimeTaskDispatchRequest> Requests { get; } = new();
 
         public bool CanDispatch(string taskKind) => string.Equals(taskKind, "Messaging", StringComparison.OrdinalIgnoreCase);
 
         public Task<RuntimeTaskDispatchResult> Dispatch(RuntimeTaskDispatchRequest request, CancellationToken cancellationToken = default)
         {
+            _onDispatch?.Invoke(request);
             Requests.Add(request);
             return Task.FromResult(new RuntimeTaskDispatchResult
             {
@@ -790,6 +958,19 @@ public sealed class RuntimeEngineIdempotencyTests
                 ExternalReference = "test"
             });
         }
+    }
+
+    private sealed class FailingTaskDispatcher : IRuntimeTaskDispatcher
+    {
+        public bool CanDispatch(string taskKind) => string.Equals(taskKind, "Messaging", StringComparison.OrdinalIgnoreCase);
+
+        public Task<RuntimeTaskDispatchResult> Dispatch(RuntimeTaskDispatchRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RuntimeTaskDispatchResult
+            {
+                Succeeded = false,
+                Status = "Failed",
+                FailureReason = "Demo forced dispatch failure."
+            });
     }
 
     private sealed class ThrowingTriggerPromoter : ITriggerPromoter
