@@ -13,11 +13,13 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
 {
     private readonly ITaskExecutionRepository _taskRepository;
     private readonly ITaskExecutionAttemptRepository _attemptRepository;
+    private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly ICompensationExecutionRepository _compensationRepository;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IStageExecutionRepository _stageRepository;
     private readonly IRuntimeArtifactRepository _artifactRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
+    private readonly IRuntimeTaskDispatcherResolver _taskDispatcherResolver;
     private readonly IRuntimeTimeoutPolicyEvaluator _timeoutPolicyEvaluator;
     private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
     private readonly IRuntimeCompensationExecutor _compensationExecutor;
@@ -30,11 +32,13 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     public RuntimePendingWorkProcessor(
         ITaskExecutionRepository taskRepository,
         ITaskExecutionAttemptRepository attemptRepository,
+        ITaskDispatchRepository dispatchRepository,
         ICompensationExecutionRepository compensationRepository,
         IOrchestrationInstanceRepository instanceRepository,
         IStageExecutionRepository stageRepository,
         IRuntimeArtifactRepository artifactRepository,
         IExecutionTransitionRepository transitionRepository,
+        IRuntimeTaskDispatcherResolver taskDispatcherResolver,
         IRuntimeTimeoutPolicyEvaluator timeoutPolicyEvaluator,
         IRuntimeErrorPolicyResolver errorPolicyResolver,
         IRuntimeCompensationExecutor compensationExecutor,
@@ -42,11 +46,13 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     {
         _taskRepository = taskRepository;
         _attemptRepository = attemptRepository;
+        _dispatchRepository = dispatchRepository;
         _compensationRepository = compensationRepository;
         _instanceRepository = instanceRepository;
         _stageRepository = stageRepository;
         _artifactRepository = artifactRepository;
         _transitionRepository = transitionRepository;
+        _taskDispatcherResolver = taskDispatcherResolver;
         _timeoutPolicyEvaluator = timeoutPolicyEvaluator;
         _errorPolicyResolver = errorPolicyResolver;
         _compensationExecutor = compensationExecutor;
@@ -123,7 +129,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             .FirstOrDefault();
 
         if (string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Reconcile), StringComparison.OrdinalIgnoreCase))
-            return await ApplyUnsupportedReconcileTimeout(instance, stageExecution, taskExecution, attempt, timeoutPolicy, nowUtc, cancellationToken);
+            return await ApplyReconcileTimeout(document, instance, stageExecution, taskExecution, taskDocument, attempt, timeoutPolicy, nowUtc, cancellationToken);
 
         if (string.Equals(timeoutPolicy.Behavior, nameof(TimeoutBehavior.Wait), StringComparison.OrdinalIgnoreCase) &&
             string.Equals(timeoutPolicy.OrchestrationAction, nameof(OrchestrationActionOnTimeout.Block), StringComparison.OrdinalIgnoreCase))
@@ -265,6 +271,234 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         return true;
     }
 
+    private async Task<bool> ApplyReconcileTimeout(
+        RuntimeArtifactDocument document,
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        RuntimeTaskDocument taskDocument,
+        TaskExecutionAttempt attempt,
+        RuntimeTimeoutPolicy timeoutPolicy,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var dispatcher = _taskDispatcherResolver.Resolve(taskDocument.Kind);
+        if (dispatcher is null)
+            return await ApplyUnsupportedReconcileTimeout(instance, stageExecution, taskExecution, attempt, timeoutPolicy, nowUtc, cancellationToken);
+
+        var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
+        var lastAttemptNumber = Math.Max(taskExecution.LastAttemptNumber, attempts.Select(x => x.AttemptNumber).DefaultIfEmpty(0).Max());
+        var retryPolicy = timeoutPolicy.ReconcileRetryPolicy ?? new RuntimeRetryPolicy();
+        if (lastAttemptNumber >= retryPolicy.MaxAttempts)
+            return await ExhaustReconcileTimeout(document, instance, stageExecution, taskExecution, attempt, timeoutPolicy, nowUtc, cancellationToken);
+
+        if (attempt is not null)
+        {
+            attempt.Status = TaskExecutionStatus.TimedOut;
+            attempt.TimedOutOnUtc = nowUtc;
+            attempt.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+            attempt.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+            attempt.Metadata["reconciliationStatus"] = "Retrying";
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttempt(
+                instance,
+                "TaskTimedOut",
+                TaskExecutionStatus.WaitingResponse,
+                attempt.Status,
+                stageExecution,
+                taskExecution,
+                attempt), cancellationToken);
+        }
+
+        var retryAttemptNumber = lastAttemptNumber + 1;
+        var started = nowUtc;
+        var retryAttempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = taskExecution.Id,
+            AttemptNumber = retryAttemptNumber,
+            Status = TaskExecutionStatus.Running,
+            StartedOnUtc = started,
+            RequestPayload = (attempt?.RequestPayload ?? instance.SnapshotPayload)?.DeepClone(),
+            Metadata = new Dictionary<string, JsonNode>
+            {
+                ["reconciliationStatus"] = "Redispatching",
+                ["reconciliationAttempt"] = retryAttemptNumber,
+                ["timeoutBehavior"] = timeoutPolicy.Behavior,
+                ["timeoutAction"] = timeoutPolicy.OrchestrationAction
+            }
+        };
+
+        taskExecution.Status = TaskExecutionStatus.Running;
+        taskExecution.LastAttemptNumber = retryAttemptNumber;
+        taskExecution.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+        taskExecution.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+        taskExecution.Metadata["timeoutPolicyApplied"] = "ReconciliationRedispatched";
+        taskExecution.Metadata["reconciliationStatus"] = "Redispatching";
+        taskExecution.Metadata["reconciliationAttempt"] = retryAttemptNumber;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await _attemptRepository.Create(retryAttempt, cancellationToken);
+
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = retryAttempt.Id,
+            DispatchType = taskDocument.Kind ?? string.Empty,
+            Destination = taskDocument.Destination ?? string.Empty,
+            RequestPayload = retryAttempt.RequestPayload?.DeepClone(),
+            DispatchStatus = "Pending",
+            CommandId = Id.New().ToString(),
+            CorrelationId = taskExecution.CorrelationId
+        };
+        await _dispatchRepository.Create(dispatch, cancellationToken);
+
+        await WriteTransition(RuntimeTransition.ForAttemptPayload(
+            instance,
+            "TaskReconciliationRedispatching",
+            TaskExecutionStatus.TimedOut,
+            TaskExecutionStatus.Running,
+            stageExecution,
+            taskExecution,
+            retryAttempt,
+            retryAttempt.RequestPayload), cancellationToken);
+
+        var result = await dispatcher.Dispatch(CreateDispatchRequest(instance, document.Version, stageExecution, taskExecution, taskDocument, retryAttempt, dispatch, started), cancellationToken);
+        if (!result.Succeeded)
+        {
+            dispatch.DispatchStatus = "Failed";
+            dispatch.FailedOnUtc = nowUtc;
+            dispatch.FailureReason = result.FailureReason;
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+
+            retryAttempt.Status = TaskExecutionStatus.Failed;
+            retryAttempt.FailedOnUtc = nowUtc;
+            retryAttempt.ErrorCode = "MessagingReconciliationDispatchFailed";
+            retryAttempt.ErrorMessage = result.FailureReason;
+            retryAttempt.DispatchId = dispatch.Id;
+            await _attemptRepository.Update(retryAttempt, cancellationToken);
+
+            taskExecution.Status = TaskExecutionStatus.Failed;
+            taskExecution.FailedOnUtc = nowUtc;
+            taskExecution.WaitingSinceUtc = null;
+            taskExecution.Metadata["reconciliationStatus"] = "DispatchFailed";
+            taskExecution.Metadata["failureReason"] = result.FailureReason;
+            await _taskRepository.Update(taskExecution, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttempt(
+                instance,
+                "TaskReconciliationDispatchFailed",
+                TaskExecutionStatus.Running,
+                TaskExecutionStatus.Failed,
+                stageExecution,
+                taskExecution,
+                retryAttempt), cancellationToken);
+            await ApplyTimeoutErrorPolicy(document, instance, stageExecution, taskExecution, cancellationToken);
+            return true;
+        }
+
+        dispatch.DispatchStatus = "Dispatched";
+        dispatch.SentOnUtc = DateTime.UtcNow;
+        dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
+        await _dispatchRepository.Update(dispatch, cancellationToken);
+
+        retryAttempt.DispatchId = dispatch.Id;
+        retryAttempt.Status = TaskExecutionStatus.WaitingResponse;
+        retryAttempt.CompletedOnUtc = DateTime.UtcNow;
+        retryAttempt.WaitingSinceUtc = DateTime.UtcNow;
+        retryAttempt.Metadata["reconciliationStatus"] = "WaitingResponse";
+        await _attemptRepository.Update(retryAttempt, cancellationToken);
+
+        taskExecution.Status = TaskExecutionStatus.WaitingResponse;
+        taskExecution.WaitingSinceUtc = retryAttempt.WaitingSinceUtc;
+        taskExecution.Metadata["reconciliationStatus"] = "WaitingResponse";
+        await _taskRepository.Update(taskExecution, cancellationToken);
+
+        instance.Status = OrchestrationInstanceStatus.Waiting;
+        instance.WaitingSinceUtc = retryAttempt.WaitingSinceUtc;
+        instance.LastUpdatedOnUtc = DateTime.UtcNow;
+        instance.Metadata["reconciliationStatus"] = "Redispatched";
+        instance.Metadata["reconciliationTaskKey"] = taskExecution.TaskKey;
+        instance.Metadata["reconciliationAttempt"] = retryAttemptNumber;
+        await _instanceRepository.Update(instance, cancellationToken);
+
+        await WriteTransition(RuntimeTransition.ForAttempt(
+            instance,
+            "TaskReconciliationRedispatched",
+            TaskExecutionStatus.Running,
+            TaskExecutionStatus.WaitingResponse,
+            stageExecution,
+            taskExecution,
+            retryAttempt), cancellationToken);
+        await WriteTransition(RuntimeTransition.ForTask(
+            instance,
+            "TaskTimeoutPolicyApplied",
+            TaskExecutionStatus.WaitingResponse,
+            taskExecution.Status,
+            stageExecution,
+            taskExecution), cancellationToken);
+        return true;
+    }
+
+    private async Task<bool> ExhaustReconcileTimeout(
+        RuntimeArtifactDocument document,
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        RuntimeTimeoutPolicy timeoutPolicy,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (attempt is not null)
+        {
+            attempt.Status = TaskExecutionStatus.TimedOut;
+            attempt.TimedOutOnUtc = nowUtc;
+            attempt.ErrorCode = "TaskReconciliationExhausted";
+            attempt.ErrorMessage = $"Task '{taskExecution.TaskKey}' exhausted reconciliation attempts.";
+            attempt.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+            attempt.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+            attempt.Metadata["reconciliationStatus"] = "Exhausted";
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttempt(
+                instance,
+                "TaskTimedOut",
+                TaskExecutionStatus.WaitingResponse,
+                attempt.Status,
+                stageExecution,
+                taskExecution,
+                attempt), cancellationToken);
+        }
+
+        taskExecution.Status = TaskExecutionStatus.Failed;
+        taskExecution.TimedOutOnUtc = nowUtc;
+        taskExecution.FailedOnUtc = nowUtc;
+        taskExecution.WaitingSinceUtc = null;
+        taskExecution.Metadata["timeoutBehavior"] = timeoutPolicy.Behavior;
+        taskExecution.Metadata["timeoutAction"] = timeoutPolicy.OrchestrationAction;
+        taskExecution.Metadata["timeoutPolicyApplied"] = "ReconciliationExhausted";
+        taskExecution.Metadata["reconciliationStatus"] = "Exhausted";
+        taskExecution.Metadata["errorCode"] = "TaskReconciliationExhausted";
+        taskExecution.Metadata["errorMessage"] = $"Task '{taskExecution.TaskKey}' exhausted reconciliation attempts.";
+        await _taskRepository.Update(taskExecution, cancellationToken);
+
+        await WriteTransition(RuntimeTransition.ForTask(
+            instance,
+            "TaskReconciliationExhausted",
+            TaskExecutionStatus.WaitingResponse,
+            taskExecution.Status,
+            stageExecution,
+            taskExecution), cancellationToken);
+        await WriteTransition(RuntimeTransition.ForTask(
+            instance,
+            "TaskTimeoutPolicyApplied",
+            TaskExecutionStatus.WaitingResponse,
+            taskExecution.Status,
+            stageExecution,
+            taskExecution), cancellationToken);
+
+        await ApplyTimeoutErrorPolicy(document, instance, stageExecution, taskExecution, cancellationToken);
+        return true;
+    }
+
     private async Task ApplyTimeoutErrorPolicy(
         RuntimeArtifactDocument document,
         OrchestrationInstance instance,
@@ -360,9 +594,43 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             applied is JsonValue value &&
             value.TryGetValue<string>(out var text) &&
             !string.IsNullOrWhiteSpace(text))
-            return true;
+            return !string.Equals(text, "ReconciliationRedispatched", StringComparison.OrdinalIgnoreCase);
 
         return false;
+    }
+
+    private static RuntimeTaskDispatchRequest CreateDispatchRequest(
+        OrchestrationInstance instance,
+        string orchestrationVersion,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        RuntimeTaskDocument taskDocument,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        DateTime startedOnUtc)
+    {
+        return new RuntimeTaskDispatchRequest
+        {
+            CommandId = dispatch.CommandId,
+            CorrelationId = taskExecution.CorrelationId,
+            TaskKind = taskDocument.Kind,
+            DispatchType = taskDocument.DispatchType,
+            Destination = taskDocument.Destination ?? string.Empty,
+            MessageVersion = string.IsNullOrWhiteSpace(taskDocument.MessageVersion) ? "1.0.0" : taskDocument.MessageVersion,
+            Payload = dispatch.RequestPayload?.DeepClone(),
+            OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,
+            OrchestrationVersion = orchestrationVersion,
+            OrchestrationInstanceId = instance.Id.ToString(),
+            TaskExecutionId = taskExecution.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            EnvironmentKey = instance.EnvironmentKey,
+            StageKey = stageExecution.StageKey,
+            TaskKey = taskExecution.TaskKey,
+            CurrentStatus = taskExecution.Status.ToString(),
+            Attempt = attempt.AttemptNumber,
+            StartedOnUtc = startedOnUtc,
+            UpdatedOnUtc = DateTime.UtcNow
+        };
     }
 
     private async Task WriteTransition(RuntimeTransition transition, CancellationToken cancellationToken)
@@ -429,6 +697,10 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             "TaskTimedOut" => RuntimeReactiveEventNames.TaskTimedOut,
             "TaskTimeoutPolicyApplied" => RuntimeReactiveEventNames.TaskTimeoutPolicyApplied,
             "TaskReconciliationUnsupported" => RuntimeReactiveEventNames.TaskReconciliationUnsupported,
+            "TaskReconciliationRedispatching" => RuntimeReactiveEventNames.TaskTimeoutPolicyApplied,
+            "TaskReconciliationRedispatched" => RuntimeReactiveEventNames.TaskTimeoutPolicyApplied,
+            "TaskReconciliationDispatchFailed" => RuntimeReactiveEventNames.TaskFailed,
+            "TaskReconciliationExhausted" => RuntimeReactiveEventNames.TaskFailed,
             "TaskErrorPolicyApplied" => RuntimeReactiveEventNames.TaskErrorPolicyApplied,
             "CompensationScheduled" => RuntimeReactiveEventNames.CompensationScheduled,
             "CompensationStarted" => RuntimeReactiveEventNames.CompensationStarted,
