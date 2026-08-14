@@ -180,6 +180,13 @@ public sealed class StageExecutionRepository : IStageExecutionRepository
     public async Task<StageExecution> GetById(Id stageExecutionId, CancellationToken cancellationToken = default)
         => RuntimeStorageMapper.ToDomain(await _dbContext.StageExecutions.AsNoTracking().FirstAsync(x => x.Id == stageExecutionId, cancellationToken));
 
+    public async Task<StageExecution> GetByInstanceAndKey(Id instanceId, string stageKey, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.StageExecutions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.OrchestrationInstanceId == instanceId && x.StageKey == stageKey, cancellationToken);
+        return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
+    }
+
     public async Task<IReadOnlyCollection<StageExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
         => await _dbContext.StageExecutions.AsNoTracking()
             .Where(x => x.OrchestrationInstanceId == instanceId)
@@ -213,6 +220,13 @@ public sealed class TaskExecutionRepository : ITaskExecutionRepository
     public async Task<TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default)
     {
         var entity = await _dbContext.TaskExecutions.AsNoTracking().FirstOrDefaultAsync(x => x.CorrelationId == correlationId, cancellationToken);
+        return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
+    }
+
+    public async Task<TaskExecution> GetByStageAndKey(Id stageExecutionId, string taskKey, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.TaskExecutions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.StageExecutionId == stageExecutionId && x.TaskKey == taskKey, cancellationToken);
         return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
     }
 

@@ -234,6 +234,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 return;
             }
 
+            if (stageExecution.Status == StageExecutionStatus.Running)
+                return;
+
             var targetStageIndex = await TryApplyStageBranch(document, stage, stageIndex, instance, cancellationToken);
             if (targetStageIndex.HasValue)
                 stageIndex = targetStageIndex.Value - 1;
@@ -249,6 +252,10 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task<StageExecution> ExecuteStage(RuntimeStageExecutionContext context, CancellationToken cancellationToken)
     {
+        var existingStage = await _stageRepository.GetByInstanceAndKey(context.Instance.Id, context.Stage.Key, cancellationToken);
+        if (existingStage is not null)
+            return existingStage;
+
         var started = DateTime.UtcNow;
         var condition = _conditionEvaluator.Evaluate(context.Stage.ExecutionCondition, context.Instance.SnapshotPayload);
         var stageExecution = new StageExecution
@@ -320,6 +327,12 @@ public sealed class RuntimeEngine : IRuntimeEngine
             }
 
             if (taskExecution.Status == TaskExecutionStatus.WaitingResponse)
+            {
+                await _stageRepository.Update(stageExecution, cancellationToken);
+                return stageExecution;
+            }
+
+            if (taskExecution.Status == TaskExecutionStatus.Running)
             {
                 await _stageRepository.Update(stageExecution, cancellationToken);
                 return stageExecution;
@@ -408,6 +421,10 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task<TaskExecution> ExecuteTask(RuntimeTaskExecutionContext context, CancellationToken cancellationToken)
     {
+        var existingTask = await _taskRepository.GetByStageAndKey(context.StageExecution.Id, context.Task.Key, cancellationToken);
+        if (existingTask is not null)
+            return existingTask;
+
         var started = DateTime.UtcNow;
         var condition = _conditionEvaluator.Evaluate(context.Task.ExecutionCondition, context.Instance.SnapshotPayload);
         var taskExecution = CreateTaskExecution(context, started);
@@ -1063,6 +1080,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
             if (taskExecution.Status == TaskExecutionStatus.WaitingResponse)
                 return;
 
+            if (taskExecution.Status == TaskExecutionStatus.Running)
+                return;
+
             if (taskExecution.Status == TaskExecutionStatus.Failed)
             {
                 if (await TryContinueAfterTaskFailure(new RuntimeStageExecutionContext
@@ -1148,6 +1168,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
             var stage = stages[i];
             var stageExecution = await ExecuteStage(CreateStageContext(instance, resume.Document, stage), cancellationToken);
             if (stageExecution.Status == StageExecutionStatus.Failed || instance.Status == OrchestrationInstanceStatus.Waiting)
+                return;
+
+            if (stageExecution.Status == StageExecutionStatus.Running)
                 return;
 
             var targetStageIndex = await TryApplyStageBranch(resume.Document, stage, i, instance, cancellationToken);
