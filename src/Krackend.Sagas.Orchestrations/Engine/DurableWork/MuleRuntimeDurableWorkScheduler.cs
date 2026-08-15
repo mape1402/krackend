@@ -30,6 +30,7 @@ public sealed class MuleRuntimeDurableWorkScheduler : IRuntimeDurableWorkSchedul
             envelope,
             options =>
             {
+                options.Lane = ResolveIngressLane(envelope);
                 options.CorrelationId = envelope.CorrelationId;
                 options.DeduplicationKey = RuntimeIngressIdempotency.Build(envelope);
                 AddIngressMetadata(options.Metadata, envelope);
@@ -48,6 +49,7 @@ public sealed class MuleRuntimeDurableWorkScheduler : IRuntimeDurableWorkSchedul
             envelope,
             options =>
             {
+                options.Lane = ResolveDispatchLane(envelope);
                 options.CorrelationId = envelope.CorrelationId;
                 options.DeduplicationKey = RuntimeDispatchIdempotency.Build(envelope);
                 AddDispatchMetadata(options.Metadata, envelope);
@@ -66,6 +68,7 @@ public sealed class MuleRuntimeDurableWorkScheduler : IRuntimeDurableWorkSchedul
             request,
             options =>
             {
+                options.Lane = RuntimeDurableWorkLanes.Reconcile;
                 options.CorrelationId = request.ReconcileKey;
                 options.DeduplicationKey = request.ReconcileKey;
                 AddReconcileMetadata(options.Metadata, request);
@@ -89,6 +92,16 @@ public sealed class MuleRuntimeDurableWorkScheduler : IRuntimeDurableWorkSchedul
         Add(metadata, "runtime.transport.address", envelope.Source?.Address);
         Add(metadata, "runtime.transport.messageId", envelope.Source?.MessageId);
     }
+
+    private static string ResolveIngressLane(RuntimeIngressEnvelope envelope)
+        => envelope.Kind == RuntimeIngressKind.TaskResponse
+            ? RuntimeDurableWorkLanes.ResponseIngress
+            : RuntimeDurableWorkLanes.TriggerIngress;
+
+    private static string ResolveDispatchLane(RuntimeDispatchEnvelope envelope)
+        => envelope.Metadata != null && envelope.Metadata.ContainsKey("compensationExecutionId")
+            ? RuntimeDurableWorkLanes.Compensation
+            : RuntimeDurableWorkLanes.Dispatch;
 
     private static void AddDispatchMetadata(IDictionary<string, string> metadata, RuntimeDispatchEnvelope envelope)
     {
