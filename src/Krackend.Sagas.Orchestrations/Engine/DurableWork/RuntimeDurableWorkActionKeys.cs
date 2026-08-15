@@ -27,3 +27,34 @@ public static class RuntimeDurableWorkActionKeys
     /// </summary>
     public static readonly ActionKey Compensate = ActionKey.From("krackend.runtime.compensate");
 }
+
+/// <summary>
+/// Mule lanes used by the orchestration runtime durable work pipeline.
+/// </summary>
+public static class RuntimeDurableWorkLanes
+{
+    /// <summary>
+    /// Durable trigger ingress lane.
+    /// </summary>
+    public const string TriggerIngress = "krackend.runtime.ingress.trigger";
+
+    /// <summary>
+    /// Durable task response ingress lane.
+    /// </summary>
+    public const string ResponseIngress = "krackend.runtime.ingress.response";
+
+    /// <summary>
+    /// Durable task dispatch lane.
+    /// </summary>
+    public const string Dispatch = "krackend.runtime.dispatch";
+
+    /// <summary>
+    /// Durable compensation dispatch lane.
+    /// </summary>
+    public const string Compensation = "krackend.runtime.compensation";
+
+    /// <summary>
+    /// Durable reconciliation lane.
+    /// </summary>
+    public const string Reconcile = "krackend.runtime.reconcile";
+}

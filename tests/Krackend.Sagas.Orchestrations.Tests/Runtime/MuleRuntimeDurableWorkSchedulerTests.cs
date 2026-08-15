@@ -40,10 +40,37 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
 
         Assert.Equal(RuntimeDurableWorkActionKeys.ProcessIngress, mule.CapturedKey);
         Assert.Same(envelope, mule.CapturedPayload);
+        Assert.Equal(RuntimeDurableWorkLanes.ResponseIngress, mule.CapturedLane);
         Assert.Equal("corr-1", mule.CapturedCorrelationId);
         Assert.Equal("response|local|instance-1|dispatch-1|task-exec-1|0|msg-1", mule.CapturedDeduplicationKey);
         Assert.Equal("TaskResponse", mule.CapturedMetadata["runtime.ingress.kind"]);
         Assert.Equal("orders.backchannel", mule.CapturedMetadata["runtime.transport.address"]);
+    }
+
+    [Fact]
+    public async Task ScheduleProcessIngress_Should_Use_TriggerIngress_Lane_For_Triggers()
+    {
+        var mule = new CapturingMuleClient();
+        var scheduler = new MuleRuntimeDurableWorkScheduler(mule);
+        var envelope = new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            EnvironmentKey = "local",
+            OrchestrationName = "order.fulfillment",
+            OrchestrationVersion = "1.0.0",
+            CorrelationId = "corr-1",
+            Source = new RuntimeTransportDescriptor
+            {
+                Kind = RuntimeTransportKind.Message,
+                Address = "orders.created",
+                MessageId = "msg-1"
+            },
+            Payload = JsonNode.Parse("""{"ok":true}""")
+        };
+
+        await scheduler.ScheduleProcessIngress(envelope);
+
+        Assert.Equal(RuntimeDurableWorkLanes.TriggerIngress, mule.CapturedLane);
     }
 
     [Fact]
@@ -77,10 +104,44 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
 
         Assert.Equal(RuntimeDurableWorkActionKeys.DispatchTask, mule.CapturedKey);
         Assert.Same(envelope, mule.CapturedPayload);
+        Assert.Equal(RuntimeDurableWorkLanes.Dispatch, mule.CapturedLane);
         Assert.Equal("corr-1", mule.CapturedCorrelationId);
         Assert.Equal("dispatch|instance-1|dispatch-1|task-exec-1|3", mule.CapturedDeduplicationKey);
         Assert.Equal("charge-payment", mule.CapturedMetadata["runtime.task"]);
         Assert.Equal("2.0.0", mule.CapturedMetadata["runtime.transport.version"]);
+    }
+
+    [Fact]
+    public async Task ScheduleDispatchTask_Should_Use_Compensation_Lane_When_Dispatch_Is_Compensation()
+    {
+        var mule = new CapturingMuleClient();
+        var scheduler = new MuleRuntimeDurableWorkScheduler(mule);
+        var envelope = new RuntimeDispatchEnvelope
+        {
+            DispatchId = "dispatch-1",
+            OrchestrationInstanceId = "instance-1",
+            CorrelationId = "corr-1",
+            EnvironmentKey = "local",
+            OrchestrationName = "order.fulfillment",
+            OrchestrationVersion = "1.0.0",
+            StageKey = "payment",
+            TaskKey = "compensate-payment",
+            TaskExecutionId = "task-exec-1",
+            Payload = JsonNode.Parse("""{"amount":10}""")!,
+            Destination = new RuntimeTransportDescriptor
+            {
+                Kind = RuntimeTransportKind.Message,
+                Address = "orders.payment.compensate"
+            },
+            Metadata =
+            {
+                ["compensationExecutionId"] = "compensation-1"
+            }
+        };
+
+        await scheduler.ScheduleDispatchTask(envelope);
+
+        Assert.Equal(RuntimeDurableWorkLanes.Compensation, mule.CapturedLane);
     }
 
     [Fact]
@@ -99,6 +160,7 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
 
         Assert.Equal(RuntimeDurableWorkActionKeys.Reconcile, mule.CapturedKey);
         Assert.Same(request, mule.CapturedPayload);
+        Assert.Equal(RuntimeDurableWorkLanes.Reconcile, mule.CapturedLane);
         Assert.Equal("runtime-reconcile:123", mule.CapturedCorrelationId);
         Assert.Equal("runtime-reconcile:123", mule.CapturedDeduplicationKey);
         Assert.Equal("krackend.runtime.reconcile", mule.CapturedMetadata["runtime.action"]);
@@ -127,6 +189,8 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
 
         public string CapturedCorrelationId { get; private set; } = string.Empty;
 
+        public string CapturedLane { get; private set; } = string.Empty;
+
         public string CapturedDeduplicationKey { get; private set; } = string.Empty;
 
         public Dictionary<string, string> CapturedMetadata { get; } = new();
@@ -152,6 +216,7 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
 
             CapturedKey = key;
             CapturedPayload = payload!;
+            CapturedLane = options.Lane;
             CapturedCorrelationId = options.CorrelationId;
             CapturedDeduplicationKey = options.DeduplicationKey;
 
