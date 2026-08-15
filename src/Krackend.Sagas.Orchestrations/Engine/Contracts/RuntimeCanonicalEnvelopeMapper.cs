@@ -103,7 +103,7 @@ public static class RuntimeCanonicalEnvelopeMapper
             CreatedOnUtc = request.StartedOnUtc,
             Destination = new RuntimeTransportDescriptor
             {
-                Kind = MapTransportKind(request.DispatchType),
+                Kind = MapTransportKind(request.TaskKind),
                 Address = request.Destination,
                 Version = string.IsNullOrWhiteSpace(request.MessageVersion) ? "1.0.0" : request.MessageVersion
             }

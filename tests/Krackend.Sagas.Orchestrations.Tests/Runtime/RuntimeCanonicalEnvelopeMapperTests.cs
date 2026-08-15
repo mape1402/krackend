@@ -69,8 +69,8 @@ public sealed class RuntimeCanonicalEnvelopeMapperTests
         {
             CommandId = "cmd-1",
             CorrelationId = "corr-1",
-            TaskKind = "Service",
-            DispatchType = "Messaging",
+            TaskKind = "Messaging",
+            DispatchType = "FireAndWaitCallback",
             Destination = "orders.reserve",
             MessageVersion = "1.2.3",
             Payload = JsonNode.Parse("""{"id":10}""")!,
@@ -96,5 +96,36 @@ public sealed class RuntimeCanonicalEnvelopeMapperTests
         Assert.Equal("orders.reserve", envelope.Destination.Address);
         Assert.Equal("1.2.3", envelope.Destination.Version);
         Assert.Equal("dispatch|instance-1|dispatch-1|task-exec-1|2", RuntimeDispatchIdempotency.Build(envelope));
+    }
+
+    [Fact]
+    public void TaskDispatchRequest_Should_Map_Unsupported_TaskKind_To_Unknown_Transport()
+    {
+        var request = new RuntimeTaskDispatchRequest
+        {
+            CommandId = "cmd-1",
+            CorrelationId = "corr-1",
+            TaskKind = "Plugin",
+            DispatchType = "FireAndWaitCallback",
+            Destination = "plugin.execute",
+            MessageVersion = "",
+            Payload = JsonNode.Parse("""{"id":10}""")!,
+            OrchestrationDefinitionKey = "order.fulfillment",
+            OrchestrationVersion = "1.0.0",
+            OrchestrationInstanceId = "instance-1",
+            TaskExecutionId = "task-exec-1",
+            DispatchId = "dispatch-1",
+            EnvironmentKey = "local",
+            StageKey = "reserve",
+            TaskKey = "reserve-stock",
+            CurrentStatus = "Running",
+            StartedOnUtc = new DateTime(2026, 8, 14, 1, 2, 3, DateTimeKind.Utc),
+            UpdatedOnUtc = new DateTime(2026, 8, 14, 1, 2, 4, DateTimeKind.Utc)
+        };
+
+        var envelope = request.ToDispatchEnvelope();
+
+        Assert.Equal(RuntimeTransportKind.Unknown, envelope.Destination.Kind);
+        Assert.Equal("1.0.0", envelope.Destination.Version);
     }
 }
