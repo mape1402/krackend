@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Mule.DurableActions" Version="1.2.0" />
     <PackageReference Include="Pigeon.Messaging" />
   </ItemGroup>
 
