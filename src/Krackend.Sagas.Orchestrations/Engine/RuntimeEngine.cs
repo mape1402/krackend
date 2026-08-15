@@ -137,7 +137,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
             if (trace is null || !CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
                 return DuplicateResponseIgnored(instance);
 
-            await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
+            if (IsFailureResponse(command.Payload))
+                await FailResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
+            else
+                await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
+
             await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
 
             return new RuntimeEngineProcessResult
@@ -1052,11 +1056,18 @@ public sealed class RuntimeEngine : IRuntimeEngine
     {
         var artifact = await _artifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
         var resume = CreateResumeContext(artifact, stageExecution, taskExecution);
-        await ContinueCurrentStage(resume, instance, stageExecution, cancellationToken);
+        await ContinueCurrentStage(resume, instance, stageExecution, taskExecution, cancellationToken);
     }
 
-    private async Task ContinueCurrentStage(RuntimeResumeContext resume, OrchestrationInstance instance, StageExecution stageExecution, CancellationToken cancellationToken)
+    private async Task ContinueCurrentStage(RuntimeResumeContext resume, OrchestrationInstance instance, StageExecution stageExecution, TaskExecution currentTaskExecution, CancellationToken cancellationToken)
     {
+        if (currentTaskExecution.Status == TaskExecutionStatus.Failed)
+        {
+            var canContinueAfterFailure = await ApplyTaskFailurePolicyAfterResponse(resume, instance, stageExecution, currentTaskExecution, cancellationToken);
+            if (!canContinueAfterFailure)
+                return;
+        }
+
         var nextTaskIndex = resume.TaskIndex + 1;
         if (IsParallelGroupTask(resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex)))
         {
@@ -1153,8 +1164,17 @@ public sealed class RuntimeEngine : IRuntimeEngine
             return new ParallelGroupResumeDecision(false, resume.TaskIndex + 1);
         }
 
-        if (groupExecutions.Any(x => x.Status == TaskExecutionStatus.Failed))
-            return new ParallelGroupResumeDecision(true, resume.TaskIndex + 1);
+        var failedTaskExecution = groupExecutions.FirstOrDefault(x => x.Status == TaskExecutionStatus.Failed);
+        var taskIndexes = resume.CurrentStage.Tasks.ToList();
+        var lastGroupIndex = groupTasks.Max(groupTask => taskIndexes.FindIndex(x => string.Equals(x.Key, groupTask.Key, StringComparison.OrdinalIgnoreCase)));
+        if (failedTaskExecution is not null)
+        {
+            var canContinueAfterFailure = await ApplyTaskFailurePolicyAfterResponse(resume, instance, stageExecution, failedTaskExecution, cancellationToken);
+            if (!canContinueAfterFailure)
+                return new ParallelGroupResumeDecision(false, resume.TaskIndex + 1);
+
+            return new ParallelGroupResumeDecision(true, lastGroupIndex + 1);
+        }
 
         instance.CurrentParallelGroupKey = string.Empty;
         instance.LastUpdatedOnUtc = DateTime.UtcNow;
@@ -1167,8 +1187,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
             stageExecution,
             BuildParallelGroupPayload(resume.CurrentStage, currentTask.ParallelGroupId, groupTasks)), cancellationToken);
 
-        var taskIndexes = resume.CurrentStage.Tasks.ToList();
-        var lastGroupIndex = groupTasks.Max(groupTask => taskIndexes.FindIndex(x => string.Equals(x.Key, groupTask.Key, StringComparison.OrdinalIgnoreCase)));
         return new ParallelGroupResumeDecision(true, lastGroupIndex + 1);
     }
 
@@ -1278,6 +1296,92 @@ public sealed class RuntimeEngine : IRuntimeEngine
         await WriteTransition(RuntimeTransition.ForAttempt(instance, "TaskCompleted", TaskExecutionStatus.WaitingResponse, taskExecution.Status, stageExecution, taskExecution, attempt), cancellationToken);
     }
 
+    private async Task FailResponse(OrchestrationInstance instance, StageExecution stageExecution, TaskExecution taskExecution, TaskExecutionAttempt attempt, RuntimeMessageResponseCommand command, CancellationToken cancellationToken)
+    {
+        var failedOnUtc = DateTime.UtcNow;
+        var failureReason = ReadFailureReason(command.Payload);
+
+        attempt.Status = TaskExecutionStatus.Failed;
+        attempt.FailedOnUtc = failedOnUtc;
+        attempt.WaitingSinceUtc = null;
+        attempt.ResponsePayload = command.Payload?.DeepClone();
+        attempt.ErrorCode = ReadFailureCode(command.Payload);
+        attempt.ErrorMessage = failureReason;
+        await _attemptRepository.Update(attempt, cancellationToken);
+
+        taskExecution.Status = TaskExecutionStatus.Failed;
+        taskExecution.FailedOnUtc = failedOnUtc;
+        taskExecution.WaitingSinceUtc = null;
+        taskExecution.OutputVariablesPayload = command.Payload?.DeepClone();
+        taskExecution.Metadata["failureReason"] = failureReason;
+        taskExecution.Metadata["errorCode"] = attempt.ErrorCode;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+
+        instance.Status = OrchestrationInstanceStatus.Running;
+        instance.WaitingSinceUtc = null;
+        instance.SnapshotPayload = command.Payload?.DeepClone() ?? instance.SnapshotPayload;
+        instance.LastUpdatedOnUtc = failedOnUtc;
+        await _instanceRepository.Update(instance, cancellationToken);
+        await WriteTransition(RuntimeTransition.ForAttemptPayload(instance, "TaskFailureResponseReceived", TaskExecutionStatus.WaitingResponse, TaskExecutionStatus.Failed, stageExecution, taskExecution, attempt, command.Payload), cancellationToken);
+        await WriteTransition(RuntimeTransition.ForAttempt(instance, "TaskFailed", TaskExecutionStatus.WaitingResponse, taskExecution.Status, stageExecution, taskExecution, attempt), cancellationToken);
+    }
+
+    private async Task<bool> ApplyTaskFailurePolicyAfterResponse(
+        RuntimeResumeContext resume,
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        CancellationToken cancellationToken)
+    {
+        var stageContext = new RuntimeStageExecutionContext
+        {
+            Instance = instance,
+            OrchestrationVersion = resume.Document.Version,
+            Document = resume.Document,
+            Stage = resume.CurrentStage
+        };
+
+        if (await TryContinueAfterTaskFailure(stageContext, stageExecution, taskExecution, cancellationToken))
+            return true;
+
+        if (await TryStartCompensationAfterTaskFailure(stageContext, stageExecution, taskExecution, cancellationToken))
+            return false;
+
+        await FailCurrentStage(instance, stageExecution, taskExecution, cancellationToken);
+        return false;
+    }
+
+    private static bool IsFailureResponse(JsonNode payload)
+    {
+        if (TryReadBoolean(payload, "Succeeded", "succeeded", "Success", "success", out var succeeded))
+            return !succeeded;
+
+        if (TryReadString(payload, out var status, "Status", "status") &&
+            (string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(status, "Failure", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(status, "Error", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        return TryReadString(payload, out _, "ErrorType", "errorType")
+            && TryReadString(payload, out _, "Message", "message");
+    }
+
+    private static string ReadFailureReason(JsonNode payload)
+    {
+        if (TryReadString(payload, out var message, "Message", "message", "FailureReason", "failureReason", "ErrorMessage", "errorMessage"))
+            return message;
+
+        return "Task response reported failure.";
+    }
+
+    private static string ReadFailureCode(JsonNode payload)
+    {
+        if (TryReadString(payload, out var code, "ErrorCode", "errorCode", "ErrorType", "errorType"))
+            return code;
+
+        return "TaskResponseFailed";
+    }
+
     private async Task CompleteCurrentStage(StageExecution stageExecution, OrchestrationInstance instance, CancellationToken cancellationToken)
     {
         stageExecution.Status = StageExecutionStatus.Completed;
@@ -1364,6 +1468,41 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         if (!string.Equals(dispatch.CorrelationId, command.CorrelationId, StringComparison.Ordinal))
             throw new InvalidOperationException($"Response correlation '{command.CorrelationId}' does not match dispatch correlation '{dispatch.CorrelationId}'.");
+    }
+
+    private static bool TryReadBoolean(JsonNode payload, string firstKey, string secondKey, string thirdKey, string fourthKey, out bool value)
+    {
+        foreach (var key in new[] { firstKey, secondKey, thirdKey, fourthKey })
+        {
+            if (payload is JsonObject obj &&
+                obj.TryGetPropertyValue(key, out var node) &&
+                node is JsonValue jsonValue &&
+                jsonValue.TryGetValue<bool>(out value))
+            {
+                return true;
+            }
+        }
+
+        value = false;
+        return false;
+    }
+
+    private static bool TryReadString(JsonNode payload, out string value, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (payload is JsonObject obj &&
+                obj.TryGetPropertyValue(key, out var node) &&
+                node is JsonValue jsonValue &&
+                jsonValue.TryGetValue<string>(out value) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+        }
+
+        value = string.Empty;
+        return false;
     }
 
     private sealed record RuntimeResponseTrace(TaskExecutionAttempt Attempt, TaskDispatch Dispatch);
