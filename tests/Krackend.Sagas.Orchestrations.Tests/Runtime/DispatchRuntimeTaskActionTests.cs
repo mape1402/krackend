@@ -44,13 +44,41 @@ public sealed class DispatchRuntimeTaskActionTests
     public async Task ExecuteAsync_Should_Reject_Unsupported_Transport()
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
-        var action = CreateAction(dispatcher, new CapturingTaskDispatchRepository());
+        var dispatchRepository = new CapturingTaskDispatchRepository();
+        var taskRepository = new CapturingTaskRepository();
+        var attemptRepository = new CapturingAttemptRepository();
+        var stageRepository = new CapturingStageRepository();
+        var instanceRepository = new CapturingInstanceRepository { Instance = { Status = OrchestrationInstanceStatus.Waiting } };
+        var transitionRepository = new CapturingTransitionRepository();
+        var action = CreateAction(
+            dispatcher,
+            dispatchRepository,
+            new NoopRuntimeReactiveEventPublisher(),
+            taskRepository,
+            attemptRepository,
+            stageRepository,
+            instanceRepository,
+            transitionRepository);
         var envelope = CreateEnvelope();
+        envelope.OrchestrationInstanceId = Id.New().ToString();
+        envelope.TaskExecutionId = Id.New().ToString();
+        dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
+        taskRepository.Task.Id = new Id(Ulid.Parse(envelope.TaskExecutionId));
+        taskRepository.Task.StageExecutionId = stageRepository.Stage.Id;
+        attemptRepository.Attempt.TaskExecutionId = taskRepository.Task.Id;
+        attemptRepository.Attempt.DispatchId = dispatchRepository.Dispatch.Id;
+        instanceRepository.Instance.Id = new Id(Ulid.Parse(envelope.OrchestrationInstanceId));
         envelope.Destination.Kind = RuntimeTransportKind.Http;
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => action.ExecuteAsync(CreateContext(envelope), CancellationToken.None).AsTask());
+        await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
 
-        Assert.Equal("Runtime dispatch transport 'Http' is not supported yet.", ex.Message);
+        Assert.Equal("Failed", dispatchRepository.Dispatch.DispatchStatus);
+        Assert.Equal(TaskExecutionStatus.Failed, taskRepository.Task.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, attemptRepository.Attempt.Status);
+        Assert.Equal(StageExecutionStatus.Failed, stageRepository.Stage.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instanceRepository.Instance.Status);
+        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "TaskFailed");
+        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "InstanceFailed");
     }
 
     [Fact]
@@ -64,6 +92,9 @@ public sealed class DispatchRuntimeTaskActionTests
         var action = new DispatchRuntimeTaskAction(
             dispatcher,
             dispatchRepository,
+            new CapturingTaskRepository(),
+            new CapturingAttemptRepository(),
+            new CapturingStageRepository(),
             compensationRepository,
             instanceRepository,
             transitionRepository,
@@ -92,12 +123,34 @@ public sealed class DispatchRuntimeTaskActionTests
         IMessagingCommandDispatcher dispatcher,
         ITaskDispatchRepository dispatchRepository,
         IRuntimeReactiveEventPublisher reactiveEventPublisher)
+        => CreateAction(
+            dispatcher,
+            dispatchRepository,
+            reactiveEventPublisher,
+            new CapturingTaskRepository(),
+            new CapturingAttemptRepository(),
+            new CapturingStageRepository(),
+            new CapturingInstanceRepository(),
+            new CapturingTransitionRepository());
+
+    private static DispatchRuntimeTaskAction CreateAction(
+        IMessagingCommandDispatcher dispatcher,
+        ITaskDispatchRepository dispatchRepository,
+        IRuntimeReactiveEventPublisher reactiveEventPublisher,
+        ITaskExecutionRepository taskRepository,
+        ITaskExecutionAttemptRepository attemptRepository,
+        IStageExecutionRepository stageRepository,
+        IOrchestrationInstanceRepository instanceRepository,
+        IExecutionTransitionRepository transitionRepository)
         => new(
             dispatcher,
             dispatchRepository,
+            taskRepository,
+            attemptRepository,
+            stageRepository,
             new CapturingCompensationRepository(),
-            new CapturingInstanceRepository(),
-            new CapturingTransitionRepository(),
+            instanceRepository,
+            transitionRepository,
             reactiveEventPublisher);
 
     private static RuntimeDispatchEnvelope CreateEnvelope()
@@ -229,6 +282,98 @@ public sealed class DispatchRuntimeTaskActionTests
 
         public Task<IReadOnlyCollection<Abstractions.Runtime.CompensationExecution>> GetPending(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.CompensationExecution>>([]);
+    }
+
+    private sealed class CapturingTaskRepository : ITaskExecutionRepository
+    {
+        public Abstractions.Runtime.TaskExecution Task { get; } = new()
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = Id.New(),
+            StageExecutionId = Id.New(),
+            TaskKey = "charge-payment",
+            TaskKind = TaskKind.Messaging,
+            Status = TaskExecutionStatus.WaitingResponse,
+            AwaitResponse = true,
+            WaitingSinceUtc = DateTime.UtcNow,
+            Metadata = new Dictionary<string, JsonNode>()
+        };
+
+        public Task Create(Abstractions.Runtime.TaskExecution taskExecution, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task Update(Abstractions.Runtime.TaskExecution taskExecution, CancellationToken cancellationToken = default)
+            => System.Threading.Tasks.Task.CompletedTask;
+
+        public Task<Abstractions.Runtime.TaskExecution> GetById(Id taskExecutionId, CancellationToken cancellationToken = default)
+            => System.Threading.Tasks.Task.FromResult(taskExecutionId == Task.Id ? Task : null!);
+
+        public Task<Abstractions.Runtime.TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<Abstractions.Runtime.TaskExecution> GetByStageAndKey(Id stageExecutionId, string taskKey, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+            => System.Threading.Tasks.Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskExecution>>([Task]);
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+    }
+
+    private sealed class CapturingAttemptRepository : ITaskExecutionAttemptRepository
+    {
+        public Abstractions.Runtime.TaskExecutionAttempt Attempt { get; } = new()
+        {
+            Id = Id.New(),
+            TaskExecutionId = Id.New(),
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = DateTime.UtcNow,
+            Metadata = new Dictionary<string, JsonNode>()
+        };
+
+        public Task Create(Abstractions.Runtime.TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task Update(Abstractions.Runtime.TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<Abstractions.Runtime.TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default)
+            => Task.FromResult(attemptId == Attempt.Id ? Attempt : null!);
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>>(taskExecutionId == Attempt.TaskExecutionId ? [Attempt] : []);
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+    }
+
+    private sealed class CapturingStageRepository : IStageExecutionRepository
+    {
+        public Abstractions.Runtime.StageExecution Stage { get; } = new()
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = Id.New(),
+            StageKey = "payment",
+            Status = StageExecutionStatus.Running,
+            Metadata = new Dictionary<string, JsonNode>()
+        };
+
+        public Task Create(Abstractions.Runtime.StageExecution stageExecution, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task Update(Abstractions.Runtime.StageExecution stageExecution, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<Abstractions.Runtime.StageExecution> GetById(Id stageExecutionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(stageExecutionId == Stage.Id ? Stage : null!);
+
+        public Task<Abstractions.Runtime.StageExecution> GetByInstanceAndKey(Id instanceId, string stageKey, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyCollection<Abstractions.Runtime.StageExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 
     private sealed class CapturingInstanceRepository : IOrchestrationInstanceRepository
