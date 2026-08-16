@@ -80,6 +80,31 @@ public sealed class RuntimeCompensationExecutorTests
     }
 
     [Fact]
+    public async Task Execute_RecoversFailedInstanceWhenCompensationIsStillPending()
+    {
+        var store = RuntimeCompensationStore.Create(nameof(TaskDispatchType.FireAndForget));
+        store.Instance.Status = OrchestrationInstanceStatus.Failed;
+        store.Instance.FailedOnUtc = DateTime.UtcNow.AddSeconds(-30);
+        var dispatcher = new RecordingDispatcher(new RuntimeTaskDispatchResult
+        {
+            Succeeded = true,
+            Status = "Dispatched",
+            ExternalReference = "rabbit:rollback-recovered"
+        });
+
+        var result = await CreateExecutor(store, dispatcher).Execute(store.Compensation);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Completed", store.Compensation.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, store.Instance.Status);
+        Assert.Null(store.Instance.FailedOnUtc);
+        Assert.Equal("RecoveredPendingCompensation", store.Instance.Metadata["compensationRecovery"]!.GetValue<string>());
+        Assert.NotNull(dispatcher.Request);
+        Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceCompensating" && x.FromStatus == "Failed");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceCompensated");
+    }
+
+    [Fact]
     public async Task Execute_WhenDispatcherSchedulesDurableWork_KeepsCompensationStarted()
     {
         var store = RuntimeCompensationStore.Create(nameof(TaskDispatchType.FireAndForget));
@@ -243,6 +268,8 @@ public sealed class RuntimeCompensationExecutorTests
             store.Instance.FinalOutcome = instance.FinalOutcome;
             store.Instance.ErrorSummary = instance.ErrorSummary;
             store.Instance.LastUpdatedOnUtc = instance.LastUpdatedOnUtc;
+            store.Instance.CompensationStartedOnUtc = instance.CompensationStartedOnUtc;
+            store.Instance.Metadata = instance.Metadata;
             return Task.CompletedTask;
         }
 
