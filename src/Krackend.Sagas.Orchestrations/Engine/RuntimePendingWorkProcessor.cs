@@ -160,7 +160,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     private async Task<bool> TryApplyTimeout(TaskExecution taskExecution, DateTime nowUtc, CancellationToken cancellationToken)
     {
         var instance = await _instanceRepository.GetById(taskExecution.OrchestrationInstanceId, cancellationToken);
-        if (instance.Status != OrchestrationInstanceStatus.Waiting ||
+        if (instance.Status is not (OrchestrationInstanceStatus.Waiting or OrchestrationInstanceStatus.Running) ||
             taskExecution.Status != TaskExecutionStatus.WaitingResponse)
             return false;
 
