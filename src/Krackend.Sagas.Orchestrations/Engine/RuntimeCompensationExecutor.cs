@@ -60,6 +60,21 @@ internal sealed class RuntimeCompensationExecutor : IRuntimeCompensationExecutor
             return new RuntimeCompensationExecutionResult(true, compensation.Status, "Compensation dispatch is already scheduled.");
 
         var instance = await _instanceRepository.GetById(compensation.OrchestrationInstanceId, cancellationToken);
+        if (instance.Status == OrchestrationInstanceStatus.Failed)
+        {
+            instance.Status = OrchestrationInstanceStatus.Compensating;
+            instance.CompensationStartedOnUtc ??= DateTime.UtcNow;
+            instance.FailedOnUtc = null;
+            instance.LastUpdatedOnUtc = DateTime.UtcNow;
+            instance.Metadata["compensationRecovery"] = "RecoveredPendingCompensation";
+            await _instanceRepository.Update(instance, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForInstance(
+                instance,
+                "InstanceCompensating",
+                OrchestrationInstanceStatus.Failed,
+                instance.Status), cancellationToken);
+        }
+
         if (instance.Status != OrchestrationInstanceStatus.Compensating)
             return new RuntimeCompensationExecutionResult(true, compensation.Status, "Instance is not compensating.");
 
