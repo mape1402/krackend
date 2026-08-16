@@ -24,6 +24,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
     private readonly IRuntimeCompensationExecutor _compensationExecutor;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
+    private readonly IRuntimeEngine _runtimeEngine;
     private readonly IRuntimeCompensationPlanBuilder _compensationPlanBuilder = new RuntimeCompensationPlanBuilder();
 
     /// <summary>
@@ -42,7 +43,8 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         IRuntimeTimeoutPolicyEvaluator timeoutPolicyEvaluator,
         IRuntimeErrorPolicyResolver errorPolicyResolver,
         IRuntimeCompensationExecutor compensationExecutor,
-        IRuntimeReactiveEventPublisher reactiveEventPublisher)
+        IRuntimeReactiveEventPublisher reactiveEventPublisher,
+        IRuntimeEngine runtimeEngine)
     {
         _taskRepository = taskRepository;
         _attemptRepository = attemptRepository;
@@ -57,6 +59,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         _errorPolicyResolver = errorPolicyResolver;
         _compensationExecutor = compensationExecutor;
         _reactiveEventPublisher = reactiveEventPublisher;
+        _runtimeEngine = runtimeEngine;
     }
 
     /// <inheritdoc/>
@@ -67,7 +70,18 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         var scheduledDispatches = await _dispatchRepository.GetScheduledOlderThan(nowUtc, cancellationToken);
         var compensations = await _compensationRepository.GetPending(cancellationToken);
 
+        var resumedTaskIds = new HashSet<Id>();
         foreach (var task in waitingTasks)
+        {
+            if (await TryResumeTerminalAttempt(task, cancellationToken))
+                resumedTaskIds.Add(task.Id);
+        }
+
+        var unresolvedWaitingTasks = waitingTasks
+            .Where(x => !resumedTaskIds.Contains(x.Id))
+            .ToArray();
+
+        foreach (var task in unresolvedWaitingTasks)
         {
             await TryApplyTimeout(task, nowUtc, CancellationToken.None);
         }
@@ -77,7 +91,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             await _compensationExecutor.Execute(compensation, CancellationToken.None);
         }
 
-        var items = waitingTasks
+        var items = unresolvedWaitingTasks
             .Select(x => new RuntimePendingWorkItem(
                 RuntimePendingWorkTypes.WaitingTaskTimeout,
                 x.Id,
@@ -110,6 +124,37 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             .ToArray();
 
         return new RuntimePendingWorkResult(nowUtc, items);
+    }
+
+    private async Task<bool> TryResumeTerminalAttempt(TaskExecution taskExecution, CancellationToken cancellationToken)
+    {
+        if (taskExecution.Status != TaskExecutionStatus.WaitingResponse)
+            return false;
+
+        var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
+        var terminalAttempt = attempts
+            .Where(x => x.Status is TaskExecutionStatus.Completed or TaskExecutionStatus.Failed &&
+                        x.DispatchId != default)
+            .OrderByDescending(x => x.AttemptNumber)
+            .FirstOrDefault();
+
+        if (terminalAttempt is null)
+            return false;
+
+        var instance = await _instanceRepository.GetById(taskExecution.OrchestrationInstanceId, cancellationToken);
+        if (instance.Status is not (OrchestrationInstanceStatus.Waiting or OrchestrationInstanceStatus.Running))
+            return false;
+
+        var result = await _runtimeEngine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = instance.Id.ToString(),
+            TaskExecutionId = taskExecution.Id.ToString(),
+            DispatchId = terminalAttempt.DispatchId.ToString(),
+            CorrelationId = taskExecution.CorrelationId,
+            Payload = terminalAttempt.ResponsePayload?.DeepClone()
+        }, cancellationToken);
+
+        return result.Succeeded;
     }
 
     private async Task<bool> TryApplyTimeout(TaskExecution taskExecution, DateTime nowUtc, CancellationToken cancellationToken)
