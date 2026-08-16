@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using System.Security.Cryptography;
+using System.Text;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
@@ -86,7 +88,18 @@ public sealed class TriggerPromoter : ITriggerPromoter
             }
         };
 
-        await _instanceRepository.Create(instance, cancellationToken);
+        try
+        {
+            await _instanceRepository.Create(instance, cancellationToken);
+        }
+        catch when (!string.IsNullOrWhiteSpace(intake.IdempotencyKey))
+        {
+            var existingPromotion = await TryResolveConcurrentPromotion(item, cancellationToken);
+            if (existingPromotion is not null)
+                return existingPromotion;
+
+            throw;
+        }
 
         intake.Status = TriggerIntakeStatus.PromotedToRuntime;
         intake.ResolvedArtifactId = artifact.Id;
@@ -130,6 +143,20 @@ public sealed class TriggerPromoter : ITriggerPromoter
         };
     }
 
+    private async Task<TriggerPromotionResult> TryResolveConcurrentPromotion(TriggerIntakeBufferItem item, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var existing = await ResolveExistingIntake(item, cancellationToken);
+            if (existing?.PromotedInstanceId is not null)
+                return await CreateExistingPromotionResult(item, existing, cancellationToken);
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+        }
+
+        return null;
+    }
+
     private Task<TriggerIntake> ResolveExistingIntake(TriggerIntakeBufferItem item, CancellationToken cancellationToken)
     {
         return string.IsNullOrWhiteSpace(item.IdempotencyKey)
@@ -155,5 +182,13 @@ public sealed class TriggerPromoter : ITriggerPromoter
             : item.CorrelationId.Trim();
 
     private static string BuildExecutionKey(string triggerKey, TriggerIntake intake)
-        => $"{triggerKey.Trim()}::{intake.CorrelationId}::{intake.Id}";
+        => string.IsNullOrWhiteSpace(intake.IdempotencyKey)
+            ? $"{triggerKey.Trim()}::{intake.CorrelationId}::{intake.Id}"
+            : $"{triggerKey.Trim()}::{intake.CorrelationId}::idempotency:{Hash(intake.EnvironmentKey, intake.IdempotencyKey)}";
+
+    private static string Hash(string environmentKey, string idempotencyKey)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{environmentKey.Trim()}::{idempotencyKey.Trim()}"));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
 }
