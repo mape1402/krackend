@@ -190,7 +190,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         => instance.Status is OrchestrationInstanceStatus.Waiting or OrchestrationInstanceStatus.Running
             && stageExecution.Status == StageExecutionStatus.Running
             && taskExecution.Status == TaskExecutionStatus.WaitingResponse
-            && attempt.Status == TaskExecutionStatus.WaitingResponse;
+            && attempt.Status is TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Completed or TaskExecutionStatus.Failed;
 
     private static RuntimeEngineProcessResult DuplicateResponseIgnored(OrchestrationInstance instance)
         => new()
