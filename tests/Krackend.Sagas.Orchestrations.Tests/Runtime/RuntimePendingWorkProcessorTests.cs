@@ -57,6 +57,27 @@ public sealed class RuntimePendingWorkProcessorTests
     }
 
     [Fact]
+    public async Task ProcessDueWork_ResumesTaskWhenAttemptAlreadyCompleted()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.Fail);
+        store.Attempt.Status = TaskExecutionStatus.Completed;
+        store.Attempt.CompletedOnUtc = now.AddMinutes(-1);
+        store.Attempt.DispatchId = Id.New();
+        store.Attempt.ResponsePayload = JsonNode.Parse("""{"succeeded":true}""");
+        var runtimeEngine = new RecordingRuntimeEngine();
+
+        var result = await CreateProcessor(store, runtimeEngine: runtimeEngine).ProcessDueWork(now);
+
+        Assert.Empty(result.Items);
+        var command = Assert.Single(runtimeEngine.ResponseCommands);
+        Assert.Equal(store.Instance.Id.ToString(), command.OrchestrationInstanceId);
+        Assert.Equal(store.Task.Id.ToString(), command.TaskExecutionId);
+        Assert.Equal(store.Attempt.DispatchId.ToString(), command.DispatchId);
+        Assert.Equal(store.Task.CorrelationId, command.CorrelationId);
+    }
+
+    [Fact]
     public async Task ProcessDueWork_AppliesFailTimeoutPolicyAndStopsInstance()
     {
         var now = DateTime.UtcNow;
@@ -192,7 +213,10 @@ public sealed class RuntimePendingWorkProcessorTests
         Assert.Equal(transitionCount, store.Transitions.Count);
     }
 
-    private static RuntimePendingWorkProcessor CreateProcessor(RuntimePendingWorkStore store, IRuntimeTaskDispatcher? dispatcher = null)
+    private static RuntimePendingWorkProcessor CreateProcessor(
+        RuntimePendingWorkStore store,
+        IRuntimeTaskDispatcher? dispatcher = null,
+        IRuntimeEngine? runtimeEngine = null)
         => new(
             new TaskRepositoryStub(store),
             new AttemptRepositoryStub(store),
@@ -206,7 +230,8 @@ public sealed class RuntimePendingWorkProcessorTests
             new RuntimeTimeoutPolicyEvaluator(),
             new RuntimeErrorPolicyResolver(),
             new NoopCompensationExecutor(),
-            new NoopRuntimeReactiveEventPublisher());
+            new NoopRuntimeReactiveEventPublisher(),
+            runtimeEngine ?? new RecordingRuntimeEngine());
 
     private static CompensationExecution PendingCompensation(Id instanceId, Id sourceTaskExecutionId)
         => new()
@@ -512,6 +537,29 @@ public sealed class RuntimePendingWorkProcessorTests
     {
         public Task<RuntimeCompensationExecutionResult> Execute(CompensationExecution compensation, CancellationToken cancellationToken = default)
             => Task.FromResult(new RuntimeCompensationExecutionResult(true, compensation.Status, "Noop"));
+    }
+
+    private sealed class RecordingRuntimeEngine : IRuntimeEngine
+    {
+        public List<RuntimeMessageResponseCommand> ResponseCommands { get; } = new();
+
+        public Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
+            => Task.FromResult(new RuntimeEngineProcessResult { Succeeded = true, Status = "Idle", Message = "Idle" });
+
+        public Task<IReadOnlyCollection<RuntimeEngineProcessResult>> ProcessAll(int maxItems = 25, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<RuntimeEngineProcessResult>>(Array.Empty<RuntimeEngineProcessResult>());
+
+        public Task<RuntimeEngineProcessResult> ContinueFromResponse(RuntimeMessageResponseCommand command, CancellationToken cancellationToken = default)
+        {
+            ResponseCommands.Add(command);
+            return Task.FromResult(new RuntimeEngineProcessResult
+            {
+                Succeeded = true,
+                Status = "Recovered",
+                Message = "Recovered split response state.",
+                InstanceId = command.OrchestrationInstanceId
+            });
+        }
     }
 
     private sealed class DispatcherResolverStub(IRuntimeTaskDispatcher? dispatcher) : IRuntimeTaskDispatcherResolver
