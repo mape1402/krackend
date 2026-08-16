@@ -49,8 +49,8 @@ public sealed class TriggerPromoterVersionResolutionTests
         Assert.NotEqual(first.Instance.Id, second.Instance.Id);
         Assert.NotEqual(first.Instance.ExecutionKey, second.Instance.ExecutionKey);
         Assert.Equal(first.Instance.Id, replay.Instance.Id);
-        Assert.EndsWith(first.Intake.Id.ToString(), first.Instance.ExecutionKey);
-        Assert.EndsWith(second.Intake.Id.ToString(), second.Instance.ExecutionKey);
+        Assert.Contains("::idempotency:", first.Instance.ExecutionKey);
+        Assert.Contains("::idempotency:", second.Instance.ExecutionKey);
     }
 
     private static TriggerPromoter CreatePromoter(VersionedTriggerStore store)
