@@ -95,6 +95,24 @@ public sealed class RuntimePendingWorkProcessorTests
     }
 
     [Fact]
+    public async Task ProcessDueWork_AppliesTimeoutWhenInstanceIsRunningButTaskIsWaiting()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.Fail);
+        store.Instance.Status = OrchestrationInstanceStatus.Running;
+
+        await CreateProcessor(store).ProcessDueWork(now);
+
+        Assert.Equal(TaskExecutionStatus.TimedOut, store.Attempt.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, store.Task.Status);
+        Assert.Equal(StageExecutionStatus.Failed, store.Stage.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, store.Instance.Status);
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimedOut");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "TaskTimeoutPolicyApplied");
+        Assert.Contains(store.Transitions, x => x.TransitionType == "InstanceFailed");
+    }
+
+    [Fact]
     public async Task ProcessDueWork_AppliesWaitBlockTimeoutPolicyWithoutClosingWaitingTask()
     {
         var now = DateTime.UtcNow;
