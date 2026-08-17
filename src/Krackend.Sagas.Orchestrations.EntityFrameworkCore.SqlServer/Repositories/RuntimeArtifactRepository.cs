@@ -33,7 +33,7 @@ public sealed class RuntimeArtifactRepository : IRuntimeArtifactRepository
             _dbContext.Entry(existing).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(artifact));
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task DeactivateActiveArtifacts(
@@ -56,7 +56,7 @@ public sealed class RuntimeArtifactRepository : IRuntimeArtifactRepository
             artifact.SupersededByArtifactId = exceptArtifactId;
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default)

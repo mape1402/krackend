@@ -93,4 +93,9 @@ public sealed class RuntimeEngineDependencies
     /// Gets the reactive event publisher.
     /// </summary>
     public required IRuntimeReactiveEventPublisher ReactiveEventPublisher { get; init; }
+
+    /// <summary>
+    /// Gets runtime storage units of work available for batching durable action mutations.
+    /// </summary>
+    public IEnumerable<IRuntimeStorageUnitOfWork> UnitOfWorks { get; init; } = [];
 }
