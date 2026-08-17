@@ -141,14 +141,20 @@ public sealed class RuntimeEngine : IRuntimeEngine
         if (command is null)
             throw new ArgumentNullException(nameof(command));
 
+        var profile = RuntimeProfile.Start("runtime.response");
         var instanceId = ParseId(command.OrchestrationInstanceId, nameof(command.OrchestrationInstanceId));
         var lease = await AcquireInstanceMutationLease(instanceId, cancellationToken);
+        profile.Mark("acquire-lease");
         try
         {
             var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+            profile.Mark("load-instance");
             var taskExecution = await _taskRepository.GetById(ParseId(command.TaskExecutionId, nameof(command.TaskExecutionId)), cancellationToken);
+            profile.Mark("load-task");
             var stageExecution = await _stageRepository.GetById(taskExecution.StageExecutionId, cancellationToken);
+            profile.Mark("load-stage");
             var trace = await ResolveResponseTrace(instance, stageExecution, taskExecution, command, cancellationToken);
+            profile.Mark("resolve-trace");
 
             if (trace is null || !CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
                 return DuplicateResponseIgnored(instance);
@@ -157,8 +163,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 await FailResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
             else
                 await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
+            profile.Mark("apply-response");
 
             await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
+            profile.Mark("continue-after-response");
+            profile.Stop();
 
             return new RuntimeEngineProcessResult
             {
@@ -171,6 +180,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         finally
         {
             await _instanceRepository.ReleaseLease(instanceId, lease.LeaseId, CancellationToken.None);
+            profile.Mark("release-lease");
         }
     }
 
