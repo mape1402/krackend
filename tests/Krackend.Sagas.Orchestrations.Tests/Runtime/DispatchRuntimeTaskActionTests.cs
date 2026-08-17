@@ -342,6 +342,9 @@ public sealed class DispatchRuntimeTaskActionTests
         public Task<Abstractions.Runtime.TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default)
             => Task.FromResult(attemptId == Attempt.Id ? Attempt : null!);
 
+        public Task<Abstractions.Runtime.TaskExecutionAttempt> GetByDispatchId(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Attempt.DispatchId == dispatchId ? Attempt : null!);
+
         public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>>(taskExecutionId == Attempt.TaskExecutionId ? [Attempt] : []);
 

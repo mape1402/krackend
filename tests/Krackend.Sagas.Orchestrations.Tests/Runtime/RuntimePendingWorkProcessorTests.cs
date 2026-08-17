@@ -441,6 +441,8 @@ public sealed class RuntimePendingWorkProcessorTests
             return Task.CompletedTask;
         }
         public Task<TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default) => Task.FromResult(store.Attempt);
+        public Task<TaskExecutionAttempt> GetByDispatchId(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Attempts.FirstOrDefault(x => x.DispatchId == dispatchId));
         public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempts.Where(x => x.TaskExecutionId == taskExecutionId).ToArray());
         public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)

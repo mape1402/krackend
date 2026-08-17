@@ -14,6 +14,8 @@ public interface ITaskExecutionAttemptRepository
 
     Task<TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default);
 
+    Task<TaskExecutionAttempt> GetByDispatchId(Id dispatchId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(
         Id taskExecutionId,
         CancellationToken cancellationToken = default);

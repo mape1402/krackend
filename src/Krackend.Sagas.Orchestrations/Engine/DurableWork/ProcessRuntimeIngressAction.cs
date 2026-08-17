@@ -1,5 +1,6 @@
 namespace Krackend.Sagas.Orchestrations.Engine.DurableWork;
 
+using System.Transactions;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
@@ -32,6 +33,15 @@ public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnve
             throw new ArgumentNullException(nameof(context));
 
         var scopes = _unitOfWorks.Select(x => x.DeferAutoSave()).ToArray();
+        using var transaction = new TransactionScope(
+            TransactionScopeOption.Required,
+            new TransactionOptions
+            {
+                IsolationLevel = IsolationLevel.ReadCommitted,
+                Timeout = TimeSpan.FromMinutes(2)
+            },
+            TransactionScopeAsyncFlowOption.Enabled);
+
         try
         {
             switch (context.Payload.Kind)
@@ -47,6 +57,7 @@ public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnve
             }
 
             await SaveRuntimeChanges(cancellationToken);
+            transaction.Complete();
         }
         finally
         {

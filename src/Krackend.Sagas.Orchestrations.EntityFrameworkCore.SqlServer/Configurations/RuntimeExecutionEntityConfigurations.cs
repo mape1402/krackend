@@ -107,6 +107,7 @@ internal sealed class TaskExecutionAttemptEntityConfiguration : IEntityTypeConfi
         builder.Property(x => x.DispatchId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
         builder.Property(x => x.MetadataJson).HasColumnType("nvarchar(max)").IsRequired(false);
         builder.HasIndex(x => new { x.TaskExecutionId, x.AttemptNumber }).IsUnique();
+        builder.HasIndex(x => x.DispatchId);
     }
 }
 
