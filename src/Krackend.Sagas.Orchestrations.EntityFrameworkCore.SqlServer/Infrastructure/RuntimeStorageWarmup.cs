@@ -170,11 +170,35 @@ public sealed class RuntimeStorageWarmup : IRuntimeStorageWarmup
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        await _dbContext.OrchestrationInstances.AsNoTracking().FirstAsync(x => x.Id == instanceId, cancellationToken);
+        await _dbContext.StageExecutions.AsNoTracking().FirstAsync(x => x.Id == stageId, cancellationToken);
+        await _dbContext.TaskExecutions.AsNoTracking().FirstAsync(x => x.Id == taskId, cancellationToken);
+        await _dbContext.TaskExecutionAttempts.AsNoTracking().Where(x => x.TaskExecutionId == taskId).ToListAsync(cancellationToken);
+        await _dbContext.TaskDispatches.AsNoTracking().FirstAsync(x => x.Id == dispatchId, cancellationToken);
+
         var instance = await _dbContext.OrchestrationInstances.FirstAsync(x => x.Id == instanceId, cancellationToken);
         instance.Status = OrchestrationInstanceStatus.Running;
         instance.CurrentStageKey = "__warmup";
         instance.CurrentTaskKey = "__warmup";
         instance.LastUpdatedOnUtc = DateTime.UtcNow;
+
+        var stage = await _dbContext.StageExecutions.FirstAsync(x => x.Id == stageId, cancellationToken);
+        stage.Status = StageExecutionStatus.Completed;
+        stage.CompletedOnUtc = DateTime.UtcNow;
+
+        var task = await _dbContext.TaskExecutions.FirstAsync(x => x.Id == taskId, cancellationToken);
+        task.Status = TaskExecutionStatus.WaitingResponse;
+        task.WaitingSinceUtc = DateTime.UtcNow;
+
+        var attempt = await _dbContext.TaskExecutionAttempts.FirstAsync(x => x.Id == attemptId, cancellationToken);
+        attempt.Status = TaskExecutionStatus.WaitingResponse;
+        attempt.DispatchId = dispatchId;
+        attempt.WaitingSinceUtc = DateTime.UtcNow;
+
+        var dispatch = await _dbContext.TaskDispatches.FirstAsync(x => x.Id == dispatchId, cancellationToken);
+        dispatch.DispatchStatus = "Scheduled";
+        dispatch.ScheduledOnUtc = DateTime.UtcNow;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await transaction.RollbackAsync(cancellationToken);
