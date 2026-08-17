@@ -929,6 +929,9 @@ public sealed class RuntimeEngineIdempotencyTests
         public Task<TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Attempts[attemptId]);
 
+        public Task<TaskExecutionAttempt> GetByDispatchId(Id dispatchId, CancellationToken cancellationToken = default)
+            => Task.FromResult(store.Attempts.Values.FirstOrDefault(x => x.DispatchId == dispatchId));
+
         public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(store.Attempts.Values.Where(x => x.TaskExecutionId == taskExecutionId).ToArray());
 

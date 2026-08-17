@@ -270,6 +270,14 @@ public sealed class TaskExecutionAttemptRepository : ITaskExecutionAttemptReposi
     public async Task<TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default)
         => RuntimeStorageMapper.ToDomain(await _dbContext.TaskExecutionAttempts.AsNoTracking().FirstAsync(x => x.Id == attemptId, cancellationToken));
 
+    public async Task<TaskExecutionAttempt> GetByDispatchId(Id dispatchId, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.TaskExecutionAttempts.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.DispatchId == dispatchId, cancellationToken);
+
+        return entity is null ? null : RuntimeStorageMapper.ToDomain(entity);
+    }
+
     public async Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
         => await _dbContext.TaskExecutionAttempts.AsNoTracking()
             .Where(x => x.TaskExecutionId == taskExecutionId)

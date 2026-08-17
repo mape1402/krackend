@@ -410,12 +410,11 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
 
     private async Task<TaskExecutionAttempt> TryGetAttempt(TaskExecution taskExecution, Abstractions.Runtime.TaskDispatch dispatch, CancellationToken cancellationToken)
     {
-        var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
-        return attempts
-            .Where(x => x.DispatchId == dispatch.Id || x.Id == dispatch.TaskExecutionAttemptId)
-            .OrderByDescending(x => x.AttemptNumber)
-            .FirstOrDefault()
-            ?? attempts.OrderByDescending(x => x.AttemptNumber).FirstOrDefault();
+        var attempt = await _attemptRepository.GetByDispatchId(dispatch.Id, cancellationToken);
+        if (attempt is not null)
+            return attempt;
+
+        return await _attemptRepository.GetById(dispatch.TaskExecutionAttemptId, cancellationToken);
     }
 
     private async Task<StageExecution> TryGetStageExecution(TaskExecution taskExecution, CancellationToken cancellationToken)
