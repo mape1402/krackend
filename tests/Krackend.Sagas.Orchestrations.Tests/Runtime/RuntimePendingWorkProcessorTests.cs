@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Engine;
@@ -560,6 +561,9 @@ public sealed class RuntimePendingWorkProcessorTests
     private sealed class RecordingRuntimeEngine : IRuntimeEngine
     {
         public List<RuntimeMessageResponseCommand> ResponseCommands { get; } = new();
+
+        public Task<RuntimeEngineProcessResult> Process(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RuntimeEngineProcessResult { Succeeded = true, Status = "Processed", Message = "Processed" });
 
         public Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
             => Task.FromResult(new RuntimeEngineProcessResult { Succeeded = true, Status = "Idle", Message = "Idle" });
