@@ -13,6 +13,8 @@ public static class ServiceCollectionExtensions
         Action<DbContextOptionsBuilder> configureDbContext)
     {
         services.AddDbContext<RuntimeStorageDbContext>(configureDbContext);
+        services.AddScoped<IRuntimeStorageUnitOfWork, RuntimeStorageUnitOfWork>();
+        services.AddScoped<IRuntimeStorageWarmup, RuntimeStorageWarmup>();
         services.AddScoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>();
         services.AddScoped<ITriggerIntakeRepository, TriggerIntakeRepository>();
         services.AddScoped<ITriggerIntakeAttemptRepository, TriggerIntakeAttemptRepository>();

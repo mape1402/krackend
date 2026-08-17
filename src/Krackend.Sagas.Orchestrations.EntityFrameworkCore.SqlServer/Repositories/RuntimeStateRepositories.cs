@@ -15,14 +15,13 @@ public sealed class TriggerIntakeRepository : ITriggerIntakeRepository
     public async Task Create(TriggerIntake intake, CancellationToken cancellationToken = default)
     {
         _dbContext.TriggerIntakes.Add(RuntimeStorageMapper.ToEntity(intake));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(TriggerIntake intake, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.TriggerIntakes.FirstAsync(x => x.Id == intake.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(intake));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.TriggerIntakes, intake.Id, RuntimeStorageMapper.ToEntity(intake));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<TriggerIntake> GetById(Id intakeId, CancellationToken cancellationToken = default)
@@ -50,7 +49,7 @@ public sealed class TriggerIntakeAttemptRepository : ITriggerIntakeAttemptReposi
     public async Task Create(TriggerIntakeAttempt attempt, CancellationToken cancellationToken = default)
     {
         _dbContext.TriggerIntakeAttempts.Add(RuntimeStorageMapper.ToEntity(attempt));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<TriggerIntakeAttempt>> GetByIntakeId(Id intakeId, CancellationToken cancellationToken = default)
@@ -70,14 +69,13 @@ public sealed class OrchestrationInstanceRepository : IOrchestrationInstanceRepo
     public async Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
         _dbContext.OrchestrationInstances.Add(RuntimeStorageMapper.ToEntity(instance));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.OrchestrationInstances.FirstAsync(x => x.Id == instance.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(instance));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.OrchestrationInstances, instance.Id, RuntimeStorageMapper.ToEntity(instance));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
@@ -167,14 +165,13 @@ public sealed class StageExecutionRepository : IStageExecutionRepository
     public async Task Create(StageExecution stageExecution, CancellationToken cancellationToken = default)
     {
         _dbContext.StageExecutions.Add(RuntimeStorageMapper.ToEntity(stageExecution));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(StageExecution stageExecution, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.StageExecutions.FirstAsync(x => x.Id == stageExecution.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(stageExecution));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.StageExecutions, stageExecution.Id, RuntimeStorageMapper.ToEntity(stageExecution));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<StageExecution> GetById(Id stageExecutionId, CancellationToken cancellationToken = default)
@@ -204,14 +201,13 @@ public sealed class TaskExecutionRepository : ITaskExecutionRepository
     public async Task Create(TaskExecution taskExecution, CancellationToken cancellationToken = default)
     {
         _dbContext.TaskExecutions.Add(RuntimeStorageMapper.ToEntity(taskExecution));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(TaskExecution taskExecution, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.TaskExecutions.FirstAsync(x => x.Id == taskExecution.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(taskExecution));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.TaskExecutions, taskExecution.Id, RuntimeStorageMapper.ToEntity(taskExecution));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<TaskExecution> GetById(Id taskExecutionId, CancellationToken cancellationToken = default)
@@ -257,14 +253,13 @@ public sealed class TaskExecutionAttemptRepository : ITaskExecutionAttemptReposi
     public async Task Create(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
     {
         _dbContext.TaskExecutionAttempts.Add(RuntimeStorageMapper.ToEntity(attempt));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.TaskExecutionAttempts.FirstAsync(x => x.Id == attempt.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(attempt));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.TaskExecutionAttempts, attempt.Id, RuntimeStorageMapper.ToEntity(attempt));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<TaskExecutionAttempt> GetById(Id attemptId, CancellationToken cancellationToken = default)
@@ -298,14 +293,13 @@ public sealed class TaskDispatchRepository : ITaskDispatchRepository
     public async Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default)
     {
         _dbContext.TaskDispatches.Add(RuntimeStorageMapper.ToEntity(dispatch));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(TaskDispatch dispatch, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.TaskDispatches.FirstAsync(x => x.Id == dispatch.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(dispatch));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.TaskDispatches, dispatch.Id, RuntimeStorageMapper.ToEntity(dispatch));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
@@ -351,14 +345,13 @@ public sealed class CompensationExecutionRepository : ICompensationExecutionRepo
     public async Task Create(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
     {
         _dbContext.CompensationExecutions.Add(RuntimeStorageMapper.ToEntity(compensationExecution));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.CompensationExecutions.FirstAsync(x => x.Id == compensationExecution.Id, cancellationToken);
-        _dbContext.Entry(entity).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(compensationExecution));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        _dbContext.ApplyValues(_dbContext.CompensationExecutions, compensationExecution.Id, RuntimeStorageMapper.ToEntity(compensationExecution));
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<CompensationExecution> TryGetById(Id compensationExecutionId, CancellationToken cancellationToken = default)
@@ -391,7 +384,7 @@ public sealed class ExecutionTransitionRepository : IExecutionTransitionReposito
     public async Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default)
     {
         _dbContext.ExecutionTransitions.Add(RuntimeStorageMapper.ToEntity(transition));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<ExecutionTransition>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
@@ -478,7 +471,7 @@ public sealed class InstanceVariableRepository : IInstanceVariableRepository
             _dbContext.Entry(existing).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(variable));
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<InstanceVariable>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
@@ -510,7 +503,7 @@ public sealed class EnvironmentVariableRepository : IEnvironmentVariableReposito
             _dbContext.Entry(existing).CurrentValues.SetValues(RuntimeStorageMapper.ToEntity(variable));
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<EnvironmentVariableValue>> GetByEnvironmentKey(string environmentKey, CancellationToken cancellationToken = default)
