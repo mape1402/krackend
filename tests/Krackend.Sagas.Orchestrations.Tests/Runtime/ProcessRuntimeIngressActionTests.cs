@@ -13,11 +13,10 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class ProcessRuntimeIngressActionTests
 {
     [Fact]
-    public async Task ExecuteAsync_Should_Enqueue_Trigger_And_Process_Next()
+    public async Task ExecuteAsync_Should_Process_Durable_Trigger_Item()
     {
-        var intake = new CapturingTriggerIntakeBuffer();
         var engine = new CapturingRuntimeEngine();
-        var action = new ProcessRuntimeIngressAction(intake, engine);
+        var action = new ProcessRuntimeIngressAction(engine);
         var envelope = new RuntimeIngressEnvelope
         {
             Kind = RuntimeIngressKind.Trigger,
@@ -35,17 +34,16 @@ public sealed class ProcessRuntimeIngressActionTests
 
         await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
 
-        Assert.Equal("order.fulfillment", intake.EnqueuedItem.TriggerKey);
-        Assert.Equal("trigger|local|order.fulfillment|1.0.0|msg-1|corr-1", intake.EnqueuedItem.IdempotencyKey);
-        Assert.Equal(1, engine.ProcessNextCalls);
+        Assert.Equal("order.fulfillment", engine.ProcessedItem.TriggerKey);
+        Assert.Equal("trigger|local|order.fulfillment|1.0.0|msg-1|corr-1", engine.ProcessedItem.IdempotencyKey);
+        Assert.Equal(1, engine.ProcessCalls);
     }
 
     [Fact]
     public async Task ExecuteAsync_Should_Continue_Task_Response()
     {
-        var intake = new CapturingTriggerIntakeBuffer();
         var engine = new CapturingRuntimeEngine();
-        var action = new ProcessRuntimeIngressAction(intake, engine);
+        var action = new ProcessRuntimeIngressAction(engine);
         var envelope = new RuntimeIngressEnvelope
         {
             Kind = RuntimeIngressKind.TaskResponse,
@@ -64,7 +62,7 @@ public sealed class ProcessRuntimeIngressActionTests
         Assert.Equal("instance-1", engine.ResponseCommand.OrchestrationInstanceId);
         Assert.Equal("dispatch-1", engine.ResponseCommand.DispatchId);
         Assert.Equal("task-exec-1", engine.ResponseCommand.TaskExecutionId);
-        Assert.Equal(0, engine.ProcessNextCalls);
+        Assert.Equal(0, engine.ProcessCalls);
     }
 
     private static MuleActionContext<RuntimeIngressEnvelope> CreateContext(RuntimeIngressEnvelope envelope)
@@ -83,34 +81,22 @@ public sealed class ProcessRuntimeIngressActionTests
         return new MuleActionContext<RuntimeIngressEnvelope>(action, services, envelope);
     }
 
-    private sealed class CapturingTriggerIntakeBuffer : ITriggerIntakeBuffer
-    {
-        public TriggerIntakeBufferItem EnqueuedItem { get; private set; } = null!;
-
-        public Task<TriggerIntakeBufferResult> Enqueue(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
-        {
-            EnqueuedItem = item;
-            return Task.FromResult(TriggerIntakeBufferResult.Accept(item.BufferItemId));
-        }
-
-        public Task<TriggerIntakeBufferLease> TryDequeue(CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<TriggerIntakeBufferItem> Peek(CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<TriggerIntakeBufferResult> MarkCompleted(Id bufferItemId, string leaseId, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<TriggerIntakeBufferResult> MarkFailed(Id bufferItemId, string leaseId, string reason, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-    }
-
     private sealed class CapturingRuntimeEngine : IRuntimeEngine
     {
+        public int ProcessCalls { get; private set; }
+
+        public TriggerIntakeBufferItem ProcessedItem { get; private set; } = null!;
+
         public int ProcessNextCalls { get; private set; }
 
         public RuntimeMessageResponseCommand ResponseCommand { get; private set; } = null!;
+
+        public Task<RuntimeEngineProcessResult> Process(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
+        {
+            ProcessCalls++;
+            ProcessedItem = item;
+            return Task.FromResult(CreateResult());
+        }
 
         public Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
         {
