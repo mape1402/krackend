@@ -62,6 +62,26 @@ public sealed class RuntimeEngine : IRuntimeEngine
     }
 
     /// <inheritdoc/>
+    public async Task<RuntimeEngineProcessResult> Process(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
+    {
+        if (item is null)
+            throw new ArgumentNullException(nameof(item));
+
+        var promotion = await _triggerPromoter.Promote(item, cancellationToken);
+        await Execute(promotion, cancellationToken);
+
+        return new RuntimeEngineProcessResult
+        {
+            Succeeded = true,
+            Status = promotion.Instance.Status.ToString(),
+            Message = "Runtime trigger processed.",
+            BufferItemId = item.BufferItemId.ToString(),
+            IntakeId = promotion.Intake.Id.ToString(),
+            InstanceId = promotion.Instance.Id.ToString()
+        };
+    }
+
+    /// <inheritdoc/>
     public async Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
     {
         var lease = await _intakeBuffer.TryDequeue(cancellationToken);
@@ -75,19 +95,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         try
         {
-            var promotion = await _triggerPromoter.Promote(lease.Item, cancellationToken);
-            await Execute(promotion, cancellationToken);
+            var result = await Process(lease.Item, cancellationToken);
             await _intakeBuffer.MarkCompleted(lease.Item.BufferItemId, lease.LeaseId, cancellationToken);
-
-            return new RuntimeEngineProcessResult
-            {
-                Succeeded = true,
-                Status = promotion.Instance.Status.ToString(),
-                Message = "Runtime trigger processed.",
-                BufferItemId = lease.Item.BufferItemId.ToString(),
-                IntakeId = promotion.Intake.Id.ToString(),
-                InstanceId = promotion.Instance.Id.ToString()
-            };
+            return result;
         }
         catch (Exception ex)
         {

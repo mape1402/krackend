@@ -12,15 +12,13 @@ using Mule;
 [MuleAction("krackend.runtime.process-ingress")]
 public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnvelope>
 {
-    private readonly ITriggerIntakeBuffer _triggerIntakeBuffer;
     private readonly IRuntimeEngine _runtimeEngine;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProcessRuntimeIngressAction"/> class.
     /// </summary>
-    public ProcessRuntimeIngressAction(ITriggerIntakeBuffer triggerIntakeBuffer, IRuntimeEngine runtimeEngine)
+    public ProcessRuntimeIngressAction(IRuntimeEngine runtimeEngine)
     {
-        _triggerIntakeBuffer = triggerIntakeBuffer ?? throw new ArgumentNullException(nameof(triggerIntakeBuffer));
         _runtimeEngine = runtimeEngine ?? throw new ArgumentNullException(nameof(runtimeEngine));
     }
 
@@ -59,9 +57,9 @@ public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnve
             ReceivedOnUtc = envelope.ReceivedOnUtc == default ? DateTime.UtcNow : envelope.ReceivedOnUtc
         };
 
-        var result = await _triggerIntakeBuffer.Enqueue(item, cancellationToken);
-        if (result.Accepted)
-            await _runtimeEngine.ProcessNext(cancellationToken);
+        var result = await _runtimeEngine.Process(item, cancellationToken);
+        if (!result.Succeeded)
+            throw new InvalidOperationException(result.Message);
     }
 
     private async Task ProcessTaskResponse(RuntimeIngressEnvelope envelope, CancellationToken cancellationToken)

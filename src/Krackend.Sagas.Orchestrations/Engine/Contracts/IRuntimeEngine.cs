@@ -1,10 +1,20 @@
 namespace Krackend.Sagas.Orchestrations.Engine;
 
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+
 /// <summary>
 /// Processes pending runtime trigger intake items into orchestration executions.
 /// </summary>
 public interface IRuntimeEngine
 {
+    /// <summary>
+    /// Processes a trigger intake item that is already protected by a durable ingress action.
+    /// </summary>
+    /// <param name="item">Trigger intake item to promote into a runtime instance.</param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>Processing result for the provided intake item.</returns>
+    Task<RuntimeEngineProcessResult> Process(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Processes the next pending intake item when one is available.
     /// </summary>
