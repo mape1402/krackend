@@ -158,8 +158,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
             if (trace is null || !CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
             {
-                await SaveRuntimeChanges(cancellationToken);
-                profile.Mark("save-runtime");
                 return DuplicateResponseIgnored(instance);
             }
 
@@ -168,8 +166,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
             else
                 await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
             profile.Mark("apply-response");
-            await SaveRuntimeChanges(cancellationToken);
-            profile.Mark("save-response");
 
             await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
             profile.Mark("continue-after-response");
@@ -710,8 +706,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
             StartedOnUtc = started
         });
         var profile = RuntimeProfile.Start("runtime.dispatch-schedule");
-        await SaveRuntimeChanges(cancellationToken);
-        profile.Mark("flush-runtime-state");
         var result = await dispatcher.Dispatch(command, cancellationToken);
         profile.Mark("schedule-durable-dispatch");
         profile.Stop();
@@ -1507,8 +1501,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         if (dispatch is null)
             return null;
 
-        var attempts = await _attemptRepository.GetByTaskExecutionId(taskExecution.Id, cancellationToken);
-        var attempt = attempts.OrderByDescending(x => x.AttemptNumber).FirstOrDefault(x => x.DispatchId == dispatchId);
+        var attempt = await _attemptRepository.GetByDispatchId(dispatchId, cancellationToken);
         if (attempt is null)
             throw new InvalidOperationException($"No task attempt found for dispatch '{command.DispatchId}'.");
 

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Entities;
+using Mule;
 
 namespace Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Infrastructure;
 
@@ -31,6 +32,9 @@ public sealed class RuntimeStorageDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema("Runtime");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(RuntimeStorageDbContext).Assembly);
+        modelBuilder.Entity<DurableAction>()
+            .HasIndex(x => x.CorrelationId)
+            .HasDatabaseName("IX_MuleActions_CorrelationId");
         base.OnModelCreating(modelBuilder);
     }
 
