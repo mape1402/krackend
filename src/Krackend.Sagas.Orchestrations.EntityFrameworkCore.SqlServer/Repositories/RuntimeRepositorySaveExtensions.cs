@@ -8,7 +8,12 @@ internal static class RuntimeRepositorySaveExtensions
     public static Task SaveChangesIfNeeded(this RuntimeStorageDbContext dbContext, CancellationToken cancellationToken)
         => dbContext.AutoSaveChanges ? dbContext.SaveChangesAsync(cancellationToken) : Task.CompletedTask;
 
-    public static void ApplyValues<TEntity>(this RuntimeStorageDbContext dbContext, DbSet<TEntity> set, object id, TEntity values)
+    public static void ApplyValues<TEntity>(
+        this RuntimeStorageDbContext dbContext,
+        DbSet<TEntity> set,
+        object id,
+        TEntity values,
+        params string[] excludedProperties)
         where TEntity : class
     {
         var tracked = set.Local.FirstOrDefault(entity => Equals(dbContext.Entry(entity).Property("Id").CurrentValue, id));
@@ -23,5 +28,8 @@ internal static class RuntimeRepositorySaveExtensions
         entry.CurrentValues.SetValues(values);
         if (entry.State != EntityState.Added)
             entry.State = EntityState.Modified;
+
+        foreach (var propertyName in excludedProperties)
+            entry.Property(propertyName).IsModified = false;
     }
 }
