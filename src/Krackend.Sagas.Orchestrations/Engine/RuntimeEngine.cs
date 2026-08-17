@@ -157,16 +157,24 @@ public sealed class RuntimeEngine : IRuntimeEngine
             profile.Mark("resolve-trace");
 
             if (trace is null || !CanContinueFromResponse(instance, stageExecution, taskExecution, trace.Attempt))
+            {
+                await SaveRuntimeChanges(cancellationToken);
+                profile.Mark("save-runtime");
                 return DuplicateResponseIgnored(instance);
+            }
 
             if (IsFailureResponse(command.Payload))
                 await FailResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
             else
                 await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
             profile.Mark("apply-response");
+            await SaveRuntimeChanges(cancellationToken);
+            profile.Mark("save-response");
 
             await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
             profile.Mark("continue-after-response");
+            await SaveRuntimeChanges(cancellationToken);
+            profile.Mark("save-runtime");
             profile.Stop();
 
             return new RuntimeEngineProcessResult

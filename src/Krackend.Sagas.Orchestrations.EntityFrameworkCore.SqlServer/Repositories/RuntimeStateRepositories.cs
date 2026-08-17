@@ -74,7 +74,12 @@ public sealed class OrchestrationInstanceRepository : IOrchestrationInstanceRepo
 
     public async Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
-        _dbContext.ApplyValues(_dbContext.OrchestrationInstances, instance.Id, RuntimeStorageMapper.ToEntity(instance));
+        _dbContext.ApplyValues(
+            _dbContext.OrchestrationInstances,
+            instance.Id,
+            RuntimeStorageMapper.ToEntity(instance),
+            nameof(Entities.OrchestrationInstanceEntity.ActiveLeaseId),
+            nameof(Entities.OrchestrationInstanceEntity.ActiveLeaseExpiresOnUtc));
         await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
