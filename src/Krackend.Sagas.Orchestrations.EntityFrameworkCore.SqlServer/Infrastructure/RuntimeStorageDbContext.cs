@@ -5,10 +5,14 @@ namespace Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Infrastruc
 
 public sealed class RuntimeStorageDbContext : DbContext
 {
+    private int _deferAutoSaveDepth;
+
     public RuntimeStorageDbContext(DbContextOptions<RuntimeStorageDbContext> options)
         : base(options)
     {
     }
+
+    public bool AutoSaveChanges => _deferAutoSaveDepth == 0;
 
     public DbSet<RuntimeArtifactEntity> Artifacts => Set<RuntimeArtifactEntity>();
     public DbSet<TriggerIntakeEntity> TriggerIntakes => Set<TriggerIntakeEntity>();
@@ -28,5 +32,31 @@ public sealed class RuntimeStorageDbContext : DbContext
         modelBuilder.HasDefaultSchema("Runtime");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(RuntimeStorageDbContext).Assembly);
         base.OnModelCreating(modelBuilder);
+    }
+
+    internal IDisposable DeferAutoSave()
+    {
+        _deferAutoSaveDepth++;
+        return new AutoSaveScope(this);
+    }
+
+    private sealed class AutoSaveScope : IDisposable
+    {
+        private RuntimeStorageDbContext _dbContext;
+
+        public AutoSaveScope(RuntimeStorageDbContext dbContext)
+        {
+            _dbContext = dbContext;
+        }
+
+        public void Dispose()
+        {
+            var dbContext = _dbContext;
+            if (dbContext is null)
+                return;
+
+            _dbContext = null!;
+            dbContext._deferAutoSaveDepth = Math.Max(0, dbContext._deferAutoSaveDepth - 1);
+        }
     }
 }

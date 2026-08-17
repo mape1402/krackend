@@ -34,6 +34,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private readonly IRuntimeErrorPolicyResolver _errorPolicyResolver;
     private readonly IRuntimeCompensationPlanBuilder _compensationPlanBuilder = new RuntimeCompensationPlanBuilder();
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
+    private readonly IReadOnlyCollection<IRuntimeStorageUnitOfWork> _unitOfWorks;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeEngine"/> class.
@@ -59,6 +60,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         _retryPolicyEvaluator = dependencies.RetryPolicyEvaluator;
         _errorPolicyResolver = dependencies.ErrorPolicyResolver;
         _reactiveEventPublisher = dependencies.ReactiveEventPublisher;
+        _unitOfWorks = dependencies.UnitOfWorks?.ToArray() ?? [];
     }
 
     /// <inheritdoc/>
@@ -67,8 +69,12 @@ public sealed class RuntimeEngine : IRuntimeEngine
         if (item is null)
             throw new ArgumentNullException(nameof(item));
 
+        var profile = RuntimeProfile.Start("runtime.process");
         var promotion = await _triggerPromoter.Promote(item, cancellationToken);
+        profile.Mark("promote");
         await Execute(promotion, cancellationToken);
+        profile.Mark("execute");
+        profile.Stop();
 
         return new RuntimeEngineProcessResult
         {
@@ -213,14 +219,17 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task Execute(TriggerPromotionResult promotion, CancellationToken cancellationToken)
     {
+        var profile = RuntimeProfile.Start("runtime.execute");
         var document = RuntimeArtifactDocument.Parse(
             promotion.Artifact.ArtifactPayload,
             promotion.Artifact.Version.ToString());
+        profile.Mark("parse-artifact");
         var instance = promotion.Instance;
         instance.Status = OrchestrationInstanceStatus.Running;
         instance.LastUpdatedOnUtc = DateTime.UtcNow;
         await _instanceRepository.Update(instance, cancellationToken);
         await WriteTransition(RuntimeTransition.ForInstance(instance, "InstanceStarted", OrchestrationInstanceStatus.Created, instance.Status), cancellationToken);
+        profile.Mark("instance-started");
 
         var stages = document.Stages.ToArray();
         for (var stageIndex = 0; stageIndex < stages.Length; stageIndex++)
@@ -228,6 +237,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
             var stage = stages[stageIndex];
             var stageContext = CreateStageContext(instance, document, stage);
             var stageExecution = await ExecuteStage(stageContext, cancellationToken);
+            profile.Mark($"stage:{stage.Key}:{stageExecution.Status}");
             if (stageExecution.Status == StageExecutionStatus.Failed)
             {
                 if (instance.Status == OrchestrationInstanceStatus.Compensating)
@@ -262,11 +272,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
         instance.LastUpdatedOnUtc = DateTime.UtcNow;
         await _instanceRepository.Update(instance, cancellationToken);
         await WriteTransition(RuntimeTransition.ForInstance(instance, "InstanceCompleted", OrchestrationInstanceStatus.Running, instance.Status), cancellationToken);
+        profile.Stop();
     }
 
     private async Task<StageExecution> ExecuteStage(RuntimeStageExecutionContext context, CancellationToken cancellationToken)
     {
+        var profile = RuntimeProfile.Start($"runtime.stage:{context.Stage.Key}");
         var existingStage = await _stageRepository.GetByInstanceAndKey(context.Instance.Id, context.Stage.Key, cancellationToken);
+        profile.Mark("load-existing-stage");
         if (existingStage is not null)
             return existingStage;
 
@@ -288,9 +301,12 @@ public sealed class RuntimeEngine : IRuntimeEngine
         };
 
         await _stageRepository.Create(stageExecution, cancellationToken);
+        profile.Mark("create-stage");
         if (!condition.ShouldExecute)
         {
             await WriteTransition(RuntimeTransition.ForStage(context.Instance, "StageSkipped", StageExecutionStatus.Pending, stageExecution.Status, stageExecution), cancellationToken);
+            profile.Mark("stage-skipped");
+            profile.Stop();
             return stageExecution;
         }
 
@@ -298,6 +314,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         context.Instance.LastUpdatedOnUtc = started;
         await _instanceRepository.Update(context.Instance, cancellationToken);
         await WriteTransition(RuntimeTransition.ForStage(context.Instance, "StageStarted", StageExecutionStatus.Pending, stageExecution.Status, stageExecution), cancellationToken);
+        profile.Mark("stage-started");
 
         var tasks = context.Stage.Tasks.ToArray();
         for (var taskIndex = 0; taskIndex < tasks.Length; taskIndex++)
@@ -323,6 +340,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
             var taskContext = CreateTaskContext(context, stageExecution, task);
             var taskExecution = await ExecuteTask(taskContext, cancellationToken);
+            profile.Mark($"task:{task.Key}:{taskExecution.Status}");
 
             if (taskExecution.Status == TaskExecutionStatus.Failed)
             {
@@ -343,12 +361,16 @@ public sealed class RuntimeEngine : IRuntimeEngine
             if (taskExecution.Status == TaskExecutionStatus.WaitingResponse)
             {
                 await _stageRepository.Update(stageExecution, cancellationToken);
+                profile.Mark("stage-waiting-response");
+                profile.Stop();
                 return stageExecution;
             }
 
             if (taskExecution.Status == TaskExecutionStatus.Running)
             {
                 await _stageRepository.Update(stageExecution, cancellationToken);
+                profile.Mark("stage-running");
+                profile.Stop();
                 return stageExecution;
             }
         }
@@ -357,6 +379,8 @@ public sealed class RuntimeEngine : IRuntimeEngine
         stageExecution.CompletedOnUtc = DateTime.UtcNow;
         await _stageRepository.Update(stageExecution, cancellationToken);
         await WriteTransition(RuntimeTransition.ForStage(context.Instance, "StageCompleted", StageExecutionStatus.Running, stageExecution.Status, stageExecution), cancellationToken);
+        profile.Mark("stage-completed");
+        profile.Stop();
         return stageExecution;
     }
 
@@ -435,7 +459,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task<TaskExecution> ExecuteTask(RuntimeTaskExecutionContext context, CancellationToken cancellationToken)
     {
+        var profile = RuntimeProfile.Start($"runtime.task:{context.Task.Key}");
         var existingTask = await _taskRepository.GetByStageAndKey(context.StageExecution.Id, context.Task.Key, cancellationToken);
+        profile.Mark("load-existing-task");
         if (existingTask is not null)
             return existingTask;
 
@@ -452,12 +478,15 @@ public sealed class RuntimeEngine : IRuntimeEngine
             taskExecution.CompletedOnUtc = started;
             await _taskRepository.Create(taskExecution, cancellationToken);
             await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskSkipped", TaskExecutionStatus.Pending, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
+            profile.Mark("task-skipped");
+            profile.Stop();
             return taskExecution;
         }
 
         await _taskRepository.Create(taskExecution, cancellationToken);
         await MarkInstanceTaskStarted(context, started, cancellationToken);
         await WriteTransition(RuntimeTransition.ForTask(context.Instance, "TaskStarted", TaskExecutionStatus.Pending, taskExecution.Status, context.StageExecution, taskExecution), cancellationToken);
+        profile.Mark("task-started");
 
         if (_taskDispatcherResolver.Resolve(context.Task.Kind) is null)
             return await FailUnsupportedTask(context, taskExecution, cancellationToken);
@@ -470,10 +499,15 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 await MarkTaskRetryStarted(context, taskExecution, attemptNumber, cancellationToken);
 
             var attempt = await CreateAttempt(context, taskExecution, started, attemptNumber, cancellationToken);
+            profile.Mark($"attempt:{attemptNumber}:created");
             await WriteTransition(RuntimeTransition.ForAttemptPayload(context.Instance, "TaskInputTransformed", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt, attempt.RequestPayload), cancellationToken);
+            profile.Mark($"attempt:{attemptNumber}:input-transition");
             var dispatch = await CreateDispatch(context, taskExecution, attempt, cancellationToken);
+            profile.Mark($"attempt:{attemptNumber}:dispatch-created");
             await PrepareTaskDispatch(context, taskExecution, attempt, dispatch, cancellationToken);
+            profile.Mark($"attempt:{attemptNumber}:dispatch-prepared");
             var dispatchResult = await DispatchTask(context, taskExecution, attempt, dispatch, started, cancellationToken);
+            profile.Mark($"attempt:{attemptNumber}:dispatch-scheduled");
 
             if (!dispatchResult.Succeeded)
             {
@@ -489,15 +523,20 @@ public sealed class RuntimeEngine : IRuntimeEngine
             }
 
             await MarkDispatchAccepted(dispatch, dispatchResult, cancellationToken);
+            profile.Mark($"attempt:{attemptNumber}:dispatch-accepted");
 
             if (context.Task.AwaitResponse)
+            {
+                profile.Stop();
                 return taskExecution;
+            }
             else
             {
                 await MarkTaskDispatchAccepted(context, taskExecution, attempt, dispatch, cancellationToken);
                 await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskCompleted", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
             }
 
+            profile.Stop();
             return taskExecution;
         }
 
@@ -636,7 +675,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         return dispatch;
     }
 
-    private Task<RuntimeTaskDispatchResult> DispatchTask(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, DateTime started, CancellationToken cancellationToken)
+    private async Task<RuntimeTaskDispatchResult> DispatchTask(RuntimeTaskExecutionContext context, TaskExecution taskExecution, TaskExecutionAttempt attempt, TaskDispatch dispatch, DateTime started, CancellationToken cancellationToken)
     {
         var dispatcher = _taskDispatcherResolver.Resolve(context.Task.Kind)
             ?? throw new InvalidOperationException($"Task kind '{context.Task.Kind}' is not supported by the runtime dispatcher registry.");
@@ -652,7 +691,19 @@ public sealed class RuntimeEngine : IRuntimeEngine
             Task = context.Task,
             StartedOnUtc = started
         });
-        return dispatcher.Dispatch(command, cancellationToken);
+        var profile = RuntimeProfile.Start("runtime.dispatch-schedule");
+        await SaveRuntimeChanges(cancellationToken);
+        profile.Mark("flush-runtime-state");
+        var result = await dispatcher.Dispatch(command, cancellationToken);
+        profile.Mark("schedule-durable-dispatch");
+        profile.Stop();
+        return result;
+    }
+
+    private async Task SaveRuntimeChanges(CancellationToken cancellationToken)
+    {
+        foreach (var unitOfWork in _unitOfWorks)
+            await unitOfWork.SaveChanges(cancellationToken);
     }
 
     private async Task MarkFailedDispatchAttempt(RuntimeTaskDispatchFailure failure, CancellationToken cancellationToken)
@@ -1550,4 +1601,5 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         return new Id(Ulid.Parse(value));
     }
+
 }

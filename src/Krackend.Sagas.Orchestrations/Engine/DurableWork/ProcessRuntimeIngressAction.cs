@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Mule;
 
 /// <summary>
@@ -13,13 +14,15 @@ using Mule;
 public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnvelope>
 {
     private readonly IRuntimeEngine _runtimeEngine;
+    private readonly IReadOnlyCollection<IRuntimeStorageUnitOfWork> _unitOfWorks;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProcessRuntimeIngressAction"/> class.
     /// </summary>
-    public ProcessRuntimeIngressAction(IRuntimeEngine runtimeEngine)
+    public ProcessRuntimeIngressAction(IRuntimeEngine runtimeEngine, IEnumerable<IRuntimeStorageUnitOfWork> unitOfWorks = null)
     {
         _runtimeEngine = runtimeEngine ?? throw new ArgumentNullException(nameof(runtimeEngine));
+        _unitOfWorks = unitOfWorks?.ToArray() ?? [];
     }
 
     /// <inheritdoc />
@@ -28,16 +31,27 @@ public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnve
         if (context == null)
             throw new ArgumentNullException(nameof(context));
 
-        switch (context.Payload.Kind)
+        var scopes = _unitOfWorks.Select(x => x.DeferAutoSave()).ToArray();
+        try
         {
-            case RuntimeIngressKind.Trigger:
-                await ProcessTrigger(context.Payload, cancellationToken);
-                return;
-            case RuntimeIngressKind.TaskResponse:
-                await ProcessTaskResponse(context.Payload, cancellationToken);
-                return;
-            default:
-                throw new InvalidOperationException($"Runtime ingress kind '{context.Payload.Kind}' is not supported.");
+            switch (context.Payload.Kind)
+            {
+                case RuntimeIngressKind.Trigger:
+                    await ProcessTrigger(context.Payload, cancellationToken);
+                    break;
+                case RuntimeIngressKind.TaskResponse:
+                    await ProcessTaskResponse(context.Payload, cancellationToken);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Runtime ingress kind '{context.Payload.Kind}' is not supported.");
+            }
+
+            await SaveRuntimeChanges(cancellationToken);
+        }
+        finally
+        {
+            foreach (var scope in scopes)
+                scope.Dispose();
         }
     }
 
@@ -74,6 +88,12 @@ public sealed class ProcessRuntimeIngressAction : IMuleAction<RuntimeIngressEnve
             CorrelationId = envelope.CorrelationId,
             Payload = envelope.Payload
         }, cancellationToken);
+    }
+
+    private async Task SaveRuntimeChanges(CancellationToken cancellationToken)
+    {
+        foreach (var unitOfWork in _unitOfWorks)
+            await unitOfWork.SaveChanges(cancellationToken);
     }
 
     private static void ValidateTaskResponse(RuntimeIngressEnvelope envelope)

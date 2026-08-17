@@ -36,13 +36,22 @@ public sealed class TriggerPromoter : ITriggerPromoter
         if (item is null)
             throw new ArgumentNullException(nameof(item));
 
+        var profile = RuntimeProfile.Start("runtime.promote");
         var payload = ParsePayload(item.PayloadJson);
+        profile.Mark("parse-payload");
         var existing = await ResolveExistingIntake(item, cancellationToken);
+        profile.Mark("resolve-existing-intake");
 
         if (existing?.PromotedInstanceId is not null)
-            return await CreateExistingPromotionResult(item, existing, cancellationToken);
+        {
+            var result = await CreateExistingPromotionResult(item, existing, cancellationToken);
+            profile.Mark("existing-promotion");
+            profile.Stop();
+            return result;
+        }
 
         var artifact = await _artifactResolver.Resolve(item.EnvironmentKey, item.TriggerKey, item.ArtifactVersion, cancellationToken);
+        profile.Mark("resolve-artifact");
 
         var now = DateTime.UtcNow;
         var intake = existing ?? new TriggerIntake
@@ -66,6 +75,7 @@ public sealed class TriggerPromoter : ITriggerPromoter
 
         if (existing is null)
             await _intakeRepository.Create(intake, cancellationToken);
+        profile.Mark("create-intake");
 
         var instance = new OrchestrationInstance
         {
@@ -91,6 +101,7 @@ public sealed class TriggerPromoter : ITriggerPromoter
         try
         {
             await _instanceRepository.Create(instance, cancellationToken);
+            profile.Mark("create-instance");
         }
         catch when (!string.IsNullOrWhiteSpace(intake.IdempotencyKey))
         {
@@ -106,6 +117,7 @@ public sealed class TriggerPromoter : ITriggerPromoter
         intake.PromotedInstanceId = instance.Id;
         intake.PromotedOnUtc = now;
         await _intakeRepository.Update(intake, cancellationToken);
+        profile.Mark("update-intake");
 
         await _timelineRepository.Create(new ExecutionTransition
         {
@@ -119,6 +131,8 @@ public sealed class TriggerPromoter : ITriggerPromoter
             ProducedBy = "Krackend.Sagas.Orchestrations.Engine",
             Payload = payload.DeepClone()
         }, cancellationToken);
+        profile.Mark("transition");
+        profile.Stop();
 
         return new TriggerPromotionResult
         {

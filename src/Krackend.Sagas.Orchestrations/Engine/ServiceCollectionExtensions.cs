@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
         services.AddScoped(CreateRuntimeEngineDependencies);
         services.AddScoped<IRuntimeEngine, RuntimeEngine>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeStorageWarmupHostedService>());
         return services;
     }
 
@@ -80,7 +81,8 @@ public static class ServiceCollectionExtensions
             RetryPolicyEvaluator = provider.GetRequiredService<IRuntimeRetryPolicyEvaluator>(),
             TimeoutPolicyEvaluator = provider.GetRequiredService<IRuntimeTimeoutPolicyEvaluator>(),
             ErrorPolicyResolver = provider.GetRequiredService<IRuntimeErrorPolicyResolver>(),
-            ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>()
+            ReactiveEventPublisher = provider.GetRequiredService<IRuntimeReactiveEventPublisher>(),
+            UnitOfWorks = provider.GetServices<IRuntimeStorageUnitOfWork>()
         };
     }
 }
