@@ -16,7 +16,7 @@ public sealed class ProcessRuntimeIngressActionTests
     public async Task ExecuteAsync_Should_Process_Durable_Trigger_Item()
     {
         var engine = new CapturingRuntimeEngine();
-        var action = new ProcessRuntimeIngressAction(engine);
+        var action = CreateAction(engine);
         var envelope = new RuntimeIngressEnvelope
         {
             Kind = RuntimeIngressKind.Trigger,
@@ -43,7 +43,7 @@ public sealed class ProcessRuntimeIngressActionTests
     public async Task ExecuteAsync_Should_Continue_Task_Response()
     {
         var engine = new CapturingRuntimeEngine();
-        var action = new ProcessRuntimeIngressAction(engine);
+        var action = CreateAction(engine);
         var envelope = new RuntimeIngressEnvelope
         {
             Kind = RuntimeIngressKind.TaskResponse,
@@ -80,6 +80,9 @@ public sealed class ProcessRuntimeIngressActionTests
 
         return new MuleActionContext<RuntimeIngressEnvelope>(action, services, envelope);
     }
+
+    private static ProcessRuntimeIngressAction CreateAction(CapturingRuntimeEngine engine)
+        => new(engine);
 
     private sealed class CapturingRuntimeEngine : IRuntimeEngine
     {
@@ -121,4 +124,5 @@ public sealed class ProcessRuntimeIngressActionTests
                 Message = "Processed"
             };
     }
+
 }

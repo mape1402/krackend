@@ -28,7 +28,12 @@ internal sealed class TriggerIntakeEntityConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.PromotedInstanceId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
         builder.Property(x => x.RejectionReason).HasMaxLength(2048).IsRequired(false);
         builder.Property(x => x.FailureReason).HasMaxLength(2048).IsRequired(false);
-        builder.HasIndex(x => new { x.EnvironmentKey, x.IdempotencyKey });
+        builder.HasIndex(x => new { x.EnvironmentKey, x.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("[IdempotencyKey] IS NOT NULL AND [IdempotencyKey] <> N''")
+            .HasDatabaseName("UX_TriggerIntakes_EnvironmentKey_IdempotencyKey");
+        builder.HasIndex(x => new { x.EnvironmentKey, x.CorrelationId })
+            .HasDatabaseName("IX_TriggerIntakes_EnvironmentKey_CorrelationId");
         builder.HasIndex(x => new { x.EnvironmentKey, x.TriggerKey, x.Status });
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Engine.DurableWork;
 
@@ -8,7 +9,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class DurableRuntimeTaskDispatcherTests
 {
     [Fact]
-    public async Task Dispatch_Should_Schedule_Dispatch_Task_Durable_Work()
+    public async Task Dispatch_Should_Schedule_Dispatch_Action()
     {
         var scheduler = new CapturingDurableWorkScheduler();
         var dispatcher = new DurableRuntimeTaskDispatcher(scheduler);
@@ -17,9 +18,9 @@ public sealed class DurableRuntimeTaskDispatcherTests
 
         Assert.True(result.Succeeded);
         Assert.Equal("Scheduled", result.Status);
-        Assert.NotEqual(Guid.Empty.ToString(), result.ExternalReference);
+        Assert.Equal("dispatch-1", result.ExternalReference);
 
-        var envelope = scheduler.DispatchEnvelope;
+        var envelope = Assert.Single(scheduler.Dispatches);
         Assert.Equal("dispatch-1", envelope.DispatchId);
         Assert.Equal("local", envelope.EnvironmentKey);
         Assert.Equal("orders.payment", envelope.Destination.Address);
@@ -49,20 +50,21 @@ public sealed class DurableRuntimeTaskDispatcherTests
             UpdatedOnUtc = new DateTime(2026, 8, 14, 1, 2, 4, DateTimeKind.Utc)
         };
 
-    private sealed class CapturingDurableWorkScheduler : IRuntimeDurableWorkScheduler
+}
+
+file sealed class CapturingDurableWorkScheduler : IRuntimeDurableWorkScheduler
+{
+    public List<RuntimeDispatchEnvelope> Dispatches { get; } = [];
+
+    public ValueTask<Guid> ScheduleProcessIngress(RuntimeIngressEnvelope envelope, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException();
+
+    public ValueTask<Guid> ScheduleDispatchTask(RuntimeDispatchEnvelope envelope, CancellationToken cancellationToken = default)
     {
-        public RuntimeDispatchEnvelope DispatchEnvelope { get; private set; } = null!;
-
-        public ValueTask<Guid> ScheduleProcessIngress(Abstractions.Runtime.Ingress.RuntimeIngressEnvelope envelope, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public ValueTask<Guid> ScheduleDispatchTask(RuntimeDispatchEnvelope envelope, CancellationToken cancellationToken = default)
-        {
-            DispatchEnvelope = envelope;
-            return ValueTask.FromResult(Guid.NewGuid());
-        }
-
-        public ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
+        Dispatches.Add(envelope);
+        return ValueTask.FromResult(Guid.NewGuid());
     }
+
+    public ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException();
 }

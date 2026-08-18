@@ -315,6 +315,40 @@ public sealed class TaskDispatchRepository : ITaskDispatchRepository
         await _dbContext.SaveChangesIfNeeded(cancellationToken);
     }
 
+    public async Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
+    {
+        var dispatchIdBytes = dispatchId.Value.ToByteArray();
+        var dispatchStatus = string.IsNullOrWhiteSpace(status) ? "Dispatched" : status;
+        var externalReferenceValue = externalReference ?? string.Empty;
+        var emptyMetadataJson = "{}";
+        await _dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE [Runtime].[TaskDispatches]
+            SET [DispatchStatus] = {dispatchStatus},
+                [SentOnUtc] = {sentOnUtc},
+                [AcknowledgedOnUtc] = {sentOnUtc},
+                [FailedOnUtc] = NULL,
+                [FailureReason] = NULL,
+                [MetadataJson] = JSON_MODIFY(COALESCE([MetadataJson], {emptyMetadataJson}), '$.externalReference', {externalReferenceValue})
+            WHERE [Id] = {dispatchIdBytes}
+            """, cancellationToken);
+    }
+
+    public async Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default)
+    {
+        var dispatchIdBytes = dispatchId.Value.ToByteArray();
+        var failedOnUtc = DateTime.UtcNow;
+        var externalReferenceValue = externalReference ?? string.Empty;
+        var emptyMetadataJson = "{}";
+        await _dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE [Runtime].[TaskDispatches]
+            SET [DispatchStatus] = N'Failed',
+                [FailedOnUtc] = {failedOnUtc},
+                [FailureReason] = {failureReason},
+                [MetadataJson] = JSON_MODIFY(COALESCE([MetadataJson], {emptyMetadataJson}), '$.externalReference', {externalReferenceValue})
+            WHERE [Id] = {dispatchIdBytes}
+            """, cancellationToken);
+    }
+
     public async Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
         => RuntimeStorageMapper.ToDomain(await _dbContext.TaskDispatches.AsNoTracking().FirstAsync(x => x.Id == dispatchId, cancellationToken));
 

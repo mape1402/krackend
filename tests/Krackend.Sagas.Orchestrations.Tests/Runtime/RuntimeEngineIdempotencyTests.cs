@@ -1107,6 +1107,34 @@ public sealed class RuntimeEngineIdempotencyTests
             return Task.CompletedTask;
         }
 
+        public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
+        {
+            if (store.Dispatches.TryGetValue(dispatchId, out var dispatch))
+            {
+                dispatch.DispatchStatus = string.IsNullOrWhiteSpace(status) ? "Dispatched" : status;
+                dispatch.SentOnUtc = sentOnUtc;
+                dispatch.AcknowledgedOnUtc = sentOnUtc;
+                dispatch.FailedOnUtc = null;
+                dispatch.FailureReason = null;
+                dispatch.Metadata["externalReference"] = externalReference ?? string.Empty;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default)
+        {
+            if (store.Dispatches.TryGetValue(dispatchId, out var dispatch))
+            {
+                dispatch.DispatchStatus = "Failed";
+                dispatch.FailedOnUtc = DateTime.UtcNow;
+                dispatch.FailureReason = failureReason;
+                dispatch.Metadata["externalReference"] = externalReference ?? string.Empty;
+            }
+
+            return Task.CompletedTask;
+        }
+
         public Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Dispatches[dispatchId]);
 

@@ -24,6 +24,7 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
+    private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DispatchRuntimeTaskAction"/> class.
@@ -37,7 +38,8 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
         ICompensationExecutionRepository compensationRepository,
         IOrchestrationInstanceRepository instanceRepository,
         IExecutionTransitionRepository transitionRepository,
-        IRuntimeReactiveEventPublisher reactiveEventPublisher)
+        IRuntimeReactiveEventPublisher reactiveEventPublisher,
+        IRuntimeDurableWorkScheduler durableWorkScheduler)
     {
         _messagingDispatcher = messagingDispatcher ?? throw new ArgumentNullException(nameof(messagingDispatcher));
         _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
@@ -48,6 +50,7 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
         _reactiveEventPublisher = reactiveEventPublisher ?? throw new ArgumentNullException(nameof(reactiveEventPublisher));
+        _durableWorkScheduler = durableWorkScheduler ?? throw new ArgumentNullException(nameof(durableWorkScheduler));
     }
 
     /// <inheritdoc />
@@ -67,7 +70,9 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
         var result = await _messagingDispatcher.Dispatch(CreateCommand(envelope), cancellationToken);
         if (!result.Succeeded)
         {
-            await MarkDispatchFailed(envelope, result, cancellationToken);
+            if (await HandleDispatchFailure(envelope, result, cancellationToken))
+                return;
+
             throw new InvalidOperationException(result.FailureReason ?? $"Runtime dispatch failed with status '{result.Status}'.");
         }
 
@@ -135,35 +140,219 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
 
     private async Task MarkDispatchSent(RuntimeDispatchEnvelope envelope, MessagingDispatchResult result, CancellationToken cancellationToken)
     {
-        var dispatch = await TryGetDispatch(envelope, cancellationToken);
-        if (dispatch is not null)
-        {
-            dispatch.DispatchStatus = string.IsNullOrWhiteSpace(result.Status) ? "Dispatched" : result.Status;
-            dispatch.SentOnUtc = DateTime.UtcNow;
-            dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
-            dispatch.FailureReason = null;
-            dispatch.Metadata["externalReference"] = result.ExternalReference ?? string.Empty;
-            await _dispatchRepository.Update(dispatch, cancellationToken);
-        }
+        var dispatchId = TryParseId(envelope.DispatchId);
+        if (dispatchId.HasValue)
+            await _dispatchRepository.MarkSent(dispatchId.Value, result.Status, DateTime.UtcNow, result.ExternalReference, cancellationToken);
 
-        await PublishDispatchEvent(envelope, dispatch, RuntimeReactiveEventNames.DispatchPublished, "DispatchPublished", "Scheduled", result.Status, result.ExternalReference, cancellationToken);
+        await PublishDispatchEvent(envelope, null, RuntimeReactiveEventNames.DispatchPublished, "DispatchPublished", "Scheduled", result.Status, result.ExternalReference, cancellationToken);
         await MarkCompensationCompleted(envelope, result, cancellationToken);
     }
 
     private async Task MarkDispatchFailed(RuntimeDispatchEnvelope envelope, MessagingDispatchResult result, CancellationToken cancellationToken)
     {
+        var dispatchId = TryParseId(envelope.DispatchId);
+        if (dispatchId.HasValue)
+            await _dispatchRepository.MarkFailed(dispatchId.Value, result.FailureReason, result.ExternalReference, cancellationToken);
+
+        await PublishDispatchEvent(envelope, null, RuntimeReactiveEventNames.DispatchFailed, "DispatchFailed", "Scheduled", "Failed", result.ExternalReference, cancellationToken);
+        await MarkCompensationFailed(envelope, result, cancellationToken);
+    }
+
+    private async Task<bool> HandleDispatchFailure(RuntimeDispatchEnvelope envelope, MessagingDispatchResult result, CancellationToken cancellationToken)
+    {
+        await MarkDispatchFailed(envelope, result, cancellationToken);
+        if (await TryGetCompensation(envelope, cancellationToken) is not null)
+            return true;
+
         var dispatch = await TryGetDispatch(envelope, cancellationToken);
-        if (dispatch is not null)
+        var taskExecution = await TryGetTaskExecution(envelope, cancellationToken);
+        var instance = await TryGetInstance(envelope, cancellationToken);
+        if (dispatch is null || taskExecution is null || instance is null)
+            return false;
+
+        var stageExecution = await TryGetStageExecution(taskExecution, cancellationToken);
+        var attempt = await TryGetAttempt(taskExecution, dispatch, cancellationToken);
+        if (attempt is null)
+            return false;
+
+        await MarkCurrentAttemptFailed(dispatch, taskExecution, attempt, result, cancellationToken);
+        var maxAttempts = ReadInt(envelope.Metadata, "retryMaxAttempts", "maxAttempts");
+        if (maxAttempts <= attempt.AttemptNumber)
         {
-            dispatch.DispatchStatus = "Failed";
-            dispatch.FailedOnUtc = DateTime.UtcNow;
-            dispatch.FailureReason = result.FailureReason;
-            dispatch.Metadata["externalReference"] = result.ExternalReference ?? string.Empty;
-            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await MarkTaskDispatchExhausted(instance, stageExecution, taskExecution, attempt, result, cancellationToken);
+            return true;
         }
 
-        await PublishDispatchEvent(envelope, dispatch, RuntimeReactiveEventNames.DispatchFailed, "DispatchFailed", "Scheduled", "Failed", result.ExternalReference, cancellationToken);
-        await MarkCompensationFailed(envelope, result, cancellationToken);
+        await ScheduleNextDispatchAttempt(envelope, instance, stageExecution, taskExecution, attempt, dispatch, maxAttempts, cancellationToken);
+        return true;
+    }
+
+    private async Task MarkCurrentAttemptFailed(
+        Abstractions.Runtime.TaskDispatch dispatch,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        MessagingDispatchResult result,
+        CancellationToken cancellationToken)
+    {
+        var failedOnUtc = DateTime.UtcNow;
+        attempt.Status = TaskExecutionStatus.Failed;
+        attempt.FailedOnUtc = failedOnUtc;
+        attempt.WaitingSinceUtc = null;
+        attempt.ErrorCode = "MessagingDispatchFailed";
+        attempt.ErrorMessage = result.FailureReason ?? "Messaging dispatch failed.";
+        attempt.DispatchId = dispatch.Id;
+        await _attemptRepository.Update(attempt, cancellationToken);
+
+        taskExecution.Status = TaskExecutionStatus.Failed;
+        taskExecution.FailedOnUtc = failedOnUtc;
+        taskExecution.WaitingSinceUtc = null;
+        taskExecution.Metadata["failureReason"] = attempt.ErrorMessage;
+        taskExecution.Metadata["errorCode"] = attempt.ErrorCode;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+    }
+
+    private async Task ScheduleNextDispatchAttempt(
+        RuntimeDispatchEnvelope envelope,
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt failedAttempt,
+        Abstractions.Runtime.TaskDispatch failedDispatch,
+        int maxAttempts,
+        CancellationToken cancellationToken)
+    {
+        taskExecution.Status = TaskExecutionStatus.Retrying;
+        taskExecution.Metadata["retryAttempt"] = failedAttempt.AttemptNumber;
+        taskExecution.Metadata["maxRetries"] = Math.Max(0, maxAttempts - 1);
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await WriteRuntimeTransition(
+            instance,
+            stageExecution,
+            taskExecution,
+            failedAttempt,
+            "TaskRetryScheduled",
+            TaskExecutionStatus.Failed.ToString(),
+            TaskExecutionStatus.Retrying.ToString(),
+            BuildRetryPayload(failedAttempt.AttemptNumber, maxAttempts),
+            cancellationToken);
+
+        var nextAttemptNumber = failedAttempt.AttemptNumber + 1;
+        taskExecution.Status = TaskExecutionStatus.Running;
+        taskExecution.LastAttemptNumber = nextAttemptNumber;
+        taskExecution.FailedOnUtc = null;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+        await WriteRuntimeTransition(
+            instance,
+            stageExecution,
+            taskExecution,
+            null,
+            "TaskRetryStarted",
+            TaskExecutionStatus.Retrying.ToString(),
+            TaskExecutionStatus.Running.ToString(),
+            BuildRetryPayload(nextAttemptNumber, maxAttempts),
+            cancellationToken);
+
+        var started = DateTime.UtcNow;
+        var nextAttempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = taskExecution.Id,
+            AttemptNumber = nextAttemptNumber,
+            Status = TaskExecutionStatus.Running,
+            StartedOnUtc = started,
+            RequestPayload = failedAttempt.RequestPayload?.DeepClone() ?? failedDispatch.RequestPayload?.DeepClone(),
+            Metadata = failedAttempt.Metadata.ToDictionary(x => x.Key, x => x.Value?.DeepClone())
+        };
+        await _attemptRepository.Create(nextAttempt, cancellationToken);
+        await WriteRuntimeTransition(
+            instance,
+            stageExecution,
+            taskExecution,
+            nextAttempt,
+            "TaskInputTransformed",
+            TaskExecutionStatus.Running.ToString(),
+            TaskExecutionStatus.Running.ToString(),
+            nextAttempt.RequestPayload?.DeepClone(),
+            cancellationToken);
+
+        var nextDispatch = new Abstractions.Runtime.TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = nextAttempt.Id,
+            DispatchType = failedDispatch.DispatchType,
+            Destination = failedDispatch.Destination,
+            RequestPayload = nextAttempt.RequestPayload?.DeepClone() ?? failedDispatch.RequestPayload.DeepClone(),
+            DispatchStatus = "Scheduled",
+            CommandId = Id.New().ToString(),
+            CorrelationId = failedDispatch.CorrelationId,
+            ScheduledOnUtc = DateTime.UtcNow,
+            Metadata = failedDispatch.Metadata.ToDictionary(x => x.Key, x => x.Value?.DeepClone())
+        };
+        await _dispatchRepository.Create(nextDispatch, cancellationToken);
+
+        nextAttempt.DispatchId = nextDispatch.Id;
+        taskExecution.WaitingSinceUtc = null;
+        if (envelope.ExpectedResponse)
+        {
+            var waitingSince = DateTime.UtcNow;
+            nextAttempt.Status = TaskExecutionStatus.WaitingResponse;
+            nextAttempt.WaitingSinceUtc = waitingSince;
+            taskExecution.Status = TaskExecutionStatus.WaitingResponse;
+            taskExecution.WaitingSinceUtc = waitingSince;
+            instance.Status = OrchestrationInstanceStatus.Waiting;
+            instance.WaitingSinceUtc = waitingSince;
+            instance.LastUpdatedOnUtc = waitingSince;
+            await _instanceRepository.Update(instance, cancellationToken);
+            await WriteRuntimeTransition(
+                instance,
+                stageExecution,
+                taskExecution,
+                nextAttempt,
+                "TaskWaitingResponse",
+                TaskExecutionStatus.Running.ToString(),
+                TaskExecutionStatus.WaitingResponse.ToString(),
+                null,
+                cancellationToken);
+        }
+
+        await _attemptRepository.Update(nextAttempt, cancellationToken);
+        await _taskRepository.Update(taskExecution, cancellationToken);
+
+        var nextEnvelope = CloneForNextAttempt(envelope, nextAttempt, nextDispatch);
+        await _durableWorkScheduler.ScheduleDispatchTask(nextEnvelope, cancellationToken);
+    }
+
+    private async Task MarkTaskDispatchExhausted(
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        MessagingDispatchResult result,
+        CancellationToken cancellationToken)
+    {
+        var reason = result.FailureReason ?? "Messaging dispatch failed.";
+        var failedOnUtc = DateTime.UtcNow;
+        taskExecution.Status = TaskExecutionStatus.Failed;
+        taskExecution.FailedOnUtc = failedOnUtc;
+        taskExecution.WaitingSinceUtc = null;
+        taskExecution.Metadata["failureReason"] = reason;
+        await _taskRepository.Update(taskExecution, cancellationToken);
+
+        if (stageExecution is not null)
+        {
+            stageExecution.Status = StageExecutionStatus.Failed;
+            stageExecution.FailedOnUtc = failedOnUtc;
+            stageExecution.ErrorSummary = reason;
+            await _stageRepository.Update(stageExecution, cancellationToken);
+        }
+
+        instance.Status = OrchestrationInstanceStatus.Failed;
+        instance.FailedOnUtc = failedOnUtc;
+        instance.WaitingSinceUtc = null;
+        instance.ErrorSummary = reason;
+        instance.LastUpdatedOnUtc = failedOnUtc;
+        await _instanceRepository.Update(instance, cancellationToken);
+        await WriteTaskFailureTransitions(instance, stageExecution, taskExecution, attempt, reason, cancellationToken);
     }
 
     private async Task PublishDispatchEvent(
@@ -441,6 +630,20 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
 
         if (stageExecution is not null)
         {
+            if (taskExecution?.ParallelGroupId is not null)
+            {
+                await WriteRuntimeTransition(
+                    instance,
+                    stageExecution,
+                    taskExecution,
+                    null,
+                    "ParallelGroupFailed",
+                    StageExecutionStatus.Running.ToString(),
+                    stageExecution.Status.ToString(),
+                    BuildFailurePayload(reason),
+                    cancellationToken);
+            }
+
             await WriteRuntimeTransition(
                 instance,
                 stageExecution,
@@ -565,6 +768,62 @@ public sealed class DispatchRuntimeTaskAction : IMuleAction<RuntimeDispatchEnvel
             ["failureReason"] = reason ?? string.Empty,
             ["errorCode"] = "UnsupportedDispatchTransport"
         };
+
+    private static JsonObject BuildRetryPayload(int attemptNumber, int maxAttempts)
+        => new()
+        {
+            ["attempt"] = attemptNumber,
+            ["maxAttempts"] = maxAttempts,
+            ["maxRetries"] = Math.Max(0, maxAttempts - 1)
+        };
+
+    private static RuntimeDispatchEnvelope CloneForNextAttempt(
+        RuntimeDispatchEnvelope envelope,
+        TaskExecutionAttempt attempt,
+        Abstractions.Runtime.TaskDispatch dispatch)
+        => new()
+        {
+            DispatchId = dispatch.Id.ToString(),
+            OrchestrationInstanceId = envelope.OrchestrationInstanceId,
+            ExecutionKey = dispatch.CommandId,
+            CorrelationId = envelope.CorrelationId,
+            SagaId = envelope.SagaId,
+            EnvironmentKey = envelope.EnvironmentKey,
+            OrchestrationName = envelope.OrchestrationName,
+            OrchestrationVersion = envelope.OrchestrationVersion,
+            StageKey = envelope.StageKey,
+            TaskKey = envelope.TaskKey,
+            TaskExecutionId = envelope.TaskExecutionId,
+            Attempt = attempt.AttemptNumber,
+            Destination = new RuntimeTransportDescriptor
+            {
+                Kind = envelope.Destination?.Kind ?? RuntimeTransportKind.Unknown,
+                Address = envelope.Destination?.Address,
+                Version = envelope.Destination?.Version,
+                MessageId = envelope.Destination?.MessageId
+            },
+            ExpectedResponse = envelope.ExpectedResponse,
+            Payload = dispatch.RequestPayload.DeepClone(),
+            Metadata = envelope.Metadata.ToDictionary(x => x.Key, x => x.Value?.DeepClone()),
+            CreatedOnUtc = DateTime.UtcNow
+        };
+
+    private static int ReadInt(IReadOnlyDictionary<string, JsonNode> metadata, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!metadata.TryGetValue(key, out var node) || node is not JsonValue value)
+                continue;
+
+            if (value.TryGetValue<int>(out var intValue))
+                return intValue;
+
+            if (value.TryGetValue<string>(out var text) && int.TryParse(text, out intValue))
+                return intValue;
+        }
+
+        return 1;
+    }
 
     private static string ResolveReactiveEventName(string transitionType)
         => transitionType switch
