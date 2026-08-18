@@ -1144,7 +1144,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var nextTaskIndex = resume.TaskIndex + 1;
         if (IsParallelGroupTask(resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex)))
         {
-            var groupDecision = await TryContinueAfterParallelTaskResponse(resume, instance, stageExecution, cancellationToken);
+            var groupDecision = await TryContinueAfterParallelTaskResponse(resume, instance, stageExecution, currentTaskExecution, cancellationToken);
             if (!groupDecision.CanContinue)
                 return;
 
@@ -1213,6 +1213,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
         RuntimeResumeContext resume,
         OrchestrationInstance instance,
         StageExecution stageExecution,
+        TaskExecution currentTaskExecution,
         CancellationToken cancellationToken)
     {
         var currentTask = resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex);
@@ -1224,7 +1225,14 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var groupKeys = groupTasks.Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var groupExecutions = executions
             .Where(x => x.StageExecutionId == stageExecution.Id && groupKeys.Contains(x.TaskKey))
+            .Select(x => x.Id == currentTaskExecution.Id ? currentTaskExecution : x)
             .ToArray();
+        if (!groupExecutions.Any(x => x.Id == currentTaskExecution.Id) &&
+            currentTaskExecution.StageExecutionId == stageExecution.Id &&
+            groupKeys.Contains(currentTaskExecution.TaskKey))
+        {
+            groupExecutions = groupExecutions.Append(currentTaskExecution).ToArray();
+        }
 
         if (groupExecutions.Length < groupTasks.Length ||
             groupExecutions.Any(x => x.Status is TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Running))
