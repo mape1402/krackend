@@ -72,8 +72,15 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var profile = RuntimeProfile.Start("runtime.process");
         var promotion = await _triggerPromoter.Promote(item, cancellationToken);
         profile.Mark("promote");
-        await Execute(promotion, cancellationToken);
-        profile.Mark("execute");
+        if (promotion.Instance.Status == OrchestrationInstanceStatus.Created)
+        {
+            await Execute(promotion, cancellationToken);
+            profile.Mark("execute");
+        }
+        else
+        {
+            profile.Mark("idempotent-existing-instance");
+        }
         profile.Stop();
 
         return new RuntimeEngineProcessResult
