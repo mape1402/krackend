@@ -225,5 +225,13 @@ public sealed class MuleRuntimeDurableWorkSchedulerTests
 
             return ValueTask.FromResult(Guid.NewGuid());
         }
+
+        public ValueTask<IReadOnlyCollection<Guid>> EnqueueManyAsync(
+            IEnumerable<MuleIntent> intents,
+            CancellationToken cancellationToken = default)
+        {
+            var ids = intents.Select(_ => Guid.NewGuid()).ToArray();
+            return ValueTask.FromResult<IReadOnlyCollection<Guid>>(ids);
+        }
     }
 }
