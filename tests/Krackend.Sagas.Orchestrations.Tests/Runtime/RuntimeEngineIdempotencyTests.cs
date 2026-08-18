@@ -529,6 +529,39 @@ public sealed class RuntimeEngineIdempotencyTests
         Assert.DoesNotContain(trace.Store.Transitions, x => x.TransitionType == "ParallelGroupCompleted");
     }
 
+    [Fact]
+    public async Task ContinueFromResponse_WhenParallelTaskSnapshotIsStale_UsesCurrentInMemoryTaskToCloseGroup()
+    {
+        var trace = CreateParallelWaitingTrace();
+        trace.OtherTask.Status = TaskExecutionStatus.Completed;
+        trace.OtherTask.WaitingSinceUtc = null;
+        trace.OtherTask.CompletedOnUtc = DateTime.UtcNow.AddSeconds(-1);
+        trace.Store.StaleTaskSnapshotsByInstance[trace.Instance.Id] =
+        [
+            CloneTask(trace.Task),
+            CloneTask(trace.OtherTask)
+        ];
+        var engine = CreateEngine(trace.Store);
+
+        var result = await engine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        {
+            OrchestrationInstanceId = trace.Instance.Id.ToString(),
+            TaskExecutionId = trace.Task.Id.ToString(),
+            DispatchId = trace.Dispatch.Id.ToString(),
+            CorrelationId = trace.Task.CorrelationId,
+            Payload = JsonNode.Parse("""{"reserved":true}""")
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Completed", result.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Completed, trace.Store.Instances[trace.Instance.Id].Status);
+        Assert.Equal(StageExecutionStatus.Completed, trace.Store.Stages[trace.Stage.Id].Status);
+        Assert.Equal(TaskExecutionStatus.Completed, trace.Store.Tasks[trace.Task.Id].Status);
+        Assert.Contains(trace.Store.Transitions, x => x.TransitionType == "ParallelGroupCompleted");
+        Assert.Contains(trace.Store.Transitions, x => x.TransitionType == "StageCompleted");
+        Assert.Contains(trace.Store.Transitions, x => x.TransitionType == "InstanceCompleted");
+    }
+
     private static RuntimeTraceFixture CreateWaitingTrace()
     {
         var store = new RuntimeStore();
@@ -731,6 +764,33 @@ public sealed class RuntimeEngineIdempotencyTests
             ActivatedOnUtc = DateTime.UtcNow.AddMinutes(-5)
         };
 
+    private static TaskExecution CloneTask(TaskExecution source)
+        => new()
+        {
+            Id = source.Id,
+            OrchestrationInstanceId = source.OrchestrationInstanceId,
+            StageExecutionId = source.StageExecutionId,
+            TaskKey = source.TaskKey,
+            TaskKind = source.TaskKind,
+            ExecutionMode = source.ExecutionMode,
+            ParallelGroupId = source.ParallelGroupId,
+            Status = source.Status,
+            WasSkipped = source.WasSkipped,
+            SkipReason = source.SkipReason,
+            ExecutionConditionResult = source.ExecutionConditionResult,
+            OnErrorPolicy = source.OnErrorPolicy,
+            AwaitResponse = source.AwaitResponse,
+            StartedOnUtc = source.StartedOnUtc,
+            WaitingSinceUtc = source.WaitingSinceUtc,
+            CompletedOnUtc = source.CompletedOnUtc,
+            FailedOnUtc = source.FailedOnUtc,
+            TimedOutOnUtc = source.TimedOutOnUtc,
+            LastAttemptNumber = source.LastAttemptNumber,
+            OutputVariablesPayload = source.OutputVariablesPayload?.DeepClone(),
+            CorrelationId = source.CorrelationId,
+            Metadata = source.Metadata.ToDictionary(x => x.Key, x => x.Value?.DeepClone())
+        };
+
     private sealed record RuntimeTraceFixture(
         RuntimeStore Store,
         OrchestrationInstance Instance,
@@ -782,6 +842,7 @@ public sealed class RuntimeEngineIdempotencyTests
         public Dictionary<Id, TaskExecutionAttempt> Attempts { get; } = new();
         public Dictionary<Id, TaskDispatch> Dispatches { get; } = new();
         public Dictionary<Id, RuntimeOrchestrationArtifact> Artifacts { get; } = new();
+        public Dictionary<Id, IReadOnlyCollection<TaskExecution>> StaleTaskSnapshotsByInstance { get; } = new();
         public List<ExecutionTransition> Transitions { get; } = new();
         public List<CompensationExecution> Compensations { get; } = new();
         public int LeasesAcquired { get; set; }
@@ -902,7 +963,9 @@ public sealed class RuntimeEngineIdempotencyTests
                 string.Equals(x.TaskKey, taskKey, StringComparison.OrdinalIgnoreCase))!);
 
         public Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<TaskExecution>>(store.Tasks.Values.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
+            => Task.FromResult(store.StaleTaskSnapshotsByInstance.TryGetValue(instanceId, out var staleTasks)
+                ? staleTasks
+                : store.Tasks.Values.Where(x => x.OrchestrationInstanceId == instanceId).ToArray());
 
         public Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<TaskExecution>>(store.Tasks.Values
