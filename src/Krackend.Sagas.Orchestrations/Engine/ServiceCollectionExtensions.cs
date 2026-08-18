@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Publishing;
@@ -65,7 +64,6 @@ public static class ServiceCollectionExtensions
     {
         return new RuntimeEngineDependencies
         {
-            IntakeBuffer = provider.GetRequiredService<ITriggerIntakeBuffer>(),
             TriggerPromoter = provider.GetRequiredService<ITriggerPromoter>(),
             ArtifactRepository = provider.GetRequiredService<IRuntimeArtifactRepository>(),
             StageRepository = provider.GetRequiredService<IStageExecutionRepository>(),

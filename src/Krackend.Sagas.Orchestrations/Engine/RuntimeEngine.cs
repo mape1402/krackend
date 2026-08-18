@@ -18,7 +18,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private static readonly TimeSpan InstanceMutationLeaseRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly ConcurrentDictionary<string, RuntimeArtifactDocument> ArtifactDocuments = new(StringComparer.Ordinal);
 
-    private readonly ITriggerIntakeBuffer _intakeBuffer;
     private readonly ITriggerPromoter _triggerPromoter;
     private readonly IRuntimeArtifactRepository _artifactRepository;
     private readonly IStageExecutionRepository _stageRepository;
@@ -45,7 +44,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
     public RuntimeEngine(RuntimeEngineDependencies dependencies)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
-        _intakeBuffer = dependencies.IntakeBuffer;
         _triggerPromoter = dependencies.TriggerPromoter;
         _artifactRepository = dependencies.ArtifactRepository;
         _stageRepository = dependencies.StageRepository;
@@ -94,54 +92,6 @@ public sealed class RuntimeEngine : IRuntimeEngine
             IntakeId = promotion.Intake.Id.ToString(),
             InstanceId = promotion.Instance.Id.ToString()
         };
-    }
-
-    /// <inheritdoc/>
-    public async Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
-    {
-        var lease = await _intakeBuffer.TryDequeue(cancellationToken);
-        if (lease is null)
-            return new RuntimeEngineProcessResult
-            {
-                Succeeded = true,
-                Status = "Idle",
-                Message = "No trigger intake items are pending."
-            };
-
-        try
-        {
-            var result = await Process(lease.Item, cancellationToken);
-            await _intakeBuffer.MarkCompleted(lease.Item.BufferItemId, lease.LeaseId, cancellationToken);
-            return result;
-        }
-        catch (Exception ex)
-        {
-            await _intakeBuffer.MarkFailed(lease.Item.BufferItemId, lease.LeaseId, ex.Message, cancellationToken);
-            return new RuntimeEngineProcessResult
-            {
-                Succeeded = false,
-                Status = "Failed",
-                Message = ex.Message,
-                BufferItemId = lease.Item.BufferItemId.ToString()
-            };
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyCollection<RuntimeEngineProcessResult>> ProcessAll(int maxItems = 25, CancellationToken cancellationToken = default)
-    {
-        var results = new List<RuntimeEngineProcessResult>();
-        var limit = Math.Clamp(maxItems, 1, 250);
-        for (var i = 0; i < limit; i++)
-        {
-            var result = await ProcessNext(cancellationToken);
-            if (result.Status == "Idle")
-                break;
-
-            results.Add(result);
-        }
-
-        return results;
     }
 
     /// <inheritdoc/>

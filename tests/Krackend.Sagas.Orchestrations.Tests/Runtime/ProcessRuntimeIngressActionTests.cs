@@ -90,8 +90,6 @@ public sealed class ProcessRuntimeIngressActionTests
 
         public TriggerIntakeBufferItem ProcessedItem { get; private set; } = null!;
 
-        public int ProcessNextCalls { get; private set; }
-
         public RuntimeMessageResponseCommand ResponseCommand { get; private set; } = null!;
 
         public Task<RuntimeEngineProcessResult> Process(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
@@ -100,15 +98,6 @@ public sealed class ProcessRuntimeIngressActionTests
             ProcessedItem = item;
             return Task.FromResult(CreateResult());
         }
-
-        public Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
-        {
-            ProcessNextCalls++;
-            return Task.FromResult(CreateResult());
-        }
-
-        public Task<IReadOnlyCollection<RuntimeEngineProcessResult>> ProcessAll(int maxItems = 25, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
 
         public Task<RuntimeEngineProcessResult> ContinueFromResponse(RuntimeMessageResponseCommand command, CancellationToken cancellationToken = default)
         {

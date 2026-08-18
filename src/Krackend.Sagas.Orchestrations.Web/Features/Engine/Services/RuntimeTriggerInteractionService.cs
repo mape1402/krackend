@@ -3,7 +3,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Runtime;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 
 namespace Krackend.Sagas.Orchestrations.Web;
@@ -11,19 +10,13 @@ namespace Krackend.Sagas.Orchestrations.Web;
 public sealed class RuntimeTriggerInteractionService : IRuntimeTriggerInteractionService
 {
     private readonly RuntimeEnvironmentDescriptor _runtimeEnvironment;
-    private readonly ITriggerIntakeBuffer _intakeBuffer;
-    private readonly IRuntimeEngine _runtimeEngine;
     private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
 
     public RuntimeTriggerInteractionService(
         RuntimeEnvironmentDescriptor runtimeEnvironment,
-        ITriggerIntakeBuffer intakeBuffer,
-        IRuntimeEngine runtimeEngine,
         IRuntimeDurableWorkScheduler durableWorkScheduler)
     {
         _runtimeEnvironment = runtimeEnvironment ?? throw new ArgumentNullException(nameof(runtimeEnvironment));
-        _intakeBuffer = intakeBuffer ?? throw new ArgumentNullException(nameof(intakeBuffer));
-        _runtimeEngine = runtimeEngine ?? throw new ArgumentNullException(nameof(runtimeEngine));
         _durableWorkScheduler = durableWorkScheduler ?? throw new ArgumentNullException(nameof(durableWorkScheduler));
     }
 
@@ -71,14 +64,6 @@ public sealed class RuntimeTriggerInteractionService : IRuntimeTriggerInteractio
             Message = "Trigger accepted into runtime durable ingress."
         };
     }
-
-    public Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
-        => _runtimeEngine.ProcessNext(cancellationToken);
-
-    public Task<IReadOnlyCollection<RuntimeEngineProcessResult>> ProcessAll(
-        int maxItems,
-        CancellationToken cancellationToken = default)
-        => _runtimeEngine.ProcessAll(maxItems, cancellationToken);
 
     private string Validate(RuntimeTriggerRequest request)
     {
