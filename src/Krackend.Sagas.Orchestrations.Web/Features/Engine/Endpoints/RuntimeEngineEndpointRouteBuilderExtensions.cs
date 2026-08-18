@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Krackend.Sagas.Orchestrations.Engine;
 
 namespace Krackend.Sagas.Orchestrations.Web;
 
@@ -17,20 +18,12 @@ public static class RuntimeEngineEndpointRouteBuilderExtensions
             return result.Accepted ? Results.Ok(result) : Results.BadRequest(result);
         });
 
-        endpoints.MapPost("/runtime/engine/process-next", async (
-            IRuntimeTriggerInteractionService service,
-            CancellationToken cancellationToken) =>
-        {
-            var result = await service.ProcessNext(cancellationToken);
-            return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
-        });
-
         endpoints.MapPost("/runtime/engine/process-all", async (
             int? maxItems,
-            IRuntimeTriggerInteractionService service,
+            IRuntimePendingWorkProcessor processor,
             CancellationToken cancellationToken) =>
         {
-            var result = await service.ProcessAll(maxItems ?? 25, cancellationToken);
+            var result = await processor.ProcessDueWork(DateTime.UtcNow, cancellationToken);
             return Results.Ok(result);
         });
 

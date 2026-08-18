@@ -1,6 +1,4 @@
-using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Consuming;
 using Krackend.Sagas.Orchestrations.Engine;
@@ -13,23 +11,13 @@ namespace Krackend.Sagas.Orchestrations.Web;
 public sealed class RuntimeBackChannelResponseHandler : IRuntimeBackChannelResponseHandler
 {
     private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
-    private readonly ITaskDispatchRepository _dispatchRepository;
-    private readonly ITaskExecutionRepository _taskRepository;
-    private readonly ITaskExecutionAttemptRepository _attemptRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeBackChannelResponseHandler"/> class.
     /// </summary>
-    public RuntimeBackChannelResponseHandler(
-        IRuntimeDurableWorkScheduler durableWorkScheduler,
-        ITaskDispatchRepository dispatchRepository,
-        ITaskExecutionRepository taskRepository,
-        ITaskExecutionAttemptRepository attemptRepository)
+    public RuntimeBackChannelResponseHandler(IRuntimeDurableWorkScheduler durableWorkScheduler)
     {
         _durableWorkScheduler = durableWorkScheduler ?? throw new ArgumentNullException(nameof(durableWorkScheduler));
-        _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
-        _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
-        _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
     }
 
     /// <inheritdoc/>
@@ -42,44 +30,7 @@ public sealed class RuntimeBackChannelResponseHandler : IRuntimeBackChannelRespo
             throw new InvalidOperationException("Back-channel response does not include orchestrator metadata.");
 
         ValidateRequiredMetadata(context);
-        await ValidateTrace(context, cancellationToken);
-
         await _durableWorkScheduler.ScheduleProcessIngress(CreateEnvelope(context), cancellationToken);
-    }
-
-    private async Task ValidateTrace(MessageConsumeContext context, CancellationToken cancellationToken)
-    {
-        var metadata = context.Metadata;
-        var instanceId = ParseId(metadata.OrchestrationInstanceId, "orchestration instance id");
-        var taskExecutionId = ParseId(metadata.TaskExecutionId, "task execution id");
-        var dispatchId = ParseId(metadata.DispatchId, "dispatch id");
-
-        var taskExecution = await _taskRepository.GetById(taskExecutionId, cancellationToken);
-        if (taskExecution.OrchestrationInstanceId != instanceId)
-            throw new InvalidOperationException($"Back-channel response task execution '{taskExecution.Id}' does not belong to orchestration instance '{instanceId}'.");
-
-        var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
-        if (dispatch is null)
-            throw new InvalidOperationException($"Back-channel response dispatch '{dispatchId}' was not found.");
-
-        var attempt = await _attemptRepository.GetByDispatchId(dispatchId, cancellationToken);
-        if (attempt is null)
-            throw new InvalidOperationException($"Back-channel response dispatch '{dispatchId}' is not linked to a task attempt.");
-
-        if (attempt.TaskExecutionId != taskExecution.Id)
-            throw new InvalidOperationException($"Back-channel response attempt '{attempt.Id}' does not belong to task execution '{taskExecution.Id}'.");
-
-        if (attempt.DispatchId != dispatch.Id)
-            throw new InvalidOperationException($"Back-channel response attempt '{attempt.Id}' is not correlated with dispatch '{dispatch.Id}'.");
-
-        if (dispatch.TaskExecutionAttemptId != attempt.Id)
-            throw new InvalidOperationException($"Back-channel response dispatch '{dispatch.Id}' does not belong to attempt '{attempt.Id}'.");
-
-        if (!string.Equals(taskExecution.CorrelationId, metadata.CorrelationId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Back-channel response correlation '{metadata.CorrelationId}' does not match task correlation '{taskExecution.CorrelationId}'.");
-
-        if (!string.Equals(dispatch.CorrelationId, metadata.CorrelationId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Back-channel response correlation '{metadata.CorrelationId}' does not match dispatch correlation '{dispatch.CorrelationId}'.");
     }
 
     private static RuntimeIngressEnvelope CreateEnvelope(MessageConsumeContext context)
@@ -138,11 +89,4 @@ public sealed class RuntimeBackChannelResponseHandler : IRuntimeBackChannelRespo
             throw new InvalidOperationException("Back-channel response metadata must include correlation id.");
     }
 
-    private static Id ParseId(string value, string name)
-    {
-        if (!Ulid.TryParse(value, out var ulid))
-            throw new InvalidOperationException($"Back-channel response metadata has invalid {name}.");
-
-        return new Id(ulid);
-    }
 }

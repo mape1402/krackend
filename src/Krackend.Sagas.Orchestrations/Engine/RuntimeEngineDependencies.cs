@@ -1,4 +1,3 @@
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
@@ -9,11 +8,6 @@ namespace Krackend.Sagas.Orchestrations.Engine;
 /// </summary>
 public sealed class RuntimeEngineDependencies
 {
-    /// <summary>
-    /// Gets the trigger intake buffer.
-    /// </summary>
-    public required ITriggerIntakeBuffer IntakeBuffer { get; init; }
-
     /// <summary>
     /// Gets the service that promotes intake entries into runtime instances.
     /// </summary>

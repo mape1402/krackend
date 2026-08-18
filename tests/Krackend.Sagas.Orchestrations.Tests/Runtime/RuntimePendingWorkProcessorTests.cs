@@ -96,6 +96,23 @@ public sealed class RuntimePendingWorkProcessorTests
     }
 
     [Fact]
+    public async Task ProcessDueWork_WhenInstanceIsBusy_SkipsResumeWithoutFailingTick()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.Fail);
+        store.Attempt.Status = TaskExecutionStatus.Completed;
+        store.Attempt.CompletedOnUtc = now.AddMinutes(-1);
+        store.Attempt.DispatchId = Id.New();
+        store.Attempt.ResponsePayload = JsonNode.Parse("""{"succeeded":true}""");
+        var runtimeEngine = new RecordingRuntimeEngine(throwBusy: true);
+
+        var result = await CreateProcessor(store, runtimeEngine: runtimeEngine).ProcessDueWork(now);
+
+        Assert.NotEmpty(result.Items);
+        Assert.Empty(runtimeEngine.ResponseCommands);
+    }
+
+    [Fact]
     public async Task ProcessDueWork_AppliesFailTimeoutPolicyAndStopsInstance()
     {
         var now = DateTime.UtcNow;
@@ -612,21 +629,18 @@ public sealed class RuntimePendingWorkProcessorTests
             => Task.FromResult(new RuntimeCompensationExecutionResult(true, compensation.Status, "Noop"));
     }
 
-    private sealed class RecordingRuntimeEngine : IRuntimeEngine
+    private sealed class RecordingRuntimeEngine(bool throwBusy = false) : IRuntimeEngine
     {
         public List<RuntimeMessageResponseCommand> ResponseCommands { get; } = new();
 
         public Task<RuntimeEngineProcessResult> Process(TriggerIntakeBufferItem item, CancellationToken cancellationToken = default)
             => Task.FromResult(new RuntimeEngineProcessResult { Succeeded = true, Status = "Processed", Message = "Processed" });
 
-        public Task<RuntimeEngineProcessResult> ProcessNext(CancellationToken cancellationToken = default)
-            => Task.FromResult(new RuntimeEngineProcessResult { Succeeded = true, Status = "Idle", Message = "Idle" });
-
-        public Task<IReadOnlyCollection<RuntimeEngineProcessResult>> ProcessAll(int maxItems = 25, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<RuntimeEngineProcessResult>>(Array.Empty<RuntimeEngineProcessResult>());
-
         public Task<RuntimeEngineProcessResult> ContinueFromResponse(RuntimeMessageResponseCommand command, CancellationToken cancellationToken = default)
         {
+            if (throwBusy)
+                throw new InvalidOperationException($"Orchestration instance '{command.OrchestrationInstanceId}' is busy processing another response.");
+
             ResponseCommands.Add(command);
             return Task.FromResult(new RuntimeEngineProcessResult
             {

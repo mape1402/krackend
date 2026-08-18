@@ -46,40 +46,17 @@ public sealed class DispatchRuntimeTaskActionTests
     {
         var dispatcher = new CapturingMessagingCommandDispatcher();
         var dispatchRepository = new CapturingTaskDispatchRepository();
-        var taskRepository = new CapturingTaskRepository();
-        var attemptRepository = new CapturingAttemptRepository();
-        var stageRepository = new CapturingStageRepository();
-        var instanceRepository = new CapturingInstanceRepository { Instance = { Status = OrchestrationInstanceStatus.Waiting } };
-        var transitionRepository = new CapturingTransitionRepository();
-        var action = CreateAction(
-            dispatcher,
-            dispatchRepository,
-            new NoopRuntimeReactiveEventPublisher(),
-            taskRepository,
-            attemptRepository,
-            stageRepository,
-            instanceRepository,
-            transitionRepository);
+        var action = CreateAction(dispatcher, dispatchRepository);
         var envelope = CreateEnvelope();
         envelope.OrchestrationInstanceId = Id.New().ToString();
         envelope.TaskExecutionId = Id.New().ToString();
         dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
-        taskRepository.Task.Id = new Id(Ulid.Parse(envelope.TaskExecutionId));
-        taskRepository.Task.StageExecutionId = stageRepository.Stage.Id;
-        attemptRepository.Attempt.TaskExecutionId = taskRepository.Task.Id;
-        attemptRepository.Attempt.DispatchId = dispatchRepository.Dispatch.Id;
-        instanceRepository.Instance.Id = new Id(Ulid.Parse(envelope.OrchestrationInstanceId));
         envelope.Destination.Kind = RuntimeTransportKind.Http;
 
-        await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(() => action.ExecuteAsync(CreateContext(envelope), CancellationToken.None).AsTask());
 
-        Assert.Equal("Failed", dispatchRepository.Dispatch.DispatchStatus);
-        Assert.Equal(TaskExecutionStatus.Failed, taskRepository.Task.Status);
-        Assert.Equal(TaskExecutionStatus.Failed, attemptRepository.Attempt.Status);
-        Assert.Equal(StageExecutionStatus.Failed, stageRepository.Stage.Status);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instanceRepository.Instance.Status);
-        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "TaskFailed");
-        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "InstanceFailed");
+        Assert.Contains("not supported", ex.Message);
+        Assert.Null(dispatcher.Command);
     }
 
     [Fact]
@@ -93,14 +70,10 @@ public sealed class DispatchRuntimeTaskActionTests
         var action = new DispatchRuntimeTaskAction(
             dispatcher,
             dispatchRepository,
-            new CapturingTaskRepository(),
-            new CapturingAttemptRepository(),
-            new CapturingStageRepository(),
             compensationRepository,
             instanceRepository,
             transitionRepository,
-            new NoopRuntimeReactiveEventPublisher(),
-            new CapturingDurableWorkScheduler());
+            new NoopRuntimeReactiveEventPublisher());
         var envelope = CreateEnvelope();
         dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
         envelope.OrchestrationInstanceId = instanceRepository.Instance.Id.ToString();
@@ -117,7 +90,7 @@ public sealed class DispatchRuntimeTaskActionTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_WhenPublishFailsAndRetryIsAvailable_SchedulesNextDispatchAttempt()
+    public async Task ExecuteAsync_WhenPublishFails_Leaves_Retry_To_Mule()
     {
         var dispatcher = new CapturingMessagingCommandDispatcher(new MessagingDispatchResult
         {
@@ -126,47 +99,18 @@ public sealed class DispatchRuntimeTaskActionTests
             FailureReason = "flaky publish"
         });
         var dispatchRepository = new CapturingTaskDispatchRepository();
-        var taskRepository = new CapturingTaskRepository();
-        var attemptRepository = new CapturingAttemptRepository();
-        var stageRepository = new CapturingStageRepository();
-        var instanceRepository = new CapturingInstanceRepository { Instance = { Status = OrchestrationInstanceStatus.Waiting } };
-        var transitionRepository = new CapturingTransitionRepository();
-        var scheduler = new CapturingDurableWorkScheduler();
-        var action = CreateAction(
-            dispatcher,
-            dispatchRepository,
-            new NoopRuntimeReactiveEventPublisher(),
-            taskRepository,
-            attemptRepository,
-            stageRepository,
-            instanceRepository,
-            transitionRepository,
-            scheduler);
+        var action = CreateAction(dispatcher, dispatchRepository);
         var envelope = CreateEnvelope();
         envelope.OrchestrationInstanceId = Id.New().ToString();
         envelope.TaskExecutionId = Id.New().ToString();
         envelope.Metadata["retryMaxAttempts"] = 2;
         dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
-        dispatchRepository.Dispatch.TaskExecutionAttemptId = attemptRepository.Attempt.Id;
         dispatchRepository.Dispatch.RequestPayload = envelope.Payload.DeepClone();
-        taskRepository.Task.Id = new Id(Ulid.Parse(envelope.TaskExecutionId));
-        taskRepository.Task.StageExecutionId = stageRepository.Stage.Id;
-        attemptRepository.Attempt.TaskExecutionId = taskRepository.Task.Id;
-        attemptRepository.Attempt.DispatchId = dispatchRepository.Dispatch.Id;
-        attemptRepository.Attempt.RequestPayload = envelope.Payload.DeepClone();
-        instanceRepository.Instance.Id = new Id(Ulid.Parse(envelope.OrchestrationInstanceId));
 
-        await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => action.ExecuteAsync(CreateContext(envelope), CancellationToken.None).AsTask());
 
-        Assert.Equal(TaskExecutionStatus.WaitingResponse, taskRepository.Task.Status);
-        Assert.Equal(2, taskRepository.Task.LastAttemptNumber);
-        Assert.Equal(2, attemptRepository.Attempts.Count);
-        Assert.Equal(2, dispatchRepository.Dispatches.Count);
-        Assert.NotNull(scheduler.Envelope);
-        Assert.Equal(2, scheduler.Envelope!.Attempt);
-        Assert.Equal(dispatchRepository.Dispatches[1].Id.ToString(), scheduler.Envelope.DispatchId);
-        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "TaskRetryScheduled");
-        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "TaskRetryStarted");
+        Assert.Equal("flaky publish", ex.Message);
+        Assert.Equal("Scheduled", dispatchRepository.Dispatch.DispatchStatus);
     }
 
     private static DispatchRuntimeTaskAction CreateAction(
@@ -178,57 +122,13 @@ public sealed class DispatchRuntimeTaskActionTests
         IMessagingCommandDispatcher dispatcher,
         ITaskDispatchRepository dispatchRepository,
         IRuntimeReactiveEventPublisher reactiveEventPublisher)
-        => CreateAction(
-            dispatcher,
-            dispatchRepository,
-            reactiveEventPublisher,
-            new CapturingTaskRepository(),
-            new CapturingAttemptRepository(),
-            new CapturingStageRepository(),
-            new CapturingInstanceRepository(),
-            new CapturingTransitionRepository());
-
-    private static DispatchRuntimeTaskAction CreateAction(
-        IMessagingCommandDispatcher dispatcher,
-        ITaskDispatchRepository dispatchRepository,
-        IRuntimeReactiveEventPublisher reactiveEventPublisher,
-        ITaskExecutionRepository taskRepository,
-        ITaskExecutionAttemptRepository attemptRepository,
-        IStageExecutionRepository stageRepository,
-        IOrchestrationInstanceRepository instanceRepository,
-        IExecutionTransitionRepository transitionRepository)
-        => CreateAction(
-            dispatcher,
-            dispatchRepository,
-            reactiveEventPublisher,
-            taskRepository,
-            attemptRepository,
-            stageRepository,
-            instanceRepository,
-            transitionRepository,
-            new CapturingDurableWorkScheduler());
-
-    private static DispatchRuntimeTaskAction CreateAction(
-        IMessagingCommandDispatcher dispatcher,
-        ITaskDispatchRepository dispatchRepository,
-        IRuntimeReactiveEventPublisher reactiveEventPublisher,
-        ITaskExecutionRepository taskRepository,
-        ITaskExecutionAttemptRepository attemptRepository,
-        IStageExecutionRepository stageRepository,
-        IOrchestrationInstanceRepository instanceRepository,
-        IExecutionTransitionRepository transitionRepository,
-        IRuntimeDurableWorkScheduler durableWorkScheduler)
         => new(
             dispatcher,
             dispatchRepository,
-            taskRepository,
-            attemptRepository,
-            stageRepository,
             new CapturingCompensationRepository(),
-            instanceRepository,
-            transitionRepository,
-            reactiveEventPublisher,
-            durableWorkScheduler);
+            new CapturingInstanceRepository(),
+            new CapturingTransitionRepository(),
+            reactiveEventPublisher);
 
     private static RuntimeDispatchEnvelope CreateEnvelope()
         => new()

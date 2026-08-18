@@ -155,17 +155,28 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         if (instance.Status is not (OrchestrationInstanceStatus.Waiting or OrchestrationInstanceStatus.Running))
             return false;
 
-        var result = await _runtimeEngine.ContinueFromResponse(new RuntimeMessageResponseCommand
+        RuntimeEngineProcessResult result;
+        try
         {
-            OrchestrationInstanceId = instance.Id.ToString(),
-            TaskExecutionId = taskExecution.Id.ToString(),
-            DispatchId = terminalAttempt.DispatchId.ToString(),
-            CorrelationId = taskExecution.CorrelationId,
-            Payload = terminalAttempt.ResponsePayload?.DeepClone()
-        }, cancellationToken);
+            result = await _runtimeEngine.ContinueFromResponse(new RuntimeMessageResponseCommand
+            {
+                OrchestrationInstanceId = instance.Id.ToString(),
+                TaskExecutionId = taskExecution.Id.ToString(),
+                DispatchId = terminalAttempt.DispatchId.ToString(),
+                CorrelationId = taskExecution.CorrelationId,
+                Payload = terminalAttempt.ResponsePayload?.DeepClone()
+            }, cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (IsBusyMutationLease(exception))
+        {
+            return false;
+        }
 
         return result.Succeeded;
     }
+
+    private static bool IsBusyMutationLease(InvalidOperationException exception)
+        => exception.Message.Contains("busy processing another response", StringComparison.OrdinalIgnoreCase);
 
     private async Task<bool> TryApplyTimeout(TaskExecution taskExecution, DateTime nowUtc, CancellationToken cancellationToken)
     {
