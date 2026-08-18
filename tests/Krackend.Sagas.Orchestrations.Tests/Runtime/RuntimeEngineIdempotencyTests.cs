@@ -247,6 +247,93 @@ public sealed class RuntimeEngineIdempotencyTests
     }
 
     [Fact]
+    public async Task Process_WhenTriggerReplayFindsTerminalInstance_DoesNotRestartExecution()
+    {
+        var store = new RuntimeStore();
+        var artifactId = Id.New();
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            EnvironmentKey = "local",
+            OrchestrationDefinitionKey = "order.fulfillment",
+            RuntimeOrchestrationArtifactId = artifactId,
+            TriggerIntakeId = Id.New(),
+            CorrelationId = "terminal-replay",
+            ExecutionKey = "order.fulfillment::terminal-replay",
+            Status = OrchestrationInstanceStatus.Compensated,
+            StartedOnUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastUpdatedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            SnapshotPayload = JsonNode.Parse("""{"orderId":"terminal-replay"}""")
+        };
+        var artifact = CreateArtifact(artifactId, """
+        {
+          "Key": "order.fulfillment",
+          "Version": { "Major": 1, "Minor": 0, "Patch": 0 },
+          "StageDefinitions": [
+            {
+              "Key": "reserve-inventory",
+              "Order": 1,
+              "TaskDefinitions": [
+                {
+                  "Key": "reserve-stock",
+                  "Order": 1,
+                  "Kind": 0,
+                  "DispatchType": 2,
+                  "Configuration": { "Topic": "inventory.reserve", "Version": "1.0.0" },
+                  "IsEnabled": true
+                }
+              ]
+            }
+          ]
+        }
+        """);
+        var intake = new TriggerIntake
+        {
+            Id = instance.TriggerIntakeId,
+            TriggerType = TriggerType.Event,
+            TriggerKey = instance.OrchestrationDefinitionKey,
+            EnvironmentKey = instance.EnvironmentKey,
+            CorrelationId = instance.CorrelationId,
+            RawPayload = instance.SnapshotPayload!.DeepClone(),
+            NormalizedPayload = instance.SnapshotPayload.DeepClone(),
+            Status = TriggerIntakeStatus.PromotedToRuntime,
+            PersistenceLevel = "Primary",
+            BufferLocation = "InMemory",
+            ResolvedArtifactId = artifact.Id,
+            PromotedInstanceId = instance.Id,
+            ReceivedOnUtc = DateTime.UtcNow.AddMinutes(-5)
+        };
+        var item = new TriggerIntakeBufferItem
+        {
+            BufferItemId = Id.New(),
+            TriggerType = TriggerType.Event,
+            TriggerKey = instance.OrchestrationDefinitionKey,
+            ArtifactVersion = "1.0.0",
+            EnvironmentKey = instance.EnvironmentKey,
+            CorrelationId = instance.CorrelationId,
+            IdempotencyKey = "terminal-replay-idempotency",
+            PayloadJson = instance.SnapshotPayload.ToJsonString(),
+            ReceivedOnUtc = DateTime.UtcNow
+        };
+        store.Instances[instance.Id] = instance;
+        store.Artifacts[artifact.Id] = artifact;
+        var engine = CreateEngine(
+            store,
+            triggerPromoter: new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }));
+
+        var result = await engine.Process(item);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(nameof(OrchestrationInstanceStatus.Compensated), result.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, store.Instances[instance.Id].Status);
+        Assert.Empty(store.Stages);
+        Assert.Empty(store.Tasks);
+        Assert.Empty(store.Dispatches);
+        Assert.Empty(store.Transitions);
+    }
+
+    [Fact]
     public async Task ContinueFromResponse_WhenTaskAlreadyCompleted_IgnoresDuplicateWithoutWritingTransitions()
     {
         var store = new RuntimeStore();
