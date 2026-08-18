@@ -244,6 +244,8 @@ public sealed class RuntimeDiagnosticsReaderTests
     {
         public Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(TaskDispatch dispatch, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
         public Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
         public Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);

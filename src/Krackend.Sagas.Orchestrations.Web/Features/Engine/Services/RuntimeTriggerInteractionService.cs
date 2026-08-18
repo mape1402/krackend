@@ -1,8 +1,10 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 
 namespace Krackend.Sagas.Orchestrations.Web;
 
@@ -11,15 +13,18 @@ public sealed class RuntimeTriggerInteractionService : IRuntimeTriggerInteractio
     private readonly RuntimeEnvironmentDescriptor _runtimeEnvironment;
     private readonly ITriggerIntakeBuffer _intakeBuffer;
     private readonly IRuntimeEngine _runtimeEngine;
+    private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
 
     public RuntimeTriggerInteractionService(
         RuntimeEnvironmentDescriptor runtimeEnvironment,
         ITriggerIntakeBuffer intakeBuffer,
-        IRuntimeEngine runtimeEngine)
+        IRuntimeEngine runtimeEngine,
+        IRuntimeDurableWorkScheduler durableWorkScheduler)
     {
         _runtimeEnvironment = runtimeEnvironment ?? throw new ArgumentNullException(nameof(runtimeEnvironment));
         _intakeBuffer = intakeBuffer ?? throw new ArgumentNullException(nameof(intakeBuffer));
         _runtimeEngine = runtimeEngine ?? throw new ArgumentNullException(nameof(runtimeEngine));
+        _durableWorkScheduler = durableWorkScheduler ?? throw new ArgumentNullException(nameof(durableWorkScheduler));
     }
 
     public async Task<RuntimeTriggerResult> Enqueue(
@@ -37,27 +42,33 @@ public sealed class RuntimeTriggerInteractionService : IRuntimeTriggerInteractio
             };
         }
 
-        var item = new TriggerIntakeBufferItem
+        var payload = JsonNode.Parse(request.PayloadJson.Trim());
+        var ingress = new RuntimeIngressEnvelope
         {
-            BufferItemId = Id.New(),
-            TriggerType = ParseTriggerType(request.TriggerType),
-            TriggerKey = request.TriggerKey.Trim(),
-            ArtifactVersion = request.ArtifactVersion?.Trim(),
+            IngressId = Id.New().ToString(),
+            Kind = RuntimeIngressKind.Trigger,
             EnvironmentKey = request.EnvironmentKey.Trim(),
+            OrchestrationName = request.TriggerKey.Trim(),
+            OrchestrationVersion = request.ArtifactVersion?.Trim(),
             CorrelationId = request.CorrelationId?.Trim(),
             IdempotencyKey = BuildVersionScopedIdempotencyKey(request.IdempotencyKey, request.ArtifactVersion),
-            SourceMessageId = request.SourceMessageId?.Trim(),
-            PayloadJson = request.PayloadJson.Trim(),
+            Source = new RuntimeTransportDescriptor
+            {
+                Kind = RuntimeTransportKind.Http,
+                Address = "/runtime/triggers",
+                MessageId = request.SourceMessageId?.Trim()
+            },
+            Payload = payload,
             ReceivedOnUtc = DateTime.UtcNow
         };
 
-        var result = await _intakeBuffer.Enqueue(item, cancellationToken);
+        var actionId = await _durableWorkScheduler.ScheduleProcessIngress(ingress, cancellationToken);
         return new RuntimeTriggerResult
         {
-            Accepted = result.Accepted,
-            BufferItemId = result.BufferItemId?.ToString() ?? string.Empty,
-            Status = result.Accepted ? "Buffered" : "Rejected",
-            Message = result.Reason ?? (result.Accepted ? "Trigger accepted into runtime intake buffer." : "Trigger rejected.")
+            Accepted = true,
+            BufferItemId = actionId.ToString(),
+            Status = "Accepted",
+            Message = "Trigger accepted into runtime durable ingress."
         };
     }
 

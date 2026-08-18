@@ -23,6 +23,8 @@ public static class ServiceCollectionExtensions
         services.AddOrchestratorWebUIShell();
         services.AddSignalR();
         services.Configure(configureOptions);
+        services.TryAddSingleton<SignalRRuntimeReactiveEventQueue>();
+        services.AddHostedService<SignalRRuntimeReactiveEventDispatcher>();
         services.TryAddScoped<IRuntimeDiagnosticsReader, RuntimeDiagnosticsReader>();
         services.Replace(ServiceDescriptor.Singleton<IRuntimeReactiveEventPublisher, SignalRRuntimeReactiveEventPublisher>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureRuntimeAreaRoutes>());
