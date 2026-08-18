@@ -12,7 +12,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class RuntimeEngineIdempotencyTests
 {
     [Fact]
-    public async Task ProcessNext_CreatesTaskCorrelationScopedByInstanceId()
+    public async Task Process_CreatesTaskCorrelationScopedByInstanceId()
     {
         var store = new RuntimeStore();
         var artifactId = Id.New();
@@ -73,11 +73,10 @@ public sealed class RuntimeEngineIdempotencyTests
         var dispatcher = new RecordingTaskDispatcher();
         var engine = CreateEngine(
             store,
-            new SingleItemIntakeBuffer(),
-            new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
-            new RecordingTaskDispatcherResolver(dispatcher));
+            triggerPromoter: new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
+            taskDispatcherResolver: new RecordingTaskDispatcherResolver(dispatcher));
 
-        var result = await engine.ProcessNext();
+        var result = await engine.Process(CreateItem(instance));
 
         Assert.True(result.Succeeded);
         var task = Assert.Single(store.Tasks.Values);
@@ -87,7 +86,7 @@ public sealed class RuntimeEngineIdempotencyTests
     }
 
     [Fact]
-    public async Task ProcessNext_PersistsWaitingCorrelationBeforeDispatchingAwaitedTask()
+    public async Task Process_PersistsWaitingCorrelationBeforeDispatchingAwaitedTask()
     {
         var store = new RuntimeStore();
         var artifactId = Id.New();
@@ -157,17 +156,16 @@ public sealed class RuntimeEngineIdempotencyTests
         });
         var engine = CreateEngine(
             store,
-            new SingleItemIntakeBuffer(),
-            new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
-            new RecordingTaskDispatcherResolver(dispatcher));
+            triggerPromoter: new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
+            taskDispatcherResolver: new RecordingTaskDispatcherResolver(dispatcher));
 
-        await engine.ProcessNext();
+        await engine.Process(CreateItem(instance));
 
         Assert.Single(dispatcher.Requests);
     }
 
     [Fact]
-    public async Task ProcessNext_WhenAwaitedDispatchFailsWithContinuePolicy_CompletesInstanceWithoutWaiting()
+    public async Task Process_WhenAwaitedDispatchFailsWithContinuePolicy_CompletesInstanceWithoutWaiting()
     {
         var store = new RuntimeStore();
         var artifactId = Id.New();
@@ -228,11 +226,10 @@ public sealed class RuntimeEngineIdempotencyTests
         store.Artifacts[artifact.Id] = artifact;
         var engine = CreateEngine(
             store,
-            new SingleItemIntakeBuffer(),
-            new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
-            new RecordingTaskDispatcherResolver(new FailingTaskDispatcher()));
+            triggerPromoter: new InlineTriggerPromoter(new TriggerPromotionResult { Intake = intake, Instance = instance, Artifact = artifact }),
+            taskDispatcherResolver: new RecordingTaskDispatcherResolver(new FailingTaskDispatcher()));
 
-        var result = await engine.ProcessNext();
+        var result = await engine.Process(CreateItem(instance));
 
         Assert.True(result.Succeeded);
         Assert.Equal(OrchestrationInstanceStatus.Completed, store.Instances[instance.Id].Status);
@@ -897,12 +894,10 @@ public sealed class RuntimeEngineIdempotencyTests
 
     private static RuntimeEngine CreateEngine(
         RuntimeStore store,
-        ITriggerIntakeBuffer? intakeBuffer = null,
         ITriggerPromoter? triggerPromoter = null,
         IRuntimeTaskDispatcherResolver? taskDispatcherResolver = null)
         => new(new RuntimeEngineDependencies
         {
-            IntakeBuffer = intakeBuffer ?? new ThrowingIntakeBuffer(),
             TriggerPromoter = triggerPromoter ?? new ThrowingTriggerPromoter(),
             ArtifactRepository = new RuntimeArtifactRepositoryStub(store),
             StageRepository = new StageRepositoryStub(store),
@@ -920,6 +915,20 @@ public sealed class RuntimeEngineIdempotencyTests
             ErrorPolicyResolver = new RuntimeErrorPolicyResolver(),
             ReactiveEventPublisher = new NoopRuntimeReactiveEventPublisher()
         });
+
+    private static TriggerIntakeBufferItem CreateItem(OrchestrationInstance instance)
+        => new()
+        {
+            BufferItemId = Id.New(),
+            TriggerType = TriggerType.Event,
+            TriggerKey = instance.OrchestrationDefinitionKey,
+            ArtifactVersion = "1.0.0",
+            EnvironmentKey = instance.EnvironmentKey,
+            CorrelationId = instance.CorrelationId,
+            IdempotencyKey = instance.CorrelationId,
+            PayloadJson = instance.SnapshotPayload?.ToJsonString() ?? "{}",
+            ReceivedOnUtc = DateTime.UtcNow
+        };
 
     private sealed class RuntimeStore
     {
