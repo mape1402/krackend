@@ -1,7 +1,9 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Engine;
@@ -25,6 +27,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
     private readonly IRuntimeCompensationExecutor _compensationExecutor;
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
     private readonly IRuntimeEngine _runtimeEngine;
+    private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
     private readonly IRuntimeCompensationPlanBuilder _compensationPlanBuilder = new RuntimeCompensationPlanBuilder();
 
     /// <summary>
@@ -44,7 +47,8 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         IRuntimeErrorPolicyResolver errorPolicyResolver,
         IRuntimeCompensationExecutor compensationExecutor,
         IRuntimeReactiveEventPublisher reactiveEventPublisher,
-        IRuntimeEngine runtimeEngine)
+        IRuntimeEngine runtimeEngine,
+        IRuntimeDurableWorkScheduler durableWorkScheduler)
     {
         _taskRepository = taskRepository;
         _attemptRepository = attemptRepository;
@@ -60,6 +64,7 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         _compensationExecutor = compensationExecutor;
         _reactiveEventPublisher = reactiveEventPublisher;
         _runtimeEngine = runtimeEngine;
+        _durableWorkScheduler = durableWorkScheduler;
     }
 
     /// <inheritdoc/>
@@ -89,6 +94,11 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         foreach (var compensation in compensations)
         {
             await _compensationExecutor.Execute(compensation, CancellationToken.None);
+        }
+
+        foreach (var dispatch in scheduledDispatches)
+        {
+            await TryRescheduleDispatch(dispatch, cancellationToken);
         }
 
         var items = unresolvedWaitingTasks
@@ -170,6 +180,9 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         var taskDocument = FindTaskDocument(document, stageExecution.StageKey, taskExecution.TaskKey);
         var timeoutPolicy = _timeoutPolicyEvaluator.Evaluate(taskDocument.TimeoutPolicy);
         if (!timeoutPolicy.IsConfigured)
+            return false;
+
+        if (!IsTimeoutDue(taskExecution, timeoutPolicy, nowUtc))
             return false;
 
         if (IsTimeoutPolicyAlreadyApplied(taskExecution))
@@ -399,9 +412,10 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             DispatchType = taskDocument.Kind ?? string.Empty,
             Destination = taskDocument.Destination ?? string.Empty,
             RequestPayload = retryAttempt.RequestPayload?.DeepClone(),
-            DispatchStatus = "Pending",
+            DispatchStatus = "Scheduled",
             CommandId = Id.New().ToString(),
-            CorrelationId = taskExecution.CorrelationId
+            CorrelationId = taskExecution.CorrelationId,
+            ScheduledOnUtc = DateTime.UtcNow
         };
         await _dispatchRepository.Create(dispatch, cancellationToken);
 
@@ -414,52 +428,6 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             taskExecution,
             retryAttempt,
             retryAttempt.RequestPayload), cancellationToken);
-
-        var result = await dispatcher.Dispatch(CreateDispatchRequest(instance, document.Version, stageExecution, taskExecution, taskDocument, retryAttempt, dispatch, started), cancellationToken);
-        if (!result.Succeeded)
-        {
-            dispatch.DispatchStatus = "Failed";
-            dispatch.FailedOnUtc = nowUtc;
-            dispatch.FailureReason = result.FailureReason;
-            await _dispatchRepository.Update(dispatch, cancellationToken);
-
-            retryAttempt.Status = TaskExecutionStatus.Failed;
-            retryAttempt.FailedOnUtc = nowUtc;
-            retryAttempt.ErrorCode = "MessagingReconciliationDispatchFailed";
-            retryAttempt.ErrorMessage = result.FailureReason;
-            retryAttempt.DispatchId = dispatch.Id;
-            await _attemptRepository.Update(retryAttempt, cancellationToken);
-
-            taskExecution.Status = TaskExecutionStatus.Failed;
-            taskExecution.FailedOnUtc = nowUtc;
-            taskExecution.WaitingSinceUtc = null;
-            taskExecution.Metadata["reconciliationStatus"] = "DispatchFailed";
-            taskExecution.Metadata["failureReason"] = result.FailureReason;
-            await _taskRepository.Update(taskExecution, cancellationToken);
-            await WriteTransition(RuntimeTransition.ForAttempt(
-                instance,
-                "TaskReconciliationDispatchFailed",
-                TaskExecutionStatus.Running,
-                TaskExecutionStatus.Failed,
-                stageExecution,
-                taskExecution,
-                retryAttempt), cancellationToken);
-            await ApplyTimeoutErrorPolicy(document, instance, stageExecution, taskExecution, cancellationToken);
-            return true;
-        }
-
-        dispatch.DispatchStatus = string.IsNullOrWhiteSpace(result.Status) ? "Accepted" : result.Status;
-        dispatch.Metadata["externalReference"] = result.ExternalReference ?? string.Empty;
-        if (string.Equals(dispatch.DispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase))
-            dispatch.ScheduledOnUtc ??= DateTime.UtcNow;
-
-        if (IsTransportSentStatus(dispatch.DispatchStatus))
-        {
-            dispatch.SentOnUtc = DateTime.UtcNow;
-            dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
-        }
-
-        await _dispatchRepository.Update(dispatch, cancellationToken);
 
         retryAttempt.DispatchId = dispatch.Id;
         retryAttempt.Status = TaskExecutionStatus.WaitingResponse;
@@ -496,6 +464,9 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             taskExecution.Status,
             stageExecution,
             taskExecution), cancellationToken);
+        await _durableWorkScheduler.ScheduleDispatchTask(
+            CreateDispatchRequest(instance, document.Version, stageExecution, taskExecution, taskDocument, retryAttempt, dispatch, started).ToDispatchEnvelope(),
+            cancellationToken);
         return true;
     }
 
@@ -660,6 +631,15 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
         return false;
     }
 
+    private static bool IsTimeoutDue(TaskExecution taskExecution, RuntimeTimeoutPolicy timeoutPolicy, DateTime nowUtc)
+    {
+        if (timeoutPolicy.Timeout <= TimeSpan.Zero)
+            return true;
+
+        var waitingSince = taskExecution.WaitingSinceUtc ?? taskExecution.StartedOnUtc ?? nowUtc;
+        return waitingSince.Add(timeoutPolicy.Timeout) <= nowUtc;
+    }
+
     private static RuntimeTaskDispatchRequest CreateDispatchRequest(
         OrchestrationInstance instance,
         string orchestrationVersion,
@@ -693,11 +673,6 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             UpdatedOnUtc = DateTime.UtcNow
         };
     }
-
-    private static bool IsTransportSentStatus(string status)
-        => string.Equals(status, "Dispatched", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "Published", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "Sent", StringComparison.OrdinalIgnoreCase);
 
     private async Task WriteTransition(RuntimeTransition transition, CancellationToken cancellationToken)
     {
@@ -776,4 +751,26 @@ public sealed class RuntimePendingWorkProcessor : IRuntimePendingWorkProcessor
             "InstanceCompensated" => RuntimeReactiveEventNames.OrchestrationCompensated,
             _ => RuntimeReactiveEventNames.TransitionRecorded
         };
+
+    private async Task<bool> TryRescheduleDispatch(TaskDispatch dispatch, CancellationToken cancellationToken)
+    {
+        var attempt = await _attemptRepository.GetById(dispatch.TaskExecutionAttemptId, cancellationToken);
+        var task = await _taskRepository.GetById(attempt.TaskExecutionId, cancellationToken);
+        var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
+        var instance = await _instanceRepository.GetById(task.OrchestrationInstanceId, cancellationToken);
+        if (instance.Status is not (OrchestrationInstanceStatus.Running or OrchestrationInstanceStatus.Waiting) ||
+            task.Status is not (TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse))
+            return false;
+
+        var artifact = await _artifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+        var document = RuntimeArtifactDocument.Parse(artifact.ArtifactPayload, artifact.Version.ToString());
+        var taskDocument = FindTaskDocument(document, stage.StageKey, task.TaskKey);
+        if (_taskDispatcherResolver.Resolve(taskDocument.Kind) is null)
+            return false;
+
+        await _durableWorkScheduler.ScheduleDispatchTask(
+            CreateDispatchRequest(instance, document.Version, stage, task, taskDocument, attempt, dispatch, dispatch.ScheduledOnUtc ?? DateTime.UtcNow).ToDispatchEnvelope(),
+            cancellationToken);
+        return true;
+    }
 }

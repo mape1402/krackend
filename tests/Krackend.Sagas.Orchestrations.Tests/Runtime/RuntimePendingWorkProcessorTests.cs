@@ -2,6 +2,8 @@ using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
@@ -55,6 +57,21 @@ public sealed class RuntimePendingWorkProcessorTests
         var result = await CreateProcessor(store).ProcessDueWork(now);
 
         Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task ProcessDueWork_DoesNotApplyTimeoutBeforePolicyDurationElapses()
+    {
+        var now = DateTime.UtcNow;
+        var store = RuntimePendingWorkStore.Create(now.AddMilliseconds(-100), TimeoutScenario.Fail);
+
+        await CreateProcessor(store).ProcessDueWork(now);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Attempt.Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Task.Status);
+        Assert.Equal(StageExecutionStatus.Running, store.Stage.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Waiting, store.Instance.Status);
+        Assert.DoesNotContain(store.Transitions, x => x.TransitionType == "TaskTimedOut");
     }
 
     [Fact]
@@ -162,8 +179,9 @@ public sealed class RuntimePendingWorkProcessorTests
         var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
         store.Attempt.RequestPayload = JsonNode.Parse("""{"orderId":"order-1","reserved":true}""");
         var dispatcher = new RecordingTaskDispatcher();
+        var scheduler = new RecordingDurableWorkScheduler();
 
-        await CreateProcessor(store, dispatcher).ProcessDueWork(now);
+        await CreateProcessor(store, dispatcher, scheduler).ProcessDueWork(now);
 
         Assert.Equal(TaskExecutionStatus.TimedOut, store.Attempts[0].Status);
         Assert.Equal(TaskExecutionStatus.WaitingResponse, store.Attempts[1].Status);
@@ -174,8 +192,8 @@ public sealed class RuntimePendingWorkProcessorTests
         Assert.Equal("Redispatched", store.Instance.Metadata["reconciliationStatus"]!.GetValue<string>());
         Assert.Equal(store.Task.CorrelationId, Assert.Single(store.Dispatches).CorrelationId);
         Assert.Equal(store.Dispatches[0].Id, store.Attempts[1].DispatchId);
-        Assert.Equal("inventory.reserve", Assert.Single(dispatcher.Requests).Destination);
-        Assert.Equal(store.Task.CorrelationId, Assert.Single(dispatcher.Requests).CorrelationId);
+        Assert.Equal("inventory.reserve", Assert.Single(scheduler.Dispatches).Destination.Address);
+        Assert.Equal(store.Task.CorrelationId, Assert.Single(scheduler.Dispatches).CorrelationId);
         Assert.Contains(store.Transitions, x => x.TransitionType == "TaskReconciliationRedispatched");
     }
 
@@ -203,7 +221,8 @@ public sealed class RuntimePendingWorkProcessorTests
         var now = DateTime.UtcNow;
         var store = RuntimePendingWorkStore.Create(now.AddMinutes(-5), TimeoutScenario.ReconcileBlock);
         var dispatcher = new RecordingTaskDispatcher();
-        var processor = CreateProcessor(store, dispatcher);
+        var scheduler = new RecordingDurableWorkScheduler();
+        var processor = CreateProcessor(store, dispatcher, scheduler);
 
         await processor.ProcessDueWork(now);
         store.Attempt.WaitingSinceUtc = now.AddMinutes(1);
@@ -212,7 +231,8 @@ public sealed class RuntimePendingWorkProcessorTests
         await processor.ProcessDueWork(now.AddMinutes(12));
 
         Assert.Equal(3, store.Attempts.Count);
-        Assert.Equal(2, dispatcher.Requests.Count);
+        Assert.True(scheduler.Dispatches.Count >= 2);
+        Assert.Equal(2, scheduler.Dispatches.Select(x => x.Attempt).Distinct().Count());
         Assert.Equal(TaskExecutionStatus.Failed, store.Task.Status);
         Assert.Equal(OrchestrationInstanceStatus.Failed, store.Instance.Status);
         Assert.Equal("ReconciliationExhausted", store.Task.Metadata["timeoutPolicyApplied"]!.GetValue<string>());
@@ -235,6 +255,7 @@ public sealed class RuntimePendingWorkProcessorTests
     private static RuntimePendingWorkProcessor CreateProcessor(
         RuntimePendingWorkStore store,
         IRuntimeTaskDispatcher? dispatcher = null,
+        IRuntimeDurableWorkScheduler? durableWorkScheduler = null,
         IRuntimeEngine? runtimeEngine = null)
         => new(
             new TaskRepositoryStub(store),
@@ -250,7 +271,8 @@ public sealed class RuntimePendingWorkProcessorTests
             new RuntimeErrorPolicyResolver(),
             new NoopCompensationExecutor(),
             new NoopRuntimeReactiveEventPublisher(),
-            runtimeEngine ?? new RecordingRuntimeEngine());
+            runtimeEngine ?? new RecordingRuntimeEngine(),
+            durableWorkScheduler ?? new RecordingDurableWorkScheduler());
 
     private static CompensationExecution PendingCompensation(Id instanceId, Id sourceTaskExecutionId)
         => new()
@@ -467,6 +489,36 @@ public sealed class RuntimePendingWorkProcessorTests
             return Task.CompletedTask;
         }
 
+        public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
+        {
+            var dispatch = store.Dispatches.SingleOrDefault(x => x.Id == dispatchId);
+            if (dispatch is not null)
+            {
+                dispatch.DispatchStatus = string.IsNullOrWhiteSpace(status) ? "Dispatched" : status;
+                dispatch.SentOnUtc = sentOnUtc;
+                dispatch.AcknowledgedOnUtc = sentOnUtc;
+                dispatch.FailedOnUtc = null;
+                dispatch.FailureReason = null;
+                dispatch.Metadata["externalReference"] = externalReference ?? string.Empty;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default)
+        {
+            var dispatch = store.Dispatches.SingleOrDefault(x => x.Id == dispatchId);
+            if (dispatch is not null)
+            {
+                dispatch.DispatchStatus = "Failed";
+                dispatch.FailedOnUtc = DateTime.UtcNow;
+                dispatch.FailureReason = failureReason;
+                dispatch.Metadata["externalReference"] = externalReference ?? string.Empty;
+            }
+
+            return Task.CompletedTask;
+        }
+
         public Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
             => Task.FromResult(store.Dispatches.Single(x => x.Id == dispatchId));
 
@@ -608,6 +660,33 @@ public sealed class RuntimePendingWorkProcessorTests
                 Status = "Dispatched",
                 ExternalReference = request.CommandId
             });
+        }
+    }
+
+    private sealed class RecordingDurableWorkScheduler : IRuntimeDurableWorkScheduler
+    {
+        public List<RuntimeIngressEnvelope> Ingresses { get; } = new();
+
+        public List<RuntimeDispatchEnvelope> Dispatches { get; } = new();
+
+        public List<RuntimeReconcileRequest> Reconciles { get; } = new();
+
+        public ValueTask<Guid> ScheduleProcessIngress(RuntimeIngressEnvelope envelope, CancellationToken cancellationToken = default)
+        {
+            Ingresses.Add(envelope);
+            return ValueTask.FromResult(Guid.NewGuid());
+        }
+
+        public ValueTask<Guid> ScheduleDispatchTask(RuntimeDispatchEnvelope envelope, CancellationToken cancellationToken = default)
+        {
+            Dispatches.Add(envelope);
+            return ValueTask.FromResult(Guid.NewGuid());
+        }
+
+        public ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
+        {
+            Reconciles.Add(request);
+            return ValueTask.FromResult(Guid.NewGuid());
         }
     }
 }

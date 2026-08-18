@@ -87,6 +87,8 @@ internal sealed class TaskExecutionEntityConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.MetadataJson).HasColumnType("nvarchar(max)").IsRequired(false);
         builder.HasIndex(x => new { x.OrchestrationInstanceId, x.TaskKey });
+        builder.HasIndex(x => new { x.StageExecutionId, x.TaskKey }).IsUnique();
+        builder.HasIndex(x => new { x.Status, x.WaitingSinceUtc });
         builder.HasIndex(x => x.CorrelationId);
     }
 }
@@ -108,6 +110,7 @@ internal sealed class TaskExecutionAttemptEntityConfiguration : IEntityTypeConfi
         builder.Property(x => x.MetadataJson).HasColumnType("nvarchar(max)").IsRequired(false);
         builder.HasIndex(x => new { x.TaskExecutionId, x.AttemptNumber }).IsUnique();
         builder.HasIndex(x => x.DispatchId);
+        builder.HasIndex(x => new { x.Status, x.WaitingSinceUtc });
     }
 }
 

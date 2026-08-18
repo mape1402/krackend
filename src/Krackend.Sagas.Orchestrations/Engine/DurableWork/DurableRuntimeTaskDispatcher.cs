@@ -25,12 +25,14 @@ public sealed class DurableRuntimeTaskDispatcher : IRuntimeTaskDispatcher
         RuntimeTaskDispatchRequest request,
         CancellationToken cancellationToken = default)
     {
-        var actionId = await _durableWorkScheduler.ScheduleDispatchTask(request.ToDispatchEnvelope(), cancellationToken);
+        var envelope = request.ToDispatchEnvelope();
+        await _durableWorkScheduler.ScheduleDispatchTask(envelope, cancellationToken);
+
         return new RuntimeTaskDispatchResult
         {
             Succeeded = true,
             Status = "Scheduled",
-            ExternalReference = actionId.ToString()
+            ExternalReference = envelope.DispatchId
         };
     }
 }

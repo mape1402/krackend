@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
@@ -98,7 +99,8 @@ public sealed class DispatchRuntimeTaskActionTests
             compensationRepository,
             instanceRepository,
             transitionRepository,
-            new NoopRuntimeReactiveEventPublisher());
+            new NoopRuntimeReactiveEventPublisher(),
+            new CapturingDurableWorkScheduler());
         var envelope = CreateEnvelope();
         dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
         envelope.OrchestrationInstanceId = instanceRepository.Instance.Id.ToString();
@@ -112,6 +114,59 @@ public sealed class DispatchRuntimeTaskActionTests
         Assert.Equal(OrchestrationInstanceStatus.Compensated, instanceRepository.Instance.Status);
         Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "CompensationCompleted");
         Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "InstanceCompensated");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenPublishFailsAndRetryIsAvailable_SchedulesNextDispatchAttempt()
+    {
+        var dispatcher = new CapturingMessagingCommandDispatcher(new MessagingDispatchResult
+        {
+            Succeeded = false,
+            Status = "Failed",
+            FailureReason = "flaky publish"
+        });
+        var dispatchRepository = new CapturingTaskDispatchRepository();
+        var taskRepository = new CapturingTaskRepository();
+        var attemptRepository = new CapturingAttemptRepository();
+        var stageRepository = new CapturingStageRepository();
+        var instanceRepository = new CapturingInstanceRepository { Instance = { Status = OrchestrationInstanceStatus.Waiting } };
+        var transitionRepository = new CapturingTransitionRepository();
+        var scheduler = new CapturingDurableWorkScheduler();
+        var action = CreateAction(
+            dispatcher,
+            dispatchRepository,
+            new NoopRuntimeReactiveEventPublisher(),
+            taskRepository,
+            attemptRepository,
+            stageRepository,
+            instanceRepository,
+            transitionRepository,
+            scheduler);
+        var envelope = CreateEnvelope();
+        envelope.OrchestrationInstanceId = Id.New().ToString();
+        envelope.TaskExecutionId = Id.New().ToString();
+        envelope.Metadata["retryMaxAttempts"] = 2;
+        dispatchRepository.Dispatch.Id = new Id(Ulid.Parse(envelope.DispatchId));
+        dispatchRepository.Dispatch.TaskExecutionAttemptId = attemptRepository.Attempt.Id;
+        dispatchRepository.Dispatch.RequestPayload = envelope.Payload.DeepClone();
+        taskRepository.Task.Id = new Id(Ulid.Parse(envelope.TaskExecutionId));
+        taskRepository.Task.StageExecutionId = stageRepository.Stage.Id;
+        attemptRepository.Attempt.TaskExecutionId = taskRepository.Task.Id;
+        attemptRepository.Attempt.DispatchId = dispatchRepository.Dispatch.Id;
+        attemptRepository.Attempt.RequestPayload = envelope.Payload.DeepClone();
+        instanceRepository.Instance.Id = new Id(Ulid.Parse(envelope.OrchestrationInstanceId));
+
+        await action.ExecuteAsync(CreateContext(envelope), CancellationToken.None);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, taskRepository.Task.Status);
+        Assert.Equal(2, taskRepository.Task.LastAttemptNumber);
+        Assert.Equal(2, attemptRepository.Attempts.Count);
+        Assert.Equal(2, dispatchRepository.Dispatches.Count);
+        Assert.NotNull(scheduler.Envelope);
+        Assert.Equal(2, scheduler.Envelope!.Attempt);
+        Assert.Equal(dispatchRepository.Dispatches[1].Id.ToString(), scheduler.Envelope.DispatchId);
+        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "TaskRetryScheduled");
+        Assert.Contains(transitionRepository.Transitions, x => x.TransitionType == "TaskRetryStarted");
     }
 
     private static DispatchRuntimeTaskAction CreateAction(
@@ -142,6 +197,27 @@ public sealed class DispatchRuntimeTaskActionTests
         IStageExecutionRepository stageRepository,
         IOrchestrationInstanceRepository instanceRepository,
         IExecutionTransitionRepository transitionRepository)
+        => CreateAction(
+            dispatcher,
+            dispatchRepository,
+            reactiveEventPublisher,
+            taskRepository,
+            attemptRepository,
+            stageRepository,
+            instanceRepository,
+            transitionRepository,
+            new CapturingDurableWorkScheduler());
+
+    private static DispatchRuntimeTaskAction CreateAction(
+        IMessagingCommandDispatcher dispatcher,
+        ITaskDispatchRepository dispatchRepository,
+        IRuntimeReactiveEventPublisher reactiveEventPublisher,
+        ITaskExecutionRepository taskRepository,
+        ITaskExecutionAttemptRepository attemptRepository,
+        IStageExecutionRepository stageRepository,
+        IOrchestrationInstanceRepository instanceRepository,
+        IExecutionTransitionRepository transitionRepository,
+        IRuntimeDurableWorkScheduler durableWorkScheduler)
         => new(
             dispatcher,
             dispatchRepository,
@@ -151,7 +227,8 @@ public sealed class DispatchRuntimeTaskActionTests
             new CapturingCompensationRepository(),
             instanceRepository,
             transitionRepository,
-            reactiveEventPublisher);
+            reactiveEventPublisher,
+            durableWorkScheduler);
 
     private static RuntimeDispatchEnvelope CreateEnvelope()
         => new()
@@ -196,17 +273,29 @@ public sealed class DispatchRuntimeTaskActionTests
 
     private sealed class CapturingMessagingCommandDispatcher : IMessagingCommandDispatcher
     {
+        private readonly MessagingDispatchResult _result;
+
+        public CapturingMessagingCommandDispatcher()
+            : this(new MessagingDispatchResult
+            {
+                Succeeded = true,
+                Status = "Published",
+                ExternalReference = "message-1"
+            })
+        {
+        }
+
+        public CapturingMessagingCommandDispatcher(MessagingDispatchResult result)
+        {
+            _result = result;
+        }
+
         public MessagingDispatchCommand Command { get; private set; } = null!;
 
         public Task<MessagingDispatchResult> Dispatch(MessagingDispatchCommand command, CancellationToken cancellationToken = default)
         {
             Command = command;
-            return Task.FromResult(new MessagingDispatchResult
-            {
-                Succeeded = true,
-                Status = "Published",
-                ExternalReference = "message-1"
-            });
+            return Task.FromResult(_result);
         }
     }
 
@@ -222,8 +311,18 @@ public sealed class DispatchRuntimeTaskActionTests
             Metadata = new Dictionary<string, JsonNode>()
         };
 
+        public List<Abstractions.Runtime.TaskDispatch> Dispatches { get; } = new();
+
+        public CapturingTaskDispatchRepository()
+        {
+            Dispatches.Add(Dispatch);
+        }
+
         public Task Create(Abstractions.Runtime.TaskDispatch dispatch, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
+        {
+            Dispatches.Add(dispatch);
+            return Task.CompletedTask;
+        }
 
         public Task Update(Abstractions.Runtime.TaskDispatch dispatch, CancellationToken cancellationToken = default)
         {
@@ -237,11 +336,39 @@ public sealed class DispatchRuntimeTaskActionTests
             return Task.CompletedTask;
         }
 
+        public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
+        {
+            if (dispatchId == Dispatch.Id)
+            {
+                Dispatch.DispatchStatus = string.IsNullOrWhiteSpace(status) ? "Dispatched" : status;
+                Dispatch.SentOnUtc = sentOnUtc;
+                Dispatch.AcknowledgedOnUtc = sentOnUtc;
+                Dispatch.FailedOnUtc = null;
+                Dispatch.FailureReason = null;
+                Dispatch.Metadata["externalReference"] = externalReference ?? string.Empty;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default)
+        {
+            if (dispatchId == Dispatch.Id)
+            {
+                Dispatch.DispatchStatus = "Failed";
+                Dispatch.FailedOnUtc = DateTime.UtcNow;
+                Dispatch.FailureReason = failureReason;
+                Dispatch.Metadata["externalReference"] = externalReference ?? string.Empty;
+            }
+
+            return Task.CompletedTask;
+        }
+
         public Task<Abstractions.Runtime.TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default)
             => Task.FromResult(Dispatch);
 
         public Task<Abstractions.Runtime.TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default)
-            => Task.FromResult(dispatchId == Dispatch.Id ? Dispatch : null!);
+            => Task.FromResult(Dispatches.FirstOrDefault(x => x.Id == dispatchId)!);
 
         public Task<Abstractions.Runtime.TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
@@ -333,8 +460,18 @@ public sealed class DispatchRuntimeTaskActionTests
             Metadata = new Dictionary<string, JsonNode>()
         };
 
+        public List<Abstractions.Runtime.TaskExecutionAttempt> Attempts { get; } = new();
+
+        public CapturingAttemptRepository()
+        {
+            Attempts.Add(Attempt);
+        }
+
         public Task Create(Abstractions.Runtime.TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
+        {
+            Attempts.Add(attempt);
+            return Task.CompletedTask;
+        }
 
         public Task Update(Abstractions.Runtime.TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
@@ -343,10 +480,10 @@ public sealed class DispatchRuntimeTaskActionTests
             => Task.FromResult(attemptId == Attempt.Id ? Attempt : null!);
 
         public Task<Abstractions.Runtime.TaskExecutionAttempt> GetByDispatchId(Id dispatchId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Attempt.DispatchId == dispatchId ? Attempt : null!);
+            => Task.FromResult(Attempts.FirstOrDefault(x => x.DispatchId == dispatchId)!);
 
         public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>> GetByTaskExecutionId(Id taskExecutionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>>(taskExecutionId == Attempt.TaskExecutionId ? [Attempt] : []);
+            => Task.FromResult<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>>(Attempts.Where(x => x.TaskExecutionId == taskExecutionId).ToArray());
 
         public Task<IReadOnlyCollection<Abstractions.Runtime.TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
@@ -446,6 +583,23 @@ public sealed class DispatchRuntimeTaskActionTests
         {
             Event = eventData;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingDurableWorkScheduler : IRuntimeDurableWorkScheduler
+    {
+        public RuntimeDispatchEnvelope Envelope { get; private set; } = null!;
+
+        public ValueTask<Guid> ScheduleProcessIngress(RuntimeIngressEnvelope envelope, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(Guid.NewGuid());
+
+        public ValueTask<Guid> ScheduleReconcile(RuntimeReconcileRequest request, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(Guid.NewGuid());
+
+        public ValueTask<Guid> ScheduleDispatchTask(RuntimeDispatchEnvelope envelope, CancellationToken cancellationToken = default)
+        {
+            Envelope = envelope;
+            return ValueTask.FromResult(Guid.NewGuid());
         }
     }
 }

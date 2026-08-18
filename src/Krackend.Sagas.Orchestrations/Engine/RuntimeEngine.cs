@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
@@ -15,6 +16,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private static readonly TimeSpan InstanceMutationLeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan InstanceMutationLeaseWaitTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan InstanceMutationLeaseRetryDelay = TimeSpan.FromMilliseconds(50);
+    private static readonly ConcurrentDictionary<string, RuntimeArtifactDocument> ArtifactDocuments = new(StringComparer.Ordinal);
 
     private readonly ITriggerIntakeBuffer _intakeBuffer;
     private readonly ITriggerPromoter _triggerPromoter;
@@ -174,7 +176,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
                 await CompleteResponse(instance, stageExecution, taskExecution, trace.Attempt, command, cancellationToken);
             profile.Mark("apply-response");
 
-            await ContinueAfterResponse(instance, stageExecution, taskExecution, cancellationToken);
+            await ContinueAfterResponse(instance, stageExecution, taskExecution, trace.Attempt, cancellationToken);
             profile.Mark("continue-after-response");
             await SaveRuntimeChanges(cancellationToken);
             profile.Mark("save-runtime");
@@ -241,9 +243,7 @@ public sealed class RuntimeEngine : IRuntimeEngine
     private async Task Execute(TriggerPromotionResult promotion, CancellationToken cancellationToken)
     {
         var profile = RuntimeProfile.Start("runtime.execute");
-        var document = RuntimeArtifactDocument.Parse(
-            promotion.Artifact.ArtifactPayload,
-            promotion.Artifact.Version.ToString());
+        var document = GetOrAddArtifactDocument(promotion.Artifact);
         profile.Mark("parse-artifact");
         var instance = promotion.Instance;
         instance.Status = OrchestrationInstanceStatus.Running;
@@ -701,6 +701,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var dispatcher = _taskDispatcherResolver.Resolve(context.Task.Kind)
             ?? throw new InvalidOperationException($"Task kind '{context.Task.Kind}' is not supported by the runtime dispatcher registry.");
 
+        await MarkDispatchScheduled(dispatch, cancellationToken);
+        await SaveRuntimeChanges(cancellationToken);
+
         var command = CreateDispatchRequest(new MessagingDispatchCommandSource
         {
             Instance = context.Instance,
@@ -914,6 +917,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private async Task MarkDispatchAccepted(TaskDispatch dispatch, RuntimeTaskDispatchResult dispatchResult, CancellationToken cancellationToken)
     {
+        if (string.Equals(dispatchResult.Status, "Scheduled", StringComparison.OrdinalIgnoreCase))
+            return;
+
         dispatch.DispatchStatus = string.IsNullOrWhiteSpace(dispatchResult.Status) ? "Accepted" : dispatchResult.Status;
         dispatch.Metadata["externalReference"] = dispatchResult.ExternalReference ?? string.Empty;
         if (string.Equals(dispatch.DispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase))
@@ -925,6 +931,13 @@ public sealed class RuntimeEngine : IRuntimeEngine
             dispatch.AcknowledgedOnUtc = dispatch.SentOnUtc;
         }
 
+        await _dispatchRepository.Update(dispatch, cancellationToken);
+    }
+
+    private async Task MarkDispatchScheduled(TaskDispatch dispatch, CancellationToken cancellationToken)
+    {
+        dispatch.DispatchStatus = "Scheduled";
+        dispatch.ScheduledOnUtc ??= DateTime.UtcNow;
         await _dispatchRepository.Update(dispatch, cancellationToken);
     }
 
@@ -953,6 +966,59 @@ public sealed class RuntimeEngine : IRuntimeEngine
         context.Instance.LastUpdatedOnUtc = DateTime.UtcNow;
         await _instanceRepository.Update(context.Instance, cancellationToken);
         await WriteTransition(RuntimeTransition.ForAttempt(context.Instance, "TaskWaitingResponse", TaskExecutionStatus.Running, taskExecution.Status, context.StageExecution, taskExecution, attempt), cancellationToken);
+    }
+
+    private async Task<bool> TryRetryTaskAfterFailureResponse(
+        RuntimeResumeContext resume,
+        OrchestrationInstance instance,
+        StageExecution stageExecution,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt failedAttempt,
+        CancellationToken cancellationToken)
+    {
+        var task = resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex);
+        var retryPolicy = _retryPolicyEvaluator.Evaluate(task.RetryPolicy);
+        if (failedAttempt.AttemptNumber >= retryPolicy.MaxAttempts)
+            return false;
+
+        var context = CreateTaskContext(instance, resume.Document.Version, stageExecution, task);
+        await MarkTaskRetryScheduled(context, taskExecution, failedAttempt, failedAttempt.AttemptNumber, retryPolicy, cancellationToken);
+
+        RuntimeTaskDispatchFailure dispatchFailure = null;
+        for (var attemptNumber = failedAttempt.AttemptNumber + 1; attemptNumber <= retryPolicy.MaxAttempts; attemptNumber++)
+        {
+            var started = DateTime.UtcNow;
+            await MarkTaskRetryStarted(context, taskExecution, attemptNumber, cancellationToken);
+            var attempt = await CreateAttempt(context, taskExecution, started, attemptNumber, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttemptPayload(instance, "TaskInputTransformed", TaskExecutionStatus.Running, taskExecution.Status, stageExecution, taskExecution, attempt, attempt.RequestPayload), cancellationToken);
+
+            var dispatch = await CreateDispatch(context, taskExecution, attempt, cancellationToken);
+            await PrepareTaskDispatch(context, taskExecution, attempt, dispatch, cancellationToken);
+            var dispatchResult = await DispatchTask(context, taskExecution, attempt, dispatch, started, cancellationToken);
+            if (!dispatchResult.Succeeded)
+            {
+                dispatchFailure = CreateDispatchFailure(context, taskExecution, attempt, dispatch, dispatchResult);
+                await MarkFailedDispatchAttempt(dispatchFailure, cancellationToken);
+                if (attemptNumber < retryPolicy.MaxAttempts)
+                {
+                    await MarkTaskRetryScheduled(context, taskExecution, attempt, attemptNumber, retryPolicy, cancellationToken);
+                    continue;
+                }
+
+                await FailDispatch(dispatchFailure, cancellationToken);
+                return false;
+            }
+
+            await MarkDispatchAccepted(dispatch, dispatchResult, cancellationToken);
+            if (task.AwaitResponse)
+                return true;
+
+            await MarkTaskDispatchAccepted(context, taskExecution, attempt, dispatch, cancellationToken);
+            await WriteTransition(RuntimeTransition.ForAttempt(instance, "TaskCompleted", TaskExecutionStatus.Running, taskExecution.Status, stageExecution, taskExecution, attempt), cancellationToken);
+            return false;
+        }
+
+        return false;
     }
 
     private async Task WriteTransition(RuntimeTransition transition, CancellationToken cancellationToken)
@@ -1106,8 +1172,9 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private sealed record ParallelGroupResumeDecision(bool CanContinue, int NextTaskIndex);
 
-    private static RuntimeTaskDispatchRequest CreateDispatchRequest(MessagingDispatchCommandSource source)
+    private RuntimeTaskDispatchRequest CreateDispatchRequest(MessagingDispatchCommandSource source)
     {
+        var retryPolicy = _retryPolicyEvaluator.Evaluate(source.Task.RetryPolicy);
         return new RuntimeTaskDispatchRequest
         {
             CommandId = source.Dispatch.CommandId,
@@ -1128,34 +1195,46 @@ public sealed class RuntimeEngine : IRuntimeEngine
             CurrentStatus = source.TaskExecution.Status.ToString(),
             Attempt = source.Attempt.AttemptNumber,
             StartedOnUtc = source.StartedOnUtc,
-            UpdatedOnUtc = DateTime.UtcNow
+            UpdatedOnUtc = DateTime.UtcNow,
+            Metadata = new Dictionary<string, JsonNode>
+            {
+                ["retryMaxAttempts"] = retryPolicy.MaxAttempts,
+                ["retryMaxRetries"] = retryPolicy.MaxRetries
+            }
         };
     }
 
-    private async Task ContinueAfterResponse(OrchestrationInstance instance, StageExecution stageExecution, TaskExecution taskExecution, CancellationToken cancellationToken)
+    private async Task ContinueAfterResponse(OrchestrationInstance instance, StageExecution stageExecution, TaskExecution taskExecution, TaskExecutionAttempt currentAttempt, CancellationToken cancellationToken)
     {
-        var artifact = await _artifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
-        var resume = CreateResumeContext(artifact, stageExecution, taskExecution);
-        await ContinueCurrentStage(resume, instance, stageExecution, taskExecution, cancellationToken);
-    }
-
-    private async Task ContinueCurrentStage(RuntimeResumeContext resume, OrchestrationInstance instance, StageExecution stageExecution, TaskExecution currentTaskExecution, CancellationToken cancellationToken)
-    {
-        if (currentTaskExecution.Status == TaskExecutionStatus.Failed)
+        if (!TryGetArtifactDocument(instance.RuntimeOrchestrationArtifactId, out var document))
         {
-            var canContinueAfterFailure = await ApplyTaskFailurePolicyAfterResponse(resume, instance, stageExecution, currentTaskExecution, cancellationToken);
-            if (!canContinueAfterFailure)
-                return;
+            var artifact = await _artifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+            document = GetOrAddArtifactDocument(artifact);
         }
 
+        var resume = CreateResumeContext(instance.RuntimeOrchestrationArtifactId, document, stageExecution, taskExecution);
+        await ContinueCurrentStage(resume, instance, stageExecution, taskExecution, currentAttempt, cancellationToken);
+    }
+
+    private async Task ContinueCurrentStage(RuntimeResumeContext resume, OrchestrationInstance instance, StageExecution stageExecution, TaskExecution currentTaskExecution, TaskExecutionAttempt currentAttempt, CancellationToken cancellationToken)
+    {
         var nextTaskIndex = resume.TaskIndex + 1;
         if (IsParallelGroupTask(resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex)))
         {
-            var groupDecision = await TryContinueAfterParallelTaskResponse(resume, instance, stageExecution, currentTaskExecution, cancellationToken);
+            var groupDecision = await TryContinueAfterParallelTaskResponse(resume, instance, stageExecution, currentTaskExecution, currentAttempt, cancellationToken);
             if (!groupDecision.CanContinue)
                 return;
 
             nextTaskIndex = groupDecision.NextTaskIndex;
+        }
+        else if (currentTaskExecution.Status == TaskExecutionStatus.Failed)
+        {
+            if (await TryRetryTaskAfterFailureResponse(resume, instance, stageExecution, currentTaskExecution, currentAttempt, cancellationToken))
+                return;
+
+            var canContinueAfterFailure = await ApplyTaskFailurePolicyAfterResponse(resume, instance, stageExecution, currentTaskExecution, cancellationToken);
+            if (!canContinueAfterFailure)
+                return;
         }
 
         for (var i = nextTaskIndex; i < resume.CurrentStage.Tasks.Count; i++)
@@ -1221,9 +1300,16 @@ public sealed class RuntimeEngine : IRuntimeEngine
         OrchestrationInstance instance,
         StageExecution stageExecution,
         TaskExecution currentTaskExecution,
+        TaskExecutionAttempt currentAttempt,
         CancellationToken cancellationToken)
     {
         var currentTask = resume.CurrentStage.Tasks.ElementAt(resume.TaskIndex);
+        if (currentTaskExecution.Status == TaskExecutionStatus.Failed &&
+            await TryRetryTaskAfterFailureResponse(resume, instance, stageExecution, currentTaskExecution, currentAttempt, cancellationToken))
+        {
+            return new ParallelGroupResumeDecision(false, resume.TaskIndex + 1);
+        }
+
         var groupTasks = resume.CurrentStage.Tasks
             .Where(x => string.Equals(x.ParallelGroupId, currentTask.ParallelGroupId, StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.Order)
@@ -1257,6 +1343,15 @@ public sealed class RuntimeEngine : IRuntimeEngine
         var lastGroupIndex = groupTasks.Max(groupTask => taskIndexes.FindIndex(x => string.Equals(x.Key, groupTask.Key, StringComparison.OrdinalIgnoreCase)));
         if (failedTaskExecution is not null)
         {
+            await WriteTransition(RuntimeTransition.ForTaskPayload(
+                instance,
+                "ParallelGroupFailed",
+                StageExecutionStatus.Running,
+                StageExecutionStatus.Failed,
+                stageExecution,
+                failedTaskExecution,
+                BuildParallelGroupPayload(resume.CurrentStage, currentTask.ParallelGroupId, groupTasks)), cancellationToken);
+
             var canContinueAfterFailure = await ApplyTaskFailurePolicyAfterResponse(resume, instance, stageExecution, failedTaskExecution, cancellationToken);
             if (!canContinueAfterFailure)
                 return new ParallelGroupResumeDecision(false, resume.TaskIndex + 1);
@@ -1594,12 +1689,11 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
     private sealed record RuntimeResponseTrace(TaskExecutionAttempt Attempt, TaskDispatch Dispatch);
 
-    private static RuntimeResumeContext CreateResumeContext(RuntimeOrchestrationArtifact artifact, StageExecution stageExecution, TaskExecution taskExecution)
+    private static RuntimeResumeContext CreateResumeContext(Id artifactId, RuntimeArtifactDocument document, StageExecution stageExecution, TaskExecution taskExecution)
     {
-        var document = RuntimeArtifactDocument.Parse(artifact.ArtifactPayload, artifact.Version.ToString());
         var stageIndex = document.Stages.ToList().FindIndex(x => string.Equals(x.Key, stageExecution.StageKey, StringComparison.OrdinalIgnoreCase));
         if (stageIndex < 0)
-            throw new InvalidOperationException($"Stage '{stageExecution.StageKey}' was not found in artifact '{artifact.Id}'.");
+            throw new InvalidOperationException($"Stage '{stageExecution.StageKey}' was not found in artifact '{artifactId}'.");
 
         var stage = document.Stages.ElementAt(stageIndex);
         var taskIndex = stage.Tasks.ToList().FindIndex(x => string.Equals(x.Key, taskExecution.TaskKey, StringComparison.OrdinalIgnoreCase));
@@ -1608,6 +1702,25 @@ public sealed class RuntimeEngine : IRuntimeEngine
 
         return new RuntimeResumeContext { Document = document, CurrentStage = stage, StageIndex = stageIndex, TaskIndex = taskIndex };
     }
+
+    private static RuntimeArtifactDocument GetOrAddArtifactDocument(RuntimeOrchestrationArtifact artifact)
+    {
+        var cacheKey = BuildArtifactDocumentCacheKey(artifact.Id, artifact.ArtifactChecksum.ToString());
+        return ArtifactDocuments.GetOrAdd(
+            cacheKey,
+            _ => RuntimeArtifactDocument.Parse(artifact.ArtifactPayload, artifact.Version.ToString()));
+    }
+
+    private static bool TryGetArtifactDocument(Id artifactId, out RuntimeArtifactDocument document)
+    {
+        var prefix = $"{artifactId}:";
+        var match = ArtifactDocuments.FirstOrDefault(x => x.Key.StartsWith(prefix, StringComparison.Ordinal));
+        document = match.Value;
+        return document is not null;
+    }
+
+    private static string BuildArtifactDocumentCacheKey(Id artifactId, string checksum)
+        => $"{artifactId}:{checksum}";
 
     private static RuntimeTaskExecutionContext CreateTaskContext(OrchestrationInstance instance, string orchestrationVersion, StageExecution stageExecution, RuntimeTaskDocument task)
     {
