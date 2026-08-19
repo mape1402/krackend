@@ -1,5 +1,3 @@
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
-using Krackend.Sagas.Orchestrations.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -29,21 +27,15 @@ public sealed class RuntimeActiveArtifactConsumerHostedService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<RuntimeEnvironmentDescriptor>();
-        var artifacts = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
-        var synchronizer = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactConsumerSynchronizer>();
-
-        var activeArtifacts = (await artifacts.GetAll(environment.EnvironmentKey, cancellationToken))
-            .Where(x => x.IsActive)
-            .ToArray();
-
-        foreach (var artifact in activeArtifacts)
-            await synchronizer.Synchronize(artifact, cancellationToken);
+        var synchronizer = scope.ServiceProvider.GetRequiredService<IRuntimeIngressSynchronizer>();
 
         _logger.LogInformation(
-            "Runtime synchronized {Count} active artifact consumer registrations for environment '{EnvironmentKey}'.",
-            activeArtifacts.Length,
-            environment.EnvironmentKey);
+            "Runtime synchronizing active artifact ingress registrations.");
+
+        await synchronizer.SynchronizeActiveArtifacts(cancellationToken);
+
+        _logger.LogInformation(
+            "Runtime synchronized active artifact ingress registrations.");
     }
 
     /// <inheritdoc/>

@@ -3,11 +3,13 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 using Krackend.Sagas.Orchestrations.Engine;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Consuming;
 using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Metadata;
 using Krackend.Sagas.Orchestrations.Web;
+using Microsoft.Extensions.Options;
 using SemanticVersion = Krackend.Sagas.Orchestrations.Abstractions.Primitives.SemanticVersion;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Web;
@@ -20,6 +22,8 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
         var scheduler = new CapturingDurableWorkScheduler();
         var registry = new CapturingMessageConsumerRegistry();
         var synchronizer = new RuntimeArtifactConsumerSynchronizer(
+            new EmptyArtifactCatalog(),
+            new RuntimeArtifactIngressBindingBuilder(),
             scheduler,
             new NoopBackChannelResponseHandler(),
             new[] { registry });
@@ -41,18 +45,58 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
         Assert.Equal("A1", envelope.Payload["orderId"]!.GetValue<string>());
     }
 
-    private static RuntimeOrchestrationArtifact CreateArtifact()
+    [Fact]
+    public async Task SynchronizeActiveArtifacts_ReadsArtifactsInPages()
+    {
+        var catalog = new CapturingPagedArtifactCatalog(CreateArtifact("first"), CreateArtifact("second"));
+        var registry = new CapturingMessageConsumerRegistry();
+        var synchronizer = new RuntimeArtifactConsumerSynchronizer(
+            catalog,
+            new RuntimeArtifactIngressBindingBuilder(),
+            new CapturingDurableWorkScheduler(),
+            new NoopBackChannelResponseHandler(),
+            new[] { registry },
+            Options.Create(new RuntimeIngressSynchronizationOptions { ActiveArtifactPageSize = 1 }));
+
+        await synchronizer.SynchronizeActiveArtifacts();
+
+        Assert.Equal(2, catalog.Reads);
+        Assert.Equal(new[] { 0, 1 }, catalog.Offsets);
+        Assert.Equal(4, registry.Registered.Count);
+    }
+
+    [Fact]
+    public async Task SynchronizeArtifact_DoesNotRegisterSameArtifactBindingTwice()
+    {
+        var artifact = CreateArtifact();
+        var registry = new CapturingMessageConsumerRegistry();
+        var synchronizer = new RuntimeArtifactConsumerSynchronizer(
+            new EmptyArtifactCatalog(),
+            new RuntimeArtifactIngressBindingBuilder(),
+            new CapturingDurableWorkScheduler(),
+            new NoopBackChannelResponseHandler(),
+            new[] { registry });
+
+        await synchronizer.SynchronizeArtifact(artifact);
+        await synchronizer.SynchronizeArtifact(artifact);
+
+        Assert.Equal(2, registry.Registered.Count);
+        Assert.Equal(2, registry.Removed.Count);
+    }
+
+    private static RuntimeOrchestrationArtifact CreateArtifact(string orchestrationKey = "order.fulfillment")
         => new()
         {
             Id = Id.New(),
             EnvironmentKey = "local",
-            OrchestrationDefinitionKey = "order.fulfillment",
+            OrchestrationDefinitionKey = orchestrationKey,
             ArtifactType = "orchestration.deploy",
             SourceOrchestrationVersionId = Id.New(),
             Version = new SemanticVersion(2, 1, 0),
             ArtifactChecksum = new Checksum("checksum"),
             ArtifactPayload = new JsonObject
             {
+                ["Key"] = orchestrationKey,
                 ["TriggerBindings"] = new JsonArray
                 {
                     new JsonObject
@@ -65,7 +109,7 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
                         }
                     }
                 },
-                ["BackChannelTopic"] = "orders.backchannel"
+                ["StageDefinitions"] = new JsonArray()
             }
         };
 
@@ -121,9 +165,12 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
     private sealed class CapturingMessageConsumerRegistry : IMessageConsumerRegistry
     {
         public MessageConsumerRegistration TriggerRegistration { get; private set; } = null!;
+        public List<MessageConsumerRegistration> Registered { get; } = new();
+        public List<string> Removed { get; } = new();
 
         public Task Register(MessageConsumerRegistration registration, CancellationToken cancellationToken = default)
         {
+            Registered.Add(registration);
             if (registration.Topic == "orders.created")
                 TriggerRegistration = registration;
 
@@ -131,12 +178,48 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
         }
 
         public Task Remove(string topic, string version, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            Removed.Add($"{topic}:{version}");
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NoopBackChannelResponseHandler : IRuntimeBackChannelResponseHandler
     {
         public Task Handle(MessageConsumeContext context, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class EmptyArtifactCatalog : IRuntimeArtifactCatalog
+    {
+        public Task<RuntimeArtifactPage> ReadActiveDeployments(RuntimeArtifactPageCursor cursor, int pageSize, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RuntimeArtifactPage(Array.Empty<RuntimeOrchestrationArtifact>(), null!, false));
+    }
+
+    private sealed class CapturingPagedArtifactCatalog : IRuntimeArtifactCatalog
+    {
+        private readonly RuntimeOrchestrationArtifact[] _artifacts;
+
+        public CapturingPagedArtifactCatalog(params RuntimeOrchestrationArtifact[] artifacts)
+        {
+            _artifacts = artifacts;
+        }
+
+        public int Reads { get; private set; }
+
+        public List<int> Offsets { get; } = new();
+
+        public Task<RuntimeArtifactPage> ReadActiveDeployments(RuntimeArtifactPageCursor cursor, int pageSize, CancellationToken cancellationToken = default)
+        {
+            Reads++;
+            Offsets.Add(cursor.Offset);
+            var items = _artifacts.Skip(cursor.Offset).Take(pageSize).ToArray();
+            var nextOffset = cursor.Offset + items.Length;
+            var hasMore = nextOffset < _artifacts.Length;
+            return Task.FromResult(new RuntimeArtifactPage(
+                items,
+                hasMore ? new RuntimeArtifactPageCursor(nextOffset) : null!,
+                hasMore));
+        }
     }
 }
