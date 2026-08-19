@@ -9,18 +9,18 @@ using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Consuming;
 namespace Krackend.Sagas.Orchestrations.Web;
 
 /// <summary>
-/// Registers message-based runtime ingresses through the broker-neutral messaging registry.
+/// Connects message-based runtime ingresses through the broker-neutral messaging registry.
 /// </summary>
-public sealed class MessageIngressRegistration : IRuntimeIngressRegistration
+public sealed class MessageIngressConnector : IRuntimeIngressConnector
 {
     private readonly IRuntimeDurableWorkScheduler _durableWorkScheduler;
     private readonly IRuntimeBackChannelResponseHandler _backChannelResponseHandler;
     private readonly IReadOnlyCollection<IMessageConsumerRegistry> _registries;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="MessageIngressRegistration"/> class.
+    /// Initializes a new instance of the <see cref="MessageIngressConnector"/> class.
     /// </summary>
-    public MessageIngressRegistration(
+    public MessageIngressConnector(
         IRuntimeDurableWorkScheduler durableWorkScheduler,
         IRuntimeBackChannelResponseHandler backChannelResponseHandler,
         IEnumerable<IMessageConsumerRegistry> registries)
@@ -35,7 +35,7 @@ public sealed class MessageIngressRegistration : IRuntimeIngressRegistration
         => binding is not null;
 
     /// <inheritdoc/>
-    public async Task Register(
+    public async Task Connect(
         RuntimeOrchestrationArtifact artifact,
         RuntimeMessagingIngressBinding binding,
         CancellationToken cancellationToken = default)
@@ -49,12 +49,12 @@ public sealed class MessageIngressRegistration : IRuntimeIngressRegistration
         foreach (var registry in _registries)
         {
             await registry.Remove(binding.Topic, binding.Version, cancellationToken);
-            await registry.Register(CreateRegistration(artifact, binding), cancellationToken);
+            await registry.Register(CreateConsumer(artifact, binding), cancellationToken);
         }
     }
 
     /// <inheritdoc/>
-    public async Task Remove(
+    public async Task Disconnect(
         RuntimeOrchestrationArtifact artifact,
         RuntimeMessagingIngressBinding binding,
         CancellationToken cancellationToken = default)
@@ -66,7 +66,7 @@ public sealed class MessageIngressRegistration : IRuntimeIngressRegistration
             await registry.Remove(binding.Topic, binding.Version, cancellationToken);
     }
 
-    private MessageConsumerRegistration CreateRegistration(RuntimeOrchestrationArtifact artifact, RuntimeMessagingIngressBinding binding)
+    private MessageConsumerRegistration CreateConsumer(RuntimeOrchestrationArtifact artifact, RuntimeMessagingIngressBinding binding)
     {
         return new MessageConsumerRegistration
         {
