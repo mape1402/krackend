@@ -48,9 +48,9 @@ internal sealed class RuntimeArtifactConsumerBindings
     {
         var topic = ReadString(payload, "BackChannelTopic", "backChannelTopic", "ResponseTopic", "responseTopic");
         if (string.IsNullOrWhiteSpace(topic))
-            topic = BuildBackChannelTopic(ReadString(payload, "Domain", "domain"), ReadOrchestrationKey(artifact, payload));
+            topic = BuildBackChannelTopic(ReadOrchestrationKey(artifact, payload));
 
-        return new RuntimeArtifactConsumerBinding { Topic = AppendVersion(topic, version), Version = version };
+        return new RuntimeArtifactConsumerBinding { Topic = NormalizeTopic(topic), Version = version };
     }
 
     private static string ReadOrchestrationKey(RuntimeOrchestrationArtifact artifact, JsonObject payload)
@@ -76,6 +76,10 @@ internal sealed class RuntimeArtifactConsumerBindings
         var channel = ReadObject(binding, "TriggerChannel", "triggerChannel");
         if (channel is null)
             return null;
+
+        var eventChannel = ReadObject(channel, "Event", "event");
+        if (eventChannel is not null)
+            channel = eventChannel;
 
         var topic = ReadString(channel, "Topic", "topic");
         if (string.IsNullOrWhiteSpace(topic))
@@ -104,32 +108,19 @@ internal sealed class RuntimeArtifactConsumerBindings
         return RuntimeArtifactLifecycle.Deploy;
     }
 
-    /// <summary>
-    /// Builds the default orchestration back-channel topic when the artifact does not specify one.
-    /// </summary>
-    /// <param name="domain">Orchestration domain.</param>
-    /// <param name="key">Orchestration key.</param>
-    /// <returns>Back-channel topic.</returns>
-    private static string BuildBackChannelTopic(string domain, string key)
+    private static string BuildBackChannelTopic(string key)
     {
-        var parts = new[] { "orchestrations", domain, key }
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim().Replace(" ", "_"));
+        var normalized = string.IsNullOrWhiteSpace(key)
+            ? "unknown"
+            : key.Trim().Replace("::", ".").Replace(" ", "_");
 
-        return string.Join(".", parts).ToLowerInvariant();
+        return normalized.StartsWith("orchestrations.", StringComparison.OrdinalIgnoreCase)
+            ? normalized.ToLowerInvariant()
+            : $"orchestrations.{normalized}".ToLowerInvariant();
     }
 
-    private static string AppendVersion(string topic, string version)
-    {
-        var normalizedTopic = topic.Trim().Replace(" ", "_").ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(version))
-            return normalizedTopic;
-
-        var suffix = $".v{version.Trim().Replace(".", "-")}".ToLowerInvariant();
-        return normalizedTopic.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
-            ? normalizedTopic
-            : $"{normalizedTopic}{suffix}";
-    }
+    private static string NormalizeTopic(string topic)
+        => topic.Trim().Replace(" ", "_").ToLowerInvariant();
 
     private static JsonObject ReadObject(JsonObject obj, params string[] names)
         => names.Select(name => obj[name]).OfType<JsonObject>().FirstOrDefault();

@@ -73,7 +73,7 @@ public sealed class MessagingCommandDispatcher : IMessagingCommandDispatcher
             TaskExecutionId = command.TaskExecutionId,
             DispatchId = command.DispatchId,
             CorrelationId = command.CorrelationId,
-            ResponseTopic = RuntimeBackChannelTopic.Build(command.OrchestrationDefinitionKey, command.OrchestrationVersion),
+            ResponseTopic = RuntimeBackChannelTopic.Build(command.OrchestrationDefinitionKey),
             ResponseVersion = command.OrchestrationVersion,
             Environment = command.EnvironmentKey,
             CurrentState = CreateRuntimeState(command)
