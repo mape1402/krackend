@@ -16,9 +16,11 @@ public static class ServiceCollectionExtensions
             services.Configure(configureArtifactPull);
         }
 
+        services.AddOptions<RuntimeIngressSynchronizationOptions>();
         services.AddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
         services.AddScoped<IRuntimeArtifactIngressBindingBuilder, RuntimeArtifactIngressBindingBuilder>();
         services.AddScoped<IRuntimeArtifactConsumerSynchronizer, RuntimeArtifactConsumerSynchronizer>();
+        services.AddScoped<IRuntimeIngressSynchronizer>(provider => provider.GetRequiredService<IRuntimeArtifactConsumerSynchronizer>() as IRuntimeIngressSynchronizer);
         services.AddScoped<IRuntimeBackChannelResponseHandler, RuntimeBackChannelResponseHandler>();
         services.AddScoped<IRuntimeTriggerInteractionService, RuntimeTriggerInteractionService>();
         services.AddHttpClient<IRuntimeArtifactPullService, RuntimeArtifactPullService>();

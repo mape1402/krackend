@@ -21,5 +21,5 @@ internal sealed class RuntimeConsumerSyncContext
     /// <summary>
     /// Gets the consumer bindings derived from the artifact payload.
     /// </summary>
-    public required RuntimeArtifactConsumerBindings Bindings { get; init; }
+    public required RuntimeArtifactIngressBindingSet Bindings { get; init; }
 }
