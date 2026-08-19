@@ -15,6 +15,7 @@ public static class ServiceCollectionExtensions
         services.AddDbContextPool<RuntimeStorageDbContext>(configureDbContext, poolSize: 2048);
         services.AddScoped<IRuntimeStorageUnitOfWork, RuntimeStorageUnitOfWork>();
         services.AddScoped<IRuntimeStorageWarmup, RuntimeStorageWarmup>();
+        services.AddScoped<IRuntimeArtifactCatalog, EfCoreRuntimeArtifactCatalog>();
         services.AddScoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>();
         services.AddScoped<ITriggerIntakeRepository, TriggerIntakeRepository>();
         services.AddScoped<ITriggerIntakeAttemptRepository, TriggerIntakeAttemptRepository>();

@@ -5,18 +5,18 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class RuntimeBackChannelTopicTests
 {
     [Fact]
-    public void Build_AppendsSemanticVersionToBackChannelTopic()
+    public void Build_UsesOrchestrationsPrefixWithoutAppendingVersion()
     {
-        var topic = RuntimeBackChannelTopic.Build("order.fulfillment", "2.1.3");
+        var topic = RuntimeBackChannelTopic.Build("order.fulfillment");
 
-        Assert.Equal("orchestrations.order.fulfillment.v2-1-3", topic);
+        Assert.Equal("orchestrations.order.fulfillment", topic);
     }
 
     [Fact]
-    public void Build_DoesNotAppendVersionTwice()
+    public void Build_DoesNotAppendPrefixTwice()
     {
-        var topic = RuntimeBackChannelTopic.Build("orchestrations.order.fulfillment.v2-1-3", "2.1.3");
+        var topic = RuntimeBackChannelTopic.Build("orchestrations.order.fulfillment");
 
-        Assert.Equal("orchestrations.order.fulfillment.v2-1-3", topic);
+        Assert.Equal("orchestrations.order.fulfillment", topic);
     }
 }
