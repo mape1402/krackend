@@ -1,6 +1,4 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
-using Krackend.Sagas.Orchestrations.Messaging.Abstractions.Consuming;
-
 namespace Krackend.Sagas.Orchestrations.Web;
 
 /// <summary>
@@ -8,11 +6,6 @@ namespace Krackend.Sagas.Orchestrations.Web;
 /// </summary>
 internal sealed class RuntimeConsumerSyncContext
 {
-    /// <summary>
-    /// Gets the registry that receives consumer changes.
-    /// </summary>
-    public required IMessageConsumerRegistry Registry { get; init; }
-
     /// <summary>
     /// Gets the runtime artifact being synchronized.
     /// </summary>
