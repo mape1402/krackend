@@ -13,7 +13,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Krackend.Sagas.Orchestrations\Krackend.Sagas.Orchestrations.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Web\Krackend.Sagas.Orchestrations.Web.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
   </ItemGroup>
