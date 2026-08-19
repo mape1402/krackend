@@ -103,6 +103,9 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
 
     private Task EnqueueTrigger(RuntimeOrchestrationArtifact artifact, MessageConsumeContext context, CancellationToken cancellationToken)
     {
+        if (!ShouldProcessTrigger(artifact, context))
+            return Task.CompletedTask;
+
         var envelope = new RuntimeIngressEnvelope
         {
             IngressId = Id.New().ToString(),
@@ -110,7 +113,7 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
             EnvironmentKey = artifact.EnvironmentKey,
             OrchestrationName = artifact.OrchestrationDefinitionKey,
             OrchestrationVersion = artifact.Version.ToString(),
-            CorrelationId = context.Metadata?.CorrelationId,
+            CorrelationId = ResolveCorrelationId(context),
             SagaId = context.Metadata?.SagaId,
             IdempotencyKey = BuildTriggerIdempotencyKey(context),
             Payload = context.Message ?? new JsonObject(),
@@ -127,14 +130,48 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
         return _durableWorkScheduler.ScheduleProcessIngress(envelope, cancellationToken).AsTask();
     }
 
+    private static bool ShouldProcessTrigger(RuntimeOrchestrationArtifact artifact, MessageConsumeContext context)
+    {
+        var requestedOrchestration = ReadPayloadString(context.Message, "OrchestrationKey", "orchestrationKey");
+        return string.IsNullOrWhiteSpace(requestedOrchestration)
+            || string.Equals(requestedOrchestration.Trim(), artifact.OrchestrationDefinitionKey, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveCorrelationId(MessageConsumeContext context)
+        => FirstNonEmpty(
+            context.Metadata?.CorrelationId,
+            ReadPayloadString(context.Message, "OrderId", "orderId", "CorrelationId", "correlationId"),
+            context.Metadata?.DispatchId,
+            ReadPayloadString(context.Message, "MessageId", "messageId"));
+
     private static string BuildTriggerIdempotencyKey(MessageConsumeContext context)
     {
-        if (!string.IsNullOrWhiteSpace(context.Metadata?.CorrelationId))
-            return context.Metadata.CorrelationId;
+        var payloadKey = FirstNonEmpty(
+            context.Metadata?.CorrelationId,
+            ReadPayloadString(context.Message, "OrderId", "orderId", "CorrelationId", "correlationId"),
+            context.Metadata?.DispatchId,
+            ReadPayloadString(context.Message, "MessageId", "messageId"));
 
-        if (!string.IsNullOrWhiteSpace(context.Metadata?.DispatchId))
-            return context.Metadata.DispatchId;
+        if (!string.IsNullOrWhiteSpace(payloadKey))
+            return payloadKey;
 
         return $"{context.Topic}|{context.Version}|{context.CreatedOnUtc.UtcTicks}|{Id.New()}";
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty;
+
+    private static string ReadPayloadString(JsonNode node, params string[] names)
+    {
+        if (node is not JsonObject obj)
+            return string.Empty;
+
+        foreach (var name in names)
+        {
+            if (obj[name] is JsonValue value && value.TryGetValue<string>(out var text))
+                return text ?? string.Empty;
+        }
+
+        return string.Empty;
     }
 }
