@@ -3,7 +3,7 @@ namespace Krackend.Sagas.Orchestrations.Engine;
 /// <summary>
 /// Builds the runtime back-channel topic used by external services to answer orchestration tasks.
 /// </summary>
-internal static class RuntimeBackChannelTopic
+public static class RuntimeBackChannelTopic
 {
     /// <summary>
     /// Builds a normalized topic using the orchestration key.

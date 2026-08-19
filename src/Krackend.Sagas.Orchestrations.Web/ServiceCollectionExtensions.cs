@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
+        services.AddScoped<IRuntimeArtifactIngressBindingBuilder, RuntimeArtifactIngressBindingBuilder>();
         services.AddScoped<IRuntimeArtifactConsumerSynchronizer, RuntimeArtifactConsumerSynchronizer>();
         services.AddScoped<IRuntimeBackChannelResponseHandler, RuntimeBackChannelResponseHandler>();
         services.AddScoped<IRuntimeTriggerInteractionService, RuntimeTriggerInteractionService>();
