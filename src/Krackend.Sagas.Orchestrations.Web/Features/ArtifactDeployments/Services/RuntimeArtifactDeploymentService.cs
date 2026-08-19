@@ -14,13 +14,13 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
 {
     private readonly RuntimeEnvironmentDescriptor _runtimeEnvironment;
     private readonly IRuntimeArtifactRepository _artifactRepository;
-    private readonly IRuntimeArtifactConsumerSynchronizer _consumerSynchronizer;
+    private readonly IRuntimeIngressSynchronizer _ingressSynchronizer;
 
-    public RuntimeArtifactDeploymentService(RuntimeEnvironmentDescriptor runtimeEnvironment, IRuntimeArtifactRepository artifactRepository, IRuntimeArtifactConsumerSynchronizer consumerSynchronizer)
+    public RuntimeArtifactDeploymentService(RuntimeEnvironmentDescriptor runtimeEnvironment, IRuntimeArtifactRepository artifactRepository, IRuntimeIngressSynchronizer ingressSynchronizer)
     {
         _runtimeEnvironment = runtimeEnvironment ?? throw new ArgumentNullException(nameof(runtimeEnvironment));
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
-        _consumerSynchronizer = consumerSynchronizer ?? throw new ArgumentNullException(nameof(consumerSynchronizer));
+        _ingressSynchronizer = ingressSynchronizer ?? throw new ArgumentNullException(nameof(ingressSynchronizer));
     }
 
     public async Task<RuntimeArtifactDeploymentResult> Deploy(RuntimeArtifactDeploymentRequest request, CancellationToken cancellationToken = default)
@@ -36,7 +36,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         var artifact = new RuntimeOrchestrationArtifact
         {
             Id = ParseIdOrNew(request.ArtifactId),
-            EnvironmentKey = request.EnvironmentKey.Trim(),
+            EnvironmentKey = _runtimeEnvironment.EnvironmentKey,
             OrchestrationDefinitionKey = request.OrchestrationDefinitionKey.Trim(),
             ArtifactType = artifactType,
             SourceOrchestrationVersionId = ParseRequiredId(request.OrchestrationVersionId),
@@ -60,11 +60,11 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                 cancellationToken);
         }
 
-        await _consumerSynchronizer.Synchronize(artifact, cancellationToken);
+        await _ingressSynchronizer.SynchronizeArtifact(artifact, cancellationToken);
 
         return RuntimeArtifactDeploymentResult.Accept(
             artifact.Id.ToString(),
-            artifact.EnvironmentKey,
+            string.Empty,
             "Activated",
             "Runtime artifact accepted and activated.",
             request.CorrelationId);
@@ -100,16 +100,6 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         if (request is null)
         {
             return "Deployment request is required.";
-        }
-
-        if (string.IsNullOrWhiteSpace(request.EnvironmentKey))
-        {
-            return "EnvironmentKey is required.";
-        }
-
-        if (!string.Equals(request.EnvironmentKey.Trim(), _runtimeEnvironment.EnvironmentKey, StringComparison.Ordinal))
-        {
-            return $"Artifact target environment '{request.EnvironmentKey}' does not match runtime environment '{_runtimeEnvironment.EnvironmentKey}'.";
         }
 
         if (string.IsNullOrWhiteSpace(request.OrchestrationVersionId))
