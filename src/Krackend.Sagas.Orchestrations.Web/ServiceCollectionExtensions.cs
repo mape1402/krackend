@@ -19,7 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<RuntimeIngressSynchronizationOptions>();
         services.AddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
         services.AddScoped<IRuntimeArtifactIngressBindingBuilder, RuntimeArtifactIngressBindingBuilder>();
-        services.AddScoped<IRuntimeIngressRegistration, MessageIngressRegistration>();
+        services.AddScoped<IRuntimeIngressConnector, MessageIngressConnector>();
         services.AddScoped<IRuntimeArtifactConsumerSynchronizer, RuntimeArtifactConsumerSynchronizer>();
         services.AddScoped<IRuntimeIngressSynchronizer>(provider => provider.GetRequiredService<IRuntimeArtifactConsumerSynchronizer>() as IRuntimeIngressSynchronizer);
         services.AddScoped<IRuntimeBackChannelResponseHandler, RuntimeBackChannelResponseHandler>();

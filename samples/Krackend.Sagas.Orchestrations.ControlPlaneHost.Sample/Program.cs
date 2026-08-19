@@ -1,9 +1,6 @@
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap;
-using Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.Infrastructure;
 using Krackend.Sagas.Orchestrations.Distribution.Interaction;
-using Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer.Infrastructure;
-using Krackend.Sagas.Orchestrations.Security.Storage.SqlServer.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -32,14 +29,6 @@ builder.Services.AddOrchestratorControlPlane(options =>
 });
 
 var app = builder.Build();
-
-if (builder.Configuration.GetValue("Demo:EnsureCreated", true))
-{
-    using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<DesignStorageDbContext>().Database.EnsureCreated();
-    scope.ServiceProvider.GetRequiredService<DistributionStorageDbContext>().Database.EnsureCreated();
-    scope.ServiceProvider.GetRequiredService<SecurityStorageDbContext>().Database.EnsureCreated();
-}
 
 app.UseRouting();
 app.UseAuthorization();
