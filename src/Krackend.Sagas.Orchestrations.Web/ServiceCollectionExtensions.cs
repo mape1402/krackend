@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuntimeBackChannelResponseHandler, RuntimeBackChannelResponseHandler>();
         services.AddScoped<IRuntimeTriggerInteractionService, RuntimeTriggerInteractionService>();
         services.AddHttpClient<IRuntimeArtifactPullService, RuntimeArtifactPullService>();
+        services.AddHostedService<RuntimeActiveArtifactConsumerHostedService>();
         return services;
     }
 }
