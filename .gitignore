@@ -331,3 +331,4 @@ agents/
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
+/agents/runtime-artifact-ingress-synchronization-plan.md
