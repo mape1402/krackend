@@ -24,9 +24,9 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
         var synchronizer = new RuntimeArtifactConsumerSynchronizer(
             new EmptyArtifactCatalog(),
             new RuntimeArtifactIngressBindingBuilder(),
-            new IRuntimeIngressRegistration[]
+            new IRuntimeIngressConnector[]
             {
-                new MessageIngressRegistration(scheduler, new NoopBackChannelResponseHandler(), new[] { registry })
+                new MessageIngressConnector(scheduler, new NoopBackChannelResponseHandler(), new[] { registry })
             });
 
         await synchronizer.Synchronize(CreateArtifact());
@@ -54,9 +54,9 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
         var synchronizer = new RuntimeArtifactConsumerSynchronizer(
             catalog,
             new RuntimeArtifactIngressBindingBuilder(),
-            new IRuntimeIngressRegistration[]
+            new IRuntimeIngressConnector[]
             {
-                new MessageIngressRegistration(new CapturingDurableWorkScheduler(), new NoopBackChannelResponseHandler(), new[] { registry })
+                new MessageIngressConnector(new CapturingDurableWorkScheduler(), new NoopBackChannelResponseHandler(), new[] { registry })
             },
             Options.Create(new RuntimeIngressSynchronizationOptions { ActiveArtifactPageSize = 1 }));
 
@@ -75,9 +75,9 @@ public sealed class RuntimeArtifactConsumerSynchronizerTests
         var synchronizer = new RuntimeArtifactConsumerSynchronizer(
             new EmptyArtifactCatalog(),
             new RuntimeArtifactIngressBindingBuilder(),
-            new IRuntimeIngressRegistration[]
+            new IRuntimeIngressConnector[]
             {
-                new MessageIngressRegistration(new CapturingDurableWorkScheduler(), new NoopBackChannelResponseHandler(), new[] { registry })
+                new MessageIngressConnector(new CapturingDurableWorkScheduler(), new NoopBackChannelResponseHandler(), new[] { registry })
             });
 
         await synchronizer.SynchronizeArtifact(artifact);

@@ -6,13 +6,13 @@ using System.Collections.Concurrent;
 namespace Krackend.Sagas.Orchestrations.Web;
 
 /// <summary>
-/// Registers or removes trigger and back-channel consumers when runtime artifacts are deployed, deprecated or archived.
+/// Connects or disconnects trigger and back-channel consumers when runtime artifacts are deployed, deprecated or archived.
 /// </summary>
 public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsumerSynchronizer, IRuntimeIngressSynchronizer
 {
     private readonly IRuntimeArtifactCatalog _artifactCatalog;
     private readonly IRuntimeArtifactIngressBindingBuilder _bindingBuilder;
-    private readonly IReadOnlyCollection<IRuntimeIngressRegistration> _registrations;
+    private readonly IReadOnlyCollection<IRuntimeIngressConnector> _connectors;
     private readonly RuntimeIngressSynchronizationOptions _options;
     private readonly ConcurrentDictionary<string, byte> _registeredBindings = new(StringComparer.OrdinalIgnoreCase);
 
@@ -21,17 +21,17 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
     /// </summary>
     /// <param name="artifactCatalog">Runtime artifact catalog.</param>
     /// <param name="bindingBuilder">Runtime ingress binding builder.</param>
-    /// <param name="registrations">Available runtime ingress registrations.</param>
+    /// <param name="connectors">Available runtime ingress connectors.</param>
     /// <param name="options">Synchronization options.</param>
     public RuntimeArtifactConsumerSynchronizer(
         IRuntimeArtifactCatalog artifactCatalog,
         IRuntimeArtifactIngressBindingBuilder bindingBuilder,
-        IEnumerable<IRuntimeIngressRegistration> registrations,
+        IEnumerable<IRuntimeIngressConnector> connectors,
         IOptions<RuntimeIngressSynchronizationOptions> options = null)
     {
         _artifactCatalog = artifactCatalog ?? throw new ArgumentNullException(nameof(artifactCatalog));
         _bindingBuilder = bindingBuilder ?? throw new ArgumentNullException(nameof(bindingBuilder));
-        _registrations = registrations?.ToArray() ?? Array.Empty<IRuntimeIngressRegistration>();
+        _connectors = connectors?.ToArray() ?? Array.Empty<IRuntimeIngressConnector>();
         _options = options?.Value ?? new RuntimeIngressSynchronizationOptions();
     }
 
@@ -58,7 +58,7 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
     /// <inheritdoc/>
     public async Task SynchronizeArtifact(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
     {
-        if (artifact is null || _registrations.Count == 0)
+        if (artifact is null || _connectors.Count == 0)
             return;
 
         var bindings = _bindingBuilder.Build(artifact);
@@ -130,14 +130,14 @@ public sealed class RuntimeArtifactConsumerSynchronizer : IRuntimeArtifactConsum
 
     private async Task RegisterBinding(RuntimeConsumerSyncContext context, RuntimeMessagingIngressBinding binding, CancellationToken cancellationToken)
     {
-        foreach (var registration in _registrations.Where(x => x.CanHandle(binding)))
-            await registration.Register(context.Artifact, binding, cancellationToken);
+        foreach (var connector in _connectors.Where(x => x.CanHandle(binding)))
+            await connector.Connect(context.Artifact, binding, cancellationToken);
     }
 
     private async Task RemoveBinding(RuntimeConsumerSyncContext context, RuntimeMessagingIngressBinding binding, CancellationToken cancellationToken)
     {
-        foreach (var registration in _registrations.Where(x => x.CanHandle(binding)))
-            await registration.Remove(context.Artifact, binding, cancellationToken);
+        foreach (var connector in _connectors.Where(x => x.CanHandle(binding)))
+            await connector.Disconnect(context.Artifact, binding, cancellationToken);
     }
 
     private static RuntimeArtifactLifecycle GetLifecycle(string artifactType)

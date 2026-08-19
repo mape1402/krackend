@@ -3,35 +3,35 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 namespace Krackend.Sagas.Orchestrations.Web;
 
 /// <summary>
-/// Registers runtime ingress bindings without exposing a concrete transport implementation.
+/// Connects runtime ingress bindings without exposing a concrete transport implementation.
 /// </summary>
-public interface IRuntimeIngressRegistration
+public interface IRuntimeIngressConnector
 {
     /// <summary>
-    /// Gets whether this registrar can handle the binding.
+    /// Gets whether this connector can handle the binding.
     /// </summary>
     /// <param name="binding">Runtime messaging ingress binding.</param>
     /// <returns>True when the binding can be handled.</returns>
     bool CanHandle(RuntimeMessagingIngressBinding binding);
 
     /// <summary>
-    /// Registers one ingress binding.
+    /// Connects one ingress binding.
     /// </summary>
     /// <param name="artifact">Runtime artifact.</param>
     /// <param name="binding">Runtime ingress binding.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task Register(
+    Task Connect(
         RuntimeOrchestrationArtifact artifact,
         RuntimeMessagingIngressBinding binding,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes one ingress binding.
+    /// Disconnects one ingress binding.
     /// </summary>
     /// <param name="artifact">Runtime artifact.</param>
     /// <param name="binding">Runtime ingress binding.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task Remove(
+    Task Disconnect(
         RuntimeOrchestrationArtifact artifact,
         RuntimeMessagingIngressBinding binding,
         CancellationToken cancellationToken = default);
