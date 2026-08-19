@@ -23,5 +23,6 @@ internal sealed class RuntimeArtifactEntityConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SupersededByArtifactId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
         builder.HasIndex(x => new { x.EnvironmentKey, x.OrchestrationDefinitionKey, x.Version, x.ArtifactType }).IsUnique();
         builder.HasIndex(x => new { x.EnvironmentKey, x.OrchestrationDefinitionKey, x.IsActive });
+        builder.HasIndex(x => new { x.IsActive, x.ArtifactType, x.DeployedOnUtc });
     }
 }
