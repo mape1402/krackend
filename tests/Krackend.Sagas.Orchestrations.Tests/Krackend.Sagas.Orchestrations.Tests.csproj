@@ -15,10 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client\Krackend.Sagas.Orchestrations.Client.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Abstractions\Krackend.Sagas.Orchestrations.Client.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Pigeon\Krackend.Sagas.Orchestrations.Client.Pigeon.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Spider\Krackend.Sagas.Orchestrations.Client.Spider.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Contracts\Krackend.Sagas.Orchestrations.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.Interaction\Krackend.Sagas.Orchestrations.Design.Interaction.csproj" />
@@ -29,16 +25,10 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer\Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.WebUI\Krackend.Sagas.Orchestrations.Distribution.WebUI.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution\Krackend.Sagas.Orchestrations.Distribution.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer\Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Messaging.Abstractions\Krackend.Sagas.Orchestrations.Messaging.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Messaging.Pigeon.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security.Interaction\Krackend.Sagas.Orchestrations.Security.Interaction.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security.Storage.SqlServer\Krackend.Sagas.Orchestrations.Security.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security.WebUI\Krackend.Sagas.Orchestrations.Security.WebUI.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security\Krackend.Sagas.Orchestrations.Security.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations\Krackend.Sagas.Orchestrations.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Web\Krackend.Sagas.Orchestrations.Web.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
   </ItemGroup>
 
