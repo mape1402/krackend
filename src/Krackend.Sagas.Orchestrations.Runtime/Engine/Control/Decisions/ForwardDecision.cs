@@ -12,6 +12,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         }
 
         public ITaskAction HandsOn()
-            => new InvokeRemoteCommandAction(new InvokeRemoteCommandContext(_context.ServiceProvider));
+            => new InvokeRemoteCommandAction(new InvokeRemoteCommandContext(_context.ServiceProvider)
+            {
+                Payload = _context.Payload,
+                RemoteCommandTransport = _context.RemoteCommandTransport,
+                SettingsPayload = _context.SettingsPayload
+            });
     }
 }
