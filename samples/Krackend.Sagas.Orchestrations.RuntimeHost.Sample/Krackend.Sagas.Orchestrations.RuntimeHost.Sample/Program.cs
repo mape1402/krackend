@@ -1,7 +1,13 @@
+using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services
+    .AddKrackendOrchestrationsRuntime()
+    .AddPigeon(builder.Configuration);
 
 var app = builder.Build();
 
