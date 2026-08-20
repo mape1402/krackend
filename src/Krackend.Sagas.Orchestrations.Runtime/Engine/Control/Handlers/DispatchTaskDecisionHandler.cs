@@ -100,35 +100,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.CurrentTaskKey = decision.Task.Key;
             instance.LastUpdatedOnUtc = now;
 
+            taskExecution.Metadata["Timeout"] = System.Text.Json.Nodes.JsonValue.Create(decision.Task.TimeoutPolicy?.Timeout.ToString() ?? string.Empty);
+
             await _taskRepository.Create(taskExecution, cancellationToken);
             await _attemptRepository.Create(attempt, cancellationToken);
             await _dispatchRepository.Create(dispatch, cancellationToken);
             await _instanceRepository.Update(instance, cancellationToken);
 
-            _metadataSetter.Set(new InstanceMetadata
+            var dispatchSucceeded = await TryDispatchAsync(
+                decision,
+                messagingConfiguration,
+                instance,
+                taskExecution,
+                attempt,
+                dispatch,
+                cancellationToken);
+            if (!dispatchSucceeded)
             {
-                SagaId = instance.CorrelationId,
-                OrchestrationInstanceId = instance.Id.ToString(),
-                CurrentStage = decision.StageKey,
-                CurrentTasks = [decision.Task.Key],
-                CorrelationId = taskExecution.CorrelationId,
-                TaskExecutionId = taskExecution.Id.ToString(),
-                DispatchId = dispatch.Id.ToString(),
-                Attempt = attempt.AttemptNumber
-            });
-
-            var messagingCommand = new MessagingCommand
-            {
-                Topic = messagingConfiguration.Topic,
-                Version = messagingConfiguration.Version.ToString(),
-                Payload = decision.Payload
-            };
-            await _dispatcher.DispatchAsync(new RemoteCommand
-            {
-                Payload = decision.Payload,
-                RemoteCommandTransport = RemoteCommandTransport.Messaging,
-                SettingsPayload = _messagingCommandSerializer.Serialize(messagingCommand)
-            }, cancellationToken);
+                return;
+            }
 
             var sentOnUtc = DateTime.UtcNow;
             dispatch.DispatchStatus = decision.Task.DispatchType == TaskDispatchType.FireAndForget ? "Completed" : "WaitingResponse";
@@ -171,6 +161,106 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 Payload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
                 ProducedBy = nameof(DispatchTaskDecisionHandler)
             }, cancellationToken);
+        }
+
+        private async Task<bool> TryDispatchAsync(
+            DispatchTaskDecision decision,
+            MessagingTaskConfigurationArtifact messagingConfiguration,
+            OrchestrationInstance instance,
+            TaskExecution taskExecution,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            CancellationToken cancellationToken)
+        {
+            var maxAttempts = Math.Max(1, (decision.Task.RetryPolicy?.MaxRetries ?? 0) + 1);
+            for (var attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++)
+            {
+                try
+                {
+                    _metadataSetter.Set(new InstanceMetadata
+                    {
+                        SagaId = instance.CorrelationId,
+                        OrchestrationInstanceId = instance.Id.ToString(),
+                        CurrentStage = decision.StageKey,
+                        CurrentTasks = [decision.Task.Key],
+                        CorrelationId = taskExecution.CorrelationId,
+                        TaskExecutionId = taskExecution.Id.ToString(),
+                        DispatchId = dispatch.Id.ToString(),
+                        Attempt = attemptNumber
+                    });
+
+                    var messagingCommand = new MessagingCommand
+                    {
+                        Topic = messagingConfiguration.Topic,
+                        Version = messagingConfiguration.Version.ToString(),
+                        Payload = decision.Payload
+                    };
+                    await _dispatcher.DispatchAsync(new RemoteCommand
+                    {
+                        Payload = decision.Payload,
+                        RemoteCommandTransport = RemoteCommandTransport.Messaging,
+                        SettingsPayload = _messagingCommandSerializer.Serialize(messagingCommand)
+                    }, cancellationToken);
+                    return true;
+                }
+                catch (Exception exception) when (attemptNumber < maxAttempts)
+                {
+                    await _transitionRepository.Create(new ExecutionTransition
+                    {
+                        Id = Id.New(),
+                        OrchestrationInstanceId = instance.Id,
+                        StageExecutionId = decision.StageExecutionId,
+                        TaskExecutionId = taskExecution.Id,
+                        TaskExecutionAttemptId = attempt.Id,
+                        TransitionType = "TaskDispatchRetrying",
+                        FromStatus = TaskExecutionStatus.Running.ToString(),
+                        ToStatus = TaskExecutionStatus.Retrying.ToString(),
+                        OccurredOnUtc = DateTime.UtcNow,
+                        Message = exception.Message,
+                        ProducedBy = nameof(DispatchTaskDecisionHandler)
+                    }, cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    var failedOnUtc = DateTime.UtcNow;
+                    dispatch.DispatchStatus = "Failed";
+                    dispatch.FailedOnUtc = failedOnUtc;
+                    dispatch.FailureReason = exception.Message;
+                    taskExecution.Status = TaskExecutionStatus.Failed;
+                    taskExecution.FailedOnUtc = failedOnUtc;
+                    attempt.Status = TaskExecutionStatus.Failed;
+                    attempt.FailedOnUtc = failedOnUtc;
+                    attempt.ErrorMessage = exception.Message;
+                    instance.Status = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue
+                        ? OrchestrationInstanceStatus.Running
+                        : OrchestrationInstanceStatus.Failed;
+                    instance.FailedOnUtc = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+                    instance.ErrorSummary = exception.Message;
+                    instance.LastUpdatedOnUtc = failedOnUtc;
+
+                    await _dispatchRepository.Update(dispatch, cancellationToken);
+                    await _taskRepository.Update(taskExecution, cancellationToken);
+                    await _attemptRepository.Update(attempt, cancellationToken);
+                    await _instanceRepository.Update(instance, cancellationToken);
+                    await _transitionRepository.Create(new ExecutionTransition
+                    {
+                        Id = Id.New(),
+                        OrchestrationInstanceId = instance.Id,
+                        StageExecutionId = decision.StageExecutionId,
+                        TaskExecutionId = taskExecution.Id,
+                        TaskExecutionAttemptId = attempt.Id,
+                        TransitionType = "TaskDispatchFailed",
+                        FromStatus = TaskExecutionStatus.Running.ToString(),
+                        ToStatus = TaskExecutionStatus.Failed.ToString(),
+                        OccurredOnUtc = failedOnUtc,
+                        Message = exception.Message,
+                        ProducedBy = nameof(DispatchTaskDecisionHandler)
+                    }, cancellationToken);
+                    return false;
+                }
+            }
+
+            return false;
         }
     }
 }

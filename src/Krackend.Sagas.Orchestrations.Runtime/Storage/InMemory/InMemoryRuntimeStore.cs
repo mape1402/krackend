@@ -18,6 +18,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public ConcurrentDictionary<Id, TaskDispatch> Dispatches { get; } = new();
 
+        public ConcurrentDictionary<Id, CompensationExecution> Compensations { get; } = new();
+
         public ConcurrentBag<ExecutionTransition> Transitions { get; } = new();
     }
 }
