@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
 {
-    internal sealed class DefaultMessagingAdapter : IMessagingAdapter
+    internal sealed class DefaultMessagingAdapter : IMessagingIngressAdapter
     {
         private readonly ILogger<DefaultMessagingAdapter> _logger;
 
