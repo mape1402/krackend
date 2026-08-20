@@ -250,8 +250,86 @@ Resultado:
 
 - No se implementaron conditions.
 - No se implementaron transformations.
-- No se implementaron branches.
-- No se implementaron parallel groups.
-- No se implementaron retry/timeout/compensation.
 - No se creo otro intake; Mule sigue siendo el intake real.
 
+## Cambios Posteriores Al Tag `runtime-orchestration-phase6`
+
+### Runtime Storage SQL Server
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/**`
+- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Migrations/RuntimeStorage/**`
+- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Program.cs`
+
+Cambio:
+
+- Se agrego provider SQL Server para runtime storage.
+- Se agrego `RuntimeStorageDbContext`.
+- Se agregaron repositorios EF para artifacts, instances, stages, tasks, attempts, dispatches, transitions, variables y compensations.
+- Se conecto el sample host al provider SQL runtime.
+- Se agrego migracion inicial y ejecucion de migrations al arrancar.
+
+Justificacion:
+
+- El motor ya no debe depender de storage in-memory para correr una orquestacion real.
+- Mule sigue siendo intake; runtime storage persiste la instancia y su ejecucion.
+
+### Parallel Groups
+
+Archivo:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/DecisionControl.cs`
+
+Cambio:
+
+- El decision control detecta tasks de un mismo parallel group.
+- Respeta `MaxParallelAgents`.
+- Mantiene semantica `WaitAll`: no avanza mientras haya tasks corriendo o esperando callback.
+- El selector de siguiente task solo considera tasks no iniciadas, evitando re-dispatch de pasos ya completados, fallidos o saltados.
+
+Justificacion:
+
+- El artifact ya modela parallel groups; el runtime debe respetar el limite de concurrencia definido por Design.
+- Una task terminal representa avance dentro de la instancia; volverla a despachar duplicaria efectos externos.
+
+### Retry De Dispatch
+
+Archivo:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Handlers/DispatchTaskDecisionHandler.cs`
+
+Cambio:
+
+- El dispatch intenta publicar hasta `RetryPolicy.MaxRetries + 1`.
+- Registra transition `TaskDispatchRetrying`.
+- Si agota reintentos, marca dispatch, attempt y task como failed.
+
+Justificacion:
+
+- El primer punto real de fallo es el dispatch remoto. El motor debe persistir el fallo sin tirar el proceso completo.
+
+### Compensation Inversa
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Decisions/CompensateInstanceDecision.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Handlers/CompensateInstanceDecisionHandler.cs`
+
+Cambio:
+
+- Si una task falla con `OnErrorPolicy.StopAndCompensate`, el runtime crea compensation executions.
+- Ejecuta compensaciones de tasks completadas en orden inverso.
+- Por ahora soporta compensation messaging.
+
+Justificacion:
+
+- La semantica de saga necesita compensar efectos ya confirmados cuando una task posterior falla.
+
+### Pendientes Explícitos
+
+- Conditions esperan definicion de DSL.
+- Transformations esperan definicion de DSL.
+- Branch rules condicionados quedan esperando evaluator de conditions.
+- `FireAndWait` queda reservado para HTTP.
+- Timeout scheduler operativo queda pendiente; el timeout se conserva en metadata de task para que el scheduler lo procese despues.

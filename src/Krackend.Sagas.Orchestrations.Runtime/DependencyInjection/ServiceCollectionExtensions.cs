@@ -38,6 +38,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionHandler<CompleteStageDecision>, CompleteStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteInstanceDecision>, CompleteInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteCallbackDecision>, CompleteCallbackDecisionHandler>();
+            services.TryAddScoped<IDecisionHandler<CompensateInstanceDecision>, CompensateInstanceDecisionHandler>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();
             services.TryAddScoped<IRuntimeArtifactResolver, DefaultRuntimeArtifactResolver>();
             services.TryAddScoped<IResolvedOrchestrationArtifactAccessor, DefaultResolvedOrchestrationArtifactAccessor>();
@@ -53,6 +54,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<ITaskExecutionAttemptRepository, InMemoryTaskExecutionAttemptRepository>();
             services.TryAddScoped<ITaskDispatchRepository, InMemoryTaskDispatchRepository>();
             services.TryAddScoped<IExecutionTransitionRepository, InMemoryExecutionTransitionRepository>();
+            services.TryAddScoped<ICompensationExecutionRepository, InMemoryCompensationExecutionRepository>();
             services.TryAddScoped<DefaultInstanceMetadataAccessor>();
             services.TryAddScoped<IInstanceMetadataAccessor>(provider =>
                 provider.GetRequiredService<DefaultInstanceMetadataAccessor>());

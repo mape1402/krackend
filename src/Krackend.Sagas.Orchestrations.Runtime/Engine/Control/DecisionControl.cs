@@ -42,7 +42,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
             var instanceId = RuntimeIdParser.Parse(request.Metadata.OrchestrationInstanceId);
             var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
-            if (instance.Status == OrchestrationInstanceStatus.Completed)
+            if (instance.Status is OrchestrationInstanceStatus.Completed or OrchestrationInstanceStatus.Compensating or OrchestrationInstanceStatus.Compensated)
             {
                 return [];
             }
@@ -69,24 +69,72 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 .Where(x => x.StageExecutionId == currentStageExecution.Id)
                 .ToArray();
 
+            var failedTask = taskExecutions.FirstOrDefault(x => x.Status == TaskExecutionStatus.Failed);
+            if (failedTask is not null)
+            {
+                var failedArtifact = tasks.FirstOrDefault(x => x.Key == failedTask.TaskKey);
+                if (failedArtifact?.OnErrorPolicy == OnErrorPolicy.StopAndCompensate)
+                {
+                    return [new CompensateInstanceDecision(instance.Id, request.ArtifactId, request.Payload?.ToJsonString())];
+                }
+
+                if (failedArtifact?.OnErrorPolicy == OnErrorPolicy.Continue)
+                {
+                    return BuildNextTaskDecisions(instance, currentStage, currentStageExecution, tasks, taskExecutions, request);
+                }
+
+                return [];
+            }
+
             if (taskExecutions.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse))
             {
                 return [];
             }
 
+            return BuildNextTaskDecisions(instance, currentStage, currentStageExecution, tasks, taskExecutions, request);
+        }
+
+        private static IReadOnlyCollection<IDecision> BuildNextTaskDecisions(
+            OrchestrationInstance instance,
+            StageArtifact currentStage,
+            StageExecution currentStageExecution,
+            IReadOnlyCollection<TaskArtifact> tasks,
+            IReadOnlyCollection<TaskExecution> taskExecutions,
+            DecisionRequest request)
+        {
             var nextTask = tasks.FirstOrDefault(task =>
-                taskExecutions.All(execution => execution.TaskKey != task.Key || execution.Status != TaskExecutionStatus.Completed));
+                taskExecutions.All(execution => execution.TaskKey != task.Key));
             if (nextTask is null)
             {
                 return [new CompleteStageDecision(instance.Id, currentStageExecution.Id)];
             }
 
-            return [new DispatchTaskDecision(
-                instance.Id,
-                currentStageExecution.Id,
-                currentStage.Key,
-                nextTask,
-                request.Payload?.ToJsonString())];
+            if (nextTask.ParallelGroupId is null)
+            {
+                return [new DispatchTaskDecision(
+                    instance.Id,
+                    currentStageExecution.Id,
+                    currentStage.Key,
+                    nextTask,
+                    request.Payload?.ToJsonString())];
+            }
+
+            var group = currentStage.ParallelGroups.FirstOrDefault(x => x.Id == nextTask.ParallelGroupId.Value);
+            var maxParallelAgents = group?.MaxParallelAgents ?? int.MaxValue;
+            var groupTasks = tasks
+                .Where(x => x.ParallelGroupId == nextTask.ParallelGroupId)
+                .Where(task => taskExecutions.All(execution => execution.TaskKey != task.Key))
+                .Take(maxParallelAgents)
+                .Select(task => new DispatchTaskDecision(
+                    instance.Id,
+                    currentStageExecution.Id,
+                    currentStage.Key,
+                    task,
+                    request.Payload?.ToJsonString()))
+                .Cast<IDecision>()
+                .ToArray();
+
+            return groupTasks.Length == 0 ? [new CompleteStageDecision(instance.Id, currentStageExecution.Id)] : groupTasks;
         }
 
         private static StageArtifact ResolveCurrentStage(
