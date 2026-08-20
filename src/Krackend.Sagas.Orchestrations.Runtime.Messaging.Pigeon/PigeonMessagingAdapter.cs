@@ -1,6 +1,7 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
+﻿using Krackend.Sagas.Orchestrations.Runtime.Buffering;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Pigeon.Messaging.Consuming.Configuration;
 using System.Text.Json.Nodes;
 
@@ -17,12 +18,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 
         public Task ConnectAsync(MessagingConfiguration configuration, CancellationToken cancellationToken = default)
         {
-            _consumingConfigurator.AddConsumer<JsonNode>(configuration.Topic, configuration.Version, (context, message) =>
+            _consumingConfigurator.AddConsumer<JsonNode>(configuration.Topic, configuration.Version, async (context, message) =>
             {
-                var logger = context.Services.GetService<ILogger<PigeonMessagingAdapter>>();
-                logger.LogInformation("Prepare for intake!!");
+                var intake = context.Services.GetRequiredService<IIntakeBuffer>();
+                var metadataAccessor = context.Services.GetRequiredService<IInstanceMetadataAccessor>();
 
-                return Task.CompletedTask;
+                var workItem = new WorkItem
+                {
+                    ArtifactId = configuration.ArtifactId,
+                    IngressKind = configuration.MessageType,
+                    Payload = message,
+                    Metadata = metadataAccessor.Get()
+                };
+
+                await intake.EnqueueWorkAsync(workItem, cancellationToken);
             });
 
             return Task.CompletedTask;   

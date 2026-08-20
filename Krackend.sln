@@ -81,6 +81,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestratio
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.RuntimeHost.Sample", "samples\Krackend.Sagas.Orchestrations.RuntimeHost.Sample\Krackend.Sagas.Orchestrations.RuntimeHost.Sample\Krackend.Sagas.Orchestrations.RuntimeHost.Sample.csproj", "{180E77D5-9133-47E4-812A-6F7108994C48}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule", "src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj", "{4D7D304B-D522-463A-ADF0-67970F6AE7EC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -451,6 +453,18 @@ Global
 		{180E77D5-9133-47E4-812A-6F7108994C48}.Release|x64.Build.0 = Release|Any CPU
 		{180E77D5-9133-47E4-812A-6F7108994C48}.Release|x86.ActiveCfg = Release|Any CPU
 		{180E77D5-9133-47E4-812A-6F7108994C48}.Release|x86.Build.0 = Release|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Debug|x64.Build.0 = Debug|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Debug|x86.Build.0 = Debug|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x64.ActiveCfg = Release|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x64.Build.0 = Release|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x86.ActiveCfg = Release|Any CPU
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -489,6 +503,7 @@ Global
 		{46F3665D-1863-45DE-8783-C852D7EE5A4B} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
 		{CCB91316-FDFC-4C5D-A428-6CB50D575385} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
 		{180E77D5-9133-47E4-812A-6F7108994C48} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{4D7D304B-D522-463A-ADF0-67970F6AE7EC} = {78A858F9-427E-427A-8B34-D82BB95A07D8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3F2B5274-3B0F-4F73-B211-9BD128E1AF56}

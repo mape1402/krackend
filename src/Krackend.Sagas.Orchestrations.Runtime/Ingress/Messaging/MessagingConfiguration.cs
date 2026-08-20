@@ -9,5 +9,7 @@
         public string Topic { get; set; }
 
         public string Version { get; set; }
+
+        public IngressKind MessageType { get; set; }
     }
 }
