@@ -1,0 +1,257 @@
+# Runtime Orchestration Engine Changes
+
+## Alcance
+
+Se implemento el camino minimo hasta fase 6 del roadmap:
+
+- Resolver artifacts runtime.
+- Promover desde el `WorkItem` aceptado por Mule.
+- Convertir decisions a datos.
+- Ejecutar decisions con handlers.
+- Despachar tasks messaging.
+- Completar `FireAndForget`.
+- Soportar callback correlation para `FireAndWaitCallback`.
+
+No se hizo commit.
+
+## Cambios En Runtime Core
+
+### Referencia a Abstractions
+
+Archivo:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Krackend.Sagas.Orchestrations.Runtime.csproj`
+
+Cambio:
+
+- Se agrego referencia a `Krackend.Sagas.Orchestrations.Abstractions`.
+
+Justificacion:
+
+- El motor runtime ahora interpreta `OrchestrationArtifact` y persiste modelos como `OrchestrationInstance`, `StageExecution`, `TaskExecution`, `TaskDispatch` y `ExecutionTransition`.
+- Esos contratos viven en Abstractions, asi que Runtime necesita esa referencia para ejecutar artifacts generados por Design.
+
+### Artifact Resolution
+
+Archivos:
+
+- `Engine/Artifacts/IRuntimeArtifactResolver.cs`
+- `Engine/Artifacts/DefaultRuntimeArtifactResolver.cs`
+- `Engine/Artifacts/IRuntimeArtifactSerializer.cs`
+- `Engine/Artifacts/DefaultRuntimeArtifactSerializer.cs`
+- `Engine/Artifacts/ResolvedOrchestrationArtifact.cs`
+- `Engine/Artifacts/IResolvedOrchestrationArtifactAccessor.cs`
+- `Engine/Artifacts/DefaultResolvedOrchestrationArtifactAccessor.cs`
+
+Cambio:
+
+- Se agrego resolucion de `RuntimeOrchestrationArtifact` por id.
+- Se valida que el artifact este activo.
+- Se deserializa el `ArtifactPayload` hacia `OrchestrationArtifact`.
+
+Justificacion:
+
+- Para correr una orquestacion real, Runtime debe interpretar el artifact generado por Design, no operar con configuracion hardcodeada.
+
+### Promotion Desde Mule
+
+Archivos:
+
+- `Engine/Promotion/PromotionRequest.cs`
+- `Engine/Promotion/PromotionResult.cs`
+- `Engine/Promotion/Promoter.cs`
+
+Cambio:
+
+- `Promoter` ahora crea una `OrchestrationInstance` desde el `WorkItem` que Mule ya acepto.
+- No se crea otro intake.
+- Se registra una transition `InstancePromoted`.
+- `PromotionResult` devuelve `SagaId` e `InstanceId`.
+
+Justificacion:
+
+- Mule es el intake real. Promotion solo convierte trabajo aceptado en una instancia de orquestacion persistida.
+
+### Metadata De Instancia
+
+Archivo:
+
+- `Metadata/InstanceMetadata.cs`
+
+Cambio:
+
+- Se agregaron `OrchestrationInstanceId`, `TaskExecutionId`, `DispatchId` y `Attempt`.
+
+Justificacion:
+
+- El callback necesita correlacionar la respuesta con instancia, task, dispatch y attempt.
+- Pigeon ya propaga `InstanceMetadata` via interceptors, por eso se aprovecha el mecanismo existente.
+
+### Decisions Como Datos
+
+Archivos:
+
+- `Engine/Control/IDecision.cs`
+- `Engine/Control/IDecisionExecutor.cs`
+- `Engine/Control/IDecisionHandler.cs`
+- `Engine/Control/DecisionExecutor.cs`
+- `Engine/Control/Decisions/*.cs`
+
+Cambio:
+
+- `IDecision` ya no expone `HandsOn()`.
+- Las decisions son records/datos.
+- Se agrego executor para resolver handlers por tipo.
+
+Justificacion:
+
+- DecisionControl debe decidir, no construir efectos.
+- Los handlers concentran efectos, persistencia y dispatch.
+- Esto deja el motor mas testeable y preparado para retry, timeout, compensation y branches.
+
+### Decision Control
+
+Archivo:
+
+- `Engine/Control/DecisionControl.cs`
+
+Cambio:
+
+- Se implemento decision control minimo:
+  - Completa callback si la task esta esperando respuesta.
+  - Arranca la siguiente stage.
+  - Despacha la siguiente task habilitada.
+  - Completa stage cuando no hay mas tasks.
+  - Completa instancia cuando no hay mas stages.
+
+Justificacion:
+
+- Este es el slice minimo para correr una orquestacion secuencial real con messaging.
+- Conditions, transformations, branches y parallel groups quedan fuera porque pertenecen a fases posteriores.
+
+### Decision Handlers
+
+Archivos:
+
+- `Engine/Control/Handlers/StartStageDecisionHandler.cs`
+- `Engine/Control/Handlers/DispatchTaskDecisionHandler.cs`
+- `Engine/Control/Handlers/CompleteStageDecisionHandler.cs`
+- `Engine/Control/Handlers/CompleteInstanceDecisionHandler.cs`
+- `Engine/Control/Handlers/CompleteCallbackDecisionHandler.cs`
+
+Cambio:
+
+- Se agregaron handlers para mutar estado runtime y ejecutar efectos.
+- `DispatchTaskDecisionHandler` crea `TaskExecution`, `TaskExecutionAttempt` y `TaskDispatch`.
+- Para `FireAndForget`, marca task/attempt/dispatch como completados despues de publicar.
+- Para `FireAndWaitCallback`, deja task/attempt/dispatch esperando respuesta.
+- `CompleteCallbackDecisionHandler` completa task/attempt/dispatch al recibir backchannel.
+
+Justificacion:
+
+- Las acciones del motor necesitan persistir cada paso y dejar una linea de tiempo auditable.
+
+### Saga Engine
+
+Archivo:
+
+- `Engine/SagaEngine.cs`
+
+Cambio:
+
+- El engine ahora ejecuta ciclos de decisions hasta que no haya mas trabajo inmediato.
+- `StartOrchestrationAsync` actualiza metadata con `SagaId` e `InstanceId` despues de promotion.
+- El engine usa `IDecisionExecutor`.
+
+Justificacion:
+
+- Una sola decision no basta para correr una orquestacion simple. El flujo necesita promover, iniciar stage, despachar task, completar stage y completar instance.
+
+### Messaging Command Serializer
+
+Archivos:
+
+- `Engine/Dispatching/Messaging/IMessagingCommandSerializer.cs`
+- `Engine/Dispatching/Messaging/DefaultMessagingCommandSerializer.cs`
+
+Cambio:
+
+- Se agrego `Serialize`.
+
+Justificacion:
+
+- El handler de dispatch construye el settings payload desde `MessagingTaskConfigurationArtifact` y el executor existente lo deserializa antes de publicar.
+
+### Storage Default In-Memory
+
+Archivos:
+
+- `Storage/InMemory/InMemoryRuntimeStore.cs`
+- `Storage/InMemory/InMemoryRuntimeStorageUnitOfWork.cs`
+- `Storage/InMemory/InMemoryRuntimeArtifactRepository.cs`
+- `Storage/InMemory/InMemoryOrchestrationInstanceRepository.cs`
+- `Storage/InMemory/InMemoryStageExecutionRepository.cs`
+- `Storage/InMemory/InMemoryTaskExecutionRepository.cs`
+- `Storage/InMemory/InMemoryTaskExecutionAttemptRepository.cs`
+- `Storage/InMemory/InMemoryTaskDispatchRepository.cs`
+- `Storage/InMemory/InMemoryExecutionTransitionRepository.cs`
+
+Cambio:
+
+- Se agregaron implementaciones default in-memory de storage runtime necesarias para el motor.
+
+Justificacion:
+
+- Los contratos de storage runtime existian, pero no habia provider concreto en Runtime core.
+- Estos defaults permiten que el runtime arranque y que un provider SQL futuro pueda reemplazarlos via DI.
+
+### Dependency Injection
+
+Archivo:
+
+- `DependencyInjection/ServiceCollectionExtensions.cs`
+
+Cambio:
+
+- Se registraron artifact resolver/serializer/accessor.
+- Se registraron decision executor y handlers.
+- Se registraron repos in-memory default.
+- Se mantuvieron `TryAdd*` para permitir reemplazos por host/adapters.
+
+Justificacion:
+
+- El host debe poder levantar el runtime sin registrar cada componente manualmente.
+- Los providers reales pueden reemplazar defaults.
+
+## Cambios En Adapters Runtime
+
+No se cambio Mule ni Pigeon directamente en esta tanda.
+
+Los adapters existentes se benefician de:
+
+- `InstanceMetadata` ampliada para correlation.
+- `PigeonDispatchAdapter` ya registrado previamente.
+- `Pigeon` continua propagando metadata por interceptors.
+
+## Validacion
+
+Comandos ejecutados:
+
+- `dotnet build src/Krackend.Sagas.Orchestrations.Runtime/Krackend.Sagas.Orchestrations.Runtime.csproj --no-restore`
+- `dotnet build samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Krackend.Sagas.Orchestrations.RuntimeHost.Sample.csproj --no-restore`
+- `dotnet build Krackend.sln --no-restore`
+
+Resultado:
+
+- Build exitoso.
+- Quedaron 4 warnings existentes por `SQLitePCLRaw.lib.e_sqlite3` en samples.
+
+## Limites Conscientes
+
+- No se implementaron conditions.
+- No se implementaron transformations.
+- No se implementaron branches.
+- No se implementaron parallel groups.
+- No se implementaron retry/timeout/compensation.
+- No se creo otro intake; Mule sigue siendo el intake real.
+
