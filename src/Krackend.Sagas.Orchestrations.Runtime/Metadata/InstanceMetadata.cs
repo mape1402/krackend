@@ -17,5 +17,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Metadata
         public string DispatchId { get; set; }
 
         public int Attempt { get; set; }
+
+        public string BackchannelTopic { get; set; }
+
+        public string BackchannelVersion { get; set; }
     }
 }

@@ -26,6 +26,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddSingleton<IIngressRegistry, IngressRegistry>();
             services.TryAddScoped<IGetAllIngressConfigurationsAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IGetIngressConfigurationByArtifactAccessor, DefaultIngressConfigurationAccessor>();
+            services.TryAddSingleton<RuntimeIngressBackchannelOptions>();
+            services.TryAddScoped<IBackchannelTopicFormatter, DefaultBackchannelTopicFormatter>();
+            services.TryAddScoped<IRuntimeIngressConfigurationKeyBuilder, DefaultRuntimeIngressConfigurationKeyBuilder>();
+            services.TryAddScoped<IRuntimeIngressConfigurationProjector, DefaultRuntimeIngressConfigurationProjector>();
             services.TryAddScoped<IMessagingConfigurationSerializer, DefaultMessagingConfigurationSerializer>();
             services.TryAddScoped<IMessagingIngressAdapter, DefaultMessagingAdapter>();
             services.TryAddScoped<IIntakeBuffer, DefaultIntakeBuffer>();
@@ -55,6 +59,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<ITaskDispatchRepository, InMemoryTaskDispatchRepository>();
             services.TryAddScoped<IExecutionTransitionRepository, InMemoryExecutionTransitionRepository>();
             services.TryAddScoped<ICompensationExecutionRepository, InMemoryCompensationExecutionRepository>();
+            services.TryAddScoped<IRuntimeIngressConfigurationRepository, InMemoryRuntimeIngressConfigurationRepository>();
             services.TryAddScoped<DefaultInstanceMetadataAccessor>();
             services.TryAddScoped<IInstanceMetadataAccessor>(provider =>
                 provider.GetRequiredService<DefaultInstanceMetadataAccessor>());

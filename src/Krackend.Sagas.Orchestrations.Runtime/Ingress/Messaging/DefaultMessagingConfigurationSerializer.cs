@@ -6,6 +6,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
     {
         private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
+        public string Serialize(MessagingConfiguration configuration)
+        {
+            if (configuration is null)
+            {
+                throw new ArgumentNullException(nameof(configuration));
+            }
+
+            return JsonSerializer.Serialize(configuration, SerializerOptions);
+        }
+
         public MessagingConfiguration Deserialize(string rawJson)
         {
             if (string.IsNullOrWhiteSpace(rawJson))

@@ -6,6 +6,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -19,6 +21,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IRemoteCommandDispatcher _dispatcher;
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
+        private readonly IMessagingConfigurationSerializer _messagingConfigurationSerializer;
+        private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
         private readonly IInstanceMetadataSetter _metadataSetter;
 
         public DispatchTaskDecisionHandler(
@@ -29,6 +33,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IRemoteCommandDispatcher dispatcher,
             IMessagingCommandSerializer messagingCommandSerializer,
+            IMessagingConfigurationSerializer messagingConfigurationSerializer,
+            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
             IInstanceMetadataSetter metadataSetter)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -38,6 +44,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
+            _messagingConfigurationSerializer = messagingConfigurationSerializer ?? throw new ArgumentNullException(nameof(messagingConfigurationSerializer));
+            _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
             _metadataSetter = metadataSetter ?? throw new ArgumentNullException(nameof(metadataSetter));
         }
 
@@ -53,6 +61,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var backchannel = await ResolveBackchannelConfigurationAsync(instance, cancellationToken);
             var taskExecution = new TaskExecution
             {
                 Id = Id.New(),
@@ -114,6 +123,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 taskExecution,
                 attempt,
                 dispatch,
+                backchannel,
                 cancellationToken);
             if (!dispatchSucceeded)
             {
@@ -170,6 +180,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             TaskExecution taskExecution,
             TaskExecutionAttempt attempt,
             TaskDispatch dispatch,
+            MessagingConfiguration backchannel,
             CancellationToken cancellationToken)
         {
             var maxAttempts = Math.Max(1, (decision.Task.RetryPolicy?.MaxRetries ?? 0) + 1);
@@ -186,7 +197,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                         CorrelationId = taskExecution.CorrelationId,
                         TaskExecutionId = taskExecution.Id.ToString(),
                         DispatchId = dispatch.Id.ToString(),
-                        Attempt = attemptNumber
+                        Attempt = attemptNumber,
+                        BackchannelTopic = backchannel?.Topic,
+                        BackchannelVersion = backchannel?.Version
                     });
 
                     var messagingCommand = new MessagingCommand
@@ -261,6 +274,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             return false;
+        }
+
+        private async Task<MessagingConfiguration> ResolveBackchannelConfigurationAsync(
+            OrchestrationInstance instance,
+            CancellationToken cancellationToken)
+        {
+            var configurations = await _ingressConfigurationAccessor.GetConfigurationAsync(
+                instance.RuntimeOrchestrationArtifactId.ToString(),
+                cancellationToken);
+            var backchannel = configurations.FirstOrDefault(x =>
+                x.IngressKind == IngressKind.Backchannel &&
+                x.IngressTransport == IngressTransport.Messaging);
+
+            return backchannel is null
+                ? null
+                : _messagingConfigurationSerializer.Deserialize(backchannel.SettingsPayload);
         }
     }
 }

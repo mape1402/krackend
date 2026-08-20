@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,9 +9,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Repositories;
 
 internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntimeArtifactRepository
 {
-    public RuntimeArtifactRepository(RuntimeStorageDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
+    private readonly IRuntimeIngressConfigurationProjector _ingressConfigurationProjector;
+    private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
+
+    public RuntimeArtifactRepository(
+        RuntimeStorageDbContext dbContext,
+        IRuntimeStorageUnitOfWork unitOfWork,
+        IRuntimeIngressConfigurationProjector ingressConfigurationProjector,
+        IRuntimeIngressConfigurationRepository ingressConfigurationRepository)
         : base(dbContext, unitOfWork)
     {
+        _ingressConfigurationProjector = ingressConfigurationProjector ?? throw new ArgumentNullException(nameof(ingressConfigurationProjector));
+        _ingressConfigurationRepository = ingressConfigurationRepository ?? throw new ArgumentNullException(nameof(ingressConfigurationRepository));
     }
 
     public async Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
@@ -26,6 +36,7 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         }
 
         await SaveChanges(cancellationToken);
+        await _ingressConfigurationProjector.ProjectAsync(artifact, cancellationToken);
     }
 
     public async Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
@@ -36,14 +47,17 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
                 x.Id != exceptArtifactId &&
                 x.IsActive)
             .ToArrayAsync(cancellationToken);
+        var deactivatedArtifactIds = new List<Id>();
 
         foreach (var artifact in artifacts)
         {
             artifact.IsActive = false;
             artifact.RetiredOnUtc = DateTime.UtcNow;
+            deactivatedArtifactIds.Add(artifact.Id);
         }
 
         await SaveChanges(cancellationToken);
+        await _ingressConfigurationRepository.DeactivateForArtifactsAsync(deactivatedArtifactIds, cancellationToken);
     }
 
     public async Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default)
