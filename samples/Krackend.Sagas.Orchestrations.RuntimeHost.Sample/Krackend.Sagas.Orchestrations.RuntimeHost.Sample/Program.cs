@@ -1,6 +1,8 @@
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Mule;
 using Pigeon.Messaging.Topology;
@@ -15,6 +17,15 @@ builder.Services.AddRazorPages();
 builder.Services.AddDbContext<RuntimeHostMuleDbContext>(options =>
 {
     options.UseSqlServer(muleConnectionString);
+});
+
+builder.Services.AddOrchestratorRuntimeStorageSqlServer(options =>
+{
+    options.UseSqlServer(muleConnectionString, sql =>
+    {
+        sql.MigrationsAssembly(typeof(Program).Assembly.GetName().Name);
+        sql.MigrationsHistoryTable("__RuntimeStorageMigrationsHistory", "Runtime");
+    });
 });
 
 builder.Services
@@ -70,6 +81,9 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeHostMuleDbContext>();
     await dbContext.Database.MigrateAsync();
+
+    var runtimeDbContext = scope.ServiceProvider.GetRequiredService<RuntimeStorageDbContext>();
+    await runtimeDbContext.Database.MigrateAsync();
 }
 
 // Configure the HTTP request pipeline.

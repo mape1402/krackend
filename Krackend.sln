@@ -83,6 +83,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestratio
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule", "src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj", "{4D7D304B-D522-463A-ADF0-67970F6AE7EC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer", "src\Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer\Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.csproj", "{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -465,6 +467,18 @@ Global
 		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x64.Build.0 = Release|Any CPU
 		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x86.ActiveCfg = Release|Any CPU
 		{4D7D304B-D522-463A-ADF0-67970F6AE7EC}.Release|x86.Build.0 = Release|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Debug|x64.Build.0 = Debug|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Debug|x86.Build.0 = Debug|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Release|x64.ActiveCfg = Release|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Release|x64.Build.0 = Release|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Release|x86.ActiveCfg = Release|Any CPU
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -504,6 +518,7 @@ Global
 		{CCB91316-FDFC-4C5D-A428-6CB50D575385} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
 		{180E77D5-9133-47E4-812A-6F7108994C48} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{4D7D304B-D522-463A-ADF0-67970F6AE7EC} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
+		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3F2B5274-3B0F-4F73-B211-9BD128E1AF56}

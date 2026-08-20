@@ -7,16 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.18">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.7">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.18" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" Version="1.4.1" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" Version="1.4.1" />
     <PackageReference Include="Pigeon.Messaging.Rabbit" Version="2.8.0" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer\Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />
   </ItemGroup>
 
