@@ -37,7 +37,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             builder.Services.AddPigeon(configuration, configure)
                 .AddConsumeInterceptor<KrackendConsumeInterceptor>()
                 .AddPublishInterceptor<KrackendPublishInterceptor>();
-            builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingAdapter, PigeonMessagingAdapter>());
+            builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingIngressAdapter, PigeonIngressAdapter>());
 
             return builder;
         }

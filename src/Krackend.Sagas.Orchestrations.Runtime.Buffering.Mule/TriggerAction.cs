@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Mule;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
@@ -6,17 +6,26 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
     [MuleAction(MuleActionKeys.TriggerAction)]
     public class TriggerAction : IMuleAction<WorkItem>
     {
-        private readonly ILogger<TriggerAction> _logger;
+        private readonly ISagaEngine _sagaEngine;
 
-        public TriggerAction(ILogger<TriggerAction> logger)
+        public TriggerAction(ISagaEngine sagaEngine)
         {
-            _logger = logger;
+            _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         }
 
-        public ValueTask ExecuteAsync(MuleActionContext<WorkItem> context, CancellationToken cancellationToken)
+        public async ValueTask ExecuteAsync(MuleActionContext<WorkItem> context, CancellationToken cancellationToken)
         {
-            _logger.LogInformation("Promote to engine a new SAGA instance.");
-            return ValueTask.CompletedTask;
+            var workItem = context.Payload;
+
+            var intent = new StartIntent
+            {
+                ArtifactId = workItem.ArtifactId,
+                Metadata = workItem.Metadata,
+                IngressTransport = workItem.IngressTransport,
+                Payload = workItem.Payload
+            };
+
+            await _sagaEngine.StartOrchestrationAsync(intent, cancellationToken);
         }
     }
 }
