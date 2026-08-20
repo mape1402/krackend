@@ -33,6 +33,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 };
 
                 await intake.EnqueueWorkAsync(workItem, cancellationToken);
+
+                await context.CompleteAsync(cancellationToken);
             });
 
             return Task.CompletedTask;   
