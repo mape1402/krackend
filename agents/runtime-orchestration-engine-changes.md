@@ -417,3 +417,88 @@ Cambio:
 Justificacion:
 
 - Los servicios orquestados necesitan saber a que topic/version responder cuando terminen su operacion.
+
+## Cambios Posteriores: Orchestration Client Y Callback Envelope
+
+### Contratos Compartidos Cliente/Runtime
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/InstanceMetadata.cs`
+- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/IInstanceMetadataAccessor.cs`
+- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/IInstanceMetadataSetter.cs`
+- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/OrchestrationMetadataConstants.cs`
+- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Responses/RuntimeTaskResponseEnvelope.cs`
+- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Responses/RuntimeTaskResponseError.cs`
+
+Cambio:
+
+- Se movio `InstanceMetadata` y sus interfaces a Abstractions.
+- Se movio la key de metadata de Pigeon a Abstractions.
+- Se agrego un envelope compartido para respuestas de task con success/failure, payload de negocio, error y datos de ejecucion.
+
+Justificacion:
+
+- Runtime y client necesitan compartir exactamente los mismos contratos para que Pigeon pueda transportar metadata y respuestas sin acoplar servicios orquestados al proyecto Runtime completo.
+
+### Runtime Usando Metadata Compartida
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Metadata/DefaultInstanceMetadataAccessor.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/**/*.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon/Interceptors/KrackendPublishInterceptor.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon/Interceptors/KrackendConsumeInterceptor.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon/PigeonIngressAdapter.cs`
+
+Cambio:
+
+- Runtime conserva su implementacion scoped default de metadata, pero ahora implementa las interfaces compartidas.
+- El adapter Pigeon de Runtime usa `OrchestrationMetadataConstants.InstanceMetadataKey`.
+- Se elimino la constante local duplicada de Pigeon.
+
+Justificacion:
+
+- Evita duplicidad de tipos/strings entre runtime y cliente.
+- Mantiene el comportamiento actual de propagacion de metadata por Pigeon.
+
+### Semantica De Callback Success/Failure
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/DecisionControl.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Decisions/CompleteCallbackDecision.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Handlers/CompleteCallbackDecisionHandler.cs`
+
+Cambio:
+
+- `DecisionControl` intenta interpretar el payload de backchannel como `RuntimeTaskResponseEnvelope`.
+- `CompleteCallbackDecision` ahora transporta `Succeeded`, error y payload original del envelope.
+- `CompleteCallbackDecisionHandler` marca task/attempt/dispatch como completed o failed segun el envelope.
+- El payload de negocio se guarda en `TaskExecutionAttempt.ResponsePayload`.
+- El envelope completo se conserva en metadata del attempt para diagnostico.
+- Se registran transitions diferenciadas: `TaskCallbackCompleted` y `TaskCallbackFailed`.
+
+Justificacion:
+
+- El orquestador necesita distinguir exito y falla de servicios externos para poder avanzar, continuar, fallar o compensar segun `OnErrorPolicy`.
+
+### Libreria Cliente
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Client/**`
+- `src/Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon/**`
+- `Krackend.sln`
+
+Cambio:
+
+- Se creo la libreria cliente core.
+- Se agregaron servicios default de DI, metadata scoped, response factory, publisher abstraction y extensiones `UseOrchestration` para Spider.
+- Se agrego adapter Pigeon para publicar respuestas/triggers con `IProducer`.
+- Se agrego consume interceptor del client para leer `InstanceMetadata` desde Pigeon.
+- Se agregaron los proyectos a la solucion.
+
+Justificacion:
+
+- Los servicios generados por TurtlePath pueden enganchar orquestacion desde Spider sin meter logica de Krackend en controllers, consumers o handlers.
