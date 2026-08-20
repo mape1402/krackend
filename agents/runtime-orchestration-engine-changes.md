@@ -333,3 +333,87 @@ Justificacion:
 - Branch rules condicionados quedan esperando evaluator de conditions.
 - `FireAndWait` queda reservado para HTTP.
 - Timeout scheduler operativo queda pendiente; el timeout se conserva en metadata de task para que el scheduler lo procese despues.
+
+## Cambios Posteriores: Ingress Configurations Desde Artifact
+
+### Persistencia De Ingress Configurations
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Ingress/RuntimeIngressConfiguration.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Ingress/IRuntimeIngressConfigurationRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Storage/InMemory/InMemoryRuntimeIngressConfigurationRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/RuntimeIngressConfigurationRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Infrastructure/RuntimeStorageDbContext.cs`
+- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Krackend.Sagas.Orchestrations.RuntimeHost.Sample/Migrations/RuntimeStorage/**`
+
+Cambio:
+
+- Se agrego una entidad persistida para configuraciones de ingress runtime.
+- La entidad conserva `SettingsPayload` como JSON dinamico del transporte; no guarda `Topic` ni `Version` como columnas.
+- SQL agrega indices para lectura rapida de configuraciones activas en standup y busqueda por artifact.
+
+Justificacion:
+
+- El standup debe leer configuraciones listas, sin transformar el artifact en cada arranque.
+- El runtime debe seguir abierto a otros transportes futuros como HTTP.
+
+### Proyeccion Al Publicar Artifact
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Ingress/IRuntimeIngressConfigurationProjector.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Ingress/DefaultRuntimeIngressConfigurationProjector.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Storage/InMemory/InMemoryRuntimeArtifactRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/RuntimeArtifactRepository.cs`
+
+Cambio:
+
+- Al hacer `Upsert` de `RuntimeOrchestrationArtifact`, se proyectan configuraciones de ingress.
+- Por cada trigger binding event/messaging habilitado se crea una configuracion `Trigger`.
+- Por cada artifact/version se crea una configuracion `Backchannel` con version del artifact y topic calculado por `IBackchannelTopicFormatter`.
+- Al desactivar artifacts previos, tambien se desactivan sus ingress configurations.
+- La key interna de configuracion la genera `IRuntimeIngressConfigurationKeyBuilder`.
+- El `SettingsPayload` messaging lo genera `IMessagingConfigurationSerializer`, no JSON armado manualmente en el proyector.
+
+Justificacion:
+
+- La configuracion nace del artifact publicado y queda materializada una sola vez para runtime.
+- La convención default del backchannel sigue siendo `orchestrations.{artifact.Key}`, pero queda encapsulada y reemplazable.
+
+### Standup Sin Transformar Artifacts
+
+Archivo:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Ingress/DefaultIngressConfigurationAccessor.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Ingress/RuntimeIngressConfigurationAccessor.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/ServiceCollectionExtensions.cs`
+
+Cambio:
+
+- El accessor deja de regresar configuracion hardcodeada.
+- Ahora lee configuraciones activas desde repositorio en paginas de 500 registros.
+- El adapter SQL reemplaza los accessors de lectura y consulta directamente `RuntimeStorageDbContext.RuntimeIngressConfigurations` con `AsNoTracking`.
+
+Justificacion:
+
+- El arranque debe ser rapido y directo: leer rows activas, conectar ingress, avanzar.
+- Cuando el host usa SQL, el standup no debe pasar por defaults in-memory ni por transformacion de artifacts.
+
+### Backchannel En Metadata
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Metadata/InstanceMetadata.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Handlers/DispatchTaskDecisionHandler.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/Handlers/CompensateInstanceDecisionHandler.cs`
+
+Cambio:
+
+- `InstanceMetadata` ahora incluye `BackchannelTopic` y `BackchannelVersion`.
+- Antes de publicar una task messaging, runtime resuelve el backchannel del artifact y lo agrega a la metadata propagada por Pigeon.
+- Compensation tambien setea metadata antes de publicar.
+
+Justificacion:
+
+- Los servicios orquestados necesitan saber a que topic/version responder cuando terminen su operacion.

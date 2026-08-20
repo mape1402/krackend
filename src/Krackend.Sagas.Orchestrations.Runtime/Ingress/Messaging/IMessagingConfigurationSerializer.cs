@@ -2,6 +2,8 @@
 {
     public interface IMessagingConfigurationSerializer 
     {
+        string Serialize(MessagingConfiguration configuration);
+
         MessagingConfiguration Deserialize(string rawJson);
     }
 }

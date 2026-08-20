@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
@@ -30,6 +31,8 @@ public sealed class RuntimeStorageDbContext : DbContext
 
     public DbSet<CompensationExecution> CompensationExecutions => Set<CompensationExecution>();
 
+    public DbSet<RuntimeIngressConfiguration> RuntimeIngressConfigurations => Set<RuntimeIngressConfiguration>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("Runtime");
@@ -42,6 +45,7 @@ public sealed class RuntimeStorageDbContext : DbContext
         ConfigureTransitions(modelBuilder);
         ConfigureVariables(modelBuilder);
         ConfigureCompensations(modelBuilder);
+        ConfigureIngressConfigurations(modelBuilder);
         base.OnModelCreating(modelBuilder);
     }
 
@@ -226,5 +230,21 @@ public sealed class RuntimeStorageDbContext : DbContext
         builder.Property(x => x.ErrorMessage).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.Metadata).HasColumnType("nvarchar(max)").HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.OrchestrationInstanceId);
+    }
+
+    private static void ConfigureIngressConfigurations(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<RuntimeIngressConfiguration>();
+        builder.ToTable("RuntimeIngressConfigurations");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.RuntimeOrchestrationArtifactId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.ConfigurationKey).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.IngressKind).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.IngressTransport).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.SettingsPayload).HasColumnType("nvarchar(max)").IsRequired();
+        builder.HasIndex(x => new { x.RuntimeOrchestrationArtifactId, x.ConfigurationKey }).IsUnique();
+        builder.HasIndex(x => new { x.IsActive, x.IngressTransport, x.IngressKind });
+        builder.HasIndex(x => new { x.IsActive, x.RuntimeOrchestrationArtifactId });
     }
 }
