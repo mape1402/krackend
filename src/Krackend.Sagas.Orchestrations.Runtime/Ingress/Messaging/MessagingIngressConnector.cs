@@ -2,10 +2,10 @@
 {
     internal class MessagingIngressConnector : IIngressConector
     {
-        private readonly IMessagingAdapter _messagingAdapter;
+        private readonly IMessagingIngressAdapter _messagingAdapter;
         private readonly IMessagingConfigurationSerializer _serializer;
 
-        public MessagingIngressConnector(IMessagingAdapter messagingAdapter, IMessagingConfigurationSerializer serializer)
+        public MessagingIngressConnector(IMessagingIngressAdapter messagingAdapter, IMessagingConfigurationSerializer serializer)
         {
             _messagingAdapter = messagingAdapter ?? throw new ArgumentNullException(nameof(messagingAdapter));
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));

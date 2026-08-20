@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Mule;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
@@ -6,17 +6,26 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
     [MuleAction(MuleActionKeys.BackchannelAction)]
     public class BackchannelAction : IMuleAction<WorkItem>
     {
-        private readonly ILogger<BackchannelAction> _logger;
+        private readonly ISagaEngine _sagaEngine;
 
-        public BackchannelAction(ILogger<BackchannelAction> logger)
+        public BackchannelAction(ISagaEngine sagaEngine)
         {
-            _logger = logger;
+            _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         }
 
-        public ValueTask ExecuteAsync(MuleActionContext<WorkItem> context, CancellationToken cancellationToken)
+        public async ValueTask ExecuteAsync(MuleActionContext<WorkItem> context, CancellationToken cancellationToken)
         {
-            _logger.LogInformation("Process a response from backchannel communication.....");
-            return ValueTask.CompletedTask;
+            var workItem = context.Payload;
+
+            var intent = new ForwardIntent
+            {
+                ArtifactId = workItem.ArtifactId,
+                IngressTransport = workItem.IngressTransport,
+                Metadata = workItem.Metadata,
+                Payload = workItem.Payload
+            };
+
+            await _sagaEngine.OrchestrateAsync(intent, cancellationToken);
         }
     }
 }

@@ -7,11 +7,11 @@ using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 {
-    internal class PigeonMessagingAdapter : IMessagingAdapter
+    internal class PigeonIngressAdapter : IMessagingIngressAdapter
     {
         private readonly IConsumingConfigurator _consumingConfigurator;
 
-        public PigeonMessagingAdapter(IConsumingConfigurator consumingConfigurator)
+        public PigeonIngressAdapter(IConsumingConfigurator consumingConfigurator)
         {
             _consumingConfigurator = consumingConfigurator ?? throw new ArgumentNullException(nameof(consumingConfigurator));
         }

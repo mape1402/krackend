@@ -17,7 +17,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IGetAllIngressConfigurationsAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IGetIngressConfigurationByArtifactAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IMessagingConfigurationSerializer, DefaultMessagingConfigurationSerializer>();
-            services.TryAddScoped<IMessagingAdapter, DefaultMessagingAdapter>();
+            services.TryAddScoped<IMessagingIngressAdapter, DefaultMessagingAdapter>();
             services.TryAddScoped<IIntakeBuffer, DefaultIntakeBuffer>();
             services.TryAddScoped<DefaultInstanceMetadataAccessor>();
             services.TryAddScoped<IInstanceMetadataAccessor>(provider =>
