@@ -6,34 +6,36 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 {
     internal class IngressRegistry : IIngressRegistry
     {
-        private readonly IServiceProvider _serviceProvider;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<IngressRegistry> _logger;
 
         private readonly ConcurrentDictionary<string, IList<string>> _connectors = new();
 
-        public IngressRegistry(IServiceProvider serviceProvider, ILogger<IngressRegistry> logger)
+        public IngressRegistry(IServiceScopeFactory scopeFactory, ILogger<IngressRegistry> logger)
         {
-            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task StandUpAllAsync(CancellationToken cancellationToken = default)
         {
-            using var reader = _serviceProvider.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
+            using var scope = _scopeFactory.CreateScope();
+            using var reader = scope.ServiceProvider.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
 
-            var dataset = await reader.ReadAsync(cancellationToken);
-
-            while (dataset.HasMoreItems)
+            IngressConfigurationReadingResult dataset;
+            do
             {
-                await StandUpConfigurationsAsync(dataset.Configurations, cancellationToken);
                 dataset = await reader.ReadAsync(cancellationToken);
+                await StandUpConfigurationsAsync(scope.ServiceProvider, dataset.Configurations, cancellationToken);
             }
+            while (dataset.HasMoreItems);
         }
 
 
         public async Task StandUpOneAsync(string artifactId, CancellationToken cancellationToken = default)
         {
-            var accessor = _serviceProvider.GetRequiredService<IGetIngressConfigurationByArtifactAccessor>();
+            using var scope = _scopeFactory.CreateScope();
+            var accessor = scope.ServiceProvider.GetRequiredService<IGetIngressConfigurationByArtifactAccessor>();
             var configurations = await accessor.GetConfigurationAsync(artifactId, cancellationToken);
 
             if (configurations == null || !configurations.Any())
@@ -42,7 +44,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                 return;
             }
 
-            await StandUpConfigurationsAsync(configurations, cancellationToken);
+            await StandUpConfigurationsAsync(scope.ServiceProvider, configurations, cancellationToken);
         }
 
         public async Task ShutDownAllAsync(CancellationToken cancellationToken = default)
@@ -57,11 +59,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                 await ShutDownConfigurationsAsync(connectorsByArtifact.AsReadOnly(), cancellationToken);
         }
 
-        private async Task StandUpConfigurationsAsync(IReadOnlyCollection<IngressConfiguration> configurations, CancellationToken cancellationToken = default)
+        private async Task StandUpConfigurationsAsync(
+            IServiceProvider serviceProvider,
+            IReadOnlyCollection<IngressConfiguration> configurations,
+            CancellationToken cancellationToken = default)
         {
+            if (configurations is null)
+            {
+                return;
+            }
+
             foreach (var configuration in configurations)
             {
-                var connector = _serviceProvider.GetKeyedService<IIngressConector>(configuration.Kind);
+                var connector = serviceProvider.GetKeyedService<IIngressConector>(configuration.Kind);
 
                 if (connector == null)
                 {
