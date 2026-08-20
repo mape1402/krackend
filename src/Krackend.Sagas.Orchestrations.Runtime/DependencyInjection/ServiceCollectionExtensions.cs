@@ -15,8 +15,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IGetIngressConfigurationByArtifactAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IMessagingConfigurationSerializer, DefaultMessagingConfigurationSerializer>();
             services.TryAddScoped<IMessagingAdapter, DefaultMessagingAdapter>();
-            services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressKind.Messaging);
-            services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressKind.Http);
+            services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressTransport.Messaging);
+            services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressTransport.Http);
             services.AddHostedService<IngressRegistryBackgroundService>();
 
             return new KrackendOrchestrationsRuntimeBuilder(services);

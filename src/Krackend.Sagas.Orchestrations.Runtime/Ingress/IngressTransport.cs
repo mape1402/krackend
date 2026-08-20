@@ -1,8 +1,8 @@
 ﻿namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 {
-    public enum IngressKind
+    public enum IngressTransport
     {
-        Trigger,
-        Response
+        Messaging,
+        Http
     }
 }
