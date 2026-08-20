@@ -10,6 +10,8 @@
 
         public string Version { get; set; }
 
-        public IngressKind MessageType { get; set; }
+        public IngressKind IngressKind { get; set; }
+
+        public IngressTransport IngressTransport { get; set; }
     }
 }

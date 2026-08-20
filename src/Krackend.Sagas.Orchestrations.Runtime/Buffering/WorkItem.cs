@@ -12,6 +12,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering
 
         public IngressKind IngressKind { get; init; }
 
+        public IngressTransport IngressTransport { get; set; }
+
         public InstanceMetadata Metadata { get; init; }
     }
 }

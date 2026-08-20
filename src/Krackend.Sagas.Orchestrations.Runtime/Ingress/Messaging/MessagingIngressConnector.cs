@@ -11,10 +11,15 @@
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         }
 
-        public async Task ConnectAsync(string settingsPayload, CancellationToken cancellationToken = default)
+        public async Task ConnectAsync(IngressConfiguration configuration, CancellationToken cancellationToken = default)
         {
-            var configuration = _serializer.Deserialize(settingsPayload);
-            await _messagingAdapter.ConnectAsync(configuration, cancellationToken);
+            var config = _serializer.Deserialize(configuration.SettingsPayload);
+            config.IngressKind = configuration.IngressKind;
+            config.ArtifactId = configuration.ArtifactId;
+            config.IngressTransport = configuration.IngressTransport;
+            config.ConnectorId = configuration.Id;
+
+            await _messagingAdapter.ConnectAsync(config, cancellationToken);
         }
 
         public Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default)
