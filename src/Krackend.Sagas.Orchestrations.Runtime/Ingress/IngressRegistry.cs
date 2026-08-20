@@ -71,11 +71,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             foreach (var configuration in configurations)
             {
-                var connector = serviceProvider.GetKeyedService<IIngressConector>(configuration.Kind);
+                var connector = serviceProvider.GetKeyedService<IIngressConector>(configuration.Transport);
 
                 if (connector == null)
                 {
-                    _logger.LogWarning("Doesn't have a connector registered for '{kind}' ingress.", configuration.Kind);
+                    _logger.LogWarning("Doesn't have a connector registered for '{kind}' ingress.", configuration.Transport);
                     return;
                 }
 
