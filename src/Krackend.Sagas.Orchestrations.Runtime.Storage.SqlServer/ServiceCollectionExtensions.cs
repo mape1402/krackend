@@ -1,4 +1,6 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +27,9 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IInstanceVariableRepository, InstanceVariableRepository>());
         services.Replace(ServiceDescriptor.Scoped<IEnvironmentVariableRepository, EnvironmentVariableRepository>());
         services.Replace(ServiceDescriptor.Scoped<ICompensationExecutionRepository, CompensationExecutionRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressConfigurationRepository, RuntimeIngressConfigurationRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IGetAllIngressConfigurationsAccessor, RuntimeIngressConfigurationAccessor>());
+        services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, RuntimeIngressConfigurationAccessor>());
         return services;
     }
 }

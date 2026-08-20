@@ -1,26 +1,35 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
     internal sealed class InMemoryRuntimeArtifactRepository : IRuntimeArtifactRepository
     {
         private readonly InMemoryRuntimeStore _store;
+        private readonly IRuntimeIngressConfigurationProjector _ingressConfigurationProjector;
+        private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
 
-        public InMemoryRuntimeArtifactRepository(InMemoryRuntimeStore store)
+        public InMemoryRuntimeArtifactRepository(
+            InMemoryRuntimeStore store,
+            IRuntimeIngressConfigurationProjector ingressConfigurationProjector,
+            IRuntimeIngressConfigurationRepository ingressConfigurationRepository)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
+            _ingressConfigurationProjector = ingressConfigurationProjector ?? throw new ArgumentNullException(nameof(ingressConfigurationProjector));
+            _ingressConfigurationRepository = ingressConfigurationRepository ?? throw new ArgumentNullException(nameof(ingressConfigurationRepository));
         }
 
-        public Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
+        public async Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
         {
             _store.Artifacts[artifact.Id] = artifact;
-            return Task.CompletedTask;
+            await _ingressConfigurationProjector.ProjectAsync(artifact, cancellationToken);
         }
 
-        public Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
+        public async Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
         {
+            var deactivatedArtifactIds = new List<Id>();
             foreach (var artifact in _store.Artifacts.Values.Where(x =>
                 x.EnvironmentKey == environmentKey &&
                 x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
@@ -29,9 +38,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             {
                 artifact.IsActive = false;
                 artifact.RetiredOnUtc = DateTime.UtcNow;
+                deactivatedArtifactIds.Add(artifact.Id);
             }
 
-            return Task.CompletedTask;
+            await _ingressConfigurationRepository.DeactivateForArtifactsAsync(deactivatedArtifactIds, cancellationToken);
         }
 
         public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default)
