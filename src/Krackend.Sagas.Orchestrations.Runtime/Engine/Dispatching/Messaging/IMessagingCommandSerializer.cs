@@ -2,6 +2,8 @@
 {
     public interface IMessagingCommandSerializer
     {
+        string Serialize(MessagingCommand command);
+
         MessagingCommand Deserialize(string rawJson);
     }
 }

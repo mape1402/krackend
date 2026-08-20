@@ -1,22 +1,7 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Engine.Actions;
-
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
 {
-    internal class ForwardDecision : IDecision
+    internal sealed record ForwardDecision : IDecision
     {
-        private readonly ForwardContext _context;
-
-        public ForwardDecision(ForwardContext context)
-        {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
-        }
-
-        public ITaskAction HandsOn()
-            => new InvokeRemoteCommandAction(new InvokeRemoteCommandContext(_context.ServiceProvider)
-            {
-                Payload = _context.Payload,
-                RemoteCommandTransport = _context.RemoteCommandTransport,
-                SettingsPayload = _context.SettingsPayload
-            });
+        public string Kind => "forward";
     }
 }

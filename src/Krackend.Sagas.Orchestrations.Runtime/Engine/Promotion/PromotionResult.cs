@@ -1,4 +1,4 @@
-﻿namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
+namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {
     public class PromotionResult
     {
@@ -7,5 +7,7 @@
         public string ErrorMessage { get; set; }
 
         public string SagaId { get; set; }
+
+        public string InstanceId { get; set; }
     }
 }

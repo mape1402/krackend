@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {
@@ -7,5 +8,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         public string ArtifactId { get; set; }
 
         public JsonNode Payload { get; set; }
+
+        public InstanceMetadata Metadata { get; set; }
     }
 }
