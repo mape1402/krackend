@@ -26,7 +26,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 var workItem = new WorkItem
                 {
                     ArtifactId = configuration.ArtifactId,
-                    IngressKind = configuration.MessageType,
+                    IngressKind = configuration.IngressKind,
+                    IngressTransport = configuration.IngressTransport,
                     Payload = message,
                     Metadata = metadataAccessor.Get()
                 };

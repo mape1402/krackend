@@ -3,6 +3,6 @@
     public enum IngressKind
     {
         Trigger,
-        Response
+        Backchannel
     }
 }

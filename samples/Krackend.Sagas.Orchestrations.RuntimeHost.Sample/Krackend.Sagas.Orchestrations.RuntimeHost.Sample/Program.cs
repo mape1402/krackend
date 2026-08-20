@@ -1,3 +1,4 @@
+using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 
@@ -7,7 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services
     .AddKrackendOrchestrationsRuntime()
-    .AddPigeon(builder.Configuration);
+    .AddPigeon(builder.Configuration)
+    .AddMule(_ => { });
 
 var app = builder.Build();
 

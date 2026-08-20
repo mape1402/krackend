@@ -1,8 +1,11 @@
+using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Http;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
 {
@@ -15,9 +18,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IGetIngressConfigurationByArtifactAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IMessagingConfigurationSerializer, DefaultMessagingConfigurationSerializer>();
             services.TryAddScoped<IMessagingAdapter, DefaultMessagingAdapter>();
+            services.TryAddScoped<IIntakeBuffer, DefaultIntakeBuffer>();
+            services.TryAddScoped<DefaultInstanceMetadataAccessor>();
+            services.TryAddScoped<IInstanceMetadataAccessor>(provider =>
+                provider.GetRequiredService<DefaultInstanceMetadataAccessor>());
+            services.TryAddScoped<IInstanceMetadataSetter>(provider =>
+                provider.GetRequiredService<DefaultInstanceMetadataAccessor>());
             services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressTransport.Messaging);
             services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressTransport.Http);
-            services.AddHostedService<IngressRegistryBackgroundService>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IngressRegistryBackgroundService>());
 
             return new KrackendOrchestrationsRuntimeBuilder(services);
         }

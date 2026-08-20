@@ -11,7 +11,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Http
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public Task ConnectAsync(string settingsPayload, CancellationToken cancellationToken = default)
+        public Task ConnectAsync(IngressConfiguration configuration, CancellationToken cancellationToken = default)
         {
             _logger.LogWarning("HTTP ingress was ignored because no HTTP connector implementation is registered.");
             return Task.CompletedTask;

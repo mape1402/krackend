@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -33,7 +34,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 throw new ArgumentNullException(nameof(configure));
             }
 
-            builder.Services.AddPigeon(configuration, configure);
+            builder.Services.AddPigeon(configuration, configure)
+                .AddConsumeInterceptor<KrackendConsumeInterceptor>()
+                .AddPublishInterceptor<KrackendPublishInterceptor>();
             builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingAdapter, PigeonMessagingAdapter>());
 
             return builder;
