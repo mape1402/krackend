@@ -71,15 +71,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             foreach (var configuration in configurations)
             {
-                var connector = serviceProvider.GetKeyedService<IIngressConector>(configuration.Transport);
+                var connector = serviceProvider.GetKeyedService<IIngressConector>(configuration.IngressTransport);
 
                 if (connector == null)
                 {
-                    _logger.LogWarning("Doesn't have a connector registered for '{kind}' ingress.", configuration.Transport);
+                    _logger.LogWarning("Doesn't have a connector registered for '{kind}' ingress.", configuration.IngressTransport);
                     return;
                 }
 
-                await connector.ConnectAsync(configuration.SettingsPayload, cancellationToken);
+                await connector.ConnectAsync(configuration, cancellationToken);
 
                 if (!_connectors.TryGetValue(configuration.ArtifactId, out var connectorIds))
                     connectorIds = new List<string>();

@@ -6,10 +6,10 @@
 
         public string ArtifactId { get; set; }
 
-        public IngressTransport Transport { get; set; }
+        public IngressTransport IngressTransport { get; set; }
 
         public string SettingsPayload { get; set; }
 
-        public IngressKind Kind { get; set; }
+        public IngressKind IngressKind { get; set; }
     }
 }
