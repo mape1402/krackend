@@ -1,6 +1,6 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Buffering;
+using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
-using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Pigeon.Messaging.Consuming.Configuration;
 using System.Text.Json.Nodes;

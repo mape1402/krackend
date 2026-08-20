@@ -1,4 +1,4 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Pigeon.Messaging.Producing;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
@@ -15,7 +15,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
         public ValueTask Intercept(PublishContext publishContext, CancellationToken cancellationToken = default)
         {
             var metadata = _metadataAccessor.Get();
-            publishContext.AddMetadata(MetadataConstants.InstanceMetadataKey, metadata);
+            publishContext.AddMetadata(OrchestrationMetadataConstants.InstanceMetadataKey, metadata);
 
             return ValueTask.CompletedTask;
         }

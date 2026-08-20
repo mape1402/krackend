@@ -1,6 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
-using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.Logging;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine

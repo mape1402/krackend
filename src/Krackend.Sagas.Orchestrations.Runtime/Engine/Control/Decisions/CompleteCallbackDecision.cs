@@ -6,7 +6,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         Id InstanceId,
         Id TaskExecutionId,
         Id DispatchId,
-        string Payload) : IDecision
+        string Payload,
+        bool Succeeded,
+        string ErrorCode,
+        string ErrorMessage,
+        string EnvelopePayload) : IDecision
     {
         public string Kind => "complete-callback";
     }

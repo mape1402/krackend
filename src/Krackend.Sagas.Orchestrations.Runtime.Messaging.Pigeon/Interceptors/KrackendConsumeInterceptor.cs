@@ -1,4 +1,4 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Pigeon.Messaging.Consuming.Dispatching;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
@@ -16,7 +16,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
         {
             try
             {
-                var metadata = context.GetMetadata<InstanceMetadata>(MetadataConstants.InstanceMetadataKey);
+                var metadata = context.GetMetadata<InstanceMetadata>(OrchestrationMetadataConstants.InstanceMetadataKey);
                 _metadataSetter.Set(metadata);
             }
             catch
