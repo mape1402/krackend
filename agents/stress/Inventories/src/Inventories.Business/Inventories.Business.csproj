@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Inventories.Domain\Inventories.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OctoMap" />
+    <PackageReference Include="OctoMap.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Crabalidator" />
+    <PackageReference Include="Pelican.Mediator" />
+    <PackageReference Include="TurtlePath" />
+    <PackageReference Include="TurtlePath.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="TurtlePath.EntityFrameworkCore" />
+  </ItemGroup>
+
+</Project>

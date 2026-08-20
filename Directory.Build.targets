@@ -5,6 +5,7 @@
     <PackageReference Update="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.7" />
     <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.7" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" Condition="'$(MSBuildProjectName)' == 'Krackend.Sagas.Orchestrations.Client'" />
     <PackageReference Update="MinVer" Version="6.0.0" />
     <PackageReference Update="Pigeon.Messaging" Version="2.8.0" />
     <PackageReference Update="Spider.Pipelines" Version="1.0.0" />

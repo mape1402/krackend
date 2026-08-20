@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {

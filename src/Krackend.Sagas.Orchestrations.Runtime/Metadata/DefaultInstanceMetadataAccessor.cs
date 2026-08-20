@@ -1,5 +1,7 @@
 namespace Krackend.Sagas.Orchestrations.Runtime.Metadata
 {
+    using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+
     internal sealed class DefaultInstanceMetadataAccessor : IInstanceMetadataAccessor, IInstanceMetadataSetter
     {
         private InstanceMetadata _metadata = new();

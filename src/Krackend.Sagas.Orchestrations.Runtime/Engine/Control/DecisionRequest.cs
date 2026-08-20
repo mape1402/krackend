@@ -1,4 +1,4 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control

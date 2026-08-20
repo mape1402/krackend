@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Responses;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
@@ -168,11 +169,52 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
+            var callback = ParseCallbackPayload(request.Payload?.ToJsonString());
+
             return new CompleteCallbackDecision(
                 RuntimeIdParser.Parse(request.Metadata.OrchestrationInstanceId),
                 RuntimeIdParser.Parse(request.Metadata.TaskExecutionId),
                 RuntimeIdParser.Parse(request.Metadata.DispatchId),
-                request.Payload?.ToJsonString());
+                callback.Payload,
+                callback.Succeeded,
+                callback.ErrorCode,
+                callback.ErrorMessage,
+                callback.EnvelopePayload);
         }
+
+        private static CallbackPayload ParseCallbackPayload(string payload)
+        {
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                return new CallbackPayload(null, true, null, null, null);
+            }
+
+            try
+            {
+                var envelope = System.Text.Json.JsonSerializer.Deserialize<RuntimeTaskResponseEnvelope>(payload);
+                if (envelope is not null && !string.IsNullOrWhiteSpace(envelope.Status))
+                {
+                    return new CallbackPayload(
+                        envelope.Payload?.ToJsonString(),
+                        envelope.Succeeded,
+                        envelope.Error?.Code,
+                        envelope.Error?.Message,
+                        payload);
+                }
+            }
+            catch
+            {
+                return new CallbackPayload(payload, true, null, null, null);
+            }
+
+            return new CallbackPayload(payload, true, null, null, null);
+        }
+
+        private sealed record CallbackPayload(
+            string Payload,
+            bool Succeeded,
+            string ErrorCode,
+            string ErrorMessage,
+            string EnvelopePayload);
     }
 }

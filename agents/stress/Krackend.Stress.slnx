@@ -1,0 +1,40 @@
+<Solution>
+  <Folder Name="/Agents/">
+    <Project Path="krackend-stress-demo/krackend-stress-demo/krackend-stress-demo.csproj" />
+  </Folder>
+  <Folder Name="/Inventories/" />
+  <Folder Name="/Inventories/src/">
+    <Project Path="Inventories/src/Inventories.Api/Inventories.Api.csproj" />
+    <Project Path="Inventories/src/Inventories.Business/Inventories.Business.csproj" />
+    <Project Path="Inventories/src/Inventories.Domain/Inventories.Domain.csproj" />
+    <Project Path="Inventories/src/Inventories.Persistence/Inventories.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/Inventories/tests/">
+    <Project Path="Inventories/tests/Inventories.Tests/Inventories.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Payments/" />
+  <Folder Name="/Payments/src/">
+    <Project Path="Payments/src/Payments.Api/Payments.Api.csproj" />
+    <Project Path="Payments/src/Payments.Business/Payments.Business.csproj" />
+    <Project Path="Payments/src/Payments.Domain/Payments.Domain.csproj" />
+    <Project Path="Payments/src/Payments.Persistence/Payments.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/Payments/tests/">
+    <Project Path="Payments/tests/Payments.Tests/Payments.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Sales/" />
+  <Folder Name="/Sales/src/">
+    <Project Path="Sales/src/Sales.Api/Sales.Api.csproj" />
+    <Project Path="Sales/src/Sales.Business/Sales.Business.csproj" />
+    <Project Path="Sales/src/Sales.Domain/Sales.Domain.csproj" />
+    <Project Path="Sales/src/Sales.Persistence/Sales.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/Sales/tests/">
+    <Project Path="Sales/tests/Sales.Tests/Sales.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Shared/Orchestration/">
+    <Project Path="../../src/Krackend.Sagas.Orchestrations.Abstractions/Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <Project Path="../../src/Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon/Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.csproj" />
+    <Project Path="../../src/Krackend.Sagas.Orchestrations.Client/Krackend.Sagas.Orchestrations.Client.csproj" />
+  </Folder>
+</Solution>
