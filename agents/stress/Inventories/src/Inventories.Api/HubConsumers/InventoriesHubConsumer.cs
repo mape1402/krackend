@@ -1,4 +1,3 @@
-using Inventories.Business.Inventory.Messages;
 using Inventories.Business.Inventory.Models.Requests;
 using Inventories.Business.Inventory.Models.Responses;
 using Pigeon.Messaging.Consuming.Dispatching;
@@ -9,18 +8,15 @@ namespace Inventories.Api.HubConsumers
 {
     public sealed class InventoriesHubConsumer : BaseHubConsumer
     {
-        [Consumer("tasks.inventories.reserve.requested", "1.0.0", "inventories")]
-        public Task Consume(ReserveInventoryMessage message, CancellationToken cancellationToken)
+        [Consumer("commands.inventories.stock.reserve", "1.1.0")]
+        [Consumer("commands.inventories.stock.reserve", "1.0.0")]
+        [Consumer("tasks.inventories.reserve.requested", "1.0.0")]
+        public async Task Consume(ReserveInventoryRequest request, CancellationToken cancellationToken)
         {
-            return Spider
+            await Spider
                 .AsMediator()
                 .UseOrchestration<ReserveInventoryRequest, ReserveInventoryResponse>()
-                .Send(new ReserveInventoryRequest
-                {
-                    SaleId = message.SaleId,
-                    CustomerId = message.CustomerId,
-                    Total = message.Total
-                }, cancellationToken);
+                .Send(request, cancellationToken);
         }
     }
 }

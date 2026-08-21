@@ -1,5 +1,6 @@
-﻿using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
-using Pigeon.Messaging.Producing;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using global::Pigeon.Messaging.Producing;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 {
@@ -14,7 +15,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 
         public async Task PublishAsync(MessagingCommand command, CancellationToken cancellationToken = default)
         {
-            await _producer.PublishAsync(command.Payload, command.Topic, command.Version, cancellationToken);
+            var payload = string.IsNullOrWhiteSpace(command.Payload)
+                ? null
+                : JsonNode.Parse(command.Payload);
+
+            await _producer.PublishAsync(payload, command.Topic, command.Version, cancellationToken);
         }
     }
 }

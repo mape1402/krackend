@@ -6,7 +6,12 @@ namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 public static class OrchestrationMetadataConstants
 {
     /// <summary>
-    /// Gets the Pigeon metadata key used to carry orchestration instance metadata.
+    /// Gets the metadata key used to carry orchestration message metadata.
     /// </summary>
-    public const string InstanceMetadataKey = "Krackend.Sagas.Orchestrations.Instance.Metadata";
+    public const string OrchestrationMessageMetadataKey = "Krackend.Sagas.Orchestrations.Message.Metadata";
+
+    /// <summary>
+    /// Gets the metadata key used to carry orchestration execution result metadata.
+    /// </summary>
+    public const string OrchestrationExecutionResultMetadataKey = "Krackend.Sagas.Orchestrations.Execution.Result.Metadata";
 }

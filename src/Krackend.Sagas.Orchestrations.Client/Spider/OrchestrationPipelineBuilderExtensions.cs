@@ -2,16 +2,16 @@ namespace Spider.Pipelines.Core;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
-using Krackend.Sagas.Orchestrations.Client.Responses;
-using Krackend.Sagas.Orchestrations.Client.Serialization;
 using Microsoft.Extensions.DependencyInjection;
-using Spider.Pipelines.PostProcessing;
+using System.Text.Json;
 
 /// <summary>
 /// Adds Krackend orchestration behavior to Spider pipelines.
 /// </summary>
 public static class OrchestrationPipelineBuilderExtensions
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     /// <summary>
     /// Responds to the orchestration backchannel when metadata is present.
     /// </summary>
@@ -55,25 +55,33 @@ public static class OrchestrationPipelineBuilderExtensions
             throw new ArgumentNullException(nameof(transform));
         }
 
-        var options = new OrchestrationOperationOptions
-        {
-            Topic = topic,
-            Version = NormalizeVersion(version)
-        };
+        var options = CreateMessagingOptions(topic, version);
 
         builder.OnPreProcess(preProcess =>
             preProcess.OnPreProcess((context, arguments) =>
             {
-                _ = context.Services.GetRequiredService<IInstanceMetadataAccessor>().Get();
+                context.Services.GetRequiredService<IOrchestrationOperationExecutionContext>().Start(typeof(TRequest));
+                _ = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get();
                 return Task.CompletedTask;
             }));
 
         builder.OnPostProcess(postProcess =>
         {
-            postProcess.OnSuccess((context, arguments) =>
-                PublishSuccessAsync(context.Services, context.Request, null, transform(context.Request), options, arguments, context.CancellationToken));
-            postProcess.OnFailure((context, arguments) =>
-                PublishFailureAsync<TRequest>(context.Services, arguments, context.Exception, context.CancellationToken));
+            postProcess.OnSuccess((context, _) =>
+                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
+                    .PublishSuccessAsync(
+                        typeof(TRequest),
+                        null,
+                        transform(context.Request),
+                        options,
+                        context.CancellationToken));
+            postProcess.OnFailure((context, _) =>
+                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
+                    .PublishFailureAsync(
+                        typeof(TRequest),
+                        context.Exception,
+                        options,
+                        context.CancellationToken));
         });
 
         return builder;
@@ -152,84 +160,60 @@ public static class OrchestrationPipelineBuilderExtensions
             throw new ArgumentNullException(nameof(transform));
         }
 
-        var options = new OrchestrationOperationOptions
-        {
-            Topic = topic,
-            Version = NormalizeVersion(version)
-        };
+        var options = CreateMessagingOptions(topic, version);
 
         builder.OnPreProcess(preProcess =>
             preProcess.OnPreProcess((context, arguments) =>
             {
-                _ = context.Services.GetRequiredService<IInstanceMetadataAccessor>().Get();
+                context.Services.GetRequiredService<IOrchestrationOperationExecutionContext>().Start(typeof(TRequest));
+                _ = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get();
                 return Task.CompletedTask;
             }));
 
         builder.OnPostProcess(postProcess =>
         {
-            postProcess.OnSuccess((context, arguments) =>
-                PublishSuccessAsync(
-                    context.Services,
-                    context.Request,
-                    typeof(TResponse),
-                    transform(context.Request, context.Response, transformer),
-                    options,
-                    arguments,
-                    context.CancellationToken));
-            postProcess.OnFailure((context, arguments) =>
-                PublishFailureAsync<TRequest>(context.Services, arguments, context.Exception, context.CancellationToken));
+            postProcess.OnSuccess((context, _) =>
+                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
+                    .PublishSuccessAsync(
+                        typeof(TRequest),
+                        typeof(TResponse),
+                        transform(context.Request, context.Response, transformer),
+                        options,
+                        context.CancellationToken));
+            postProcess.OnFailure((context, _) =>
+                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
+                    .PublishFailureAsync(
+                        typeof(TRequest),
+                        context.Exception,
+                        options,
+                        context.CancellationToken));
         });
 
         return builder;
     }
 
-    private static async Task PublishSuccessAsync<TRequest>(
-        IServiceProvider services,
-        TRequest request,
-        Type responseType,
-        object payload,
-        OrchestrationOperationOptions options,
-        PostProcessArguments arguments,
-        CancellationToken cancellationToken)
+    private static OrchestrationOperationOptions CreateMessagingOptions(string topic, string version)
     {
-        var metadata = services.GetRequiredService<IInstanceMetadataAccessor>().Get();
-        var publisher = services.GetRequiredService<IOrchestrationClientPublisher>();
-        var businessPayload = OrchestrationPayloadSerializer.ToJsonNode(payload);
-
-        if (HasBackchannel(metadata))
+        if (string.IsNullOrWhiteSpace(topic))
         {
-            var factory = services.GetRequiredService<IOrchestrationClientResponseFactory>();
-            var envelope = factory.Success(metadata, typeof(TRequest), responseType, businessPayload, arguments.ExecutionTime);
-            await publisher.PublishAsync(envelope, metadata.BackchannelTopic, NormalizeVersion(metadata.BackchannelVersion), cancellationToken);
-            return;
+            return new OrchestrationOperationOptions();
         }
 
-        if (options.HasTriggerDestination)
+        var settings = new MessagingReplyAddressSettings
         {
-            await publisher.PublishAsync(businessPayload, options.Topic, options.Version, cancellationToken);
-        }
+            Topic = topic,
+            Version = NormalizeVersion(version)
+        };
+
+        return new OrchestrationOperationOptions
+        {
+            TriggerAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = JsonSerializer.Serialize(settings, SerializerOptions)
+            }
+        };
     }
-
-    private static async Task PublishFailureAsync<TRequest>(
-        IServiceProvider services,
-        PostProcessArguments arguments,
-        Exception exception,
-        CancellationToken cancellationToken)
-    {
-        var metadata = services.GetRequiredService<IInstanceMetadataAccessor>().Get();
-        if (!HasBackchannel(metadata))
-        {
-            return;
-        }
-
-        var factory = services.GetRequiredService<IOrchestrationClientResponseFactory>();
-        var publisher = services.GetRequiredService<IOrchestrationClientPublisher>();
-        var envelope = factory.Failure(metadata, typeof(TRequest), arguments.Reason, exception, arguments.ExecutionTime);
-        await publisher.PublishAsync(envelope, metadata.BackchannelTopic, NormalizeVersion(metadata.BackchannelVersion), cancellationToken);
-    }
-
-    private static bool HasBackchannel(InstanceMetadata metadata)
-        => !string.IsNullOrWhiteSpace(metadata?.BackchannelTopic);
 
     private static string NormalizeVersion(string version)
         => string.IsNullOrWhiteSpace(version) ? "1.0.0" : version;

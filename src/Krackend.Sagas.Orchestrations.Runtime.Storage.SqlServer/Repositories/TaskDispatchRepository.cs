@@ -21,6 +21,7 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
 
     public async Task Update(TaskDispatch dispatch, CancellationToken cancellationToken = default)
     {
+        DetachLocalTrackedEntity(DbContext.TaskDispatches, dispatch);
         DbContext.TaskDispatches.Update(dispatch);
         await SaveChanges(cancellationToken);
     }

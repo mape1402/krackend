@@ -21,6 +21,7 @@ internal sealed class StageExecutionRepository : RuntimeRepositoryBase, IStageEx
 
     public async Task Update(StageExecution stageExecution, CancellationToken cancellationToken = default)
     {
+        DetachLocalTrackedEntity(DbContext.StageExecutions, stageExecution);
         DbContext.StageExecutions.Update(stageExecution);
         await SaveChanges(cancellationToken);
     }

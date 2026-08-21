@@ -1,7 +1,10 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 {
@@ -12,19 +15,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly ITaskExecutionAttemptRepository _attemptRepository;
         private readonly ITaskDispatchRepository _dispatchRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
+        private readonly IOrchestrationPayloadState _payloadState;
 
         public CompleteCallbackDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
             ITaskExecutionRepository taskRepository,
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
-            IExecutionTransitionRepository transitionRepository)
+            IExecutionTransitionRepository transitionRepository,
+            IOrchestrationPayloadState payloadState)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
             _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
             _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
+            _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
         }
 
         public async Task HandleAsync(CompleteCallbackDecision decision, CancellationToken cancellationToken = default)
@@ -34,34 +40,39 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var task = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
             var dispatch = await _dispatchRepository.GetById(decision.DispatchId, cancellationToken);
             var attempt = await _attemptRepository.GetByDispatchId(decision.DispatchId, cancellationToken);
+            var result = decision.ExecutionResultMetadata ?? BuildMissingExecutionResultMetadata();
+            var succeeded = result.Succeeded;
+            var errorMessage = result.ErrorMessage;
+            var responsePayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : JsonNode.Parse(decision.Payload);
 
-            dispatch.DispatchStatus = decision.Succeeded ? "Acknowledged" : "Failed";
-            dispatch.AcknowledgedOnUtc = decision.Succeeded ? now : null;
-            dispatch.FailedOnUtc = decision.Succeeded ? null : now;
-            dispatch.FailureReason = decision.Succeeded ? null : decision.ErrorMessage;
-            task.Status = decision.Succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
-            task.CompletedOnUtc = decision.Succeeded ? now : null;
-            task.FailedOnUtc = decision.Succeeded ? null : now;
+            dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
+            dispatch.AcknowledgedOnUtc = succeeded ? now : null;
+            dispatch.FailedOnUtc = succeeded ? null : now;
+            dispatch.FailureReason = succeeded ? null : errorMessage;
+            task.Status = succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
+            task.CompletedOnUtc = succeeded ? now : null;
+            task.FailedOnUtc = succeeded ? null : now;
             task.WaitingSinceUtc = null;
-            attempt.Status = decision.Succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
-            attempt.CompletedOnUtc = decision.Succeeded ? now : null;
-            attempt.FailedOnUtc = decision.Succeeded ? null : now;
+            attempt.Status = succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
+            attempt.CompletedOnUtc = succeeded ? now : null;
+            attempt.FailedOnUtc = succeeded ? null : now;
             attempt.WaitingSinceUtc = null;
-            attempt.ResponsePayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload);
-            attempt.ErrorCode = decision.Succeeded ? null : decision.ErrorCode;
-            attempt.ErrorMessage = decision.Succeeded ? null : decision.ErrorMessage;
-            if (!string.IsNullOrWhiteSpace(decision.EnvelopePayload))
-            {
-                attempt.Metadata["OrchestrationResponseEnvelope"] = System.Text.Json.Nodes.JsonNode.Parse(decision.EnvelopePayload);
-            }
+            attempt.ResponsePayload = responsePayload?.DeepClone();
+            attempt.ErrorCode = succeeded ? null : result.ErrorCode;
+            attempt.ErrorMessage = succeeded ? null : errorMessage;
+            CopyExecutionResultMetadata(attempt, result);
 
-            instance.Status = decision.Succeeded || task.OnErrorPolicy == OnErrorPolicy.Continue
+            instance.Status = succeeded || task.OnErrorPolicy == OnErrorPolicy.Continue
                 ? OrchestrationInstanceStatus.Running
                 : OrchestrationInstanceStatus.Failed;
-            instance.FailedOnUtc = decision.Succeeded || task.OnErrorPolicy == OnErrorPolicy.Continue ? null : now;
-            instance.ErrorSummary = decision.Succeeded ? null : decision.ErrorMessage;
+            instance.FailedOnUtc = succeeded || task.OnErrorPolicy == OnErrorPolicy.Continue ? null : now;
+            instance.ErrorSummary = succeeded ? null : errorMessage;
             instance.WaitingSinceUtc = null;
             instance.LastUpdatedOnUtc = now;
+            if (succeeded)
+            {
+                instance.SnapshotPayload = _payloadState.ApplyCallbackPayload(instance, responsePayload);
+            }
 
             await _dispatchRepository.Update(dispatch, cancellationToken);
             await _attemptRepository.Update(attempt, cancellationToken);
@@ -74,16 +85,79 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 StageExecutionId = task.StageExecutionId,
                 TaskExecutionId = task.Id,
                 TaskExecutionAttemptId = attempt.Id,
-                TransitionType = decision.Succeeded ? "TaskCallbackCompleted" : "TaskCallbackFailed",
+                TransitionType = succeeded ? "TaskCallbackCompleted" : "TaskCallbackFailed",
                 FromStatus = TaskExecutionStatus.WaitingResponse.ToString(),
                 ToStatus = task.Status.ToString(),
                 OccurredOnUtc = now,
-                Message = decision.Succeeded
+                Message = succeeded
                     ? $"Callback completed task '{task.TaskKey}'."
-                    : $"Callback failed task '{task.TaskKey}': {decision.ErrorMessage}",
-                Payload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
+                    : $"Callback failed task '{task.TaskKey}': {errorMessage}",
+                Payload = responsePayload?.DeepClone(),
                 ProducedBy = nameof(CompleteCallbackDecisionHandler)
             }, cancellationToken);
+        }
+
+        private static OrchestrationExecutionResultMetadata BuildMissingExecutionResultMetadata()
+            => new()
+            {
+                Succeeded = false,
+                Status = "Failed",
+                ErrorCode = "MissingExecutionResultMetadata",
+                ErrorMessage = "Backchannel callback did not include orchestration execution result metadata.",
+                CompletedOnUtc = DateTime.UtcNow
+            };
+
+        private static void CopyExecutionResultMetadata(
+            TaskExecutionAttempt attempt,
+            OrchestrationExecutionResultMetadata result)
+        {
+            attempt.Metadata["ExecutionSucceeded"] = JsonValue.Create(result.Succeeded);
+            attempt.Metadata["ExecutionStatus"] = JsonValue.Create(result.Status ?? string.Empty);
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorCode))
+            {
+                attempt.Metadata["ExecutionErrorCode"] = JsonValue.Create(result.ErrorCode);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                attempt.Metadata["ExecutionErrorMessage"] = JsonValue.Create(result.ErrorMessage);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorType))
+            {
+                attempt.Metadata["ExecutionErrorType"] = JsonValue.Create(result.ErrorType);
+            }
+
+            if (result.StartedOnUtc.HasValue)
+            {
+                attempt.Metadata["ExecutionStartedOnUtc"] = JsonValue.Create(result.StartedOnUtc.Value);
+            }
+
+            if (result.CompletedOnUtc.HasValue)
+            {
+                attempt.Metadata["ExecutionCompletedOnUtc"] = JsonValue.Create(result.CompletedOnUtc.Value);
+            }
+
+            if (result.ExecutionTimeMs.HasValue)
+            {
+                attempt.Metadata["ExecutionTimeMs"] = JsonValue.Create(result.ExecutionTimeMs.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.RequestType))
+            {
+                attempt.Metadata["ExecutionRequestType"] = JsonValue.Create(result.RequestType);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ResponseType))
+            {
+                attempt.Metadata["ExecutionResponseType"] = JsonValue.Create(result.ResponseType);
+            }
+
+            foreach (var metadata in result.Metadata)
+            {
+                attempt.Metadata[$"Execution.{metadata.Key}"] = metadata.Value?.DeepClone();
+            }
         }
     }
 }

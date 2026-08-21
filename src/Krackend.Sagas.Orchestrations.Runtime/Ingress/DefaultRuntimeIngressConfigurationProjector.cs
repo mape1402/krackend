@@ -11,14 +11,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         private readonly IRuntimeArtifactSerializer _artifactSerializer;
         private readonly IRuntimeIngressConfigurationRepository _repository;
         private readonly IMessagingConfigurationSerializer _messagingConfigurationSerializer;
-        private readonly IBackchannelTopicFormatter _backchannelTopicFormatter;
+        private readonly IBackchannelMessagingTopicFormatter _backchannelTopicFormatter;
         private readonly IRuntimeIngressConfigurationKeyBuilder _keyBuilder;
 
         public DefaultRuntimeIngressConfigurationProjector(
             IRuntimeArtifactSerializer artifactSerializer,
             IRuntimeIngressConfigurationRepository repository,
             IMessagingConfigurationSerializer messagingConfigurationSerializer,
-            IBackchannelTopicFormatter backchannelTopicFormatter,
+            IBackchannelMessagingTopicFormatter backchannelTopicFormatter,
             IRuntimeIngressConfigurationKeyBuilder keyBuilder)
         {
             _artifactSerializer = artifactSerializer ?? throw new ArgumentNullException(nameof(artifactSerializer));

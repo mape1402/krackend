@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
 {
@@ -7,10 +8,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         Id TaskExecutionId,
         Id DispatchId,
         string Payload,
-        bool Succeeded,
-        string ErrorCode,
-        string ErrorMessage,
-        string EnvelopePayload) : IDecision
+        OrchestrationExecutionResultMetadata ExecutionResultMetadata) : IDecision
     {
         public string Kind => "complete-callback";
     }

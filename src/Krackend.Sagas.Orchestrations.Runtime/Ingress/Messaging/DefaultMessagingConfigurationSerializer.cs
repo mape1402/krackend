@@ -13,7 +13,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
                 throw new ArgumentNullException(nameof(configuration));
             }
 
-            return JsonSerializer.Serialize(configuration, SerializerOptions);
+            return JsonSerializer.Serialize(new MessagingIngressSettings
+            {
+                Topic = configuration.Topic,
+                Version = configuration.Version
+            }, SerializerOptions);
         }
 
         public MessagingConfiguration Deserialize(string rawJson)
@@ -23,8 +27,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
                 throw new ArgumentException("Messaging configuration payload cannot be empty.", nameof(rawJson));
             }
 
-            return JsonSerializer.Deserialize<MessagingConfiguration>(rawJson, SerializerOptions)
+            var settings = JsonSerializer.Deserialize<MessagingIngressSettings>(rawJson, SerializerOptions)
                 ?? throw new InvalidOperationException("Messaging configuration payload could not be deserialized.");
+
+            return new MessagingConfiguration
+            {
+                Topic = settings.Topic,
+                Version = settings.Version
+            };
         }
     }
 }
