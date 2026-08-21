@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Sales.Api.Orchestrations;
 
 namespace Microsoft.Extensions.DependencyInjection
 {
@@ -7,7 +8,8 @@ namespace Microsoft.Extensions.DependencyInjection
     {
         internal static IServiceCollection AddCustomContainer(this IServiceCollection services, IConfiguration configuration)
         {
-            // Register service-specific dependencies here.
+            services.AddScoped<ISaleCreatedOrchestrationDispatcher, SaleCreatedOrchestrationDispatcher>();
+
             return services;
         }
     }

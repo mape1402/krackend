@@ -13,4 +13,8 @@ internal sealed record HappyPathSeedDefinition(
     Id PaymentTaskId,
     Id RegistryProviderId,
     string InventoryTopic,
-    string PaymentTopic);
+    string PaymentTopic,
+    Id? PaymentStageId = null,
+    Id? CompletionStageId = null,
+    Id? CompletionTaskId = null,
+    string? CompletionTopic = null);

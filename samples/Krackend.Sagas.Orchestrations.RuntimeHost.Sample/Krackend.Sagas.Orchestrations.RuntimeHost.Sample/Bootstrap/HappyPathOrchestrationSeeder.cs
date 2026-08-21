@@ -40,7 +40,23 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
             StableId("01K00000000000000000000017"),
             StableId("01K00000000000000000000018"),
             "commands.inventories.stock.reserve",
-            "commands.payments.payment.capture.")
+            "commands.payments.payment.capture."),
+        new(
+            new SemanticVersion(1, 2, 0),
+            StableId("01K00000000000000000000021"),
+            StableId("01K00000000000000000000022"),
+            StableId("01K00000000000000000000023"),
+            StableId("01K00000000000000000000024"),
+            StableId("01K00000000000000000000025"),
+            StableId("01K00000000000000000000026"),
+            StableId("01K00000000000000000000027"),
+            StableId("01K00000000000000000000028"),
+            "commands.inventories.stock.reserve",
+            "commands.payments.payment.capture.",
+            StableId("01K00000000000000000000029"),
+            StableId("01K00000000000000000000030"),
+            StableId("01K00000000000000000000031"),
+            "commands.sales.sale.complete")
     ];
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -130,6 +146,20 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                     "Starts the sales happy path from the sales service event.")
             ],
             [],
+            BuildStageDefinitions(definition),
+            "Sample orchestration used to exercise the runtime happy path.",
+            definition.Version.ToString(),
+            "Registered idempotently by the runtime host.");
+    }
+
+    private static IReadOnlyList<StageArtifact> BuildStageDefinitions(HappyPathSeedDefinition definition)
+    {
+        if (definition.CompletionTopic is null ||
+            definition.PaymentStageId is null ||
+            definition.CompletionStageId is null ||
+            definition.CompletionTaskId is null)
+        {
+            return
             [
                 new StageArtifact(
                     definition.StageId,
@@ -160,10 +190,72 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                     [],
                     [],
                     "Runs the sample inventory and payment services.")
-            ],
-            "Sample orchestration used to exercise the runtime happy path.",
-            definition.Version.ToString(),
-            "Registered idempotently by the runtime host.");
+            ];
+        }
+
+        return
+        [
+            new StageArtifact(
+                definition.StageId,
+                "inventory-reservation",
+                "Inventory reservation",
+                1,
+                DisabledCondition(),
+                [
+                    BuildMessagingTask(
+                        definition.InventoryTaskId,
+                        definition.StageId,
+                        definition.RegistryProviderId,
+                        definition.Version,
+                        "inventories.reserve",
+                        "Reserve inventory",
+                        1,
+                        definition.InventoryTopic)
+                ],
+                [],
+                [],
+                "Reserves inventory for the accepted sale."),
+            new StageArtifact(
+                definition.PaymentStageId.Value,
+                "payment-capture",
+                "Payment capture",
+                2,
+                DisabledCondition(),
+                [
+                    BuildMessagingTask(
+                        definition.PaymentTaskId,
+                        definition.PaymentStageId.Value,
+                        definition.RegistryProviderId,
+                        definition.Version,
+                        "payments.capture",
+                        "Capture payment",
+                        1,
+                        definition.PaymentTopic)
+                ],
+                [],
+                [],
+                "Captures payment after inventory is reserved."),
+            new StageArtifact(
+                definition.CompletionStageId.Value,
+                "sale-completion",
+                "Sale completion",
+                3,
+                DisabledCondition(),
+                [
+                    BuildMessagingTask(
+                        definition.CompletionTaskId.Value,
+                        definition.CompletionStageId.Value,
+                        definition.RegistryProviderId,
+                        definition.Version,
+                        "sales.complete",
+                        "Complete sale",
+                        1,
+                        definition.CompletionTopic)
+                ],
+                [],
+                [],
+                "Completes the sale after reservation and payment succeed.")
+        ];
     }
 
     private static TaskArtifact BuildMessagingTask(

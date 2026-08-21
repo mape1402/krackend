@@ -1,46 +1,71 @@
+using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
+using Sales.Api.Orchestrations;
 using Sales.Business.Sales.Models.Requests;
 using Sales.Business.Sales.Models.Responses;
-using Spider.Pipelines.Core;
-using TurtlePath.Spider;
 
 namespace Sales.Api.Controllers
 {
+    /// <summary>
+    /// Handles sale commands and sale-created orchestration triggers.
+    /// </summary>
+    [ApiVersion(1.0)]
+    [ApiVersion(1.1)]
+    [ApiVersion(1.2)]
     [Route("sales")]
     public sealed class SalesController : BaseController
     {
-        private readonly IConfiguration _configuration;
+        private readonly ISaleCreatedOrchestrationDispatcher _dispatcher;
 
-        public SalesController(IConfiguration configuration)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SalesController"/> class.
+        /// </summary>
+        public SalesController(ISaleCreatedOrchestrationDispatcher dispatcher)
         {
-            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         }
 
+        /// <summary>
+        /// Creates a sale and publishes the sale-created orchestration message for artifact version 1.0.0.
+        /// </summary>
         [HttpPost]
+        [MapToApiVersion(1.0)]
         [ProducesResponseType(typeof(SaleResponse), StatusCodes.Status202Accepted)]
-        public async Task<ActionResult<SaleResponse>> Create(
+        public async Task<ActionResult<SaleResponse>> CreateV1(
             [FromBody] CreateSaleRequest request,
             CancellationToken cancellationToken)
         {
-            var orchestrationConfiguration = _configuration.GetRequiredSection("Orchestrations:SaleCreated");
-            var orchestrationTopic = orchestrationConfiguration.GetValue<string>("Topic")
-                ?? throw new InvalidOperationException("The sale created orchestration topic is not configured.");
-            var orchestrationVersion = orchestrationConfiguration.GetValue<string>("Version");
+            var response = await _dispatcher.DispatchAsync(request, "1.0.0", cancellationToken);
 
-            var response = await Spider
-                .AsMediator()
-                .UseOrchestration<CreateSaleRequest, SaleResponse>(
-                    (req, res) => new
-                    {
-                        res.SaleId,
-                        req.CustomerId,
-                        res.Total,
-                        DateTime.UtcNow
-                    },
-                    orchestrationTopic,
-                    orchestrationVersion)
-                .Send(request, cancellationToken);
+            return Accepted(response);
+        }
+
+        /// <summary>
+        /// Creates a sale and publishes the sale-created orchestration message for artifact version 1.1.0.
+        /// </summary>
+        [HttpPost]
+        [MapToApiVersion(1.1)]
+        [ProducesResponseType(typeof(SaleResponse), StatusCodes.Status202Accepted)]
+        public async Task<ActionResult<SaleResponse>> CreateV1_1(
+            [FromBody] CreateSaleRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _dispatcher.DispatchAsync(request, "1.1.0", cancellationToken);
+
+            return Accepted(response);
+        }
+
+        /// <summary>
+        /// Creates a sale and publishes the sale-created orchestration message for artifact version 1.2.0.
+        /// </summary>
+        [HttpPost]
+        [MapToApiVersion(1.2)]
+        [ProducesResponseType(typeof(SaleResponse), StatusCodes.Status202Accepted)]
+        public async Task<ActionResult<SaleResponse>> CreateV1_2(
+            [FromBody] CreateSaleRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _dispatcher.DispatchAsync(request, "1.2.0", cancellationToken);
 
             return Accepted(response);
         }
