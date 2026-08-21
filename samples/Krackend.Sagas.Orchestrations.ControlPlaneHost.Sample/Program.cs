@@ -1,6 +1,10 @@
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap;
+using Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Bootstrap;
+using Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.Infrastructure;
 using Krackend.Sagas.Orchestrations.Distribution.Interaction;
+using Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.Security.Storage.SqlServer.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -10,9 +14,12 @@ const string adminRootPath = "admin";
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 
-var sqlConnection = builder.Configuration.GetConnectionString("Default");
+var sqlConnection = builder.Configuration.GetConnectionString("ControlPlaneDocker")
+    ?? builder.Configuration.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(sqlConnection))
-    throw new InvalidOperationException("Set ConnectionStrings:Default for the Design host.");
+    throw new InvalidOperationException("Set ConnectionStrings:ControlPlaneDocker or ConnectionStrings:Default for the Design host.");
+
+var migrationsAssembly = typeof(Program).Assembly.GetName().Name;
 
 builder.Services.AddHealthChecks()
     .AddAsyncCheck("sql", async () =>
@@ -25,10 +32,27 @@ builder.Services.AddHealthChecks()
 builder.Services.AddOrchestratorControlPlane(options =>
 {
     options.AdminRootPath = adminRootPath;
-    options.ConfigureSqlServer = db => db.UseSqlServer(sqlConnection);
+    options.ConfigureSqlServer = db => db.UseSqlServer(
+        sqlConnection,
+        sql => sql.MigrationsAssembly(migrationsAssembly));
 });
+builder.Services.AddScoped<IDesignHostSeedDataSeeder, DesignHostSeedDataSeeder>();
 
 var app = builder.Build();
+
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var designDbContext = scope.ServiceProvider.GetRequiredService<DesignStorageDbContext>();
+    var distributionDbContext = scope.ServiceProvider.GetRequiredService<DistributionStorageDbContext>();
+    var securityDbContext = scope.ServiceProvider.GetRequiredService<SecurityStorageDbContext>();
+
+    await securityDbContext.Database.MigrateAsync();
+    await designDbContext.Database.MigrateAsync();
+    await distributionDbContext.Database.MigrateAsync();
+
+    var seedDataSeeder = scope.ServiceProvider.GetRequiredService<IDesignHostSeedDataSeeder>();
+    await seedDataSeeder.SeedAsync();
+}
 
 app.UseRouting();
 app.UseAuthorization();
