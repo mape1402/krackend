@@ -1859,6 +1859,436 @@
     background: #fcfdff;
 }
 
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .modal-header {
+    padding: 0.6rem 0.75rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .modal-body {
+    padding: 0.6rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .modal-title {
+    font-size: 1rem;
+    line-height: 1.2;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .modal-header .od-item-meta {
+    margin: 0.12rem 0 0;
+    font-size: 0.7rem;
+    line-height: 1.2;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-status {
+    min-width: 66px;
+    padding: 0.13rem 0.48rem;
+    font-size: 0.64rem;
+    line-height: 1.1;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-chip-row {
+    gap: 0.35rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-chip {
+    padding: 0.12rem 0.42rem;
+    font-size: 0.66rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-grid,
+:is(.od-detail-modal, .od-stage-modal) .od-detail-summary {
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 0.38rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal) .od-detail-summary {
+    margin-bottom: 0.48rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-field {
+    min-height: 42px;
+    padding: 0.42rem 0.48rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-field span {
+    font-size: 0.63rem;
+    line-height: 1.15;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-field strong {
+    margin-top: 0.08rem;
+    font-size: 0.76rem;
+    line-height: 1.25;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-split {
+    gap: 0.45rem;
+    margin: 0.42rem 0;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-split article,
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-dispatch,
+:is(.od-detail-modal, .od-stage-modal) .od-attempt {
+    padding: 0.52rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal) .od-detail-split h3,
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-detail-split h5,
+:is(.od-detail-modal, .od-stage-modal) .od-dispatch h5 {
+    margin-bottom: 0.32rem;
+    font-size: 0.78rem;
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .od-json {
+    max-height: 220px;
+    padding: 0.5rem;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    line-height: 1.28;
+}
+
+.od-runtime-detail-dialog .modal-body {
+    height: min(820px, calc(100dvh - 118px));
+}
+
+.od-runtime-detail-dialog .od-trace-shell {
+    gap: 0.7rem;
+}
+
+.od-runtime-detail-dialog .od-trace-fixed {
+    gap: 0.45rem;
+    padding-bottom: 0.1rem;
+}
+
+.od-runtime-detail-dialog .od-trace-toolbar {
+    gap: 0.55rem;
+    padding-bottom: 0.48rem;
+}
+
+.od-runtime-detail-dialog .od-trace-meta {
+    gap: 0.36rem;
+}
+
+.od-runtime-detail-dialog .od-meta-pill {
+    max-width: 210px;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+}
+
+.od-runtime-detail-dialog .od-meta-pill small {
+    font-size: 0.62rem;
+}
+
+.od-runtime-detail-dialog .od-meta-pill strong {
+    font-size: 0.72rem;
+}
+
+.od-runtime-detail-dialog .od-timeline-action {
+    min-height: 28px;
+    padding: 0.24rem 0.52rem;
+    font-size: 0.72rem;
+}
+
+.od-runtime-detail-dialog .od-execution-key {
+    font-size: 0.68rem;
+}
+
+.od-runtime-detail-dialog .od-process-track {
+    --step-size: 44px;
+    --step-gap: 2.5rem;
+    grid-auto-columns: minmax(104px, 124px);
+    min-height: 112px;
+    padding: 0.68rem 0.2rem 0.38rem;
+}
+
+.od-runtime-detail-dialog .od-process-step {
+    gap: 0.42rem;
+    min-width: 104px;
+}
+
+.od-runtime-detail-dialog .od-process-line {
+    height: 2px;
+}
+
+.od-runtime-detail-dialog .od-process-marker {
+    border-width: 2px;
+}
+
+.od-runtime-detail-dialog .od-process-marker span {
+    width: 12px;
+    height: 12px;
+}
+
+.od-runtime-detail-dialog .od-process-step.is-current .od-process-marker,
+.od-runtime-detail-dialog .od-process-step.is-selected .od-process-marker,
+.od-runtime-detail-dialog .od-process-step.is-failed .od-process-marker {
+    box-shadow: 0 0 0 5px rgba(109, 75, 220, 0.12);
+}
+
+.od-runtime-detail-dialog .od-process-step.is-failed .od-process-marker {
+    box-shadow: 0 0 0 5px rgba(196, 61, 77, 0.1);
+}
+
+.od-runtime-detail-dialog .od-process-copy strong {
+    font-size: 0.82rem;
+}
+
+.od-runtime-detail-dialog .od-process-copy span {
+    font-size: 0.74rem;
+}
+
+.od-runtime-detail-dialog .od-process-copy small,
+.od-runtime-detail-dialog .od-process-copy em {
+    font-size: 0.64rem;
+}
+
+.od-inline-storyline {
+    gap: 0.48rem;
+}
+
+.od-inline-storyline > header {
+    gap: 0.45rem;
+}
+
+.od-inline-storyline > header h3 {
+    font-size: 0.88rem;
+}
+
+.od-inline-storyline > header span {
+    font-size: 0.68rem;
+}
+
+.od-stage-focus-head {
+    gap: 0.65rem;
+    padding: 0.58rem 0.65rem;
+}
+
+.od-stage-focus-head h3 {
+    font-size: 0.92rem;
+    line-height: 1.2;
+}
+
+.od-stage-focus-head small {
+    margin-top: 0.08rem;
+    font-size: 0.68rem;
+    line-height: 1.25;
+}
+
+.od-kicker {
+    margin-bottom: 0.08rem;
+    font-size: 0.62rem;
+}
+
+.od-stage-stats {
+    padding: 0.5rem;
+}
+
+.od-stage-payload-strip {
+    padding: 0 0.5rem 0.5rem;
+}
+
+.od-stage-payload-strip summary,
+.od-timeline-content summary {
+    padding: 0.42rem 0.5rem;
+    font-size: 0.74rem;
+}
+
+.od-task-list {
+    gap: 0.4rem;
+    padding: 0.52rem;
+}
+
+.od-task-card {
+    min-height: 54px;
+    gap: 0.5rem;
+    padding: 0.5rem 0.55rem;
+}
+
+.od-task-main {
+    gap: 0.1rem;
+}
+
+.od-task-main strong {
+    font-size: 0.8rem;
+}
+
+.od-task-main small,
+.od-task-side small {
+    font-size: 0.66rem;
+}
+
+.od-task-main em {
+    font-size: 0.68rem;
+}
+
+.od-task-side {
+    gap: 0.16rem;
+    max-width: 176px;
+}
+
+.od-task-detail-shell {
+    gap: 0.5rem;
+}
+
+.od-task-fixed {
+    gap: 0.36rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-task-fixed .od-json {
+    max-height: 54px;
+    padding: 0.4rem;
+    font-size: 0.66rem;
+}
+
+.od-back-action {
+    min-height: 28px;
+    padding: 0.22rem 0.52rem;
+    font-size: 0.76rem;
+}
+
+.od-task-detail-head .od-detail-grid {
+    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+    gap: 0.28rem;
+    padding: 0.4rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-stage-focus-head {
+    padding: 0.45rem 0.55rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-stage-focus-head h3 {
+    font-size: 0.86rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-stage-focus-head small {
+    font-size: 0.66rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-field {
+    min-height: 36px;
+    padding: 0.32rem 0.4rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-field span {
+    font-size: 0.58rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-field strong {
+    font-size: 0.7rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-split {
+    gap: 0.34rem;
+    margin: 0.12rem 0;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-split article {
+    padding: 0.38rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-split h5 {
+    margin-bottom: 0.22rem;
+    font-size: 0.72rem;
+}
+
+.od-attempt-stack {
+    gap: 0.42rem;
+}
+
+.od-attempt-stack > h3 {
+    font-size: 0.86rem;
+}
+
+.od-attempt-list {
+    gap: 0.42rem;
+    padding-right: 0.25rem;
+}
+
+.od-attempt-summary {
+    gap: 0.55rem;
+    padding: 0.48rem 0.55rem;
+}
+
+.od-attempt-summary strong {
+    font-size: 0.78rem;
+}
+
+.od-attempt-summary small,
+.od-attempt-card > header small {
+    margin-top: 0.08rem;
+    font-size: 0.66rem;
+}
+
+.od-attempt-summary-side {
+    gap: 0.36rem;
+}
+
+.od-attempt-caret {
+    font-size: 0.76rem;
+}
+
+.od-attempt-card[open] {
+    box-shadow: 0 5px 12px rgba(17, 24, 39, 0.06);
+}
+
+.od-attempt-body > .od-detail-grid,
+.od-attempt-body > .od-detail-split,
+.od-attempt-body > .od-dispatch {
+    margin: 0.48rem;
+}
+
+.od-timeline-control {
+    gap: 0.55rem;
+}
+
+.od-timeline-entry {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 0.52rem;
+}
+
+.od-timeline-marker::after {
+    top: 26px;
+    bottom: -0.55rem;
+}
+
+.od-timeline-marker span {
+    width: 24px;
+    height: 24px;
+    font-size: 0.66rem;
+}
+
+.od-timeline-content {
+    padding: 0.58rem;
+}
+
+.od-timeline-content header {
+    gap: 0.52rem;
+}
+
+.od-timeline-content strong {
+    font-size: 0.8rem;
+}
+
+.od-timeline-content small,
+.od-timeline-content time,
+.od-timeline-content p {
+    font-size: 0.68rem;
+}
+
+.od-timeline-content p {
+    margin-top: 0.28rem;
+}
+
+.od-transition-status {
+    margin-top: 0.3rem;
+    padding: 0.14rem 0.42rem;
+    font-size: 0.66rem;
+}
+
+.od-timeline-content .od-chip-row,
+.od-timeline-content details {
+    margin-top: 0.38rem;
+}
+
 @media (max-width: 980px) {
     .od-runtime-detail-dialog {
         max-width: none;
