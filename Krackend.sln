@@ -89,6 +89,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestratio
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "src\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.csproj", "{01A2F9D1-0AA5-4B94-A8EE-A39BDB597446}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Runtime.WebUI", "src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj", "{B98EE43D-C723-4C97-B7AF-726F3274E630}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -507,6 +509,18 @@ Global
 		{01A2F9D1-0AA5-4B94-A8EE-A39BDB597446}.Release|x64.Build.0 = Release|Any CPU
 		{01A2F9D1-0AA5-4B94-A8EE-A39BDB597446}.Release|x86.ActiveCfg = Release|Any CPU
 		{01A2F9D1-0AA5-4B94-A8EE-A39BDB597446}.Release|x86.Build.0 = Release|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Debug|x64.Build.0 = Debug|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Debug|x86.Build.0 = Debug|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Release|x64.ActiveCfg = Release|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Release|x64.Build.0 = Release|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Release|x86.ActiveCfg = Release|Any CPU
+		{B98EE43D-C723-4C97-B7AF-726F3274E630}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -549,6 +563,7 @@ Global
 		{FB57F68E-FCB7-4A4F-9CDA-249334DEA331} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
 		{680D5D63-65D9-4AE0-90A6-73ECA1132B0B} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
 		{01A2F9D1-0AA5-4B94-A8EE-A39BDB597446} = {9B607920-26A0-46EA-BA6A-A52EA72FAB36}
+		{B98EE43D-C723-4C97-B7AF-726F3274E630} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3F2B5274-3B0F-4F73-B211-9BD128E1AF56}

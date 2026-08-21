@@ -14,6 +14,7 @@
     const pagePrev = document.querySelector("[data-page-prev]");
     const pageNext = document.querySelector("[data-page-next]");
     const pageSummary = document.querySelector("[data-page-summary]");
+    const trafficModeButtons = document.querySelectorAll("[data-traffic-mode]");
 
     const detailModalElement = document.getElementById("runtimeInstanceModal");
     const detailTitle = document.querySelector("[data-detail-title]");
@@ -35,7 +36,9 @@
 
     const instances = new Map();
     const traffic = new Map();
+    const hourlyTraffic = new Map();
     let summary = normalizeSummary(config.summary || config.Summary);
+    let trafficMode = "minute";
     let selectedInstanceId = null;
     let selectedStageId = null;
     let currentDetail = null;
@@ -57,9 +60,15 @@
         }
     });
     (config.traffic || []).forEach(item => {
-        const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"));
+        const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "minute");
         if (bucket) {
             traffic.set(bucket, normalizeTrafficPoint(item));
+        }
+    });
+    (config.hourlyTraffic || config.HourlyTraffic || []).forEach(item => {
+        const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "hour");
+        if (bucket) {
+            hourlyTraffic.set(bucket, normalizeTrafficPoint(item));
         }
     });
 
@@ -102,6 +111,7 @@
 
     function normalizeTrafficPoint(item) {
         return {
+            active: Number(read(item, "active", "Active") || 0),
             started: Number(read(item, "started", "Started") || read(item, "count", "Count") || 0),
             completed: Number(read(item, "completed", "Completed") || 0),
             failed: Number(read(item, "failed", "Failed") || 0)
@@ -136,13 +146,18 @@
         }
     }
 
-    function bucketKey(value) {
+    function bucketKey(value, mode) {
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) {
             return "";
         }
 
-        date.setSeconds(0, 0);
+        if (mode === "hour") {
+            date.setMinutes(0, 0, 0);
+        } else {
+            date.setSeconds(0, 0);
+        }
+
         return date.toISOString();
     }
 
@@ -189,8 +204,9 @@
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
         context.clearRect(0, 0, width, height);
 
-        const points = Array.from(traffic.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-60);
-        const max = Math.max(1, ...points.flatMap(x => [x[1].started, x[1].completed, x[1].failed]));
+        const source = trafficMode === "hour" ? hourlyTraffic : traffic;
+        const points = Array.from(source.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(trafficMode === "hour" ? -24 : -60);
+        const max = Math.max(1, ...points.flatMap(x => [x[1].active, x[1].started, x[1].completed, x[1].failed]));
         const padding = { top: 16, right: 18, bottom: 28, left: 34 };
         const plotWidth = Math.max(1, width - padding.left - padding.right);
         const plotHeight = Math.max(1, height - padding.top - padding.bottom);
@@ -212,6 +228,7 @@
             return;
         }
 
+        drawTrafficSeries(context, points, "active", "#176b87", padding, plotWidth, plotHeight, max);
         drawTrafficSeries(context, points, "started", "#4856d7", padding, plotWidth, plotHeight, max);
         drawTrafficSeries(context, points, "completed", "#0f8c55", padding, plotWidth, plotHeight, max);
         drawTrafficSeries(context, points, "failed", "#d64a4a", padding, plotWidth, plotHeight, max);
@@ -220,6 +237,7 @@
         context.font = "11px system-ui";
         context.fillText(String(max), 6, padding.top + 4);
         context.fillText("0", 18, padding.top + plotHeight + 4);
+        context.fillText(trafficMode === "hour" ? "24h" : "60m", padding.left, height - 8);
         context.fillText("now", width - padding.right - 20, height - 8);
 
         drawLegend(context, width, padding);
@@ -243,11 +261,12 @@
 
     function drawLegend(context, width, padding) {
         const items = [
+            ["active", "#176b87"],
             ["started", "#4856d7"],
             ["completed", "#0f8c55"],
             ["failed", "#d64a4a"]
         ];
-        let x = Math.max(padding.left, width - 245);
+        let x = Math.max(padding.left, width - 320);
         context.font = "11px system-ui";
         items.forEach(([label, color]) => {
             context.fillStyle = color;
@@ -284,17 +303,8 @@
 
         instances.set(id, row);
 
-        const bucket = bucketKey(read(eventData, "occurredOnUtc", "OccurredOnUtc"));
-        const currentTraffic = traffic.get(bucket) || { started: 0, completed: 0, failed: 0 };
-        const transitionType = read(eventData, "transitionType", "TransitionType");
-        if (transitionType === "InstanceStarted") {
-            currentTraffic.started += 1;
-        } else if (transitionType === "InstanceCompleted") {
-            currentTraffic.completed += 1;
-        } else if (transitionType === "InstanceFailed") {
-            currentTraffic.failed += 1;
-        }
-        traffic.set(bucket, currentTraffic);
+        applyTrafficEvent(traffic, read(eventData, "occurredOnUtc", "OccurredOnUtc"), "minute", eventData);
+        applyTrafficEvent(hourlyTraffic, read(eventData, "occurredOnUtc", "OccurredOnUtc"), "hour", eventData);
 
         renderGrid();
         drawTraffic();
@@ -333,14 +343,41 @@
         const nextTraffic = read(snapshot, "traffic", "Traffic") || [];
         traffic.clear();
         nextTraffic.forEach(item => {
-            const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"));
+            const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "minute");
             if (bucket) {
                 traffic.set(bucket, normalizeTrafficPoint(item));
             }
         });
 
+        const nextHourlyTraffic = read(snapshot, "hourlyTraffic", "HourlyTraffic") || [];
+        hourlyTraffic.clear();
+        nextHourlyTraffic.forEach(item => {
+            const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "hour");
+            if (bucket) {
+                hourlyTraffic.set(bucket, normalizeTrafficPoint(item));
+            }
+        });
+
         renderCounters();
         drawTraffic();
+    }
+
+    function applyTrafficEvent(target, occurredOnUtc, mode, eventData) {
+        const bucket = bucketKey(occurredOnUtc, mode);
+        if (!bucket) {
+            return;
+        }
+
+        const currentTraffic = target.get(bucket) || { active: 0, started: 0, completed: 0, failed: 0 };
+        const transitionType = read(eventData, "transitionType", "TransitionType");
+        if (transitionType === "InstancePromoted" || transitionType === "InstanceStarted") {
+            currentTraffic.started += 1;
+        } else if (transitionType === "InstanceCompleted") {
+            currentTraffic.completed += 1;
+        } else if (transitionType === "InstanceFailed") {
+            currentTraffic.failed += 1;
+        }
+        target.set(bucket, currentTraffic);
     }
 
     function scheduleSnapshotRefresh(delay) {
@@ -432,8 +469,8 @@
     function getFilteredRows() {
         const term = searchTerm.trim().toLowerCase();
         const rows = Array.from(instances.values()).sort((left, right) => {
-            const leftTime = new Date(left.lastUpdatedOnUtc || left.startedOnUtc || 0).getTime();
-            const rightTime = new Date(right.lastUpdatedOnUtc || right.startedOnUtc || 0).getTime();
+            const leftTime = new Date(left.startedOnUtc || left.lastUpdatedOnUtc || 0).getTime();
+            const rightTime = new Date(right.startedOnUtc || right.lastUpdatedOnUtc || 0).getTime();
             return rightTime - leftTime;
         });
 
@@ -576,6 +613,7 @@
             return;
         }
 
+        const selectedStage = selectedStageId ? findStage(selectedStageId) : null;
         detailBody.innerHTML = `
             <section class="od-trace-shell">
                 <div class="od-trace-toolbar">
@@ -586,14 +624,22 @@
                         ${metaPill("Started", formatDate(instance.startedOnUtc))}
                         ${metaPill("Updated", formatDate(instance.lastUpdatedOnUtc))}
                     </div>
-                    <button type="button" class="od-timeline-action" data-open-timeline>
-                        <i class="bi bi-clock-history"></i>
-                        Timeline (${(detail.transitions || []).length})
-                    </button>
                 </div>
                 <div class="od-execution-key" title="${escapeHtml(instance.executionKey || "-")}">${escapeHtml(instance.executionKey || "-")}</div>
                 <section class="od-process-track" aria-label="Stages">
                     ${stages.map((stage, index) => renderStageStep(stage, index, stages.length)).join("") || `<p class="od-empty">No stages recorded.</p>`}
+                </section>
+                <section class="od-stage-focus" data-stage-focus-panel>
+                    ${selectedStage ? renderStageDetail(selectedStage) : `<p class="od-empty">No stage selected.</p>`}
+                </section>
+                <section class="od-inline-storyline">
+                    <header>
+                        <h3>Storyline</h3>
+                        <span>${(detail.transitions || []).length} transitions</span>
+                    </header>
+                    <div class="od-timeline-control">
+                        ${(detail.transitions || []).map(renderTimelineEntry).join("") || `<p class="od-empty">No transitions recorded.</p>`}
+                    </div>
                 </section>
             </section>`;
     }
@@ -619,8 +665,9 @@
         const marker = stage.status === "Completed"
             ? `<i class="bi bi-check-lg"></i>`
             : `<span></span>`;
+        const selectedClass = stage.id === selectedStageId ? "is-selected" : "";
         return `
-            <button type="button" class="od-process-step ${stateClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
+            <button type="button" class="od-process-step ${stateClass} ${selectedClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
                 <span class="od-process-line" aria-hidden="true"></span>
                 <span class="od-process-marker">${marker}</span>
                 <span class="od-process-copy">
@@ -633,20 +680,12 @@
 
     function openStage(stageId) {
         const stage = findStage(stageId);
-        if (!stage || !stageBody) {
+        if (!stage || !detailBody || !currentDetail) {
             return;
         }
 
         selectedStageId = stage.id;
-        detailBody?.querySelectorAll("[data-open-stage]").forEach(step => step.classList.toggle("active", step.getAttribute("data-open-stage") === selectedStageId));
-        if (stageTitle) {
-            stageTitle.textContent = stage.stageKey;
-        }
-        if (stageSubtitle) {
-            stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
-        }
-        stageBody.innerHTML = renderStageDetail(stage);
-        stageModal?.show();
+        renderDetail(currentDetail);
     }
 
     function renderStageDetail(stage) {
@@ -657,7 +696,7 @@
                     <div>
                         <p class="od-kicker">Stage ${escapeHtml(stage.order)}</p>
                         <h3>${escapeHtml(stage.stageKey)}</h3>
-                        <small>${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}</small>
+                        <small>${escapeHtml(stage.configuredName || "-")} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}</small>
                     </div>
                     ${badge(stage.status)}
                 </header>
@@ -667,6 +706,7 @@
                     ${field("Completed", formatDate(stage.completedOnUtc))}
                     ${field("Failed", formatDate(stage.failedOnUtc))}
                     ${field("Tasks", String(tasks.length))}
+                    ${field("Source", stage.hasExecution === false ? "Artifact" : "Runtime")}
                 </div>
                 <div class="od-stage-payload-strip">
                     <details>
@@ -688,7 +728,7 @@
             <button type="button" class="od-task-card" data-open-task="${escapeHtml(task.id)}">
                 <span class="od-task-main">
                     <strong>${escapeHtml(task.taskKey)}</strong>
-                    <small>${escapeHtml(task.taskKind)} | ${escapeHtml(task.executionMode)} | ${windowText}</small>
+                    <small>${escapeHtml(task.configuredName || task.taskKind)} | ${escapeHtml(task.executionMode)} | ${windowText}</small>
                     ${task.errorSummary ? `<em>${escapeHtml(task.errorSummary)}</em>` : ""}
                 </span>
                 <span class="od-task-side">
@@ -738,6 +778,7 @@
                         ${field("Completed", formatDate(task.completedOnUtc))}
                         ${field("Failed", formatDate(task.failedOnUtc))}
                         ${field("Last attempt", String(task.lastAttemptNumber))}
+                        ${field("Source", task.hasExecution === false ? "Artifact" : "Runtime")}
                     </div>
                 </div>
                 ${task.errorSummary ? `<p class="od-runtime-error">${escapeHtml(task.errorSummary)}</p>` : ""}
@@ -785,6 +826,12 @@
                     <article>
                         <h5>Output</h5>
                         ${codeBlock(attempt.responsePayload)}
+                    </article>
+                </div>
+                <div class="od-detail-split">
+                    <article>
+                        <h5>Attempt metadata</h5>
+                        ${codeBlock(attempt.metadata)}
                     </article>
                 </div>
                 ${attempt.dispatch ? renderDispatch(attempt.dispatch) : ""}
@@ -993,13 +1040,26 @@
 
     function statusClass(status) {
         switch (status) {
+            case "Created":
+            case "Pending":
+            case "Skipped":
+            case "Stopped":
+                return "od-status-inactive";
             case "Running":
                 return "od-status-running";
+            case "Retrying":
+            case "CompletedWithErrors":
+                return "od-status-warning";
             case "Waiting":
+            case "WaitingResponse":
+            case "Compensating":
                 return "od-status-waiting";
             case "Completed":
+            case "Compensated":
                 return "od-status-active";
             case "Failed":
+            case "TimedOut":
+            case "Cancelled":
                 return "od-status-danger";
             default:
                 return "od-status-inactive";
@@ -1067,6 +1127,14 @@
     pageNext?.addEventListener("click", function () {
         currentPage += 1;
         renderGrid();
+    });
+
+    trafficModeButtons.forEach(button => {
+        button.addEventListener("click", function () {
+            trafficMode = button.getAttribute("data-traffic-mode") === "hour" ? "hour" : "minute";
+            trafficModeButtons.forEach(item => item.classList.toggle("active", item === button));
+            drawTraffic();
+        });
     });
 
     document.addEventListener("click", function (event) {

@@ -31,6 +31,7 @@ namespace Microsoft.Extensions.DependencyInjection
                 opts.DefaultApiVersion = new ApiVersion(1, 0);
                 opts.AssumeDefaultVersionWhenUnspecified = true;
                 opts.ReportApiVersions = true;
+                opts.ApiVersionReader = new UrlSegmentApiVersionReader();
             })
             .AddMvc()
             .AddApiExplorer(opts =>
