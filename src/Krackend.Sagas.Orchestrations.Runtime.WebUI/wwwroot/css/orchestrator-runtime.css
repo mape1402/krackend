@@ -980,6 +980,11 @@
     max-width: min(1480px, calc(100vw - 48px));
 }
 
+.od-runtime-detail-dialog .modal-body {
+    height: min(760px, calc(100vh - 154px));
+    overflow: hidden;
+}
+
 .od-detail-modal .modal-content,
 .od-stage-modal .modal-content,
 .od-timeline-modal .modal-content {
@@ -988,9 +993,26 @@
     box-shadow: 0 24px 80px rgba(10, 15, 35, 0.42);
 }
 
+.od-stage-modal .modal-dialog {
+    max-width: min(1320px, calc(100vw - 48px));
+    height: calc(100dvh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.od-stage-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+}
+
 .od-detail-modal .modal-header,
 .od-stage-modal .modal-header,
 .od-timeline-modal .modal-header {
+    flex: 0 0 auto;
     align-items: flex-start;
     border-bottom: 1px solid var(--od-border);
     background: #ffffff;
@@ -1009,6 +1031,16 @@
     display: flex;
     flex-direction: column;
     gap: 1.15rem;
+    height: 100%;
+    min-height: 0;
+}
+
+.od-runtime-detail-dialog .od-trace-fixed {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding-bottom: 0.25rem;
 }
 
 .od-runtime-detail-dialog .od-trace-toolbar {
@@ -1253,10 +1285,33 @@
 }
 
 .od-stage-focus-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     border: 1px solid var(--od-border);
     border-radius: 8px;
     background: var(--od-surface);
     overflow: hidden;
+}
+
+.od-stage-modal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.od-stage-modal .modal-body.is-stage-detail {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.od-stage-modal .modal-body.is-stage-detail .od-stage-focus-card {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
 }
 
 .od-stage-focus-head {
@@ -1318,13 +1373,25 @@
 
 .od-task-list {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: 0.55rem;
+    min-height: 0;
+    overflow-y: auto;
     padding: 0.8rem;
+    overscroll-behavior: contain;
+}
+
+.od-stage-modal .modal-body.is-stage-detail .od-task-list {
+    max-height: none;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .od-task-card {
     display: grid;
+    flex: 0 0 auto;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.75rem;
     align-items: center;
@@ -1386,14 +1453,40 @@
 }
 
 .od-task-detail-shell {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.9rem;
+    min-height: 0;
+}
+
+.od-stage-modal .modal-body.is-task-detail {
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-task-detail-shell {
+    height: 100%;
+    min-height: 0;
+}
+
+.od-task-fixed {
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: 0.6rem;
+    min-height: 0;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-task-fixed .od-json {
+    max-height: 72px;
+    padding: 0.48rem;
+    font-size: 0.72rem;
 }
 
 .od-back-action {
     align-self: flex-start;
-    min-height: 38px;
+    min-height: 34px;
+    padding: 0.3rem 0.65rem;
     border-radius: 8px;
     font-weight: 650;
 }
@@ -1407,13 +1500,63 @@
 }
 
 .od-task-detail-head .od-detail-grid {
-    padding: 0.8rem;
+    grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+    gap: 0.35rem;
+    padding: 0.5rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-stage-focus-head {
+    align-items: center;
+    padding: 0.55rem 0.65rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-stage-focus-head h3 {
+    font-size: 0.98rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-stage-focus-head small {
+    font-size: 0.76rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-field {
+    min-height: 44px;
+    padding: 0.42rem 0.5rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-field span {
+    font-size: 0.65rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-field strong {
+    margin-top: 0.08rem;
+    font-size: 0.78rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-split {
+    gap: 0.45rem;
+    margin: 0.2rem 0;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-split article {
+    padding: 0.5rem;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-detail-split h5 {
+    margin-bottom: 0.35rem;
+    font-size: 0.8rem;
 }
 
 .od-attempt-stack {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 0.75rem;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-attempt-stack {
+    min-height: 0;
+    overflow: hidden;
 }
 
 .od-attempt-stack > h3 {
@@ -1423,10 +1566,57 @@
     font-weight: 700;
 }
 
-.od-inline-storyline {
+.od-attempt-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    max-height: min(420px, 42vh);
+    min-height: 0;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 0.35rem;
+    overscroll-behavior: contain;
+}
+
+.od-stage-modal .modal-body.is-task-detail .od-attempt-list {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.od-task-list,
+.od-attempt-list {
+    scrollbar-width: thin;
+    scrollbar-color: #aab3d6 #eef1f8;
+}
+
+.od-task-list::-webkit-scrollbar,
+.od-attempt-list::-webkit-scrollbar {
+    width: 9px;
+}
+
+.od-task-list::-webkit-scrollbar-track,
+.od-attempt-list::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: #eef1f8;
+}
+
+.od-task-list::-webkit-scrollbar-thumb,
+.od-attempt-list::-webkit-scrollbar-thumb {
+    border: 2px solid #eef1f8;
+    border-radius: 999px;
+    background: #aab3d6;
+}
+
+.od-inline-storyline {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: 0.75rem;
+    min-height: 0;
+    overflow: hidden;
     padding-top: 0.2rem;
 }
 
@@ -1449,11 +1639,49 @@
     font-size: 0.78rem;
 }
 
+.od-inline-storyline > .od-timeline-control {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.35rem;
+    overscroll-behavior: contain;
+}
+
 .od-attempt-card {
+    flex: 0 0 auto;
     border: 1px solid var(--od-border);
     border-radius: 8px;
     background: #fcfdff;
     overflow: hidden;
+}
+
+.od-attempt-card[open] {
+    border-color: #b9c5f2;
+    box-shadow: 0 8px 18px rgba(17, 24, 39, 0.07);
+}
+
+.od-attempt-summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid transparent;
+    background: #f8f9ff;
+    cursor: pointer;
+    list-style: none;
+}
+
+.od-attempt-summary::-webkit-details-marker {
+    display: none;
+}
+
+.od-attempt-summary::marker {
+    content: "";
+}
+
+.od-attempt-card[open] > .od-attempt-summary {
+    border-bottom-color: var(--od-border);
 }
 
 .od-attempt-card > header {
@@ -1477,9 +1705,42 @@
     font-size: 0.78rem;
 }
 
+.od-attempt-summary strong,
+.od-attempt-summary small {
+    display: block;
+}
+
+.od-attempt-summary small {
+    margin-top: 0.16rem;
+    color: var(--od-muted);
+    font-size: 0.78rem;
+}
+
+.od-attempt-summary-side {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.od-attempt-caret {
+    color: var(--od-muted);
+    font-size: 0.85rem;
+    transition: transform 0.16s ease;
+}
+
+.od-attempt-card[open] .od-attempt-caret {
+    transform: rotate(90deg);
+}
+
 .od-attempt-card > .od-detail-grid,
 .od-attempt-card > .od-detail-split,
 .od-attempt-card > .od-dispatch {
+    margin: 0.75rem;
+}
+
+.od-attempt-body > .od-detail-grid,
+.od-attempt-body > .od-detail-split,
+.od-attempt-body > .od-dispatch {
     margin: 0.75rem;
 }
 
@@ -1610,6 +1871,19 @@
 
     .od-runtime-detail-dialog .od-timeline-action {
         align-self: flex-start;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .od-stage-modal .modal-dialog {
+        max-width: none;
+        height: 100dvh;
+        max-height: 100dvh;
+        margin: 0;
+    }
+
+    .od-stage-modal .modal-content {
+        border-radius: 0;
     }
 }
 

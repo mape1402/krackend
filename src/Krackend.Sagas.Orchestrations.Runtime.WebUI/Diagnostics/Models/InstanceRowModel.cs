@@ -6,6 +6,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
 public sealed record InstanceRowModel(
     string Id,
     string OrchestrationDefinitionKey,
+    string OrchestrationVersion,
     string CorrelationId,
     string ExecutionKey,
     string Status,
@@ -23,4 +24,13 @@ public sealed record InstanceRowModel(
     DateTime? StoppedOnUtc = null,
     DateTime? CompensationStartedOnUtc = null,
     DateTime? CompensatedOnUtc = null,
-    int RetryCount = 0);
+    int RetryCount = 0)
+{
+    /// <summary>
+    /// Gets the orchestration label including definition key and version when available.
+    /// </summary>
+    public string OrchestrationLabel
+        => string.IsNullOrWhiteSpace(OrchestrationVersion)
+            ? OrchestrationDefinitionKey
+            : $"{OrchestrationDefinitionKey} v{OrchestrationVersion}";
+}

@@ -21,7 +21,7 @@
 }
 
 @section Head {
-    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260821-01" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260821-08" />
 }
 
 <div class="od-page-head">
@@ -106,7 +106,7 @@
                 {
                     <tr data-instance-id="@instance.Id" data-instance-status="@instance.Status" tabindex="0">
                         <td>
-                            <strong>@instance.OrchestrationDefinitionKey</strong>
+                            <strong>@instance.OrchestrationLabel</strong>
                         </td>
                         <td class="od-id-cell">
                             <span class="od-id-copy">
@@ -182,5 +182,5 @@
         window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260821-01"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260821-08"></script>
 }
