@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
 {
@@ -7,11 +8,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<RemoteCommandDispatcher> _logger;
+        private readonly IOrchestrationMessageMetadataSetter _messageMetadataSetter;
 
-        public RemoteCommandDispatcher(IServiceProvider serviceProvider, ILogger<RemoteCommandDispatcher> logger)
+        public RemoteCommandDispatcher(
+            IServiceProvider serviceProvider,
+            ILogger<RemoteCommandDispatcher> logger,
+            IOrchestrationMessageMetadataSetter messageMetadataSetter)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _messageMetadataSetter = messageMetadataSetter ?? throw new ArgumentNullException(nameof(messageMetadataSetter));
         }
 
         public async Task DispatchAsync(RemoteCommand command, CancellationToken cancellationToken = default)
@@ -25,6 +31,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
                 return;
             }
 
+            _messageMetadataSetter.Set(command.MessageMetadata ?? new OrchestrationMessageMetadata());
             await executor.ExecuteAsync(command, cancellationToken);
         }
     }

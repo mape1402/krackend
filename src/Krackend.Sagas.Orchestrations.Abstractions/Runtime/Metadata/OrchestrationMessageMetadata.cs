@@ -1,9 +1,9 @@
 namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 
 /// <summary>
-/// Carries orchestration instance correlation data through transports.
+/// Carries orchestration correlation data through transports without changing the business payload.
 /// </summary>
-public class InstanceMetadata
+public class OrchestrationMessageMetadata
 {
     /// <summary>
     /// Gets or sets the business saga id.
@@ -46,12 +46,7 @@ public class InstanceMetadata
     public int Attempt { get; set; }
 
     /// <summary>
-    /// Gets or sets the orchestration response backchannel topic.
+    /// Gets or sets the address where orchestrated services must send their response.
     /// </summary>
-    public string BackchannelTopic { get; set; }
-
-    /// <summary>
-    /// Gets or sets the orchestration response backchannel version.
-    /// </summary>
-    public string BackchannelVersion { get; set; }
+    public OrchestrationReplyAddress ReplyAddress { get; set; }
 }

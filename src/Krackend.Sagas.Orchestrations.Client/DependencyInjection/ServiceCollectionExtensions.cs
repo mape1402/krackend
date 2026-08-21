@@ -4,7 +4,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Client.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
-using Krackend.Sagas.Orchestrations.Client.Responses;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
@@ -22,13 +21,20 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
         }
 
-        services.TryAddScoped<DefaultInstanceMetadataAccessor>();
-        services.TryAddScoped<IInstanceMetadataAccessor>(provider =>
-            provider.GetRequiredService<DefaultInstanceMetadataAccessor>());
-        services.TryAddScoped<IInstanceMetadataSetter>(provider =>
-            provider.GetRequiredService<DefaultInstanceMetadataAccessor>());
+        services.TryAddScoped<DefaultOrchestrationMessageMetadataAccessor>();
+        services.TryAddScoped<IOrchestrationMessageMetadataAccessor>(provider =>
+            provider.GetRequiredService<DefaultOrchestrationMessageMetadataAccessor>());
+        services.TryAddScoped<IOrchestrationMessageMetadataSetter>(provider =>
+            provider.GetRequiredService<DefaultOrchestrationMessageMetadataAccessor>());
+        services.TryAddScoped<DefaultOrchestrationExecutionResultMetadataAccessor>();
+        services.TryAddScoped<IOrchestrationExecutionResultMetadataAccessor>(provider =>
+            provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
+        services.TryAddScoped<IOrchestrationExecutionResultMetadataSetter>(provider =>
+            provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
         services.TryAddScoped<IOrchestrationClientPublisher, DefaultOrchestrationClientPublisher>();
-        services.TryAddScoped<IOrchestrationClientResponseFactory, DefaultOrchestrationClientResponseFactory>();
+        services.TryAddScoped<IOrchestrationOperationExecutionContext, DefaultOrchestrationOperationExecutionContext>();
+        services.TryAddScoped<IOrchestrationExecutionResultMetadataFactory, DefaultOrchestrationExecutionResultMetadataFactory>();
+        services.TryAddScoped<IOrchestrationPipelinePublisher, DefaultOrchestrationPipelinePublisher>();
 
         return new KrackendOrchestrationsClientBuilder(services);
     }

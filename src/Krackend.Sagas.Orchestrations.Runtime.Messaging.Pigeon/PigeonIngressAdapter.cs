@@ -2,7 +2,8 @@ using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.DependencyInjection;
-using Pigeon.Messaging.Consuming.Configuration;
+using global::Pigeon.Messaging.Consuming.Configuration;
+using global::Pigeon.Messaging.Contracts;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
@@ -18,10 +19,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 
         public Task ConnectAsync(MessagingConfiguration configuration, CancellationToken cancellationToken = default)
         {
-            _consumingConfigurator.AddConsumer<JsonNode>(configuration.Topic, configuration.Version, async (context, message) =>
+            var version = SemanticVersion.Parse(configuration.Version);
+            _consumingConfigurator.AddConsumer<JsonNode>(configuration.Topic, version, "Default", async (context, message) =>
             {
                 var intake = context.Services.GetRequiredService<IIntakeBuffer>();
-                var metadataAccessor = context.Services.GetRequiredService<IInstanceMetadataAccessor>();
+                var messageMetadataAccessor = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>();
+                var resultMetadataAccessor = context.Services.GetRequiredService<IOrchestrationExecutionResultMetadataAccessor>();
 
                 var workItem = new WorkItem
                 {
@@ -29,7 +32,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                     IngressKind = configuration.IngressKind,
                     IngressTransport = configuration.IngressTransport,
                     Payload = message,
-                    Metadata = metadataAccessor.Get()
+                    MessageMetadata = messageMetadataAccessor.Get(),
+                    ExecutionResultMetadata = resultMetadataAccessor.Get()
                 };
 
                 await intake.EnqueueWorkAsync(workItem, cancellationToken);

@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Http;
@@ -28,7 +29,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IGetAllIngressConfigurationsAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IGetIngressConfigurationByArtifactAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddSingleton<RuntimeIngressBackchannelOptions>();
-            services.TryAddScoped<IBackchannelTopicFormatter, DefaultBackchannelTopicFormatter>();
+            services.TryAddScoped<IBackchannelMessagingTopicFormatter, DefaultBackchannelMessagingTopicFormatter>();
             services.TryAddScoped<IRuntimeIngressConfigurationKeyBuilder, DefaultRuntimeIngressConfigurationKeyBuilder>();
             services.TryAddScoped<IRuntimeIngressConfigurationProjector, DefaultRuntimeIngressConfigurationProjector>();
             services.TryAddScoped<IMessagingConfigurationSerializer, DefaultMessagingConfigurationSerializer>();
@@ -38,12 +39,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IPromoter, Promoter>();
             services.TryAddScoped<IDecisionControl, DecisionControl>();
             services.TryAddScoped<IDecisionExecutor, DecisionExecutor>();
+            services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();
             services.TryAddScoped<IDecisionHandler<StartStageDecision>, StartStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DispatchTaskDecision>, DispatchTaskDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteStageDecision>, CompleteStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteInstanceDecision>, CompleteInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteCallbackDecision>, CompleteCallbackDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompensateInstanceDecision>, CompensateInstanceDecisionHandler>();
+            services.TryAddScoped<IDecisionHandler<RetryDecision>, RetryDecisionHandler>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();
             services.TryAddScoped<IRuntimeArtifactResolver, DefaultRuntimeArtifactResolver>();
             services.TryAddScoped<IResolvedOrchestrationArtifactAccessor, DefaultResolvedOrchestrationArtifactAccessor>();
@@ -61,11 +64,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IExecutionTransitionRepository, InMemoryExecutionTransitionRepository>();
             services.TryAddScoped<ICompensationExecutionRepository, InMemoryCompensationExecutionRepository>();
             services.TryAddScoped<IRuntimeIngressConfigurationRepository, InMemoryRuntimeIngressConfigurationRepository>();
-            services.TryAddScoped<DefaultInstanceMetadataAccessor>();
-            services.TryAddScoped<IInstanceMetadataAccessor>(provider =>
-                provider.GetRequiredService<DefaultInstanceMetadataAccessor>());
-            services.TryAddScoped<IInstanceMetadataSetter>(provider =>
-                provider.GetRequiredService<DefaultInstanceMetadataAccessor>());
+            services.TryAddScoped<DefaultOrchestrationMessageMetadataAccessor>();
+            services.TryAddScoped<IOrchestrationMessageMetadataAccessor>(provider =>
+                provider.GetRequiredService<DefaultOrchestrationMessageMetadataAccessor>());
+            services.TryAddScoped<IOrchestrationMessageMetadataSetter>(provider =>
+                provider.GetRequiredService<DefaultOrchestrationMessageMetadataAccessor>());
+            services.TryAddScoped<DefaultOrchestrationExecutionResultMetadataAccessor>();
+            services.TryAddScoped<IOrchestrationExecutionResultMetadataAccessor>(provider =>
+                provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
+            services.TryAddScoped<IOrchestrationExecutionResultMetadataSetter>(provider =>
+                provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
             services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressTransport.Messaging);
             services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressTransport.Http);
             services.AddKeyedScoped<IRemoteCommandExecutor, MessagingRemoteCommandExecutor>(RemoteCommandTransport.Messaging);

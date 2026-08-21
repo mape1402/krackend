@@ -21,9 +21,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IRemoteCommandDispatcher _dispatcher;
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
-        private readonly IMessagingConfigurationSerializer _messagingConfigurationSerializer;
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
-        private readonly IInstanceMetadataSetter _metadataSetter;
 
         public CompensateInstanceDecisionHandler(
             IRuntimeArtifactResolver artifactResolver,
@@ -33,9 +31,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IRemoteCommandDispatcher dispatcher,
             IMessagingCommandSerializer messagingCommandSerializer,
-            IMessagingConfigurationSerializer messagingConfigurationSerializer,
-            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
-            IInstanceMetadataSetter metadataSetter)
+            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -44,16 +40,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
-            _messagingConfigurationSerializer = messagingConfigurationSerializer ?? throw new ArgumentNullException(nameof(messagingConfigurationSerializer));
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
-            _metadataSetter = metadataSetter ?? throw new ArgumentNullException(nameof(metadataSetter));
         }
 
         public async Task HandleAsync(CompensateInstanceDecision decision, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
-            var backchannel = await ResolveBackchannelConfigurationAsync(instance, cancellationToken);
+            var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
             var completedTasks = (await _taskRepository.GetByInstanceId(decision.InstanceId, cancellationToken))
                 .Where(x => x.Status == TaskExecutionStatus.Completed)
                 .OrderByDescending(x => x.CompletedOnUtc)
@@ -98,21 +92,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     Version = messagingConfiguration.Version.ToString(),
                     Payload = decision.Payload
                 };
-                _metadataSetter.Set(new InstanceMetadata
-                {
-                    SagaId = instance.CorrelationId,
-                    OrchestrationInstanceId = instance.Id.ToString(),
-                    CorrelationId = instance.CorrelationId,
-                    TaskExecutionId = task.Id.ToString(),
-                    CurrentTasks = [task.TaskKey],
-                    BackchannelTopic = backchannel?.Topic,
-                    BackchannelVersion = backchannel?.Version
-                });
                 await _dispatcher.DispatchAsync(new RemoteCommand
                 {
                     Payload = decision.Payload,
                     RemoteCommandTransport = RemoteCommandTransport.Messaging,
-                    SettingsPayload = _messagingCommandSerializer.Serialize(command)
+                    SettingsPayload = _messagingCommandSerializer.Serialize(command),
+                    OrchestrationInstanceId = instance.Id.ToString(),
+                    TaskExecutionId = task.Id.ToString(),
+                    TaskKey = task.TaskKey,
+                    AwaitResponse = false,
+                    MessageMetadata = new OrchestrationMessageMetadata
+                    {
+                        SagaId = instance.CorrelationId,
+                        OrchestrationInstanceId = instance.Id.ToString(),
+                        CorrelationId = instance.CorrelationId,
+                        TaskExecutionId = task.Id.ToString(),
+                        CurrentTasks = [task.TaskKey],
+                        ReplyAddress = replyAddress
+                    }
                 }, cancellationToken);
 
                 compensation.Status = "Completed";
@@ -137,7 +134,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }, cancellationToken);
         }
 
-        private async Task<MessagingConfiguration> ResolveBackchannelConfigurationAsync(
+        private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(
             OrchestrationInstance instance,
             CancellationToken cancellationToken)
         {
@@ -150,7 +147,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             return backchannel is null
                 ? null
-                : _messagingConfigurationSerializer.Deserialize(backchannel.SettingsPayload);
+                : new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = backchannel.SettingsPayload
+                };
         }
     }
 }

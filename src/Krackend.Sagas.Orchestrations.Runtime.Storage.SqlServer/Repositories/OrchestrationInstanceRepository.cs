@@ -21,6 +21,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
+        DetachLocalTrackedEntity(DbContext.OrchestrationInstances, instance);
         DbContext.OrchestrationInstances.Update(instance);
         await SaveChanges(cancellationToken);
     }

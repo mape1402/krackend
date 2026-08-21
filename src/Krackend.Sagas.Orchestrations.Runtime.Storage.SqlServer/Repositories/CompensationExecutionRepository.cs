@@ -21,6 +21,7 @@ internal sealed class CompensationExecutionRepository : RuntimeRepositoryBase, I
 
     public async Task Update(CompensationExecution compensationExecution, CancellationToken cancellationToken = default)
     {
+        DetachLocalTrackedEntity(DbContext.CompensationExecutions, compensationExecution);
         DbContext.CompensationExecutions.Update(compensationExecution);
         await SaveChanges(cancellationToken);
     }
