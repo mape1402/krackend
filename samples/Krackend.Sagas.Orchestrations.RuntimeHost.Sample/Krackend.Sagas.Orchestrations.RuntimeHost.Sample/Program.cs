@@ -3,6 +3,8 @@ using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 using Microsoft.EntityFrameworkCore;
 using Mule;
@@ -15,6 +17,11 @@ var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddOrchestratorRuntimeWebUI(options =>
+{
+    options.RoutePrefix = "runtime";
+    options.EnvironmentKey = builder.Configuration["Runtime:EnvironmentKey"] ?? "local";
+});
 builder.Services.AddScoped<IHappyPathOrchestrationSeeder, HappyPathOrchestrationSeeder>();
 builder.Services.AddDbContext<RuntimeHostMuleDbContext>(options =>
 {
@@ -106,6 +113,7 @@ app.UseRouting();
 app.UseAuthorization();
 
 app.MapStaticAssets();
+app.MapOrchestratorRuntimeReactiveHub();
 app.MapRazorPages()
    .WithStaticAssets();
 

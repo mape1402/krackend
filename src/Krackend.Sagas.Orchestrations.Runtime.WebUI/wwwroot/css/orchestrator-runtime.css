@@ -140,6 +140,12 @@
     border-color: #f0d890;
 }
 
+.od-status-warning {
+    color: #8c4f10;
+    background: #fff3df;
+    border-color: #f5deba;
+}
+
 .od-status-danger {
     color: #a52c3b;
     background: #fdecef;
@@ -423,6 +429,43 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
+}
+
+.od-traffic-mode {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.18rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    background: #f8f9ff;
+}
+
+.od-traffic-mode button {
+    min-width: 68px;
+    min-height: 30px;
+    padding: 0 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--od-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.od-traffic-mode button:hover,
+.od-traffic-mode button:focus-visible {
+    border-color: #c8d2ef;
+    color: var(--od-primary);
+    outline: none;
+}
+
+.od-traffic-mode button.active {
+    border-color: #c8d2ef;
+    background: #ffffff;
+    color: var(--od-primary);
+    box-shadow: 0 2px 6px rgba(17, 24, 39, 0.08);
 }
 
 .od-metric-strip {
@@ -906,10 +949,20 @@
 @media (max-width: 980px) {
     .od-chart-head,
     .od-metric-strip,
+    .od-traffic-mode,
     .od-instances-panel .od-section-head,
     .od-detail-split {
         grid-template-columns: 1fr;
         flex-direction: column;
+    }
+
+    .od-traffic-mode {
+        width: 100%;
+        align-items: stretch;
+    }
+
+    .od-traffic-mode button {
+        flex: 1 1 0;
     }
 
     .od-metric-strip {
@@ -1144,6 +1197,11 @@
     box-shadow: 0 0 0 8px rgba(196, 61, 77, 0.1);
 }
 
+.od-runtime-detail-dialog .od-process-step.is-pending .od-process-marker {
+    border-color: #cfd6e8;
+    color: #a5aec7;
+}
+
 .od-runtime-detail-dialog .od-process-copy {
     display: grid;
     gap: 0.12rem;
@@ -1363,6 +1421,32 @@
     color: var(--od-text);
     font-size: 1rem;
     font-weight: 700;
+}
+
+.od-inline-storyline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.2rem;
+}
+
+.od-inline-storyline > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.od-inline-storyline > header h3 {
+    margin: 0;
+    color: var(--od-text);
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.od-inline-storyline > header span {
+    color: var(--od-muted);
+    font-size: 0.78rem;
 }
 
 .od-attempt-card {

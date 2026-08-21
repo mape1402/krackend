@@ -1,16 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
-using Krackend.Sagas.Orchestrations.Runtime;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
 
 public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
 {
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions ArtifactJsonOptions = new(JsonSerializerDefaults.Web);
 
+    private readonly IRuntimeArtifactRepository _runtimeArtifactRepository;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IStageExecutionRepository _stageRepository;
     private readonly ITaskExecutionRepository _taskRepository;
@@ -18,9 +21,10 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
     private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly ICompensationExecutionRepository _compensationRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
-    private readonly RuntimeEnvironmentDescriptor _runtimeEnvironment;
+    private readonly OrchestratorRuntimeWebUIOptions _options;
 
     public RuntimeDiagnosticsReader(
+        IRuntimeArtifactRepository runtimeArtifactRepository,
         IOrchestrationInstanceRepository instanceRepository,
         IStageExecutionRepository stageRepository,
         ITaskExecutionRepository taskRepository,
@@ -28,8 +32,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         ITaskDispatchRepository dispatchRepository,
         ICompensationExecutionRepository compensationRepository,
         IExecutionTransitionRepository transitionRepository,
-        RuntimeEnvironmentDescriptor runtimeEnvironment)
+        IOptions<OrchestratorRuntimeWebUIOptions> options)
     {
+        _runtimeArtifactRepository = runtimeArtifactRepository;
         _instanceRepository = instanceRepository;
         _stageRepository = stageRepository;
         _taskRepository = taskRepository;
@@ -37,29 +42,37 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         _dispatchRepository = dispatchRepository;
         _compensationRepository = compensationRepository;
         _transitionRepository = transitionRepository;
-        _runtimeEnvironment = runtimeEnvironment;
+        _options = options.Value;
     }
 
     public async Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
     {
         var summary = await BuildRuntimeSummary(cancellationToken);
-        var instances = await _instanceRepository.GetRecent(_runtimeEnvironment.EnvironmentKey, 1000, cancellationToken);
-        var traffic = await _transitionRepository.GetTraffic(_runtimeEnvironment.EnvironmentKey, DateTime.UtcNow.AddHours(-1), cancellationToken);
+        var environmentKey = GetEnvironmentKey();
+        var instances = await _instanceRepository.GetRecent(environmentKey, 1000, cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+        var traffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-1), cancellationToken);
+        var hourlyTraffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-24), cancellationToken);
 
         return new RuntimeDashboardSnapshotModel(
             summary,
             instances.Select(ToRow).ToArray(),
-            traffic.Select(ToTraffic).ToArray());
+            traffic.Select(ToTraffic).ToArray(),
+            hourlyTraffic.Select(ToTraffic).ToArray());
     }
 
     public async Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default)
     {
         var summary = await BuildRuntimeSummary(cancellationToken);
-        var traffic = await _transitionRepository.GetTraffic(_runtimeEnvironment.EnvironmentKey, DateTime.UtcNow.AddHours(-1), cancellationToken);
+        var environmentKey = GetEnvironmentKey();
+        var nowUtc = DateTime.UtcNow;
+        var traffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-1), cancellationToken);
+        var hourlyTraffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-24), cancellationToken);
 
         return new RuntimeDashboardSummaryModel(
             summary,
-            traffic.Select(ToTraffic).ToArray());
+            traffic.Select(ToTraffic).ToArray(),
+            hourlyTraffic.Select(ToTraffic).ToArray());
     }
 
     public async Task<InstanceDetailModel> GetDetail(string instanceId, CancellationToken cancellationToken = default)
@@ -73,8 +86,11 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var tasks = (await _taskRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
         var compensations = (await _compensationRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
         var transitions = (await _transitionRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.OccurredOnUtc).ToArray();
+        var artifact = await TryGetArtifact(instance, cancellationToken);
 
         var taskDetails = await BuildTaskDetails(tasks, cancellationToken);
+        var stageDetails = BuildStageDetails(stages, taskDetails, artifact);
+        var allTaskDetails = stageDetails.SelectMany(x => x.Tasks).ToArray();
         var stageById = stages.ToDictionary(x => x.Id.ToString(), x => x.StageKey);
         var taskById = tasks.ToDictionary(x => x.Id.ToString(), x => x.TaskKey);
         var transitionDetails = transitions.Select(x => ToTransition(x, stageById, taskById)).ToArray();
@@ -82,8 +98,8 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
 
         return new InstanceDetailModel(
             ToRow(instance),
-            stages.Select(stage => ToStage(stage, taskDetails)).ToArray(),
-            taskDetails,
+            stageDetails,
+            allTaskDetails,
             transitionDetails,
             FormatJson(instance.SnapshotPayload),
             FormatJson(instance.Metadata),
@@ -96,14 +112,31 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
     {
         return status switch
         {
-            nameof(OrchestrationInstanceStatus.Running) => "od-status-running",
-            nameof(OrchestrationInstanceStatus.Waiting) => "od-status-waiting",
-            nameof(OrchestrationInstanceStatus.Completed) => "od-status-active",
-            nameof(OrchestrationInstanceStatus.Failed) => "od-status-danger",
-            nameof(OrchestrationInstanceStatus.Compensating) => "od-status-waiting",
-            nameof(OrchestrationInstanceStatus.Compensated) => "od-status-active",
+            "Created" or "Pending" or "Skipped" or "Stopped" => "od-status-inactive",
+            "Running" => "od-status-running",
+            "Retrying" or "CompletedWithErrors" => "od-status-warning",
+            "Waiting" or "WaitingResponse" or "Compensating" => "od-status-waiting",
+            "Completed" or "Compensated" => "od-status-active",
+            "Failed" or "TimedOut" or "Cancelled" => "od-status-danger",
             _ => "od-status-inactive"
         };
+    }
+
+    private async Task<OrchestrationArtifact> TryGetArtifact(
+        OrchestrationInstance instance,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var runtimeArtifact = await _runtimeArtifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+            return JsonSerializer.Deserialize<OrchestrationArtifact>(
+                runtimeArtifact.ArtifactPayload.ToJsonString(),
+                ArtifactJsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task<RuntimeSummaryModel> BuildRuntimeSummary(CancellationToken cancellationToken)
@@ -111,8 +144,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var now = DateTime.UtcNow;
         var minuteSinceUtc = now.AddMinutes(-1);
         var hourSinceUtc = now.AddHours(-1);
-        var minute = await _instanceRepository.GetSummary(_runtimeEnvironment.EnvironmentKey, minuteSinceUtc, cancellationToken);
-        var hour = await _instanceRepository.GetSummary(_runtimeEnvironment.EnvironmentKey, hourSinceUtc, cancellationToken);
+        var environmentKey = GetEnvironmentKey();
+        var minute = await _instanceRepository.GetSummary(environmentKey, minuteSinceUtc, cancellationToken);
+        var hour = await _instanceRepository.GetSummary(environmentKey, hourSinceUtc, cancellationToken);
 
         return new RuntimeSummaryModel(
             minute.Active,
@@ -124,6 +158,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             minuteSinceUtc,
             hourSinceUtc);
     }
+
+    private string GetEnvironmentKey()
+        => string.IsNullOrWhiteSpace(_options.EnvironmentKey) ? "local" : _options.EnvironmentKey.Trim();
 
     private async Task<IReadOnlyCollection<TaskDetailModel>> BuildTaskDetails(
         IReadOnlyCollection<TaskExecution> tasks,
@@ -159,6 +196,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
                     attempt.DispatchId?.ToString()));
             }
 
+            var errorSummary = attemptDetails
+                .LastOrDefault(x => !string.IsNullOrWhiteSpace(x.ErrorMessage) || !string.IsNullOrWhiteSpace(x.ErrorCode));
+
             taskDetails.Add(new TaskDetailModel(
                 task.Id.ToString(),
                 task.StageExecutionId.ToString(),
@@ -182,11 +222,140 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
                 task.ParallelGroupId?.ToString(),
                 task.WasSkipped,
                 task.SkipReason,
-                task.ExecutionConditionResult));
+                task.ExecutionConditionResult,
+                true,
+                null,
+                null,
+                0,
+                errorSummary?.ErrorMessage ?? errorSummary?.ErrorCode));
         }
 
         return taskDetails;
     }
+
+    private static IReadOnlyCollection<StageDetailModel> BuildStageDetails(
+        IReadOnlyCollection<StageExecution> stages,
+        IReadOnlyCollection<TaskDetailModel> taskDetails,
+        OrchestrationArtifact artifact)
+    {
+        var stageDetails = new List<StageDetailModel>();
+        var consumedStageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var executedByKey = stages
+            .GroupBy(x => x.StageKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.OrderByDescending(stage => stage.StartedOnUtc).First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var stageArtifact in artifact?.StageDefinitions?.OrderBy(x => x.Order) ?? Enumerable.Empty<StageArtifact>())
+        {
+            if (executedByKey.TryGetValue(stageArtifact.Key, out var stage))
+            {
+                var stageId = stage.Id.ToString();
+                consumedStageIds.Add(stageId);
+                var executedTasks = taskDetails.Where(x => x.StageExecutionId == stageId).ToArray();
+                stageDetails.Add(ToStage(stage, MergeStageTasks(stageArtifact, stageId, executedTasks), stageArtifact));
+                continue;
+            }
+
+            stageDetails.Add(ToPendingStage(stageArtifact));
+        }
+
+        foreach (var stage in stages.Where(x => !consumedStageIds.Contains(x.Id.ToString())).OrderBy(x => x.Order))
+        {
+            var stageId = stage.Id.ToString();
+            stageDetails.Add(ToStage(stage, taskDetails.Where(x => x.StageExecutionId == stageId).ToArray(), null));
+        }
+
+        return stageDetails.OrderBy(x => x.Order).ToArray();
+    }
+
+    private static IReadOnlyCollection<TaskDetailModel> MergeStageTasks(
+        StageArtifact stageArtifact,
+        string stageExecutionId,
+        IReadOnlyCollection<TaskDetailModel> executedTasks)
+    {
+        var merged = new List<TaskDetailModel>();
+        var consumedTaskIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var executedByKey = executedTasks
+            .GroupBy(x => x.TaskKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.OrderByDescending(task => task.StartedOnUtc).First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var taskArtifact in stageArtifact.TaskDefinitions.OrderBy(x => x.Order))
+        {
+            if (executedByKey.TryGetValue(taskArtifact.Key, out var executedTask))
+            {
+                consumedTaskIds.Add(executedTask.Id);
+                merged.Add(executedTask with
+                {
+                    ConfiguredName = taskArtifact.Name,
+                    ConfiguredNotes = taskArtifact.Notes,
+                    Order = taskArtifact.Order
+                });
+                continue;
+            }
+
+            merged.Add(ToPendingTask(stageExecutionId, taskArtifact));
+        }
+
+        foreach (var task in executedTasks.Where(x => !consumedTaskIds.Contains(x.Id)))
+        {
+            merged.Add(task);
+        }
+
+        return merged.OrderBy(x => x.Order == 0 ? int.MaxValue : x.Order).ThenBy(x => x.StartedOnUtc).ToArray();
+    }
+
+    private static StageDetailModel ToPendingStage(StageArtifact stage)
+    {
+        var stageId = $"configured-stage:{stage.Key}";
+        return new StageDetailModel(
+            stageId,
+            stage.Key,
+            stage.Order,
+            nameof(StageExecutionStatus.Pending),
+            StatusClass(nameof(StageExecutionStatus.Pending)),
+            null,
+            null,
+            null,
+            null,
+            FormatJson(BuildStageArtifactMetadata(stage)),
+            stage.TaskDefinitions.OrderBy(x => x.Order).Select(task => ToPendingTask(stageId, task)).ToArray(),
+            false,
+            null,
+            null,
+            stage.ParallelGroups?.Count ?? 0,
+            false,
+            stage.Name,
+            stage.Description);
+    }
+
+    private static TaskDetailModel ToPendingTask(string stageExecutionId, TaskArtifact task)
+        => new(
+            $"configured-task:{stageExecutionId}:{task.Key}",
+            stageExecutionId,
+            task.Key,
+            task.Kind.ToString(),
+            task.ExecutionMode.ToString(),
+            nameof(TaskExecutionStatus.Pending),
+            task.DispatchType != TaskDispatchType.FireAndForget,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0,
+            string.Empty,
+            FormatJson(BuildTaskArtifactMetadata(task)),
+            Array.Empty<TaskAttemptDetailModel>(),
+            null,
+            task.OnErrorPolicy.ToString(),
+            task.ParallelGroupId?.ToString(),
+            false,
+            null,
+            null,
+            false,
+            task.Name,
+            task.Notes,
+            task.Order);
 
     private static InstanceRowModel ToRow(OrchestrationInstance instance)
     {
@@ -213,7 +382,10 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             instance.RetryCount);
     }
 
-    private static StageDetailModel ToStage(StageExecution stage, IReadOnlyCollection<TaskDetailModel> tasks)
+    private static StageDetailModel ToStage(
+        StageExecution stage,
+        IReadOnlyCollection<TaskDetailModel> tasks,
+        StageArtifact stageArtifact)
     {
         return new StageDetailModel(
             stage.Id.ToString(),
@@ -230,7 +402,10 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             stage.WasSkipped,
             stage.SkipReason,
             stage.ExecutionConditionResult,
-            stage.ParallelGroupCount);
+            stage.ParallelGroupCount,
+            true,
+            stageArtifact?.Name,
+            stageArtifact?.Description);
     }
 
     private static DispatchDetailModel ToDispatch(TaskDispatch dispatch)
@@ -321,8 +496,41 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             || transitionType?.Contains("Reconciliation", StringComparison.OrdinalIgnoreCase) == true
             || transitionType?.Contains("TriggerPromoted", StringComparison.OrdinalIgnoreCase) == true;
 
+    private static JsonNode BuildStageArtifactMetadata(StageArtifact stage)
+        => JsonSerializer.SerializeToNode(new
+        {
+            Id = stage.Id.ToString(),
+            stage.Name,
+            stage.Description,
+            stage.Order,
+            TaskCount = stage.TaskDefinitions?.Count ?? 0,
+            ParallelGroupCount = stage.ParallelGroups?.Count ?? 0,
+            BranchRuleCount = stage.BranchRules?.Count ?? 0,
+            HasExecutionCondition = stage.ExecutionCondition is not null
+        }, IndentedJsonOptions);
+
+    private static JsonNode BuildTaskArtifactMetadata(TaskArtifact task)
+        => JsonSerializer.SerializeToNode(new
+        {
+            Id = task.Id.ToString(),
+            task.Name,
+            task.Notes,
+            Kind = task.Kind.ToString(),
+            ExecutionMode = task.ExecutionMode.ToString(),
+            DispatchType = task.DispatchType.ToString(),
+            OnErrorPolicy = task.OnErrorPolicy.ToString(),
+            task.IsEnabled,
+            ParallelGroupId = task.ParallelGroupId?.ToString(),
+            AwaitResponse = task.DispatchType != TaskDispatchType.FireAndForget,
+            HasExecutionCondition = task.ExecutionCondition is not null,
+            HasTransformation = task.Transformation is not null,
+            HasRetryPolicy = task.RetryPolicy is not null,
+            HasTimeoutPolicy = task.TimeoutPolicy is not null,
+            HasCompensation = task.Compensation is not null
+        }, IndentedJsonOptions);
+
     private static TrafficPointModel ToTraffic(RuntimeTrafficPoint point)
-        => new(point.BucketUtc, point.Started, point.Completed, point.Failed);
+        => new(point.BucketUtc, point.Active, point.Started, point.Completed, point.Failed);
 
     private static string FormatJson(JsonNode node)
         => node?.ToJsonString(IndentedJsonOptions) ?? string.Empty;

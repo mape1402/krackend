@@ -11,6 +11,7 @@
         snapshotPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Snapshot" }),
         summaryPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Summary" }),
         traffic = Model.Traffic,
+        hourlyTraffic = Model.HourlyTraffic,
         instances = Model.Instances,
         summary = Model.Summary
     };
@@ -20,7 +21,7 @@
 }
 
 @section Head {
-    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260812-14" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260821-01" />
 }
 
 <div class="od-page-head">
@@ -38,7 +39,11 @@
     <div class="od-chart-head">
         <div>
             <h2 class="od-section-title">Traffic</h2>
-            <p class="od-item-meta">Instances started, completed and failed per minute</p>
+            <p class="od-item-meta">Operations and active sagas</p>
+        </div>
+        <div class="od-traffic-mode" role="group" aria-label="Traffic range">
+            <button type="button" class="active" data-traffic-mode="minute">Minute</button>
+            <button type="button" data-traffic-mode="hour">Hour</button>
         </div>
         <div class="od-metric-strip">
             <span>Active now <strong data-counter="active">@Model.Summary.Active</strong></span>
@@ -56,7 +61,7 @@
     <div class="od-section-head">
         <div>
             <h2 class="od-section-title">Instances</h2>
-            <p class="od-item-meta">Click an instance to inspect stages, tasks, attempts, input, output, dispatch and timeline.</p>
+            <p class="od-item-meta">Created date descending</p>
         </div>
         <span class="od-item-meta"><span data-instance-count>@Model.Instances.Count</span> visible</span>
     </div>
@@ -64,7 +69,7 @@
     <div class="od-instance-controls">
         <label class="od-instance-search">
             <i class="bi bi-search"></i>
-            <input type="search" data-instance-search placeholder="Search correlation, saga or orchestration" autocomplete="off" />
+            <input type="search" data-instance-search placeholder="Search orchestration key, saga id or correlation id" autocomplete="off" />
         </label>
         <div class="od-instance-pager">
             <label>
@@ -137,9 +142,7 @@
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" data-detail-body>
-                <p class="od-empty">Select an instance to inspect its trace.</p>
-            </div>
+            <div class="modal-body" data-detail-body></div>
         </div>
     </div>
 </div>
@@ -154,9 +157,7 @@
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" data-stage-body>
-                <p class="od-empty">Select a stage to inspect tasks, attempts, input and output.</p>
-            </div>
+            <div class="modal-body" data-stage-body></div>
         </div>
     </div>
 </div>
@@ -171,9 +172,7 @@
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" data-timeline-body>
-                <p class="od-empty">Select an instance to inspect transitions.</p>
-            </div>
+            <div class="modal-body" data-timeline-body></div>
         </div>
     </div>
 </div>
@@ -183,5 +182,5 @@
         window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260812-14"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260821-01"></script>
 }
