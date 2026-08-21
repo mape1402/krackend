@@ -74,6 +74,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 : _store.Tasks.TryGetValue(transition.TaskExecutionId.Value, out var task)
                     ? task.TaskKey
                     : null;
+            var orchestrationVersion = _store.Artifacts.TryGetValue(instance.RuntimeOrchestrationArtifactId, out var artifact)
+                ? artifact.Version.ToString()
+                : null;
 
             return new RuntimeReactiveEvent
             {
@@ -82,6 +85,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 TransitionType = transition.TransitionType,
                 EnvironmentKey = instance.EnvironmentKey,
                 OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,
+                OrchestrationVersion = orchestrationVersion,
                 OrchestrationInstanceId = transition.OrchestrationInstanceId,
                 CorrelationId = instance.CorrelationId,
                 ExecutionKey = instance.ExecutionKey,

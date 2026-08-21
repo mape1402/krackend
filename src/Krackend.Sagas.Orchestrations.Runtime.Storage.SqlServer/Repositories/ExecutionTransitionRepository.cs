@@ -82,6 +82,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
 
         var stageKey = await GetStageKey(transition.StageExecutionId, cancellationToken);
         var taskKey = await GetTaskKey(transition.TaskExecutionId, cancellationToken);
+        var orchestrationVersion = await GetOrchestrationVersion(instance.RuntimeOrchestrationArtifactId, cancellationToken);
         return new RuntimeReactiveEvent
         {
             Id = transition.Id,
@@ -89,6 +90,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             TransitionType = transition.TransitionType,
             EnvironmentKey = instance.EnvironmentKey,
             OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,
+            OrchestrationVersion = orchestrationVersion,
             OrchestrationInstanceId = transition.OrchestrationInstanceId,
             CorrelationId = instance.CorrelationId,
             ExecutionKey = instance.ExecutionKey,
@@ -133,6 +135,15 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
                 .FirstOrDefaultAsync(x => x.Id == taskExecutionId.Value, cancellationToken);
 
         return task?.TaskKey;
+    }
+
+    private async Task<string> GetOrchestrationVersion(Id runtimeOrchestrationArtifactId, CancellationToken cancellationToken)
+    {
+        var artifact = DbContext.RuntimeOrchestrationArtifacts.Local.FirstOrDefault(x => x.Id == runtimeOrchestrationArtifactId)
+            ?? await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == runtimeOrchestrationArtifactId, cancellationToken);
+
+        return artifact?.Version.ToString();
     }
 
     private static IReadOnlyCollection<RuntimeTrafficPoint> BuildTraffic(

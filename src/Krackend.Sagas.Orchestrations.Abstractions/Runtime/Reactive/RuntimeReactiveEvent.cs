@@ -34,6 +34,11 @@ public sealed class RuntimeReactiveEvent
     public required string OrchestrationDefinitionKey { get; set; }
 
     /// <summary>
+    /// Gets or sets orchestration version.
+    /// </summary>
+    public string OrchestrationVersion { get; set; }
+
+    /// <summary>
     /// Gets or sets orchestration instance id.
     /// </summary>
     public Id OrchestrationInstanceId { get; set; }

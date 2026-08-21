@@ -50,13 +50,14 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var summary = await BuildRuntimeSummary(cancellationToken);
         var environmentKey = GetEnvironmentKey();
         var instances = await _instanceRepository.GetRecent(environmentKey, 1000, cancellationToken);
+        var artifactVersions = await BuildArtifactVersionMap(environmentKey, cancellationToken);
         var nowUtc = DateTime.UtcNow;
         var traffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-1), cancellationToken);
         var hourlyTraffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-24), cancellationToken);
 
         return new RuntimeDashboardSnapshotModel(
             summary,
-            instances.Select(ToRow).ToArray(),
+            instances.Select(instance => ToRow(instance, artifactVersions.GetValueOrDefault(instance.RuntimeOrchestrationArtifactId))).ToArray(),
             traffic.Select(ToTraffic).ToArray(),
             hourlyTraffic.Select(ToTraffic).ToArray());
     }
@@ -86,7 +87,8 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var tasks = (await _taskRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
         var compensations = (await _compensationRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
         var transitions = (await _transitionRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.OccurredOnUtc).ToArray();
-        var artifact = await TryGetArtifact(instance, cancellationToken);
+        var runtimeArtifact = await TryGetRuntimeArtifact(instance, cancellationToken);
+        var artifact = DeserializeArtifact(runtimeArtifact);
 
         var taskDetails = await BuildTaskDetails(tasks, cancellationToken);
         var stageDetails = BuildStageDetails(stages, taskDetails, artifact);
@@ -97,7 +99,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var timeline = transitionDetails.Select(ToTimelineEntry).ToArray();
 
         return new InstanceDetailModel(
-            ToRow(instance),
+            ToRow(instance, runtimeArtifact?.Version.ToString()),
             stageDetails,
             allTaskDetails,
             transitionDetails,
@@ -122,13 +124,29 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         };
     }
 
-    private async Task<OrchestrationArtifact> TryGetArtifact(
+    private async Task<RuntimeOrchestrationArtifact> TryGetRuntimeArtifact(
         OrchestrationInstance instance,
         CancellationToken cancellationToken)
     {
         try
         {
-            var runtimeArtifact = await _runtimeArtifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+            return await _runtimeArtifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static OrchestrationArtifact DeserializeArtifact(RuntimeOrchestrationArtifact runtimeArtifact)
+    {
+        if (runtimeArtifact is null)
+        {
+            return null;
+        }
+
+        try
+        {
             return JsonSerializer.Deserialize<OrchestrationArtifact>(
                 runtimeArtifact.ArtifactPayload.ToJsonString(),
                 ArtifactJsonOptions);
@@ -137,6 +155,14 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         {
             return null;
         }
+    }
+
+    private async Task<IReadOnlyDictionary<Id, string>> BuildArtifactVersionMap(
+        string environmentKey,
+        CancellationToken cancellationToken)
+    {
+        var artifacts = await _runtimeArtifactRepository.GetAll(environmentKey, cancellationToken);
+        return artifacts.ToDictionary(x => x.Id, x => x.Version.ToString());
     }
 
     private async Task<RuntimeSummaryModel> BuildRuntimeSummary(CancellationToken cancellationToken)
@@ -357,11 +383,12 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             task.Notes,
             task.Order);
 
-    private static InstanceRowModel ToRow(OrchestrationInstance instance)
+    private static InstanceRowModel ToRow(OrchestrationInstance instance, string orchestrationVersion = null)
     {
         return new InstanceRowModel(
             instance.Id.ToString(),
             instance.OrchestrationDefinitionKey,
+            orchestrationVersion ?? string.Empty,
             instance.CorrelationId,
             instance.ExecutionKey,
             instance.Status.ToString(),
