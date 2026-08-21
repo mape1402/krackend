@@ -78,9 +78,13 @@
 
     function normalizeRow(item) {
         const status = read(item, "status", "Status") || "";
+        const orchestrationDefinitionKey = read(item, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || "";
+        const orchestrationVersion = read(item, "orchestrationVersion", "OrchestrationVersion") || "";
         return {
             id: read(item, "id", "Id"),
-            orchestrationDefinitionKey: read(item, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || "",
+            orchestrationDefinitionKey,
+            orchestrationVersion,
+            orchestrationLabel: read(item, "orchestrationLabel", "OrchestrationLabel") || formatOrchestrationLabel(orchestrationDefinitionKey, orchestrationVersion),
             correlationId: read(item, "correlationId", "CorrelationId") || "",
             executionKey: read(item, "executionKey", "ExecutionKey") || "",
             status,
@@ -288,6 +292,8 @@
         const row = normalizeRow({
             id,
             orchestrationDefinitionKey: read(eventData, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || existing?.orchestrationDefinitionKey,
+            orchestrationVersion: read(eventData, "orchestrationVersion", "OrchestrationVersion") || existing?.orchestrationVersion,
+            orchestrationLabel: read(eventData, "orchestrationLabel", "OrchestrationLabel") || existing?.orchestrationLabel,
             correlationId: read(eventData, "correlationId", "CorrelationId") || existing?.correlationId,
             executionKey: read(eventData, "executionKey", "ExecutionKey") || existing?.executionKey,
             status: read(eventData, "instanceStatus", "InstanceStatus") || read(eventData, "toStatus", "ToStatus") || existing?.status,
@@ -487,6 +493,8 @@
             row.correlationId,
             row.executionKey,
             row.orchestrationDefinitionKey,
+            row.orchestrationVersion,
+            row.orchestrationLabel,
             row.currentStageKey,
             row.currentTaskKey,
             row.status
@@ -532,7 +540,7 @@
         return `
             <tr data-instance-id="${escapeHtml(row.id)}" data-instance-status="${escapeHtml(row.status)}" tabindex="0">
             <td>
-                <strong>${escapeHtml(row.orchestrationDefinitionKey)}</strong>
+                <strong title="${escapeHtml(row.orchestrationLabel)}">${escapeHtml(row.orchestrationLabel)}</strong>
             </td>
             <td class="od-id-cell">
                 <span class="od-id-copy">
@@ -600,11 +608,10 @@
         currentDetail = detail;
         const instance = detail.instance;
         const stages = detail.stages || [];
-        const previousStageStillExists = stages.some(stage => stage.id === selectedStageId);
-        selectedStageId = previousStageStillExists ? selectedStageId : getPreferredStageId(detail);
+        const orchestrationLabel = instance.orchestrationLabel || formatOrchestrationLabel(instance.orchestrationDefinitionKey, instance.orchestrationVersion);
 
         if (detailTitle) {
-            detailTitle.textContent = instance.orchestrationDefinitionKey;
+            detailTitle.textContent = orchestrationLabel;
         }
         if (detailSubtitle) {
             detailSubtitle.textContent = `${instance.id} | ${instance.status} | ${instance.correlationId}`;
@@ -613,24 +620,22 @@
             return;
         }
 
-        const selectedStage = selectedStageId ? findStage(selectedStageId) : null;
         detailBody.innerHTML = `
             <section class="od-trace-shell">
-                <div class="od-trace-toolbar">
-                    <div class="od-trace-meta">
-                        ${badge(instance.status)}
-                        ${metaPill("Stage", instance.currentStageKey || "-")}
-                        ${metaPill("Task", instance.currentTaskKey || "-")}
-                        ${metaPill("Started", formatDate(instance.startedOnUtc))}
-                        ${metaPill("Updated", formatDate(instance.lastUpdatedOnUtc))}
+                <section class="od-trace-fixed">
+                    <div class="od-trace-toolbar">
+                        <div class="od-trace-meta">
+                            ${badge(instance.status)}
+                            ${metaPill("Stage", instance.currentStageKey || "-")}
+                            ${metaPill("Task", instance.currentTaskKey || "-")}
+                            ${metaPill("Started", formatDate(instance.startedOnUtc))}
+                            ${metaPill("Updated", formatDate(instance.lastUpdatedOnUtc))}
+                        </div>
                     </div>
-                </div>
-                <div class="od-execution-key" title="${escapeHtml(instance.executionKey || "-")}">${escapeHtml(instance.executionKey || "-")}</div>
-                <section class="od-process-track" aria-label="Stages">
-                    ${stages.map((stage, index) => renderStageStep(stage, index, stages.length)).join("") || `<p class="od-empty">No stages recorded.</p>`}
-                </section>
-                <section class="od-stage-focus" data-stage-focus-panel>
-                    ${selectedStage ? renderStageDetail(selectedStage) : `<p class="od-empty">No stage selected.</p>`}
+                    <div class="od-execution-key" title="${escapeHtml(instance.executionKey || "-")}">${escapeHtml(instance.executionKey || "-")}</div>
+                    <section class="od-process-track" aria-label="Stages">
+                        ${stages.map((stage, index) => renderStageStep(stage, index, stages.length)).join("") || `<p class="od-empty">No stages recorded.</p>`}
+                    </section>
                 </section>
                 <section class="od-inline-storyline">
                     <header>
@@ -642,14 +647,6 @@
                     </div>
                 </section>
             </section>`;
-    }
-
-    function getPreferredStageId(detail) {
-        const instance = detail.instance;
-        const stages = detail.stages || [];
-        const current = stages.find(stage => stage.stageKey === instance.currentStageKey);
-        const active = stages.find(stage => stage.status === "Running" || stage.status === "Waiting");
-        return (current || active || stages[0])?.id || null;
     }
 
     function renderStageStep(stage, index, total) {
@@ -665,9 +662,8 @@
         const marker = stage.status === "Completed"
             ? `<i class="bi bi-check-lg"></i>`
             : `<span></span>`;
-        const selectedClass = stage.id === selectedStageId ? "is-selected" : "";
         return `
-            <button type="button" class="od-process-step ${stateClass} ${selectedClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
+            <button type="button" class="od-process-step ${stateClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
                 <span class="od-process-line" aria-hidden="true"></span>
                 <span class="od-process-marker">${marker}</span>
                 <span class="od-process-copy">
@@ -680,12 +676,21 @@
 
     function openStage(stageId) {
         const stage = findStage(stageId);
-        if (!stage || !detailBody || !currentDetail) {
+        if (!stage || !stageBody || !currentDetail) {
             return;
         }
 
         selectedStageId = stage.id;
-        renderDetail(currentDetail);
+        stageBody.classList.remove("is-task-detail");
+        stageBody.classList.add("is-stage-detail");
+        if (stageTitle) {
+            stageTitle.textContent = stage.stageKey;
+        }
+        if (stageSubtitle) {
+            stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
+        }
+        stageBody.innerHTML = renderStageDetail(stage);
+        stageModal?.show();
     }
 
     function renderStageDetail(stage) {
@@ -748,6 +753,8 @@
 
         selectedStageId = stage.id;
         const attempts = task.attempts || [];
+        stageBody.classList.remove("is-stage-detail");
+        stageBody.classList.add("is-task-detail");
         if (stageTitle) {
             stageTitle.textContent = task.taskKey;
         }
@@ -756,45 +763,49 @@
         }
         stageBody.innerHTML = `
             <section class="od-task-detail-shell">
-                <button type="button" class="btn btn-outline-secondary od-back-action" data-back-stage="${escapeHtml(stage.id)}">
-                    Back to ${escapeHtml(stage.stageKey)}
-                </button>
-                <div class="od-task-detail-head">
-                    <header class="od-stage-focus-head">
-                        <div>
-                            <p class="od-kicker">${escapeHtml(stage.stageKey)}</p>
-                            <h3>${escapeHtml(task.taskKey)}</h3>
-                            <small>${escapeHtml(task.correlationId || "-")}</small>
+                <section class="od-task-fixed">
+                    <button type="button" class="btn btn-outline-secondary od-back-action" data-back-stage="${escapeHtml(stage.id)}">
+                        Back to ${escapeHtml(stage.stageKey)}
+                    </button>
+                    <div class="od-task-detail-head">
+                        <header class="od-stage-focus-head">
+                            <div>
+                                <p class="od-kicker">${escapeHtml(stage.stageKey)}</p>
+                                <h3>${escapeHtml(task.taskKey)}</h3>
+                                <small>${escapeHtml(task.correlationId || "-")}</small>
+                            </div>
+                            ${badge(task.status)}
+                        </header>
+                        <div class="od-detail-grid">
+                            ${field("Status", badge(task.status), true)}
+                            ${field("Kind", task.taskKind || "-")}
+                            ${field("Mode", task.executionMode || "-")}
+                            ${field("Await response", task.awaitResponse ? "yes" : "no")}
+                            ${field("Started", formatDate(task.startedOnUtc))}
+                            ${field("Waiting", formatDate(task.waitingSinceUtc))}
+                            ${field("Completed", formatDate(task.completedOnUtc))}
+                            ${field("Failed", formatDate(task.failedOnUtc))}
+                            ${field("Last attempt", String(task.lastAttemptNumber))}
+                            ${field("Source", task.hasExecution === false ? "Artifact" : "Runtime")}
                         </div>
-                        ${badge(task.status)}
-                    </header>
-                    <div class="od-detail-grid">
-                        ${field("Status", badge(task.status), true)}
-                        ${field("Kind", task.taskKind || "-")}
-                        ${field("Mode", task.executionMode || "-")}
-                        ${field("Await response", task.awaitResponse ? "yes" : "no")}
-                        ${field("Started", formatDate(task.startedOnUtc))}
-                        ${field("Waiting", formatDate(task.waitingSinceUtc))}
-                        ${field("Completed", formatDate(task.completedOnUtc))}
-                        ${field("Failed", formatDate(task.failedOnUtc))}
-                        ${field("Last attempt", String(task.lastAttemptNumber))}
-                        ${field("Source", task.hasExecution === false ? "Artifact" : "Runtime")}
                     </div>
-                </div>
-                ${task.errorSummary ? `<p class="od-runtime-error">${escapeHtml(task.errorSummary)}</p>` : ""}
-                <section class="od-detail-split">
-                    <article>
-                        <h5>Task output variables</h5>
-                        ${codeBlock(task.outputVariablesPayload)}
-                    </article>
-                    <article>
-                        <h5>Task metadata</h5>
-                        ${codeBlock(task.metadata)}
-                    </article>
+                    ${task.errorSummary ? `<p class="od-runtime-error">${escapeHtml(task.errorSummary)}</p>` : ""}
+                    <section class="od-detail-split">
+                        <article>
+                            <h5>Task output variables</h5>
+                            ${codeBlock(task.outputVariablesPayload)}
+                        </article>
+                        <article>
+                            <h5>Task metadata</h5>
+                            ${codeBlock(task.metadata)}
+                        </article>
+                    </section>
                 </section>
                 <section class="od-attempt-stack">
                     <h3>Attempts</h3>
-                    ${attempts.map(renderAttemptDetail).join("") || `<p class="od-empty">No attempts recorded.</p>`}
+                    <div class="od-attempt-list">
+                        ${attempts.map(renderAttemptDetail).join("") || `<p class="od-empty">No attempts recorded.</p>`}
+                    </div>
                 </section>
             </section>`;
         stageModal?.show();
@@ -802,40 +813,45 @@
 
     function renderAttemptDetail(attempt) {
         return `
-            <article class="od-attempt-card">
-                <header>
+            <details class="od-attempt-card">
+                <summary class="od-attempt-summary">
                     <div>
                         <strong>Attempt ${attempt.attemptNumber}</strong>
                         <small>${formatDate(attempt.startedOnUtc)} -> ${formatDate(attempt.completedOnUtc || attempt.failedOnUtc || attempt.waitingSinceUtc)}</small>
                     </div>
-                    ${badge(attempt.status)}
-                </header>
-                <div class="od-detail-grid">
-                    ${field("Started", formatDate(attempt.startedOnUtc))}
-                    ${field("Waiting", formatDate(attempt.waitingSinceUtc))}
-                    ${field("Completed", formatDate(attempt.completedOnUtc))}
-                    ${field("Failed", formatDate(attempt.failedOnUtc))}
-                    ${field("Timed out", formatDate(attempt.timedOutOnUtc))}
-                    ${field("Error", attempt.errorMessage || attempt.errorCode || "-")}
+                    <span class="od-attempt-summary-side">
+                        ${badge(attempt.status)}
+                        <i class="bi bi-chevron-right od-attempt-caret" aria-hidden="true"></i>
+                    </span>
+                </summary>
+                <div class="od-attempt-body">
+                    <div class="od-detail-grid">
+                        ${field("Started", formatDate(attempt.startedOnUtc))}
+                        ${field("Waiting", formatDate(attempt.waitingSinceUtc))}
+                        ${field("Completed", formatDate(attempt.completedOnUtc))}
+                        ${field("Failed", formatDate(attempt.failedOnUtc))}
+                        ${field("Timed out", formatDate(attempt.timedOutOnUtc))}
+                        ${field("Error", attempt.errorMessage || attempt.errorCode || "-")}
+                    </div>
+                    <div class="od-detail-split">
+                        <article>
+                            <h5>Input</h5>
+                            ${codeBlock(attempt.requestPayload)}
+                        </article>
+                        <article>
+                            <h5>Output</h5>
+                            ${codeBlock(attempt.responsePayload)}
+                        </article>
+                    </div>
+                    <div class="od-detail-split">
+                        <article>
+                            <h5>Attempt metadata</h5>
+                            ${codeBlock(attempt.metadata)}
+                        </article>
+                    </div>
+                    ${attempt.dispatch ? renderDispatch(attempt.dispatch) : ""}
                 </div>
-                <div class="od-detail-split">
-                    <article>
-                        <h5>Input</h5>
-                        ${codeBlock(attempt.requestPayload)}
-                    </article>
-                    <article>
-                        <h5>Output</h5>
-                        ${codeBlock(attempt.responsePayload)}
-                    </article>
-                </div>
-                <div class="od-detail-split">
-                    <article>
-                        <h5>Attempt metadata</h5>
-                        ${codeBlock(attempt.metadata)}
-                    </article>
-                </div>
-                ${attempt.dispatch ? renderDispatch(attempt.dispatch) : ""}
-            </article>`;
+            </details>`;
     }
 
     function renderDispatch(dispatch) {
@@ -938,7 +954,8 @@
         } else if (transition.transitionType === "InstanceWaitingResponse" && task) {
             summary = `Instance waiting for ${task.taskKey}`;
         } else if (transition.transitionType === "InstanceStarted") {
-            summary = `Instance started: ${currentDetail?.instance?.orchestrationDefinitionKey || "-"}`;
+            const instance = currentDetail?.instance;
+            summary = `Instance started: ${instance?.orchestrationLabel || formatOrchestrationLabel(instance?.orchestrationDefinitionKey, instance?.orchestrationVersion) || "-"}`;
         }
 
         return { summary, chips };
@@ -1028,6 +1045,18 @@
                 <small>${escapeHtml(label)}</small>
                 <strong>${escapeHtml(value)}</strong>
             </span>`;
+    }
+
+    function formatOrchestrationLabel(orchestrationDefinitionKey, orchestrationVersion) {
+        if (!orchestrationDefinitionKey) {
+            return "";
+        }
+
+        if (!orchestrationVersion) {
+            return orchestrationDefinitionKey;
+        }
+
+        return `${orchestrationDefinitionKey} v${orchestrationVersion}`;
     }
 
     function badge(status) {
@@ -1172,6 +1201,8 @@
             selectedStageId = backToStage.getAttribute("data-back-stage");
             const stage = findStage(selectedStageId);
             if (stage && stageBody) {
+                stageBody.classList.remove("is-task-detail");
+                stageBody.classList.add("is-stage-detail");
                 if (stageTitle) {
                     stageTitle.textContent = stage.stageKey;
                 }
