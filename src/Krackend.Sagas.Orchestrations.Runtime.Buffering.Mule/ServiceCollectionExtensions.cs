@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Mule.Configuration;
@@ -28,6 +29,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             });
 
             builder.Services.Replace(ServiceDescriptor.Scoped<IIntakeBuffer, IntakeBufferMule>());
+            builder.Services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, MuleRemoteCommandDispatcher>());
 
             return builder;
         }

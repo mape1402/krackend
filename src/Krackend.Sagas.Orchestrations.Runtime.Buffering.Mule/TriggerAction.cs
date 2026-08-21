@@ -20,7 +20,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             var intent = new StartIntent
             {
                 ArtifactId = workItem.ArtifactId,
-                Metadata = workItem.Metadata,
+                MessageMetadata = workItem.MessageMetadata,
                 IngressTransport = workItem.IngressTransport,
                 Payload = workItem.Payload
             };

@@ -5,23 +5,29 @@ using global::Pigeon.Messaging.Consuming.Dispatching;
 
 internal sealed class KrackendClientConsumeInterceptor : IConsumeInterceptor
 {
-    private readonly IInstanceMetadataSetter _metadataSetter;
+    private readonly IOrchestrationMessageMetadataSetter _metadataSetter;
+    private readonly IOrchestrationExecutionResultMetadataSetter _resultMetadataSetter;
 
-    public KrackendClientConsumeInterceptor(IInstanceMetadataSetter metadataSetter)
+    public KrackendClientConsumeInterceptor(
+        IOrchestrationMessageMetadataSetter metadataSetter,
+        IOrchestrationExecutionResultMetadataSetter resultMetadataSetter)
     {
         _metadataSetter = metadataSetter ?? throw new ArgumentNullException(nameof(metadataSetter));
+        _resultMetadataSetter = resultMetadataSetter ?? throw new ArgumentNullException(nameof(resultMetadataSetter));
     }
 
     public ValueTask Intercept(ConsumeContext context, CancellationToken cancellationToken = default)
     {
+        _resultMetadataSetter.Clear();
+
         try
         {
-            var metadata = context.GetMetadata<InstanceMetadata>(OrchestrationMetadataConstants.InstanceMetadataKey);
+            var metadata = context.GetMetadata<OrchestrationMessageMetadata>(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey);
             _metadataSetter.Set(metadata);
         }
         catch
         {
-            _metadataSetter.Set(new InstanceMetadata());
+            _metadataSetter.Set(new OrchestrationMessageMetadata());
         }
 
         return ValueTask.CompletedTask;

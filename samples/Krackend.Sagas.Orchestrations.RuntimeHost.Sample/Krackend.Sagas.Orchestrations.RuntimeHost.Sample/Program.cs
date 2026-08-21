@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 using Microsoft.EntityFrameworkCore;
 using Mule;
 using Pigeon.Messaging.Topology;
@@ -14,6 +15,7 @@ var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddScoped<IHappyPathOrchestrationSeeder, HappyPathOrchestrationSeeder>();
 builder.Services.AddDbContext<RuntimeHostMuleDbContext>(options =>
 {
     options.UseSqlServer(muleConnectionString);
@@ -84,6 +86,9 @@ using (var scope = app.Services.CreateScope())
 
     var runtimeDbContext = scope.ServiceProvider.GetRequiredService<RuntimeStorageDbContext>();
     await runtimeDbContext.Database.MigrateAsync();
+
+    var happyPathSeeder = scope.ServiceProvider.GetRequiredService<IHappyPathOrchestrationSeeder>();
+    await happyPathSeeder.SeedAsync();
 }
 
 // Configure the HTTP request pipeline.

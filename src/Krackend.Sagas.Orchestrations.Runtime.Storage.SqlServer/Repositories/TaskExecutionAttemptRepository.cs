@@ -21,6 +21,7 @@ internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, IT
 
     public async Task Update(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default)
     {
+        DetachLocalTrackedEntity(DbContext.TaskExecutionAttempts, attempt);
         DbContext.TaskExecutionAttempts.Update(attempt);
         await SaveChanges(cancellationToken);
     }

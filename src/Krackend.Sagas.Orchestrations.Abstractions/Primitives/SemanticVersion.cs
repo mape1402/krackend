@@ -1,7 +1,11 @@
 namespace Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+
+using System.Text.Json.Serialization;
+
 /// <summary>
 /// Represents a semantic version value (major.minor.patch).
 /// </summary>
+[JsonConverter(typeof(SemanticVersionJsonConverter))]
 public readonly struct SemanticVersion : IComparable<SemanticVersion>
 {
     /// <summary>

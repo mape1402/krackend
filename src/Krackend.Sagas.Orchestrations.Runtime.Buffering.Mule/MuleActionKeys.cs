@@ -8,8 +8,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         
         public const string BackchannelAction = "BackchannelSaga";
 
+        public const string RemoteCommandDispatchAction = "RemoteCommandDispatch";
+
         public  static ActionKey TriggerActionKey => ActionKey.From(TriggerAction);
 
         public static ActionKey BackchannelActionKey => ActionKey.From(BackchannelAction);
+
+        public static ActionKey RemoteCommandDispatchActionKey => ActionKey.From(RemoteCommandDispatchAction);
     }
 }

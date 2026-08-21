@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon;
 using Pigeon.Messaging;
+using Pigeon.Messaging.Consuming.Management;
 using Pigeon.Messaging.Outbox;
 using Pigeon.Messaging.Producing;
 using Pigeon.Messaging.Rabbit;
@@ -25,6 +26,14 @@ namespace Microsoft.Extensions.DependencyInjection
                     builder.ConfigurePublishing(publishing =>
                     {
                         publishing.AmbientTransactionBehavior = AmbientTransactionPublishBehavior.SuppressTransaction;
+                    });
+
+                    builder.ConfigureConsumerExecution(execution =>
+                    {
+                        execution.AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess;
+                        execution.MaxConcurrency = null;
+                        execution.QueueCapacity = null;
+                        execution.PrefetchCount = null;
                     });
 
                     builder.UseRabbitMq(rabbit =>

@@ -30,7 +30,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
             var promotionRequest = new PromotionRequest
             {
                 ArtifactId = intent.ArtifactId,
-                Metadata = intent.Metadata,
+                MessageMetadata = intent.MessageMetadata,
                 Payload = intent.Payload
             };
             var promotionResult = await _promoter.PromoteToInstanceAsync(promotionRequest, cancellationToken);
@@ -41,7 +41,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 return;
             }
 
-            var metadata = intent.Metadata ?? new InstanceMetadata();
+            var metadata = intent.MessageMetadata ?? new OrchestrationMessageMetadata();
             metadata.SagaId = promotionResult.SagaId;
             metadata.OrchestrationInstanceId = promotionResult.InstanceId;
             metadata.CorrelationId = string.IsNullOrWhiteSpace(metadata.CorrelationId)
@@ -52,7 +52,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
             {
                 ArtifactId = intent.ArtifactId,
                 IngressTransport = intent.IngressTransport,
-                Metadata = metadata,
+                MessageMetadata = metadata,
                 Payload = intent.Payload
             };
 
@@ -69,7 +69,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 var decisionRequest = new DecisionRequest
                 {
                     ArtifactId = intent.ArtifactId,
-                    Metadata = intent.Metadata,
+                    MessageMetadata = intent.MessageMetadata,
+                    ExecutionResultMetadata = intent.ExecutionResultMetadata,
                     Payload = intent.Payload
                 };
 

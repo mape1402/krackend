@@ -381,6 +381,15 @@ Justificacion:
 - La configuracion nace del artifact publicado y queda materializada una sola vez para runtime.
 - La convención default del backchannel sigue siendo `orchestrations.{artifact.Key}`, pero queda encapsulada y reemplazable.
 
+## Runtime host happy path seed
+
+- Se agregó una semilla idempotente en el sample runtime host para registrar el artifact `sales.sale.created` version `1.0.0`.
+- La semilla busca primero por `EnvironmentKey`, `OrchestrationDefinitionKey` y `Version`; si ya existe, reutiliza el `Id` del artifact y actualiza el payload, evitando duplicados en `RuntimeOrchestrationArtifacts`.
+- El artifact contiene el trigger explicito `events.sales.sale.created` y dos tareas messaging con `FireAndWaitCallback`: `tasks.inventories.reserve.requested` y `tasks.payments.capture.requested`.
+- No se guarda manualmente el backchannel en el seeder. Se conserva el camino correcto del runtime: `IRuntimeArtifactRepository.Upsert` proyecta las configuraciones de ingress, incluyendo el backchannel implicito `orchestrations.sales.sale.created`.
+- Se cambio `IngressRegistryBackgroundService` de `BackgroundService` a `IHostedService`. Justificacion: el standup de ingress debe terminar durante `StartAsync` para que los consumers dinamicos queden registrados antes de que Pigeon inicie consumo; cuando corria como `BackgroundService`, Pigeon podia empezar a consumir antes de tener el handler dinamico en su configuracion.
+- Se agrego un converter JSON para `SemanticVersion`. Justificacion: al serializar/deserializar el artifact, `System.Text.Json` no podia reconstruir correctamente el value object y el trigger messaging se proyectaba como version `0.0.0`; con el converter, las versiones viajan como string semver (`1.0.0`) y se conservan entre artifact, runtime e ingress.
+
 ### Standup Sin Transformar Artifacts
 
 Archivo:
@@ -418,7 +427,45 @@ Justificacion:
 
 - Los servicios orquestados necesitan saber a que topic/version responder cuando terminen su operacion.
 
-## Cambios Posteriores: Orchestration Client Y Callback Envelope
+### Fix De Tracking EF En Runtime SQL
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/RuntimeRepositoryBase.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/OrchestrationInstanceRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/StageExecutionRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/TaskExecutionRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/TaskExecutionAttemptRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/TaskDispatchRepository.cs`
+- `src/Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer/Repositories/CompensationExecutionRepository.cs`
+
+Cambio:
+
+- Antes de actualizar entidades runtime, el repositorio SQL desprende cualquier instancia local ya trackeada con la misma primary key.
+
+Justificacion:
+
+- En el e2e, Mule ejecuta varias decisions dentro del mismo scope/runtime storage context.
+- Algunas entidades se crean y quedan trackeadas; despues el motor las vuelve a leer con `AsNoTracking` y manda actualizar otra instancia con la misma llave.
+- EF rechazaba ese update con `The instance of entity type ... cannot be tracked because another instance with the same key value is already being tracked`, bloqueando el avance de la orquestacion antes del dispatch de tasks.
+
+### Publish Directo Con Payload JSON
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon/PigeonDispatchAdapter.cs`
+
+Cambio:
+
+- El runtime adapter publica el `Payload` de `MessagingCommand` como JSON parseado, no como string crudo.
+- El publish se mantiene directo al queue/topic default de Pigeon, sin exchange ni routing key personalizados.
+
+Justificacion:
+
+- El motor serializa el command como envelope interno, pero el payload que viaja al servicio debe conservar forma de objeto JSON para que Pigeon lo deserialice al contrato del consumer.
+- La prueba debe usar la topologia default de Pigeon y publicar directo al queue.
+
+## Cambios Posteriores: Orchestration Client Y Backchannel
 
 ### Contratos Compartidos Cliente/Runtime
 
@@ -428,18 +475,15 @@ Archivos:
 - `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/IInstanceMetadataAccessor.cs`
 - `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/IInstanceMetadataSetter.cs`
 - `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Metadata/OrchestrationMetadataConstants.cs`
-- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Responses/RuntimeTaskResponseEnvelope.cs`
-- `src/Krackend.Sagas.Orchestrations.Abstractions/Runtime/Responses/RuntimeTaskResponseError.cs`
 
 Cambio:
 
 - Se movio `InstanceMetadata` y sus interfaces a Abstractions.
 - Se movio la key de metadata de Pigeon a Abstractions.
-- Se agrego un envelope compartido para respuestas de task con success/failure, payload de negocio, error y datos de ejecucion.
 
 Justificacion:
 
-- Runtime y client necesitan compartir exactamente los mismos contratos para que Pigeon pueda transportar metadata y respuestas sin acoplar servicios orquestados al proyecto Runtime completo.
+- Runtime y client necesitan compartir exactamente los mismos contratos para que Pigeon pueda transportar metadata sin acoplar servicios orquestados al proyecto Runtime completo.
 
 ### Runtime Usando Metadata Compartida
 
@@ -462,7 +506,7 @@ Justificacion:
 - Evita duplicidad de tipos/strings entre runtime y cliente.
 - Mantiene el comportamiento actual de propagacion de metadata por Pigeon.
 
-### Semantica De Callback Success/Failure
+### Semantica De Callback
 
 Archivos:
 
@@ -472,16 +516,14 @@ Archivos:
 
 Cambio:
 
-- `DecisionControl` intenta interpretar el payload de backchannel como `RuntimeTaskResponseEnvelope`.
-- `CompleteCallbackDecision` ahora transporta `Succeeded`, error y payload original del envelope.
-- `CompleteCallbackDecisionHandler` marca task/attempt/dispatch como completed o failed segun el envelope.
-- El payload de negocio se guarda en `TaskExecutionAttempt.ResponsePayload`.
-- El envelope completo se conserva en metadata del attempt para diagnostico.
-- Se registran transitions diferenciadas: `TaskCallbackCompleted` y `TaskCallbackFailed`.
+- `DecisionControl` identifica callbacks usando `InstanceMetadata`.
+- `CompleteCallbackDecisionHandler` marca task/attempt/dispatch como completed cuando llega el callback.
+- El payload de negocio llega intacto y se guarda en `TaskExecutionAttempt.ResponsePayload`.
+- Se registra la transition `TaskCallbackCompleted`.
 
 Justificacion:
 
-- El orquestador necesita distinguir exito y falla de servicios externos para poder avanzar, continuar, fallar o compensar segun `OnErrorPolicy`.
+- El orquestador debe cerrar el task usando metadata de orquestacion, sin envolver ni modificar el payload de negocio.
 
 ### Libreria Cliente
 
@@ -502,3 +544,18 @@ Cambio:
 Justificacion:
 
 - Los servicios generados por TurtlePath pueden enganchar orquestacion desde Spider sin meter logica de Krackend en controllers, consumers o handlers.
+
+### Payload De Negocio Entre Tasks
+
+Archivos:
+
+- `src/Krackend.Sagas.Orchestrations.Runtime/Engine/Control/DecisionControl.cs`
+
+Cambio:
+
+- Se retiro el merge automatico entre snapshot de instancia y payload de callback.
+- El runtime conserva el payload de negocio tal como viene en el flujo; la informacion de correlacion y control debe viajar por `InstanceMetadata` o metadata de Pigeon.
+
+Justificacion:
+
+- El runtime no debe modificar el contrato de negocio para transportar estado interno de orquestacion. La metadata existe precisamente para separar control/correlacion del payload funcional.

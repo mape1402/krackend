@@ -1,4 +1,3 @@
-using Payments.Business.Payments.Messages;
 using Payments.Business.Payments.Models.Requests;
 using Payments.Business.Payments.Models.Responses;
 using Pigeon.Messaging.Consuming.Dispatching;
@@ -9,18 +8,15 @@ namespace Payments.Api.HubConsumers
 {
     public sealed class PaymentsHubConsumer : BaseHubConsumer
     {
-        [Consumer("tasks.payments.capture.requested", "1.0.0", "payments")]
-        public Task Consume(CapturePaymentMessage message, CancellationToken cancellationToken)
+        [Consumer("commands.payments.payment.capture.", "1.1.0")]
+        [Consumer("commands.payments.payment.capture.", "1.0.0")]
+        [Consumer("tasks.payments.capture.requested", "1.0.0")]
+        public async Task Consume(CapturePaymentRequest request, CancellationToken cancellationToken)
         {
-            return Spider
+            await Spider
                 .AsMediator()
                 .UseOrchestration<CapturePaymentRequest, CapturePaymentResponse>()
-                .Send(new CapturePaymentRequest
-                {
-                    SaleId = message.SaleId,
-                    CustomerId = message.CustomerId,
-                    Total = message.Total
-                }, cancellationToken);
+                .Send(request, cancellationToken);
         }
     }
 }

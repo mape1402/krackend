@@ -2,11 +2,11 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 {
-    internal sealed class DefaultBackchannelTopicFormatter : IBackchannelTopicFormatter
+    internal sealed class DefaultBackchannelMessagingTopicFormatter : IBackchannelMessagingTopicFormatter
     {
         private readonly RuntimeIngressBackchannelOptions _options;
 
-        public DefaultBackchannelTopicFormatter(RuntimeIngressBackchannelOptions options)
+        public DefaultBackchannelMessagingTopicFormatter(RuntimeIngressBackchannelOptions options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
         }

@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(builder));
         }
 
+        builder.Services.TryAddScoped<IMessagingReplyAddressSettingsSerializer, DefaultMessagingReplyAddressSettingsSerializer>();
         builder.Services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
 
         return builder;
@@ -49,9 +50,11 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configure));
         }
 
+        builder.Services.TryAddScoped<IMessagingReplyAddressSettingsSerializer, DefaultMessagingReplyAddressSettingsSerializer>();
         builder.Services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
         builder.Services.AddPigeon(configuration, configure)
-            .AddConsumeInterceptor<KrackendClientConsumeInterceptor>();
+            .AddConsumeInterceptor<KrackendClientConsumeInterceptor>()
+            .AddPublishInterceptor<KrackendClientPublishInterceptor>();
 
         return builder;
     }

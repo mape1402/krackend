@@ -21,9 +21,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IRemoteCommandDispatcher _dispatcher;
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
-        private readonly IMessagingConfigurationSerializer _messagingConfigurationSerializer;
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
-        private readonly IInstanceMetadataSetter _metadataSetter;
 
         public DispatchTaskDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -33,9 +31,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IRemoteCommandDispatcher dispatcher,
             IMessagingCommandSerializer messagingCommandSerializer,
-            IMessagingConfigurationSerializer messagingConfigurationSerializer,
-            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
-            IInstanceMetadataSetter metadataSetter)
+            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -44,9 +40,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
-            _messagingConfigurationSerializer = messagingConfigurationSerializer ?? throw new ArgumentNullException(nameof(messagingConfigurationSerializer));
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
-            _metadataSetter = metadataSetter ?? throw new ArgumentNullException(nameof(metadataSetter));
         }
 
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
@@ -61,7 +55,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
-            var backchannel = await ResolveBackchannelConfigurationAsync(instance, cancellationToken);
+            var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
             var taskExecution = new TaskExecution
             {
                 Id = Id.New(),
@@ -116,42 +110,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             await _dispatchRepository.Create(dispatch, cancellationToken);
             await _instanceRepository.Update(instance, cancellationToken);
 
-            var dispatchSucceeded = await TryDispatchAsync(
-                decision,
-                messagingConfiguration,
-                instance,
-                taskExecution,
-                attempt,
-                dispatch,
-                backchannel,
-                cancellationToken);
-            if (!dispatchSucceeded)
-            {
-                return;
-            }
-
-            var sentOnUtc = DateTime.UtcNow;
-            dispatch.DispatchStatus = decision.Task.DispatchType == TaskDispatchType.FireAndForget ? "Completed" : "WaitingResponse";
-            dispatch.SentOnUtc = sentOnUtc;
-
-            if (decision.Task.DispatchType == TaskDispatchType.FireAndForget)
-            {
-                taskExecution.Status = TaskExecutionStatus.Completed;
-                taskExecution.CompletedOnUtc = sentOnUtc;
-                attempt.Status = TaskExecutionStatus.Completed;
-                attempt.CompletedOnUtc = sentOnUtc;
-            }
-            else
-            {
-                taskExecution.Status = TaskExecutionStatus.WaitingResponse;
-                taskExecution.WaitingSinceUtc = sentOnUtc;
-                attempt.Status = TaskExecutionStatus.WaitingResponse;
-                attempt.WaitingSinceUtc = sentOnUtc;
-                instance.Status = OrchestrationInstanceStatus.Waiting;
-                instance.WaitingSinceUtc = sentOnUtc;
-            }
-
-            instance.LastUpdatedOnUtc = sentOnUtc;
+            var queuedOnUtc = DateTime.UtcNow;
+            dispatch.DispatchStatus = "Enqueued";
+            instance.LastUpdatedOnUtc = queuedOnUtc;
             await _taskRepository.Update(taskExecution, cancellationToken);
             await _attemptRepository.Update(attempt, cancellationToken);
             await _dispatchRepository.Update(dispatch, cancellationToken);
@@ -163,32 +124,65 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 StageExecutionId = decision.StageExecutionId,
                 TaskExecutionId = taskExecution.Id,
                 TaskExecutionAttemptId = attempt.Id,
-                TransitionType = "TaskDispatched",
+                TransitionType = "TaskDispatchEnqueued",
                 FromStatus = TaskExecutionStatus.Pending.ToString(),
-                ToStatus = taskExecution.Status.ToString(),
-                OccurredOnUtc = sentOnUtc,
-                Message = $"Task '{decision.Task.Key}' dispatched to messaging topic '{messagingConfiguration.Topic}'.",
+                ToStatus = dispatch.DispatchStatus,
+                OccurredOnUtc = queuedOnUtc,
+                Message = $"Task '{decision.Task.Key}' dispatch enqueued for transport '{RemoteCommandTransport.Messaging}'.",
                 Payload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
                 ProducedBy = nameof(DispatchTaskDecisionHandler)
             }, cancellationToken);
+
+            await TryQueueDispatchAsync(
+                decision,
+                messagingConfiguration,
+                instance,
+                taskExecution,
+                attempt,
+                dispatch,
+                replyAddress,
+                cancellationToken);
         }
 
-        private async Task<bool> TryDispatchAsync(
+        private async Task<bool> TryQueueDispatchAsync(
             DispatchTaskDecision decision,
             MessagingTaskConfigurationArtifact messagingConfiguration,
             OrchestrationInstance instance,
             TaskExecution taskExecution,
             TaskExecutionAttempt attempt,
             TaskDispatch dispatch,
-            MessagingConfiguration backchannel,
+            OrchestrationReplyAddress replyAddress,
             CancellationToken cancellationToken)
         {
-            var maxAttempts = Math.Max(1, (decision.Task.RetryPolicy?.MaxRetries ?? 0) + 1);
-            for (var attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++)
+            try
             {
-                try
+                if (decision.Task.DispatchType != TaskDispatchType.FireAndForget && replyAddress is null)
                 {
-                    _metadataSetter.Set(new InstanceMetadata
+                    throw new InvalidOperationException(
+                        $"Task '{decision.Task.Key}' requires a backchannel reply address, but none was projected for artifact '{instance.RuntimeOrchestrationArtifactId}'.");
+                }
+
+                var messagingCommand = new MessagingCommand
+                {
+                    Topic = messagingConfiguration.Topic,
+                    Version = messagingConfiguration.Version.ToString(),
+                    Payload = decision.Payload
+                };
+
+                await _dispatcher.DispatchAsync(new RemoteCommand
+                {
+                    Payload = decision.Payload,
+                    RemoteCommandTransport = RemoteCommandTransport.Messaging,
+                    SettingsPayload = _messagingCommandSerializer.Serialize(messagingCommand),
+                    OrchestrationInstanceId = instance.Id.ToString(),
+                    StageExecutionId = decision.StageExecutionId.ToString(),
+                    TaskExecutionId = taskExecution.Id.ToString(),
+                    TaskExecutionAttemptId = attempt.Id.ToString(),
+                    DispatchId = dispatch.Id.ToString(),
+                    StageKey = decision.StageKey,
+                    TaskKey = decision.Task.Key,
+                    AwaitResponse = decision.Task.DispatchType != TaskDispatchType.FireAndForget,
+                    MessageMetadata = new OrchestrationMessageMetadata
                     {
                         SagaId = instance.CorrelationId,
                         OrchestrationInstanceId = instance.Id.ToString(),
@@ -197,86 +191,54 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                         CorrelationId = taskExecution.CorrelationId,
                         TaskExecutionId = taskExecution.Id.ToString(),
                         DispatchId = dispatch.Id.ToString(),
-                        Attempt = attemptNumber,
-                        BackchannelTopic = backchannel?.Topic,
-                        BackchannelVersion = backchannel?.Version
-                    });
+                        Attempt = attempt.AttemptNumber,
+                        ReplyAddress = replyAddress
+                    }
+                }, cancellationToken);
 
-                    var messagingCommand = new MessagingCommand
-                    {
-                        Topic = messagingConfiguration.Topic,
-                        Version = messagingConfiguration.Version.ToString(),
-                        Payload = decision.Payload
-                    };
-                    await _dispatcher.DispatchAsync(new RemoteCommand
-                    {
-                        Payload = decision.Payload,
-                        RemoteCommandTransport = RemoteCommandTransport.Messaging,
-                        SettingsPayload = _messagingCommandSerializer.Serialize(messagingCommand)
-                    }, cancellationToken);
-                    return true;
-                }
-                catch (Exception exception) when (attemptNumber < maxAttempts)
-                {
-                    await _transitionRepository.Create(new ExecutionTransition
-                    {
-                        Id = Id.New(),
-                        OrchestrationInstanceId = instance.Id,
-                        StageExecutionId = decision.StageExecutionId,
-                        TaskExecutionId = taskExecution.Id,
-                        TaskExecutionAttemptId = attempt.Id,
-                        TransitionType = "TaskDispatchRetrying",
-                        FromStatus = TaskExecutionStatus.Running.ToString(),
-                        ToStatus = TaskExecutionStatus.Retrying.ToString(),
-                        OccurredOnUtc = DateTime.UtcNow,
-                        Message = exception.Message,
-                        ProducedBy = nameof(DispatchTaskDecisionHandler)
-                    }, cancellationToken);
-                }
-                catch (Exception exception)
-                {
-                    var failedOnUtc = DateTime.UtcNow;
-                    dispatch.DispatchStatus = "Failed";
-                    dispatch.FailedOnUtc = failedOnUtc;
-                    dispatch.FailureReason = exception.Message;
-                    taskExecution.Status = TaskExecutionStatus.Failed;
-                    taskExecution.FailedOnUtc = failedOnUtc;
-                    attempt.Status = TaskExecutionStatus.Failed;
-                    attempt.FailedOnUtc = failedOnUtc;
-                    attempt.ErrorMessage = exception.Message;
-                    instance.Status = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue
-                        ? OrchestrationInstanceStatus.Running
-                        : OrchestrationInstanceStatus.Failed;
-                    instance.FailedOnUtc = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
-                    instance.ErrorSummary = exception.Message;
-                    instance.LastUpdatedOnUtc = failedOnUtc;
-
-                    await _dispatchRepository.Update(dispatch, cancellationToken);
-                    await _taskRepository.Update(taskExecution, cancellationToken);
-                    await _attemptRepository.Update(attempt, cancellationToken);
-                    await _instanceRepository.Update(instance, cancellationToken);
-                    await _transitionRepository.Create(new ExecutionTransition
-                    {
-                        Id = Id.New(),
-                        OrchestrationInstanceId = instance.Id,
-                        StageExecutionId = decision.StageExecutionId,
-                        TaskExecutionId = taskExecution.Id,
-                        TaskExecutionAttemptId = attempt.Id,
-                        TransitionType = "TaskDispatchFailed",
-                        FromStatus = TaskExecutionStatus.Running.ToString(),
-                        ToStatus = TaskExecutionStatus.Failed.ToString(),
-                        OccurredOnUtc = failedOnUtc,
-                        Message = exception.Message,
-                        ProducedBy = nameof(DispatchTaskDecisionHandler)
-                    }, cancellationToken);
-                    return false;
-                }
+                return true;
             }
+            catch (Exception exception)
+            {
+                var failedOnUtc = DateTime.UtcNow;
+                dispatch.DispatchStatus = "Failed";
+                dispatch.FailedOnUtc = failedOnUtc;
+                dispatch.FailureReason = exception.Message;
+                taskExecution.Status = TaskExecutionStatus.Failed;
+                taskExecution.FailedOnUtc = failedOnUtc;
+                attempt.Status = TaskExecutionStatus.Failed;
+                attempt.FailedOnUtc = failedOnUtc;
+                attempt.ErrorMessage = exception.Message;
+                instance.Status = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue
+                    ? OrchestrationInstanceStatus.Running
+                    : OrchestrationInstanceStatus.Failed;
+                instance.FailedOnUtc = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+                instance.ErrorSummary = exception.Message;
+                instance.LastUpdatedOnUtc = failedOnUtc;
 
-            return false;
+                await _dispatchRepository.Update(dispatch, cancellationToken);
+                await _taskRepository.Update(taskExecution, cancellationToken);
+                await _attemptRepository.Update(attempt, cancellationToken);
+                await _instanceRepository.Update(instance, cancellationToken);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = decision.StageExecutionId,
+                    TaskExecutionId = taskExecution.Id,
+                    TaskExecutionAttemptId = attempt.Id,
+                    TransitionType = "TaskDispatchQueueFailed",
+                    FromStatus = TaskExecutionStatus.Running.ToString(),
+                    ToStatus = TaskExecutionStatus.Failed.ToString(),
+                    OccurredOnUtc = failedOnUtc,
+                    Message = exception.Message,
+                    ProducedBy = nameof(DispatchTaskDecisionHandler)
+                }, cancellationToken);
+                return false;
+            }
         }
 
-        private async Task<MessagingConfiguration> ResolveBackchannelConfigurationAsync(
+        private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(
             OrchestrationInstance instance,
             CancellationToken cancellationToken)
         {
@@ -289,7 +251,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             return backchannel is null
                 ? null
-                : _messagingConfigurationSerializer.Deserialize(backchannel.SettingsPayload);
+                : new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = backchannel.SettingsPayload
+                };
         }
     }
 }

@@ -31,12 +31,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 
             var now = DateTime.UtcNow;
             var instanceId = Id.New();
-            var correlationId = string.IsNullOrWhiteSpace(request.Metadata?.CorrelationId)
+            var correlationId = string.IsNullOrWhiteSpace(request.MessageMetadata?.CorrelationId)
                 ? instanceId.ToString()
-                : request.Metadata.CorrelationId;
-            var sagaId = string.IsNullOrWhiteSpace(request.Metadata?.SagaId)
+                : request.MessageMetadata.CorrelationId;
+            var sagaId = string.IsNullOrWhiteSpace(request.MessageMetadata?.SagaId)
                 ? instanceId.ToString()
-                : request.Metadata.SagaId;
+                : request.MessageMetadata.SagaId;
 
             var instance = new OrchestrationInstance
             {

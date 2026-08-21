@@ -21,6 +21,7 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
 
     public async Task Update(TaskExecution taskExecution, CancellationToken cancellationToken = default)
     {
+        DetachLocalTrackedEntity(DbContext.TaskExecutions, taskExecution);
         DbContext.TaskExecutions.Update(taskExecution);
         await SaveChanges(cancellationToken);
     }
