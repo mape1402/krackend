@@ -8,6 +8,8 @@ namespace Payments.Api.HubConsumers
 {
     public sealed class PaymentsHubConsumer : BaseHubConsumer
     {
+        [Consumer("commands.payments.payment.capture.", "1.4.0")]
+        [Consumer("commands.payments.payment.capture.", "1.3.0")]
         [Consumer("commands.payments.payment.capture.", "1.2.0")]
         [Consumer("commands.payments.payment.capture.", "1.1.0")]
         [Consumer("commands.payments.payment.capture.", "1.0.0")]

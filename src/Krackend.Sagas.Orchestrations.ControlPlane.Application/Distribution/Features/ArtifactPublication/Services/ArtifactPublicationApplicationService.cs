@@ -52,26 +52,38 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
     /// <inheritdoc />
     public async Task PublishDeployment(OrchestrationVersionDeployedEvent deployment, CancellationToken cancellationToken = default)
     {
-        var artifact = _deploymentBuilder.Build(deployment);
-        Validate(artifact);
-        await _artifactRepository.Create(artifact, cancellationToken);
+        var artifact = await GetOrCreateArtifact(_deploymentBuilder.Build(deployment), cancellationToken);
         await PromoteArtifact(artifact, deployment, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task PublishDeprecation(OrchestrationVersionDeprecatedEvent deprecation, CancellationToken cancellationToken = default)
     {
-        var artifact = _deprecationBuilder.Build(deprecation);
-        Validate(artifact);
-        await _artifactRepository.Create(artifact, cancellationToken);
+        await GetOrCreateArtifact(_deprecationBuilder.Build(deprecation), cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task PublishArchive(OrchestrationVersionArchivedEvent archive, CancellationToken cancellationToken = default)
     {
-        var artifact = _archiveBuilder.Build(archive);
-        Validate(artifact);
-        await _artifactRepository.Create(artifact, cancellationToken);
+        await GetOrCreateArtifact(_archiveBuilder.Build(archive), cancellationToken);
+    }
+
+    private async Task<Artifact> GetOrCreateArtifact(Artifact candidate, CancellationToken cancellationToken)
+    {
+        Validate(candidate);
+
+        var existing = await _artifactRepository.GetLatestForOrchestrationVersion(
+            new Id(Ulid.Parse(candidate.OrchestrationVersionId)),
+            candidate.ArtifactType,
+            cancellationToken);
+
+        if (existing is not null && string.Equals(existing.Checksum, candidate.Checksum, StringComparison.Ordinal))
+        {
+            return existing;
+        }
+
+        await _artifactRepository.Create(candidate, cancellationToken);
+        return candidate;
     }
 
     private void Validate(Artifact artifact)
@@ -111,6 +123,32 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
             return;
         }
 
+        var nodesNeedingTargets = new List<RuntimeNode>();
+        foreach (var node in enabledNodes)
+        {
+            var existingTarget = await _releaseTargetRepository.GetByArtifactAndRuntimeNode(
+                artifact.Id,
+                node.Id,
+                cancellationToken);
+
+            if (existingTarget is null)
+            {
+                nodesNeedingTargets.Add(node);
+                continue;
+            }
+
+            if (node.DistributionMode is DistributionMode.Push or DistributionMode.Hybrid
+                && existingTarget.Status != ReleaseTargetStatus.Activated)
+            {
+                await _deliveryService.Push(existingTarget.Id.ToString(), "design-deploy", cancellationToken);
+            }
+        }
+
+        if (nodesNeedingTargets.Count == 0)
+        {
+            return;
+        }
+
         var release = new Release
         {
             Id = Id.New(),
@@ -124,7 +162,7 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
             CreatedAtUtc = DateTime.UtcNow
         };
 
-        var planTargets = enabledNodes.Select(node => new ReleasePlanTarget
+        var planTargets = nodesNeedingTargets.Select(node => new ReleasePlanTarget
         {
             Id = Id.New(),
             ReleaseId = release.Id,
@@ -136,7 +174,7 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
 
         await _releaseRepository.Create(release, planTargets, cancellationToken);
 
-        foreach (var node in enabledNodes)
+        foreach (var node in nodesNeedingTargets)
         {
             var releaseTarget = new ReleaseTarget
             {

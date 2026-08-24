@@ -71,6 +71,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             foreach (var configuration in configurations)
             {
+                if (_connectors.TryGetValue(configuration.ArtifactId, out var existingConnectorIds)
+                    && existingConnectorIds.Contains(configuration.Id))
+                {
+                    continue;
+                }
+
                 var connector = serviceProvider.GetKeyedService<IIngressConector>(configuration.IngressTransport);
 
                 if (connector == null)
@@ -85,7 +91,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                     connectorIds = new List<string>();
 
                 connectorIds.Add(configuration.Id);
-                _connectors.AddOrUpdate(configuration.ArtifactId, connectorIds, (old, @new) => connectorIds);
+                _connectors.AddOrUpdate(configuration.ArtifactId, connectorIds, (_, _) => connectorIds);
             }
         }
 

@@ -20,6 +20,10 @@
 {
     <div class="alert alert-danger">@Model.ErrorMessage</div>
 }
+@if (!Model.CanEdit)
+{
+    <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
+}
 
 <div class="od-roadmap-layout">
     <aside class="od-list-shell od-roadmap-side">
@@ -37,35 +41,41 @@
                                 <h3 class="od-item-title">@trigger.Key</h3>
                                 <p class="od-item-meta">@trigger.TriggerType</p>
                             </div>
-                            <div class="dropdown">
-                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Trigger actions">&#8942;</button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <button type="button"
-                                                class="dropdown-item js-open-trigger-modal"
-                                                data-trigger-mode="edit"
-                                                data-trigger-id="@trigger.Id">
-                                            Edit trigger
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    <li>
-                                        <form method="post" asp-page-handler="DeleteTrigger" class="od-inline-form">
-                                            <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                            <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
-                                            <input type="hidden" name="triggerId" value="@trigger.Id" />
-                                            <button type="submit" class="dropdown-item text-danger">Delete trigger</button>
-                                        </form>
-                                    </li>
-                                </ul>
-                            </div>
+                            @if (Model.CanEdit)
+                            {
+                                <div class="dropdown">
+                                    <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Trigger actions">&#8942;</button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <button type="button"
+                                                    class="dropdown-item js-open-trigger-modal"
+                                                    data-trigger-mode="edit"
+                                                    data-trigger-id="@trigger.Id">
+                                                Edit trigger
+                                            </button>
+                                        </li>
+                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <form method="post" asp-page-handler="DeleteTrigger" class="od-inline-form">
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                                                <input type="hidden" name="triggerId" value="@trigger.Id" />
+                                                <button type="submit" class="dropdown-item text-danger">Delete trigger</button>
+                                            </form>
+                                        </li>
+                                    </ul>
+                                </div>
+                            }
                         </div>
-                        <div class="od-task-toggle-row">
-                            <span class="od-task-toggle-label">Enabled</span>
-                            <div class="form-check form-switch od-task-toggle">
-                                <input class="form-check-input js-trigger-enabled-toggle" type="checkbox" role="switch" data-trigger-id="@trigger.Id" @(trigger.IsEnabled ? "checked" : null) aria-label="Toggle trigger enabled" />
+                        @if (Model.CanEdit)
+                        {
+                            <div class="od-task-toggle-row">
+                                <span class="od-task-toggle-label">Enabled</span>
+                                <div class="form-check form-switch od-task-toggle">
+                                    <input class="form-check-input js-trigger-enabled-toggle" type="checkbox" role="switch" data-trigger-id="@trigger.Id" @(trigger.IsEnabled ? "checked" : null) aria-label="Toggle trigger enabled" />
+                                </div>
                             </div>
-                        </div>
+                        }
                     </article>
                 }
 
@@ -74,9 +84,12 @@
                     <p class="od-empty">No triggers yet.</p>
                 }
 
-                <article class="od-trigger-item od-trigger-empty-item">
-                    <button type="button" class="od-add-link js-open-trigger-modal" data-trigger-mode="create">+ Add trigger</button>
-                </article>
+                @if (Model.CanEdit)
+                {
+                    <article class="od-trigger-item od-trigger-empty-item">
+                        <button type="button" class="od-add-link js-open-trigger-modal" data-trigger-mode="create">+ Add trigger</button>
+                    </article>
+                }
             </div>
         </div>
     </aside>
@@ -84,7 +97,7 @@
     <section class="od-list-shell od-roadmap-main">
         <div class="od-panel-head">
             <h2 class="od-panel-title">Stages</h2>
-            <span class="od-item-meta">Drag cards to reorder, click a card to open</span>
+            <span class="od-item-meta">@(Model.CanEdit ? "Drag cards to reorder, click a card to open" : "Click a card to open")</span>
         </div>
 
         @if (!Model.Stages.Any())
@@ -97,17 +110,20 @@
             {
                 var hasStageExecutionCondition = stage.HasExecutionCondition;
 
-                <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="true">
+                <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                     <div class="od-pipeline-card od-stage-card">
-                        <button type="button"
-                                class="od-stage-exec-btn js-stage-execution-btn @(hasStageExecutionCondition ? "od-stage-exec-btn-active" : "od-stage-exec-btn-inactive")"
-                                title="Execution condition"
-                                aria-label="Execution condition"
-                                data-stage-id="@stage.Id">
-                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                                <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
-                            </svg>
-                        </button>
+                        @if (Model.CanEdit)
+                        {
+                            <button type="button"
+                                    class="od-stage-exec-btn js-stage-execution-btn @(hasStageExecutionCondition ? "od-stage-exec-btn-active" : "od-stage-exec-btn-inactive")"
+                                    title="Execution condition"
+                                    aria-label="Execution condition"
+                                    data-stage-id="@stage.Id">
+                                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                    <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
+                                </svg>
+                            </button>
+                        }
                         <div class="od-item-top">
                             <div class="od-stage-head-main">
                                 <div class="od-stage-texts">
@@ -118,14 +134,17 @@
                             <div class="dropdown">
                                 <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Stage actions">&#8942;</button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <button type="button"
-                                                class="dropdown-item js-open-stage-modal"
-                                                data-stage-mode="edit"
-                                                data-stage-id="@stage.Id">
-                                            Edit stage
-                                        </button>
-                                    </li>
+                                    @if (Model.CanEdit)
+                                    {
+                                        <li>
+                                            <button type="button"
+                                                    class="dropdown-item js-open-stage-modal"
+                                                    data-stage-mode="edit"
+                                                    data-stage-id="@stage.Id">
+                                                Edit stage
+                                            </button>
+                                        </li>
+                                    }
                                     <li>
                                         <a class="dropdown-item"
                                            asp-area="OrchestratorDesign"
@@ -134,15 +153,18 @@
                                            asp-route-versionId="@Model.SelectedVersion?.Id"
                                            asp-route-stageId="@stage.Id">Open stage</a>
                                     </li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    <li>
-                                        <form method="post" asp-page-handler="DeleteStage" class="od-inline-form">
-                                            <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                            <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
-                                            <input type="hidden" name="stageId" value="@stage.Id" />
-                                            <button type="submit" class="dropdown-item text-danger">Delete stage</button>
-                                        </form>
-                                    </li>
+                                    @if (Model.CanEdit)
+                                    {
+                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <form method="post" asp-page-handler="DeleteStage" class="od-inline-form">
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                                                <input type="hidden" name="stageId" value="@stage.Id" />
+                                                <button type="submit" class="dropdown-item text-danger">Delete stage</button>
+                                            </form>
+                                        </li>
+                                    }
                                 </ul>
                             </div>
                         </div>
@@ -153,11 +175,14 @@
                 </article>
             }
 
-            <article class="od-pipeline-item od-add-item">
-                <div class="od-pipeline-card">
-                    <button type="button" class="od-add-link js-open-stage-modal" data-stage-mode="create">+ Add stage</button>
-                </div>
-            </article>
+            @if (Model.CanEdit)
+            {
+                <article class="od-pipeline-item od-add-item">
+                    <div class="od-pipeline-card">
+                        <button type="button" class="od-add-link js-open-stage-modal" data-stage-mode="create">+ Add stage</button>
+                    </div>
+                </article>
+            }
         </div>
     </section>
 </div>
@@ -320,10 +345,17 @@
     const pipeline = document.getElementById('stagePipeline');
     if (!pipeline) return;
 
+    const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+
     const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
     let dragged = null;
 
     pipeline.addEventListener('dragstart', event => {
+        if (!canEdit) {
+            event.preventDefault();
+            return;
+        }
+
         const card = event.target.closest('.od-pipeline-item');
         if (!card || card.classList.contains('od-add-item')) {
             event.preventDefault();
@@ -337,6 +369,10 @@
     });
 
     pipeline.addEventListener('dragend', async () => {
+        if (!canEdit) {
+            return;
+        }
+
         if (!dragged) {
             return;
         }
@@ -347,6 +383,10 @@
     });
 
     pipeline.addEventListener('dragover', event => {
+        if (!canEdit) {
+            return;
+        }
+
         event.preventDefault();
         if (!dragged) {
             return;

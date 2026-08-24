@@ -12,6 +12,8 @@ namespace Sales.Api.Controllers
     [ApiVersion(1.0)]
     [ApiVersion(1.1)]
     [ApiVersion(1.2)]
+    [ApiVersion(1.3)]
+    [ApiVersion(1.4)]
     [Route("sales")]
     public sealed class SalesController : BaseController
     {
@@ -66,6 +68,36 @@ namespace Sales.Api.Controllers
             CancellationToken cancellationToken)
         {
             var response = await _dispatcher.DispatchAsync(request, "1.2.0", cancellationToken);
+
+            return Accepted(response);
+        }
+
+        /// <summary>
+        /// Creates a sale and publishes the sale-created orchestration message for artifact version 1.3.0.
+        /// </summary>
+        [HttpPost]
+        [MapToApiVersion(1.3)]
+        [ProducesResponseType(typeof(SaleResponse), StatusCodes.Status202Accepted)]
+        public async Task<ActionResult<SaleResponse>> CreateV1_3(
+            [FromBody] CreateSaleRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _dispatcher.DispatchAsync(request, "1.3.0", cancellationToken);
+
+            return Accepted(response);
+        }
+
+        /// <summary>
+        /// Creates a sale and publishes the sale-created orchestration message for artifact version 1.4.0.
+        /// </summary>
+        [HttpPost]
+        [MapToApiVersion(1.4)]
+        [ProducesResponseType(typeof(SaleResponse), StatusCodes.Status202Accepted)]
+        public async Task<ActionResult<SaleResponse>> CreateV1_4(
+            [FromBody] CreateSaleRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _dispatcher.DispatchAsync(request, "1.4.0", cancellationToken);
 
             return Accepted(response);
         }

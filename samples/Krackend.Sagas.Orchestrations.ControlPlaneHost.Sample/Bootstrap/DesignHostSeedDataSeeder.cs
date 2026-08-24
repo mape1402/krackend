@@ -1,9 +1,16 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Contracts.Events;
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
+using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Security.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Bootstrap;
 
@@ -17,10 +24,17 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private const string TriggerTopic = "events.sales.sale.created";
     private const string OwnerTeamKey = "sales-platform";
     private const string OwnerTeamName = "Sales Platform";
+    private const string RuntimeEnvironmentCode = "local";
+    private const string RuntimeNodeCode = "local-runtime";
+    private const string RuntimeNodeClientId = "local-runtime";
+    private const string RuntimeNodeSecretReference = "local-runtime-shared";
 
     private static readonly Id OwnerTeamId = StableId("01K00000000000000000000040");
     private static readonly Id DomainId = StableId("01K00000000000000000000041");
     private static readonly Id DefinitionId = StableId("01K00000000000000000000042");
+    private static readonly Id RuntimeEnvironmentId = StableId("01K00000000000000000000050");
+    private static readonly Id RuntimeNodeId = StableId("01K00000000000000000000051");
+    private static readonly Id RuntimeNodePolicyId = StableId("01K00000000000000000000052");
 
     private static readonly IReadOnlyList<DesignHostSeedDefinition> SeedDefinitions =
     [
@@ -130,10 +144,26 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     ];
 
     private readonly ControlPlaneDbContext _dbContext;
+    private readonly IConfiguration _configuration;
+    private readonly IOrchestrationVersionRepository _versionRepository;
+    private readonly IOrchestrationDefinitionRepository _definitionRepository;
+    private readonly IOrchestrationVersionArtifactSnapshotBuilder _artifactSnapshotBuilder;
+    private readonly IArtifactPublicationApplicationService _artifactPublicationService;
 
-    public DesignHostSeedDataSeeder(ControlPlaneDbContext dbContext)
+    public DesignHostSeedDataSeeder(
+        ControlPlaneDbContext dbContext,
+        IConfiguration configuration,
+        IOrchestrationVersionRepository versionRepository,
+        IOrchestrationDefinitionRepository definitionRepository,
+        IOrchestrationVersionArtifactSnapshotBuilder artifactSnapshotBuilder,
+        IArtifactPublicationApplicationService artifactPublicationService)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
+        _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
+        _artifactSnapshotBuilder = artifactSnapshotBuilder ?? throw new ArgumentNullException(nameof(artifactSnapshotBuilder));
+        _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -151,7 +181,13 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
             await UpsertOrchestrationVersionAsync(definition.Id, seedDefinition, now, cancellationToken);
         }
 
+        await UpsertDistributionAsync(now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var seedDefinition in SeedDefinitions)
+        {
+            await EnsureArtifactPublishedAsync(seedDefinition.VersionId, now, cancellationToken);
+        }
     }
 
     private async Task UpsertSecurityTeamAsync(DateTime now, CancellationToken cancellationToken)
@@ -566,6 +602,107 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
             TimeoutPolicy = DefaultTimeoutPolicy(),
             DispatchType = TaskDispatchType.FireAndForget
         };
+
+    private async Task UpsertDistributionAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var environment = await _dbContext.Environments.FirstOrDefaultAsync(x => x.Code == RuntimeEnvironmentCode, cancellationToken);
+        if (environment is null)
+        {
+            _dbContext.Environments.Add(new EnvironmentEntity
+            {
+                Id = RuntimeEnvironmentId,
+                Name = "Local Runtime",
+                Code = RuntimeEnvironmentCode,
+                Description = "Local docker-backed runtime used by the sample hosts.",
+                IsEnabled = true,
+                CreatedAtUtc = now
+            });
+        }
+        else
+        {
+            environment.Name = "Local Runtime";
+            environment.Description = "Local docker-backed runtime used by the sample hosts.";
+            environment.IsEnabled = true;
+            environment.UpdatedAtUtc = now;
+        }
+
+        var runtimeNode = await _dbContext.RuntimeNodes.FirstOrDefaultAsync(x => x.Code == RuntimeNodeCode, cancellationToken);
+        if (runtimeNode is null)
+        {
+            _dbContext.RuntimeNodes.Add(new RuntimeNodeEntity
+            {
+                Id = RuntimeNodeId,
+                Name = "Local Runtime",
+                Code = RuntimeNodeCode,
+                EnvironmentId = RuntimeEnvironmentId,
+                DistributionMode = DistributionMode.Hybrid,
+                EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227",
+                EndpointApiPath = "runtime/artifacts/deploy",
+                AuthenticationMode = RuntimeAuthenticationMode.ClientCredentials,
+                ClientId = RuntimeNodeClientId,
+                SecretReference = RuntimeNodeSecretReference,
+                ApiKeyReference = string.Empty,
+                Status = RuntimeNodeStatus.Active,
+                IsEnabled = true,
+                Description = "Local runtime node seeded for push and manual pull demos.",
+                RegisteredAtUtc = now
+            });
+        }
+        else
+        {
+            runtimeNode.Name = "Local Runtime";
+            runtimeNode.EnvironmentId = RuntimeEnvironmentId;
+            runtimeNode.DistributionMode = DistributionMode.Hybrid;
+            runtimeNode.EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227";
+            runtimeNode.EndpointApiPath = "runtime/artifacts/deploy";
+            runtimeNode.AuthenticationMode = RuntimeAuthenticationMode.ClientCredentials;
+            runtimeNode.ClientId = RuntimeNodeClientId;
+            runtimeNode.SecretReference = RuntimeNodeSecretReference;
+            runtimeNode.ApiKeyReference = string.Empty;
+            runtimeNode.Status = RuntimeNodeStatus.Active;
+            runtimeNode.IsEnabled = true;
+            runtimeNode.Description = "Local runtime node seeded for push and manual pull demos.";
+            runtimeNode.LastUpdatedAtUtc = now;
+        }
+
+        var policy = await _dbContext.OrchestrationAllowedRuntimeNodes.FirstOrDefaultAsync(
+            x => x.OrchestrationDefinitionId == DefinitionId.ToString() && x.RuntimeNodeId == RuntimeNodeId,
+            cancellationToken);
+        if (policy is null)
+        {
+            _dbContext.OrchestrationAllowedRuntimeNodes.Add(new OrchestrationAllowedRuntimeNodeEntity
+            {
+                Id = RuntimeNodePolicyId,
+                OrchestrationDefinitionId = DefinitionId.ToString(),
+                RuntimeNodeId = RuntimeNodeId,
+                CreatedAtUtc = now,
+                CreatedBy = CreatedBy
+            });
+        }
+    }
+
+    private async Task EnsureArtifactPublishedAsync(
+        Id versionId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var version = await _versionRepository.GetById(versionId, cancellationToken);
+        var definition = await _definitionRepository.GetById(version.OrchestrationDefinitionId, cancellationToken);
+        var snapshot = await _artifactSnapshotBuilder.Build(version, cancellationToken);
+        var payloadJson = OrchestrationArtifactPayloadFactory.CreatePayloadJson(definition, snapshot);
+
+        await _artifactPublicationService.PublishDeployment(new OrchestrationVersionDeployedEvent(
+            version.Id.ToString(),
+            version.OrchestrationDefinitionId.ToString(),
+            definition.Name,
+            version.VersionLabel,
+            version.Version.ToString(),
+            payloadJson,
+            version.Checksum.Value,
+            CreatedBy,
+            version.Id.ToString(),
+            now), cancellationToken);
+    }
 
     private static Id StableId(string value)
         => new(Ulid.Parse(value));

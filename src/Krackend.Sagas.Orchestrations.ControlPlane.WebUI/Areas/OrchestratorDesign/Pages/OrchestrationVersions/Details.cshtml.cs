@@ -46,6 +46,8 @@ public sealed class DetailsModel : PageModel
 
     public OrchestrationVersionModel SelectedVersion { get; private set; }
 
+    public bool CanEdit => SelectedVersion?.Status == OrchestrationVersionStatus.Draft;
+
     public IReadOnlyCollection<StageDefinitionModel> Stages { get; private set; } = Array.Empty<StageDefinitionModel>();
 
     public IReadOnlyCollection<TriggerBindingModel> TriggerBindings { get; private set; } = Array.Empty<TriggerBindingModel>();

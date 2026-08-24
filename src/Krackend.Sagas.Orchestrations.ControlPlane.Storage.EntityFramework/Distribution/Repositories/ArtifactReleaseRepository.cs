@@ -77,6 +77,40 @@ public sealed class ArtifactRepository : IArtifactRepository
         };
     }
 
+    public async Task<Artifact> GetLatestForOrchestrationVersion(
+        Id orchestrationVersionId,
+        string artifactType,
+        CancellationToken cancellationToken = default)
+    {
+        var x = await _dbContext.Artifacts.AsNoTracking()
+            .Where(y => y.OrchestrationVersionId == orchestrationVersionId.ToString()
+                && y.ArtifactType == artifactType)
+            .OrderByDescending(y => y.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return x is null
+            ? null
+            : new Artifact
+            {
+                Id = x.Id,
+                OrchestrationDefinitionId = x.OrchestrationDefinitionId,
+                OrchestrationVersionId = x.OrchestrationVersionId,
+                OrchestrationDisplayName = x.OrchestrationDisplayName,
+                VersionLabel = x.VersionLabel,
+                VersionNumber = x.VersionNumber,
+                ArtifactType = x.ArtifactType,
+                SchemaVersion = x.SchemaVersion,
+                Payload = x.Payload,
+                Metadata = x.Metadata,
+                SourceEvent = x.SourceEvent,
+                SourceVersion = x.SourceVersion,
+                Checksum = x.Checksum,
+                IsPublished = x.IsPublished,
+                CreatedAtUtc = x.CreatedAtUtc,
+                PublishedAtUtc = x.PublishedAtUtc
+            };
+    }
+
     public async Task<PagedResult<Artifact>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Artifacts.AsNoTracking().OrderByDescending(x => x.CreatedAtUtc);

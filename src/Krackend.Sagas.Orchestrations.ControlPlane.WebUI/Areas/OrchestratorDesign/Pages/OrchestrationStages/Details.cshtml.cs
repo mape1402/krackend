@@ -22,15 +22,18 @@ public sealed class DetailsModel : PageModel
     private readonly IStageApplicationService _stageService;
     private readonly ITaskApplicationService _taskService;
     private readonly IParallelGroupApplicationService _parallelGroupService;
+    private readonly IOrchestrationVersionApplicationService _versionService;
 
     public DetailsModel(
         IStageApplicationService stageService,
         ITaskApplicationService taskService,
-        IParallelGroupApplicationService parallelGroupService)
+        IParallelGroupApplicationService parallelGroupService,
+        IOrchestrationVersionApplicationService versionService)
     {
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
         _taskService = taskService ?? throw new ArgumentNullException(nameof(taskService));
         _parallelGroupService = parallelGroupService ?? throw new ArgumentNullException(nameof(parallelGroupService));
+        _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
     }
 
     [BindProperty(SupportsGet = true)]
@@ -46,6 +49,10 @@ public sealed class DetailsModel : PageModel
     public string EditTaskId { get; set; } = string.Empty;
 
     public StageDefinitionModel Stage { get; private set; }
+
+    public OrchestrationVersionModel SelectedVersion { get; private set; }
+
+    public bool CanEdit => SelectedVersion?.Status == OrchestrationVersionStatus.Draft;
 
     public IReadOnlyCollection<TaskDefinitionModel> Tasks { get; private set; } = Array.Empty<TaskDefinitionModel>();
 
@@ -90,7 +97,7 @@ public sealed class DetailsModel : PageModel
         NewTask.StageId = stageId;
 
         await LoadDataAsync(cancellationToken);
-        if (Stage is not null && !string.IsNullOrWhiteSpace(EditTaskId))
+        if (CanEdit && Stage is not null && !string.IsNullOrWhiteSpace(EditTaskId))
         {
             var task = await _taskService.GetById(new GetTaskDefinitionByIdQuery(EditTaskId), cancellationToken);
             if (task is not null)
@@ -561,6 +568,7 @@ public sealed class DetailsModel : PageModel
                 return;
             }
 
+            SelectedVersion = await _versionService.GetById(new GetOrchestrationVersionByIdQuery(VersionId), cancellationToken);
             Tasks = (await _taskService.GetAll(new GetTaskDefinitionsQuery(StageId), cancellationToken))
                 .OrderBy(x => x.Order)
                 .ToArray();

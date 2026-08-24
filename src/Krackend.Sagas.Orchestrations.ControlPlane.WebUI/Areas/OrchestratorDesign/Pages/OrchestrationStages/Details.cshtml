@@ -24,11 +24,23 @@
 {
     <div class="alert alert-danger">@Model.ErrorMessage</div>
 }
+@if (!Model.CanEdit)
+{
+    <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
+    <style>
+        .od-kebab,
+        .od-task-side-btn,
+        .od-task-toggle-row,
+        .od-add-actions-item {
+            display: none !important;
+        }
+    </style>
+}
 
 <section class="od-list-shell">
     <div class="od-panel-head">
         <h2 class="od-panel-title">Tasks</h2>
-        <span class="od-item-meta">Drag cards to reorder</span>
+        <span class="od-item-meta">@(Model.CanEdit ? "Drag cards to reorder" : "Read-only tasks")</span>
     </div>
 
     @if (!Model.Tasks.Any())
@@ -59,7 +71,7 @@
                     .FirstOrDefault(x => string.Equals(x.Id, groupId, StringComparison.Ordinal))?.Name;
                 groupName = string.IsNullOrWhiteSpace(groupName) ? "Parallel group" : groupName;
 
-                <article class="od-parallel-group" data-group-id="@groupId" draggable="true">
+                <article class="od-parallel-group" data-group-id="@groupId" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                     <div class="od-parallel-group-head">
                         <div>
                             <h3 class="od-item-title">@groupName</h3>
@@ -83,7 +95,7 @@
                             var groupedTaskHasExecutionCondition = groupedTask.HasExecutionCondition;
                             var groupedTaskHasTransformation = groupedTask.HasTransformation;
 
-                            <article class="od-pipeline-item" data-task-id="@groupedTask.Id" draggable="true">
+                            <article class="od-pipeline-item" data-task-id="@groupedTask.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                                 <div class="od-pipeline-card od-task-card @(groupedTask.IsEnabled ? string.Empty : "od-task-disabled")">
                                     <button type="button"
                                             class="od-task-side-btn od-task-exec-btn js-task-execution-btn @(groupedTaskHasExecutionCondition ? "od-task-exec-btn-active" : "od-task-exec-btn-inactive")"
@@ -151,7 +163,7 @@
             var taskHasExecutionCondition = task.HasExecutionCondition;
             var taskHasTransformation = task.HasTransformation;
 
-            <article class="od-pipeline-item" data-task-id="@task.Id" draggable="true">
+            <article class="od-pipeline-item" data-task-id="@task.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                 <div class="od-pipeline-card od-task-card @(task.IsEnabled ? string.Empty : "od-task-disabled")">
                     <button type="button"
                             class="od-task-side-btn od-task-exec-btn js-task-execution-btn @(taskHasExecutionCondition ? "od-task-exec-btn-active" : "od-task-exec-btn-inactive")"
@@ -859,6 +871,9 @@
 (() => {
     const pipeline = document.getElementById('taskPipeline');
     if (!pipeline) return;
+
+    const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+    if (!canEdit) return;
 
     const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
     const addParallelGroupButton = document.getElementById('addParallelGroupButton');

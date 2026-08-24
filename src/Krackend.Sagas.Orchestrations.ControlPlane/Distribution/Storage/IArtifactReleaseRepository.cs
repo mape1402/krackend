@@ -9,6 +9,7 @@ public interface IArtifactRepository
     Task Create(Artifact artifact, CancellationToken cancellationToken = default);
     Task SetPublished(Id artifactId, bool isPublished, CancellationToken cancellationToken = default);
     Task<Artifact> GetById(Id artifactId, CancellationToken cancellationToken = default);
+    Task<Artifact> GetLatestForOrchestrationVersion(Id orchestrationVersionId, string artifactType, CancellationToken cancellationToken = default);
     Task<PagedResult<Artifact>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
 }
 

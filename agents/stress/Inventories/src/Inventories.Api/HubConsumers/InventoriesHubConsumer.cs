@@ -8,6 +8,8 @@ namespace Inventories.Api.HubConsumers
 {
     public sealed class InventoriesHubConsumer : BaseHubConsumer
     {
+        [Consumer("commands.inventories.stock.reserve", "1.4.0")]
+        [Consumer("commands.inventories.stock.reserve", "1.3.0")]
         [Consumer("commands.inventories.stock.reserve", "1.2.0")]
         [Consumer("commands.inventories.stock.reserve", "1.1.0")]
         [Consumer("commands.inventories.stock.reserve", "1.0.0")]

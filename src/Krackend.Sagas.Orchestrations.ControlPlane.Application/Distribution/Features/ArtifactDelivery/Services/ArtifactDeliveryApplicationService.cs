@@ -1,6 +1,8 @@
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums;
@@ -18,6 +20,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
     private readonly IArtifactRepository _artifactRepository;
     private readonly IRuntimeNodeRepository _runtimeNodeRepository;
     private readonly IEnvironmentRepository _environmentRepository;
+    private readonly IArtifactDeliveryHttpRequestSigner _requestSigner;
 
     public ArtifactDeliveryApplicationService(
         HttpClient httpClient,
@@ -25,7 +28,8 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         IReleaseRepository releaseRepository,
         IArtifactRepository artifactRepository,
         IRuntimeNodeRepository runtimeNodeRepository,
-        IEnvironmentRepository environmentRepository)
+        IEnvironmentRepository environmentRepository,
+        IArtifactDeliveryHttpRequestSigner requestSigner)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _releaseTargetRepository = releaseTargetRepository ?? throw new ArgumentNullException(nameof(releaseTargetRepository));
@@ -33,6 +37,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _runtimeNodeRepository = runtimeNodeRepository ?? throw new ArgumentNullException(nameof(runtimeNodeRepository));
         _environmentRepository = environmentRepository ?? throw new ArgumentNullException(nameof(environmentRepository));
+        _requestSigner = requestSigner ?? throw new ArgumentNullException(nameof(requestSigner));
     }
 
     public async Task<RuntimeArtifactDeliveryResult> Push(
@@ -77,7 +82,8 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             await _releaseTargetRepository.Update(target, cancellationToken);
 
             var package = await BuildPackage(target, node, artifact, cancellationToken);
-            using var response = await _httpClient.PostAsJsonAsync(BuildDeployUri(node), package, cancellationToken);
+            using var requestMessage = await CreateSignedDeployRequest(node, package, cancellationToken);
+            using var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
             var bodyText = await response.Content.ReadAsStringAsync(cancellationToken);
             var body = TryReadDeploymentResponse(bodyText);
 
@@ -147,6 +153,34 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         return packages;
     }
 
+    public async Task<RuntimeArtifactDeliveryPackage> GetForPull(
+        string runtimeNodeId,
+        string releaseTargetId,
+        CancellationToken cancellationToken = default)
+    {
+        var node = await _runtimeNodeRepository.GetById(ParseId(runtimeNodeId), cancellationToken);
+        var target = await _releaseTargetRepository.GetById(ParseId(releaseTargetId), cancellationToken);
+        if (target.RuntimeNodeId != node.Id)
+        {
+            throw new InvalidOperationException("Release target does not belong to the runtime node.");
+        }
+
+        if (target.Status is not (ReleaseTargetStatus.AvailableForPull or ReleaseTargetStatus.Pending))
+        {
+            throw new InvalidOperationException("Release target is not available for pull.");
+        }
+
+        if (target.Status == ReleaseTargetStatus.Pending)
+        {
+            target.Status = ReleaseTargetStatus.AvailableForPull;
+            target.AvailableAtUtc = DateTime.UtcNow;
+            await _releaseTargetRepository.Update(target, cancellationToken);
+        }
+
+        var artifact = await _artifactRepository.GetById(target.ArtifactId, cancellationToken);
+        return await BuildPackage(target, node, artifact, cancellationToken);
+    }
+
     public async Task<RuntimeArtifactDeliveryResult> AcknowledgePull(
         string runtimeNodeId,
         string releaseTargetId,
@@ -198,6 +232,30 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             PromotedBy = "distribution",
             PromotedOnUtc = DateTime.UtcNow
         };
+    }
+
+    private async Task<HttpRequestMessage> CreateSignedDeployRequest(
+        RuntimeNode node,
+        RuntimeArtifactDeliveryPackage package,
+        CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(package);
+        var request = new HttpRequestMessage(HttpMethod.Post, BuildDeployUri(node))
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+        if (node.AuthenticationMode != RuntimeAuthenticationMode.None)
+        {
+            await _requestSigner.SignAsync(
+                request,
+                json,
+                ResolveKeyId(node),
+                ResolveSecretReference(node),
+                cancellationToken);
+        }
+
+        return request;
     }
 
     private async Task AddAttempt(
@@ -291,7 +349,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             ExternalReference = externalReference ?? string.Empty
         };
 
-    private static RuntimeDeploymentResponse TryReadDeploymentResponse(string bodyText)
+    private static RuntimeArtifactDeploymentResult TryReadDeploymentResponse(string bodyText)
     {
         if (string.IsNullOrWhiteSpace(bodyText))
         {
@@ -306,7 +364,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
 
         try
         {
-            return JsonSerializer.Deserialize<RuntimeDeploymentResponse>(
+            return JsonSerializer.Deserialize<RuntimeArtifactDeploymentResult>(
                 bodyText,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
@@ -333,11 +391,14 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             : firstLine.Length > 500 ? firstLine[..500] : firstLine;
     }
 
-    private sealed class RuntimeDeploymentResponse
-    {
-        public bool Accepted { get; set; }
-        public string RuntimeArtifactId { get; set; }
-        public string Status { get; set; }
-        public string Message { get; set; }
-    }
+    private static string ResolveKeyId(RuntimeNode node)
+        => node.AuthenticationMode == RuntimeAuthenticationMode.ApiKey && string.IsNullOrWhiteSpace(node.ClientId)
+            ? node.ApiKeyReference
+            : node.ClientId;
+
+    private static string ResolveSecretReference(RuntimeNode node)
+        => node.AuthenticationMode == RuntimeAuthenticationMode.ApiKey
+            ? node.ApiKeyReference
+            : node.SecretReference;
+
 }
