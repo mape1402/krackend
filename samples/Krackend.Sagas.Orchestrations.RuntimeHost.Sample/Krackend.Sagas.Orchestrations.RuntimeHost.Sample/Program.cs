@@ -1,13 +1,14 @@
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
-using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer;
-using Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 using Microsoft.EntityFrameworkCore;
 using Mule;
+using Mule.EntityFrameworkCore;
 using Pigeon.Messaging.Topology;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,12 +24,8 @@ builder.Services.AddOrchestratorRuntimeWebUI(options =>
     options.EnvironmentKey = builder.Configuration["Runtime:EnvironmentKey"] ?? "local";
 });
 builder.Services.AddScoped<IHappyPathOrchestrationSeeder, HappyPathOrchestrationSeeder>();
-builder.Services.AddDbContext<RuntimeHostMuleDbContext>(options =>
-{
-    options.UseSqlServer(muleConnectionString);
-});
 
-builder.Services.AddOrchestratorRuntimeStorageSqlServer(options =>
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
 {
     options.UseSqlServer(muleConnectionString, sql =>
     {
@@ -58,7 +55,7 @@ builder.Services
     })
     .AddMule(mule =>
     {
-        mule.UseEntityFrameworkCore<RuntimeHostMuleDbContext>();
+        mule.UseEntityFrameworkCore<RuntimeDbContext>();
         mule.UseFastLaneRedis(options =>
         {
             options.ConnectionString = redisConnectionString;
@@ -88,11 +85,8 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeHostMuleDbContext>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
     await dbContext.Database.MigrateAsync();
-
-    var runtimeDbContext = scope.ServiceProvider.GetRequiredService<RuntimeStorageDbContext>();
-    await runtimeDbContext.Database.MigrateAsync();
 
     var happyPathSeeder = scope.ServiceProvider.GetRequiredService<IHappyPathOrchestrationSeeder>();
     await happyPathSeeder.SeedAsync();
@@ -118,11 +112,3 @@ app.MapRazorPages()
    .WithStaticAssets();
 
 app.Run();
-
-public sealed class RuntimeHostMuleDbContext : DbContext
-{
-    public RuntimeHostMuleDbContext(DbContextOptions<RuntimeHostMuleDbContext> options)
-        : base(options)
-    {
-    }
-}

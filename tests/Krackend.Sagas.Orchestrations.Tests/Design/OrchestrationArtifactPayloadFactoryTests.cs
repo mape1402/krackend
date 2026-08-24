@@ -1,12 +1,12 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
-using Krackend.Sagas.Orchestrations.Design.Core;
-using Krackend.Sagas.Orchestrations.Design.Core.ConditionConfigurations;
-using Krackend.Sagas.Orchestrations.Design.Core.RetryStrategies;
-using Krackend.Sagas.Orchestrations.Design.Core.TimeoutBehaviorPolicies;
-using Krackend.Sagas.Orchestrations.Design.Core.TransformationConfigurations;
-using Krackend.Sagas.Orchestrations.Design.Core.TriggerChannels;
-using Krackend.Sagas.Orchestrations.Design.Interaction;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Design;
 
@@ -44,7 +44,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.True(task["Transformation"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("inventory.reserve", task["Configuration"]!["Topic"]!.GetValue<string>());
         Assert.True(task["Configuration"]!["SchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
-        Assert.Equal(1, task["Configuration"]!["Version"]!["Major"]!.GetValue<int>());
+        Assert.Equal("1.0.0", task["Configuration"]!["Version"]!.GetValue<string>());
         Assert.Equal((int)RetryStrategyType.Fixed, task["RetryPolicy"]!["StrategyType"]!.GetValue<int>());
         Assert.Equal(3, task["RetryPolicy"]!["MaxRetries"]!.GetValue<int>());
         Assert.Equal((int)TimeoutBehavior.Reconcile, task["TimeoutPolicy"]!["TimeoutBehavior"]!.GetValue<int>());

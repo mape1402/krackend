@@ -1,5 +1,3 @@
-using Krackend.Sagas.Orchestrations.Contracts.Eventing;
-
 namespace Krackend.Sagas.Orchestrations.Contracts.Events;
 
 public sealed record OrchestrationVersionDeployedEvent(
@@ -12,7 +10,7 @@ public sealed record OrchestrationVersionDeployedEvent(
     string Checksum,
     string Actor,
     string CorrelationId,
-    DateTime OccurredAtUtc) : IIntegrationEvent;
+    DateTime OccurredAtUtc);
 
 public sealed record OrchestrationVersionDeprecatedEvent(
     string OrchestrationVersionId,
@@ -24,7 +22,7 @@ public sealed record OrchestrationVersionDeprecatedEvent(
     string Checksum,
     string Actor,
     string CorrelationId,
-    DateTime OccurredAtUtc) : IIntegrationEvent;
+    DateTime OccurredAtUtc);
 
 public sealed record OrchestrationVersionArchivedEvent(
     string OrchestrationVersionId,
@@ -36,4 +34,4 @@ public sealed record OrchestrationVersionArchivedEvent(
     string Checksum,
     string Actor,
     string CorrelationId,
-    DateTime OccurredAtUtc) : IIntegrationEvent;
+    DateTime OccurredAtUtc);

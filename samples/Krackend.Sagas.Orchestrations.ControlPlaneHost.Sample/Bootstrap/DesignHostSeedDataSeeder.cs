@@ -1,9 +1,8 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
-using Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.Entities;
-using Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.Infrastructure;
-using Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.JsonModels;
-using Krackend.Sagas.Orchestrations.Security.Storage.SqlServer.Entities;
-using Krackend.Sagas.Orchestrations.Security.Storage.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Security.Entities;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Bootstrap;
@@ -130,15 +129,11 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
             ])
     ];
 
-    private readonly DesignStorageDbContext _designDbContext;
-    private readonly SecurityStorageDbContext _securityDbContext;
+    private readonly ControlPlaneDbContext _dbContext;
 
-    public DesignHostSeedDataSeeder(
-        DesignStorageDbContext designDbContext,
-        SecurityStorageDbContext securityDbContext)
+    public DesignHostSeedDataSeeder(ControlPlaneDbContext dbContext)
     {
-        _designDbContext = designDbContext ?? throw new ArgumentNullException(nameof(designDbContext));
-        _securityDbContext = securityDbContext ?? throw new ArgumentNullException(nameof(securityDbContext));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -146,11 +141,8 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         var now = DateTime.UtcNow;
 
         await UpsertSecurityTeamAsync(now, cancellationToken);
-        await _securityDbContext.SaveChangesAsync(cancellationToken);
-
-        await UpsertDesignTeamProjectionAsync(now, cancellationToken);
         await UpsertDomainAsync(now, cancellationToken);
-        await _designDbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         var definition = await UpsertOrchestrationDefinitionAsync(now, cancellationToken);
 
@@ -159,16 +151,16 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
             await UpsertOrchestrationVersionAsync(definition.Id, seedDefinition, now, cancellationToken);
         }
 
-        await _designDbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task UpsertSecurityTeamAsync(DateTime now, CancellationToken cancellationToken)
     {
-        var team = await _securityDbContext.Teams.FirstOrDefaultAsync(x => x.Key == OwnerTeamKey, cancellationToken);
+        var team = await _dbContext.Teams.FirstOrDefaultAsync(x => x.Key == OwnerTeamKey, cancellationToken);
 
         if (team is null)
         {
-            _securityDbContext.Teams.Add(new TeamEntity
+            _dbContext.Teams.Add(new TeamEntity
             {
                 Id = OwnerTeamId,
                 Key = OwnerTeamKey,
@@ -187,38 +179,13 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         team.UpdatedOnUtc = now;
     }
 
-    private async Task UpsertDesignTeamProjectionAsync(DateTime now, CancellationToken cancellationToken)
-    {
-        var teamProjection = await _designDbContext.TeamProjections.FirstOrDefaultAsync(
-            x => x.Key == OwnerTeamKey,
-            cancellationToken);
-
-        if (teamProjection is null)
-        {
-            _designDbContext.TeamProjections.Add(new TeamProjectionEntity
-            {
-                Id = OwnerTeamId,
-                Key = OwnerTeamKey,
-                DisplayName = OwnerTeamName,
-                IsActive = true,
-                UpdatedAtUtc = now
-            });
-
-            return;
-        }
-
-        teamProjection.DisplayName = OwnerTeamName;
-        teamProjection.IsActive = true;
-        teamProjection.UpdatedAtUtc = now;
-    }
-
     private async Task UpsertDomainAsync(DateTime now, CancellationToken cancellationToken)
     {
-        var domain = await _designDbContext.Domains.FirstOrDefaultAsync(x => x.Key == DomainKey, cancellationToken);
+        var domain = await _dbContext.Domains.FirstOrDefaultAsync(x => x.Key == DomainKey, cancellationToken);
 
         if (domain is null)
         {
-            _designDbContext.Domains.Add(new DomainEntity
+            _dbContext.Domains.Add(new DomainEntity
             {
                 Id = DomainId,
                 Key = DomainKey,
@@ -241,7 +208,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         DateTime now,
         CancellationToken cancellationToken)
     {
-        var definition = await _designDbContext.OrchestrationDefinitions.FirstOrDefaultAsync(
+        var definition = await _dbContext.OrchestrationDefinitions.FirstOrDefaultAsync(
             x => x.Key == OrchestrationKey,
             cancellationToken);
 
@@ -263,7 +230,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Tags = ["demo", "sales", "happy-path"]
             };
 
-            _designDbContext.OrchestrationDefinitions.Add(definition);
+            _dbContext.OrchestrationDefinitions.Add(definition);
             return definition;
         }
 
@@ -288,7 +255,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         CancellationToken cancellationToken)
     {
         var version = seedDefinition.Version.ToString();
-        var versionEntity = await _designDbContext.OrchestrationVersions.FirstOrDefaultAsync(
+        var versionEntity = await _dbContext.OrchestrationVersions.FirstOrDefaultAsync(
             x => x.OrchestrationDefinitionId == definitionId && x.Version == version,
             cancellationToken);
 
@@ -310,7 +277,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 ApprovedBy = CreatedBy
             };
 
-            _designDbContext.OrchestrationVersions.Add(versionEntity);
+            _dbContext.OrchestrationVersions.Add(versionEntity);
         }
         else
         {
@@ -339,7 +306,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         DesignHostSeedDefinition seedDefinition,
         CancellationToken cancellationToken)
     {
-        var trigger = await _designDbContext.TriggerBindings.FirstOrDefaultAsync(
+        var trigger = await _dbContext.TriggerBindings.FirstOrDefaultAsync(
             x => x.OrchestrationVersionId == versionId && x.Key == "sale-created",
             cancellationToken);
 
@@ -362,7 +329,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
 
         if (trigger is null)
         {
-            _designDbContext.TriggerBindings.Add(new TriggerBindingEntity
+            _dbContext.TriggerBindings.Add(new TriggerBindingEntity
             {
                 Id = seedDefinition.TriggerId,
                 OrchestrationVersionId = versionId,
@@ -388,7 +355,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         DesignHostSeedStageDefinition seedStage,
         CancellationToken cancellationToken)
     {
-        var stage = await _designDbContext.StageDefinitions.FirstOrDefaultAsync(
+        var stage = await _dbContext.StageDefinitions.FirstOrDefaultAsync(
             x => x.OrchestrationVersionId == versionId && x.Key == seedStage.Key,
             cancellationToken);
 
@@ -405,7 +372,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 ExecutionCondition = DisabledCondition()
             };
 
-            _designDbContext.StageDefinitions.Add(stage);
+            _dbContext.StageDefinitions.Add(stage);
         }
         else
         {
@@ -427,7 +394,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         DesignHostSeedTaskDefinition seedTask,
         CancellationToken cancellationToken)
     {
-        var task = await _designDbContext.TaskDefinitions.FirstOrDefaultAsync(
+        var task = await _dbContext.TaskDefinitions.FirstOrDefaultAsync(
             x => x.StageDefinitionId == stageId && x.Key == seedTask.Key,
             cancellationToken);
 
@@ -441,7 +408,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
 
         if (task is null)
         {
-            _designDbContext.TaskDefinitions.Add(new TaskDefinitionEntity
+            _dbContext.TaskDefinitions.Add(new TaskDefinitionEntity
             {
                 Id = seedTask.Id,
                 StageDefinitionId = stageId,

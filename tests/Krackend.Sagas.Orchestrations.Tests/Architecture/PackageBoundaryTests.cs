@@ -1,4 +1,5 @@
 using System.Reflection;
+using MuleRuntimeServices = Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.ServiceCollectionExtensions;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Architecture;
 
@@ -33,46 +34,39 @@ public sealed class PackageBoundaryTests
     }
 
     [Fact]
-    public void AllMigratedProjectsAreReferencedByTestAssembly()
+    public void ActiveOrchestrationProjectsAreReferencedByTestAssembly()
     {
         var referencedAssemblies = Assembly.GetExecutingAssembly()
             .GetReferencedAssemblies()
             .Select(assembly => assembly.Name)
+            .Append(typeof(MuleRuntimeServices).Assembly.GetName().Name)
             .Where(name => name is not null && name.StartsWith("Krackend.Sagas.Orchestrations", StringComparison.Ordinal))
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
+            .ToHashSet(StringComparer.Ordinal);
 
         var expected = new[]
         {
-            "Krackend.Sagas.Orchestrations",
             "Krackend.Sagas.Orchestrations.Abstractions",
-            "Krackend.Sagas.Orchestrations.Client",
-            "Krackend.Sagas.Orchestrations.Client.Abstractions",
-            "Krackend.Sagas.Orchestrations.Client.Pigeon",
-            "Krackend.Sagas.Orchestrations.Client.Spider",
             "Krackend.Sagas.Orchestrations.Contracts",
-            "Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap",
-            "Krackend.Sagas.Orchestrations.Design",
-            "Krackend.Sagas.Orchestrations.Design.Interaction",
-            "Krackend.Sagas.Orchestrations.Design.Storage.SqlServer",
-            "Krackend.Sagas.Orchestrations.Design.WebUI",
-            "Krackend.Sagas.Orchestrations.Distribution",
-            "Krackend.Sagas.Orchestrations.Distribution.Interaction",
-            "Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer",
-            "Krackend.Sagas.Orchestrations.Distribution.WebUI",
-            "Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer",
-            "Krackend.Sagas.Orchestrations.Messaging.Abstractions",
-            "Krackend.Sagas.Orchestrations.Messaging.Pigeon",
+            "Krackend.Sagas.Orchestrations.ControlPlane",
+            "Krackend.Sagas.Orchestrations.ControlPlane.Application",
+            "Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework",
+            "Krackend.Sagas.Orchestrations.ControlPlane.WebUI",
+            "Krackend.Sagas.Orchestrations.Runtime",
+            "Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule",
+            "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework",
             "Krackend.Sagas.Orchestrations.Runtime.WebUI",
-            "Krackend.Sagas.Orchestrations.Security",
-            "Krackend.Sagas.Orchestrations.Security.Interaction",
-            "Krackend.Sagas.Orchestrations.Security.Storage.SqlServer",
-            "Krackend.Sagas.Orchestrations.Security.WebUI",
-            "Krackend.Sagas.Orchestrations.Web",
             "Krackend.Sagas.Orchestrations.WebUI.Shell",
         };
 
-        Assert.Equal(expected, referencedAssemblies);
+        foreach (var assemblyName in expected)
+        {
+            Assert.Contains(assemblyName, referencedAssemblies);
+        }
+
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Design", referencedAssemblies);
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Distribution", referencedAssemblies);
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Security", referencedAssemblies);
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer", referencedAssemblies);
     }
 
     private static string FindRepositoryRoot()

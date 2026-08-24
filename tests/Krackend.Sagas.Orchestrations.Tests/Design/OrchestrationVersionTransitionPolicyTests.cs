@@ -1,5 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
-using Krackend.Sagas.Orchestrations.Design.Interaction;
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Design;
 

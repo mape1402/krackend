@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <Nullable>disable</Nullable>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Description>Control-plane Razor Pages UI module for Krackend Sagas Orchestrations.</Description>
+    <PackageTags>krackend;sagas;orchestrations;control-plane;webui</PackageTags>
+    <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane.Application\Krackend.Sagas.Orchestrations.ControlPlane.Application.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="[9.0.7,10.0.0)" Condition="'$(TargetFramework)' == 'net9.0'" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="[10.0.0,11.0.0)" Condition="'$(TargetFramework)' == 'net10.0'" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="**\bin\**;**\obj\**" />
+    <EmbeddedResource Remove="**\bin\**;**\obj\**" />
+    <None Remove="**\bin\**;**\obj\**" />
+  </ItemGroup>
+</Project>

@@ -1,17 +1,17 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
-using Krackend.Sagas.Orchestrations.Design.WebUI;
-using Krackend.Sagas.Orchestrations.Distribution.WebUI;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
-using Krackend.Sagas.Orchestrations.Security.WebUI;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using Microsoft.Extensions.DependencyInjection;
-using DesignWebUiServices = Krackend.Sagas.Orchestrations.Design.WebUI.ServiceCollectionExtensions;
-using DistributionWebUiServices = Krackend.Sagas.Orchestrations.Distribution.WebUI.ServiceCollectionExtensions;
+using DesignWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ServiceCollectionExtensions;
+using DistributionWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.ServiceCollectionExtensions;
 using RuntimeWebUiServices = Krackend.Sagas.Orchestrations.Runtime.WebUI.ServiceCollectionExtensions;
-using SecurityWebUiServices = Krackend.Sagas.Orchestrations.Security.WebUI.ServiceCollectionExtensions;
+using SecurityWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.ServiceCollectionExtensions;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -40,8 +40,7 @@ public sealed class WebUINavigationTests
             item => AssertNavigation(item, "Artifacts", "OrchestratorDistribution", "/ArtifactReleases/Index", 22),
             item => AssertNavigation(item, "Releases", "OrchestratorDistribution", "/Promotions/Index", 23),
             item => AssertNavigation(item, "Teams", "OrchestratorSecurity", "/Teams/Index", 30),
-            item => AssertNavigation(item, "Instances", "OrchestratorRuntime", "/Instances/Index", 35),
-            item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 40));
+            item => AssertNavigation(item, "Runtime", "OrchestratorRuntime", "/Instances/Index", 35));
     }
 
     [Fact]
