@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddPelican(typeof(ServiceCollectionExtensions).Assembly);
         services.AddValidatorsFromAssemblyContaining<CreateOrchestrationDefinitionCommandValidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationPipelineBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(OrchestrationDraftMutationPipelineBehavior<,>));
         services.AddTransient<IDomainApplicationMapper, DomainApplicationMapper>();
         services.AddTransient<IOrchestrationDefinitionApplicationMapper, OrchestrationDefinitionApplicationMapper>();
         services.AddTransient<IOrchestrationVersionApplicationMapper, OrchestrationVersionApplicationMapper>();
@@ -38,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IParallelGroupApplicationService, ParallelGroupApplicationService>();
         services.AddScoped<IBranchRuleApplicationService, BranchRuleApplicationService>();
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
+        services.AddScoped<IOrchestrationVersionEditGuard, OrchestrationVersionEditGuard>();
         services.AddSingleton<IOrchestrationVersionTransitionPolicy, OrchestrationVersionTransitionPolicy>();
         return services;
     }

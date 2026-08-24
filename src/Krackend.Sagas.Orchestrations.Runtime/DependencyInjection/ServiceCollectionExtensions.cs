@@ -1,4 +1,6 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
@@ -55,6 +57,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IRemoteCommandDispatcher, RemoteCommandDispatcher>();
             services.TryAddScoped<IMessagingCommandSerializer, DefaultMessagingCommandSerializer>();
             services.TryAddScoped<IMessagingDispatchAdapter, DefaultMessagingDispatchAdapter>();
+            services.AddOptions<RuntimeDistributionOptions>().BindConfiguration("Runtime:Distribution");
+            services.AddOptions<ArtifactDeliverySecurityOptions>().BindConfiguration("ArtifactDelivery:Security");
+            services.TryAddSingleton<IArtifactDeliverySignatureService, DefaultArtifactDeliverySignatureService>();
+            services.TryAddSingleton<IArtifactDeliveryNonceStore, InMemoryArtifactDeliveryNonceStore>();
+            services.TryAddScoped<IArtifactDeliverySecretResolver, ConfigurationArtifactDeliverySecretResolver>();
+            services.TryAddScoped<IArtifactDeliveryHttpRequestSigner, DefaultArtifactDeliveryHttpRequestSigner>();
+            services.TryAddScoped<IControlPlaneDistributionSourceProvider, OptionsControlPlaneDistributionSourceProvider>();
+            services.TryAddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
+            services.TryAddScoped<IRuntimeArtifactDeliveryEndpointAuthenticator, RuntimeArtifactDeliveryEndpointAuthenticator>();
+            services.AddHttpClient<IControlPlaneArtifactPullService, ControlPlaneArtifactPullService>();
             services.TryAddSingleton<InMemoryRuntimeStore>();
             services.TryAddScoped<IRuntimeStorageUnitOfWork, InMemoryRuntimeStorageUnitOfWork>();
             services.TryAddScoped<IRuntimeArtifactRepository, InMemoryRuntimeArtifactRepository>();

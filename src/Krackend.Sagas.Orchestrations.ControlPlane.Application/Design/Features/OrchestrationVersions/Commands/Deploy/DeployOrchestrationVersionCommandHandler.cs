@@ -34,11 +34,6 @@ public sealed class DeployOrchestrationVersionCommandHandler : IRequestHandler<D
 
         _transitionPolicy.EnsureCanTransition(current.Status, OrchestrationVersionStatus.Deployed);
 
-        current.Status = OrchestrationVersionStatus.Deployed;
-        current.UpdatedOnUtc = DateTime.UtcNow;
-        current.UpdatedBy = request.UpdatedBy;
-
-        await _repository.Update(current, cancellationToken);
         var definition = await _definitionRepository.GetById(current.OrchestrationDefinitionId, cancellationToken);
         var versionSnapshot = await _artifactSnapshotBuilder.Build(current, cancellationToken);
         var artifactPayloadJson = OrchestrationArtifactPayloadFactory.CreatePayloadJson(definition, versionSnapshot);
@@ -54,6 +49,12 @@ public sealed class DeployOrchestrationVersionCommandHandler : IRequestHandler<D
             request.UpdatedBy,
             current.Id.ToString(),
             DateTime.UtcNow), cancellationToken);
+
+        current.Status = OrchestrationVersionStatus.Deployed;
+        current.UpdatedOnUtc = DateTime.UtcNow;
+        current.UpdatedBy = request.UpdatedBy;
+
+        await _repository.Update(current, cancellationToken);
 
         return true;
     }

@@ -94,6 +94,19 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
         return Map(x);
     }
 
+    public async Task<ReleaseTarget> GetByArtifactAndRuntimeNode(
+        Id artifactId,
+        Id runtimeNodeId,
+        CancellationToken cancellationToken = default)
+    {
+        var x = await _dbContext.ReleaseTargets.AsNoTracking()
+            .Where(y => y.ArtifactId == artifactId && y.RuntimeNodeId == runtimeNodeId)
+            .OrderByDescending(y => y.AssignedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return x is null ? null : Map(x);
+    }
+
     public async Task<IReadOnlyCollection<ReleaseAttempt>> GetAttempts(Id assignmentId, CancellationToken cancellationToken = default)
     {
         var rows = await _dbContext.ReleaseAttempts.AsNoTracking()
