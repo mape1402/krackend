@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
@@ -107,6 +108,7 @@ app.UseRouting();
 app.UseAuthorization();
 
 app.MapStaticAssets();
+app.MapOrchestratorRuntimeDistributionEndpoints();
 app.MapOrchestratorRuntimeReactiveHub();
 app.MapRazorPages()
    .WithStaticAssets();

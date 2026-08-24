@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -19,20 +21,69 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
 
         endpoints.MapGet("/distribution/runtime-nodes/{runtimeNodeId}/artifacts/pending", async (
             string runtimeNodeId,
+            HttpContext httpContext,
             IArtifactDeliveryApplicationService service,
+            IArtifactDeliveryEndpointAuthenticator authenticator,
             CancellationToken cancellationToken) =>
         {
+            var authentication = await authenticator.AuthenticateRuntimeNodeAsync(
+                httpContext.Request,
+                runtimeNodeId,
+                string.Empty,
+                cancellationToken);
+            if (!authentication.Succeeded)
+            {
+                return Results.Unauthorized();
+            }
+
             var packages = await service.GetPendingForPull(runtimeNodeId, cancellationToken);
             return Results.Ok(packages);
+        });
+
+        endpoints.MapGet("/distribution/runtime-nodes/{runtimeNodeId}/artifacts/{releaseTargetId}", async (
+            string runtimeNodeId,
+            string releaseTargetId,
+            HttpContext httpContext,
+            IArtifactDeliveryApplicationService service,
+            IArtifactDeliveryEndpointAuthenticator authenticator,
+            CancellationToken cancellationToken) =>
+        {
+            var authentication = await authenticator.AuthenticateRuntimeNodeAsync(
+                httpContext.Request,
+                runtimeNodeId,
+                string.Empty,
+                cancellationToken);
+            if (!authentication.Succeeded)
+            {
+                return Results.Unauthorized();
+            }
+
+            var package = await service.GetForPull(runtimeNodeId, releaseTargetId, cancellationToken);
+            return Results.Ok(package);
         });
 
         endpoints.MapPost("/distribution/runtime-nodes/{runtimeNodeId}/artifacts/{releaseTargetId}/ack", async (
             string runtimeNodeId,
             string releaseTargetId,
-            RuntimeArtifactPullAckRequest request,
+            HttpContext httpContext,
             IArtifactDeliveryApplicationService service,
+            IArtifactDeliveryEndpointAuthenticator authenticator,
             CancellationToken cancellationToken) =>
         {
+            var body = await ReadBody(httpContext.Request);
+            var authentication = await authenticator.AuthenticateRuntimeNodeAsync(
+                httpContext.Request,
+                runtimeNodeId,
+                body,
+                cancellationToken);
+            if (!authentication.Succeeded)
+            {
+                return Results.Unauthorized();
+            }
+
+            var request = JsonSerializer.Deserialize<RuntimeArtifactPullAckRequest>(
+                body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             var result = await service.AcknowledgePull(
                 runtimeNodeId,
                 releaseTargetId,
@@ -43,5 +94,11 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
         });
 
         return endpoints;
+    }
+
+    private static async Task<string> ReadBody(HttpRequest request)
+    {
+        using var reader = new StreamReader(request.Body);
+        return await reader.ReadToEndAsync();
     }
 }
