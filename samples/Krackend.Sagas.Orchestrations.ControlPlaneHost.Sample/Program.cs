@@ -1,10 +1,8 @@
 using System.Text.Json;
-using Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap;
 using Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Bootstrap;
-using Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.Infrastructure;
-using Krackend.Sagas.Orchestrations.Distribution.Interaction;
-using Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer.Infrastructure;
-using Krackend.Sagas.Orchestrations.Security.Storage.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +30,7 @@ builder.Services.AddHealthChecks()
 builder.Services.AddOrchestratorControlPlane(options =>
 {
     options.AdminRootPath = adminRootPath;
-    options.ConfigureSqlServer = db => db.UseSqlServer(
+    options.ConfigureStorage = db => db.UseSqlServer(
         sqlConnection,
         sql => sql.MigrationsAssembly(migrationsAssembly));
 });
@@ -42,13 +40,9 @@ var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    var designDbContext = scope.ServiceProvider.GetRequiredService<DesignStorageDbContext>();
-    var distributionDbContext = scope.ServiceProvider.GetRequiredService<DistributionStorageDbContext>();
-    var securityDbContext = scope.ServiceProvider.GetRequiredService<SecurityStorageDbContext>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
 
-    await securityDbContext.Database.MigrateAsync();
-    await designDbContext.Database.MigrateAsync();
-    await distributionDbContext.Database.MigrateAsync();
+    await dbContext.Database.MigrateAsync();
 
     var seedDataSeeder = scope.ServiceProvider.GetRequiredService<IDesignHostSeedDataSeeder>();
     await seedDataSeeder.SeedAsync();

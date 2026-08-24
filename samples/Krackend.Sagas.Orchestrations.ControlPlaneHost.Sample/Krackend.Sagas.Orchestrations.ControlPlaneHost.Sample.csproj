@@ -18,13 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap\Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.Interaction\Krackend.Sagas.Orchestrations.Design.Interaction.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.Storage.SqlServer\Krackend.Sagas.Orchestrations.Design.Storage.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Design.WebUI\Krackend.Sagas.Orchestrations.Design.WebUI.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.Interaction\Krackend.Sagas.Orchestrations.Distribution.Interaction.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer\Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Distribution.WebUI\Krackend.Sagas.Orchestrations.Distribution.WebUI.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Application\Krackend.Sagas.Orchestrations.ControlPlane.Application.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.WebUI\Krackend.Sagas.Orchestrations.ControlPlane.WebUI.csproj" />
   </ItemGroup>
 
 </Project>

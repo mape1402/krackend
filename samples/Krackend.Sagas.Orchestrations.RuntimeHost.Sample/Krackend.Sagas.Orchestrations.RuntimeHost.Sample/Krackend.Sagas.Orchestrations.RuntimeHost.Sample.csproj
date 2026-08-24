@@ -28,7 +28,7 @@
     <PackageReference Include="Pigeon.Messaging.Rabbit" Version="2.8.0" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
-    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer\Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />
   </ItemGroup>

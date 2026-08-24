@@ -1,46 +1,50 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
-using Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer;
-using Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Mule;
+using Mule.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Tests.EntityFrameworkCore;
 
 public sealed class SqlServerRegistrationTests
 {
     [Fact]
-    public void SqlServerAdapterRegistersRuntimeRepositories()
+    public void RuntimeEntityFrameworkStorageRegistersRuntimeRepositories()
     {
         var services = new ServiceCollection();
 
-        services.AddKrackendSagasOrchestrationsSqlServer(_ => { });
+        services.AddOrchestratorRuntimeStorageEntityFramework(_ => { });
 
-        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IRuntimeArtifactCatalog));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(RuntimeDbContext));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IRuntimeArtifactRepository));
-        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITriggerIntakeRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IOrchestrationInstanceRepository));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IStageExecutionRepository));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITaskExecutionRepository));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITaskExecutionAttemptRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITaskDispatchRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ICompensationExecutionRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IExecutionTransitionRepository));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IRuntimeIngressConfigurationRepository));
     }
 
     [Fact]
-    public void RuntimeArtifactCatalogUsesPagedActiveDeploymentQuery()
+    public void RuntimeArtifactRepositoryQueriesArtifactsFromUnifiedRuntimeStorage()
     {
         var source = File.ReadAllText(Path.Combine(
             FindRepositoryRoot(),
             "src",
-            "Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer",
+            "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework",
             "Repositories",
-            "EfCoreRuntimeArtifactCatalog.cs"));
+            "RuntimeArtifactRepository.cs"));
 
-        Assert.Contains("ReadActiveDeployments", source);
-        Assert.Contains(".Where(x => x.IsActive && x.ArtifactType == DeployArtifactType)", source);
-        Assert.Contains(".Skip(offset)", source);
-        Assert.Contains(".Take(pageSize + 1)", source);
-        Assert.DoesNotContain("EnvironmentKey", source);
-        Assert.DoesNotContain("GetAll", source);
+        Assert.Contains("GetActive", source);
+        Assert.Contains("GetByVersion", source);
+        Assert.Contains("DbContext.RuntimeOrchestrationArtifacts", source);
+        Assert.Contains("x.EnvironmentKey == environmentKey", source);
+        Assert.Contains("x.OrchestrationDefinitionKey == orchestrationDefinitionKey", source);
     }
 
     [Fact]
@@ -48,13 +52,13 @@ public sealed class SqlServerRegistrationTests
     {
         var services = new ServiceCollection();
 
-        services.AddKrackendSagasOrchestrationsSqlServer(options =>
+        services.AddOrchestratorRuntimeStorageEntityFramework(options =>
             options.UseSqlServer("Server=(local);Database=KrackendTests;Trusted_Connection=True;TrustServerCertificate=True"));
-        services.AddMule(mule => mule.UseKrackendSagasOrchestrationsRuntimeStorage());
+        services.AddMule(mule => mule.UseEntityFrameworkCore<RuntimeDbContext>());
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeStorageDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
 
         Assert.NotNull(dbContext.Model.FindEntityType(typeof(DurableAction)));
     }
