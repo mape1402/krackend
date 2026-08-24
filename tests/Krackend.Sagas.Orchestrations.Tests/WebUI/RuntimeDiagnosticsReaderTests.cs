@@ -1,9 +1,13 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -58,6 +62,7 @@ public sealed class RuntimeDiagnosticsReaderTests
     private static RuntimeDiagnosticsReader CreateReader(RuntimeDiagnosticsStore store)
     {
         return new RuntimeDiagnosticsReader(
+            new ArtifactRepositoryStub(store),
             new InstanceRepositoryStub(store),
             new StageRepositoryStub(store),
             new TaskRepositoryStub(store),
@@ -65,11 +70,14 @@ public sealed class RuntimeDiagnosticsReaderTests
             new DispatchRepositoryStub(store),
             new CompensationRepositoryStub(store),
             new TransitionRepositoryStub(store),
-            new RuntimeEnvironmentDescriptor("local"));
+            Options.Create(new OrchestratorRuntimeWebUIOptions { EnvironmentKey = "local" }));
     }
 
     private sealed class RuntimeDiagnosticsStore
     {
+        private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
+        public required RuntimeOrchestrationArtifact Artifact { get; init; }
         public required OrchestrationInstance Instance { get; init; }
         public required StageExecution Stage { get; init; }
         public required TaskExecution Task { get; init; }
@@ -82,20 +90,38 @@ public sealed class RuntimeDiagnosticsReaderTests
         public static RuntimeDiagnosticsStore Create()
         {
             var instanceId = Id.New();
+            var artifactId = Id.New();
             var stageId = Id.New();
             var taskId = Id.New();
             var attemptId = Id.New();
             var dispatchId = Id.New();
             var started = new DateTime(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
+            var artifact = BuildArtifact(stageId, taskId);
 
             return new RuntimeDiagnosticsStore
             {
+                Artifact = new RuntimeOrchestrationArtifact
+                {
+                    Id = artifactId,
+                    EnvironmentKey = "local",
+                    OrchestrationDefinitionKey = artifact.Key,
+                    ArtifactType = "orchestration-version-snapshot",
+                    SourceOrchestrationVersionId = artifact.OrchestrationVersionId,
+                    Version = artifact.Version,
+                    ArtifactChecksum = artifact.Checksum,
+                    ArtifactPayload = JsonSerializer.SerializeToNode(artifact, SerializerOptions)!,
+                    IsActive = true,
+                    LoadedToCache = true,
+                    DeployedOnUtc = started.AddMinutes(-1),
+                    ActivatedOnUtc = started.AddMinutes(-1),
+                    Notes = "Runtime diagnostics test artifact."
+                },
                 Instance = new OrchestrationInstance
                 {
                     Id = instanceId,
                     EnvironmentKey = "local",
                     OrchestrationDefinitionKey = "orders",
-                    RuntimeOrchestrationArtifactId = Id.New(),
+                    RuntimeOrchestrationArtifactId = artifactId,
                     TriggerIntakeId = Id.New(),
                     CorrelationId = "corr-123",
                     ExecutionKey = "orders:corr-123",
@@ -197,6 +223,114 @@ public sealed class RuntimeDiagnosticsReaderTests
                 }
             };
         }
+
+        private static OrchestrationArtifact BuildArtifact(Id stageId, Id taskId)
+        {
+            var version = new SemanticVersion(1, 0, 0);
+            var schemaBinding = new SchemaBindingArtifact(
+                taskId,
+                ElementType.Task,
+                stageId,
+                taskId,
+                "orders.reserve",
+                version,
+                Id.New(),
+                false)
+            {
+                IsValidationEnabled = false
+            };
+
+            var configuration = new MessagingTaskConfigurationArtifact("orders.reserve", version, schemaBinding);
+
+            return new OrchestrationArtifact(
+                Id.New(),
+                Id.New(),
+                "orders",
+                "Orders",
+                "sales",
+                version,
+                new Checksum("test"),
+                [],
+                [],
+                [
+                    new StageArtifact(
+                        stageId,
+                        "reserve-stock",
+                        "Reserve stock",
+                        1,
+                        DisabledCondition(),
+                        [
+                            new TaskArtifact(
+                                taskId,
+                                "reserve",
+                                "Reserve inventory",
+                                1,
+                                string.Empty,
+                                TaskKind.Messaging,
+                                TaskExecutionMode.Sequential,
+                                null,
+                                DisabledCondition(),
+                                DisabledTransformation(),
+                                configuration,
+                                DefaultRetryPolicy(),
+                                DefaultTimeoutPolicy(),
+                                OnErrorPolicy.StopAndCompensate,
+                                DefaultCompensation(configuration),
+                                TaskDispatchType.FireAndWaitCallback,
+                                true)
+                        ],
+                        [],
+                        [],
+                        "Reserve inventory before charging the order.")
+                ],
+                "Test artifact.");
+        }
+
+        private static ExecutionConditionArtifact DisabledCondition()
+            => new(EngineType.DSL, new DslConditionConfigurationArtifact(new Expression("true")))
+            {
+                IsEnabled = false
+            };
+
+        private static TransformationArtifact DisabledTransformation()
+            => new(EngineType.DSL, new DslTransformationConfigurationArtifact())
+            {
+                IsEnabled = false
+            };
+
+        private static RetryPolicyArtifact DefaultRetryPolicy()
+            => new(
+                0,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                [],
+                true);
+
+        private static TimeoutPolicyArtifact DefaultTimeoutPolicy()
+            => new(
+                Duration.FromMinutes(5),
+                TimeoutBehavior.Fail,
+                new FailTimeoutBehaviorPolicyArtifact("TASK_TIMEOUT"));
+
+        private static CompensationArtifact DefaultCompensation(ITaskConfigurationArtifact configuration)
+            => new(
+                TaskKind.Messaging,
+                DisabledTransformation(),
+                DisabledCondition(),
+                configuration,
+                DefaultRetryPolicy(),
+                DefaultTimeoutPolicy(),
+                TaskDispatchType.FireAndForget);
+    }
+
+    private sealed class ArtifactRepositoryStub(RuntimeDiagnosticsStore store) : IRuntimeArtifactRepository
+    {
+        public Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
+        public Task<RuntimeOrchestrationArtifact> GetByVersion(string environmentKey, string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
+        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(string environmentKey, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
+        public Task<RuntimeOrchestrationArtifact> GetActive(string environmentKey, string orchestrationDefinitionKey, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
     }
 
     private sealed class InstanceRepositoryStub(RuntimeDiagnosticsStore store) : IOrchestrationInstanceRepository
@@ -244,8 +378,8 @@ public sealed class RuntimeDiagnosticsReaderTests
     {
         public Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(TaskDispatch dispatch, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string? externalReference = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MarkFailed(Id dispatchId, string failureReason, string? externalReference = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<TaskDispatch> GetById(Id dispatchId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
         public Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);
         public Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default) => Task.FromResult(store.Dispatch);

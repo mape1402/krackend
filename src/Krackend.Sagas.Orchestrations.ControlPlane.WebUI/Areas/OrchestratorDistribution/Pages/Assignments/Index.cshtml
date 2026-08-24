@@ -1,0 +1,24 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Assignments.IndexModel
+@{ ViewData["Title"] = "Assignments"; }
+<h1>Assignments</h1>
+<section class="od-panel mb-3">
+<table class="table table-sm"><thead><tr><th>Id</th><th>Runtime</th><th>Release</th><th>Status</th><th>Activation</th><th></th></tr></thead><tbody>
+@foreach (var item in Model.Rows) {
+<tr>
+<td>@item.Id</td><td>@item.RuntimeNodeId</td><td>@item.ArtifactId</td><td>@item.Status</td><td>@item.ActivationStatus</td>
+<td><a class="btn btn-sm btn-outline-secondary" asp-page="/Assignments/Index" asp-route-assignmentId="@item.Id" asp-area="OrchestratorDistribution">Attempts</a></td>
+</tr>
+}
+</tbody></table>
+</section>
+@if (Model.Attempts.Any())
+{
+<section class="od-panel">
+<h3>Attempts for @Model.AssignmentId</h3>
+<table class="table table-sm"><thead><tr><th>Action</th><th>By</th><th>Start</th><th>Success</th><th>Error</th></tr></thead><tbody>
+@foreach (var attempt in Model.Attempts){ <tr><td>@attempt.Action</td><td>@attempt.InitiatedBy</td><td>@attempt.StartedAtUtc</td><td>@attempt.Succeeded</td><td>@attempt.ErrorMessage</td></tr> }
+</tbody></table>
+</section>
+}
+

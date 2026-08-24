@@ -1,26 +1,26 @@
-using Krackend.Sagas.Orchestrations;
 using Krackend.Sagas.Orchestrations.Abstractions;
-using Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer;
-using Krackend.Sagas.Orchestrations.Messaging.Abstractions;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
 
 namespace Krackend.Sagas.Orchestrations.Tests;
 
 public sealed class PackageSkeletonTests
 {
     [Fact]
-    public void MarkerTypesResolveFromExpectedAssemblies()
+    public void RepresentativeTypesResolveFromExpectedAssemblies()
     {
         Assert.Equal(
             "Krackend.Sagas.Orchestrations.Abstractions",
             typeof(OrchestrationAbstractionsMarker).Assembly.GetName().Name);
         Assert.Equal(
-            "Krackend.Sagas.Orchestrations.Messaging.Abstractions",
-            typeof(MessagingAbstractionsMarker).Assembly.GetName().Name);
+            "Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework",
+            typeof(ControlPlaneDbContext).Assembly.GetName().Name);
         Assert.Equal(
-            "Krackend.Sagas.Orchestrations",
-            typeof(OrchestrationsMarker).Assembly.GetName().Name);
+            "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework",
+            typeof(RuntimeDbContext).Assembly.GetName().Name);
         Assert.Equal(
-            "Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer",
-            typeof(OrchestrationsSqlServerMarker).Assembly.GetName().Name);
+            "Krackend.Sagas.Orchestrations.Runtime.WebUI",
+            typeof(RuntimeDiagnosticsReader).Assembly.GetName().Name);
     }
 }

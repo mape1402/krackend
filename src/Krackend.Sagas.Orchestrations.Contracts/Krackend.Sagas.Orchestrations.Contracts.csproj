@@ -5,8 +5,8 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>
     <PackageId>Krackend.Sagas.Orchestrations.Contracts</PackageId>
-    <Description>Shared integration contracts for Krackend saga orchestration control plane modules.</Description>
-    <PackageTags>saga;orchestration;contracts;events;dotnet</PackageTags>
+    <Description>Shared contracts for Krackend saga orchestration modules.</Description>
+    <PackageTags>saga;orchestration;contracts;dotnet</PackageTags>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
 </Project>
