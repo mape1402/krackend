@@ -158,9 +158,121 @@
     border-color: #d3dbef;
 }
 
+.od-status-muted {
+    color: #55607c;
+    background: #ecf0fa;
+    border-color: #d3dbef;
+}
+
+.od-status-completed {
+    color: #0e7a4d;
+    background: #e6f7ef;
+    border-color: #bde9d2;
+}
+
 .od-empty {
     color: var(--od-muted);
     margin: 0;
+}
+
+.od-runtime-management-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.od-design-node-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.od-design-node-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.85rem;
+    align-items: start;
+    padding: 0.8rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    background: var(--od-surface-2);
+}
+
+.od-design-node-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.2rem;
+}
+
+.od-design-node-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+
+.od-compact-form .form-label {
+    color: var(--od-muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+}
+
+.od-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+}
+
+.od-pending-release-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem;
+}
+
+.od-pending-release-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.85rem;
+    min-height: 210px;
+    padding: 0.85rem;
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    background: var(--od-surface-2);
+}
+
+.od-pending-release-card h3 {
+    margin: 0 0 0.35rem;
+    color: var(--od-text);
+    font-size: 1rem;
+    line-height: 1.25;
+    font-weight: 700;
+}
+
+.od-inline-form {
+    display: inline-flex;
+    margin: 0;
+}
+
+@media (max-width: 1100px) {
+    .od-runtime-management-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .od-design-node-item {
+        grid-template-columns: 1fr;
+    }
+
+    .od-design-node-actions {
+        justify-content: flex-start;
+    }
 }
 
 .btn-primary {

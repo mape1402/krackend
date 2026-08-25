@@ -87,16 +87,6 @@
     </div>
 </div>
 
-@if (!ViewContext.ModelState.IsValid && !string.IsNullOrWhiteSpace(Model.OrchestrationId))
-{
-    <div class="alert alert-danger">
-        @foreach (var error in ViewContext.ModelState.Values.SelectMany(x => x.Errors))
-        {
-            <div>@error.ErrorMessage</div>
-        }
-    </div>
-}
-
 <section class="od-release-split">
     <aside class="od-list-shell od-release-left">
         @if (!Model.Orchestrations.Any())
@@ -156,15 +146,15 @@
                                 <p class="od-item-meta od-release-id">@item.Id</p>
                             </div>
                             <div class="od-chip-row">
-                                <span class="od-meta-chip">Artifact: @(artifact is null ? "N/A" : $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "N/A" : artifact.VersionLabel)}")</span>
+                                <span class="od-meta-chip">Artifact: @(artifact is null ? "No artifact linked" : $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}")</span>
                                 <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
                             </div>
                             <div class="od-release-stages">
                                 @foreach (var target in item.Targets.OrderBy(x => x.CreatedAtUtc))
                                 {
                                     var nodeName = target.RuntimeNodeId;
-                                    var nodeCode = "N/A";
-                                    var nodeMode = "N/A";
+                                    var nodeCode = "Unknown code";
+                                    var nodeMode = "Unknown mode";
                                     if (runtimeNodesById.TryGetValue(target.RuntimeNodeId, out var runtimeNode))
                                     {
                                         nodeName = runtimeNode.Name;
@@ -189,7 +179,10 @@
                                                   data-confirm-title="Promote artifact"
                                                   data-confirm-message="Push this artifact to @nodeName?"
                                                   data-confirm-accept="Push"
-                                                  data-confirm-type="warning">
+                                                  data-confirm-type="warning"
+                                                  data-orchestrator-busy="true"
+                                                  data-busy-title="Promoting artifact"
+                                                  data-busy-message="Distribution is sending the artifact to the selected runtime node.">
                                                 <input type="hidden" name="releaseTargetId" value="@releaseTarget.Id" />
                                                 <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                 <button type="submit" class="btn btn-sm btn-primary w-100">Push</button>
@@ -226,7 +219,7 @@
     <div class="modal fade" id="createReleaseModal" tabindex="-1" aria-labelledby="createReleaseModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <form method="post" asp-page-handler="Create">
+                <form method="post" asp-page-handler="Create" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Creating release" data-busy-message="Distribution is creating the release and resolving the runtime targets.">
                     <div class="modal-header">
                         <h5 class="modal-title" id="createReleaseModalLabel">Create release</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -245,7 +238,7 @@
                                     {
                                         <option value="@artifact.Id"
                                                 data-orchestration-id="@artifact.OrchestrationDefinitionId">
-                                            @artifact.OrchestrationDisplayName - @artifact.ArtifactType, @artifact.VersionNumber - @(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "N/A" : artifact.VersionLabel)
+                                            @artifact.OrchestrationDisplayName - @artifact.ArtifactType, @artifact.VersionNumber - @(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)
                                         </option>
                                     }
                                 </select>
@@ -298,7 +291,7 @@
 <div class="modal fade" id="allowedNodesModal" tabindex="-1" aria-labelledby="allowedNodesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form method="post" asp-page-handler="SaveAllowedNodes">
+            <form method="post" asp-page-handler="SaveAllowedNodes" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving policy" data-busy-message="Distribution is saving the runtime node policy for this orchestration.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="allowedNodesModalLabel">Allowed nodes</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -528,7 +521,7 @@
         const artifact = artifactById.get(release.artifactId);
         releaseDetailsOrchestrationNameElement.textContent = artifact?.orchestrationDisplayName || 'Release';
         releaseDetailsReleaseIdElement.textContent = `ReleaseId: ${release.id}`;
-        releaseDetailsArtifactElement.textContent = `Artifact: ${artifact ? `${artifact.versionNumber} - ${artifact.versionLabel || 'N/A'}` : 'N/A'}`;
+        releaseDetailsArtifactElement.textContent = `Artifact: ${artifact ? `${artifact.versionNumber} - ${artifact.versionLabel || 'Unlabeled'}` : 'No artifact linked'}`;
         releaseDetailsCreatedElement.textContent = `Created: ${release.createdAtUtc?.replace('T', ' ').slice(0, 16) || ''}`;
 
         const targets = Array.isArray(release.targets) ? [...release.targets] : [];
@@ -543,7 +536,7 @@
 
         releaseDetailsTargetsElement.innerHTML = targets.map(target => {
             const node = runtimeNodeById.get(target.runtimeNodeId);
-            const mode = node?.distributionMode || 'N/A';
+            const mode = node?.distributionMode || 'Unknown mode';
             const releaseTarget = releaseTargetsByReleaseAndNode[`${release.id}|${target.runtimeNodeId}`];
             const actualStatus = releaseTarget?.status || target.status;
             const statusVariant = getStatusVariant(actualStatus);

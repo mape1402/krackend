@@ -49,7 +49,7 @@ else
                                     </li>
                                     <li><hr class="dropdown-divider" /></li>
                                     <li>
-                                        <form method="post" asp-page-handler="SetIsActive" class="od-inline-form">
+                                        <form method="post" asp-page-handler="SetIsActive" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating domain" data-busy-message="Design is applying the domain status change.">
                                             <input type="hidden" name="domainId" value="@item.Id" />
                                             <input type="hidden" name="isActive" value="@(item.IsActive ? "false" : "true")" />
                                             <button type="submit" class="dropdown-item">@(item.IsActive ? "Disable domain" : "Enable domain")</button>
@@ -69,7 +69,7 @@ else
 <div class="modal fade" id="domainModal" tabindex="-1" aria-labelledby="domainModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert">
+            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving domain" data-busy-message="Design is validating and storing the domain.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="domainModalLabel">Create domain</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -78,7 +78,7 @@ else
                     <input asp-for="Input.DomainId" type="hidden" id="domainIdInput" />
                     <div class="mb-2">
                         <label asp-for="Input.Key" class="form-label"></label>
-                        <input asp-for="Input.Key" class="form-control" id="domainKeyInput" />
+                        <input asp-for="Input.Key" class="form-control" id="domainKeyInput" data-orchestrator-key="true" />
                     </div>
                     <div class="mb-2">
                         <label asp-for="Input.DisplayName" class="form-label"></label>

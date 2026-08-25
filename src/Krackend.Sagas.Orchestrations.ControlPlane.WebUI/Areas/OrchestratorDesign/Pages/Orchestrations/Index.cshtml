@@ -12,11 +12,6 @@
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrchestrationModal">Create orchestration</button>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-}
-
 @if (!Model.Rows.Any())
 {
     <section class="od-panel">
@@ -60,7 +55,7 @@ else
                                     </li>
                                     <li><hr class="dropdown-divider" /></li>
                                     <li>
-                                        <form method="post" asp-page-handler="@(item.IsActive ? "SetInactive" : "SetActive")" class="od-inline-form">
+                                        <form method="post" asp-page-handler="@(item.IsActive ? "SetInactive" : "SetActive")" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating orchestration" data-busy-message="Design is applying the orchestration status change.">
                                             <input type="hidden" name="orchestrationId" value="@item.Id" />
                                             <button type="submit" class="dropdown-item">@(item.IsActive ? "Set inactive" : "Set active")</button>
                                         </form>
@@ -100,7 +95,7 @@ else
 <div class="modal fade" id="createOrchestrationModal" tabindex="-1" aria-labelledby="createOrchestrationModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert">
+            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving orchestration" data-busy-message="Design is validating and storing the orchestration.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="createOrchestrationModalLabel">Create orchestration</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -111,7 +106,7 @@ else
                     <div class="row g-3">
                         <div class="col-md-6 position-relative">
                             <label asp-for="NewOrchestration.Key" class="form-label"></label>
-                            <input asp-for="NewOrchestration.Key" class="form-control" id="orchestrationModalKey" />
+                            <input asp-for="NewOrchestration.Key" class="form-control" id="orchestrationModalKey" data-orchestrator-key="true" />
                         </div>
                         <div class="col-md-6">
                             <label asp-for="NewOrchestration.Name" class="form-label"></label>
@@ -140,7 +135,7 @@ else
                             <input asp-for="NewOrchestration.Tags" type="hidden" id="orchestrationModalTagsHidden" />
                             <div class="od-chip-editor" data-chip-editor-for="orchestrationModalTagsHidden">
                                 <div class="od-chip-list"></div>
-                                <input type="text" class="od-chip-input" placeholder="billing + Enter" />
+                                <input type="text" class="od-chip-input" placeholder="Tag + Enter" />
                             </div>
                         </div>
                     </div>

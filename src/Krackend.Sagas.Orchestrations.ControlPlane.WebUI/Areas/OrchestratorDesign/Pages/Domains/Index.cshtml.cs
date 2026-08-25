@@ -50,11 +50,17 @@ public sealed class IndexModel : PageModel
     /// <returns>Redirect result.</returns>
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
     {
+        if (!ModelState.IsValid)
+        {
+            await OnGetAsync(cancellationToken);
+            return Page();
+        }
+
         await _service.Upsert(new UpsertDomainCommand(
             Input.DomainId,
-            Input.Key,
-            Input.DisplayName,
-            Input.Description), cancellationToken);
+            Input.Key.Trim(),
+            Input.DisplayName.Trim(),
+            Input.Description?.Trim() ?? string.Empty), cancellationToken);
 
         return RedirectToPage();
     }
@@ -87,6 +93,7 @@ public sealed class IndexModel : PageModel
         /// </summary>
         [Required]
         [MaxLength(128)]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
         [Display(Name = "Key")]
         public string Key { get; set; } = string.Empty;
 

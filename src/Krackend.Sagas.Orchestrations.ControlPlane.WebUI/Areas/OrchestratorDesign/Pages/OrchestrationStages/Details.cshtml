@@ -20,10 +20,6 @@
     </div>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-}
 @if (!Model.CanEdit)
 {
     <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
@@ -134,7 +130,7 @@
                                                 </li>
                                                 <li><hr class="dropdown-divider" /></li>
                                                 <li>
-                                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form">
+                                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
                                                         <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                         <input type="hidden" name="versionId" value="@Model.VersionId" />
                                                         <input type="hidden" name="stageId" value="@Model.StageId" />
@@ -202,7 +198,7 @@
                                 </li>
                                 <li><hr class="dropdown-divider" /></li>
                                 <li>
-                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form">
+                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
                                         <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                         <input type="hidden" name="versionId" value="@Model.VersionId" />
                                         <input type="hidden" name="stageId" value="@Model.StageId" />
@@ -255,7 +251,7 @@
 
                     <div class="task-condition-config-block col-12" data-engine="DSL">
                         <label class="form-label" for="taskConditionDslExpressionQuick">DSL expression</label>
-                        <input class="form-control" id="taskConditionDslExpressionQuick" placeholder="true" />
+                        <input class="form-control" id="taskConditionDslExpressionQuick" />
                     </div>
                 </div>
 
@@ -345,7 +341,7 @@
 <div class="modal fade" id="newTaskModal" tabindex="-1" aria-labelledby="newTaskModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl od-task-modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-page-handler="CreateTask" class="od-task-modal-form">
+            <form method="post" asp-page-handler="CreateTask" class="od-task-modal-form" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving task" data-busy-message="Design is validating and storing the task definition.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="newTaskModalLabel">Create task</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -401,7 +397,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label asp-for="NewTask.HttpExpectedStatusCodes" class="form-label">Expected status codes</label>
-                                        <input asp-for="NewTask.HttpExpectedStatusCodes" class="form-control" placeholder="200,202" />
+                                        <input asp-for="NewTask.HttpExpectedStatusCodes" class="form-control" data-orchestrator-status-codes="true" />
                                     </div>
                                     <div class="col-md-12 form-check mt-3 ms-2">
                                         <input asp-for="NewTask.HttpAllowSyncResponse" class="form-check-input" />
@@ -421,11 +417,11 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label asp-for="NewTask.HttpSchemaContractVersion" class="form-label">Contract version</label>
-                                        <input asp-for="NewTask.HttpSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                        <input asp-for="NewTask.HttpSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                     </div>
                                     <div class="col-md-4">
                                         <label asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                        <input asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                        <input asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
                                     </div>
                                     <div class="col-md-12 form-check mt-2 ms-2">
                                         <input asp-for="NewTask.HttpSchemaStrictMode" class="form-check-input" />
@@ -437,11 +433,11 @@
                                 <div class="row g-2">
                                     <div class="col-md-6">
                                         <label asp-for="NewTask.MessagingTopic" class="form-label">Topic</label>
-                                        <input asp-for="NewTask.MessagingTopic" class="form-control" />
+                                        <input asp-for="NewTask.MessagingTopic" class="form-control" data-orchestrator-key="true" />
                                     </div>
                                     <div class="col-md-6">
                                         <label asp-for="NewTask.MessagingVersion" class="form-label">Version</label>
-                                        <input asp-for="NewTask.MessagingVersion" class="form-control" placeholder="1.0.0" />
+                                        <input asp-for="NewTask.MessagingVersion" class="form-control" data-orchestrator-version="true" />
                                     </div>
                                     <div class="col-12"><hr class="my-2" /></div>
                                     <div class="col-12">
@@ -457,11 +453,11 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label asp-for="NewTask.MessagingSchemaContractVersion" class="form-label">Contract version</label>
-                                        <input asp-for="NewTask.MessagingSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                        <input asp-for="NewTask.MessagingSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                     </div>
                                     <div class="col-md-4">
                                         <label asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                        <input asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                        <input asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
                                     </div>
                                     <div class="col-md-12 form-check mt-2 ms-2">
                                         <input asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-input" />
@@ -473,7 +469,7 @@
                                 <div class="row g-2">
                                     <div class="col-md-6">
                                         <label asp-for="NewTask.PluginId" class="form-label">Plugin id</label>
-                                        <input asp-for="NewTask.PluginId" class="form-control" placeholder="ULID (optional)" />
+                                        <input asp-for="NewTask.PluginId" class="form-control" data-orchestrator-ulid="true" />
                                     </div>
                                 </div>
                             </div>
@@ -537,7 +533,7 @@
                                         <input asp-for="NewTask.RetryableErrorCodes" type="hidden" id="retryErrorCodesHidden" />
                                         <div class="od-chip-editor" data-chip-editor-for="retryErrorCodesHidden">
                                             <div class="od-chip-list"></div>
-                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                            <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
                                         </div>
                                     </div>
                                     <div class="col-md-12 form-check mt-3 ms-2">
@@ -600,7 +596,7 @@
                                         <input asp-for="NewTask.TimeoutReconcileRetryableErrorCodes" type="hidden" id="timeoutReconcileRetryableErrorCodesHidden" />
                                         <div class="od-chip-editor" data-chip-editor-for="timeoutReconcileRetryableErrorCodesHidden">
                                             <div class="od-chip-list"></div>
-                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                            <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
                                         </div>
                                     </div>
                                     <div class="col-md-12 form-check mt-2 ms-2">
@@ -646,7 +642,7 @@
                                         </div>
                                         <div class="col-md-6">
                                             <label asp-for="NewTask.CompensationHttpExpectedStatusCodes" class="form-label">Expected status codes</label>
-                                            <input asp-for="NewTask.CompensationHttpExpectedStatusCodes" class="form-control" placeholder="200,202" />
+                                            <input asp-for="NewTask.CompensationHttpExpectedStatusCodes" class="form-control" data-orchestrator-status-codes="true" />
                                         </div>
                                         <div class="col-md-12 form-check mt-3 ms-2">
                                             <input asp-for="NewTask.CompensationHttpAllowSyncResponse" class="form-check-input" />
@@ -666,11 +662,11 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-label">Contract version</label>
-                                            <input asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                            <input asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                         </div>
                                         <div class="col-md-4">
                                             <label asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                            <input asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                            <input asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
                                         </div>
                                         <div class="col-md-12 form-check mt-2 ms-2">
                                             <input asp-for="NewTask.CompensationHttpSchemaStrictMode" class="form-check-input" />
@@ -682,11 +678,11 @@
                                     <div class="row g-2">
                                         <div class="col-md-6">
                                             <label asp-for="NewTask.CompensationMessagingTopic" class="form-label">Topic</label>
-                                            <input asp-for="NewTask.CompensationMessagingTopic" class="form-control" />
+                                            <input asp-for="NewTask.CompensationMessagingTopic" class="form-control" data-orchestrator-key="true" />
                                         </div>
                                         <div class="col-md-6">
                                             <label asp-for="NewTask.CompensationMessagingVersion" class="form-label">Version</label>
-                                            <input asp-for="NewTask.CompensationMessagingVersion" class="form-control" placeholder="1.0.0" />
+                                            <input asp-for="NewTask.CompensationMessagingVersion" class="form-control" data-orchestrator-version="true" />
                                         </div>
                                         <div class="col-12"><hr class="my-2" /></div>
                                         <div class="col-12">
@@ -702,11 +698,11 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-label">Contract version</label>
-                                            <input asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                            <input asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                         </div>
                                         <div class="col-md-4">
                                             <label asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                            <input asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                            <input asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
                                         </div>
                                         <div class="col-md-12 form-check mt-2 ms-2">
                                             <input asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-input" />
@@ -718,7 +714,7 @@
                                     <div class="row g-2">
                                         <div class="col-md-6">
                                             <label asp-for="NewTask.CompensationPluginId" class="form-label">Plugin id</label>
-                                            <input asp-for="NewTask.CompensationPluginId" class="form-control" placeholder="ULID (optional)" />
+                                            <input asp-for="NewTask.CompensationPluginId" class="form-control" data-orchestrator-ulid="true" />
                                         </div>
                                     </div>
                                 </div>
@@ -783,7 +779,7 @@
                                         <input asp-for="NewTask.CompensationRetryableErrorCodes" type="hidden" id="compensationRetryErrorCodesHidden" />
                                         <div class="od-chip-editor" data-chip-editor-for="compensationRetryErrorCodesHidden">
                                             <div class="od-chip-list"></div>
-                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                            <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
                                         </div>
                                     </div>
                                     <div class="col-md-12 form-check mt-2 ms-2">
@@ -837,7 +833,7 @@
                                         <input asp-for="NewTask.CompensationTimeoutReconcileRetryableErrorCodes" type="hidden" id="compensationTimeoutReconcileRetryableErrorCodesHidden" />
                                         <div class="od-chip-editor" data-chip-editor-for="compensationTimeoutReconcileRetryableErrorCodesHidden">
                                             <div class="od-chip-list"></div>
-                                            <input type="text" class="od-chip-input" placeholder="ERR_A + Enter" />
+                                            <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
                                         </div>
                                     </div>
                                     <div class="col-md-12 form-check mt-2 ms-2 compensation-timeout-behavior-block" data-comp-timeout="Reconcile">
@@ -1561,20 +1557,20 @@
         ConditionDslExpression: 'true',
         HasTransformation: false,
         TransformationEngine: 'DSL',
-        HttpBaseUrlVariableRef: 'vars.baseUrl',
-        HttpRelativePath: '/',
+        HttpBaseUrlVariableRef: '',
+        HttpRelativePath: '',
         HttpMethod: 'GET',
         HttpExpectedStatusCodes: '200',
         HttpAllowSyncResponse: false,
         HasHttpSchemaValidation: false,
-        HttpSchemaContractKey: 'contract.placeholder',
+        HttpSchemaContractKey: '',
         HttpSchemaContractVersion: '1.0.0',
         HttpSchemaRegistryProviderId: '',
         HttpSchemaStrictMode: false,
-        MessagingTopic: 'orchestrator.topic',
+        MessagingTopic: '',
         MessagingVersion: '1.0.0',
         HasMessagingSchemaValidation: false,
-        MessagingSchemaContractKey: 'contract.placeholder',
+        MessagingSchemaContractKey: '',
         MessagingSchemaContractVersion: '1.0.0',
         MessagingSchemaRegistryProviderId: '',
         MessagingSchemaStrictMode: false,
@@ -1602,20 +1598,20 @@
         HasCompensationTransformation: false,
         HasCompensationRetryPolicy: false,
         HasCompensationTimeoutPolicy: false,
-        CompensationHttpBaseUrlVariableRef: 'vars.baseUrl',
-        CompensationHttpRelativePath: '/',
+        CompensationHttpBaseUrlVariableRef: '',
+        CompensationHttpRelativePath: '',
         CompensationHttpMethod: 'GET',
         CompensationHttpExpectedStatusCodes: '200',
         CompensationHttpAllowSyncResponse: false,
         HasCompensationHttpSchemaValidation: false,
-        CompensationHttpSchemaContractKey: 'contract.placeholder',
+        CompensationHttpSchemaContractKey: '',
         CompensationHttpSchemaContractVersion: '1.0.0',
         CompensationHttpSchemaRegistryProviderId: '',
         CompensationHttpSchemaStrictMode: false,
-        CompensationMessagingTopic: 'orchestrator.topic',
+        CompensationMessagingTopic: '',
         CompensationMessagingVersion: '1.0.0',
         HasCompensationMessagingSchemaValidation: false,
-        CompensationMessagingSchemaContractKey: 'contract.placeholder',
+        CompensationMessagingSchemaContractKey: '',
         CompensationMessagingSchemaContractVersion: '1.0.0',
         CompensationMessagingSchemaRegistryProviderId: '',
         CompensationMessagingSchemaStrictMode: false,

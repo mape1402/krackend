@@ -1,0 +1,239 @@
+@page
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel
+@{
+    ViewData["Title"] = "Runtime Design Nodes";
+}
+
+@section Head {
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260824-01" />
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Runtime Design Nodes</h1>
+        <p class="od-page-subtitle">Register design/control-plane nodes that this runtime can trust for push and manual pull.</p>
+    </div>
+</div>
+
+<div class="od-runtime-management-grid">
+    <section class="od-panel">
+        <div class="od-section-head">
+            <div>
+                <h2 class="od-section-title">Registered nodes</h2>
+                <p class="od-item-meta">@Model.DesignNodes.Count design node(s)</p>
+            </div>
+        </div>
+
+        @if (Model.DesignNodes.Count == 0)
+        {
+            <p class="od-empty">No design nodes registered.</p>
+        }
+        else
+        {
+            <div class="od-design-node-list">
+                @foreach (var node in Model.DesignNodes)
+                {
+                    <article class="od-design-node-item">
+                        <div>
+                            <div class="od-design-node-title">
+                                <strong>@node.Name</strong>
+                                <span class="od-status @(node.IsEnabled ? "od-status-completed" : "od-status-muted")">@(node.IsEnabled ? "Enabled" : "Disabled")</span>
+                            </div>
+                            <div class="od-item-meta">@node.Key</div>
+                            <div class="od-item-meta">@node.EndpointBaseUri</div>
+                            <div class="od-item-meta">Remote runtime: @node.RemoteRuntimeNodeId</div>
+                            <div class="od-item-meta">Client id: @node.ClientId</div>
+                            @if (!string.IsNullOrWhiteSpace(node.LastConnectionMessage))
+                            {
+                                <div class="od-item-meta">Last check: @node.LastConnectionMessage</div>
+                            }
+                        </div>
+                        <div class="od-design-node-actions">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    data-design-node-edit
+                                    data-design-node-id="@node.Id"
+                                    data-design-node-key="@node.Key"
+                                    data-design-node-name="@node.Name"
+                                    data-design-node-endpoint="@node.EndpointBaseUri"
+                                    data-design-node-remote-runtime="@node.RemoteRuntimeNodeId"
+                                    data-design-node-client-id="@node.ClientId"
+                                    data-design-node-description="@node.Description"
+                                    data-design-node-enabled="@node.IsEnabled.ToString().ToLowerInvariant()">
+                                <i class="bi bi-pencil-square"></i>
+                                Edit
+                            </button>
+                            <form method="post" asp-page-handler="SetEnabled" class="od-inline-form" data-confirm="true" data-confirm-title="Update design node" data-confirm-message="Change design node availability?" data-confirm-accept="Apply" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Updating design node" data-busy-message="Runtime is applying the design node status change.">
+                                <input type="hidden" name="designNodeId" value="@node.Id" />
+                                <input type="hidden" name="isEnabled" value="@(!node.IsEnabled)" />
+                                <button type="submit" class="btn btn-sm @(node.IsEnabled ? "btn-outline-danger" : "btn-outline-success")">
+                                    <i class="bi @(node.IsEnabled ? "bi-pause-circle" : "bi-play-circle")"></i>
+                                    @(node.IsEnabled ? "Disable" : "Enable")
+                                </button>
+                            </form>
+                            @if (node.IsEnabled)
+                            {
+                                <form method="post" asp-page-handler="CheckPending" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Checking releases" data-busy-message="Runtime is asking this design node for releases available for pull.">
+                                    <input type="hidden" name="sourceKey" value="@node.Key" />
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-arrow-down-up"></i>
+                                        Pending
+                                    </button>
+                                </form>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="od-panel">
+        <div class="od-section-head">
+            <div>
+                <h2 class="od-section-title">Capture node</h2>
+                <p class="od-item-meta">Secret is write-only after save.</p>
+            </div>
+        </div>
+
+        <form method="post" asp-page-handler="Upsert" class="od-compact-form" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving design node" data-busy-message="Runtime is storing the design node and protecting its shared secret.">
+            <input asp-for="Input.DesignNodeId" type="hidden" id="designNodeIdInput" />
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label asp-for="Input.Key" class="form-label"></label>
+                    <input asp-for="Input.Key" class="form-control" id="designNodeKeyInput" data-orchestrator-key="true" autocomplete="off" />
+                    <span asp-validation-for="Input.Key" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Input.Name" class="form-label"></label>
+                    <input asp-for="Input.Name" class="form-control" id="designNodeNameInput" autocomplete="off" />
+                    <span asp-validation-for="Input.Name" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.EndpointBaseUri" class="form-label"></label>
+                    <input asp-for="Input.EndpointBaseUri" class="form-control" id="designNodeEndpointInput" data-orchestrator-url="true" autocomplete="off" />
+                    <span asp-validation-for="Input.EndpointBaseUri" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Input.RemoteRuntimeNodeId" class="form-label"></label>
+                    <input asp-for="Input.RemoteRuntimeNodeId" class="form-control" id="designNodeRemoteRuntimeInput" autocomplete="off" />
+                    <span asp-validation-for="Input.RemoteRuntimeNodeId" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Input.ClientId" class="form-label"></label>
+                    <input asp-for="Input.ClientId" class="form-control" id="designNodeClientIdInput" autocomplete="off" />
+                    <span asp-validation-for="Input.ClientId" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.Secret" class="form-label"></label>
+                    <input asp-for="Input.Secret" class="form-control" id="designNodeSecretInput" autocomplete="new-password" data-required-on-create="designNodeIdInput" />
+                    <span asp-validation-for="Input.Secret" class="text-danger"></span>
+                    <div class="form-text">Leave empty when editing to keep the current secret.</div>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.Description" class="form-label"></label>
+                    <textarea asp-for="Input.Description" class="form-control" id="designNodeDescriptionInput" rows="2"></textarea>
+                    <span asp-validation-for="Input.Description" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input asp-for="Input.IsEnabled" class="form-check-input" id="designNodeEnabledInput" />
+                        <label asp-for="Input.IsEnabled" class="form-check-label">Enabled</label>
+                    </div>
+                </div>
+            </div>
+            <div class="od-form-actions">
+                <button type="button" class="btn btn-outline-secondary" data-design-node-reset>
+                    <i class="bi bi-plus-circle"></i>
+                    New
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i>
+                    Save
+                </button>
+            </div>
+        </form>
+    </section>
+</div>
+
+<section class="od-panel mt-3">
+    <div class="od-section-head">
+        <div>
+            <h2 class="od-section-title">Pending pull releases</h2>
+            <p class="od-item-meta">@(string.IsNullOrWhiteSpace(Model.SourceKey) ? "Select a design node to check pending releases." : $"Source: {Model.SourceKey}")</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.SourceKey) && Model.PendingArtifacts.Count == 0)
+    {
+        <p class="od-empty">No pending releases for this design node.</p>
+    }
+    else if (Model.PendingArtifacts.Count > 0)
+    {
+        <div class="od-pending-release-grid">
+            @foreach (var artifact in Model.PendingArtifacts)
+            {
+                <article class="od-pending-release-card">
+                    <div>
+                        <h3>@artifact.OrchestrationDefinitionKey v@artifact.Version</h3>
+                        <p class="od-item-meta">Environment: @artifact.EnvironmentKey</p>
+                        <p class="od-item-meta">Promoted by @artifact.PromotedBy on @artifact.PromotedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC</p>
+                        <p class="od-item-meta">Correlation: @artifact.CorrelationId</p>
+                        <p class="od-item-meta">Checksum: @artifact.Checksum</p>
+                    </div>
+                    <form method="post" asp-page-handler="ApplyRelease" data-confirm="true" data-confirm-title="Apply release" data-confirm-message="Pull and install this release in the runtime?" data-confirm-accept="Apply" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Applying release" data-busy-message="Runtime is pulling the artifact, installing it, and projecting ingress configuration.">
+                        <input type="hidden" name="sourceKey" value="@Model.SourceKey" />
+                        <input type="hidden" name="releaseTargetId" value="@artifact.ReleaseTargetId" />
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-cloud-download"></i>
+                            Apply
+                        </button>
+                    </form>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@section Scripts {
+    <script>
+        (() => {
+            const form = document.querySelector('.od-compact-form');
+            const resetButton = document.querySelector('[data-design-node-reset]');
+            const inputs = {
+                id: document.getElementById('designNodeIdInput'),
+                key: document.getElementById('designNodeKeyInput'),
+                name: document.getElementById('designNodeNameInput'),
+                endpoint: document.getElementById('designNodeEndpointInput'),
+                remoteRuntime: document.getElementById('designNodeRemoteRuntimeInput'),
+                clientId: document.getElementById('designNodeClientIdInput'),
+                secret: document.getElementById('designNodeSecretInput'),
+                description: document.getElementById('designNodeDescriptionInput'),
+                enabled: document.getElementById('designNodeEnabledInput')
+            };
+
+            document.querySelectorAll('[data-design-node-edit]').forEach(button => {
+                button.addEventListener('click', () => {
+                    inputs.id.value = button.dataset.designNodeId || '';
+                    inputs.key.value = button.dataset.designNodeKey || '';
+                    inputs.name.value = button.dataset.designNodeName || '';
+                    inputs.endpoint.value = button.dataset.designNodeEndpoint || '';
+                    inputs.remoteRuntime.value = button.dataset.designNodeRemoteRuntime || '';
+                    inputs.clientId.value = button.dataset.designNodeClientId || '';
+                    inputs.description.value = button.dataset.designNodeDescription || '';
+                    inputs.enabled.checked = button.dataset.designNodeEnabled === 'true';
+                    inputs.secret.value = '';
+                    inputs.key.focus();
+                });
+            });
+
+            resetButton?.addEventListener('click', () => {
+                form.reset();
+                inputs.id.value = '';
+                inputs.secret.value = '';
+                inputs.enabled.checked = true;
+                inputs.key.focus();
+            });
+        })();
+    </script>
+}

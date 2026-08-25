@@ -9,16 +9,11 @@
     <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index" class="btn btn-outline-secondary">Back</a>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-}
-
-<form method="post" class="od-form-shell">
+<form method="post" class="od-form-shell" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Creating orchestration" data-busy-message="Design is validating and storing the orchestration.">
     <div class="row g-3">
         <div class="col-md-6 position-relative">
             <label asp-for="Input.Key" class="form-label"></label>
-            <input asp-for="Input.Key" class="form-control" />
+            <input asp-for="Input.Key" class="form-control" data-orchestrator-key="true" />
             <span asp-validation-for="Input.Key" class="text-danger"></span>
         </div>
         <div class="col-md-6">
@@ -46,7 +41,7 @@
         </div>
         <div class="col-12">
             <label asp-for="Input.Tags" class="form-label"></label>
-            <input asp-for="Input.Tags" class="form-control" placeholder="billing,critical" />
+            <input asp-for="Input.Tags" class="form-control" />
         </div>
         <div class="col-md-6">
             <label asp-for="Input.CreatedBy" class="form-label"></label>

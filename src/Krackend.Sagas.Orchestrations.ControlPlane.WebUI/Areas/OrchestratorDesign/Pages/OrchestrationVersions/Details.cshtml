@@ -16,10 +16,6 @@
     </div>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-}
 @if (!Model.CanEdit)
 {
     <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
@@ -56,7 +52,7 @@
                                         </li>
                                         <li><hr class="dropdown-divider" /></li>
                                         <li>
-                                            <form method="post" asp-page-handler="DeleteTrigger" class="od-inline-form">
+                                            <form method="post" asp-page-handler="DeleteTrigger" class="od-inline-form" data-confirm="true" data-confirm-title="Delete trigger" data-confirm-message="Delete this trigger from the orchestration version?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting trigger" data-busy-message="Design is removing the trigger binding.">
                                                 <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                 <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
                                                 <input type="hidden" name="triggerId" value="@trigger.Id" />
@@ -157,7 +153,7 @@
                                     {
                                         <li><hr class="dropdown-divider" /></li>
                                         <li>
-                                            <form method="post" asp-page-handler="DeleteStage" class="od-inline-form">
+                                            <form method="post" asp-page-handler="DeleteStage" class="od-inline-form" data-confirm="true" data-confirm-title="Delete stage" data-confirm-message="Delete this stage from the orchestration version?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting stage" data-busy-message="Design is removing the stage definition.">
                                                 <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                 <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
                                                 <input type="hidden" name="stageId" value="@stage.Id" />
@@ -209,7 +205,7 @@
 
                     <div class="stage-condition-config-block col-12" data-engine="DSL">
                         <label class="form-label" for="stageConditionDslExpression">DSL expression</label>
-                        <input class="form-control" id="stageConditionDslExpression" placeholder="true" />
+                        <input class="form-control" id="stageConditionDslExpression" />
                     </div>
                 </div>
 
@@ -228,7 +224,7 @@
 <div class="modal fade" id="newStageModal" tabindex="-1" aria-labelledby="newStageModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-page-handler="UpsertStage">
+            <form method="post" asp-page-handler="UpsertStage" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving stage" data-busy-message="Design is validating and storing the stage definition.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="newStageModalLabel">Create stage</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -262,7 +258,7 @@
 <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-page-handler="UpsertTrigger">
+            <form method="post" asp-page-handler="UpsertTrigger" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving trigger" data-busy-message="Design is validating and storing the trigger binding.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="triggerModalLabel">Create trigger</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -291,11 +287,11 @@
                         <div class="row g-2">
                             <div class="col-md-7">
                                 <label asp-for="TriggerInput.EventTopic" class="form-label">Topic</label>
-                                <input asp-for="TriggerInput.EventTopic" class="form-control" />
+                                <input asp-for="TriggerInput.EventTopic" class="form-control" data-orchestrator-key="true" />
                             </div>
                             <div class="col-md-5">
                                 <label asp-for="TriggerInput.EventVersion" class="form-label">Version</label>
-                                <input asp-for="TriggerInput.EventVersion" class="form-control" placeholder="1.0.0" />
+                                <input asp-for="TriggerInput.EventVersion" class="form-control" data-orchestrator-version="true" />
                             </div>
                             <div class="col-12"><hr class="my-2" /></div>
                             <div class="col-12">
@@ -311,11 +307,11 @@
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="TriggerInput.EventSchemaContractVersion" class="form-label">Contract version</label>
-                                <input asp-for="TriggerInput.EventSchemaContractVersion" class="form-control" placeholder="1.0.0" />
+                                <input asp-for="TriggerInput.EventSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                             </div>
                             <div class="col-md-12">
                                 <label asp-for="TriggerInput.EventSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                <input asp-for="TriggerInput.EventSchemaRegistryProviderId" class="form-control" placeholder="ULID (optional)" />
+                                <input asp-for="TriggerInput.EventSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
                             </div>
                             <div class="col-md-12 form-check mt-2 ms-2">
                                 <input asp-for="TriggerInput.EventSchemaStrictMode" class="form-check-input" />
@@ -656,13 +652,13 @@
 
     const defaultValues = {
         TriggerId: '',
-        Key: 'trigger.key',
+        Key: '',
         TriggerType: 'Event',
         Description: '',
-        EventTopic: 'orchestrator.trigger.topic',
+        EventTopic: '',
         EventVersion: '1.0.0',
         HasEventSchemaValidation: false,
-        EventSchemaContractKey: 'contract.placeholder',
+        EventSchemaContractKey: '',
         EventSchemaContractVersion: '1.0.0',
         EventSchemaRegistryProviderId: '',
         EventSchemaStrictMode: false,
