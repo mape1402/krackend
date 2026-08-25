@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
@@ -78,7 +79,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeIngressConfiguration>>(
                 _store.IngressConfigurations.Values
-                    .Where(x => x.IsActive)
+                    .Where(x => x.IsActive && IsReadyArtifact(x.RuntimeOrchestrationArtifactId))
                     .OrderBy(x => x.RuntimeOrchestrationArtifactId.ToString())
                     .ThenBy(x => x.ConfigurationKey)
                     .Skip(skip)
@@ -90,8 +91,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeIngressConfiguration>>(
                 _store.IngressConfigurations.Values
-                    .Where(x => x.RuntimeOrchestrationArtifactId == runtimeOrchestrationArtifactId && x.IsActive)
+                    .Where(x => x.RuntimeOrchestrationArtifactId == runtimeOrchestrationArtifactId &&
+                        x.IsActive &&
+                        IsReadyArtifact(x.RuntimeOrchestrationArtifactId))
                     .OrderBy(x => x.ConfigurationKey)
                     .ToArray());
+
+        private bool IsReadyArtifact(Id runtimeOrchestrationArtifactId)
+            => _store.Artifacts.TryGetValue(runtimeOrchestrationArtifactId, out var artifact) &&
+                artifact.IsActive &&
+                artifact.Status == RuntimeOrchestrationArtifactStatus.Ready;
     }
 }

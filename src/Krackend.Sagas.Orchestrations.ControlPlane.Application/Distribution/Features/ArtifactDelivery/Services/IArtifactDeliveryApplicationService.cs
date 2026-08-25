@@ -25,5 +25,10 @@ public interface IArtifactDeliveryApplicationService
     /// <summary>
     /// Acknowledges a manually pulled artifact after the runtime installs it.
     /// </summary>
-    Task<RuntimeArtifactDeliveryResult> AcknowledgePull(string runtimeNodeId, string releaseTargetId, string runtimeArtifactId, CancellationToken cancellationToken = default);
+    Task<RuntimeArtifactDeliveryResult> AcknowledgePull(
+        string runtimeNodeId,
+        string releaseTargetId,
+        string runtimeArtifactId,
+        string runtimeArtifactStatus,
+        CancellationToken cancellationToken = default);
 }

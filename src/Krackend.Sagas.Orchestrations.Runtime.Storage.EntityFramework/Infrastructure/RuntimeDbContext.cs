@@ -88,10 +88,13 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Version).HasMaxLength(64).HasConversion(new SemanticVersionConverter()).IsRequired();
         builder.Property(x => x.ArtifactChecksum).HasMaxLength(256).HasConversion(new ChecksumConverter()).IsRequired();
         builder.Property(x => x.ArtifactPayload).HasColumnType("nvarchar(max)").HasConversion(new JsonNodeConverter()).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationArtifactStatus.Pending).IsRequired();
+        builder.Property(x => x.ProjectionError).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.SupersededByArtifactId).HasColumnType("binary(16)").HasConversion(new NullableIdToBytesConverter());
         builder.Property(x => x.Notes).HasMaxLength(2000).IsRequired(false);
         builder.HasIndex(x => new { x.EnvironmentKey, x.OrchestrationDefinitionKey, x.Version }).IsUnique();
         builder.HasIndex(x => new { x.EnvironmentKey, x.OrchestrationDefinitionKey, x.IsActive });
+        builder.HasIndex(x => new { x.EnvironmentKey, x.Status, x.IsActive });
     }
 
     private static void ConfigureInstances(ModelBuilder modelBuilder)

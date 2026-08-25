@@ -10,12 +10,14 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
+using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Http;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Runtime.Replication;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +31,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
         public static KrackendOrchestrationsRuntimeBuilder AddKrackendOrchestrationsRuntime(this IServiceCollection services)
         {
             services.TryAddSingleton<IIngressRegistry, IngressRegistry>();
+            services.TryAddSingleton<IRuntimeIngressLocalState, RuntimeIngressLocalState>();
             services.TryAddScoped<IGetAllIngressConfigurationsAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddScoped<IGetIngressConfigurationByArtifactAccessor, DefaultIngressConfigurationAccessor>();
             services.TryAddSingleton<RuntimeIngressBackchannelOptions>();
@@ -57,8 +60,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IRemoteCommandDispatcher, RemoteCommandDispatcher>();
             services.TryAddScoped<IMessagingCommandSerializer, DefaultMessagingCommandSerializer>();
             services.TryAddScoped<IMessagingDispatchAdapter, DefaultMessagingDispatchAdapter>();
+            services.AddOptions<RuntimeOptions>().BindConfiguration("Runtime");
+            services.AddOptions<RuntimeReplicaOptions>().BindConfiguration("Runtime:Replica");
             services.AddOptions<RuntimeDistributionOptions>().BindConfiguration("Runtime:Distribution");
+            services.AddOptions<RuntimeGossipOptions>().BindConfiguration("Runtime:Gossip");
+            services.TryAddSingleton<IRuntimeReplicaIdentity, DefaultRuntimeReplicaIdentity>();
             services.AddOptions<ArtifactDeliverySecurityOptions>().BindConfiguration("ArtifactDelivery:Security");
+            services.TryAddScoped<IRuntimeArtifactProjectionScheduler, ImmediateRuntimeArtifactProjectionScheduler>();
+            services.TryAddScoped<IRuntimeIngressStandupScheduler, ImmediateRuntimeIngressStandupScheduler>();
+            services.TryAddScoped<IRuntimeArtifactReadyGossipHandler, RuntimeArtifactReadyGossipHandler>();
+            services.TryAddScoped<IRuntimeArtifactReadyNotifier, RuntimeArtifactReadyNotifier>();
+            services.TryAddSingleton<IRuntimeArtifactReadyGossipPublisher, NoopRuntimeArtifactReadyGossipPublisher>();
             services.TryAddSingleton<IArtifactDeliverySignatureService, DefaultArtifactDeliverySignatureService>();
             services.TryAddSingleton<IArtifactDeliveryNonceStore, InMemoryArtifactDeliveryNonceStore>();
             services.AddDataProtection();
@@ -95,7 +107,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressTransport.Messaging);
             services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressTransport.Http);
             services.AddKeyedScoped<IRemoteCommandExecutor, MessagingRemoteCommandExecutor>(RemoteCommandTransport.Messaging);
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, IngressRegistryBackgroundService>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeReadyArtifactStartupService>());
 
             return new KrackendOrchestrationsRuntimeBuilder(services);
         }

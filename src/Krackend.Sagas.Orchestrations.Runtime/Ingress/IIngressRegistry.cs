@@ -4,7 +4,7 @@
     {
         Task StandUpAllAsync(CancellationToken cancellationToken = default);
 
-        Task StandUpOneAsync(string artifactId, CancellationToken cancellationToken = default);
+        Task StandUpOneAsync(string artifactId, long ingressGeneration, CancellationToken cancellationToken = default);
 
         Task ShutDownAllAsync(CancellationToken cancellationToken = default);
 

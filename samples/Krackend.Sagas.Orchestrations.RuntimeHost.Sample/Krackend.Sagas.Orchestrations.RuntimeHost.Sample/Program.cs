@@ -1,21 +1,25 @@
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
+using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using Mule;
 using Mule.EntityFrameworkCore;
 using Pigeon.Messaging.Topology;
 
 var builder = WebApplication.CreateBuilder(args);
+StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
 var rabbitConnectionString = builder.Configuration.GetConnectionString("RabbitMq");
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
+var muleParallelism = Math.Max(64, Environment.ProcessorCount * 20);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
@@ -25,6 +29,7 @@ builder.Services.AddOrchestratorRuntimeWebUI(options =>
     options.EnvironmentKey = builder.Configuration["Runtime:EnvironmentKey"] ?? "local";
 });
 builder.Services.AddScoped<IHappyPathOrchestrationSeeder, HappyPathOrchestrationSeeder>();
+builder.Services.AddSingleton<IDatabaseMigrationLock, SqlServerDatabaseMigrationLock>();
 
 builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
 {
@@ -54,6 +59,7 @@ builder.Services
             execution.PrefetchCount = null;
         });
     })
+    .AddRedisGossip(builder.Configuration)
     .AddMule(mule =>
     {
         mule.UseEntityFrameworkCore<RuntimeDbContext>();
@@ -70,12 +76,13 @@ builder.Services
         mule.Configure(settings =>
         {
             settings.ImmediateDispatch = true;
-            settings.RecoveryMode = MuleRecoveryMode.Scheduled;
+            settings.RecoveryMode = MuleRecoveryMode.Polling;
+            settings.DispatchInterval = TimeSpan.FromSeconds(1);
             settings.DispatchBatchSize = 1_000;
             settings.DispatchQueueCapacity = 0;
             settings.ExecutionQueueCapacity = 0;
-            settings.WorkerCount = Environment.ProcessorCount * 20;
-            settings.MaxDegreeOfParallelism = 0;
+            settings.WorkerCount = muleParallelism;
+            settings.MaxDegreeOfParallelism = muleParallelism;
             settings.MaxDrainBatchesPerCycle = int.MaxValue;
             settings.MaxDrainActionsPerCycle = 0;
             settings.DrainUntilEmpty = true;
@@ -86,11 +93,16 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var migrationLock = scope.ServiceProvider.GetRequiredService<IDatabaseMigrationLock>();
     var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+    await using var migrationLease = await migrationLock.AcquireAsync(muleConnectionString!);
     await dbContext.Database.MigrateAsync();
 
-    var happyPathSeeder = scope.ServiceProvider.GetRequiredService<IHappyPathOrchestrationSeeder>();
-    await happyPathSeeder.SeedAsync();
+    if (builder.Configuration.GetValue("SeedData:HappyPath:Enabled", true))
+    {
+        var happyPathSeeder = scope.ServiceProvider.GetRequiredService<IHappyPathOrchestrationSeeder>();
+        await happyPathSeeder.SeedAsync();
+    }
 }
 
 // Configure the HTTP request pipeline.

@@ -19,7 +19,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 throw new ArgumentNullException(nameof(command));
             }
 
-            await _muleClient.EnqueueAsync(MuleActionKeys.RemoteCommandDispatchActionKey, command, cancellationToken);
+            await _muleClient.EnqueueAsync(
+                MuleActionKeys.RemoteCommandDispatchActionKey,
+                command,
+                options =>
+                {
+                    options.CorrelationId = command.OrchestrationInstanceId;
+                    options.DeduplicationKey = string.IsNullOrWhiteSpace(command.DispatchId)
+                        ? command.TaskExecutionAttemptId
+                        : command.DispatchId;
+                },
+                cancellationToken);
         }
     }
 }

@@ -40,7 +40,9 @@ public sealed class WebUINavigationTests
             item => AssertNavigation(item, "Artifacts", "OrchestratorDistribution", "/ArtifactReleases/Index", 22),
             item => AssertNavigation(item, "Releases", "OrchestratorDistribution", "/Promotions/Index", 23),
             item => AssertNavigation(item, "Teams", "OrchestratorSecurity", "/Teams/Index", 30),
-            item => AssertNavigation(item, "Runtime", "OrchestratorRuntime", "/Instances/Index", 35));
+            item => AssertNavigation(item, "Diagnostics", "OrchestratorRuntime", "/Instances/Index", 35),
+            item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 36),
+            item => AssertNavigation(item, "Design Nodes", "OrchestratorRuntime", "/DesignNodes/Index", 37));
     }
 
     [Fact]

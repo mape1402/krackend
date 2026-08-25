@@ -1,11 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 
 namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 
@@ -15,6 +14,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
     private const string OrchestrationKey = "sales.sale.created";
     private const string OrchestrationName = "Sale Created Happy Path";
     private const string ArtifactType = "orchestration-version-snapshot";
+    private const string ArtifactSchemaVersion = "1.0.0";
     private static readonly HappyPathSeedDefinition[] SeedDefinitions =
     [
         new(
@@ -60,11 +60,11 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
     ];
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly IRuntimeArtifactRepository _repository;
+    private readonly IRuntimeArtifactDeploymentService _deploymentService;
 
-    public HappyPathOrchestrationSeeder(IRuntimeArtifactRepository repository)
+    public HappyPathOrchestrationSeeder(IRuntimeArtifactDeploymentService deploymentService)
     {
-        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _deploymentService = deploymentService ?? throw new ArgumentNullException(nameof(deploymentService));
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -73,48 +73,26 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
         {
             var artifact = BuildArtifact(definition);
             var payload = JsonSerializer.Serialize(artifact, SerializerOptions);
-            var checksum = new Checksum(ComputeChecksum(payload));
-            var artifactId = await ResolveArtifactIdAsync(definition, cancellationToken);
+            var checksum = ComputeChecksum(payload);
             var now = DateTime.UtcNow;
 
-            await _repository.Upsert(new RuntimeOrchestrationArtifact
+            await _deploymentService.DeployAsync(new RuntimeArtifactDeliveryPackage
             {
-                Id = artifactId,
-                EnvironmentKey = EnvironmentKey,
-                OrchestrationDefinitionKey = artifact.Key,
+                ReleaseTargetId = $"runtime-sample-seed:{OrchestrationKey}:{artifact.Version}",
+                ArtifactId = definition.ArtifactId.ToString(),
                 ArtifactType = ArtifactType,
-                SourceOrchestrationVersionId = artifact.OrchestrationVersionId,
-                Version = artifact.Version,
-                ArtifactChecksum = checksum,
-                ArtifactPayload = JsonNode.Parse(payload)!,
-                IsActive = true,
-                LoadedToCache = false,
-                DeployedOnUtc = now,
-                ActivatedOnUtc = now,
-                RetiredOnUtc = null,
-                SupersededByArtifactId = null,
-                Notes = "Seeded by the runtime host sample for the sales happy path."
-            }, cancellationToken);
-        }
-    }
-
-    private async Task<Id> ResolveArtifactIdAsync(
-        HappyPathSeedDefinition definition,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var current = await _repository.GetByVersion(
-                EnvironmentKey,
-                OrchestrationKey,
-                definition.Version,
-                cancellationToken);
-
-            return current.Id;
-        }
-        catch (KeyNotFoundException)
-        {
-            return definition.ArtifactId;
+                SchemaVersion = ArtifactSchemaVersion,
+                EnvironmentKey = EnvironmentKey,
+                OrchestrationDefinitionId = artifact.OrchestrationDefinitionId.ToString(),
+                OrchestrationVersionId = artifact.OrchestrationVersionId.ToString(),
+                OrchestrationDefinitionKey = artifact.Key,
+                Version = artifact.Version.ToString(),
+                Checksum = checksum,
+                PayloadJson = payload,
+                CorrelationId = $"runtime-sample-seed:{artifact.Key}:{artifact.Version}",
+                PromotedBy = "runtime-host-sample",
+                PromotedOnUtc = now
+            }, "runtime-host-sample", cancellationToken);
         }
     }
 

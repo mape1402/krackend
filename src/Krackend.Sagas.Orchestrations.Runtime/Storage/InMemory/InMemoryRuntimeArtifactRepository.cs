@@ -8,23 +8,74 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
     internal sealed class InMemoryRuntimeArtifactRepository : IRuntimeArtifactRepository
     {
         private readonly InMemoryRuntimeStore _store;
-        private readonly IRuntimeIngressConfigurationProjector _ingressConfigurationProjector;
         private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
 
         public InMemoryRuntimeArtifactRepository(
             InMemoryRuntimeStore store,
-            IRuntimeIngressConfigurationProjector ingressConfigurationProjector,
             IRuntimeIngressConfigurationRepository ingressConfigurationRepository)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
-            _ingressConfigurationProjector = ingressConfigurationProjector ?? throw new ArgumentNullException(nameof(ingressConfigurationProjector));
             _ingressConfigurationRepository = ingressConfigurationRepository ?? throw new ArgumentNullException(nameof(ingressConfigurationRepository));
         }
 
-        public async Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
+        public Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default)
         {
             _store.Artifacts[artifact.Id] = artifact;
-            await _ingressConfigurationProjector.ProjectAsync(artifact, cancellationToken);
+            return Task.CompletedTask;
+        }
+
+        public Task MarkProjectionStarted(
+            Id artifactId,
+            long ingressGeneration,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_store.Artifacts.TryGetValue(artifactId, out var artifact) || artifact.IngressGeneration != ingressGeneration)
+            {
+                return Task.CompletedTask;
+            }
+
+            artifact.Status = RuntimeOrchestrationArtifactStatus.Pending;
+            artifact.ProjectionStartedOnUtc = DateTime.UtcNow;
+            artifact.ProjectionCompletedOnUtc = null;
+            artifact.ProjectionFailedOnUtc = null;
+            artifact.ProjectionError = null;
+            return Task.CompletedTask;
+        }
+
+        public Task MarkReady(
+            Id artifactId,
+            long ingressGeneration,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_store.Artifacts.TryGetValue(artifactId, out var artifact) || artifact.IngressGeneration != ingressGeneration)
+            {
+                return Task.CompletedTask;
+            }
+
+            var now = DateTime.UtcNow;
+            artifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
+            artifact.ActivatedOnUtc = now;
+            artifact.ProjectionCompletedOnUtc = now;
+            artifact.ProjectionFailedOnUtc = null;
+            artifact.ProjectionError = null;
+            return Task.CompletedTask;
+        }
+
+        public Task MarkProjectionFailed(
+            Id artifactId,
+            long ingressGeneration,
+            string error,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_store.Artifacts.TryGetValue(artifactId, out var artifact) || artifact.IngressGeneration != ingressGeneration)
+            {
+                return Task.CompletedTask;
+            }
+
+            artifact.Status = RuntimeOrchestrationArtifactStatus.Failed;
+            artifact.ProjectionFailedOnUtc = DateTime.UtcNow;
+            artifact.ProjectionError = error;
+            return Task.CompletedTask;
         }
 
         public async Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
@@ -37,6 +88,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 x.IsActive))
             {
                 artifact.IsActive = false;
+                artifact.Status = RuntimeOrchestrationArtifactStatus.Retired;
                 artifact.RetiredOnUtc = DateTime.UtcNow;
                 deactivatedArtifactIds.Add(artifact.Id);
             }
@@ -60,11 +112,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(
                 _store.Artifacts.Values.Where(x => x.EnvironmentKey == environmentKey).ToArray());
 
+        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(string environmentKey, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(
+                _store.Artifacts.Values
+                    .Where(x => x.EnvironmentKey == environmentKey &&
+                        x.IsActive &&
+                        x.Status == RuntimeOrchestrationArtifactStatus.Ready)
+                    .ToArray());
+
         public Task<RuntimeOrchestrationArtifact> GetActive(string environmentKey, string orchestrationDefinitionKey, CancellationToken cancellationToken = default)
             => Task.FromResult(_store.Artifacts.Values.FirstOrDefault(x =>
                     x.EnvironmentKey == environmentKey &&
                     x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
-                    x.IsActive)
+                    x.IsActive &&
+                    x.Status == RuntimeOrchestrationArtifactStatus.Ready)
                 ?? throw new KeyNotFoundException($"Active runtime artifact '{orchestrationDefinitionKey}' was not found."));
     }
 }

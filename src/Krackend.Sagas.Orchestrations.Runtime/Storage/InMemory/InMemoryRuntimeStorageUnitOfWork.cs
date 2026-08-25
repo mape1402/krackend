@@ -6,6 +6,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
     {
         public bool AutoSaveChanges => true;
 
+        public Task<IRuntimeStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IRuntimeStorageTransaction>(new NoopTransaction());
+
         public IDisposable DeferAutoSave()
             => new NoopDisposable();
 
@@ -17,6 +20,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             public void Dispose()
             {
             }
+        }
+
+        private sealed class NoopTransaction : IRuntimeStorageTransaction
+        {
+            public Task CommitAsync(CancellationToken cancellationToken = default)
+                => Task.CompletedTask;
+
+            public ValueTask DisposeAsync()
+                => ValueTask.CompletedTask;
         }
     }
 }
