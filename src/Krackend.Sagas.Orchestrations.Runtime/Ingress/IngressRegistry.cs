@@ -8,13 +8,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<IngressRegistry> _logger;
+        private readonly IRuntimeIngressLocalState _localState;
 
         private readonly ConcurrentDictionary<string, IList<string>> _connectors = new();
 
-        public IngressRegistry(IServiceScopeFactory scopeFactory, ILogger<IngressRegistry> logger)
+        public IngressRegistry(
+            IServiceScopeFactory scopeFactory,
+            ILogger<IngressRegistry> logger,
+            IRuntimeIngressLocalState localState)
         {
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _localState = localState ?? throw new ArgumentNullException(nameof(localState));
         }
 
         public async Task StandUpAllAsync(CancellationToken cancellationToken = default)
@@ -32,8 +37,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         }
 
 
-        public async Task StandUpOneAsync(string artifactId, CancellationToken cancellationToken = default)
+        public async Task StandUpOneAsync(string artifactId, long ingressGeneration, CancellationToken cancellationToken = default)
         {
+            if (_localState.IsApplied(artifactId, ingressGeneration))
+            {
+                return;
+            }
+
             using var scope = _scopeFactory.CreateScope();
             var accessor = scope.ServiceProvider.GetRequiredService<IGetIngressConfigurationByArtifactAccessor>();
             var configurations = await accessor.GetConfigurationAsync(artifactId, cancellationToken);
@@ -45,6 +55,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             }
 
             await StandUpConfigurationsAsync(scope.ServiceProvider, configurations, cancellationToken);
+            _localState.MarkApplied(artifactId, ingressGeneration);
         }
 
         public async Task ShutDownAllAsync(CancellationToken cancellationToken = default)

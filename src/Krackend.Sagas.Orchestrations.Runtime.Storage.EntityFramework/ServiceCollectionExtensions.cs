@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
@@ -32,6 +33,8 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IEnvironmentVariableRepository, EnvironmentVariableRepository>());
         services.Replace(ServiceDescriptor.Scoped<ICompensationExecutionRepository, CompensationExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressConfigurationRepository, RuntimeIngressConfigurationRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactProjectionScheduler, EntityFrameworkRuntimeArtifactProjectionScheduler>());
+        services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressStandupScheduler, EntityFrameworkRuntimeIngressStandupScheduler>());
         services.Replace(ServiceDescriptor.Scoped<IGetAllIngressConfigurationsAccessor, RuntimeIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, RuntimeIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IArtifactDeliverySecretResolver, RuntimeDesignNodeSecretResolver>());

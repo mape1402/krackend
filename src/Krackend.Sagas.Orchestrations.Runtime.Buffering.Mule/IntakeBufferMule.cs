@@ -24,11 +24,28 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             switch (workItem.IngressKind)
             {
                 case Ingress.IngressKind.Trigger:
-                    await _muleClient.EnqueueAsync(MuleActionKeys.TriggerActionKey, workItem, cancellationToken);
+                    await _muleClient.EnqueueAsync(
+                        MuleActionKeys.TriggerActionKey,
+                        workItem,
+                        options =>
+                        {
+                            options.CorrelationId = workItem.MessageMetadata?.CorrelationId
+                                ?? workItem.MessageMetadata?.SagaId;
+                        },
+                        cancellationToken);
                     break;
                 
                 case Ingress.IngressKind.Backchannel:
-                    await _muleClient.EnqueueAsync(MuleActionKeys.BackchannelActionKey, workItem, cancellationToken);
+                    await _muleClient.EnqueueAsync(
+                        MuleActionKeys.BackchannelActionKey,
+                        workItem,
+                        options =>
+                        {
+                            options.CorrelationId = workItem.MessageMetadata?.OrchestrationInstanceId
+                                ?? workItem.MessageMetadata?.CorrelationId;
+                            options.DeduplicationKey = BuildBackchannelDeduplicationKey(workItem);
+                        },
+                        cancellationToken);
                     break;
 
                 default:
@@ -38,6 +55,29 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                         workItem.IngressKind);
                     break;
             }
+        }
+
+        private string? BuildBackchannelDeduplicationKey(WorkItem workItem)
+        {
+            var metadata = workItem.MessageMetadata;
+            if (metadata is null)
+            {
+                return null;
+            }
+
+            var dispatchId = metadata.DispatchId;
+            if (!string.IsNullOrWhiteSpace(dispatchId))
+            {
+                return $"backchannel:{dispatchId}:{metadata.Attempt}";
+            }
+
+            var taskExecutionId = metadata.TaskExecutionId;
+            if (!string.IsNullOrWhiteSpace(taskExecutionId))
+            {
+                return $"backchannel:{taskExecutionId}:{metadata.Attempt}";
+            }
+
+            return null;
         }
     }
 }

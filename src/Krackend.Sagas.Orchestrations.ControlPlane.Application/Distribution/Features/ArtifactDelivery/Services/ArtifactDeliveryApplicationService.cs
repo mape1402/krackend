@@ -95,18 +95,29 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
                     ?? $"Runtime returned HTTP {(int)response.StatusCode}.");
             }
 
-            target.Status = ReleaseTargetStatus.Activated;
-            target.ActivationStatus = ActivationStatus.Activated;
             target.DeliveredAtUtc = DateTime.UtcNow;
             target.AcknowledgedAtUtc = target.DeliveredAtUtc;
-            target.ActivatedAtUtc = target.DeliveredAtUtc;
             target.RuntimeVersionApplied = body.RuntimeArtifactId;
             target.FailureReason = string.Empty;
-            await _releaseTargetRepository.Update(target, cancellationToken);
-            await MarkPublished(target, cancellationToken);
             await AddAttempt(target.Id, "Push", initiatedBy, startedAtUtc, true, body.RuntimeArtifactId, null, cancellationToken);
 
-            return CreateResult(target, true, "Activated", "Runtime artifact pushed and activated.", body.RuntimeArtifactId);
+            if (IsRuntimeReady(body.Status))
+            {
+                target.Status = ReleaseTargetStatus.Activated;
+                target.ActivationStatus = ActivationStatus.Activated;
+                target.ActivatedAtUtc = target.DeliveredAtUtc;
+                await _releaseTargetRepository.Update(target, cancellationToken);
+                await MarkPublished(target, cancellationToken);
+
+                return CreateResult(target, true, "Activated", "Runtime artifact pushed and activated.", body.RuntimeArtifactId);
+            }
+
+            target.Status = ReleaseTargetStatus.Delivered;
+            target.ActivationStatus = ActivationStatus.Activating;
+            target.ActivatedAtUtc = null;
+            await _releaseTargetRepository.Update(target, cancellationToken);
+
+            return CreateResult(target, true, "Delivered", "Runtime artifact pushed and accepted for activation.", body.RuntimeArtifactId);
         }
         catch (Exception ex)
         {
@@ -185,6 +196,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         string runtimeNodeId,
         string releaseTargetId,
         string runtimeArtifactId,
+        string runtimeArtifactStatus,
         CancellationToken cancellationToken = default)
     {
         var nodeId = ParseId(runtimeNodeId);
@@ -194,18 +206,25 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             throw new InvalidOperationException("Release target does not belong to the runtime node.");
         }
 
-        target.Status = ReleaseTargetStatus.Activated;
-        target.ActivationStatus = ActivationStatus.Activated;
+        var ready = IsRuntimeReady(runtimeArtifactStatus);
+        target.Status = ready ? ReleaseTargetStatus.Activated : ReleaseTargetStatus.Acknowledged;
+        target.ActivationStatus = ready ? ActivationStatus.Activated : ActivationStatus.Activating;
         target.DeliveredAtUtc ??= DateTime.UtcNow;
         target.AcknowledgedAtUtc = DateTime.UtcNow;
-        target.ActivatedAtUtc = target.AcknowledgedAtUtc;
+        target.ActivatedAtUtc = ready ? target.AcknowledgedAtUtc : null;
         target.RuntimeVersionApplied = runtimeArtifactId;
         target.FailureReason = string.Empty;
         await _releaseTargetRepository.Update(target, cancellationToken);
-        await MarkPublished(target, cancellationToken);
+        if (ready)
+        {
+            await MarkPublished(target, cancellationToken);
+        }
+
         await AddAttempt(target.Id, "Pull", "runtime", DateTime.UtcNow, true, runtimeArtifactId, null, cancellationToken);
 
-        return CreateResult(target, true, "Activated", "Runtime pull acknowledged.", runtimeArtifactId);
+        return ready
+            ? CreateResult(target, true, "Activated", "Runtime pull acknowledged and activated.", runtimeArtifactId)
+            : CreateResult(target, true, "Acknowledged", "Runtime pull acknowledged and accepted for activation.", runtimeArtifactId);
     }
 
     private async Task<RuntimeArtifactDeliveryPackage> BuildPackage(
@@ -401,4 +420,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             ? node.ApiKeyReference
             : node.SecretReference;
 
+    private static bool IsRuntimeReady(string status)
+        => string.Equals(status, "Ready", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
 }

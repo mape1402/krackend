@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -21,18 +22,25 @@ internal sealed class RuntimeIngressConfigurationAccessor :
     public async Task<IngressConfigurationReadingResult> ReadAsync(CancellationToken cancellationToken = default)
     {
         var configurations = await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
-            .Where(x => x.IsActive)
-            .OrderBy(x => x.RuntimeOrchestrationArtifactId)
-            .ThenBy(x => x.ConfigurationKey)
+            .Join(
+                _dbContext.RuntimeOrchestrationArtifacts.AsNoTracking(),
+                configuration => configuration.RuntimeOrchestrationArtifactId,
+                artifact => artifact.Id,
+                (configuration, artifact) => new { Configuration = configuration, Artifact = artifact })
+            .Where(x => x.Configuration.IsActive &&
+                x.Artifact.IsActive &&
+                x.Artifact.Status == RuntimeOrchestrationArtifactStatus.Ready)
+            .OrderBy(x => x.Configuration.RuntimeOrchestrationArtifactId)
+            .ThenBy(x => x.Configuration.ConfigurationKey)
             .Skip(_skip)
             .Take(PageSize)
             .Select(x => new IngressConfiguration
             {
-                Id = x.Id.ToString(),
-                ArtifactId = x.RuntimeOrchestrationArtifactId.ToString(),
-                IngressKind = x.IngressKind,
-                IngressTransport = x.IngressTransport,
-                SettingsPayload = x.SettingsPayload
+                Id = x.Configuration.Id.ToString(),
+                ArtifactId = x.Configuration.RuntimeOrchestrationArtifactId.ToString(),
+                IngressKind = x.Configuration.IngressKind,
+                IngressTransport = x.Configuration.IngressTransport,
+                SettingsPayload = x.Configuration.SettingsPayload
             })
             .ToArrayAsync(cancellationToken);
 
@@ -51,15 +59,23 @@ internal sealed class RuntimeIngressConfigurationAccessor :
     {
         var runtimeArtifactId = new Id(Ulid.Parse(artifactId));
         return await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
-            .Where(x => x.RuntimeOrchestrationArtifactId == runtimeArtifactId && x.IsActive)
-            .OrderBy(x => x.ConfigurationKey)
+            .Join(
+                _dbContext.RuntimeOrchestrationArtifacts.AsNoTracking(),
+                configuration => configuration.RuntimeOrchestrationArtifactId,
+                artifact => artifact.Id,
+                (configuration, artifact) => new { Configuration = configuration, Artifact = artifact })
+            .Where(x => x.Configuration.RuntimeOrchestrationArtifactId == runtimeArtifactId &&
+                x.Configuration.IsActive &&
+                x.Artifact.IsActive &&
+                x.Artifact.Status == RuntimeOrchestrationArtifactStatus.Ready)
+            .OrderBy(x => x.Configuration.ConfigurationKey)
             .Select(x => new IngressConfiguration
             {
-                Id = x.Id.ToString(),
-                ArtifactId = x.RuntimeOrchestrationArtifactId.ToString(),
-                IngressKind = x.IngressKind,
-                IngressTransport = x.IngressTransport,
-                SettingsPayload = x.SettingsPayload
+                Id = x.Configuration.Id.ToString(),
+                ArtifactId = x.Configuration.RuntimeOrchestrationArtifactId.ToString(),
+                IngressKind = x.Configuration.IngressKind,
+                IngressTransport = x.Configuration.IngressTransport,
+                SettingsPayload = x.Configuration.SettingsPayload
             })
             .ToArrayAsync(cancellationToken);
     }

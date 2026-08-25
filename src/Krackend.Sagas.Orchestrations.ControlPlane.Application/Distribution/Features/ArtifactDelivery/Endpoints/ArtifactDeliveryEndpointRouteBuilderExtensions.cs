@@ -88,6 +88,7 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
                 runtimeNodeId,
                 releaseTargetId,
                 request?.RuntimeArtifactId ?? string.Empty,
+                request?.RuntimeArtifactStatus ?? string.Empty,
                 cancellationToken);
 
             return Results.Ok(result);

@@ -377,6 +377,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<long>("IngressGeneration")
+                        .HasColumnType("bigint");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -392,12 +395,32 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTime?>("ProjectionCompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProjectionError")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime?>("ProjectionFailedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ProjectionStartedOnUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("RetiredOnUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<byte[]>("SourceOrchestrationVersionId")
                         .IsRequired()
                         .HasColumnType("binary(16)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("Pending");
 
                     b.Property<byte[]>("SupersededByArtifactId")
                         .HasColumnType("binary(16)");
@@ -413,6 +436,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasIndex("EnvironmentKey", "OrchestrationDefinitionKey", "Version")
                         .IsUnique();
+
+                    b.HasIndex("EnvironmentKey", "Status", "IsActive");
 
                     b.ToTable("RuntimeOrchestrationArtifacts", "Runtime");
                 });
