@@ -148,6 +148,7 @@ public sealed class CreateModel : PageModel
         /// </summary>
         [Required]
         [MaxLength(128)]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
         [Display(Name = "Key")]
         public string Key { get; set; } = string.Empty;
 

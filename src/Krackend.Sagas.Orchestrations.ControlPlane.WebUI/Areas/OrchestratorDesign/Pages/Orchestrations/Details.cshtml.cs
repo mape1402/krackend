@@ -97,6 +97,13 @@ public sealed class DetailsModel : PageModel
     /// </summary>
     public async Task<IActionResult> OnPostCreateVersionAsync(string orchestrationId, CancellationToken cancellationToken = default)
     {
+        if (!ModelState.IsValid)
+        {
+            OrchestrationId = orchestrationId;
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
+
         if (!string.IsNullOrWhiteSpace(NewVersion.VersionId))
         {
             var updatedBy = string.IsNullOrWhiteSpace(NewVersion.CreatedBy) ? "web-ui" : NewVersion.CreatedBy;
@@ -230,24 +237,28 @@ public sealed class DetailsModel : PageModel
         /// Gets or sets semantic version string.
         /// </summary>
         [Required]
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         [Display(Name = "Version")]
         public string Version { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets version label.
         /// </summary>
+        [MaxLength(256)]
         [Display(Name = "Label")]
         public string VersionLabel { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets optional version description.
         /// </summary>
+        [MaxLength(2000)]
         [Display(Name = "Description")]
         public string Description { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets optional version notes.
         /// </summary>
+        [MaxLength(2000)]
         [Display(Name = "Notes")]
         public string Notes { get; set; } = string.Empty;
 

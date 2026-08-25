@@ -134,6 +134,34 @@
 
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-shell.js" asp-append-version="true"></script>
+    <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-messages.js" asp-append-version="true"></script>
+    @{
+        var pageError = ViewContext.ViewData.Model?.GetType().GetProperty("ErrorMessage")?.GetValue(ViewContext.ViewData.Model)?.ToString() ?? string.Empty;
+        var validationErrors = ViewContext.ModelState.Values
+            .SelectMany(x => x.Errors)
+            .Select(x => x.ErrorMessage)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+    }
+    @if (validationErrors.Length > 0 || !string.IsNullOrWhiteSpace(pageError))
+    {
+        <script>
+            window.OrchestratorMessages?.showValidation({
+                title: 'Review the capture',
+                errors: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(validationErrors.Length > 0 ? validationErrors : new[] { pageError }))
+            });
+        </script>
+    }
+    @if (TempData["OrchestratorMessage.Title"] is string messageTitle)
+    {
+        <script>
+            window.OrchestratorMessages?.notify({
+                title: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(messageTitle)),
+                message: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(TempData["OrchestratorMessage.Body"]?.ToString() ?? string.Empty)),
+                type: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(TempData["OrchestratorMessage.Type"]?.ToString() ?? "info"))
+            });
+        </script>
+    }
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
