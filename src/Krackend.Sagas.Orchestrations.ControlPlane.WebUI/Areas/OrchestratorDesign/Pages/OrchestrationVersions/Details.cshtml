@@ -37,19 +37,19 @@
                                 <h3 class="od-item-title">@trigger.Key</h3>
                                 <p class="od-item-meta">@trigger.TriggerType</p>
                             </div>
-                            @if (Model.CanEdit)
-                            {
-                                <div class="dropdown">
-                                    <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Trigger actions">&#8942;</button>
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        <li>
-                                            <button type="button"
-                                                    class="dropdown-item js-open-trigger-modal"
-                                                    data-trigger-mode="edit"
-                                                    data-trigger-id="@trigger.Id">
-                                                Edit trigger
-                                            </button>
-                                        </li>
+                            <div class="dropdown">
+                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Trigger actions">&#8942;</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li>
+                                        <button type="button"
+                                                class="dropdown-item js-open-trigger-modal"
+                                                data-trigger-mode="edit"
+                                                data-trigger-id="@trigger.Id">
+                                            @(Model.CanEdit ? "Edit trigger" : "View trigger")
+                                        </button>
+                                    </li>
+                                    @if (Model.CanEdit)
+                                    {
                                         <li><hr class="dropdown-divider" /></li>
                                         <li>
                                             <form method="post" asp-page-handler="DeleteTrigger" class="od-inline-form" data-confirm="true" data-confirm-title="Delete trigger" data-confirm-message="Delete this trigger from the orchestration version?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting trigger" data-busy-message="Design is removing the trigger binding.">
@@ -59,9 +59,9 @@
                                                 <button type="submit" class="dropdown-item text-danger">Delete trigger</button>
                                             </form>
                                         </li>
-                                    </ul>
-                                </div>
-                            }
+                                    }
+                                </ul>
+                            </div>
                         </div>
                         @if (Model.CanEdit)
                         {
@@ -108,18 +108,15 @@
 
                 <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                     <div class="od-pipeline-card od-stage-card">
-                        @if (Model.CanEdit)
-                        {
-                            <button type="button"
-                                    class="od-stage-exec-btn js-stage-execution-btn @(hasStageExecutionCondition ? "od-stage-exec-btn-active" : "od-stage-exec-btn-inactive")"
-                                    title="Execution condition"
-                                    aria-label="Execution condition"
-                                    data-stage-id="@stage.Id">
-                                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                                    <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
-                                </svg>
-                            </button>
-                        }
+                        <button type="button"
+                                class="od-stage-exec-btn js-stage-execution-btn @(hasStageExecutionCondition ? "od-stage-exec-btn-active" : "od-stage-exec-btn-inactive")"
+                                title="Execution condition"
+                                aria-label="Execution condition"
+                                data-stage-id="@stage.Id">
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
+                            </svg>
+                        </button>
                         <div class="od-item-top">
                             <div class="od-stage-head-main">
                                 <div class="od-stage-texts">
@@ -130,17 +127,14 @@
                             <div class="dropdown">
                                 <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Stage actions">&#8942;</button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    @if (Model.CanEdit)
-                                    {
-                                        <li>
-                                            <button type="button"
-                                                    class="dropdown-item js-open-stage-modal"
-                                                    data-stage-mode="edit"
-                                                    data-stage-id="@stage.Id">
-                                                Edit stage
-                                            </button>
-                                        </li>
-                                    }
+                                    <li>
+                                        <button type="button"
+                                                class="dropdown-item js-open-stage-modal"
+                                                data-stage-mode="edit"
+                                                data-stage-id="@stage.Id">
+                                            @(Model.CanEdit ? "Edit stage" : "View stage")
+                                        </button>
+                                    </li>
                                     <li>
                                         <a class="dropdown-item"
                                            asp-area="OrchestratorDesign"
@@ -337,11 +331,44 @@
 
 @section Scripts {
 <script>
+const orchestrationVersionCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+
+function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
+    if (!modalElement) {
+        return;
+    }
+
+    modalElement.querySelectorAll('input, textarea, select').forEach(element => {
+        const type = (element.getAttribute('type') || '').toLowerCase();
+        if (type === 'hidden') {
+            return;
+        }
+
+        if (element.tagName === 'TEXTAREA' || (element.tagName === 'INPUT' && type !== 'checkbox' && type !== 'radio')) {
+            element.readOnly = readOnly;
+            element.toggleAttribute('readonly', readOnly);
+            return;
+        }
+
+        element.disabled = readOnly;
+    });
+
+    if (submitButton) {
+        submitButton.classList.toggle('d-none', readOnly);
+        submitButton.disabled = readOnly;
+    }
+
+    const dismissButton = modalElement.querySelector('.modal-footer [data-bs-dismiss="modal"]');
+    if (dismissButton) {
+        dismissButton.textContent = readOnly ? 'Close' : 'Cancel';
+    }
+}
+
 (() => {
     const pipeline = document.getElementById('stagePipeline');
     if (!pipeline) return;
 
-    const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+    const canEdit = orchestrationVersionCanEdit;
 
     const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
     let dragged = null;
@@ -448,8 +475,14 @@
     const stageModalTitle = document.getElementById('newStageModalLabel');
     const stageSubmitButton = document.getElementById('stageModalSubmitButton');
     const stageIdInput = document.getElementById('stageModalStageId');
+    const stageForm = stageModalElement?.querySelector('form');
+    const canEdit = orchestrationVersionCanEdit;
     if (!stageModalElement || !stageModalTitle || !stageSubmitButton || !stageIdInput) {
         return;
+    }
+
+    if (stageForm && !canEdit) {
+        stageForm.addEventListener('submit', event => event.preventDefault());
     }
 
     const defaultValues = {
@@ -508,16 +541,22 @@
                 }
 
                 const payload = await response.json();
-                stageModalTitle.textContent = 'Edit stage';
+                stageModalTitle.textContent = canEdit ? 'Edit stage' : 'Stage configuration';
                 stageSubmitButton.textContent = 'Save';
                 applyPayload(payload);
+                setVersionModalReadOnly(stageModalElement, !canEdit, stageSubmitButton);
                 openModal();
+                return;
+            }
+
+            if (!canEdit) {
                 return;
             }
 
             stageModalTitle.textContent = 'Create stage';
             stageSubmitButton.textContent = 'Create';
             applyPayload({});
+            setVersionModalReadOnly(stageModalElement, false, stageSubmitButton);
             openModal();
         });
     });
@@ -533,9 +572,12 @@
     const conditionSection = document.getElementById('stageExecutionConditionSection');
     const unsupportedEngineWarning = document.getElementById('stageConditionUnsupportedEngineWarning');
     const saveButton = document.getElementById('stageExecutionConditionSaveButton');
+    const canEdit = orchestrationVersionCanEdit;
     if (!modalElement || !stageIdInput || !hasExecutionConditionInput || !conditionEngineInput || !conditionDslExpressionInput || !conditionSection || !unsupportedEngineWarning || !saveButton) {
         return;
     }
+
+    setVersionModalReadOnly(modalElement, !canEdit, saveButton);
 
     function refreshConditionConfigByEngine() {
         const selectedEngine = (conditionEngineInput.value || '').toLowerCase();
@@ -577,6 +619,10 @@
     }
 
     async function saveExecutionCondition() {
+        if (!canEdit) {
+            return;
+        }
+
         const stageId = stageIdInput.value || '';
         if (!stageId) {
             return;
@@ -646,8 +692,14 @@
     const triggerSubmitButton = document.getElementById('triggerModalSubmitButton');
     const triggerIdInput = document.getElementById('triggerModalTriggerId');
     const unsupportedWarning = document.getElementById('triggerUnsupportedTypeWarning');
+    const triggerForm = triggerModalElement?.querySelector('form');
+    const canEdit = orchestrationVersionCanEdit;
     if (!triggerTypeSelector || !triggerModalElement || !triggerModalTitle || !triggerSubmitButton || !triggerIdInput) {
         return;
+    }
+
+    if (triggerForm && !canEdit) {
+        triggerForm.addEventListener('submit', event => event.preventDefault());
     }
 
     const defaultValues = {
@@ -745,16 +797,22 @@
                 }
 
                 const payload = await response.json();
-                triggerModalTitle.textContent = 'Edit trigger';
+                triggerModalTitle.textContent = canEdit ? 'Edit trigger' : 'Trigger configuration';
                 triggerSubmitButton.textContent = 'Save';
                 applyPayload(payload);
+                setVersionModalReadOnly(triggerModalElement, !canEdit, triggerSubmitButton);
                 openModal();
+                return;
+            }
+
+            if (!canEdit) {
                 return;
             }
 
             triggerModalTitle.textContent = 'Create trigger';
             triggerSubmitButton.textContent = 'Create';
             applyPayload({});
+            setVersionModalReadOnly(triggerModalElement, false, triggerSubmitButton);
             openModal();
         });
     });

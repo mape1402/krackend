@@ -24,8 +24,6 @@
 {
     <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
     <style>
-        .od-kebab,
-        .od-task-side-btn,
         .od-task-toggle-row,
         .od-add-actions-item {
             display: none !important;
@@ -76,12 +74,15 @@
                             <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Parallel group actions">&#8942;</button>
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li>
-                                    <button type="button" class="dropdown-item js-edit-group">Edit group</button>
+                                    <button type="button" class="dropdown-item js-edit-group">@(Model.CanEdit ? "Edit group" : "View group")</button>
                                 </li>
-                                <li><hr class="dropdown-divider" /></li>
-                                <li>
-                                    <button type="button" class="dropdown-item text-danger js-remove-group">Remove group</button>
-                                </li>
+                                @if (Model.CanEdit)
+                                {
+                                    <li><hr class="dropdown-divider" /></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item text-danger js-remove-group">Remove group</button>
+                                    </li>
+                                }
                             </ul>
                         </div>
                     </div>
@@ -122,31 +123,37 @@
                                             <ul class="dropdown-menu dropdown-menu-end">
                                                 <li>
                                                     <button type="button"
-                                                            class="dropdown-item js-open-task-modal"
-                                                            data-task-mode="edit"
-                                                            data-task-id="@groupedTask.Id">
-                                                        Edit task
+                                                    class="dropdown-item js-open-task-modal"
+                                                    data-task-mode="edit"
+                                                    data-task-id="@groupedTask.Id">
+                                                        @(Model.CanEdit ? "Edit task" : "View task")
                                                     </button>
                                                 </li>
-                                                <li><hr class="dropdown-divider" /></li>
-                                                <li>
-                                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
-                                                        <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                                        <input type="hidden" name="versionId" value="@Model.VersionId" />
-                                                        <input type="hidden" name="stageId" value="@Model.StageId" />
-                                                        <input type="hidden" name="taskId" value="@groupedTask.Id" />
-                                                        <button type="submit" class="dropdown-item text-danger">Delete task</button>
-                                                    </form>
-                                                </li>
+                                                @if (Model.CanEdit)
+                                                {
+                                                    <li><hr class="dropdown-divider" /></li>
+                                                    <li>
+                                                        <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
+                                                            <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                            <input type="hidden" name="versionId" value="@Model.VersionId" />
+                                                            <input type="hidden" name="stageId" value="@Model.StageId" />
+                                                            <input type="hidden" name="taskId" value="@groupedTask.Id" />
+                                                            <button type="submit" class="dropdown-item text-danger">Delete task</button>
+                                                        </form>
+                                                    </li>
+                                                }
                                             </ul>
                                         </div>
                                     </div>
-                                    <div class="od-task-toggle-row">
-                                        <span class="od-task-toggle-label">Enabled</span>
-                                        <div class="form-check form-switch od-task-toggle">
-                                            <input class="form-check-input js-task-enabled-toggle" type="checkbox" role="switch" data-task-id="@groupedTask.Id" @(groupedTask.IsEnabled ? "checked" : null) aria-label="Toggle task enabled" />
+                                    @if (Model.CanEdit)
+                                    {
+                                        <div class="od-task-toggle-row">
+                                            <span class="od-task-toggle-label">Enabled</span>
+                                            <div class="form-check form-switch od-task-toggle">
+                                                <input class="form-check-input js-task-enabled-toggle" type="checkbox" role="switch" data-task-id="@groupedTask.Id" @(groupedTask.IsEnabled ? "checked" : null) aria-label="Toggle task enabled" />
+                                            </div>
                                         </div>
-                                    </div>
+                                    }
                                 </div>
                             </article>
                         }
@@ -193,39 +200,48 @@
                                             class="dropdown-item js-open-task-modal"
                                             data-task-mode="edit"
                                             data-task-id="@task.Id">
-                                        Edit task
+                                        @(Model.CanEdit ? "Edit task" : "View task")
                                     </button>
                                 </li>
-                                <li><hr class="dropdown-divider" /></li>
-                                <li>
-                                    <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
-                                        <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                        <input type="hidden" name="versionId" value="@Model.VersionId" />
-                                        <input type="hidden" name="stageId" value="@Model.StageId" />
-                                        <input type="hidden" name="taskId" value="@task.Id" />
-                                        <button type="submit" class="dropdown-item text-danger">Delete task</button>
-                                    </form>
-                                </li>
+                                @if (Model.CanEdit)
+                                {
+                                    <li><hr class="dropdown-divider" /></li>
+                                    <li>
+                                        <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
+                                            <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                            <input type="hidden" name="versionId" value="@Model.VersionId" />
+                                            <input type="hidden" name="stageId" value="@Model.StageId" />
+                                            <input type="hidden" name="taskId" value="@task.Id" />
+                                            <button type="submit" class="dropdown-item text-danger">Delete task</button>
+                                        </form>
+                                    </li>
+                                }
                             </ul>
                         </div>
                     </div>
-                    <div class="od-task-toggle-row">
-                        <span class="od-task-toggle-label">Enabled</span>
-                        <div class="form-check form-switch od-task-toggle">
-                            <input class="form-check-input js-task-enabled-toggle" type="checkbox" role="switch" data-task-id="@task.Id" @(task.IsEnabled ? "checked" : null) aria-label="Toggle task enabled" />
+                    @if (Model.CanEdit)
+                    {
+                        <div class="od-task-toggle-row">
+                            <span class="od-task-toggle-label">Enabled</span>
+                            <div class="form-check form-switch od-task-toggle">
+                                <input class="form-check-input js-task-enabled-toggle" type="checkbox" role="switch" data-task-id="@task.Id" @(task.IsEnabled ? "checked" : null) aria-label="Toggle task enabled" />
+                            </div>
                         </div>
-                    </div>
+                    }
                 </div>
             </article>
         }
 
-        <article class="od-pipeline-item od-add-item od-add-group-item od-add-actions-item">
-            <div class="od-pipeline-card od-add-actions-card">
-                <a href="#" id="addParallelGroupButton" class="od-add-link">+ Add parallel group</a>
-                <span class="od-add-actions-separator" aria-hidden="true"></span>
-                <a href="#" class="od-add-link js-open-task-modal" data-task-mode="create" data-bs-toggle="modal" data-bs-target="#newTaskModal">+ Add task</a>
-            </div>
-        </article>
+        @if (Model.CanEdit)
+        {
+            <article class="od-pipeline-item od-add-item od-add-group-item od-add-actions-item">
+                <div class="od-pipeline-card od-add-actions-card">
+                    <a href="#" id="addParallelGroupButton" class="od-add-link">+ Add parallel group</a>
+                    <span class="od-add-actions-separator" aria-hidden="true"></span>
+                    <a href="#" class="od-add-link js-open-task-modal" data-task-mode="create" data-bs-toggle="modal" data-bs-target="#newTaskModal">+ Add task</a>
+                </div>
+            </article>
+        }
     </div>
 </section>
 
@@ -864,16 +880,59 @@
 
 @section Scripts {
 <script>
+const orchestrationStageCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+
+function setStageModalReadOnly(modalElement, readOnly, submitButton) {
+    if (!modalElement) {
+        return;
+    }
+
+    modalElement.querySelectorAll('input, textarea, select').forEach(element => {
+        const type = (element.getAttribute('type') || '').toLowerCase();
+        if (type === 'hidden') {
+            return;
+        }
+
+        if (element.tagName === 'TEXTAREA' || (element.tagName === 'INPUT' && type !== 'checkbox' && type !== 'radio')) {
+            element.readOnly = readOnly;
+            element.toggleAttribute('readonly', readOnly);
+            return;
+        }
+
+        element.disabled = readOnly;
+    });
+
+    modalElement.querySelectorAll('.od-chip-input').forEach(input => {
+        input.readOnly = readOnly;
+        input.disabled = readOnly;
+    });
+
+    modalElement.querySelectorAll('.od-chip-remove').forEach(button => {
+        button.disabled = readOnly;
+        button.classList.toggle('d-none', readOnly);
+    });
+
+    if (submitButton) {
+        submitButton.classList.toggle('d-none', readOnly);
+        submitButton.disabled = readOnly;
+    }
+
+    const dismissButton = modalElement.querySelector('.modal-footer [data-bs-dismiss="modal"]');
+    if (dismissButton) {
+        dismissButton.textContent = readOnly ? 'Close' : 'Cancel';
+    }
+}
+
 (() => {
     const pipeline = document.getElementById('taskPipeline');
     if (!pipeline) return;
 
-    const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
-    if (!canEdit) return;
+    const canEdit = orchestrationStageCanEdit;
 
     const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
     const addParallelGroupButton = document.getElementById('addParallelGroupButton');
     const editGroupModalElement = document.getElementById('editParallelGroupModal');
+    const editGroupModalTitle = document.getElementById('editParallelGroupModalLabel');
     const editGroupIdInput = document.getElementById('editParallelGroupId');
     const editGroupNameInput = document.getElementById('editParallelGroupName');
     const editGroupJoinPolicyInput = document.getElementById('editParallelGroupJoinPolicy');
@@ -894,6 +953,10 @@
     const transformationSection = document.getElementById('taskTransformationSectionQuick');
     const transformationWarning = document.getElementById('taskTransformationUnsupportedEngineWarningQuick');
     const saveTransformationButton = document.getElementById('taskTransformationSaveButton');
+    setStageModalReadOnly(executionConditionModalElement, !canEdit, saveExecutionConditionButton);
+    setStageModalReadOnly(transformationModalElement, !canEdit, saveTransformationButton);
+    setStageModalReadOnly(editGroupModalElement, !canEdit, saveParallelGroupButton);
+
     let draggedTask = null;
     let draggedGroup = null;
     let groupNameCounter = getInitialGroupNameCounter();
@@ -964,7 +1027,7 @@
         const group = document.createElement('article');
         group.className = 'od-parallel-group';
         group.dataset.groupId = groupData.id;
-        group.draggable = true;
+        group.draggable = canEdit;
         const groupName = normalizeGroupName(groupData.name, 'Parallel group');
         group.innerHTML = `
             <div class="od-parallel-group-head">
@@ -975,12 +1038,14 @@
                     <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Parallel group actions">&#8942;</button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li>
-                            <button type="button" class="dropdown-item js-edit-group">Edit group</button>
+                            <button type="button" class="dropdown-item js-edit-group">${canEdit ? 'Edit group' : 'View group'}</button>
                         </li>
+                        ${canEdit ? `
                         <li><hr class="dropdown-divider" /></li>
                         <li>
                             <button type="button" class="dropdown-item text-danger js-remove-group">Remove group</button>
                         </li>
+                        ` : ''}
                     </ul>
                 </div>
             </div>
@@ -1174,6 +1239,11 @@
     }
 
     pipeline.addEventListener('dragstart', event => {
+        if (!canEdit) {
+            event.preventDefault();
+            return;
+        }
+
         const task = event.target.closest('.od-pipeline-item[data-task-id]');
         if (task) {
             draggedTask = task;
@@ -1198,6 +1268,10 @@
     });
 
     pipeline.addEventListener('dragover', event => {
+        if (!canEdit) {
+            return;
+        }
+
         if (!draggedTask && !draggedGroup) {
             return;
         }
@@ -1216,6 +1290,10 @@
     });
 
     pipeline.addEventListener('dragend', async () => {
+        if (!canEdit) {
+            return;
+        }
+
         if (!draggedTask && !draggedGroup) {
             return;
         }
@@ -1282,6 +1360,11 @@
             editGroupNameInput.value = normalizeGroupName(payload.name, 'Parallel group');
             editGroupJoinPolicyInput.value = payload.joinPolicy || 'WaitAll';
             editGroupMaxParallelAgentsInput.value = payload.maxParallelAgents == null ? '' : payload.maxParallelAgents;
+            if (editGroupModalTitle) {
+                editGroupModalTitle.textContent = canEdit ? 'Edit parallel group' : 'Parallel group configuration';
+            }
+
+            setStageModalReadOnly(editGroupModalElement, !canEdit, saveParallelGroupButton);
 
             if (editGroupModalElement && window.bootstrap?.Modal) {
                 window.bootstrap.Modal.getOrCreateInstance(editGroupModalElement).show();
@@ -1296,6 +1379,10 @@
         }
 
         event.preventDefault();
+        if (!canEdit) {
+            return;
+        }
+
         const group = removeButton.closest('.od-parallel-group');
         if (!group) {
             return;
@@ -1326,6 +1413,11 @@
     });
 
     pipeline.addEventListener('change', async event => {
+        if (!canEdit) {
+            event.preventDefault();
+            return;
+        }
+
         const toggle = event.target.closest('.js-task-enabled-toggle');
         if (!toggle) {
             return;
@@ -1363,6 +1455,10 @@
 
     if (saveExecutionConditionButton) {
         saveExecutionConditionButton.addEventListener('click', async () => {
+            if (!canEdit) {
+                return;
+            }
+
             if (!executionConditionTaskIdInput || !executionConditionEnabledInput || !executionConditionEngineInput || !executionConditionDslExpressionInput || !executionConditionModalElement || !window.bootstrap?.Modal) {
                 return;
             }
@@ -1402,6 +1498,10 @@
 
     if (saveTransformationButton) {
         saveTransformationButton.addEventListener('click', async () => {
+            if (!canEdit) {
+                return;
+            }
+
             if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationModalElement || !window.bootstrap?.Modal) {
                 return;
             }
@@ -1432,6 +1532,10 @@
 
     if (saveParallelGroupButton) {
         saveParallelGroupButton.addEventListener('click', async () => {
+            if (!canEdit) {
+                return;
+            }
+
             if (!editGroupIdInput || !editGroupNameInput || !editGroupJoinPolicyInput || !editGroupMaxParallelAgentsInput) {
                 return;
             }
@@ -1475,6 +1579,10 @@
     if (addParallelGroupButton) {
         addParallelGroupButton.addEventListener('click', async event => {
             event.preventDefault();
+            if (!canEdit) {
+                return;
+            }
+
             const defaultName = getNextDefaultGroupName();
             const createResult = await postJson('CreateParallelGroup', {
                 stageId: '@Model.StageId',
@@ -1498,6 +1606,10 @@
     }
 
     async function persistOrder() {
+        if (!canEdit) {
+            return;
+        }
+
         const items = [];
         const rootItems = Array.from(pipeline.children).filter(
             x => !x.classList.contains('od-add-item') && !x.classList.contains('od-add-group-item'));
@@ -1535,12 +1647,18 @@
 })();
 
 (() => {
+    const canEdit = orchestrationStageCanEdit;
     const modalTitle = document.getElementById('newTaskModalLabel');
     const submitButton = document.getElementById('taskModalSubmitButton');
     const serverEditPayload = window.__odServerEditTaskPayload || null;
     const modalElement = document.getElementById('newTaskModal');
+    const form = modalElement?.querySelector('form');
     const taskIdInput = document.getElementById('taskModalTaskId');
     const taskIdRawInput = document.getElementById('taskModalTaskIdRaw');
+    if (form && !canEdit) {
+        form.addEventListener('submit', event => event.preventDefault());
+    }
+
     const defaultValues = {
         TaskId: '',
         Key: '',
@@ -1729,29 +1847,37 @@
                 }
 
                 const payload = await response.json();
-                modalTitle.textContent = 'Edit task';
+                modalTitle.textContent = canEdit ? 'Edit task' : 'Task configuration';
                 submitButton.textContent = 'Save';
                 applyPayload(payload);
+                setStageModalReadOnly(modalElement, !canEdit, submitButton);
                 openModal();
+                return;
+            }
+
+            if (!canEdit) {
                 return;
             }
 
             modalTitle.textContent = 'Create task';
             submitButton.textContent = 'Create';
             applyPayload({});
+            setStageModalReadOnly(modalElement, false, submitButton);
         });
     });
 
     if (serverEditPayload && modalTitle && submitButton) {
-        modalTitle.textContent = 'Edit task';
+        modalTitle.textContent = canEdit ? 'Edit task' : 'Task configuration';
         submitButton.textContent = 'Save';
         applyPayload(serverEditPayload);
+        setStageModalReadOnly(modalElement, !canEdit, submitButton);
 
         openModal();
     }
 })();
 
 (() => {
+    const canEdit = orchestrationStageCanEdit;
     const kindSelector = document.getElementById('taskKindSelector');
     const onErrorPolicySelector = document.getElementById('NewTask_OnErrorPolicy');
     const generalTabButton = document.getElementById('task-general-tab');
@@ -1834,6 +1960,10 @@
 
     function refreshDispatchOptions(kindSelect, dispatchSelect) {
         if (!kindSelect || !dispatchSelect) {
+            return;
+        }
+
+        if (!canEdit) {
             return;
         }
 
@@ -1981,7 +2111,13 @@
                     remove.className = 'od-chip-remove';
                     remove.setAttribute('aria-label', `Remove ${value}`);
                     remove.textContent = '×';
+                    remove.disabled = !canEdit;
+                    remove.classList.toggle('d-none', !canEdit);
                     remove.addEventListener('click', () => {
+                        if (!canEdit) {
+                            return;
+                        }
+
                         values.delete(value);
                         syncHidden();
                         render();
@@ -2007,13 +2143,22 @@
             }
 
             input.addEventListener('keydown', event => {
+                if (!canEdit) {
+                    event.preventDefault();
+                    return;
+                }
+
                 if (event.key === 'Enter' || event.key === ',') {
                     event.preventDefault();
                     addFromInput();
                 }
             });
 
-            input.addEventListener('blur', addFromInput);
+            input.addEventListener('blur', () => {
+                if (canEdit) {
+                    addFromInput();
+                }
+            });
             hiddenInput.addEventListener('change', () => {
                 loadFromHidden();
                 render();
@@ -2021,6 +2166,8 @@
             loadFromHidden();
             syncHidden();
             render();
+            input.readOnly = !canEdit;
+            input.disabled = !canEdit;
         });
     }
 
