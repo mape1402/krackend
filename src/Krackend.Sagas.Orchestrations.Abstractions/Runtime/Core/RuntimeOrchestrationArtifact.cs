@@ -51,6 +51,16 @@ public sealed class RuntimeOrchestrationArtifact
     public required JsonNode ArtifactPayload { get; set; }
 
     /// <summary>
+    /// Gets or sets the artifact installation status.
+    /// </summary>
+    public RuntimeOrchestrationArtifactStatus Status { get; set; } = RuntimeOrchestrationArtifactStatus.Pending;
+
+    /// <summary>
+    /// Gets or sets the ingress configuration generation represented by this artifact.
+    /// </summary>
+    public long IngressGeneration { get; set; }
+
+    /// <summary>
     /// Gets or sets is active.
     /// </summary>
     public bool IsActive { get; set; }
@@ -69,6 +79,26 @@ public sealed class RuntimeOrchestrationArtifact
     /// Gets or sets activated on utc.
     /// </summary>
     public DateTime? ActivatedOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets when ingress configuration projection started.
+    /// </summary>
+    public DateTime? ProjectionStartedOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets when ingress configuration projection completed.
+    /// </summary>
+    public DateTime? ProjectionCompletedOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets when ingress configuration projection failed.
+    /// </summary>
+    public DateTime? ProjectionFailedOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last ingress configuration projection error.
+    /// </summary>
+    public string ProjectionError { get; set; }
 
     /// <summary>
     /// Gets or sets retired on utc.

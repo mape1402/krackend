@@ -9,17 +9,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Reposito
 
 internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntimeArtifactRepository
 {
-    private readonly IRuntimeIngressConfigurationProjector _ingressConfigurationProjector;
     private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
 
     public RuntimeArtifactRepository(
         RuntimeDbContext dbContext,
         IRuntimeStorageUnitOfWork unitOfWork,
-        IRuntimeIngressConfigurationProjector ingressConfigurationProjector,
         IRuntimeIngressConfigurationRepository ingressConfigurationRepository)
         : base(dbContext, unitOfWork)
     {
-        _ingressConfigurationProjector = ingressConfigurationProjector ?? throw new ArgumentNullException(nameof(ingressConfigurationProjector));
         _ingressConfigurationRepository = ingressConfigurationRepository ?? throw new ArgumentNullException(nameof(ingressConfigurationRepository));
     }
 
@@ -36,7 +33,63 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         }
 
         await SaveChanges(cancellationToken);
-        await _ingressConfigurationProjector.ProjectAsync(artifact, cancellationToken);
+    }
+
+    public async Task MarkProjectionStarted(
+        Id artifactId,
+        long ingressGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await GetTrackedArtifact(artifactId, cancellationToken);
+        if (artifact.IngressGeneration != ingressGeneration)
+        {
+            return;
+        }
+
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Pending;
+        artifact.ProjectionStartedOnUtc = DateTime.UtcNow;
+        artifact.ProjectionCompletedOnUtc = null;
+        artifact.ProjectionFailedOnUtc = null;
+        artifact.ProjectionError = null;
+        await SaveChanges(cancellationToken);
+    }
+
+    public async Task MarkReady(
+        Id artifactId,
+        long ingressGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await GetTrackedArtifact(artifactId, cancellationToken);
+        if (artifact.IngressGeneration != ingressGeneration)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
+        artifact.ActivatedOnUtc = now;
+        artifact.ProjectionCompletedOnUtc = now;
+        artifact.ProjectionFailedOnUtc = null;
+        artifact.ProjectionError = null;
+        await SaveChanges(cancellationToken);
+    }
+
+    public async Task MarkProjectionFailed(
+        Id artifactId,
+        long ingressGeneration,
+        string error,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await GetTrackedArtifact(artifactId, cancellationToken);
+        if (artifact.IngressGeneration != ingressGeneration)
+        {
+            return;
+        }
+
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Failed;
+        artifact.ProjectionFailedOnUtc = DateTime.UtcNow;
+        artifact.ProjectionError = error;
+        await SaveChanges(cancellationToken);
     }
 
     public async Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
@@ -52,6 +105,7 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         foreach (var artifact in artifacts)
         {
             artifact.IsActive = false;
+            artifact.Status = RuntimeOrchestrationArtifactStatus.Retired;
             artifact.RetiredOnUtc = DateTime.UtcNow;
             deactivatedArtifactIds.Add(artifact.Id);
         }
@@ -77,10 +131,23 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
             .OrderByDescending(x => x.DeployedOnUtc)
             .ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(string environmentKey, CancellationToken cancellationToken = default)
+        => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
+            .Where(x => x.EnvironmentKey == environmentKey &&
+                x.IsActive &&
+                x.Status == RuntimeOrchestrationArtifactStatus.Ready)
+            .OrderByDescending(x => x.DeployedOnUtc)
+            .ToArrayAsync(cancellationToken);
+
     public async Task<RuntimeOrchestrationArtifact> GetActive(string environmentKey, string orchestrationDefinitionKey, CancellationToken cancellationToken = default)
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking().FirstOrDefaultAsync(x =>
                 x.EnvironmentKey == environmentKey &&
                 x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
-                x.IsActive, cancellationToken)
+                x.IsActive &&
+                x.Status == RuntimeOrchestrationArtifactStatus.Ready, cancellationToken)
             ?? throw new KeyNotFoundException($"Active runtime artifact '{orchestrationDefinitionKey}' was not found.");
+
+    private async Task<RuntimeOrchestrationArtifact> GetTrackedArtifact(Id artifactId, CancellationToken cancellationToken)
+        => await DbContext.RuntimeOrchestrationArtifacts.FirstOrDefaultAsync(x => x.Id == artifactId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Runtime artifact '{artifactId}' was not found.");
 }

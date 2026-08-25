@@ -3,7 +3,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
-using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Distribution;
 
@@ -13,17 +12,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Distribution;
 public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymentService
 {
     private readonly IRuntimeArtifactRepository _artifactRepository;
-    private readonly IIngressRegistry _ingressRegistry;
+    private readonly IRuntimeStorageUnitOfWork _unitOfWork;
+    private readonly IRuntimeArtifactProjectionScheduler _projectionScheduler;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
     /// </summary>
     public RuntimeArtifactDeploymentService(
         IRuntimeArtifactRepository artifactRepository,
-        IIngressRegistry ingressRegistry)
+        IRuntimeStorageUnitOfWork unitOfWork,
+        IRuntimeArtifactProjectionScheduler projectionScheduler)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
-        _ingressRegistry = ingressRegistry ?? throw new ArgumentNullException(nameof(ingressRegistry));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _projectionScheduler = projectionScheduler ?? throw new ArgumentNullException(nameof(projectionScheduler));
     }
 
     /// <inheritdoc />
@@ -41,8 +43,23 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             package.OrchestrationDefinitionKey,
             version,
             cancellationToken);
+        if (existingArtifact is not null &&
+            existingArtifact.ArtifactChecksum.Value == package.Checksum &&
+            existingArtifact.Status == RuntimeOrchestrationArtifactStatus.Ready)
+        {
+            return new RuntimeArtifactDeploymentResult
+            {
+                Accepted = true,
+                RuntimeArtifactId = existingArtifact.Id.ToString(),
+                Status = RuntimeOrchestrationArtifactStatus.Ready.ToString(),
+                Message = $"Artifact '{existingArtifact.OrchestrationDefinitionKey}' v{existingArtifact.Version} is already ready."
+            };
+        }
 
         var now = DateTime.UtcNow;
+        var ingressGeneration = existingArtifact?.ArtifactChecksum.Value == package.Checksum
+            ? Math.Max(existingArtifact.IngressGeneration, 1)
+            : (existingArtifact?.IngressGeneration ?? 0) + 1;
         var artifact = new RuntimeOrchestrationArtifact
         {
             Id = existingArtifact?.Id ?? artifactId,
@@ -54,24 +71,43 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             ArtifactChecksum = new Checksum(package.Checksum),
             ArtifactPayload = JsonNode.Parse(package.PayloadJson)
                 ?? throw new InvalidOperationException("Artifact payload is empty."),
+            Status = RuntimeOrchestrationArtifactStatus.Pending,
+            IngressGeneration = ingressGeneration,
             IsActive = true,
             LoadedToCache = false,
             DeployedOnUtc = existingArtifact?.DeployedOnUtc ?? now,
-            ActivatedOnUtc = now,
+            ActivatedOnUtc = null,
+            ProjectionStartedOnUtc = null,
+            ProjectionCompletedOnUtc = null,
+            ProjectionFailedOnUtc = null,
+            ProjectionError = null,
             RetiredOnUtc = null,
             SupersededByArtifactId = null,
             Notes = $"Installed from '{sourceKey}' release target '{package.ReleaseTargetId}'."
         };
 
-        await _artifactRepository.Upsert(artifact, cancellationToken);
-        await _ingressRegistry.StandUpOneAsync(artifact.Id.ToString(), cancellationToken);
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_unitOfWork.DeferAutoSave())
+        {
+            await _artifactRepository.Upsert(artifact, cancellationToken);
+            await _projectionScheduler.ScheduleProjectionAsync(new RuntimeArtifactProjectionRequest
+            {
+                ArtifactId = artifact.Id.ToString(),
+                IngressGeneration = artifact.IngressGeneration,
+                RequestedBy = sourceKey,
+                RequestedOnUtc = now
+            }, cancellationToken);
+            await _unitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
 
         return new RuntimeArtifactDeploymentResult
         {
             Accepted = true,
             RuntimeArtifactId = artifact.Id.ToString(),
-            Status = "Activated",
-            Message = $"Artifact '{artifact.OrchestrationDefinitionKey}' v{artifact.Version} installed."
+            Status = RuntimeOrchestrationArtifactStatus.Pending.ToString(),
+            Message = $"Artifact '{artifact.OrchestrationDefinitionKey}' v{artifact.Version} accepted for ingress projection."
         };
     }
 

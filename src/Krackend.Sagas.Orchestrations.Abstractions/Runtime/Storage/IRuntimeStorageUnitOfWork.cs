@@ -11,6 +11,13 @@ public interface IRuntimeStorageUnitOfWork
     bool AutoSaveChanges { get; }
 
     /// <summary>
+    /// Begins a storage transaction for coordinated runtime changes.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Runtime storage transaction.</returns>
+    Task<IRuntimeStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Defers repository flushes until an explicit save or scope disposal.
     /// </summary>
     IDisposable DeferAutoSave();

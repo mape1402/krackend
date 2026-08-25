@@ -67,7 +67,7 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         var source = _sourceProvider.GetByKey(sourceKey);
         var package = await GetPackageAsync(source, releaseTargetId, cancellationToken);
         var deployment = await _deploymentService.DeployAsync(package, source.Key, cancellationToken);
-        await AcknowledgeAsync(source, releaseTargetId, deployment.RuntimeArtifactId, cancellationToken);
+        await AcknowledgeAsync(source, releaseTargetId, deployment, cancellationToken);
         return deployment;
     }
 
@@ -96,12 +96,13 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
     private async Task AcknowledgeAsync(
         ControlPlaneDistributionSource source,
         string releaseTargetId,
-        string runtimeArtifactId,
+        RuntimeArtifactDeploymentResult deployment,
         CancellationToken cancellationToken)
     {
         var body = JsonSerializer.Serialize(new RuntimeArtifactPullAckRequest
         {
-            RuntimeArtifactId = runtimeArtifactId
+            RuntimeArtifactId = deployment.RuntimeArtifactId,
+            RuntimeArtifactStatus = deployment.Status
         });
         using var request = await CreateSignedRequest(
             HttpMethod.Post,

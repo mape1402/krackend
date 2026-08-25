@@ -4,12 +4,14 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 const string adminRootPath = "admin";
 
 var builder = WebApplication.CreateBuilder(args);
+StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
 builder.Services.AddRazorPages();
 
 var sqlConnection = builder.Configuration.GetConnectionString("ControlPlaneDocker")
