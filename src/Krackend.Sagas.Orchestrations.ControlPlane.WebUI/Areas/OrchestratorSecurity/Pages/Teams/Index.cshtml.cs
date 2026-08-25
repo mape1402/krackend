@@ -65,11 +65,21 @@ public sealed class IndexModel : PageModel
     /// <returns>Redirect result.</returns>
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
     {
+        ModelState.Remove("MemberInput.TeamId");
+        ModelState.Remove("MemberInput.ExternalUserId");
+        ModelState.Remove("MemberInput.DisplayName");
+
+        if (!ModelState.IsValid)
+        {
+            await LoadAsync(cancellationToken);
+            return Page();
+        }
+
         await _service.Upsert(new UpsertTeamCommand(
             Input.TeamId,
-            Input.Key,
-            Input.DisplayName,
-            Input.Description,
+            Input.Key.Trim(),
+            Input.DisplayName.Trim(),
+            Input.Description?.Trim() ?? string.Empty,
             "web-ui"), cancellationToken);
 
         return RedirectToPage();
@@ -95,10 +105,22 @@ public sealed class IndexModel : PageModel
     /// <returns>Redirect result.</returns>
     public async Task<IActionResult> OnPostAddMemberAsync(CancellationToken cancellationToken = default)
     {
+        ModelState.Remove("Input.TeamId");
+        ModelState.Remove("Input.Key");
+        ModelState.Remove("Input.DisplayName");
+        ModelState.Remove("Input.Description");
+
+        if (!ModelState.IsValid)
+        {
+            TeamId = MemberInput.TeamId;
+            await LoadAsync(cancellationToken);
+            return Page();
+        }
+
         await _service.AddMember(new AddTeamMemberCommand(
-            MemberInput.TeamId,
-            MemberInput.ExternalUserId,
-            MemberInput.DisplayName), cancellationToken);
+            MemberInput.TeamId.Trim(),
+            MemberInput.ExternalUserId.Trim(),
+            MemberInput.DisplayName?.Trim() ?? string.Empty), cancellationToken);
 
         return RedirectToPage(new { teamId = MemberInput.TeamId });
     }
@@ -154,6 +176,7 @@ public sealed class IndexModel : PageModel
         /// </summary>
         [Required]
         [MaxLength(128)]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
         [Display(Name = "Key")]
         public string Key { get; set; } = string.Empty;
 

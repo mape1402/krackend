@@ -87,14 +87,14 @@ internal static class DefinitionDefaults
         {
             TaskKind.Http => new HttpTaskConfiguration
             {
-                BaseUrlVariableRef = "vars.baseUrl",
-                RelativePath = "/",
+                BaseUrlVariableRef = string.Empty,
+                RelativePath = string.Empty,
                 Method = "GET",
                 ExpectedStatusCodes = new List<int> { 200 }
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
-                Topic = "orchestrator.topic",
+                Topic = string.Empty,
                 Version = new SemanticVersion(1, 0, 0)
             },
             TaskKind.Plugin => new PluginTaskConfiguration

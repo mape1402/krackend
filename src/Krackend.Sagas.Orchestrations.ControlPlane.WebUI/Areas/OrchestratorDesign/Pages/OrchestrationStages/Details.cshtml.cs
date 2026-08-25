@@ -112,6 +112,16 @@ public sealed class DetailsModel : PageModel
 
     public async Task<IActionResult> OnPostCreateTaskAsync(string orchestrationId, string versionId, string taskId = "", CancellationToken cancellationToken = default)
     {
+        ValidateTaskInput();
+        if (!ModelState.IsValid)
+        {
+            OrchestrationId = orchestrationId;
+            VersionId = versionId;
+            StageId = NewTask.StageId;
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
+
         var effectiveTaskId = string.IsNullOrWhiteSpace(taskId) ? NewTask.TaskId : taskId;
         if (!string.IsNullOrWhiteSpace(effectiveTaskId))
         {
@@ -580,6 +590,189 @@ public sealed class DetailsModel : PageModel
         }
     }
 
+    private void ValidateTaskInput()
+    {
+        var kind = ParseEnum(NewTask.Kind, TaskKind.HumanApproval);
+        ValidateTaskConfiguration(kind, string.Empty);
+
+        if (NewTask.HasRetryPolicy)
+        {
+            ValidateRetryPolicy(nameof(NewTask.RetryMaxRetries), NewTask.RetryMaxRetries, nameof(NewTask.RetryDelaySeconds), NewTask.RetryDelaySeconds);
+        }
+
+        if (NewTask.HasTimeoutPolicy)
+        {
+            ValidateTimeoutPolicy(
+                nameof(NewTask.TimeoutSeconds),
+                NewTask.TimeoutSeconds,
+                nameof(NewTask.TimeoutWaitSeconds),
+                NewTask.TimeoutWaitSeconds,
+                nameof(NewTask.TimeoutReconcileRetries),
+                NewTask.TimeoutReconcileRetries,
+                nameof(NewTask.TimeoutReconcileDelaySeconds),
+                NewTask.TimeoutReconcileDelaySeconds);
+        }
+
+        if (!NewTask.HasCompensation)
+        {
+            return;
+        }
+
+        var compensationKind = ParseEnum(NewTask.CompensationKind, TaskKind.HumanApproval);
+        ValidateTaskConfiguration(compensationKind, "Compensation");
+
+        if (NewTask.HasCompensationRetryPolicy)
+        {
+            ValidateRetryPolicy(
+                nameof(NewTask.CompensationRetryMaxRetries),
+                NewTask.CompensationRetryMaxRetries,
+                nameof(NewTask.CompensationRetryDelaySeconds),
+                NewTask.CompensationRetryDelaySeconds);
+        }
+
+        if (NewTask.HasCompensationTimeoutPolicy)
+        {
+            ValidateTimeoutPolicy(
+                nameof(NewTask.CompensationTimeoutSeconds),
+                NewTask.CompensationTimeoutSeconds,
+                nameof(NewTask.CompensationTimeoutWaitSeconds),
+                NewTask.CompensationTimeoutWaitSeconds,
+                nameof(NewTask.CompensationTimeoutReconcileRetries),
+                NewTask.CompensationTimeoutReconcileRetries,
+                nameof(NewTask.CompensationTimeoutReconcileDelaySeconds),
+                NewTask.CompensationTimeoutReconcileDelaySeconds);
+        }
+    }
+
+    private void ValidateTaskConfiguration(TaskKind kind, string prefix)
+    {
+        switch (kind)
+        {
+            case TaskKind.Http:
+                ValidateHttpConfiguration(prefix);
+                break;
+            case TaskKind.Messaging:
+                ValidateMessagingConfiguration(prefix);
+                break;
+            case TaskKind.Plugin:
+                ValidatePluginConfiguration(prefix);
+                break;
+        }
+    }
+
+    private void ValidateHttpConfiguration(string prefix)
+    {
+        var isCompensation = string.Equals(prefix, "Compensation", StringComparison.Ordinal);
+        var baseUrlVariable = isCompensation ? NewTask.CompensationHttpBaseUrlVariableRef : NewTask.HttpBaseUrlVariableRef;
+        var relativePath = isCompensation ? NewTask.CompensationHttpRelativePath : NewTask.HttpRelativePath;
+        var statusCodes = isCompensation ? NewTask.CompensationHttpExpectedStatusCodes : NewTask.HttpExpectedStatusCodes;
+        var hasSchemaValidation = isCompensation ? NewTask.HasCompensationHttpSchemaValidation : NewTask.HasHttpSchemaValidation;
+        var contractKey = isCompensation ? NewTask.CompensationHttpSchemaContractKey : NewTask.HttpSchemaContractKey;
+        var registryProviderId = isCompensation ? NewTask.CompensationHttpSchemaRegistryProviderId : NewTask.HttpSchemaRegistryProviderId;
+
+        AddRequired($"{prefix}HttpBaseUrlVariableRef", baseUrlVariable, "Capture the base URL variable.");
+        AddRequired($"{prefix}HttpRelativePath", relativePath, "Capture the relative path.");
+
+        if (!ParseIntList(statusCodes, Array.Empty<int>()).Any())
+        {
+            ModelState.AddModelError($"{prefix}HttpExpectedStatusCodes", "Capture at least one valid HTTP status code.");
+        }
+
+        if (hasSchemaValidation)
+        {
+            AddRequired($"{prefix}HttpSchemaContractKey", contractKey, "Capture the HTTP schema contract key.");
+        }
+
+        ValidateOptionalUlid($"{prefix}HttpSchemaRegistryProviderId", registryProviderId);
+    }
+
+    private void ValidateMessagingConfiguration(string prefix)
+    {
+        var isCompensation = string.Equals(prefix, "Compensation", StringComparison.Ordinal);
+        var topic = isCompensation ? NewTask.CompensationMessagingTopic : NewTask.MessagingTopic;
+        var hasSchemaValidation = isCompensation ? NewTask.HasCompensationMessagingSchemaValidation : NewTask.HasMessagingSchemaValidation;
+        var contractKey = isCompensation ? NewTask.CompensationMessagingSchemaContractKey : NewTask.MessagingSchemaContractKey;
+        var registryProviderId = isCompensation ? NewTask.CompensationMessagingSchemaRegistryProviderId : NewTask.MessagingSchemaRegistryProviderId;
+
+        AddRequired($"{prefix}MessagingTopic", topic, "Capture the messaging topic.");
+        if (hasSchemaValidation)
+        {
+            AddRequired($"{prefix}MessagingSchemaContractKey", contractKey, "Capture the messaging schema contract key.");
+        }
+
+        ValidateOptionalUlid($"{prefix}MessagingSchemaRegistryProviderId", registryProviderId);
+    }
+
+    private void ValidatePluginConfiguration(string prefix)
+    {
+        var pluginId = string.Equals(prefix, "Compensation", StringComparison.Ordinal)
+            ? NewTask.CompensationPluginId
+            : NewTask.PluginId;
+
+        AddRequired($"{prefix}PluginId", pluginId, "Capture the plugin id.");
+        ValidateOptionalUlid($"{prefix}PluginId", pluginId);
+    }
+
+    private void ValidateRetryPolicy(string retriesField, int retries, string delayField, double delaySeconds)
+    {
+        if (retries < 0)
+        {
+            ModelState.AddModelError(retriesField, "Retries cannot be negative.");
+        }
+
+        if (delaySeconds < 0)
+        {
+            ModelState.AddModelError(delayField, "Delay cannot be negative.");
+        }
+    }
+
+    private void ValidateTimeoutPolicy(
+        string timeoutField,
+        double timeoutSeconds,
+        string waitField,
+        double waitSeconds,
+        string reconcileRetriesField,
+        int reconcileRetries,
+        string reconcileDelayField,
+        double reconcileDelaySeconds)
+    {
+        if (timeoutSeconds <= 0)
+        {
+            ModelState.AddModelError(timeoutField, "Timeout must be greater than zero.");
+        }
+
+        if (waitSeconds <= 0)
+        {
+            ModelState.AddModelError(waitField, "Wait time must be greater than zero.");
+        }
+
+        if (reconcileRetries < 0)
+        {
+            ModelState.AddModelError(reconcileRetriesField, "Reconcile retries cannot be negative.");
+        }
+
+        if (reconcileDelaySeconds < 0)
+        {
+            ModelState.AddModelError(reconcileDelayField, "Reconcile delay cannot be negative.");
+        }
+    }
+
+    private void AddRequired(string field, string value, string message)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            ModelState.AddModelError(field, message);
+        }
+    }
+
+    private void ValidateOptionalUlid(string field, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && !Ulid.TryParse(value, out _))
+        {
+            ModelState.AddModelError(field, "Capture a valid ULID.");
+        }
+    }
+
     private static object BuildEditPayload(TaskDefinitionModel task)
     {
         var payload = new Dictionary<string, object>(StringComparer.Ordinal)
@@ -616,23 +809,23 @@ public sealed class DetailsModel : PageModel
 
         if (task.Configuration is HttpTaskConfiguration http)
         {
-            payload["HttpBaseUrlVariableRef"] = http.BaseUrlVariableRef ?? "vars.baseUrl";
-            payload["HttpRelativePath"] = http.RelativePath ?? "/";
-            payload["HttpMethod"] = http.Method ?? "GET";
+            payload["HttpBaseUrlVariableRef"] = http.BaseUrlVariableRef ?? string.Empty;
+            payload["HttpRelativePath"] = http.RelativePath ?? string.Empty;
+            payload["HttpMethod"] = http.Method ?? string.Empty;
             payload["HttpExpectedStatusCodes"] = string.Join(',', http.ExpectedStatusCodes ?? new List<int> { 200 });
             payload["HttpAllowSyncResponse"] = http.AllowSyncResponse;
             payload["HasHttpSchemaValidation"] = http.HasSchemaValidation;
-            payload["HttpSchemaContractKey"] = http.SchemaBinding?.ContractKey ?? "contract.placeholder";
+            payload["HttpSchemaContractKey"] = http.SchemaBinding?.ContractKey ?? string.Empty;
             payload["HttpSchemaContractVersion"] = http.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
             payload["HttpSchemaRegistryProviderId"] = http.SchemaBinding is null ? string.Empty : http.SchemaBinding.RegistryProviderId.ToString();
             payload["HttpSchemaStrictMode"] = http.SchemaBinding?.StrictMode ?? false;
         }
         else if (task.Configuration is MessagingTaskConfiguration messaging)
         {
-            payload["MessagingTopic"] = messaging.Topic ?? "orchestrator.topic";
+            payload["MessagingTopic"] = messaging.Topic ?? string.Empty;
             payload["MessagingVersion"] = messaging.Version.ToString();
             payload["HasMessagingSchemaValidation"] = messaging.HasSchemaValidation;
-            payload["MessagingSchemaContractKey"] = messaging.SchemaBinding?.ContractKey ?? "contract.placeholder";
+            payload["MessagingSchemaContractKey"] = messaging.SchemaBinding?.ContractKey ?? string.Empty;
             payload["MessagingSchemaContractVersion"] = messaging.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
             payload["MessagingSchemaRegistryProviderId"] = messaging.SchemaBinding is null ? string.Empty : messaging.SchemaBinding.RegistryProviderId.ToString();
             payload["MessagingSchemaStrictMode"] = messaging.SchemaBinding?.StrictMode ?? false;
@@ -680,23 +873,23 @@ public sealed class DetailsModel : PageModel
         {
             if (task.CompensationDefinition.Configuration is HttpTaskConfiguration compHttp)
             {
-                payload["CompensationHttpBaseUrlVariableRef"] = compHttp.BaseUrlVariableRef ?? "vars.baseUrl";
-                payload["CompensationHttpRelativePath"] = compHttp.RelativePath ?? "/";
-                payload["CompensationHttpMethod"] = compHttp.Method ?? "GET";
+                payload["CompensationHttpBaseUrlVariableRef"] = compHttp.BaseUrlVariableRef ?? string.Empty;
+                payload["CompensationHttpRelativePath"] = compHttp.RelativePath ?? string.Empty;
+                payload["CompensationHttpMethod"] = compHttp.Method ?? string.Empty;
                 payload["CompensationHttpExpectedStatusCodes"] = string.Join(',', compHttp.ExpectedStatusCodes ?? new List<int> { 200 });
                 payload["CompensationHttpAllowSyncResponse"] = compHttp.AllowSyncResponse;
                 payload["HasCompensationHttpSchemaValidation"] = compHttp.HasSchemaValidation;
-                payload["CompensationHttpSchemaContractKey"] = compHttp.SchemaBinding?.ContractKey ?? "contract.placeholder";
+                payload["CompensationHttpSchemaContractKey"] = compHttp.SchemaBinding?.ContractKey ?? string.Empty;
                 payload["CompensationHttpSchemaContractVersion"] = compHttp.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
                 payload["CompensationHttpSchemaRegistryProviderId"] = compHttp.SchemaBinding is null ? string.Empty : compHttp.SchemaBinding.RegistryProviderId.ToString();
                 payload["CompensationHttpSchemaStrictMode"] = compHttp.SchemaBinding?.StrictMode ?? false;
             }
             else if (task.CompensationDefinition.Configuration is MessagingTaskConfiguration compMsg)
             {
-                payload["CompensationMessagingTopic"] = compMsg.Topic ?? "orchestrator.topic";
+                payload["CompensationMessagingTopic"] = compMsg.Topic ?? string.Empty;
                 payload["CompensationMessagingVersion"] = compMsg.Version.ToString();
                 payload["HasCompensationMessagingSchemaValidation"] = compMsg.HasSchemaValidation;
-                payload["CompensationMessagingSchemaContractKey"] = compMsg.SchemaBinding?.ContractKey ?? "contract.placeholder";
+                payload["CompensationMessagingSchemaContractKey"] = compMsg.SchemaBinding?.ContractKey ?? string.Empty;
                 payload["CompensationMessagingSchemaContractVersion"] = compMsg.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
                 payload["CompensationMessagingSchemaRegistryProviderId"] = compMsg.SchemaBinding is null ? string.Empty : compMsg.SchemaBinding.RegistryProviderId.ToString();
                 payload["CompensationMessagingSchemaStrictMode"] = compMsg.SchemaBinding?.StrictMode ?? false;
@@ -922,31 +1115,31 @@ public sealed class DetailsModel : PageModel
             TaskKind.Http => new HttpTaskConfiguration
             {
                 HasSchemaValidation = input.HasHttpSchemaValidation,
-                BaseUrlVariableRef = string.IsNullOrWhiteSpace(input.HttpBaseUrlVariableRef) ? "vars.baseUrl" : input.HttpBaseUrlVariableRef,
-                RelativePath = string.IsNullOrWhiteSpace(input.HttpRelativePath) ? "/" : input.HttpRelativePath,
-                Method = string.IsNullOrWhiteSpace(input.HttpMethod) ? "GET" : input.HttpMethod.ToUpperInvariant(),
+                BaseUrlVariableRef = input.HttpBaseUrlVariableRef.Trim(),
+                RelativePath = input.HttpRelativePath.Trim(),
+                Method = input.HttpMethod.Trim().ToUpperInvariant(),
                 ExpectedStatusCodes = ParseIntList(input.HttpExpectedStatusCodes, new[] { 200 }),
                 AllowSyncResponse = input.HttpAllowSyncResponse,
-                SchemaBinding = CreateSchemaBinding(
+                SchemaBinding = input.HasHttpSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.HttpSchemaContractKey,
                     input.HttpSchemaContractVersion,
                     input.HttpSchemaRegistryProviderId,
                     input.HttpSchemaStrictMode,
-                    input.HasHttpSchemaValidation)
+                    input.HasHttpSchemaValidation) : null
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
                 HasSchemaValidation = input.HasMessagingSchemaValidation,
-                Topic = string.IsNullOrWhiteSpace(input.MessagingTopic) ? "orchestrator.topic" : input.MessagingTopic,
+                Topic = input.MessagingTopic.Trim(),
                 Version = ParseSemanticVersion(input.MessagingVersion, new SemanticVersion(1, 0, 0)),
-                SchemaBinding = CreateSchemaBinding(
+                SchemaBinding = input.HasMessagingSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.MessagingSchemaContractKey,
                     input.MessagingSchemaContractVersion,
                     input.MessagingSchemaRegistryProviderId,
                     input.MessagingSchemaStrictMode,
-                    input.HasMessagingSchemaValidation)
+                    input.HasMessagingSchemaValidation) : null
             },
             TaskKind.Plugin => new PluginTaskConfiguration
             {
@@ -963,31 +1156,31 @@ public sealed class DetailsModel : PageModel
             TaskKind.Http => new HttpTaskConfiguration
             {
                 HasSchemaValidation = input.HasCompensationHttpSchemaValidation,
-                BaseUrlVariableRef = string.IsNullOrWhiteSpace(input.CompensationHttpBaseUrlVariableRef) ? "vars.baseUrl" : input.CompensationHttpBaseUrlVariableRef,
-                RelativePath = string.IsNullOrWhiteSpace(input.CompensationHttpRelativePath) ? "/" : input.CompensationHttpRelativePath,
-                Method = string.IsNullOrWhiteSpace(input.CompensationHttpMethod) ? "GET" : input.CompensationHttpMethod.ToUpperInvariant(),
+                BaseUrlVariableRef = input.CompensationHttpBaseUrlVariableRef.Trim(),
+                RelativePath = input.CompensationHttpRelativePath.Trim(),
+                Method = input.CompensationHttpMethod.Trim().ToUpperInvariant(),
                 ExpectedStatusCodes = ParseIntList(input.CompensationHttpExpectedStatusCodes, new[] { 200 }),
                 AllowSyncResponse = input.CompensationHttpAllowSyncResponse,
-                SchemaBinding = CreateSchemaBinding(
+                SchemaBinding = input.HasCompensationHttpSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.CompensationHttpSchemaContractKey,
                     input.CompensationHttpSchemaContractVersion,
                     input.CompensationHttpSchemaRegistryProviderId,
                     input.CompensationHttpSchemaStrictMode,
-                    input.HasCompensationHttpSchemaValidation)
+                    input.HasCompensationHttpSchemaValidation) : null
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
                 HasSchemaValidation = input.HasCompensationMessagingSchemaValidation,
-                Topic = string.IsNullOrWhiteSpace(input.CompensationMessagingTopic) ? "orchestrator.topic" : input.CompensationMessagingTopic,
+                Topic = input.CompensationMessagingTopic.Trim(),
                 Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
-                SchemaBinding = CreateSchemaBinding(
+                SchemaBinding = input.HasCompensationMessagingSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.CompensationMessagingSchemaContractKey,
                     input.CompensationMessagingSchemaContractVersion,
                     input.CompensationMessagingSchemaRegistryProviderId,
                     input.CompensationMessagingSchemaStrictMode,
-                    input.HasCompensationMessagingSchemaValidation)
+                    input.HasCompensationMessagingSchemaValidation) : null
             },
             TaskKind.Plugin => new PluginTaskConfiguration
             {
@@ -1211,7 +1404,7 @@ public sealed class DetailsModel : PageModel
             ElementType = elementType,
             ElementId = Id.New(),
             ContractId = Id.New(),
-            ContractKey = string.IsNullOrWhiteSpace(contractKey) ? "contract.placeholder" : contractKey,
+            ContractKey = contractKey.Trim(),
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
             StrictMode = strictMode,
@@ -1227,6 +1420,7 @@ public sealed class DetailsModel : PageModel
         public string StageId { get; set; } = string.Empty;
 
         [Required]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]
@@ -1262,34 +1456,39 @@ public sealed class DetailsModel : PageModel
 
         public bool HasTransformation { get; set; }
 
-        public string HttpBaseUrlVariableRef { get; set; } = "vars.baseUrl";
+        public string HttpBaseUrlVariableRef { get; set; } = string.Empty;
 
-        public string HttpRelativePath { get; set; } = "/";
+        public string HttpRelativePath { get; set; } = string.Empty;
 
         public string HttpMethod { get; set; } = "GET";
 
+        [RegularExpression(@"^([1-5]\d{2})(\s*,\s*[1-5]\d{2})*$", ErrorMessage = "Use HTTP status codes separated by commas.")]
         public string HttpExpectedStatusCodes { get; set; } = "200";
 
         public bool HttpAllowSyncResponse { get; set; }
 
         public bool HasHttpSchemaValidation { get; set; }
 
-        public string HttpSchemaContractKey { get; set; } = "contract.placeholder";
+        public string HttpSchemaContractKey { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string HttpSchemaContractVersion { get; set; } = "1.0.0";
 
         public string HttpSchemaRegistryProviderId { get; set; } = string.Empty;
 
         public bool HttpSchemaStrictMode { get; set; }
 
-        public string MessagingTopic { get; set; } = "orchestrator.topic";
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        public string MessagingTopic { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string MessagingVersion { get; set; } = "1.0.0";
 
         public bool HasMessagingSchemaValidation { get; set; }
 
-        public string MessagingSchemaContractKey { get; set; } = "contract.placeholder";
+        public string MessagingSchemaContractKey { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string MessagingSchemaContractVersion { get; set; } = "1.0.0";
 
         public string MessagingSchemaRegistryProviderId { get; set; } = string.Empty;
@@ -1349,34 +1548,39 @@ public sealed class DetailsModel : PageModel
 
         public bool HasCompensationTimeoutPolicy { get; set; }
 
-        public string CompensationHttpBaseUrlVariableRef { get; set; } = "vars.baseUrl";
+        public string CompensationHttpBaseUrlVariableRef { get; set; } = string.Empty;
 
-        public string CompensationHttpRelativePath { get; set; } = "/";
+        public string CompensationHttpRelativePath { get; set; } = string.Empty;
 
         public string CompensationHttpMethod { get; set; } = "GET";
 
+        [RegularExpression(@"^([1-5]\d{2})(\s*,\s*[1-5]\d{2})*$", ErrorMessage = "Use HTTP status codes separated by commas.")]
         public string CompensationHttpExpectedStatusCodes { get; set; } = "200";
 
         public bool CompensationHttpAllowSyncResponse { get; set; }
 
         public bool HasCompensationHttpSchemaValidation { get; set; }
 
-        public string CompensationHttpSchemaContractKey { get; set; } = "contract.placeholder";
+        public string CompensationHttpSchemaContractKey { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string CompensationHttpSchemaContractVersion { get; set; } = "1.0.0";
 
         public string CompensationHttpSchemaRegistryProviderId { get; set; } = string.Empty;
 
         public bool CompensationHttpSchemaStrictMode { get; set; }
 
-        public string CompensationMessagingTopic { get; set; } = "orchestrator.topic";
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        public string CompensationMessagingTopic { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string CompensationMessagingVersion { get; set; } = "1.0.0";
 
         public bool HasCompensationMessagingSchemaValidation { get; set; }
 
-        public string CompensationMessagingSchemaContractKey { get; set; } = "contract.placeholder";
+        public string CompensationMessagingSchemaContractKey { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string CompensationMessagingSchemaContractVersion { get; set; } = "1.0.0";
 
         public string CompensationMessagingSchemaRegistryProviderId { get; set; } = string.Empty;

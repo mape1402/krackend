@@ -24,7 +24,17 @@ public sealed class IndexModel : PageModel
 
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
     {
-        await _service.Upsert(new UpsertRuntimeEnvironmentInput(Input.EnvironmentId, Input.Name, Input.Code, Input.Description), cancellationToken);
+        if (!ModelState.IsValid)
+        {
+            await OnGetAsync(cancellationToken);
+            return Page();
+        }
+
+        await _service.Upsert(new UpsertRuntimeEnvironmentInput(
+            Input.EnvironmentId,
+            Input.Name.Trim(),
+            Input.Code.Trim(),
+            Input.Description?.Trim() ?? string.Empty), cancellationToken);
         return RedirectToPage();
     }
 
@@ -37,8 +47,12 @@ public sealed class IndexModel : PageModel
     public sealed class EnvironmentInput
     {
         public string EnvironmentId { get; set; } = string.Empty;
-        [Required] public string Name { get; set; } = string.Empty;
-        [Required] public string Code { get; set; } = string.Empty;
+        [Required] [MaxLength(256)] public string Name { get; set; } = string.Empty;
+        [Required]
+        [MaxLength(128)]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        public string Code { get; set; } = string.Empty;
+        [MaxLength(2000)]
         public string Description { get; set; } = string.Empty;
     }
 }

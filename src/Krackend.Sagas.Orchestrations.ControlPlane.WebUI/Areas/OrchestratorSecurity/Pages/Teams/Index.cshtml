@@ -57,7 +57,7 @@ else
                                     </li>
                                     <li><hr class="dropdown-divider" /></li>
                                     <li>
-                                        <form method="post" asp-page-handler="SetIsActive" class="od-inline-form">
+                                        <form method="post" asp-page-handler="SetIsActive" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating team" data-busy-message="Security is applying the team status change.">
                                             <input type="hidden" name="teamId" value="@item.Id" />
                                             <input type="hidden" name="isActive" value="@(item.IsActive ? "false" : "true")" />
                                             <button type="submit" class="dropdown-item">@(item.IsActive ? "Disable team" : "Enable team")</button>
@@ -80,7 +80,7 @@ else
 <div class="modal fade" id="teamModal" tabindex="-1" aria-labelledby="teamModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert">
+            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving team" data-busy-message="Security is validating and storing the team.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="teamModalLabel">Create team</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -89,7 +89,7 @@ else
                     <input asp-for="Input.TeamId" type="hidden" id="teamIdInput" />
                     <div class="mb-2">
                         <label for="teamKeyInput" class="form-label">Key</label>
-                        <input asp-for="Input.Key" class="form-control" id="teamKeyInput" />
+                        <input asp-for="Input.Key" class="form-control" id="teamKeyInput" data-orchestrator-key="true" />
                     </div>
                     <div class="mb-2">
                         <label for="teamDisplayNameInput" class="form-label">Display Name</label>
@@ -117,7 +117,7 @@ else
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form method="post" asp-page-handler="AddMember" class="row g-2 mb-3">
+                <form method="post" asp-page-handler="AddMember" class="row g-2 mb-3" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Adding member" data-busy-message="Security is validating and storing the team member.">
                     <input asp-for="MemberInput.TeamId" type="hidden" id="memberTeamIdInput" />
                     <div class="col-md-5">
                         <label for="memberExternalUserInput" class="form-label">External User Id</label>
@@ -204,7 +204,12 @@ else
         if (!membersList || !teamId) return;
         const response = await fetch(`${window.location.pathname}?handler=Members&teamId=${encodeURIComponent(teamId)}`);
         if (!response.ok) {
-            membersList.innerHTML = '<div class="text-danger small">Failed to load members.</div>';
+            membersList.innerHTML = '<div class="text-muted small">Members could not be loaded.</div>';
+            window.OrchestratorMessages?.notify({
+                title: 'Members unavailable',
+                message: 'Security could not load the selected team members.',
+                type: 'error'
+            });
             return;
         }
 
@@ -220,7 +225,7 @@ else
                     <div>${escapeHtml(x.displayName || '')}</div>
                     <div class="text-muted small">${escapeHtml(x.externalUserId || '')}</div>
                 </div>
-                <form method="post" action="${window.location.pathname}?handler=RemoveMember">
+                <form method="post" action="${window.location.pathname}?handler=RemoveMember" data-confirm="true" data-confirm-title="Remove member" data-confirm-message="Remove this member from the team?" data-confirm-accept="Remove" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Removing member" data-busy-message="Security is removing the team member.">
                     <input type="hidden" name="teamId" value="${escapeHtml(x.teamId || '')}" />
                     <input type="hidden" name="externalUserId" value="${escapeHtml(x.externalUserId || '')}" />
                     <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>

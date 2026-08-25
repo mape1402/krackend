@@ -78,7 +78,7 @@
                                 <p class="od-item-meta od-release-id">@item.Id</p>
                             </div>
                             <div class="od-chip-row">
-                                <span class="od-meta-chip">Version: @item.VersionNumber - @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "N/A" : item.VersionLabel)</span>
+                                <span class="od-meta-chip">Version: @item.VersionNumber - @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "Unlabeled" : item.VersionLabel)</span>
                                 <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
                             </div>
                         </div>

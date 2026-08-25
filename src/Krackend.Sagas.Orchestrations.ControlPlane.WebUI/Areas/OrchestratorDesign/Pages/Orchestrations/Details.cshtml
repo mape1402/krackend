@@ -64,11 +64,6 @@
     </div>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-}
-
 <section class="od-list-shell">
     @if (!Model.Versions.Any())
     {
@@ -111,7 +106,7 @@
                                     @foreach (var action in Model.GetAllowedActions(version.Status))
                                     {
                                         <li>
-                                            <form method="post" asp-page-handler="VersionAction" class="od-inline-form">
+                                            <form method="post" asp-page-handler="VersionAction" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected version transition.">
                                                 <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                 <input type="hidden" name="versionId" value="@version.Id" />
                                                 <input type="hidden" name="action" value="@action" />
@@ -134,7 +129,7 @@
 <div class="modal fade" id="newVersionModal" tabindex="-1" aria-labelledby="newVersionModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" asp-page-handler="CreateVersion">
+            <form method="post" asp-page-handler="CreateVersion" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving version" data-busy-message="Design is validating and storing the orchestration version.">
                 <div class="modal-header">
                     <h5 class="modal-title" id="newVersionModalLabel">Create version</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -146,7 +141,7 @@
                     <input asp-for="NewVersion.Notes" type="hidden" id="versionModalNotes" />
                     <div class="mb-2">
                         <label asp-for="NewVersion.Version" class="form-label"></label>
-                        <input asp-for="NewVersion.Version" class="form-control" id="versionModalVersion" />
+                        <input asp-for="NewVersion.Version" class="form-control" id="versionModalVersion" data-orchestrator-version="true" />
                     </div>
                     <div class="mb-2">
                         <label asp-for="NewVersion.VersionLabel" class="form-label"></label>

@@ -1,5 +1,5 @@
 @page
-@model ErrorModel
+@model Krackend.Sagas.Orchestrations.WebUI.Shell.Pages.ErrorModel
 @{
     Layout = "_OrchestratorShellLayout";
     ViewData["Title"] = "Unexpected Error";
@@ -11,10 +11,10 @@
             <i class="bi bi-exclamation-triangle"></i>
         </div>
         <div>
-            <p class="od-item-meta">Control plane host</p>
+            <p class="od-item-meta">Unhandled error</p>
             <h1 class="od-page-title">Unexpected error</h1>
             <p class="od-item-description">
-                The control plane could not complete the request. Use the request id to trace the failure.
+                The operation could not be completed. The request id below can be used to trace the failure.
             </p>
             @if (Model.ShowRequestId)
             {

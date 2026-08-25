@@ -121,6 +121,14 @@ public sealed class DetailsModel : PageModel
 
     public async Task<IActionResult> OnPostUpsertStageAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
     {
+        if (!ModelState.IsValid)
+        {
+            OrchestrationId = orchestrationId;
+            VersionId = versionId;
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
+
         if (!string.IsNullOrWhiteSpace(NewStage.StageId))
         {
             var current = await _stageService.GetById(new GetStageDefinitionByIdQuery(NewStage.StageId), cancellationToken);
@@ -241,7 +249,16 @@ public sealed class DetailsModel : PageModel
 
     public async Task<IActionResult> OnPostUpsertTriggerAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
     {
-        var key = string.IsNullOrWhiteSpace(TriggerInput.Key) ? "trigger.key" : TriggerInput.Key.Trim();
+        ValidateTriggerInput();
+        if (!ModelState.IsValid)
+        {
+            OrchestrationId = orchestrationId;
+            VersionId = versionId;
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
+
+        var key = TriggerInput.Key.Trim();
         var triggerType = ParseEnum(TriggerInput.TriggerType, TriggerType.Event);
         var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId);
         var description = TriggerInput.Description ?? string.Empty;
@@ -432,6 +449,26 @@ public sealed class DetailsModel : PageModel
         }
     }
 
+    private void ValidateTriggerInput()
+    {
+        var triggerType = ParseEnum(TriggerInput.TriggerType, TriggerType.Event);
+        if (triggerType == TriggerType.Event && string.IsNullOrWhiteSpace(TriggerInput.EventTopic))
+        {
+            ModelState.AddModelError(nameof(TriggerInput.EventTopic), "Capture the event topic.");
+        }
+
+        if (TriggerInput.HasEventSchemaValidation && string.IsNullOrWhiteSpace(TriggerInput.EventSchemaContractKey))
+        {
+            ModelState.AddModelError(nameof(TriggerInput.EventSchemaContractKey), "Capture the schema contract key.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(TriggerInput.EventSchemaRegistryProviderId) &&
+            !Ulid.TryParse(TriggerInput.EventSchemaRegistryProviderId, out _))
+        {
+            ModelState.AddModelError(nameof(TriggerInput.EventSchemaRegistryProviderId), "Capture a valid schema registry provider id.");
+        }
+    }
+
     private static object BuildTriggerEditPayload(TriggerBindingModel trigger)
     {
         var eventChannel = trigger.TriggerChannel as EventTriggerChannel;
@@ -446,7 +483,7 @@ public sealed class DetailsModel : PageModel
             EventTopic = eventChannel?.Topic ?? string.Empty,
             EventVersion = eventChannel?.Version.ToString() ?? "1.0.0",
             HasEventSchemaValidation = eventChannel?.HasSchemaValidation ?? false,
-            EventSchemaContractKey = schema?.ContractKey ?? "contract.placeholder",
+            EventSchemaContractKey = schema?.ContractKey ?? string.Empty,
             EventSchemaContractVersion = schema?.ContractVersion.ToString() ?? "1.0.0",
             EventSchemaRegistryProviderId = schema is null || schema.RegistryProviderId == default ? string.Empty : schema.RegistryProviderId.ToString(),
             EventSchemaStrictMode = schema?.StrictMode ?? false,
@@ -512,28 +549,21 @@ public sealed class DetailsModel : PageModel
             TriggerType.Event => new EventTriggerChannel
             {
                 HasSchemaValidation = input.HasEventSchemaValidation,
-                Topic = string.IsNullOrWhiteSpace(input.EventTopic) ? "orchestrator.trigger.topic" : input.EventTopic,
+                Topic = input.EventTopic.Trim(),
                 Version = ParseSemanticVersion(input.EventVersion, new SemanticVersion(1, 0, 0)),
-                SchemaBinding = CreateSchemaBinding(
+                SchemaBinding = input.HasEventSchemaValidation ? CreateSchemaBinding(
                     input.EventSchemaContractKey,
                     input.EventSchemaContractVersion,
                     input.EventSchemaRegistryProviderId,
                     input.EventSchemaStrictMode,
                     input.HasEventSchemaValidation,
-                    orchestrationId),
+                    orchestrationId) : null,
             },
             _ => new EventTriggerChannel
             {
                 HasSchemaValidation = false,
-                Topic = "orchestrator.trigger.topic",
+                Topic = input.EventTopic.Trim(),
                 Version = new SemanticVersion(1, 0, 0),
-                SchemaBinding = CreateSchemaBinding(
-                    "contract.placeholder",
-                    "1.0.0",
-                    string.Empty,
-                    false,
-                    false,
-                    orchestrationId),
             },
         };
     }
@@ -552,7 +582,7 @@ public sealed class DetailsModel : PageModel
             ElementType = ElementType.Orchestration,
             ElementId = ParseId(orchestrationId),
             ContractId = Id.New(),
-            ContractKey = string.IsNullOrWhiteSpace(contractKey) ? "contract.placeholder" : contractKey,
+            ContractKey = contractKey.Trim(),
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
             StrictMode = strictMode,
@@ -599,6 +629,7 @@ public sealed class DetailsModel : PageModel
         public string StageId { get; set; } = string.Empty;
 
         [Required]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]
@@ -612,21 +643,26 @@ public sealed class DetailsModel : PageModel
         public string TriggerId { get; set; } = string.Empty;
 
         [Required]
-        public string Key { get; set; } = "trigger.key";
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        public string Key { get; set; } = string.Empty;
 
         [Required]
         public string TriggerType { get; set; } = Krackend.Sagas.Orchestrations.Abstractions.Primitives.TriggerType.Event.ToString();
 
         public string Description { get; set; } = string.Empty;
 
-        public string EventTopic { get; set; } = "orchestrator.trigger.topic";
+        [Required]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        public string EventTopic { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string EventVersion { get; set; } = "1.0.0";
 
         public bool HasEventSchemaValidation { get; set; }
 
-        public string EventSchemaContractKey { get; set; } = "contract.placeholder";
+        public string EventSchemaContractKey { get; set; } = string.Empty;
 
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
         public string EventSchemaContractVersion { get; set; } = "1.0.0";
 
         public string EventSchemaRegistryProviderId { get; set; } = string.Empty;

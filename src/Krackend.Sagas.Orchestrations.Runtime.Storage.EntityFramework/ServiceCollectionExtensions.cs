@@ -1,5 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
@@ -18,6 +20,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddDbContext<RuntimeDbContext>(configureDbContext);
         services.Replace(ServiceDescriptor.Scoped<IRuntimeStorageUnitOfWork, RuntimeStorageUnitOfWork>());
+        services.Replace(ServiceDescriptor.Scoped<IRuntimeDesignNodeRepository, RuntimeDesignNodeRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>());
         services.Replace(ServiceDescriptor.Scoped<IOrchestrationInstanceRepository, OrchestrationInstanceRepository>());
         services.Replace(ServiceDescriptor.Scoped<IStageExecutionRepository, StageExecutionRepository>());
@@ -31,6 +34,8 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressConfigurationRepository, RuntimeIngressConfigurationRepository>());
         services.Replace(ServiceDescriptor.Scoped<IGetAllIngressConfigurationsAccessor, RuntimeIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, RuntimeIngressConfigurationAccessor>());
+        services.Replace(ServiceDescriptor.Scoped<IArtifactDeliverySecretResolver, RuntimeDesignNodeSecretResolver>());
+        services.Replace(ServiceDescriptor.Scoped<IControlPlaneDistributionSourceProvider, RuntimeDesignNodeDistributionSourceProvider>());
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
         return services;
     }

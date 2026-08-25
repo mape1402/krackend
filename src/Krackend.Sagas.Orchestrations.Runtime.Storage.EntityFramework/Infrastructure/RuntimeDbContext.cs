@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.EntityFrameworkCore;
 using Mule.EntityFrameworkCore;
@@ -13,6 +14,8 @@ public sealed class RuntimeDbContext : DbContext
     }
 
     public DbSet<RuntimeOrchestrationArtifact> RuntimeOrchestrationArtifacts => Set<RuntimeOrchestrationArtifact>();
+
+    public DbSet<RuntimeDesignNode> RuntimeDesignNodes => Set<RuntimeDesignNode>();
 
     public DbSet<OrchestrationInstance> OrchestrationInstances => Set<OrchestrationInstance>();
 
@@ -38,6 +41,7 @@ public sealed class RuntimeDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema("Runtime");
         ConfigureRuntimeArtifacts(modelBuilder);
+        ConfigureRuntimeDesignNodes(modelBuilder);
         ConfigureInstances(modelBuilder);
         ConfigureStages(modelBuilder);
         ConfigureTasks(modelBuilder);
@@ -49,6 +53,26 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureIngressConfigurations(modelBuilder);
         modelBuilder.UseMuleModel();
         base.OnModelCreating(modelBuilder);
+    }
+
+    private static void ConfigureRuntimeDesignNodes(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<RuntimeDesignNode>();
+        builder.ToTable("RuntimeDesignNodes");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Key).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.EndpointBaseUri).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.RemoteRuntimeNodeId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ClientId).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.SecretReference).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.ProtectedSecret).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(2000).IsRequired(false);
+        builder.Property(x => x.LastConnectionMessage).HasMaxLength(2000).IsRequired(false);
+        builder.HasIndex(x => x.Key).IsUnique();
+        builder.HasIndex(x => x.ClientId).IsUnique();
+        builder.HasIndex(x => x.IsEnabled);
     }
 
     private static void ConfigureRuntimeArtifacts(ModelBuilder modelBuilder)
