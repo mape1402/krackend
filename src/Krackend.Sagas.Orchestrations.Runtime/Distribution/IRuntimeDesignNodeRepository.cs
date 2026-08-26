@@ -28,6 +28,11 @@ public interface IRuntimeDesignNodeRepository
     Task<RuntimeDesignNode> GetByKeyAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns one design node by inbound client id.
+    /// </summary>
+    Task<RuntimeDesignNode> GetByInboundClientIdAsync(string clientId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates or updates one design node.
     /// </summary>
     Task UpsertAsync(RuntimeDesignNode designNode, CancellationToken cancellationToken = default);

@@ -1,3 +1,4 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Contracts.Events;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
@@ -26,8 +27,14 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private const string OwnerTeamName = "Sales Platform";
     private const string RuntimeEnvironmentCode = "local";
     private const string RuntimeNodeCode = "local-runtime";
-    private const string RuntimeNodeClientId = "local-runtime";
-    private const string RuntimeNodeSecretReference = "local-runtime-shared";
+    private const string DesignInboundClientId = "local-runtime-pull";
+    private const string DesignInboundKeyId = "local-design-pull-key";
+    private const string DesignInboundSecret = "KrackendLocalDesignInboundSecret_ChangeMe";
+    private const string RuntimeInboundClientId = "local-design-push";
+    private const string RuntimeInboundKeyId = "local-runtime-push-key";
+    private const string RuntimeInboundSecret = "KrackendLocalRuntimeInboundSecret_ChangeMe";
+    private const string DesignInboundScopes = "release:read artifact:read artifact:ack connection:validate";
+    private const string DesignOutboundScopes = "artifact:push connection:validate";
 
     private static readonly Id OwnerTeamId = StableId("01K00000000000000000000040");
     private static readonly Id DomainId = StableId("01K00000000000000000000041");
@@ -149,6 +156,8 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private readonly IOrchestrationDefinitionRepository _definitionRepository;
     private readonly IOrchestrationVersionArtifactSnapshotBuilder _artifactSnapshotBuilder;
     private readonly IArtifactPublicationApplicationService _artifactPublicationService;
+    private readonly IConnectionSecretHasher _secretHasher;
+    private readonly IControlPlaneRuntimeNodeSecretProtector _secretProtector;
 
     public DesignHostSeedDataSeeder(
         ControlPlaneDbContext dbContext,
@@ -156,7 +165,9 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         IOrchestrationVersionRepository versionRepository,
         IOrchestrationDefinitionRepository definitionRepository,
         IOrchestrationVersionArtifactSnapshotBuilder artifactSnapshotBuilder,
-        IArtifactPublicationApplicationService artifactPublicationService)
+        IArtifactPublicationApplicationService artifactPublicationService,
+        IConnectionSecretHasher secretHasher,
+        IControlPlaneRuntimeNodeSecretProtector secretProtector)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -164,6 +175,8 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
         _artifactSnapshotBuilder = artifactSnapshotBuilder ?? throw new ArgumentNullException(nameof(artifactSnapshotBuilder));
         _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
+        _secretHasher = secretHasher ?? throw new ArgumentNullException(nameof(secretHasher));
+        _secretProtector = secretProtector ?? throw new ArgumentNullException(nameof(secretProtector));
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -635,16 +648,31 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Name = "Local Runtime",
                 Code = RuntimeNodeCode,
                 EnvironmentId = RuntimeEnvironmentId,
-                DistributionMode = DistributionMode.Hybrid,
+                DistributionMode = DistributionMode.HybridSync,
                 EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227",
                 EndpointApiPath = "runtime/artifacts/deploy",
-                AuthenticationMode = RuntimeAuthenticationMode.ClientCredentials,
-                ClientId = RuntimeNodeClientId,
-                SecretReference = RuntimeNodeSecretReference,
-                ApiKeyReference = string.Empty,
-                Status = RuntimeNodeStatus.Active,
+                Status = RuntimeNodeStatus.Enabled,
                 IsEnabled = true,
+                IsDeleted = false,
+                DeletedAtUtc = null,
                 Description = "Local runtime node seeded for push and manual pull demos.",
+                AccessTokenTtlSeconds = 86_400,
+                TokenRefreshSkewSeconds = 300,
+                TokenValidationCacheTtlSeconds = 300,
+                InboundClientId = DesignInboundClientId,
+                InboundKeyId = DesignInboundKeyId,
+                InboundSecretHash = _secretHasher.HashSecret(DesignInboundSecret),
+                InboundAllowedScopes = DesignInboundScopes,
+                InboundCredentialStatus = ConnectionCredentialStatus.Active,
+                InboundCredentialCreatedAtUtc = now,
+                InboundCredentialRotatedAtUtc = now,
+                InboundLastFailureReason = string.Empty,
+                OutboundClientId = RuntimeInboundClientId,
+                OutboundKeyId = RuntimeInboundKeyId,
+                ProtectedOutboundSecret = _secretProtector.Protect(RuntimeInboundSecret),
+                OutboundRequestedScopes = DesignOutboundScopes,
+                OutboundCredentialStatus = ConnectionCredentialStatus.Active,
+                OutboundCredentialImportedAtUtc = now,
                 RegisteredAtUtc = now
             });
         }
@@ -652,16 +680,32 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         {
             runtimeNode.Name = "Local Runtime";
             runtimeNode.EnvironmentId = RuntimeEnvironmentId;
-            runtimeNode.DistributionMode = DistributionMode.Hybrid;
+            runtimeNode.DistributionMode = DistributionMode.HybridSync;
             runtimeNode.EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227";
             runtimeNode.EndpointApiPath = "runtime/artifacts/deploy";
-            runtimeNode.AuthenticationMode = RuntimeAuthenticationMode.ClientCredentials;
-            runtimeNode.ClientId = RuntimeNodeClientId;
-            runtimeNode.SecretReference = RuntimeNodeSecretReference;
-            runtimeNode.ApiKeyReference = string.Empty;
-            runtimeNode.Status = RuntimeNodeStatus.Active;
+            runtimeNode.Status = RuntimeNodeStatus.Enabled;
             runtimeNode.IsEnabled = true;
+            runtimeNode.IsDeleted = false;
+            runtimeNode.DeletedAtUtc = null;
             runtimeNode.Description = "Local runtime node seeded for push and manual pull demos.";
+            runtimeNode.AccessTokenTtlSeconds = 86_400;
+            runtimeNode.TokenRefreshSkewSeconds = 300;
+            runtimeNode.TokenValidationCacheTtlSeconds = 300;
+            runtimeNode.InboundClientId = DesignInboundClientId;
+            runtimeNode.InboundKeyId = DesignInboundKeyId;
+            runtimeNode.InboundSecretHash = _secretHasher.HashSecret(DesignInboundSecret);
+            runtimeNode.InboundAllowedScopes = DesignInboundScopes;
+            runtimeNode.InboundCredentialStatus = ConnectionCredentialStatus.Active;
+            runtimeNode.InboundCredentialCreatedAtUtc ??= now;
+            runtimeNode.InboundCredentialRotatedAtUtc = now;
+            runtimeNode.InboundCredentialRevokedAtUtc = null;
+            runtimeNode.InboundLastFailureReason = string.Empty;
+            runtimeNode.OutboundClientId = RuntimeInboundClientId;
+            runtimeNode.OutboundKeyId = RuntimeInboundKeyId;
+            runtimeNode.ProtectedOutboundSecret = _secretProtector.Protect(RuntimeInboundSecret);
+            runtimeNode.OutboundRequestedScopes = DesignOutboundScopes;
+            runtimeNode.OutboundCredentialStatus = ConnectionCredentialStatus.Active;
+            runtimeNode.OutboundCredentialImportedAtUtc ??= now;
             runtimeNode.LastUpdatedAtUtc = now;
         }
 

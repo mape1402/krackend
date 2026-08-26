@@ -20,7 +20,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
     private readonly IArtifactRepository _artifactRepository;
     private readonly IRuntimeNodeRepository _runtimeNodeRepository;
     private readonly IEnvironmentRepository _environmentRepository;
-    private readonly IArtifactDeliveryHttpRequestSigner _requestSigner;
+    private readonly IRuntimeAccessTokenProvider _accessTokenProvider;
 
     public ArtifactDeliveryApplicationService(
         HttpClient httpClient,
@@ -29,7 +29,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         IArtifactRepository artifactRepository,
         IRuntimeNodeRepository runtimeNodeRepository,
         IEnvironmentRepository environmentRepository,
-        IArtifactDeliveryHttpRequestSigner requestSigner)
+        IRuntimeAccessTokenProvider accessTokenProvider)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _releaseTargetRepository = releaseTargetRepository ?? throw new ArgumentNullException(nameof(releaseTargetRepository));
@@ -37,7 +37,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _runtimeNodeRepository = runtimeNodeRepository ?? throw new ArgumentNullException(nameof(runtimeNodeRepository));
         _environmentRepository = environmentRepository ?? throw new ArgumentNullException(nameof(environmentRepository));
-        _requestSigner = requestSigner ?? throw new ArgumentNullException(nameof(requestSigner));
+        _accessTokenProvider = accessTokenProvider ?? throw new ArgumentNullException(nameof(accessTokenProvider));
     }
 
     public async Task<RuntimeArtifactDeliveryResult> Push(
@@ -52,6 +52,8 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
 
         try
         {
+            EnsureRuntimeNodeCanDistribute(node);
+
             if (target.Status == ReleaseTargetStatus.Activated
                 && target.ActivationStatus == ActivationStatus.Activated
                 && !string.IsNullOrWhiteSpace(target.RuntimeVersionApplied))
@@ -65,12 +67,17 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
                     target.RuntimeVersionApplied);
             }
 
-            if (node.DistributionMode == DistributionMode.Pull)
+            if (node.DistributionMode == DistributionMode.RuntimeFetchesFromDesign)
             {
                 target.Status = ReleaseTargetStatus.AvailableForPull;
                 target.AvailableAtUtc ??= DateTime.UtcNow;
                 await _releaseTargetRepository.Update(target, cancellationToken);
                 return CreateResult(target, true, "AvailableForPull", "Runtime node is configured for pull.");
+            }
+
+            if (node.OutboundCredentialStatus != ConnectionCredentialStatus.Active)
+            {
+                throw new InvalidOperationException($"Runtime node '{node.Name}' outbound credential is not active.");
             }
 
             if (string.IsNullOrWhiteSpace(node.EndpointBaseUri))
@@ -82,7 +89,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             await _releaseTargetRepository.Update(target, cancellationToken);
 
             var package = await BuildPackage(target, node, artifact, cancellationToken);
-            using var requestMessage = await CreateSignedDeployRequest(node, package, cancellationToken);
+            using var requestMessage = await CreateAuthenticatedDeployRequest(node, package, cancellationToken);
             using var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
             var bodyText = await response.Content.ReadAsStringAsync(cancellationToken);
             var body = TryReadDeploymentResponse(bodyText);
@@ -121,11 +128,11 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         }
         catch (Exception ex)
         {
-            target.Status = node.DistributionMode == DistributionMode.Hybrid
+            target.Status = node.DistributionMode == DistributionMode.HybridSync
                 ? ReleaseTargetStatus.AvailableForPull
                 : ReleaseTargetStatus.Failed;
             target.ActivationStatus = ActivationStatus.ActivationFailed;
-            target.AvailableAtUtc = node.DistributionMode == DistributionMode.Hybrid ? DateTime.UtcNow : target.AvailableAtUtc;
+            target.AvailableAtUtc = node.DistributionMode == DistributionMode.HybridSync ? DateTime.UtcNow : target.AvailableAtUtc;
             target.FailedAtUtc = DateTime.UtcNow;
             target.FailureReason = ex.Message;
             await _releaseTargetRepository.Update(target, cancellationToken);
@@ -145,6 +152,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         CancellationToken cancellationToken = default)
     {
         var node = await _runtimeNodeRepository.GetById(ParseId(runtimeNodeId), cancellationToken);
+        EnsureRuntimeNodeCanDistribute(node);
         var targets = await _releaseTargetRepository.GetPendingForRuntimeNode(node.Id, cancellationToken);
         var packages = new List<RuntimeArtifactDeliveryPackage>();
 
@@ -170,6 +178,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         CancellationToken cancellationToken = default)
     {
         var node = await _runtimeNodeRepository.GetById(ParseId(runtimeNodeId), cancellationToken);
+        EnsureRuntimeNodeCanDistribute(node);
         var target = await _releaseTargetRepository.GetById(ParseId(releaseTargetId), cancellationToken);
         if (target.RuntimeNodeId != node.Id)
         {
@@ -253,7 +262,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         };
     }
 
-    private async Task<HttpRequestMessage> CreateSignedDeployRequest(
+    private async Task<HttpRequestMessage> CreateAuthenticatedDeployRequest(
         RuntimeNode node,
         RuntimeArtifactDeliveryPackage package,
         CancellationToken cancellationToken)
@@ -264,15 +273,11 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
 
-        if (node.AuthenticationMode != RuntimeAuthenticationMode.None)
-        {
-            await _requestSigner.SignAsync(
-                request,
-                json,
-                ResolveKeyId(node),
-                ResolveSecretReference(node),
-                cancellationToken);
-        }
+        await _accessTokenProvider.AttachTokenAsync(
+            request,
+            node,
+            [ArtifactDeliveryScope.ArtifactPush],
+            cancellationToken);
 
         return request;
     }
@@ -304,6 +309,8 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
 
     private async Task MarkPublished(ReleaseTarget target, CancellationToken cancellationToken)
     {
+        await _artifactRepository.SetPublished(target.ArtifactId, true, cancellationToken);
+
         if (target.ReleaseId.HasValue)
         {
             await _releaseRepository.ApplyTargetStatus(
@@ -350,6 +357,19 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
     }
 
     private static Id ParseId(string value) => new(Ulid.Parse(value));
+
+    private static void EnsureRuntimeNodeCanDistribute(RuntimeNode node)
+    {
+        if (node.IsDeleted)
+        {
+            throw new InvalidOperationException($"Runtime node '{node.Name}' was deleted.");
+        }
+
+        if (node.Status != RuntimeNodeStatus.Enabled)
+        {
+            throw new InvalidOperationException($"Runtime node '{node.Name}' is not enabled.");
+        }
+    }
 
     private static RuntimeArtifactDeliveryResult CreateResult(
         ReleaseTarget target,
@@ -409,16 +429,6 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             ? null
             : firstLine.Length > 500 ? firstLine[..500] : firstLine;
     }
-
-    private static string ResolveKeyId(RuntimeNode node)
-        => node.AuthenticationMode == RuntimeAuthenticationMode.ApiKey && string.IsNullOrWhiteSpace(node.ClientId)
-            ? node.ApiKeyReference
-            : node.ClientId;
-
-    private static string ResolveSecretReference(RuntimeNode node)
-        => node.AuthenticationMode == RuntimeAuthenticationMode.ApiKey
-            ? node.ApiKeyReference
-            : node.SecretReference;
 
     private static bool IsRuntimeReady(string status)
         => string.Equals(status, "Ready", StringComparison.OrdinalIgnoreCase)

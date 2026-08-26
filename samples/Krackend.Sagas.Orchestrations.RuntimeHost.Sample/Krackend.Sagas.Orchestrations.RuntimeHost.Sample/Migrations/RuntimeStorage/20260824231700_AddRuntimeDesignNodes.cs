@@ -28,9 +28,6 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     IsEnabled = table.Column<bool>(type: "bit", nullable: false),
                     CreatedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    LastConnectionCheckedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    LastConnectionSucceeded = table.Column<bool>(type: "bit", nullable: true),
-                    LastConnectionMessage = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true)
                 },
                 constraints: table =>
                 {

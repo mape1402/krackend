@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases;
 
@@ -180,7 +181,10 @@ public sealed class IndexModel : PageModel
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ToArray();
         }
-        RuntimeNodes = (await _runtimeService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }, cancellationToken)).Rows.Where(x => x.IsEnabled).ToArray();
+        RuntimeNodes = (await _runtimeService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }, cancellationToken))
+            .Rows
+            .Where(x => !x.IsDeleted && string.Equals(x.Status, RuntimeNodeStatus.Enabled.ToString(), StringComparison.Ordinal))
+            .ToArray();
         var releaseIds = Rows.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
         var releaseTargets = (await _releaseTargetService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 1000 }, cancellationToken)).Rows
             .Where(x => !string.IsNullOrWhiteSpace(x.ReleaseId) && releaseIds.Contains(x.ReleaseId))
