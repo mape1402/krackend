@@ -1,4 +1,5 @@
 @page
+@using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.RuntimeNodes.IndexModel
 @{
     ViewData["Title"] = "Runtime Nodes";
@@ -21,52 +22,119 @@
 else
 {
     <section class="od-list-shell">
-        <div class="od-grid">
+        <div class="od-grid od-runtime-node-grid">
             @foreach (var item in Model.Rows)
             {
-                var statusClass = item.IsEnabled ? "od-status od-status-active" : "od-status od-status-inactive";
-                <article class="od-item-card">
+                var statusClass = RuntimeNodeStatusClass(item.Status);
+                var canCheckConnection = item.Status == "Enabled" && (item.DistributionMode is "DesignPublishesToRuntime" or "HybridSync");
+                var statusTransitions = RuntimeNodeStatusTransitions(item.Status);
+                var credentialReadiness = CredentialReadinessLabel(item);
+                var endpointReadiness = EndpointReadinessLabel(item);
+
+                <article class="od-item-card od-runtime-node-card"
+                         data-runtime-node="true"
+                         data-id="@item.Id"
+                         data-name="@item.Name"
+                         data-code="@item.Code"
+                         data-environment-id="@item.EnvironmentId"
+                         data-environment-name="@item.EnvironmentName"
+                         data-distribution-mode="@item.DistributionMode"
+                         data-distribution-mode-label="@DistributionModeLabel(item.DistributionMode)"
+                         data-distribution-mode-description="@DistributionModeDescription(item.DistributionMode)"
+                         data-endpoint-base-uri="@item.EndpointBaseUri"
+                         data-endpoint-api-path="@item.EndpointApiPath"
+                         data-status="@item.Status"
+                         data-status-label="@ReadableLabel(item.Status)"
+                         data-inbound-credential-status="@item.InboundCredentialStatus"
+                         data-inbound-credential-status-label="@ReadableLabel(item.InboundCredentialStatus)"
+                         data-outbound-credential-status="@item.OutboundCredentialStatus"
+                         data-outbound-credential-status-label="@ReadableLabel(item.OutboundCredentialStatus)"
+                         data-access-token-ttl-seconds="@item.AccessTokenTtlSeconds"
+                         data-token-refresh-skew-seconds="@item.TokenRefreshSkewSeconds"
+                         data-token-validation-cache-ttl-seconds="@item.TokenValidationCacheTtlSeconds"
+                         data-inbound-client-id="@item.InboundClientId"
+                         data-inbound-key-id="@item.InboundKeyId"
+                         data-inbound-allowed-scopes="@item.InboundAllowedScopes"
+                         data-inbound-credential-created-at="@DateOrDash(item.InboundCredentialCreatedAtUtc)"
+                         data-inbound-credential-rotated-at="@DateOrDash(item.InboundCredentialRotatedAtUtc)"
+                         data-inbound-credential-revoked-at="@DateOrDash(item.InboundCredentialRevokedAtUtc)"
+                         data-inbound-last-token-issued-at="@DateOrDash(item.InboundLastTokenIssuedAtUtc)"
+                         data-inbound-last-token-failed-at="@DateOrDash(item.InboundLastTokenFailedAtUtc)"
+                         data-inbound-last-failure-reason="@item.InboundLastFailureReason"
+                         data-outbound-client-id="@item.OutboundClientId"
+                         data-outbound-key-id="@item.OutboundKeyId"
+                         data-outbound-requested-scopes="@item.OutboundRequestedScopes"
+                         data-outbound-credential-imported-at="@DateOrDash(item.OutboundCredentialImportedAtUtc)"
+                         data-outbound-last-token-received-at="@DateOrDash(item.OutboundLastTokenReceivedAtUtc)"
+                         data-is-enabled="@item.IsEnabled"
+                         data-is-deleted="@item.IsDeleted"
+                         data-deleted-at="@DateOrDash(item.DeletedAtUtc)"
+                         data-description="@item.Description"
+                         data-registered-at="@DateOrDash(item.RegisteredAtUtc)"
+                         data-last-updated-at="@DateOrDash(item.LastUpdatedAtUtc)">
                     <div class="od-item-top">
                         <div>
                             <h2 class="od-item-title">@item.Name</h2>
                             <p class="od-item-meta">@item.Code</p>
                         </div>
                         <div class="d-flex align-items-start gap-2">
-                            <span class="@statusClass">@(item.IsEnabled ? "Enabled" : "Disabled")</span>
+                            <span class="@statusClass">@ReadableLabel(item.Status)</span>
                             <div class="dropdown">
                                 <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <button type="button"
-                                                class="dropdown-item js-open-runtime-node-modal"
-                                                data-mode="edit"
-                                                data-id="@item.Id"
-                                                data-name="@item.Name"
-                                                data-code="@item.Code"
-                                                data-environment-id="@item.EnvironmentId"
-                                                data-distribution-mode="@item.DistributionMode"
-                                                data-endpoint-base-uri="@item.EndpointBaseUri"
-                                                data-description="@item.Description">
-                                            Edit
-                                        </button>
+                                    @foreach (var transition in statusTransitions)
+                                    {
+                                        <li>
+                                            <form method="post" asp-page-handler="SetStatus" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating runtime node" data-busy-message="Distribution is applying the runtime node status change.">
+                                                <input type="hidden" name="runtimeNodeId" value="@item.Id" />
+                                                <input type="hidden" name="status" value="@transition.Status" />
+                                                <button type="submit" class="dropdown-item">@transition.Label</button>
+                                            </form>
+                                        </li>
+                                    }
+                                    <li data-check-connection-action="true" class="@(canCheckConnection ? string.Empty : "d-none")">
+                                        <form method="post" asp-page-handler="ValidateConnection" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Checking connection" data-busy-message="Design is requesting a token from Runtime and checking the secured endpoint.">
+                                            <input type="hidden" name="runtimeNodeId" value="@item.Id" />
+                                            <button type="submit" class="dropdown-item">Check connection</button>
+                                        </form>
                                     </li>
                                     <li><hr class="dropdown-divider" /></li>
                                     <li>
-                                        <form method="post" asp-page-handler="SetEnabled" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating runtime node" data-busy-message="Distribution is applying the runtime node status change.">
+                                        <form method="post" asp-page-handler="Delete" class="od-inline-form" data-confirm="true" data-confirm-title="Delete runtime node" data-confirm-message="Delete this runtime node from active configuration? Existing release references will be preserved." data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting runtime node" data-busy-message="Distribution is removing the runtime node from active configuration.">
                                             <input type="hidden" name="runtimeNodeId" value="@item.Id" />
-                                            <input type="hidden" name="isEnabled" value="@(item.IsEnabled ? "false" : "true")" />
-                                            <button type="submit" class="dropdown-item">@(item.IsEnabled ? "Disable node" : "Enable node")</button>
+                                            <button type="submit" class="dropdown-item text-danger">Delete node</button>
                                         </form>
                                     </li>
                                 </ul>
                             </div>
                         </div>
                     </div>
-                    <p class="od-item-description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
-                    <div class="od-chip-row">
-                        <span class="od-meta-chip">Environment: @item.EnvironmentName</span>
-                        <span class="od-meta-chip">Mode: @item.DistributionMode</span>
-                        <span class="od-meta-chip">URI: @(string.IsNullOrWhiteSpace(item.EndpointBaseUri) ? "Not configured" : item.EndpointBaseUri)</span>
+
+                    <div class="od-runtime-card-summary">
+                        <div>
+                            <span>Environment</span>
+                            <strong>@TextOrDash(item.EnvironmentName)</strong>
+                        </div>
+                        <div>
+                            <span>Policy</span>
+                            <strong>@DistributionModeLabel(item.DistributionMode)</strong>
+                        </div>
+                        <div>
+                            <span>Credentials</span>
+                            <strong class="@CredentialReadinessClass(credentialReadiness)">@credentialReadiness</strong>
+                        </div>
+                        <div>
+                            <span>Endpoint</span>
+                            <strong>@endpointReadiness</strong>
+                        </div>
+                    </div>
+
+                    <p class="od-item-description" title="@item.Description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
+                    <p class="od-item-meta">Updated @DateOrDash(item.LastUpdatedAtUtc ?? item.RegisteredAtUtc)</p>
+
+                    <div class="od-card-actions">
+                        <button type="button" class="btn btn-outline-secondary btn-sm js-open-runtime-node-setup-card">Configure</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm js-open-runtime-node-view">Details</button>
                     </div>
                 </article>
             }
@@ -84,14 +152,18 @@ else
                 </div>
                 <div class="modal-body">
                     <input asp-for="Input.RuntimeNodeId" type="hidden" id="runtimeNodeIdInput" />
+                    <input asp-for="Input.DistributionMode" type="hidden" id="distributionModeInput" />
+                    <input asp-for="Input.EndpointBaseUri" type="hidden" id="endpointBaseUriInput" />
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label asp-for="Input.Name" class="form-label"></label>
                             <input asp-for="Input.Name" class="form-control" id="nameInput" />
+                            <span asp-validation-for="Input.Name" class="text-danger"></span>
                         </div>
                         <div class="col-md-6">
                             <label asp-for="Input.Code" class="form-label"></label>
                             <input asp-for="Input.Code" class="form-control" id="codeInput" data-orchestrator-key="true" />
+                            <span asp-validation-for="Input.Code" class="text-danger"></span>
                         </div>
                         <div class="col-md-6">
                             <label asp-for="Input.EnvironmentId" class="form-label">Environment</label>
@@ -102,23 +174,12 @@ else
                                     <option value="@env.Id">@env.Name (@env.Code)</option>
                                 }
                             </select>
+                            <span asp-validation-for="Input.EnvironmentId" class="text-danger"></span>
                         </div>
                         <div class="col-md-6">
-                            <label asp-for="Input.DistributionMode" class="form-label"></label>
-                            <select asp-for="Input.DistributionMode" class="form-select" id="distributionModeInput">
-                                @foreach (var mode in Model.DistributionModes)
-                                {
-                                    <option value="@mode">@mode</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="col-md-12">
-                            <label asp-for="Input.EndpointBaseUri" class="form-label"></label>
-                            <input asp-for="Input.EndpointBaseUri" class="form-control" id="endpointBaseUriInput" data-orchestrator-url="true" />
-                        </div>
-                        <div class="col-md-12">
                             <label asp-for="Input.Description" class="form-label"></label>
                             <input asp-for="Input.Description" class="form-control" id="descriptionInput" />
+                            <span asp-validation-for="Input.Description" class="text-danger"></span>
                         </div>
                     </div>
                 </div>
@@ -131,54 +192,966 @@ else
     </div>
 </div>
 
+<div class="modal fade" id="runtimeNodeViewModal" tabindex="-1" aria-labelledby="runtimeNodeViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl od-runtime-detail-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="runtimeNodeViewModalLabel">Runtime node</h5>
+                    <p class="od-item-meta mb-0" id="runtimeNodeViewSubtitle"></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body od-runtime-detail-body od-runtime-node-view-body">
+                <section class="od-detail-section od-runtime-view-section">
+                    <div class="od-section-head">
+                        <div>
+                            <h2 class="od-section-title">Identity</h2>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm js-view-edit-basic">Edit data</button>
+                    </div>
+                    <div class="od-info-grid">
+                        <div class="od-info-tile"><span>Name</span><strong id="viewName">-</strong></div>
+                        <div class="od-info-tile"><span>Code</span><strong id="viewCode">-</strong></div>
+                        <div class="od-info-tile"><span>Environment</span><strong id="viewEnvironment">-</strong></div>
+                        <div class="od-info-tile"><span>Status</span><strong id="viewStatus">-</strong></div>
+                        <div class="od-info-tile"><span>Registered</span><strong id="viewRegisteredAt">-</strong></div>
+                        <div class="od-info-tile"><span>Last update</span><strong id="viewLastUpdatedAt">-</strong></div>
+                        <div class="od-info-tile"><span>Policy</span><strong id="viewDistributionModeLabel">-</strong></div>
+                        <div class="od-info-tile"><span>Runtime endpoint</span><strong id="viewEndpointBaseUri">-</strong></div>
+                        <div class="od-info-tile"><span>API path</span><strong id="viewEndpointApiPath">-</strong></div>
+                        <div class="od-info-tile"><span>Access token TTL</span><strong id="viewAccessTokenTtl">-</strong></div>
+                        <div class="od-info-tile"><span>Validation cache TTL</span><strong id="viewTokenValidationCacheTtl">-</strong></div>
+                    </div>
+                    <div class="od-info-block">
+                        <span>Description</span>
+                        <p id="viewDescription">-</p>
+                    </div>
+                </section>
+
+                <section class="od-detail-section od-runtime-view-section">
+                    <div class="od-section-head">
+                        <div>
+                            <h2 class="od-section-title">Credentials</h2>
+                        </div>
+                    </div>
+                    <div class="od-credential-columns">
+                        <div class="od-credential-panel" data-credential-section="design">
+                            <h3>Design credentials</h3>
+                            <div class="od-info-grid od-info-grid-compact">
+                                <div class="od-info-tile"><span>Status</span><strong id="viewInboundCredentialStatus">-</strong></div>
+                                <div class="od-info-tile"><span>Client ID</span><strong id="viewInboundClientId">-</strong></div>
+                                <div class="od-info-tile"><span>Key ID</span><strong id="viewInboundKeyId">-</strong></div>
+                                <div class="od-info-tile"><span>Scopes</span><strong id="viewInboundAllowedScopes">-</strong></div>
+                                <div class="od-info-tile"><span>Created</span><strong id="viewInboundCredentialCreatedAt">-</strong></div>
+                                <div class="od-info-tile"><span>Last token</span><strong id="viewInboundLastTokenIssuedAt">-</strong></div>
+                            </div>
+                        </div>
+                        <div class="od-credential-panel" data-credential-section="runtime">
+                            <h3>Runtime credentials</h3>
+                            <div class="od-info-grid od-info-grid-compact">
+                                <div class="od-info-tile"><span>Status</span><strong id="viewOutboundCredentialStatus">-</strong></div>
+                                <div class="od-info-tile"><span>Client ID</span><strong id="viewOutboundClientId">-</strong></div>
+                                <div class="od-info-tile"><span>Key ID</span><strong id="viewOutboundKeyId">-</strong></div>
+                                <div class="od-info-tile"><span>Scopes</span><strong id="viewOutboundRequestedScopes">-</strong></div>
+                                <div class="od-info-tile"><span>Imported</span><strong id="viewOutboundCredentialImportedAt">-</strong></div>
+                                <div class="od-info-tile"><span>Last token</span><strong id="viewOutboundLastTokenReceivedAt">-</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-primary js-open-runtime-node-setup">Configure</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="runtimeNodeSetupModal" tabindex="-1" aria-labelledby="runtimeNodeSetupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl od-runtime-detail-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="runtimeNodeSetupModalLabel">Configure runtime node</h5>
+                    <p class="od-item-meta mb-0" id="runtimeNodeSetupSubtitle"></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body od-runtime-detail-body">
+                <div class="od-runtime-detail-layout">
+                    <nav class="od-runtime-wizard-nav" aria-label="Runtime node setup">
+                        <button type="button" class="od-runtime-wizard-step is-active" data-setup-step-target="policy"><span>1</span><strong>Policy</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="runtimeCredentials"><span>2</span><strong>Runtime credentials</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="designCredentials"><span>3</span><strong>Design credentials</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="verify"><span>4</span><strong>Verify</strong></button>
+                    </nav>
+
+                    <div class="od-runtime-wizard-content">
+                        <section class="od-setup-step is-active" data-setup-step="policy">
+                            <div class="od-section-head">
+                                <div>
+                                    <h2 class="od-section-title">Policy</h2>
+                                    <p class="od-item-meta">Choose who starts release movement.</p>
+                                </div>
+                            </div>
+                            <form method="post" asp-page-handler="WizardUpsert" id="setupPolicyForm" data-wizard-form="true">
+                                <input type="hidden" name="Input.RuntimeNodeId" id="setupPolicyRuntimeNodeId" />
+                                <input type="hidden" name="Input.Name" id="setupPolicyName" />
+                                <input type="hidden" name="Input.Code" id="setupPolicyCode" />
+                                <input type="hidden" name="Input.EnvironmentId" id="setupPolicyEnvironmentId" />
+                                <input type="hidden" name="Input.Description" id="setupPolicyDescription" />
+                                <input type="hidden" name="Input.EndpointBaseUri" id="setupPolicyEndpointBaseUri" />
+                                <div class="od-policy-options">
+                                    @foreach (var mode in Model.DistributionModeOptions)
+                                    {
+                                        <label class="od-policy-option">
+                                            <input type="radio" name="Input.DistributionMode" value="@mode.Value" />
+                                            <span>
+                                                <strong>@mode.Label</strong>
+                                                <small>@mode.Description</small>
+                                            </span>
+                                        </label>
+                                    }
+                                </div>
+                            </form>
+                        </section>
+
+                        <section class="od-setup-step" data-setup-step="runtimeCredentials">
+                            <div class="od-section-head">
+                                <div>
+                                    <h2 class="od-section-title">Runtime credentials</h2>
+                                    <p class="od-item-meta">Required when Design publishes releases.</p>
+                                </div>
+                                <button type="button" class="btn btn-outline-primary btn-sm js-setup-import-credentials">Import credentials</button>
+                            </div>
+                            <div class="od-info-grid od-info-grid-compact">
+                                <div class="od-info-tile"><span>Status</span><strong id="setupOutboundCredentialStatus">-</strong></div>
+                                <div class="od-info-tile"><span>Runtime endpoint</span><strong id="setupEndpointBaseUri">-</strong></div>
+                                <div class="od-info-tile"><span>Client ID</span><strong id="setupOutboundClientId">-</strong></div>
+                                <div class="od-info-tile"><span>Key ID</span><strong id="setupOutboundKeyId">-</strong></div>
+                                <div class="od-info-tile"><span>Scopes</span><strong id="setupOutboundRequestedScopes">-</strong></div>
+                                <div class="od-info-tile"><span>Imported</span><strong id="setupOutboundCredentialImportedAt">-</strong></div>
+                            </div>
+                        </section>
+
+                        <section class="od-setup-step" data-setup-step="designCredentials">
+                            <div class="od-section-head">
+                                <div>
+                                    <h2 class="od-section-title">Design credentials</h2>
+                                    <p class="od-item-meta">Required when Runtime imports releases.</p>
+                                </div>
+                                <form method="post" asp-page-handler="WizardGenerateCredentials" id="setupGenerateCredentialsForm" class="od-inline-form d-none" data-wizard-form="true">
+                                    <input type="hidden" name="runtimeNodeId" id="setupGenerateRuntimeNodeId" />
+                                </form>
+                                <button type="button" class="btn btn-outline-primary btn-sm js-setup-generate-credentials">Generate credentials</button>
+                            </div>
+                            <div class="od-info-grid od-info-grid-compact">
+                                <div class="od-info-tile"><span>Status</span><strong id="setupInboundCredentialStatus">-</strong></div>
+                                <div class="od-info-tile"><span>Client ID</span><strong id="setupInboundClientId">-</strong></div>
+                                <div class="od-info-tile"><span>Key ID</span><strong id="setupInboundKeyId">-</strong></div>
+                                <div class="od-info-tile"><span>Scopes</span><strong id="setupInboundAllowedScopes">-</strong></div>
+                                <div class="od-info-tile"><span>Created</span><strong id="setupInboundCredentialCreatedAt">-</strong></div>
+                                <div class="od-info-tile"><span>Last token</span><strong id="setupInboundLastTokenIssuedAt">-</strong></div>
+                            </div>
+                        </section>
+
+                        <section class="od-setup-step" data-setup-step="verify">
+                            <div class="od-section-head">
+                                <div>
+                                    <h2 class="od-section-title">Verify</h2>
+                                    <p class="od-item-meta">Connection check.</p>
+                                </div>
+                                <form method="post" asp-page-handler="WizardValidateConnection" id="setupValidateConnectionForm" class="od-inline-form d-none" data-wizard-form="true">
+                                    <input type="hidden" name="runtimeNodeId" id="setupValidateRuntimeNodeId" />
+                                </form>
+                                <button type="button" class="btn btn-outline-primary btn-sm js-setup-validate-connection">Check connection</button>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+            <form method="post" asp-page-handler="WizardSetStatus" id="setupStatusForm" class="d-none" data-wizard-form="true">
+                <input type="hidden" name="runtimeNodeId" id="setupStatusRuntimeNodeId" />
+                <input type="hidden" name="status" id="setupStatusValue" value="Enabled" />
+            </form>
+            <div class="modal-footer od-runtime-wizard-footer">
+                <button type="button" class="btn btn-outline-secondary" id="setupBackButton">Back</button>
+                <button type="button" class="btn btn-primary" id="setupNextButton">Next</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="runtimeNodeCredentialModal" tabindex="-1" aria-labelledby="runtimeNodeCredentialModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="WizardImportCredentials" id="runtimeNodeCredentialForm" data-wizard-form="true">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="runtimeNodeCredentialModalLabel">Import Runtime credentials</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input asp-for="Credentials.RuntimeNodeId" type="hidden" id="credentialRuntimeNodeIdInput" />
+                    <label asp-for="Credentials.CredentialsJson" class="form-label">Runtime credentials JSON</label>
+                    <textarea asp-for="Credentials.CredentialsJson" class="form-control od-credentials-textarea" id="credentialsJsonInput" rows="12" data-val-required="Runtime credentials JSON is required."></textarea>
+                    <span asp-validation-for="Credentials.CredentialsJson" class="text-danger"></span>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="runtimeNodeCredentialSubmitButton">Import and continue</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="generatedCredentialsModal" tabindex="-1" aria-labelledby="generatedCredentialsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="generatedCredentialsModalLabel">Generated credentials</h5>
+                    <p class="od-item-meta mb-0" id="generatedCredentialsNodeName">@Model.GeneratedCredentialsNodeName</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="od-item-meta">Copy these JSON credentials now. The secret is shown only in this response.</p>
+                <textarea class="form-control od-credentials-textarea" id="generatedCredentialsJsonOutput" rows="14" readonly>@Model.GeneratedCredentialsJson</textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-primary" id="copyGeneratedCredentialsButton">Copy</button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    private static string TextOrDash(string value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string DateOrDash(DateTime? value)
+        => value.HasValue ? value.Value.ToString("yyyy-MM-dd HH:mm:ss") : "-";
+
+    private static string DateOrDash(DateTime value)
+        => value.ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static string DistributionModeLabel(string mode)
+        => mode switch
+        {
+            "DesignPublishesToRuntime" => "Design publishes releases",
+            "RuntimeFetchesFromDesign" => "Runtime imports releases",
+            "HybridSync" => "Both directions",
+            _ => TextOrDash(mode)
+        };
+
+    private static string DistributionModeDescription(string mode)
+        => mode switch
+        {
+            "DesignPublishesToRuntime" => "Design sends approved releases to Runtime using the Runtime credentials.",
+            "RuntimeFetchesFromDesign" => "Runtime owners import approved releases using credentials generated by Design.",
+            "HybridSync" => "Design can publish releases and Runtime can import them manually.",
+            _ => string.Empty
+        };
+
+    private static string ReadableLabel(string value)
+        => value switch
+        {
+            "NotActivated" => "Not activated",
+            "ActivationFailed" => "Activation failed",
+            _ => TextOrDash(value)
+        };
+
+    private static string RuntimeNodeStatusClass(string status)
+        => status switch
+        {
+            "Enabled" => "od-status od-status-active",
+            "Pending" => "od-status od-status-inreview",
+            "Suspend" => "od-status od-status-inactive",
+            _ => "od-status od-status-inactive"
+        };
+
+    private static IReadOnlyCollection<(string Status, string Label)> RuntimeNodeStatusTransitions(string status)
+        => status switch
+        {
+            "Pending" =>
+            [
+                ("Suspend", "Suspend node")
+            ],
+            "Suspend" =>
+            [
+                ("Pending", "Mark pending"),
+                ("Enabled", "Enable node")
+            ],
+            "Enabled" =>
+            [
+                ("Suspend", "Suspend node")
+            ],
+            _ => Array.Empty<(string Status, string Label)>()
+        };
+
+    private static string CredentialReadinessLabel(RuntimeNodeModel item)
+    {
+        var needsDesignCredentials = item.DistributionMode is "RuntimeFetchesFromDesign" or "HybridSync";
+        var needsRuntimeCredentials = item.DistributionMode is "DesignPublishesToRuntime" or "HybridSync";
+        var hasDesignCredentials = item.InboundCredentialStatus == "Active";
+        var hasRuntimeCredentials = item.OutboundCredentialStatus == "Active";
+
+        if (needsDesignCredentials && needsRuntimeCredentials)
+        {
+            return hasDesignCredentials && hasRuntimeCredentials
+                ? "Ready"
+                : !hasDesignCredentials && !hasRuntimeCredentials
+                    ? "Missing both"
+                    : hasDesignCredentials ? "Missing Runtime" : "Missing Design";
+        }
+
+        if (needsDesignCredentials)
+        {
+            return hasDesignCredentials ? "Ready" : "Missing Design";
+        }
+
+        if (needsRuntimeCredentials)
+        {
+            return hasRuntimeCredentials ? "Ready" : "Missing Runtime";
+        }
+
+        return "Not required";
+    }
+
+    private static string CredentialReadinessClass(string value)
+        => value switch
+        {
+            "Ready" => "od-runtime-card-ready",
+            "Not required" => "od-runtime-card-muted",
+            _ => "od-runtime-card-warning"
+        };
+
+    private static string EndpointReadinessLabel(RuntimeNodeModel item)
+    {
+        if (item.DistributionMode == "RuntimeFetchesFromDesign")
+        {
+            return "Not required";
+        }
+
+        return TextOrDash(item.EndpointBaseUri);
+    }
+
+}
+
 @section Scripts {
 <script>
 (() => {
-    const modalElement = document.getElementById('runtimeNodeModal');
-    const title = document.getElementById('runtimeNodeModalLabel');
-    const submitButton = document.getElementById('runtimeNodeModalSubmitButton');
-    const modal = window.bootstrap?.Modal?.getOrCreateInstance(modalElement);
-    if (!modalElement || !title || !submitButton || !modal) return;
+    const basicModalElement = document.getElementById('runtimeNodeModal');
+    const basicModal = window.bootstrap?.Modal?.getOrCreateInstance(basicModalElement);
+    const viewModalElement = document.getElementById('runtimeNodeViewModal');
+    const viewModal = window.bootstrap?.Modal?.getOrCreateInstance(viewModalElement);
+    const setupModalElement = document.getElementById('runtimeNodeSetupModal');
+    const setupModal = window.bootstrap?.Modal?.getOrCreateInstance(setupModalElement);
+    const credentialsModalElement = document.getElementById('runtimeNodeCredentialModal');
+    const credentialsModal = window.bootstrap?.Modal?.getOrCreateInstance(credentialsModalElement);
+    const generatedCredentialsModalElement = document.getElementById('generatedCredentialsModal');
+    const generatedCredentialsModal = window.bootstrap?.Modal?.getOrCreateInstance(generatedCredentialsModalElement);
+    const hasGeneratedCredentials = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(!string.IsNullOrWhiteSpace(Model.GeneratedCredentialsJson)));
 
-    const idInput = document.getElementById('runtimeNodeIdInput');
-    const nameInput = document.getElementById('nameInput');
-    const codeInput = document.getElementById('codeInput');
-    const environmentIdInput = document.getElementById('environmentIdInput');
-    const distributionModeInput = document.getElementById('distributionModeInput');
-    const endpointBaseUriInput = document.getElementById('endpointBaseUriInput');
-    const descriptionInput = document.getElementById('descriptionInput');
+    const setValue = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.value = value || '';
+    };
 
-    const setValue = (el, value) => { if (el) el.value = value ?? ''; };
+    const setText = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value || '-';
+    };
+
+    const readNode = trigger => trigger.closest('[data-runtime-node]');
+    let currentNode = null;
+    let setupSequence = ['policy', 'runtimeCredentials', 'designCredentials', 'verify'];
+    let setupStep = 'policy';
+
+    const sequences = {
+        DesignPublishesToRuntime: ['policy', 'runtimeCredentials'],
+        RuntimeFetchesFromDesign: ['policy', 'designCredentials'],
+        HybridSync: ['policy', 'runtimeCredentials', 'designCredentials']
+    };
+
+    const stackChildModal = modalElement => {
+        if (!modalElement) return;
+
+        let childBackdrop = null;
+
+        modalElement.addEventListener('show.bs.modal', () => {
+            const openBackdropCount = document.querySelectorAll('.modal-backdrop').length;
+            const nextLayer = openBackdropCount + 1;
+            modalElement.style.zIndex = 1065 + nextLayer * 20;
+
+            window.setTimeout(() => {
+                const backdrops = Array.from(document.querySelectorAll('.modal-backdrop'));
+                childBackdrop = backdrops[backdrops.length - 1] || null;
+                if (!childBackdrop) return;
+                childBackdrop.style.zIndex = 1060 + nextLayer * 20;
+                childBackdrop.classList.add('od-modal-backdrop-stacked');
+            }, 0);
+        });
+
+        modalElement.addEventListener('hidden.bs.modal', () => {
+            modalElement.style.zIndex = '';
+            childBackdrop = null;
+            window.setTimeout(repairModalState, 0);
+        });
+    };
+
+    const repairModalState = () => {
+        if (document.querySelectorAll('.modal.show').length > 0) {
+            document.body.classList.add('modal-open');
+            return;
+        }
+
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+    };
+
+    stackChildModal(credentialsModalElement);
+    stackChildModal(generatedCredentialsModalElement);
+
+    const notify = ({ title, message, type }) => window.OrchestratorMessages?.notify({
+        title,
+        message,
+        type
+    });
+
+    const showBusy = ({ title, message }) => window.OrchestratorMessages?.showBusy({
+        title,
+        message
+    }) || (() => {});
+
+    const postWizardForm = async (form, busyTitle, busyMessage) => {
+        if (!form) throw new Error('Wizard form was not found.');
+
+        const hideBusy = showBusy({ title: busyTitle, message: busyMessage });
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            const responseText = await response.text();
+            let payload = {};
+            if (responseText) {
+                try {
+                    payload = JSON.parse(responseText);
+                } catch {
+                    payload = { message: responseText };
+                }
+            }
+
+            if (!response.ok) {
+                throw new Error(payload.message || 'The wizard operation failed.');
+            }
+
+            return payload;
+        } finally {
+            hideBusy();
+        }
+    };
+
+    const showWizardError = error => notify({
+        title: 'Review the configuration',
+        message: error?.message || 'The wizard operation failed.',
+        type: 'error'
+    });
+
+    const canCheckConnectionFor = (status, mode) =>
+        status === 'Enabled' && (mode === 'DesignPublishesToRuntime' || mode === 'HybridSync');
+
+    const updateCardChrome = () => {
+        if (!currentNode) return;
+
+        const title = currentNode.querySelector('.od-item-title');
+        const meta = currentNode.querySelector('.od-item-top .od-item-meta');
+        const description = currentNode.querySelector('.od-item-description');
+        const statusBadge = currentNode.querySelector('.od-item-top .od-status');
+        if (title) title.textContent = currentNode.dataset.name || '-';
+        if (meta) meta.textContent = currentNode.dataset.code || '-';
+        if (description) description.textContent = currentNode.dataset.description || 'No description.';
+        if (statusBadge) {
+            statusBadge.textContent = currentNode.dataset.statusLabel || currentNode.dataset.status || '-';
+            statusBadge.classList.remove(...statusClassNames);
+            statusBadge.classList.add(getStatusClass(currentNode.dataset.status));
+        }
+
+        const summaryValues = currentNode.querySelectorAll('.od-runtime-card-summary strong');
+        if (summaryValues[0]) summaryValues[0].textContent = currentNode.dataset.environmentName || '-';
+        if (summaryValues[1]) summaryValues[1].textContent = currentNode.dataset.distributionModeLabel || '-';
+
+        const checkConnectionAction = currentNode.querySelector('[data-check-connection-action]');
+        if (checkConnectionAction) {
+            checkConnectionAction.classList.toggle(
+                'd-none',
+                !canCheckConnectionFor(currentNode.dataset.status, currentNode.dataset.distributionMode));
+        }
+    };
+
+    const updateCurrentNode = node => {
+        if (!currentNode || !node) return;
+
+        Object.entries(node).forEach(([key, value]) => {
+            currentNode.dataset[key] = value ?? '';
+        });
+
+        updateCardChrome();
+        fillReadOnlyFields(currentNode);
+        fillSetupFields(currentNode);
+    };
+
+    const getSelectedMode = () =>
+        document.querySelector('#runtimeNodeSetupModal input[name="Input.DistributionMode"]:checked')?.value ||
+        currentNode?.dataset.distributionMode ||
+        'HybridSync';
+
+    const hasActiveCredentials = status => (status || '').toLowerCase() === 'active';
+    const isDesignPullMode = mode => mode === 'RuntimeFetchesFromDesign' || mode === 'HybridSync';
+    const isDesignPushMode = mode => mode === 'DesignPublishesToRuntime' || mode === 'HybridSync';
+    const statusClassNames = ['od-status-active', 'od-status-inactive', 'od-status-inreview'];
+    const getStatusClass = status => {
+        switch (status) {
+            case 'Enabled':
+                return 'od-status-active';
+            case 'Pending':
+                return 'od-status-inreview';
+            case 'Suspend':
+                return 'od-status-inactive';
+            default:
+                return 'od-status-inactive';
+        }
+    };
+    const isCurrentNodeConfigured = () => {
+        const mode = getSelectedMode();
+        const needsDesignCredentials = isDesignPullMode(mode);
+        const needsRuntimeCredentials = isDesignPushMode(mode);
+        const hasDesignCredentials = hasActiveCredentials(currentNode?.dataset.inboundCredentialStatus);
+        const hasRuntimeCredentials = hasActiveCredentials(currentNode?.dataset.outboundCredentialStatus);
+        const hasEndpoint = !!(currentNode?.dataset.endpointBaseUri || '').trim();
+
+        return (!needsDesignCredentials || hasDesignCredentials) &&
+            (!needsRuntimeCredentials || (hasRuntimeCredentials && hasEndpoint));
+    };
+    const applyCredentialVisibility = node => {
+        const mode = node?.dataset.distributionMode || 'HybridSync';
+        const showDesignCredentials = isDesignPullMode(mode);
+        const showRuntimeCredentials = isDesignPushMode(mode);
+        const credentialsSection = viewModalElement?.querySelector('.od-credential-columns');
+        const designPanel = viewModalElement?.querySelector('[data-credential-section="design"]');
+        const runtimePanel = viewModalElement?.querySelector('[data-credential-section="runtime"]');
+
+        designPanel?.classList.toggle('d-none', !showDesignCredentials);
+        runtimePanel?.classList.toggle('d-none', !showRuntimeCredentials);
+        credentialsSection?.classList.toggle('is-single', showDesignCredentials !== showRuntimeCredentials);
+    };
+
+    const populateBasicModal = (node, mode) => {
+        if (!basicModal) return;
+
+        document.getElementById('runtimeNodeModalLabel').textContent = mode === 'edit' ? 'Edit data' : 'Create runtime node';
+        document.getElementById('runtimeNodeModalSubmitButton').textContent = mode === 'edit' ? 'Save' : 'Create';
+
+        setValue('runtimeNodeIdInput', mode === 'edit' ? node?.dataset.id : '');
+        setValue('nameInput', mode === 'edit' ? node?.dataset.name : '');
+        setValue('codeInput', mode === 'edit' ? node?.dataset.code : '');
+        setValue('environmentIdInput', mode === 'edit' ? node?.dataset.environmentId : '');
+        setValue('distributionModeInput', mode === 'edit' ? node?.dataset.distributionMode : 'HybridSync');
+        setValue('endpointBaseUriInput', mode === 'edit' ? node?.dataset.endpointBaseUri : '');
+        setValue('descriptionInput', mode === 'edit' ? node?.dataset.description : '');
+
+        basicModal.show();
+    };
+
+    const fillReadOnlyFields = node => {
+        setText('viewName', node.dataset.name);
+        setText('viewCode', node.dataset.code);
+        setText('viewEnvironment', node.dataset.environmentName);
+        setText('viewStatus', node.dataset.statusLabel || node.dataset.status);
+        setText('viewRegisteredAt', node.dataset.registeredAt);
+        setText('viewLastUpdatedAt', node.dataset.lastUpdatedAt);
+        setText('viewDescription', node.dataset.description);
+
+        setText('viewDistributionModeLabel', node.dataset.distributionModeLabel);
+        setText('viewEndpointBaseUri', node.dataset.endpointBaseUri);
+        setText('viewEndpointApiPath', node.dataset.endpointApiPath);
+        setText('viewAccessTokenTtl', node.dataset.accessTokenTtlSeconds ? `${node.dataset.accessTokenTtlSeconds}s` : '-');
+        setText('viewTokenValidationCacheTtl', node.dataset.tokenValidationCacheTtlSeconds ? `${node.dataset.tokenValidationCacheTtlSeconds}s` : '-');
+
+        setText('viewInboundCredentialStatus', node.dataset.inboundCredentialStatusLabel);
+        setText('viewInboundClientId', node.dataset.inboundClientId);
+        setText('viewInboundKeyId', node.dataset.inboundKeyId);
+        setText('viewInboundAllowedScopes', node.dataset.inboundAllowedScopes);
+        setText('viewInboundCredentialCreatedAt', node.dataset.inboundCredentialCreatedAt);
+        setText('viewInboundLastTokenIssuedAt', node.dataset.inboundLastTokenIssuedAt);
+
+        setText('viewOutboundCredentialStatus', node.dataset.outboundCredentialStatusLabel);
+        setText('viewOutboundClientId', node.dataset.outboundClientId);
+        setText('viewOutboundKeyId', node.dataset.outboundKeyId);
+        setText('viewOutboundRequestedScopes', node.dataset.outboundRequestedScopes);
+        setText('viewOutboundCredentialImportedAt', node.dataset.outboundCredentialImportedAt);
+        setText('viewOutboundLastTokenReceivedAt', node.dataset.outboundLastTokenReceivedAt);
+        applyCredentialVisibility(node);
+
+    };
+
+    const fillSetupFields = node => {
+        setText('runtimeNodeSetupModalLabel', 'Configure runtime node');
+        setText('runtimeNodeSetupSubtitle', `${node.dataset.name || '-'} | ${node.dataset.code || '-'}`);
+        setValue('setupPolicyRuntimeNodeId', node.dataset.id);
+        setValue('setupPolicyName', node.dataset.name);
+        setValue('setupPolicyCode', node.dataset.code);
+        setValue('setupPolicyEnvironmentId', node.dataset.environmentId);
+        setValue('setupPolicyDescription', node.dataset.description);
+        setValue('setupPolicyEndpointBaseUri', node.dataset.endpointBaseUri);
+        setValue('setupGenerateRuntimeNodeId', node.dataset.id);
+        setValue('setupValidateRuntimeNodeId', node.dataset.id);
+        setValue('setupStatusRuntimeNodeId', node.dataset.id);
+        setValue('setupStatusValue', 'Enabled');
+
+        const mode = node.dataset.distributionMode || 'HybridSync';
+        document.querySelectorAll('#runtimeNodeSetupModal input[name="Input.DistributionMode"]').forEach(input => {
+            input.checked = input.value === mode;
+        });
+
+        setText('setupOutboundCredentialStatus', node.dataset.outboundCredentialStatusLabel);
+        setText('setupEndpointBaseUri', node.dataset.endpointBaseUri);
+        setText('setupOutboundClientId', node.dataset.outboundClientId);
+        setText('setupOutboundKeyId', node.dataset.outboundKeyId);
+        setText('setupOutboundRequestedScopes', node.dataset.outboundRequestedScopes);
+        setText('setupOutboundCredentialImportedAt', node.dataset.outboundCredentialImportedAt);
+
+        setText('setupInboundCredentialStatus', node.dataset.inboundCredentialStatusLabel);
+        setText('setupInboundClientId', node.dataset.inboundClientId);
+        setText('setupInboundKeyId', node.dataset.inboundKeyId);
+        setText('setupInboundAllowedScopes', node.dataset.inboundAllowedScopes);
+        setText('setupInboundCredentialCreatedAt', node.dataset.inboundCredentialCreatedAt);
+        setText('setupInboundLastTokenIssuedAt', node.dataset.inboundLastTokenIssuedAt);
+
+        applySetupPolicy(mode);
+    };
+
+    const populateViewModal = node => {
+        if (!viewModal || !node) return;
+        currentNode = node;
+        setText('runtimeNodeViewModalLabel', node.dataset.name);
+        setText('runtimeNodeViewSubtitle', `${node.dataset.code || '-'} | ${node.dataset.environmentName || '-'}`);
+        fillReadOnlyFields(node);
+        viewModal.show();
+    };
+
+    const populateSetupModal = node => {
+        if (!setupModal || !node) return;
+        currentNode = node;
+        fillSetupFields(node);
+        showSetupStep('policy');
+        setupModal.show();
+    };
+
+    const applySetupPolicy = mode => {
+        const canVerifyConnection = canCheckConnectionFor(currentNode?.dataset.status, mode);
+        setupSequence = [...(sequences[mode] || sequences.HybridSync)];
+        if (canVerifyConnection) {
+            setupSequence.push('verify');
+        }
+
+        if (!setupSequence.includes(setupStep)) {
+            setupStep = 'policy';
+        }
+
+        document.querySelectorAll('[data-setup-step-target]').forEach(button => {
+            const enabled = setupSequence.includes(button.dataset.setupStepTarget);
+            button.disabled = !enabled;
+            button.classList.toggle('is-disabled', !enabled);
+        });
+
+        const validateButton = document.querySelector('.js-setup-validate-connection');
+        if (validateButton) {
+            validateButton.disabled = !canVerifyConnection;
+        }
+
+        showSetupStep(setupStep);
+    };
+
+    const showSetupStep = step => {
+        if (!setupSequence.includes(step)) {
+            step = setupSequence[0];
+        }
+
+        setupStep = step;
+        document.querySelectorAll('[data-setup-step-target]').forEach(button => {
+            button.classList.toggle('is-active', button.dataset.setupStepTarget === setupStep);
+        });
+        document.querySelectorAll('[data-setup-step]').forEach(panel => {
+            panel.classList.toggle('is-active', panel.dataset.setupStep === setupStep);
+        });
+
+        const index = setupSequence.indexOf(setupStep);
+        const backButton = document.getElementById('setupBackButton');
+        const nextButton = document.getElementById('setupNextButton');
+        if (backButton) backButton.disabled = index <= 0;
+        if (nextButton) {
+            nextButton.disabled = false;
+            nextButton.textContent = 'Next';
+        }
+    };
+
+    const moveSetup = direction => {
+        const index = setupSequence.indexOf(setupStep);
+        const next = setupSequence[index + direction];
+        if (!next) return false;
+
+        showSetupStep(next);
+        return true;
+    };
+
+    const enablePendingNodeIfReady = async () => {
+        if (currentNode?.dataset.status !== 'Pending') return;
+
+        if (!isCurrentNodeConfigured()) {
+            throw new Error('Complete the required credentials before enabling the runtime node.');
+        }
+
+        const payload = await postWizardForm(
+            document.getElementById('setupStatusForm'),
+            'Enabling runtime node',
+            'Distribution is validating the completed configuration.');
+        updateCurrentNode(payload.node);
+    };
+
+    const completeSetup = async () => {
+        await enablePendingNodeIfReady();
+        setupModal?.hide();
+    };
+
+    const moveNextOrClose = async () => {
+        if (!moveSetup(1)) {
+            await completeSetup();
+        }
+    };
+
+    const openRuntimeCredentialsModal = () => {
+        if (!currentNode || !credentialsModal) return;
+        setValue('credentialRuntimeNodeIdInput', currentNode.dataset.id);
+        setValue('credentialsJsonInput', '');
+        setText('runtimeNodeCredentialModalLabel', `Import Runtime credentials - ${currentNode.dataset.name || 'Runtime node'}`);
+        credentialsModal.show();
+        window.setTimeout(() => document.getElementById('credentialsJsonInput')?.focus(), 160);
+    };
+
+    const validateRuntimeCredentialsCapture = () => {
+        const input = document.getElementById('credentialsJsonInput');
+        const value = input?.value?.trim() || '';
+        if (!value) {
+            throw new Error('Runtime credentials JSON is required.');
+        }
+
+        try {
+            JSON.parse(value);
+        } catch {
+            throw new Error('Runtime credentials must be valid JSON.');
+        }
+    };
+
+    const handlePolicyNext = async () => {
+        const payload = await postWizardForm(
+            document.getElementById('setupPolicyForm'),
+            'Saving policy',
+            'Design is saving the selected runtime node policy.');
+        updateCurrentNode(payload.node);
+        applySetupPolicy(getSelectedMode());
+        await moveNextOrClose();
+    };
+
+    const handleRuntimeCredentialsNext = async () => {
+        if (hasActiveCredentials(currentNode?.dataset.outboundCredentialStatus)) {
+            await moveNextOrClose();
+            return;
+        }
+
+        throw new Error('Import the Runtime credentials before continuing.');
+    };
+
+    const handleDesignCredentialsNext = async () => {
+        if (hasActiveCredentials(currentNode?.dataset.inboundCredentialStatus)) {
+            await moveNextOrClose();
+            return;
+        }
+
+        throw new Error('Generate the Design credentials before continuing.');
+    };
+
+    const generateDesignCredentials = async () => {
+        const payload = await postWizardForm(
+            document.getElementById('setupGenerateCredentialsForm'),
+            'Generating credentials',
+            'Design is generating credentials for Runtime.');
+        updateCurrentNode(payload.node);
+        setText('generatedCredentialsNodeName', currentNode?.dataset.name || 'Runtime node');
+        setValue('generatedCredentialsJsonOutput', payload.credentialsJson);
+        generatedCredentialsModal?.show();
+    };
+
+    const handleVerifyNext = async () => {
+        await completeSetup();
+    };
+
+    const validateConnection = async () => {
+        if (!canCheckConnectionFor(currentNode?.dataset.status, getSelectedMode())) {
+            throw new Error('Connection check is available only for enabled Push or Hybrid runtime nodes.');
+        }
+
+        const payload = await postWizardForm(
+            document.getElementById('setupValidateConnectionForm'),
+            'Checking connection',
+            'Design is requesting a token from Runtime and checking the secured endpoint.');
+        updateCurrentNode(payload.node);
+        await notify({
+            title: payload.succeeded ? 'Connection check succeeded' : 'Connection check failed',
+            message: payload.message || '-',
+            type: payload.succeeded ? 'success' : 'error'
+        });
+    };
+
+    const copyGeneratedCredentials = async () => {
+        const output = document.getElementById('generatedCredentialsJsonOutput');
+        const button = document.getElementById('copyGeneratedCredentialsButton');
+        const text = output?.value || '';
+        if (!text) return;
+
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            output.select();
+            document.execCommand('copy');
+            output.setSelectionRange(0, 0);
+        }
+
+        if (!button) return;
+        const previousText = button.textContent;
+        button.textContent = 'Copied';
+        window.setTimeout(() => {
+            button.textContent = previousText;
+        }, 1200);
+    };
+
+    const handleNext = async () => {
+        try {
+            switch (setupStep) {
+                case 'policy':
+                    await handlePolicyNext();
+                    break;
+                case 'runtimeCredentials':
+                    handleRuntimeCredentialsNext();
+                    break;
+                case 'designCredentials':
+                    await handleDesignCredentialsNext();
+                    break;
+                case 'verify':
+                    await handleVerifyNext();
+                    break;
+            }
+        } catch (error) {
+            await showWizardError(error);
+        }
+    };
 
     document.querySelectorAll('.js-open-runtime-node-modal').forEach(button => {
         button.addEventListener('click', () => {
-            const mode = button.getAttribute('data-mode');
-            if (mode === 'edit') {
-                title.textContent = 'Edit runtime node';
-                submitButton.textContent = 'Save';
-                setValue(idInput, button.getAttribute('data-id'));
-                setValue(nameInput, button.getAttribute('data-name'));
-                setValue(codeInput, button.getAttribute('data-code'));
-                setValue(environmentIdInput, button.getAttribute('data-environment-id'));
-                setValue(distributionModeInput, button.getAttribute('data-distribution-mode'));
-                setValue(endpointBaseUriInput, button.getAttribute('data-endpoint-base-uri'));
-                setValue(descriptionInput, button.getAttribute('data-description'));
-                modal.show();
-                return;
-            }
-
-            title.textContent = 'Create runtime node';
-            submitButton.textContent = 'Create';
-            setValue(idInput, '');
-            setValue(nameInput, '');
-            setValue(codeInput, '');
-            setValue(environmentIdInput, '');
-            setValue(distributionModeInput, 'Hybrid');
-            setValue(endpointBaseUriInput, '');
-            setValue(descriptionInput, '');
-            modal.show();
+            const mode = button.dataset.mode || 'create';
+            populateBasicModal(readNode(button), mode);
         });
     });
+
+    document.querySelectorAll('.js-open-runtime-node-view').forEach(button => {
+        button.addEventListener('click', () => populateViewModal(readNode(button)));
+    });
+
+    document.querySelectorAll('.js-open-runtime-node-setup-card').forEach(button => {
+        button.addEventListener('click', () => populateSetupModal(readNode(button)));
+    });
+
+    document.querySelector('.js-open-runtime-node-setup')?.addEventListener('click', () => {
+        if (!currentNode) return;
+        viewModal?.hide();
+        populateSetupModal(currentNode);
+    });
+
+    document.querySelectorAll('[data-setup-step-target]').forEach(button => {
+        button.addEventListener('click', () => {
+            if (!button.disabled) showSetupStep(button.dataset.setupStepTarget);
+        });
+    });
+
+    document.querySelectorAll('#runtimeNodeSetupModal input[name="Input.DistributionMode"]').forEach(input => {
+        input.addEventListener('change', event => applySetupPolicy(event.target.value));
+    });
+
+    document.getElementById('setupBackButton')?.addEventListener('click', () => moveSetup(-1));
+    document.getElementById('setupNextButton')?.addEventListener('click', handleNext);
+
+    document.querySelector('.js-setup-import-credentials')?.addEventListener('click', openRuntimeCredentialsModal);
+
+    document.querySelector('.js-setup-generate-credentials')?.addEventListener('click', async () => {
+        try {
+            await generateDesignCredentials();
+        } catch (error) {
+            await showWizardError(error);
+        }
+    });
+
+    document.querySelector('.js-setup-validate-connection')?.addEventListener('click', async () => {
+        try {
+            await validateConnection();
+        } catch (error) {
+            await showWizardError(error);
+        }
+    });
+
+    document.getElementById('copyGeneratedCredentialsButton')?.addEventListener('click', async () => {
+        try {
+            await copyGeneratedCredentials();
+        } catch (error) {
+            await showWizardError(error);
+        }
+    });
+
+    document.querySelector('.js-view-edit-basic')?.addEventListener('click', () => {
+        viewModal?.hide();
+        populateBasicModal(currentNode, 'edit');
+    });
+
+    document.getElementById('runtimeNodeCredentialForm')?.addEventListener('submit', async event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        try {
+            validateRuntimeCredentialsCapture();
+            const payload = await postWizardForm(
+                event.currentTarget,
+                'Importing credentials',
+                'Design is protecting the Runtime credentials.');
+            updateCurrentNode(payload.node);
+            credentialsModal?.hide();
+        } catch (error) {
+            await showWizardError(error);
+        }
+    });
+
+    if (hasGeneratedCredentials) {
+        generatedCredentialsModal?.show();
+    }
 })();
 </script>
 }

@@ -21,6 +21,19 @@ var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
 var muleParallelism = Math.Max(64, Environment.ProcessorCount * 20);
 
+if (string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+else
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "krackend:runtime:";
+    });
+}
+
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddOrchestratorRuntimeWebUI(options =>

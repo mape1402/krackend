@@ -11,7 +11,7 @@
 <div class="od-page-head">
     <div>
         <h1 class="od-page-title">Runtime Design Nodes</h1>
-        <p class="od-page-subtitle">Register design/control-plane nodes that this runtime can trust for push and manual pull.</p>
+        <p class="od-page-subtitle">Register design/control-plane nodes that this runtime can trust for artifact distribution.</p>
     </div>
 </div>
 
@@ -42,11 +42,9 @@
                             <div class="od-item-meta">@node.Key</div>
                             <div class="od-item-meta">@node.EndpointBaseUri</div>
                             <div class="od-item-meta">Remote runtime: @node.RemoteRuntimeNodeId</div>
-                            <div class="od-item-meta">Client id: @node.ClientId</div>
-                            @if (!string.IsNullOrWhiteSpace(node.LastConnectionMessage))
-                            {
-                                <div class="od-item-meta">Last check: @node.LastConnectionMessage</div>
-                            }
+                            <div class="od-item-meta">Inbound credential: @node.InboundCredentialStatus</div>
+                            <div class="od-item-meta">Outbound credential: @node.OutboundCredentialStatus</div>
+                            <div class="od-item-meta">Outbound client id: @node.OutboundClientId</div>
                         </div>
                         <div class="od-design-node-actions">
                             <button type="button"
@@ -57,7 +55,8 @@
                                     data-design-node-name="@node.Name"
                                     data-design-node-endpoint="@node.EndpointBaseUri"
                                     data-design-node-remote-runtime="@node.RemoteRuntimeNodeId"
-                                    data-design-node-client-id="@node.ClientId"
+                                    data-design-node-client-id="@node.OutboundClientId"
+                                    data-design-node-key-id="@node.OutboundKeyId"
                                     data-design-node-description="@node.Description"
                                     data-design-node-enabled="@node.IsEnabled.ToString().ToLowerInvariant()">
                                 <i class="bi bi-pencil-square"></i>
@@ -69,6 +68,28 @@
                                 <button type="submit" class="btn btn-sm @(node.IsEnabled ? "btn-outline-danger" : "btn-outline-success")">
                                     <i class="bi @(node.IsEnabled ? "bi-pause-circle" : "bi-play-circle")"></i>
                                     @(node.IsEnabled ? "Disable" : "Enable")
+                                </button>
+                            </form>
+                            <form method="post" asp-page-handler="GenerateCredentials" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Generating credentials" data-busy-message="Runtime is generating a credential package for Design.">
+                                <input type="hidden" name="designNodeId" value="@node.Id" />
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-key"></i>
+                                    Generate
+                                </button>
+                            </form>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    data-design-node-credential-import
+                                    data-design-node-id="@node.Id"
+                                    data-design-node-name="@node.Name">
+                                <i class="bi bi-box-arrow-in-down"></i>
+                                Import
+                            </button>
+                            <form method="post" asp-page-handler="ValidateConnection" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Validating connection" data-busy-message="Runtime is requesting a token from Design and checking the secured endpoint.">
+                                <input type="hidden" name="designNodeId" value="@node.Id" />
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-check2-circle"></i>
+                                    Validate
                                 </button>
                             </form>
                             @if (node.IsEnabled)
@@ -92,7 +113,7 @@
         <div class="od-section-head">
             <div>
                 <h2 class="od-section-title">Capture node</h2>
-                <p class="od-item-meta">Secret is write-only after save.</p>
+                <p class="od-item-meta">Remote credential secret is write-only after save.</p>
             </div>
         </div>
 
@@ -123,6 +144,11 @@
                     <label asp-for="Input.ClientId" class="form-label"></label>
                     <input asp-for="Input.ClientId" class="form-control" id="designNodeClientIdInput" autocomplete="off" />
                     <span asp-validation-for="Input.ClientId" class="text-danger"></span>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Input.KeyId" class="form-label"></label>
+                    <input asp-for="Input.KeyId" class="form-control" id="designNodeKeyIdInput" autocomplete="off" />
+                    <span asp-validation-for="Input.KeyId" class="text-danger"></span>
                 </div>
                 <div class="col-12">
                     <label asp-for="Input.Secret" class="form-label"></label>
@@ -155,6 +181,28 @@
         </form>
     </section>
 </div>
+
+@if (!string.IsNullOrWhiteSpace(Model.GeneratedCredentialJson))
+{
+    <section class="od-panel mt-3">
+        <div class="od-section-head">
+            <div>
+                <h2 class="od-section-title">Generated credential package</h2>
+                <p class="od-item-meta">Copy this package now; the secret is not shown again after this response.</p>
+            </div>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">JSON</label>
+                <textarea class="form-control" rows="8" readonly>@Model.GeneratedCredentialJson</textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Base64</label>
+                <textarea class="form-control" rows="8" readonly>@Model.GeneratedCredentialBase64</textarea>
+            </div>
+        </div>
+    </section>
+}
 
 <section class="od-panel mt-3">
     <div class="od-section-head">
@@ -195,6 +243,29 @@
     }
 </section>
 
+<div class="modal fade" id="designNodeCredentialModal" tabindex="-1" aria-labelledby="designNodeCredentialModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="ImportCredentials" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Importing credentials" data-busy-message="Runtime is protecting the Design-generated credential package.">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="designNodeCredentialModalLabel">Import design package</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input asp-for="CredentialPackage.DesignNodeId" type="hidden" id="credentialDesignNodeIdInput" />
+                    <label asp-for="CredentialPackage.Package" class="form-label">Credential package</label>
+                    <textarea asp-for="CredentialPackage.Package" class="form-control" id="credentialPackageInput" rows="10"></textarea>
+                    <span asp-validation-for="CredentialPackage.Package" class="text-danger"></span>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
     <script>
         (() => {
@@ -207,6 +278,7 @@
                 endpoint: document.getElementById('designNodeEndpointInput'),
                 remoteRuntime: document.getElementById('designNodeRemoteRuntimeInput'),
                 clientId: document.getElementById('designNodeClientIdInput'),
+                keyId: document.getElementById('designNodeKeyIdInput'),
                 secret: document.getElementById('designNodeSecretInput'),
                 description: document.getElementById('designNodeDescriptionInput'),
                 enabled: document.getElementById('designNodeEnabledInput')
@@ -220,6 +292,7 @@
                     inputs.endpoint.value = button.dataset.designNodeEndpoint || '';
                     inputs.remoteRuntime.value = button.dataset.designNodeRemoteRuntime || '';
                     inputs.clientId.value = button.dataset.designNodeClientId || '';
+                    inputs.keyId.value = button.dataset.designNodeKeyId || '';
                     inputs.description.value = button.dataset.designNodeDescription || '';
                     inputs.enabled.checked = button.dataset.designNodeEnabled === 'true';
                     inputs.secret.value = '';
@@ -231,8 +304,26 @@
                 form.reset();
                 inputs.id.value = '';
                 inputs.secret.value = '';
+                inputs.keyId.value = '';
                 inputs.enabled.checked = true;
                 inputs.key.focus();
+            });
+
+            const credentialModalElement = document.getElementById('designNodeCredentialModal');
+            const credentialModalTitle = document.getElementById('designNodeCredentialModalLabel');
+            const credentialNodeIdInput = document.getElementById('credentialDesignNodeIdInput');
+            const credentialPackageInput = document.getElementById('credentialPackageInput');
+            const credentialModal = window.bootstrap?.Modal?.getOrCreateInstance(credentialModalElement);
+
+            document.querySelectorAll('[data-design-node-credential-import]').forEach(button => {
+                button.addEventListener('click', () => {
+                    if (!credentialModal || !credentialNodeIdInput || !credentialPackageInput || !credentialModalTitle) return;
+
+                    credentialNodeIdInput.value = button.dataset.designNodeId || '';
+                    credentialPackageInput.value = '';
+                    credentialModalTitle.textContent = `Import design package - ${button.dataset.designNodeName || 'Design node'}`;
+                    credentialModal.show();
+                });
             });
         })();
     </script>

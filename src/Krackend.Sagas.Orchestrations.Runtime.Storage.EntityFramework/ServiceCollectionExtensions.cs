@@ -1,6 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
-using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
@@ -37,7 +36,6 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressStandupScheduler, EntityFrameworkRuntimeIngressStandupScheduler>());
         services.Replace(ServiceDescriptor.Scoped<IGetAllIngressConfigurationsAccessor, RuntimeIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, RuntimeIngressConfigurationAccessor>());
-        services.Replace(ServiceDescriptor.Scoped<IArtifactDeliverySecretResolver, RuntimeDesignNodeSecretResolver>());
         services.Replace(ServiceDescriptor.Scoped<IControlPlaneDistributionSourceProvider, RuntimeDesignNodeDistributionSourceProvider>());
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
         return services;

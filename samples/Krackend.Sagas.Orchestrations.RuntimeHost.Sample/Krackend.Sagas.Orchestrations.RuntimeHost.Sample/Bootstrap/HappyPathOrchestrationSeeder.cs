@@ -3,8 +3,10 @@ using System.Text;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Microsoft.Extensions.Configuration;
 
 namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 
@@ -15,6 +17,17 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
     private const string OrchestrationName = "Sale Created Happy Path";
     private const string ArtifactType = "orchestration-version-snapshot";
     private const string ArtifactSchemaVersion = "1.0.0";
+    private const string DesignNodeKey = "local-design";
+    private const string DesignNodeName = "Local Design Control Plane";
+    private const string RemoteRuntimeNodeId = "01K00000000000000000000051";
+    private const string DesignInboundClientId = "local-runtime-pull";
+    private const string DesignInboundKeyId = "local-design-pull-key";
+    private const string DesignInboundSecret = "KrackendLocalDesignInboundSecret_ChangeMe";
+    private const string RuntimeInboundClientId = "local-design-push";
+    private const string RuntimeInboundKeyId = "local-runtime-push-key";
+    private const string RuntimeInboundSecret = "KrackendLocalRuntimeInboundSecret_ChangeMe";
+    private const string RuntimeInboundScopes = "artifact:push connection:validate";
+    private const string RuntimeOutboundScopes = "release:read artifact:read artifact:ack connection:validate";
     private static readonly HappyPathSeedDefinition[] SeedDefinitions =
     [
         new(
@@ -60,15 +73,31 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
     ];
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Id DesignNodeId = StableId("01K00000000000000000000060");
+    private readonly IConfiguration _configuration;
+    private readonly IRuntimeDesignNodeRepository _designNodeRepository;
+    private readonly IConnectionSecretHasher _secretHasher;
+    private readonly IRuntimeDesignNodeSecretProtector _secretProtector;
     private readonly IRuntimeArtifactDeploymentService _deploymentService;
 
-    public HappyPathOrchestrationSeeder(IRuntimeArtifactDeploymentService deploymentService)
+    public HappyPathOrchestrationSeeder(
+        IConfiguration configuration,
+        IRuntimeDesignNodeRepository designNodeRepository,
+        IConnectionSecretHasher secretHasher,
+        IRuntimeDesignNodeSecretProtector secretProtector,
+        IRuntimeArtifactDeploymentService deploymentService)
     {
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _designNodeRepository = designNodeRepository ?? throw new ArgumentNullException(nameof(designNodeRepository));
+        _secretHasher = secretHasher ?? throw new ArgumentNullException(nameof(secretHasher));
+        _secretProtector = secretProtector ?? throw new ArgumentNullException(nameof(secretProtector));
         _deploymentService = deploymentService ?? throw new ArgumentNullException(nameof(deploymentService));
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
+        await UpsertDesignNodeAsync(DateTime.UtcNow, cancellationToken);
+
         foreach (var definition in SeedDefinitions)
         {
             var artifact = BuildArtifact(definition);
@@ -94,6 +123,43 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                 PromotedOnUtc = now
             }, "runtime-host-sample", cancellationToken);
         }
+    }
+
+    private async Task UpsertDesignNodeAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var existing = await _designNodeRepository.GetByIdAsync(DesignNodeId, cancellationToken);
+
+        await _designNodeRepository.UpsertAsync(new RuntimeDesignNode
+        {
+            Id = DesignNodeId,
+            Key = DesignNodeKey,
+            Name = DesignNodeName,
+            EndpointBaseUri = _configuration["SeedData:DesignNode:EndpointBaseUri"] ?? "http://localhost:5085",
+            RemoteRuntimeNodeId = RemoteRuntimeNodeId,
+            DistributionMode = DistributionConnectionMode.HybridSync,
+            AccessTokenTtlSeconds = 86_400,
+            TokenRefreshSkewSeconds = 300,
+            TokenValidationCacheTtlSeconds = 300,
+            InboundClientId = RuntimeInboundClientId,
+            InboundKeyId = RuntimeInboundKeyId,
+            InboundSecretHash = _secretHasher.HashSecret(RuntimeInboundSecret),
+            InboundAllowedScopes = RuntimeInboundScopes,
+            InboundCredentialStatus = ConnectionCredentialStatus.Active,
+            InboundCredentialCreatedAtUtc = existing?.InboundCredentialCreatedAtUtc ?? now,
+            InboundCredentialRotatedAtUtc = now,
+            InboundCredentialRevokedAtUtc = null,
+            InboundLastFailureReason = string.Empty,
+            OutboundClientId = DesignInboundClientId,
+            OutboundKeyId = DesignInboundKeyId,
+            ProtectedOutboundSecret = _secretProtector.Protect(DesignInboundSecret),
+            OutboundRequestedScopes = RuntimeOutboundScopes,
+            OutboundCredentialStatus = ConnectionCredentialStatus.Active,
+            OutboundCredentialImportedAtUtc = existing?.OutboundCredentialImportedAtUtc ?? now,
+            Description = "Local design node seeded for push and manual pull demos.",
+            IsEnabled = true,
+            CreatedOnUtc = existing?.CreatedOnUtc == default ? now : existing?.CreatedOnUtc ?? now,
+            UpdatedOnUtc = now
+        }, cancellationToken);
     }
 
     private static OrchestrationArtifact BuildArtifact(HappyPathSeedDefinition definition)

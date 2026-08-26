@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -10,6 +11,39 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
 {
     public static IEndpointRouteBuilder MapOrchestratorArtifactDeliveryEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapPost("/distribution/connect/token", async (
+            ConnectionTokenRequest request,
+            IControlPlaneConnectionTokenIssuer tokenIssuer,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var token = await tokenIssuer.IssueAsync(request, cancellationToken);
+                return Results.Ok(token);
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = "invalid_client", error_description = ex.Message });
+            }
+        });
+
+        endpoints.MapGet("/distribution/runtime-nodes/{runtimeNodeId}/connect/validate", async (
+            string runtimeNodeId,
+            HttpContext httpContext,
+            IControlPlaneConnectionTokenValidator tokenValidator,
+            CancellationToken cancellationToken) =>
+        {
+            var validation = await tokenValidator.ValidateAsync(
+                ReadBearerToken(httpContext.Request),
+                runtimeNodeId,
+                [ArtifactDeliveryScope.ConnectionValidate],
+                cancellationToken);
+
+            return validation.Succeeded
+                ? Results.Ok(new { succeeded = true, runtimeNodeId, nodeKey = validation.Principal.NodeKey })
+                : Results.Unauthorized();
+        });
+
         endpoints.MapPost("/distribution/release-targets/{releaseTargetId}/push", async (
             string releaseTargetId,
             IArtifactDeliveryApplicationService service,
@@ -101,5 +135,13 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
     {
         using var reader = new StreamReader(request.Body);
         return await reader.ReadToEndAsync();
+    }
+
+    private static string ReadBearerToken(HttpRequest request)
+    {
+        var header = request.Headers.Authorization.ToString();
+        return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? header["Bearer ".Length..].Trim()
+            : string.Empty;
     }
 }

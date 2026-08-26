@@ -19,7 +19,21 @@ var sqlConnection = builder.Configuration.GetConnectionString("ControlPlaneDocke
 if (string.IsNullOrWhiteSpace(sqlConnection))
     throw new InvalidOperationException("Set ConnectionStrings:ControlPlaneDocker or ConnectionStrings:Default for the Design host.");
 
+var redisConnection = builder.Configuration.GetConnectionString("Redis");
 var migrationsAssembly = typeof(Program).Assembly.GetName().Name;
+
+if (string.IsNullOrWhiteSpace(redisConnection))
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+else
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnection;
+        options.InstanceName = "krackend:design:";
+    });
+}
 
 builder.Services.AddHealthChecks()
     .AddAsyncCheck("sql", async () =>

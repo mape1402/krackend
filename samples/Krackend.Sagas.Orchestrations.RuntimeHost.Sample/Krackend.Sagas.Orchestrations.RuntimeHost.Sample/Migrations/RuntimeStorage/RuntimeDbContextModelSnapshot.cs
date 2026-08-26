@@ -729,10 +729,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<byte[]>("Id")
                         .HasColumnType("binary(16)");
 
-                    b.Property<string>("ClientId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                    b.Property<int>("AccessTokenTtlSeconds")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("datetime2");
@@ -741,10 +739,54 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("DistributionMode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("EndpointBaseUri")
                         .IsRequired()
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("InboundAllowedScopes")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("InboundClientId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime?>("InboundCredentialCreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("InboundCredentialRevokedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("InboundCredentialRotatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InboundCredentialStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("InboundKeyId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("InboundLastFailureReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("InboundLastTokenFailedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("InboundLastTokenIssuedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InboundSecretHash")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
@@ -754,23 +796,35 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
-                    b.Property<DateTime?>("LastConnectionCheckedOnUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("LastConnectionMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<bool?>("LastConnectionSucceeded")
-                        .HasColumnType("bit");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("ProtectedSecret")
+                    b.Property<string>("OutboundClientId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime?>("OutboundCredentialImportedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OutboundCredentialStatus")
                         .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OutboundKeyId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime?>("OutboundLastTokenReceivedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OutboundRequestedScopes")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ProtectedOutboundSecret")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RemoteRuntimeNodeId")
@@ -778,18 +832,20 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
-                    b.Property<string>("SecretReference")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                    b.Property<int>("TokenRefreshSkewSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TokenValidationCacheTtlSeconds")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("UpdatedOnUtc")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ClientId")
-                        .IsUnique();
+                    b.HasIndex("InboundClientId")
+                        .IsUnique()
+                        .HasFilter("[InboundClientId] IS NOT NULL AND [InboundClientId] <> ''");
 
                     b.HasIndex("IsEnabled");
 

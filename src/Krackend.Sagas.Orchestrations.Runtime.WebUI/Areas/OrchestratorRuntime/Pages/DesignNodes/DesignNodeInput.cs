@@ -49,16 +49,22 @@ public sealed class DesignNodeInput
     /// <summary>
     /// Gets or sets the signing client id.
     /// </summary>
-    [Required(ErrorMessage = "Capture the client id.")]
     [MaxLength(256)]
     [Display(Name = "Client id")]
     public string ClientId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the shared secret to create or replace.
+    /// Gets or sets the imported credential key id.
+    /// </summary>
+    [MaxLength(256)]
+    [Display(Name = "Key id")]
+    public string KeyId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the imported remote credential secret to create or replace.
     /// </summary>
     [MaxLength(2048)]
-    [Display(Name = "Shared secret")]
+    [Display(Name = "Remote credential secret")]
     public string Secret { get; set; } = string.Empty;
 
     /// <summary>

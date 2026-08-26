@@ -50,6 +50,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         }
 
         /// <inheritdoc />
+        public Task<RuntimeDesignNode> GetByInboundClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        {
+            var designNode = _store.DesignNodes.Values.FirstOrDefault(x =>
+                string.Equals(x.InboundClientId, clientId, StringComparison.Ordinal));
+            return Task.FromResult(designNode);
+        }
+
+        /// <inheritdoc />
         public Task UpsertAsync(RuntimeDesignNode designNode, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(designNode);

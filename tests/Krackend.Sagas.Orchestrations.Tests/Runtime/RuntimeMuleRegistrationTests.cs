@@ -26,11 +26,21 @@ public sealed class RuntimeMuleRegistrationTests
             .AddKrackendOrchestrationsRuntime()
             .AddMule(_ => { });
 
+        AssertRegistered<IRuntimeConnectionTokenIssuer>(services);
+        AssertRegistered<IRuntimeConnectionTokenValidator>(services);
+        AssertRegistered<IControlPlaneAccessTokenProvider>(services);
+        AssertRegistered<IRuntimeDesignNodeConnectionService>(services);
+
         using var provider = services.BuildServiceProvider();
         var settings = provider.GetRequiredService<IOptions<MuleSettings>>().Value;
 
         Assert.Equal(MuleRecoveryMode.Polling, settings.RecoveryMode);
         Assert.True(settings.Lanes.ContainsKey(RuntimeArtifactProjectionSchedulerDefaults.Lane));
         Assert.True(settings.Lanes.ContainsKey("runtime-standup:replica-a"));
+    }
+
+    private static void AssertRegistered<TService>(IServiceCollection services)
+    {
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(TService));
     }
 }

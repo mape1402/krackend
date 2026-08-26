@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -16,6 +17,37 @@ public static class RuntimeDistributionEndpointRouteBuilderExtensions
     /// </summary>
     public static IEndpointRouteBuilder MapOrchestratorRuntimeDistributionEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapPost("/runtime/distribution/connect/token", async (
+            ConnectionTokenRequest request,
+            IRuntimeConnectionTokenIssuer tokenIssuer,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var token = await tokenIssuer.IssueAsync(request, cancellationToken);
+                return Results.Ok(token);
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = "invalid_client", error_description = ex.Message });
+            }
+        });
+
+        endpoints.MapGet("/runtime/distribution/connect/validate", async (
+            HttpContext httpContext,
+            IRuntimeConnectionTokenValidator tokenValidator,
+            CancellationToken cancellationToken) =>
+        {
+            var validation = await tokenValidator.ValidateAsync(
+                ReadBearerToken(httpContext.Request),
+                [ArtifactDeliveryScope.ConnectionValidate],
+                cancellationToken);
+
+            return validation.Succeeded
+                ? Results.Ok(new { succeeded = true, nodeKey = validation.Principal.NodeKey })
+                : Results.Unauthorized();
+        });
+
         endpoints.MapPost("/runtime/artifacts/deploy", async (
             HttpContext httpContext,
             IRuntimeArtifactDeliveryEndpointAuthenticator authenticator,
@@ -79,5 +111,13 @@ public static class RuntimeDistributionEndpointRouteBuilderExtensions
     {
         using var reader = new StreamReader(request.Body);
         return await reader.ReadToEndAsync();
+    }
+
+    private static string ReadBearerToken(HttpRequest request)
+    {
+        var header = request.Headers.Authorization.ToString();
+        return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? header["Bearer ".Length..].Trim()
+            : string.Empty;
     }
 }

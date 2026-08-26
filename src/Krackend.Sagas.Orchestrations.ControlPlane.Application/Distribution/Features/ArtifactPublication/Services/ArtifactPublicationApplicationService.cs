@@ -112,7 +112,7 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
         foreach (var nodeId in allowedNodeIds)
         {
             var node = await _runtimeNodeRepository.GetById(nodeId, cancellationToken);
-            if (node.IsEnabled && node.Status == RuntimeNodeStatus.Active)
+            if (!node.IsDeleted && node.Status == RuntimeNodeStatus.Enabled)
             {
                 enabledNodes.Add(node);
             }
@@ -137,7 +137,13 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
                 continue;
             }
 
-            if (node.DistributionMode is DistributionMode.Push or DistributionMode.Hybrid
+            if (existingTarget.Status == ReleaseTargetStatus.Activated)
+            {
+                await _artifactRepository.SetPublished(artifact.Id, true, cancellationToken);
+                continue;
+            }
+
+            if (node.DistributionMode is DistributionMode.DesignPublishesToRuntime or DistributionMode.HybridSync
                 && existingTarget.Status != ReleaseTargetStatus.Activated)
             {
                 await _deliveryService.Push(existingTarget.Id.ToString(), "design-deploy", cancellationToken);
@@ -186,13 +192,13 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
                 Status = GetInitialTargetStatus(node.DistributionMode),
                 ActivationStatus = ActivationStatus.NotActivated,
                 AssignedAtUtc = DateTime.UtcNow,
-                AvailableAtUtc = node.DistributionMode == DistributionMode.Pull ? DateTime.UtcNow : null,
+                AvailableAtUtc = node.DistributionMode == DistributionMode.RuntimeFetchesFromDesign ? DateTime.UtcNow : null,
                 CorrelationId = deployment.CorrelationId
             };
 
             await _releaseTargetRepository.Create(releaseTarget, cancellationToken);
 
-            if (node.DistributionMode is DistributionMode.Push or DistributionMode.Hybrid)
+            if (node.DistributionMode is DistributionMode.DesignPublishesToRuntime or DistributionMode.HybridSync)
             {
                 await _deliveryService.Push(releaseTarget.Id.ToString(), release.RequestedBy, cancellationToken);
             }
@@ -200,7 +206,7 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
     }
 
     private static ReleaseTargetStatus GetInitialTargetStatus(DistributionMode mode)
-        => mode == DistributionMode.Pull
+        => mode == DistributionMode.RuntimeFetchesFromDesign
             ? ReleaseTargetStatus.AvailableForPull
             : ReleaseTargetStatus.PushScheduled;
 }
