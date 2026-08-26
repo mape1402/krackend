@@ -53,9 +53,9 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         foreach (var nodeId in selectedNodeIds)
         {
             var node = await _runtimeNodeRepository.GetById(nodeId, cancellationToken);
-            if (!node.IsEnabled)
+            if (node.IsDeleted || node.Status != RuntimeNodeStatus.Enabled)
             {
-                throw new InvalidOperationException($"Runtime node '{node.Name}' is disabled.");
+                throw new InvalidOperationException($"Runtime node '{node.Name}' is not enabled.");
             }
 
             selectedNodes[nodeId] = node;
@@ -86,7 +86,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
                 Id = Id.New(), RuntimeNodeId = target.RuntimeNodeId, ArtifactId = release.ArtifactId,
                 ReleaseId = release.Id, RolloutGroup = release.Strategy, Status = GetInitialTargetStatus(node.DistributionMode),
                 ActivationStatus = ActivationStatus.NotActivated, AssignedAtUtc = DateTime.UtcNow,
-                AvailableAtUtc = node.DistributionMode == DistributionMode.Pull ? DateTime.UtcNow : null,
+                AvailableAtUtc = node.DistributionMode == DistributionMode.RuntimeFetchesFromDesign ? DateTime.UtcNow : null,
                 CorrelationId = release.Id.ToString()
             };
 
@@ -128,7 +128,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
     }
 
     private static ReleaseTargetStatus GetInitialTargetStatus(DistributionMode mode)
-        => mode == DistributionMode.Pull
+        => mode == DistributionMode.RuntimeFetchesFromDesign
             ? ReleaseTargetStatus.AvailableForPull
             : ReleaseTargetStatus.PushScheduled;
 }

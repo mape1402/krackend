@@ -26,14 +26,29 @@ public sealed class ControlPlaneDistributionSource
     public string RemoteRuntimeNodeId { get; set; }
 
     /// <summary>
-    /// Gets or sets the key identifier used to sign runtime pull requests and validate incoming pushes.
+    /// Gets or sets the client id imported from Design for outbound runtime calls.
     /// </summary>
     public string ClientId { get; set; }
 
     /// <summary>
-    /// Gets or sets the configuration reference for the shared signing secret.
+    /// Gets or sets the protected client secret imported from Design for outbound runtime calls.
     /// </summary>
-    public string SecretReference { get; set; }
+    public string ProtectedSecret { get; set; }
+
+    /// <summary>
+    /// Gets or sets the credential key id imported from Design.
+    /// </summary>
+    public string KeyId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the requested scopes used when this runtime calls Design.
+    /// </summary>
+    public string RequestedScopes { get; set; }
+
+    /// <summary>
+    /// Gets or sets the renewal skew in seconds used before tokens expire.
+    /// </summary>
+    public int TokenRefreshSkewSeconds { get; set; } = 300;
 
     /// <summary>
     /// Gets or sets a value indicating whether this source is enabled.

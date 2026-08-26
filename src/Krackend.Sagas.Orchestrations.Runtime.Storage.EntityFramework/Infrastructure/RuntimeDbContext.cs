@@ -65,13 +65,21 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.Property(x => x.EndpointBaseUri).HasMaxLength(1024).IsRequired();
         builder.Property(x => x.RemoteRuntimeNodeId).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.ClientId).HasMaxLength(256).IsRequired();
-        builder.Property(x => x.SecretReference).HasMaxLength(256).IsRequired();
-        builder.Property(x => x.ProtectedSecret).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(x => x.DistributionMode).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.InboundClientId).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.InboundKeyId).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.InboundSecretHash).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(x => x.InboundAllowedScopes).HasMaxLength(512).IsRequired(false);
+        builder.Property(x => x.InboundCredentialStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.InboundLastFailureReason).HasMaxLength(2000).IsRequired(false);
+        builder.Property(x => x.OutboundClientId).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.OutboundKeyId).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.ProtectedOutboundSecret).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(x => x.OutboundRequestedScopes).HasMaxLength(512).IsRequired(false);
+        builder.Property(x => x.OutboundCredentialStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(2000).IsRequired(false);
-        builder.Property(x => x.LastConnectionMessage).HasMaxLength(2000).IsRequired(false);
         builder.HasIndex(x => x.Key).IsUnique();
-        builder.HasIndex(x => x.ClientId).IsUnique();
+        builder.HasIndex(x => x.InboundClientId).IsUnique().HasFilter("[InboundClientId] IS NOT NULL AND [InboundClientId] <> ''");
         builder.HasIndex(x => x.IsEnabled);
     }
 

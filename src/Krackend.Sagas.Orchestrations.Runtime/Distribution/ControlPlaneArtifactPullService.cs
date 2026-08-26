@@ -13,7 +13,7 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
 {
     private readonly HttpClient _httpClient;
     private readonly IControlPlaneDistributionSourceProvider _sourceProvider;
-    private readonly IArtifactDeliveryHttpRequestSigner _requestSigner;
+    private readonly IControlPlaneAccessTokenProvider _accessTokenProvider;
     private readonly IRuntimeArtifactDeploymentService _deploymentService;
 
     /// <summary>
@@ -22,12 +22,12 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
     public ControlPlaneArtifactPullService(
         HttpClient httpClient,
         IControlPlaneDistributionSourceProvider sourceProvider,
-        IArtifactDeliveryHttpRequestSigner requestSigner,
+        IControlPlaneAccessTokenProvider accessTokenProvider,
         IRuntimeArtifactDeploymentService deploymentService)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _sourceProvider = sourceProvider ?? throw new ArgumentNullException(nameof(sourceProvider));
-        _requestSigner = requestSigner ?? throw new ArgumentNullException(nameof(requestSigner));
+        _accessTokenProvider = accessTokenProvider ?? throw new ArgumentNullException(nameof(accessTokenProvider));
         _deploymentService = deploymentService ?? throw new ArgumentNullException(nameof(deploymentService));
     }
 
@@ -41,11 +41,11 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         CancellationToken cancellationToken = default)
     {
         var source = _sourceProvider.GetByKey(sourceKey);
-        using var request = await CreateSignedRequest(
+        using var request = await CreateAuthenticatedRequest(
             HttpMethod.Get,
             BuildControlPlaneUri(source, $"distribution/runtime-nodes/{source.RemoteRuntimeNodeId}/artifacts/pending"),
             source,
-            string.Empty,
+            [ArtifactDeliveryScope.ReleaseRead],
             cancellationToken);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -76,11 +76,11 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         string releaseTargetId,
         CancellationToken cancellationToken)
     {
-        using var request = await CreateSignedRequest(
+        using var request = await CreateAuthenticatedRequest(
             HttpMethod.Get,
             BuildControlPlaneUri(source, $"distribution/runtime-nodes/{source.RemoteRuntimeNodeId}/artifacts/{releaseTargetId}"),
             source,
-            string.Empty,
+            [ArtifactDeliveryScope.ArtifactRead],
             cancellationToken);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -104,11 +104,11 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
             RuntimeArtifactId = deployment.RuntimeArtifactId,
             RuntimeArtifactStatus = deployment.Status
         });
-        using var request = await CreateSignedRequest(
+        using var request = await CreateAuthenticatedRequest(
             HttpMethod.Post,
             BuildControlPlaneUri(source, $"distribution/runtime-nodes/{source.RemoteRuntimeNodeId}/artifacts/{releaseTargetId}/ack"),
             source,
-            body,
+            [ArtifactDeliveryScope.ArtifactAcknowledge],
             cancellationToken);
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
@@ -116,20 +116,15 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         response.EnsureSuccessStatusCode();
     }
 
-    private async Task<HttpRequestMessage> CreateSignedRequest(
+    private async Task<HttpRequestMessage> CreateAuthenticatedRequest(
         HttpMethod method,
         Uri uri,
         ControlPlaneDistributionSource source,
-        string body,
+        IReadOnlyCollection<ArtifactDeliveryScope> scopes,
         CancellationToken cancellationToken)
     {
         var request = new HttpRequestMessage(method, uri);
-        await _requestSigner.SignAsync(
-            request,
-            body,
-            source.ClientId,
-            source.SecretReference,
-            cancellationToken);
+        await _accessTokenProvider.AttachTokenAsync(request, source, scopes, cancellationToken);
         return request;
     }
 

@@ -45,6 +45,11 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
             .FirstOrDefaultAsync(x => x.Key == key, cancellationToken);
 
     /// <inheritdoc />
+    public async Task<RuntimeDesignNode> GetByInboundClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        => await DbContext.RuntimeDesignNodes.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.InboundClientId == clientId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task UpsertAsync(RuntimeDesignNode designNode, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(designNode);
@@ -60,16 +65,32 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
             current.Name = designNode.Name;
             current.EndpointBaseUri = designNode.EndpointBaseUri;
             current.RemoteRuntimeNodeId = designNode.RemoteRuntimeNodeId;
-            current.ClientId = designNode.ClientId;
-            current.SecretReference = designNode.SecretReference;
-            current.ProtectedSecret = designNode.ProtectedSecret;
+            current.DistributionMode = designNode.DistributionMode;
+            current.AccessTokenTtlSeconds = designNode.AccessTokenTtlSeconds;
+            current.TokenRefreshSkewSeconds = designNode.TokenRefreshSkewSeconds;
+            current.TokenValidationCacheTtlSeconds = designNode.TokenValidationCacheTtlSeconds;
+            current.InboundClientId = designNode.InboundClientId;
+            current.InboundKeyId = designNode.InboundKeyId;
+            current.InboundSecretHash = designNode.InboundSecretHash;
+            current.InboundAllowedScopes = designNode.InboundAllowedScopes;
+            current.InboundCredentialStatus = designNode.InboundCredentialStatus;
+            current.InboundCredentialCreatedAtUtc = designNode.InboundCredentialCreatedAtUtc;
+            current.InboundCredentialRotatedAtUtc = designNode.InboundCredentialRotatedAtUtc;
+            current.InboundCredentialRevokedAtUtc = designNode.InboundCredentialRevokedAtUtc;
+            current.InboundLastTokenIssuedAtUtc = designNode.InboundLastTokenIssuedAtUtc;
+            current.InboundLastTokenFailedAtUtc = designNode.InboundLastTokenFailedAtUtc;
+            current.InboundLastFailureReason = designNode.InboundLastFailureReason;
+            current.OutboundClientId = designNode.OutboundClientId;
+            current.OutboundKeyId = designNode.OutboundKeyId;
+            current.ProtectedOutboundSecret = designNode.ProtectedOutboundSecret;
+            current.OutboundRequestedScopes = designNode.OutboundRequestedScopes;
+            current.OutboundCredentialStatus = designNode.OutboundCredentialStatus;
+            current.OutboundCredentialImportedAtUtc = designNode.OutboundCredentialImportedAtUtc;
+            current.OutboundLastTokenReceivedAtUtc = designNode.OutboundLastTokenReceivedAtUtc;
             current.Description = designNode.Description;
             current.IsEnabled = designNode.IsEnabled;
             current.CreatedOnUtc = designNode.CreatedOnUtc;
             current.UpdatedOnUtc = designNode.UpdatedOnUtc;
-            current.LastConnectionCheckedOnUtc = designNode.LastConnectionCheckedOnUtc;
-            current.LastConnectionSucceeded = designNode.LastConnectionSucceeded;
-            current.LastConnectionMessage = designNode.LastConnectionMessage;
         }
 
         await SaveChanges(cancellationToken);

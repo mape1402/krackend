@@ -44,6 +44,10 @@ public sealed class ControlPlaneApplicationRegistrationTests
         AssertRegistered<IReleaseTargetApplicationService>(services);
         AssertRegistered<IArtifactDeliveryApplicationService>(services);
         AssertRegistered<IArtifactPublicationApplicationService>(services);
+        AssertRegistered<IRuntimeNodeConnectionApplicationService>(services);
+        AssertRegistered<IControlPlaneConnectionTokenIssuer>(services);
+        AssertRegistered<IControlPlaneConnectionTokenValidator>(services);
+        AssertRegistered<IRuntimeAccessTokenProvider>(services);
         AssertRegistered<IOrchestrationNodePolicyApplicationService>(services);
         AssertRegistered<IArtifactValidationPolicy>(services);
         AssertRegistered<IArtifactBuilder<OrchestrationVersionDeployedEvent>>(services);
