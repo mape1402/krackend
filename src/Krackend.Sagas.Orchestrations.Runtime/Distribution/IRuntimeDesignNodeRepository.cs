@@ -41,4 +41,9 @@ public interface IRuntimeDesignNodeRepository
     /// Enables or disables one design node.
     /// </summary>
     Task SetEnabledAsync(Id id, bool isEnabled, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates the configuration lifecycle status of one design node.
+    /// </summary>
+    Task SetStatusAsync(Id id, RuntimeDesignNodeStatus status, CancellationToken cancellationToken = default);
 }

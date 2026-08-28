@@ -149,9 +149,14 @@ public sealed class RuntimeDesignNode
     public string Description { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the node configuration lifecycle status.
+    /// </summary>
+    public RuntimeDesignNodeStatus Status { get; set; } = RuntimeDesignNodeStatus.Pending;
+
+    /// <summary>
     /// Gets or sets a value indicating whether this design node can be used by runtime distribution.
     /// </summary>
-    public bool IsEnabled { get; set; } = true;
+    public bool IsEnabled { get; set; }
 
     /// <summary>
     /// Gets or sets when the node was registered.

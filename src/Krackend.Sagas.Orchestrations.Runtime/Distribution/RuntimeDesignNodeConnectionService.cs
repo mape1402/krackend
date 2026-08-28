@@ -48,6 +48,7 @@ public sealed class RuntimeDesignNodeConnectionService : IRuntimeDesignNodeConne
         CancellationToken cancellationToken = default)
     {
         var node = await GetNode(designNodeId, cancellationToken);
+        EnsureCanGenerateCredentialPackage(node);
         var material = _secretGenerator.GenerateCredential(node.Key);
         var now = DateTime.UtcNow;
         var scopes = _scopeFormatter.FormatMany(GetInboundScopes(node.DistributionMode));
@@ -68,7 +69,9 @@ public sealed class RuntimeDesignNodeConnectionService : IRuntimeDesignNodeConne
             Target = "design",
             Mode = node.DistributionMode.ToString(),
             BaseUrl = issuerBaseUrl?.Trim().TrimEnd('/') ?? string.Empty,
+            IssuerNodeId = node.Id.ToString(),
             IssuerNodeCode = node.Key,
+            TargetNodeId = "design",
             TargetNodeCode = "design",
             ClientId = material.ClientId,
             ClientSecret = material.ClientSecret,
@@ -88,6 +91,7 @@ public sealed class RuntimeDesignNodeConnectionService : IRuntimeDesignNodeConne
         ArgumentNullException.ThrowIfNull(input);
 
         var node = await GetNode(input.DesignNodeId, cancellationToken);
+        EnsureCanImportCredentialPackage(node);
         var package = _packageSerializer.Parse(input.Package);
         if (!string.Equals(package.Issuer, "design", StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(package.Target, "runtime", StringComparison.OrdinalIgnoreCase))
@@ -96,6 +100,7 @@ public sealed class RuntimeDesignNodeConnectionService : IRuntimeDesignNodeConne
         }
 
         node.EndpointBaseUri = string.IsNullOrWhiteSpace(package.BaseUrl) ? node.EndpointBaseUri : package.BaseUrl.Trim().TrimEnd('/');
+        node.RemoteRuntimeNodeId = string.IsNullOrWhiteSpace(package.TargetNodeId) ? node.RemoteRuntimeNodeId : package.TargetNodeId.Trim();
         node.OutboundClientId = package.ClientId;
         node.OutboundKeyId = package.KeyId;
         node.ProtectedOutboundSecret = _secretProtector.Protect(package.ClientSecret);
@@ -155,16 +160,32 @@ public sealed class RuntimeDesignNodeConnectionService : IRuntimeDesignNodeConne
             ? [ArtifactDeliveryScope.ArtifactPush, ArtifactDeliveryScope.ConnectionValidate]
             : [ArtifactDeliveryScope.ConnectionValidate];
 
+    private static void EnsureCanGenerateCredentialPackage(RuntimeDesignNode node)
+    {
+        if (node.DistributionMode is not (DistributionConnectionMode.DesignPublishesToRuntime or DistributionConnectionMode.HybridSync))
+        {
+            throw new InvalidOperationException("Runtime credentials are only required when Design can call Runtime.");
+        }
+    }
+
+    private static void EnsureCanImportCredentialPackage(RuntimeDesignNode node)
+    {
+        if (node.DistributionMode is not (DistributionConnectionMode.RuntimeFetchesFromDesign or DistributionConnectionMode.HybridSync))
+        {
+            throw new InvalidOperationException("Design credentials are only required when Runtime can call Design.");
+        }
+    }
+
     private static void EnsureCanCheckConnection(RuntimeDesignNode node)
     {
-        if (node.DistributionMode == DistributionConnectionMode.DesignPublishesToRuntime)
+        if (node.DistributionMode is not (DistributionConnectionMode.RuntimeFetchesFromDesign or DistributionConnectionMode.HybridSync))
         {
             throw new InvalidOperationException("Connection check only applies when Runtime can call Design.");
         }
 
-        if (!node.IsEnabled)
+        if (node.Status != RuntimeDesignNodeStatus.Enabled || !node.IsEnabled)
         {
-            throw new InvalidOperationException("Design node is not enabled.");
+            throw new InvalidOperationException("Design node must be enabled before checking the connection.");
         }
 
         if (node.OutboundCredentialStatus != ConnectionCredentialStatus.Active)
@@ -175,6 +196,11 @@ public sealed class RuntimeDesignNodeConnectionService : IRuntimeDesignNodeConne
         if (string.IsNullOrWhiteSpace(node.EndpointBaseUri))
         {
             throw new InvalidOperationException("Design endpoint is required before checking the connection.");
+        }
+
+        if (string.IsNullOrWhiteSpace(node.RemoteRuntimeNodeId))
+        {
+            throw new InvalidOperationException("Remote runtime node id is required before checking the connection.");
         }
     }
 

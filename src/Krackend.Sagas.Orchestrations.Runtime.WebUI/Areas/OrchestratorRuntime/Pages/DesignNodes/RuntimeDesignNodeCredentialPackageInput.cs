@@ -13,8 +13,8 @@ public sealed class RuntimeDesignNodeCredentialPackageInput
     public string DesignNodeId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the JSON or Base64 credential package.
+    /// Gets or sets the Design credentials JSON.
     /// </summary>
     [Required]
-    public string Package { get; set; } = string.Empty;
+    public string CredentialsJson { get; set; } = string.Empty;
 }
