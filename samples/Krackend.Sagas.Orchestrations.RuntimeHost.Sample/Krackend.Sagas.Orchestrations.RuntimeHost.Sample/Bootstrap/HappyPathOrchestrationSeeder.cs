@@ -156,6 +156,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
             OutboundCredentialStatus = ConnectionCredentialStatus.Active,
             OutboundCredentialImportedAtUtc = existing?.OutboundCredentialImportedAtUtc ?? now,
             Description = "Local design node seeded for push and manual pull demos.",
+            Status = RuntimeDesignNodeStatus.Enabled,
             IsEnabled = true,
             CreatedOnUtc = existing?.CreatedOnUtc == default ? now : existing?.CreatedOnUtc ?? now,
             UpdatedOnUtc = now

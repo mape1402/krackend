@@ -10,7 +10,7 @@
         <h1 class="od-page-title">Runtime Nodes</h1>
         <p class="od-page-subtitle">Execution engines available for releases.</p>
     </div>
-    <button type="button" class="btn btn-primary js-open-runtime-node-modal" data-mode="create">Create runtime node</button>
+    <button type="button" class="btn btn-primary js-open-runtime-node-setup" data-mode="create">Create runtime node</button>
 </div>
 
 @if (!Model.Rows.Any())
@@ -282,14 +282,53 @@ else
             <div class="modal-body od-runtime-detail-body">
                 <div class="od-runtime-detail-layout">
                     <nav class="od-runtime-wizard-nav" aria-label="Runtime node setup">
-                        <button type="button" class="od-runtime-wizard-step is-active" data-setup-step-target="policy"><span>1</span><strong>Policy</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="runtimeCredentials"><span>2</span><strong>Runtime credentials</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="designCredentials"><span>3</span><strong>Design credentials</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="verify"><span>4</span><strong>Verify</strong></button>
+                        <button type="button" class="od-runtime-wizard-step is-active" data-setup-step-target="basic"><span>1</span><strong>Basic data</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="policy"><span>2</span><strong>Policy</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="runtimeCredentials"><span>3</span><strong>Runtime credentials</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="designCredentials"><span>4</span><strong>Design credentials</strong></button>
+                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="verify"><span>5</span><strong>Verify</strong></button>
                     </nav>
 
                     <div class="od-runtime-wizard-content">
-                        <section class="od-setup-step is-active" data-setup-step="policy">
+                        <section class="od-setup-step is-active" data-setup-step="basic">
+                            <div class="od-section-head">
+                                <div>
+                                    <h2 class="od-section-title">Basic data</h2>
+                                    <p class="od-item-meta">Design-local identity for the Runtime node.</p>
+                                </div>
+                            </div>
+                            <form method="post" asp-page-handler="WizardUpsert" id="setupBasicForm" data-wizard-form="true">
+                                <input type="hidden" name="Input.RuntimeNodeId" id="setupBasicRuntimeNodeId" />
+                                <input type="hidden" name="Input.DistributionMode" id="setupBasicDistributionMode" value="HybridSync" />
+                                <input type="hidden" name="Input.EndpointBaseUri" id="setupBasicEndpointBaseUri" />
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label for="setupBasicName" class="form-label">Name</label>
+                                        <input name="Input.Name" class="form-control" id="setupBasicName" autocomplete="off" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="setupBasicCode" class="form-label">Code</label>
+                                        <input name="Input.Code" class="form-control" id="setupBasicCode" data-orchestrator-key="true" autocomplete="off" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="setupBasicEnvironmentId" class="form-label">Environment</label>
+                                        <select name="Input.EnvironmentId" class="form-select" id="setupBasicEnvironmentId">
+                                            <option value="">Select environment</option>
+                                            @foreach (var env in Model.Environments)
+                                            {
+                                                <option value="@env.Id">@env.Name (@env.Code)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="setupBasicDescription" class="form-label">Description</label>
+                                        <input name="Input.Description" class="form-control" id="setupBasicDescription" autocomplete="off" />
+                                    </div>
+                                </div>
+                            </form>
+                        </section>
+
+                        <section class="od-setup-step" data-setup-step="policy">
                             <div class="od-section-head">
                                 <div>
                                     <h2 class="od-section-title">Policy</h2>
@@ -568,15 +607,15 @@ else
         if (element) element.textContent = value || '-';
     };
 
-    const readNode = trigger => trigger.closest('[data-runtime-node]');
+    const readNode = trigger => trigger?.closest?.('[data-runtime-node]') || null;
     let currentNode = null;
-    let setupSequence = ['policy', 'runtimeCredentials', 'designCredentials', 'verify'];
-    let setupStep = 'policy';
+    let setupSequence = ['basic', 'policy', 'runtimeCredentials', 'designCredentials', 'verify'];
+    let setupStep = 'basic';
 
     const sequences = {
-        DesignPublishesToRuntime: ['policy', 'runtimeCredentials'],
-        RuntimeFetchesFromDesign: ['policy', 'designCredentials'],
-        HybridSync: ['policy', 'runtimeCredentials', 'designCredentials']
+        DesignPublishesToRuntime: ['basic', 'policy', 'runtimeCredentials'],
+        RuntimeFetchesFromDesign: ['basic', 'policy', 'designCredentials'],
+        HybridSync: ['basic', 'policy', 'runtimeCredentials', 'designCredentials']
     };
 
     const stackChildModal = modalElement => {
@@ -619,6 +658,11 @@ else
 
     stackChildModal(credentialsModalElement);
     stackChildModal(generatedCredentialsModalElement);
+    setupModalElement?.addEventListener('hidden.bs.modal', () => {
+        if (currentNode && !currentNode.isConnected) {
+            window.location.reload();
+        }
+    });
 
     const notify = ({ title, message, type }) => window.OrchestratorMessages?.notify({
         title,
@@ -701,7 +745,11 @@ else
     };
 
     const updateCurrentNode = node => {
-        if (!currentNode || !node) return;
+        if (!node) return;
+        if (!currentNode) {
+            currentNode = document.createElement('article');
+            currentNode.dataset.runtimeNode = 'true';
+        }
 
         Object.entries(node).forEach(([key, value]) => {
             currentNode.dataset[key] = value ?? '';
@@ -807,37 +855,47 @@ else
     };
 
     const fillSetupFields = node => {
-        setText('runtimeNodeSetupModalLabel', 'Configure runtime node');
-        setText('runtimeNodeSetupSubtitle', `${node.dataset.name || '-'} | ${node.dataset.code || '-'}`);
-        setValue('setupPolicyRuntimeNodeId', node.dataset.id);
-        setValue('setupPolicyName', node.dataset.name);
-        setValue('setupPolicyCode', node.dataset.code);
-        setValue('setupPolicyEnvironmentId', node.dataset.environmentId);
-        setValue('setupPolicyDescription', node.dataset.description);
-        setValue('setupPolicyEndpointBaseUri', node.dataset.endpointBaseUri);
-        setValue('setupGenerateRuntimeNodeId', node.dataset.id);
-        setValue('setupValidateRuntimeNodeId', node.dataset.id);
-        setValue('setupStatusRuntimeNodeId', node.dataset.id);
+        const isNew = !node;
+        const mode = node?.dataset.distributionMode || 'HybridSync';
+        setText('runtimeNodeSetupModalLabel', isNew ? 'Create runtime node' : 'Configure runtime node');
+        setText('runtimeNodeSetupSubtitle', isNew ? 'New Design-side Runtime node' : `${node.dataset.name || '-'} | ${node.dataset.code || '-'}`);
+
+        setValue('setupBasicRuntimeNodeId', node?.dataset.id);
+        setValue('setupBasicName', node?.dataset.name);
+        setValue('setupBasicCode', node?.dataset.code);
+        setValue('setupBasicEnvironmentId', node?.dataset.environmentId);
+        setValue('setupBasicDescription', node?.dataset.description);
+        setValue('setupBasicDistributionMode', mode);
+        setValue('setupBasicEndpointBaseUri', node?.dataset.endpointBaseUri);
+
+        setValue('setupPolicyRuntimeNodeId', node?.dataset.id);
+        setValue('setupPolicyName', node?.dataset.name);
+        setValue('setupPolicyCode', node?.dataset.code);
+        setValue('setupPolicyEnvironmentId', node?.dataset.environmentId);
+        setValue('setupPolicyDescription', node?.dataset.description);
+        setValue('setupPolicyEndpointBaseUri', node?.dataset.endpointBaseUri);
+        setValue('setupGenerateRuntimeNodeId', node?.dataset.id);
+        setValue('setupValidateRuntimeNodeId', node?.dataset.id);
+        setValue('setupStatusRuntimeNodeId', node?.dataset.id);
         setValue('setupStatusValue', 'Enabled');
 
-        const mode = node.dataset.distributionMode || 'HybridSync';
         document.querySelectorAll('#runtimeNodeSetupModal input[name="Input.DistributionMode"]').forEach(input => {
             input.checked = input.value === mode;
         });
 
-        setText('setupOutboundCredentialStatus', node.dataset.outboundCredentialStatusLabel);
-        setText('setupEndpointBaseUri', node.dataset.endpointBaseUri);
-        setText('setupOutboundClientId', node.dataset.outboundClientId);
-        setText('setupOutboundKeyId', node.dataset.outboundKeyId);
-        setText('setupOutboundRequestedScopes', node.dataset.outboundRequestedScopes);
-        setText('setupOutboundCredentialImportedAt', node.dataset.outboundCredentialImportedAt);
+        setText('setupOutboundCredentialStatus', node?.dataset.outboundCredentialStatusLabel);
+        setText('setupEndpointBaseUri', node?.dataset.endpointBaseUri);
+        setText('setupOutboundClientId', node?.dataset.outboundClientId);
+        setText('setupOutboundKeyId', node?.dataset.outboundKeyId);
+        setText('setupOutboundRequestedScopes', node?.dataset.outboundRequestedScopes);
+        setText('setupOutboundCredentialImportedAt', node?.dataset.outboundCredentialImportedAt);
 
-        setText('setupInboundCredentialStatus', node.dataset.inboundCredentialStatusLabel);
-        setText('setupInboundClientId', node.dataset.inboundClientId);
-        setText('setupInboundKeyId', node.dataset.inboundKeyId);
-        setText('setupInboundAllowedScopes', node.dataset.inboundAllowedScopes);
-        setText('setupInboundCredentialCreatedAt', node.dataset.inboundCredentialCreatedAt);
-        setText('setupInboundLastTokenIssuedAt', node.dataset.inboundLastTokenIssuedAt);
+        setText('setupInboundCredentialStatus', node?.dataset.inboundCredentialStatusLabel);
+        setText('setupInboundClientId', node?.dataset.inboundClientId);
+        setText('setupInboundKeyId', node?.dataset.inboundKeyId);
+        setText('setupInboundAllowedScopes', node?.dataset.inboundAllowedScopes);
+        setText('setupInboundCredentialCreatedAt', node?.dataset.inboundCredentialCreatedAt);
+        setText('setupInboundLastTokenIssuedAt', node?.dataset.inboundLastTokenIssuedAt);
 
         applySetupPolicy(mode);
     };
@@ -852,14 +910,15 @@ else
     };
 
     const populateSetupModal = node => {
-        if (!setupModal || !node) return;
-        currentNode = node;
+        if (!setupModal) return;
+        currentNode = node || null;
         fillSetupFields(node);
-        showSetupStep('policy');
+        showSetupStep('basic');
         setupModal.show();
     };
 
     const applySetupPolicy = mode => {
+        setValue('setupBasicDistributionMode', mode || 'HybridSync');
         const canVerifyConnection = canCheckConnectionFor(currentNode?.dataset.status, mode);
         setupSequence = [...(sequences[mode] || sequences.HybridSync)];
         if (canVerifyConnection) {
@@ -867,11 +926,13 @@ else
         }
 
         if (!setupSequence.includes(setupStep)) {
-            setupStep = 'policy';
+            setupStep = 'basic';
         }
 
         document.querySelectorAll('[data-setup-step-target]').forEach(button => {
-            const enabled = setupSequence.includes(button.dataset.setupStepTarget);
+            const target = button.dataset.setupStepTarget;
+            const hasSavedNode = !!currentNode?.dataset.id;
+            const enabled = setupSequence.includes(target) && (target === 'basic' || hasSavedNode);
             button.disabled = !enabled;
             button.classList.toggle('is-disabled', !enabled);
         });
@@ -933,6 +994,9 @@ else
     const completeSetup = async () => {
         await enablePendingNodeIfReady();
         setupModal?.hide();
+        if (currentNode && !currentNode.isConnected) {
+            window.location.reload();
+        }
     };
 
     const moveNextOrClose = async () => {
@@ -964,7 +1028,21 @@ else
         }
     };
 
+    const handleBasicNext = async () => {
+        const payload = await postWizardForm(
+            document.getElementById('setupBasicForm'),
+            'Saving basic data',
+            'Design is saving the Runtime node identity.');
+        updateCurrentNode(payload.node);
+        applySetupPolicy(getSelectedMode());
+        await moveNextOrClose();
+    };
+
     const handlePolicyNext = async () => {
+        if (!currentNode?.dataset.id) {
+            throw new Error('Save the basic data before selecting a distribution policy.');
+        }
+
         const payload = await postWizardForm(
             document.getElementById('setupPolicyForm'),
             'Saving policy',
@@ -1049,11 +1127,14 @@ else
     const handleNext = async () => {
         try {
             switch (setupStep) {
+                case 'basic':
+                    await handleBasicNext();
+                    break;
                 case 'policy':
                     await handlePolicyNext();
                     break;
                 case 'runtimeCredentials':
-                    handleRuntimeCredentialsNext();
+                    await handleRuntimeCredentialsNext();
                     break;
                 case 'designCredentials':
                     await handleDesignCredentialsNext();
@@ -1067,13 +1148,6 @@ else
         }
     };
 
-    document.querySelectorAll('.js-open-runtime-node-modal').forEach(button => {
-        button.addEventListener('click', () => {
-            const mode = button.dataset.mode || 'create';
-            populateBasicModal(readNode(button), mode);
-        });
-    });
-
     document.querySelectorAll('.js-open-runtime-node-view').forEach(button => {
         button.addEventListener('click', () => populateViewModal(readNode(button)));
     });
@@ -1082,10 +1156,13 @@ else
         button.addEventListener('click', () => populateSetupModal(readNode(button)));
     });
 
-    document.querySelector('.js-open-runtime-node-setup')?.addEventListener('click', () => {
-        if (!currentNode) return;
-        viewModal?.hide();
-        populateSetupModal(currentNode);
+    document.querySelectorAll('.js-open-runtime-node-setup').forEach(button => {
+        button.addEventListener('click', () => {
+            const node = button.dataset.mode === 'create' ? null : (readNode(button) || currentNode);
+            if (button.dataset.mode !== 'create' && !node) return;
+            viewModal?.hide();
+            populateSetupModal(node);
+        });
     });
 
     document.querySelectorAll('[data-setup-step-target]').forEach(button => {

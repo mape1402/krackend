@@ -111,7 +111,7 @@ public sealed class RuntimeConnectionTokenIssuer : IRuntimeConnectionTokenIssuer
 
     private void EnsureNodeCanIssueToken(RuntimeDesignNode node)
     {
-        if (!node.IsEnabled)
+        if (node.Status != RuntimeDesignNodeStatus.Enabled || !node.IsEnabled)
         {
             throw new InvalidOperationException("Design node connection is disabled.");
         }

@@ -22,6 +22,7 @@ public sealed class RuntimeDesignNodeDistributionSourceProvider : IControlPlaneD
         => _repository.GetEnabled()
             .Where(x => !string.IsNullOrWhiteSpace(x.Key))
             .Where(x => !string.IsNullOrWhiteSpace(x.EndpointBaseUri))
+            .Where(x => x.DistributionMode is DistributionConnectionMode.RuntimeFetchesFromDesign or DistributionConnectionMode.HybridSync)
             .Where(x => x.OutboundCredentialStatus == ConnectionCredentialStatus.Active)
             .Select(ToSource)
             .OrderBy(x => x.Name)
