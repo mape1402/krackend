@@ -71,7 +71,10 @@ public sealed class RuntimeConnectionTokenValidator : IRuntimeConnectionTokenVal
         }
 
         var node = await _repository.GetByIdAsync(new Id(Ulid.Parse(entry.NodeId)), cancellationToken);
-        if (node is null || !node.IsEnabled || node.InboundCredentialStatus != ConnectionCredentialStatus.Active)
+        if (node is null ||
+            node.Status != RuntimeDesignNodeStatus.Enabled ||
+            !node.IsEnabled ||
+            node.InboundCredentialStatus != ConnectionCredentialStatus.Active)
         {
             return ConnectionTokenValidationResult.Failure("Bearer token credential is not active.");
         }

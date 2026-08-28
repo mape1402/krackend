@@ -78,8 +78,15 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.OutboundRequestedScopes).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.OutboundCredentialStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(2000).IsRequired(false);
+        builder.Property(x => x.Status)
+            .HasConversion<string>()
+            .HasMaxLength(64)
+            .HasDefaultValue(RuntimeDesignNodeStatus.Pending)
+            .HasSentinel(RuntimeDesignNodeStatus.Pending)
+            .IsRequired();
         builder.HasIndex(x => x.Key).IsUnique();
         builder.HasIndex(x => x.InboundClientId).IsUnique().HasFilter("[InboundClientId] IS NOT NULL AND [InboundClientId] <> ''");
+        builder.HasIndex(x => x.Status);
         builder.HasIndex(x => x.IsEnabled);
     }
 

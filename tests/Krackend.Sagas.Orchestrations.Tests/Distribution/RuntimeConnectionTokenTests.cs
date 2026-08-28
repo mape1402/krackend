@@ -19,6 +19,7 @@ public sealed class RuntimeConnectionTokenTests
             Id = Id.New(),
             Key = "local-design",
             Name = "Local Design",
+            Status = RuntimeDesignNodeStatus.Enabled,
             IsEnabled = true,
             AccessTokenTtlSeconds = 120,
             TokenValidationCacheTtlSeconds = 30,

@@ -29,7 +29,7 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
     /// <inheritdoc />
     public IReadOnlyCollection<RuntimeDesignNode> GetEnabled()
         => DbContext.RuntimeDesignNodes.AsNoTracking()
-            .Where(x => x.IsEnabled)
+            .Where(x => x.Status == RuntimeDesignNodeStatus.Enabled && x.IsEnabled)
             .OrderBy(x => x.Name)
             .ThenBy(x => x.Key)
             .ToArray();
@@ -88,6 +88,7 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
             current.OutboundCredentialImportedAtUtc = designNode.OutboundCredentialImportedAtUtc;
             current.OutboundLastTokenReceivedAtUtc = designNode.OutboundLastTokenReceivedAtUtc;
             current.Description = designNode.Description;
+            current.Status = designNode.Status;
             current.IsEnabled = designNode.IsEnabled;
             current.CreatedOnUtc = designNode.CreatedOnUtc;
             current.UpdatedOnUtc = designNode.UpdatedOnUtc;
@@ -98,6 +99,13 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
 
     /// <inheritdoc />
     public async Task SetEnabledAsync(Id id, bool isEnabled, CancellationToken cancellationToken = default)
+        => await SetStatusAsync(
+            id,
+            isEnabled ? RuntimeDesignNodeStatus.Enabled : RuntimeDesignNodeStatus.Suspend,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public async Task SetStatusAsync(Id id, RuntimeDesignNodeStatus status, CancellationToken cancellationToken = default)
     {
         var current = await DbContext.RuntimeDesignNodes.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (current is null)
@@ -105,7 +113,8 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
             return;
         }
 
-        current.IsEnabled = isEnabled;
+        current.Status = status;
+        current.IsEnabled = status == RuntimeDesignNodeStatus.Enabled;
         current.UpdatedOnUtc = DateTime.UtcNow;
         await SaveChanges(cancellationToken);
     }

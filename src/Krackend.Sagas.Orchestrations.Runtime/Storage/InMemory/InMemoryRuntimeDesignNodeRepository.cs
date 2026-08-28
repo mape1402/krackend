@@ -29,7 +29,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         /// <inheritdoc />
         public IReadOnlyCollection<RuntimeDesignNode> GetEnabled()
             => _store.DesignNodes.Values
-                .Where(x => x.IsEnabled)
+                .Where(x => x.Status == RuntimeDesignNodeStatus.Enabled && x.IsEnabled)
                 .OrderBy(x => x.Name)
                 .ThenBy(x => x.Key)
                 .ToArray();
@@ -67,10 +67,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         /// <inheritdoc />
         public Task SetEnabledAsync(Id id, bool isEnabled, CancellationToken cancellationToken = default)
+            => SetStatusAsync(id, isEnabled ? RuntimeDesignNodeStatus.Enabled : RuntimeDesignNodeStatus.Suspend, cancellationToken);
+
+        /// <inheritdoc />
+        public Task SetStatusAsync(Id id, RuntimeDesignNodeStatus status, CancellationToken cancellationToken = default)
         {
             if (_store.DesignNodes.TryGetValue(id, out var designNode))
             {
-                designNode.IsEnabled = isEnabled;
+                designNode.Status = status;
+                designNode.IsEnabled = status == RuntimeDesignNodeStatus.Enabled;
                 designNode.UpdatedOnUtc = DateTime.UtcNow;
             }
 

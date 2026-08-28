@@ -11,7 +11,7 @@ internal sealed class FakeRuntimeDesignNodeRepository : IRuntimeDesignNodeReposi
         => Task.FromResult<IReadOnlyCollection<RuntimeDesignNode>>(_nodes.Values.ToArray());
 
     public IReadOnlyCollection<RuntimeDesignNode> GetEnabled()
-        => _nodes.Values.Where(x => x.IsEnabled).ToArray();
+        => _nodes.Values.Where(x => x.Status == RuntimeDesignNodeStatus.Enabled && x.IsEnabled).ToArray();
 
     public Task<RuntimeDesignNode> GetByIdAsync(Id id, CancellationToken cancellationToken = default)
         => Task.FromResult(_nodes.GetValueOrDefault(id)!);
@@ -29,10 +29,14 @@ internal sealed class FakeRuntimeDesignNodeRepository : IRuntimeDesignNodeReposi
     }
 
     public Task SetEnabledAsync(Id id, bool isEnabled, CancellationToken cancellationToken = default)
+        => SetStatusAsync(id, isEnabled ? RuntimeDesignNodeStatus.Enabled : RuntimeDesignNodeStatus.Suspend, cancellationToken);
+
+    public Task SetStatusAsync(Id id, RuntimeDesignNodeStatus status, CancellationToken cancellationToken = default)
     {
         if (_nodes.TryGetValue(id, out var node))
         {
-            node.IsEnabled = isEnabled;
+            node.Status = status;
+            node.IsEnabled = status == RuntimeDesignNodeStatus.Enabled;
         }
 
         return Task.CompletedTask;

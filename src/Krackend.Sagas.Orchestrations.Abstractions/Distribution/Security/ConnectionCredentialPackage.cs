@@ -31,9 +31,19 @@ public sealed class ConnectionCredentialPackage
     public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the local node id that generated the package.
+    /// </summary>
+    public string IssuerNodeId { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the local node code that generated the package.
     /// </summary>
     public string IssuerNodeCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the remote node id expected to import the package.
+    /// </summary>
+    public string TargetNodeId { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the remote node code expected to import the package.
