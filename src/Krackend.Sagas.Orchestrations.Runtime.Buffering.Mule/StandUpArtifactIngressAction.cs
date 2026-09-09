@@ -1,3 +1,5 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Replication;
@@ -12,6 +14,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 [MuleAction(RuntimeArtifactActionNames.StandUpArtifactIngress)]
 public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressStandupRequest>
 {
+    private readonly IRuntimeArtifactRepository _artifactRepository;
     private readonly IIngressRegistry _ingressRegistry;
     private readonly IRuntimeReplicaIdentity _replicaIdentity;
     private readonly ILogger<StandUpArtifactIngressAction> _logger;
@@ -20,10 +23,12 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
     /// Initializes a new instance of the <see cref="StandUpArtifactIngressAction"/> class.
     /// </summary>
     public StandUpArtifactIngressAction(
+        IRuntimeArtifactRepository artifactRepository,
         IIngressRegistry ingressRegistry,
         IRuntimeReplicaIdentity replicaIdentity,
         ILogger<StandUpArtifactIngressAction> logger)
     {
+        _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _ingressRegistry = ingressRegistry ?? throw new ArgumentNullException(nameof(ingressRegistry));
         _replicaIdentity = replicaIdentity ?? throw new ArgumentNullException(nameof(replicaIdentity));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -47,6 +52,27 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
         }
 
         var request = context.Payload ?? throw new InvalidOperationException("Ingress standup request payload is required.");
-        await _ingressRegistry.StandUpOneAsync(request.ArtifactId, request.IngressGeneration, cancellationToken);
+        try
+        {
+            await _ingressRegistry.StandUpOneAsync(request.ArtifactId, request.IngressGeneration, cancellationToken);
+        }
+        catch (IngressStandupConfigurationException exception)
+        {
+            await _artifactRepository.MarkProjectionFailed(
+                new Id(Ulid.Parse(request.ArtifactId)),
+                request.IngressGeneration,
+                exception.Message,
+                cancellationToken);
+
+            _logger.LogWarning(
+                exception,
+                "Ingress standup for artifact {ArtifactId} generation {IngressGeneration} failed permanently because runtime configuration is incomplete.",
+                request.ArtifactId,
+                request.IngressGeneration);
+
+            // Mule calculates retry eligibility from the claimed action attempts.
+            context.Action.Attempts = int.MaxValue - 1;
+            throw;
+        }
     }
 }

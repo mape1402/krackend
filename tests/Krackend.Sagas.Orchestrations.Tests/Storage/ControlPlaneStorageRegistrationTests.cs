@@ -30,7 +30,6 @@ public sealed class ControlPlaneStorageRegistrationTests
         AssertRegistered<IVariableDefinitionRepository>(services);
         AssertRegistered<IParallelGroupRepository>(services);
         AssertRegistered<IBranchRuleRepository>(services);
-        AssertRegistered<IEnvironmentRepository>(services);
         AssertRegistered<IRuntimeNodeRepository>(services);
         AssertRegistered<IOrchestrationNodePolicyRepository>(services);
         AssertRegistered<IArtifactRepository>(services);

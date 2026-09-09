@@ -2,7 +2,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Replication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
@@ -12,7 +11,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress;
 public sealed class RuntimeReadyArtifactStartupService : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly RuntimeOptions _runtimeOptions;
     private readonly IRuntimeReplicaIdentity _replicaIdentity;
 
     /// <summary>
@@ -20,11 +18,9 @@ public sealed class RuntimeReadyArtifactStartupService : IHostedService
     /// </summary>
     public RuntimeReadyArtifactStartupService(
         IServiceScopeFactory scopeFactory,
-        IOptions<RuntimeOptions> runtimeOptions,
         IRuntimeReplicaIdentity replicaIdentity)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-        _runtimeOptions = runtimeOptions?.Value ?? throw new ArgumentNullException(nameof(runtimeOptions));
         _replicaIdentity = replicaIdentity ?? throw new ArgumentNullException(nameof(replicaIdentity));
     }
 
@@ -35,7 +31,7 @@ public sealed class RuntimeReadyArtifactStartupService : IHostedService
         var artifactRepository = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
         var standupScheduler = scope.ServiceProvider.GetRequiredService<IRuntimeIngressStandupScheduler>();
 
-        var artifacts = await artifactRepository.GetReady(_runtimeOptions.EnvironmentKey, cancellationToken);
+        var artifacts = await artifactRepository.GetReady(cancellationToken);
         foreach (var artifact in artifacts)
         {
             await standupScheduler.ScheduleStandupAsync(new RuntimeIngressStandupRequest

@@ -21,11 +21,6 @@ public sealed class PendingArtifactViewModel
     public string Version { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the target environment key.
-    /// </summary>
-    public string EnvironmentKey { get; set; } = string.Empty;
-
-    /// <summary>
     /// Gets or sets the artifact checksum.
     /// </summary>
     public string Checksum { get; set; } = string.Empty;

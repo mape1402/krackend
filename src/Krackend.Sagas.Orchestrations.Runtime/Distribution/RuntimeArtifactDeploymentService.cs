@@ -39,7 +39,6 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         var version = ParseVersion(package.Version);
         var artifactId = ParseId(package.ArtifactId);
         var existingArtifact = await TryGetExistingArtifact(
-            package.EnvironmentKey,
             package.OrchestrationDefinitionKey,
             version,
             cancellationToken);
@@ -63,7 +62,6 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         var artifact = new RuntimeOrchestrationArtifact
         {
             Id = existingArtifact?.Id ?? artifactId,
-            EnvironmentKey = package.EnvironmentKey,
             OrchestrationDefinitionKey = package.OrchestrationDefinitionKey,
             ArtifactType = package.ArtifactType,
             SourceOrchestrationVersionId = ParseId(package.OrchestrationVersionId),
@@ -112,7 +110,6 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     }
 
     private async Task<RuntimeOrchestrationArtifact> TryGetExistingArtifact(
-        string environmentKey,
         string orchestrationDefinitionKey,
         SemanticVersion version,
         CancellationToken cancellationToken)
@@ -120,7 +117,6 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         try
         {
             return await _artifactRepository.GetByVersion(
-                environmentKey,
                 orchestrationDefinitionKey,
                 version,
                 cancellationToken);

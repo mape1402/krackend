@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 /// <summary>
-/// Persists runtime orchestration artifacts materialized for an environment.
+/// Persists runtime orchestration artifacts materialized for a runtime node.
 /// </summary>
 public interface IRuntimeArtifactRepository
 {
@@ -53,12 +53,10 @@ public interface IRuntimeArtifactRepository
     /// <summary>
     /// Deactivates active artifacts that were superseded by another artifact.
     /// </summary>
-    /// <param name="environmentKey">Runtime environment key.</param>
     /// <param name="orchestrationDefinitionKey">Orchestration definition key.</param>
     /// <param name="exceptArtifactId">Artifact id that must remain active.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task DeactivateActiveArtifacts(
-        string environmentKey,
         string orchestrationDefinitionKey,
         Id exceptArtifactId,
         CancellationToken cancellationToken = default);
@@ -74,46 +72,36 @@ public interface IRuntimeArtifactRepository
     /// <summary>
     /// Gets an artifact by orchestration version.
     /// </summary>
-    /// <param name="environmentKey">Runtime environment key.</param>
     /// <param name="orchestrationDefinitionKey">Orchestration definition key.</param>
     /// <param name="version">Semantic version.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Runtime artifact.</returns>
     Task<RuntimeOrchestrationArtifact> GetByVersion(
-        string environmentKey,
         string orchestrationDefinitionKey,
         SemanticVersion version,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets all artifacts for an environment.
+    /// Gets all artifacts for this runtime node.
     /// </summary>
-    /// <param name="environmentKey">Runtime environment key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Runtime artifacts.</returns>
-    Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(
-        string environmentKey,
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets ready artifacts for an environment.
+    /// Gets ready artifacts for this runtime node.
     /// </summary>
-    /// <param name="environmentKey">Runtime environment key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Ready runtime artifacts.</returns>
-    Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(
-        string environmentKey,
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the active ready artifact for an orchestration definition.
     /// </summary>
-    /// <param name="environmentKey">Runtime environment key.</param>
     /// <param name="orchestrationDefinitionKey">Orchestration definition key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Active runtime artifact.</returns>
     Task<RuntimeOrchestrationArtifact> GetActive(
-        string environmentKey,
         string orchestrationDefinitionKey,
         CancellationToken cancellationToken = default);
 }

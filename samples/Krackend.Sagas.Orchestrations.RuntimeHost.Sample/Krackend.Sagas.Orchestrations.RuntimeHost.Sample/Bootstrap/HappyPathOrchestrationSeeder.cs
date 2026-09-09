@@ -12,7 +12,6 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 
 public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
 {
-    private const string EnvironmentKey = "local";
     private const string OrchestrationKey = "sales.sale.created";
     private const string OrchestrationName = "Sale Created Happy Path";
     private const string ArtifactType = "orchestration-version-snapshot";
@@ -111,7 +110,6 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                 ArtifactId = definition.ArtifactId.ToString(),
                 ArtifactType = ArtifactType,
                 SchemaVersion = ArtifactSchemaVersion,
-                EnvironmentKey = EnvironmentKey,
                 OrchestrationDefinitionId = artifact.OrchestrationDefinitionId.ToString(),
                 OrchestrationVersionId = artifact.OrchestrationVersionId.ToString(),
                 OrchestrationDefinitionKey = artifact.Key,

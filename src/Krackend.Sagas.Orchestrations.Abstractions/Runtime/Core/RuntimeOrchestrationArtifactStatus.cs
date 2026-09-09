@@ -16,7 +16,7 @@ public enum RuntimeOrchestrationArtifactStatus
     Ready = 1,
 
     /// <summary>
-    /// The artifact projection failed and must be retried or replaced.
+    /// The artifact projection or ingress standup failed and must be corrected, retried manually, or replaced.
     /// </summary>
     Failed = 2,
 

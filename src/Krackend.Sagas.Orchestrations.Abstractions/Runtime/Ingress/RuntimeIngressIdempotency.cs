@@ -27,7 +27,6 @@ public static class RuntimeIngressIdempotency
     private static string BuildTriggerKey(RuntimeIngressEnvelope envelope)
         => Join(
             "trigger",
-            envelope.EnvironmentKey,
             envelope.OrchestrationName,
             envelope.OrchestrationVersion,
             envelope.Source?.MessageId,
@@ -36,7 +35,6 @@ public static class RuntimeIngressIdempotency
     private static string BuildTaskResponseKey(RuntimeIngressEnvelope envelope)
         => Join(
             "response",
-            envelope.EnvironmentKey,
             envelope.OrchestrationInstanceId,
             envelope.DispatchId,
             envelope.TaskExecutionId,

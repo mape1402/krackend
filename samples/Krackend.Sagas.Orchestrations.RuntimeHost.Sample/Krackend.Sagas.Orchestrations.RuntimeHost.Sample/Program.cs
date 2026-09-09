@@ -39,7 +39,6 @@ builder.Services.AddRazorPages();
 builder.Services.AddOrchestratorRuntimeWebUI(options =>
 {
     options.RoutePrefix = "runtime";
-    options.EnvironmentKey = builder.Configuration["Runtime:EnvironmentKey"] ?? "local";
 });
 builder.Services.AddScoped<IHappyPathOrchestrationSeeder, HappyPathOrchestrationSeeder>();
 builder.Services.AddSingleton<IDatabaseMigrationLock, SqlServerDatabaseMigrationLock>();

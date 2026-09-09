@@ -21,18 +21,16 @@ public interface IExecutionTransitionRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets recent transitions for an environment.
+    /// Gets recent transitions for this runtime node.
     /// </summary>
     Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(
-        string environmentKey,
         int take = 250,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets bucketed runtime traffic for an environment since the supplied UTC timestamp.
+    /// Gets bucketed runtime traffic for this runtime node since the supplied UTC timestamp.
     /// </summary>
     Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(
-        string environmentKey,
         DateTime sinceUtc,
         CancellationToken cancellationToken = default);
 }

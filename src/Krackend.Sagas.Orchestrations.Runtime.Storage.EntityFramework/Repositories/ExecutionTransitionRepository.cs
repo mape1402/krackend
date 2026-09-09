@@ -37,23 +37,19 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             .OrderBy(x => x.OccurredOnUtc)
             .ToArrayAsync(cancellationToken);
 
-    public async Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(string environmentKey, int take = 250, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(int take = 250, CancellationToken cancellationToken = default)
         => await (from transition in DbContext.ExecutionTransitions.AsNoTracking()
-                  join instance in DbContext.OrchestrationInstances.AsNoTracking()
-                      on transition.OrchestrationInstanceId equals instance.Id
-                  where instance.EnvironmentKey == environmentKey
                   orderby transition.OccurredOnUtc descending
                   select transition)
             .Take(take)
             .ToArrayAsync(cancellationToken);
 
-    public async Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(DateTime sinceUtc, CancellationToken cancellationToken = default)
     {
         var nowUtc = DateTime.UtcNow;
         var bucketSize = GetBucketSize(sinceUtc, nowUtc);
         var firstBucketUtc = AlignBucket(sinceUtc, bucketSize);
         var instances = await DbContext.OrchestrationInstances.AsNoTracking()
-            .Where(x => x.EnvironmentKey == environmentKey)
             .Where(x => x.StartedOnUtc <= nowUtc)
             .Where(x => x.StartedOnUtc >= firstBucketUtc
                 || x.CompletedOnUtc >= firstBucketUtc
@@ -88,7 +84,6 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             Id = transition.Id,
             EventName = ResolveEventName(transition.TransitionType),
             TransitionType = transition.TransitionType,
-            EnvironmentKey = instance.EnvironmentKey,
             OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,
             OrchestrationVersion = orchestrationVersion,
             OrchestrationInstanceId = transition.OrchestrationInstanceId,

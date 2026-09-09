@@ -57,16 +57,15 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         }
     }
 
-    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(string environmentKey, int take = 50, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)
         => await DbContext.OrchestrationInstances.AsNoTracking()
-            .Where(x => x.EnvironmentKey == environmentKey)
             .OrderByDescending(x => x.LastUpdatedOnUtc)
             .Take(take)
             .ToArrayAsync(cancellationToken);
 
-    public async Task<RuntimeInstanceSummary> GetSummary(string environmentKey, DateTime recentSinceUtc, CancellationToken cancellationToken = default)
+    public async Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default)
     {
-        var query = DbContext.OrchestrationInstances.AsNoTracking().Where(x => x.EnvironmentKey == environmentKey);
+        var query = DbContext.OrchestrationInstances.AsNoTracking();
         return new RuntimeInstanceSummary(
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Created || x.Status == OrchestrationInstanceStatus.Running, cancellationToken),
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Waiting, cancellationToken),

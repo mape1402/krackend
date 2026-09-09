@@ -147,7 +147,6 @@ internal static class DemoArtifactFactory
             ArtifactId = Ulid.NewUlid().ToString(),
             ArtifactType = "orchestration.deploy",
             SchemaVersion = "1.0.0",
-            EnvironmentKey = "local",
             OrchestrationDefinitionId = Ulid.NewUlid().ToString(),
             OrchestrationVersionId = Ulid.NewUlid().ToString(),
             OrchestrationDefinitionKey = key,

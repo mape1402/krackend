@@ -43,7 +43,7 @@ public sealed class SqlServerRegistrationTests
         Assert.Contains("GetActive", source);
         Assert.Contains("GetByVersion", source);
         Assert.Contains("DbContext.RuntimeOrchestrationArtifacts", source);
-        Assert.Contains("x.EnvironmentKey == environmentKey", source);
+        Assert.DoesNotContain("EnvironmentKey", source);
         Assert.Contains("x.OrchestrationDefinitionKey == orchestrationDefinitionKey", source);
     }
 

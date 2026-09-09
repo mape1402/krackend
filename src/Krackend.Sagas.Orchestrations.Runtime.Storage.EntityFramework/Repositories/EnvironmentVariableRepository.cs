@@ -27,9 +27,8 @@ internal sealed class EnvironmentVariableRepository : RuntimeRepositoryBase, IEn
         await SaveChanges(cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<EnvironmentVariableValue>> GetByEnvironmentKey(string environmentKey, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<EnvironmentVariableValue>> GetAll(CancellationToken cancellationToken = default)
         => await DbContext.EnvironmentVariableValues.AsNoTracking()
-            .Where(x => x.EnvironmentKey == environmentKey)
             .OrderBy(x => x.VariableKey)
             .ToArrayAsync(cancellationToken);
 }

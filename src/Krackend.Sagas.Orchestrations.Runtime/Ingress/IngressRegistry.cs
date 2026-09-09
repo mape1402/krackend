@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
@@ -7,18 +6,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
     internal class IngressRegistry : IIngressRegistry
     {
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ILogger<IngressRegistry> _logger;
         private readonly IRuntimeIngressLocalState _localState;
 
         private readonly ConcurrentDictionary<string, IList<string>> _connectors = new();
 
         public IngressRegistry(
             IServiceScopeFactory scopeFactory,
-            ILogger<IngressRegistry> logger,
             IRuntimeIngressLocalState localState)
         {
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _localState = localState ?? throw new ArgumentNullException(nameof(localState));
         }
 
@@ -46,12 +42,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             using var scope = _scopeFactory.CreateScope();
             var accessor = scope.ServiceProvider.GetRequiredService<IGetIngressConfigurationByArtifactAccessor>();
-            var configurations = await accessor.GetConfigurationAsync(artifactId, cancellationToken);
+            var configurations = (await accessor.GetConfigurationAsync(artifactId, cancellationToken))?.ToArray()
+                ?? Array.Empty<IngressConfiguration>();
 
-            if (configurations == null || !configurations.Any())
+            if (configurations.Length == 0)
             {
-                _logger.LogError("Cannot stand up a new orchestration roadmap with artifact id '{id}'", artifactId);
-                return;
+                throw new IngressStandupConfigurationException($"Cannot stand up artifact '{artifactId}' generation '{ingressGeneration}' because no ingress configurations were found.");
             }
 
             await StandUpConfigurationsAsync(scope.ServiceProvider, configurations, cancellationToken);
@@ -92,8 +88,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
                 if (connector == null)
                 {
-                    _logger.LogWarning("Doesn't have a connector registered for '{kind}' ingress.", configuration.IngressTransport);
-                    return;
+                    throw new IngressStandupConfigurationException($"Cannot stand up ingress configuration '{configuration.Id}' for artifact '{configuration.ArtifactId}' because transport '{configuration.IngressTransport}' has no registered connector.");
                 }
 
                 await connector.ConnectAsync(configuration, cancellationToken);
