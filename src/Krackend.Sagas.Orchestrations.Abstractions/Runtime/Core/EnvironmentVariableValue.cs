@@ -16,11 +16,6 @@ public sealed class EnvironmentVariableValue
     public Id Id { get; set; }
 
     /// <summary>
-    /// Gets or sets environment key.
-    /// </summary>
-    public required string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets variable key.
     /// </summary>
     public required string VariableKey { get; set; }

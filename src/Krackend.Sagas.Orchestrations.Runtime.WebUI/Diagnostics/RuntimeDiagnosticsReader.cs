@@ -4,7 +4,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
-using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
 
@@ -21,7 +20,6 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
     private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly ICompensationExecutionRepository _compensationRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
-    private readonly OrchestratorRuntimeWebUIOptions _options;
 
     public RuntimeDiagnosticsReader(
         IRuntimeArtifactRepository runtimeArtifactRepository,
@@ -31,8 +29,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         ITaskExecutionAttemptRepository attemptRepository,
         ITaskDispatchRepository dispatchRepository,
         ICompensationExecutionRepository compensationRepository,
-        IExecutionTransitionRepository transitionRepository,
-        IOptions<OrchestratorRuntimeWebUIOptions> options)
+        IExecutionTransitionRepository transitionRepository)
     {
         _runtimeArtifactRepository = runtimeArtifactRepository;
         _instanceRepository = instanceRepository;
@@ -42,18 +39,16 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         _dispatchRepository = dispatchRepository;
         _compensationRepository = compensationRepository;
         _transitionRepository = transitionRepository;
-        _options = options.Value;
     }
 
     public async Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
     {
         var summary = await BuildRuntimeSummary(cancellationToken);
-        var environmentKey = GetEnvironmentKey();
-        var instances = await _instanceRepository.GetRecent(environmentKey, 1000, cancellationToken);
-        var artifactVersions = await BuildArtifactVersionMap(environmentKey, cancellationToken);
+        var instances = await _instanceRepository.GetRecent(1000, cancellationToken);
+        var artifactVersions = await BuildArtifactVersionMap(cancellationToken);
         var nowUtc = DateTime.UtcNow;
-        var traffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-1), cancellationToken);
-        var hourlyTraffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-24), cancellationToken);
+        var traffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-1), cancellationToken);
+        var hourlyTraffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-24), cancellationToken);
 
         return new RuntimeDashboardSnapshotModel(
             summary,
@@ -65,10 +60,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
     public async Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default)
     {
         var summary = await BuildRuntimeSummary(cancellationToken);
-        var environmentKey = GetEnvironmentKey();
         var nowUtc = DateTime.UtcNow;
-        var traffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-1), cancellationToken);
-        var hourlyTraffic = await _transitionRepository.GetTraffic(environmentKey, nowUtc.AddHours(-24), cancellationToken);
+        var traffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-1), cancellationToken);
+        var hourlyTraffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-24), cancellationToken);
 
         return new RuntimeDashboardSummaryModel(
             summary,
@@ -157,11 +151,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         }
     }
 
-    private async Task<IReadOnlyDictionary<Id, string>> BuildArtifactVersionMap(
-        string environmentKey,
-        CancellationToken cancellationToken)
+    private async Task<IReadOnlyDictionary<Id, string>> BuildArtifactVersionMap(CancellationToken cancellationToken)
     {
-        var artifacts = await _runtimeArtifactRepository.GetAll(environmentKey, cancellationToken);
+        var artifacts = await _runtimeArtifactRepository.GetAll(cancellationToken);
         return artifacts.ToDictionary(x => x.Id, x => x.Version.ToString());
     }
 
@@ -170,9 +162,8 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var now = DateTime.UtcNow;
         var minuteSinceUtc = now.AddMinutes(-1);
         var hourSinceUtc = now.AddHours(-1);
-        var environmentKey = GetEnvironmentKey();
-        var minute = await _instanceRepository.GetSummary(environmentKey, minuteSinceUtc, cancellationToken);
-        var hour = await _instanceRepository.GetSummary(environmentKey, hourSinceUtc, cancellationToken);
+        var minute = await _instanceRepository.GetSummary(minuteSinceUtc, cancellationToken);
+        var hour = await _instanceRepository.GetSummary(hourSinceUtc, cancellationToken);
 
         return new RuntimeSummaryModel(
             minute.Active,
@@ -184,9 +175,6 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             minuteSinceUtc,
             hourSinceUtc);
     }
-
-    private string GetEnvironmentKey()
-        => string.IsNullOrWhiteSpace(_options.EnvironmentKey) ? "local" : _options.EnvironmentKey.Trim();
 
     private async Task<IReadOnlyCollection<TaskDetailModel>> BuildTaskDetails(
         IReadOnlyCollection<TaskExecution> tasks,

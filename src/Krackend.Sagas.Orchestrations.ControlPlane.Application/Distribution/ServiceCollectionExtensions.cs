@@ -11,7 +11,6 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddOrchestratorDistributionApplication(this IServiceCollection services)
     {
-        services.AddScoped<IRuntimeEnvironmentApplicationService, RuntimeEnvironmentApplicationService>();
         services.AddScoped<IRuntimeNodeApplicationService, RuntimeNodeApplicationService>();
         services.AddHttpClient<IRuntimeNodeConnectionApplicationService, RuntimeNodeConnectionApplicationService>();
         services.AddScoped<IArtifactApplicationService, ArtifactApplicationService>();

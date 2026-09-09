@@ -9,7 +9,6 @@ public sealed class RuntimeNodeEntity
     public Id Id { get; set; }
     public string Name { get; set; }
     public string Code { get; set; }
-    public Id EnvironmentId { get; set; }
     public DistributionMode DistributionMode { get; set; }
     public string EndpointBaseUri { get; set; }
     public string EndpointApiPath { get; set; }
@@ -41,7 +40,6 @@ public sealed class RuntimeNodeEntity
     public DateTime? OutboundLastTokenReceivedAtUtc { get; set; }
     public DateTime RegisteredAtUtc { get; set; }
     public DateTime? LastUpdatedAtUtc { get; set; }
-    public EnvironmentEntity Environment { get; set; }
     public ICollection<RuntimeCapabilityEntity> Capabilities { get; set; } = new List<RuntimeCapabilityEntity>();
 }
 

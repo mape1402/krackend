@@ -10,8 +10,4 @@ public sealed class OrchestratorRuntimeWebUIOptions
     /// </summary>
     public string RoutePrefix { get; set; } = "runtime";
 
-    /// <summary>
-    /// Gets or sets the runtime environment key displayed and queried by the diagnostics UI.
-    /// </summary>
-    public string EnvironmentKey { get; set; } = "local";
 }

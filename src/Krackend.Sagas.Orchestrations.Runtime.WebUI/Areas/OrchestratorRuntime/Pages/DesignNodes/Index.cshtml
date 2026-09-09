@@ -36,6 +36,7 @@ else
                 var runtimeCredentialReadiness = RuntimeCredentialReadiness(node);
                 var designCredentialReadiness = DesignCredentialReadiness(node);
                 var canCheckConnection = CanCheckConnection(node);
+                var canReviewReleases = CanReviewReleases(node);
 
                 <article class="od-item-card od-design-node-card"
                          data-design-node="true"
@@ -129,6 +130,13 @@ else
 
                     <div class="od-card-actions">
                         <button type="button" class="btn btn-outline-secondary btn-sm js-open-design-node-setup-card">Configure</button>
+                        @if (canReviewReleases)
+                        {
+                            <form method="post" asp-page-handler="CheckPending" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Checking releases" data-busy-message="Runtime is reading pending releases from Design.">
+                                <input type="hidden" name="sourceKey" value="@node.Key" />
+                                <button type="submit" class="btn btn-outline-primary btn-sm">Review releases</button>
+                            </form>
+                        }
                         <button type="button" class="btn btn-outline-primary btn-sm js-open-design-node-view">Details</button>
                     </div>
                 </article>
@@ -459,7 +467,6 @@ else
                             <article class="od-pending-release-card">
                                 <div>
                                     <h3>@artifact.OrchestrationDefinitionKey v@artifact.Version</h3>
-                                    <p class="od-item-meta">Environment: @artifact.EnvironmentKey</p>
                                     <p class="od-item-meta">Promoted by @artifact.PromotedBy on @artifact.PromotedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC</p>
                                     <p class="od-item-meta">Correlation: @artifact.CorrelationId</p>
                                     <p class="od-item-meta">Checksum: @artifact.Checksum</p>
@@ -526,6 +533,13 @@ else
     private static bool CanCheckConnection(RuntimeDesignNode node)
         => node.Status == RuntimeDesignNodeStatus.Enabled &&
            node.DistributionMode is DistributionConnectionMode.RuntimeFetchesFromDesign or DistributionConnectionMode.HybridSync;
+
+    private static bool CanReviewReleases(RuntimeDesignNode node)
+        => node.Status == RuntimeDesignNodeStatus.Enabled &&
+           node.DistributionMode is DistributionConnectionMode.RuntimeFetchesFromDesign or DistributionConnectionMode.HybridSync &&
+           node.OutboundCredentialStatus == ConnectionCredentialStatus.Active &&
+           !string.IsNullOrWhiteSpace(node.EndpointBaseUri) &&
+           !string.IsNullOrWhiteSpace(node.RemoteRuntimeNodeId);
 
     private static string RuntimeCredentialReadiness(RuntimeDesignNode node)
     {

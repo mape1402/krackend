@@ -36,8 +36,6 @@ else
                          data-id="@item.Id"
                          data-name="@item.Name"
                          data-code="@item.Code"
-                         data-environment-id="@item.EnvironmentId"
-                         data-environment-name="@item.EnvironmentName"
                          data-distribution-mode="@item.DistributionMode"
                          data-distribution-mode-label="@DistributionModeLabel(item.DistributionMode)"
                          data-distribution-mode-description="@DistributionModeDescription(item.DistributionMode)"
@@ -112,10 +110,6 @@ else
 
                     <div class="od-runtime-card-summary">
                         <div>
-                            <span>Environment</span>
-                            <strong>@TextOrDash(item.EnvironmentName)</strong>
-                        </div>
-                        <div>
                             <span>Policy</span>
                             <strong>@DistributionModeLabel(item.DistributionMode)</strong>
                         </div>
@@ -166,17 +160,6 @@ else
                             <span asp-validation-for="Input.Code" class="text-danger"></span>
                         </div>
                         <div class="col-md-6">
-                            <label asp-for="Input.EnvironmentId" class="form-label">Environment</label>
-                            <select asp-for="Input.EnvironmentId" class="form-select" id="environmentIdInput">
-                                <option value="">Select environment</option>
-                                @foreach (var env in Model.Environments)
-                                {
-                                    <option value="@env.Id">@env.Name (@env.Code)</option>
-                                }
-                            </select>
-                            <span asp-validation-for="Input.EnvironmentId" class="text-danger"></span>
-                        </div>
-                        <div class="col-md-6">
                             <label asp-for="Input.Description" class="form-label"></label>
                             <input asp-for="Input.Description" class="form-control" id="descriptionInput" />
                             <span asp-validation-for="Input.Description" class="text-danger"></span>
@@ -213,7 +196,6 @@ else
                     <div class="od-info-grid">
                         <div class="od-info-tile"><span>Name</span><strong id="viewName">-</strong></div>
                         <div class="od-info-tile"><span>Code</span><strong id="viewCode">-</strong></div>
-                        <div class="od-info-tile"><span>Environment</span><strong id="viewEnvironment">-</strong></div>
                         <div class="od-info-tile"><span>Status</span><strong id="viewStatus">-</strong></div>
                         <div class="od-info-tile"><span>Registered</span><strong id="viewRegisteredAt">-</strong></div>
                         <div class="od-info-tile"><span>Last update</span><strong id="viewLastUpdatedAt">-</strong></div>
@@ -311,16 +293,6 @@ else
                                         <input name="Input.Code" class="form-control" id="setupBasicCode" data-orchestrator-key="true" autocomplete="off" />
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="setupBasicEnvironmentId" class="form-label">Environment</label>
-                                        <select name="Input.EnvironmentId" class="form-select" id="setupBasicEnvironmentId">
-                                            <option value="">Select environment</option>
-                                            @foreach (var env in Model.Environments)
-                                            {
-                                                <option value="@env.Id">@env.Name (@env.Code)</option>
-                                            }
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
                                         <label for="setupBasicDescription" class="form-label">Description</label>
                                         <input name="Input.Description" class="form-control" id="setupBasicDescription" autocomplete="off" />
                                     </div>
@@ -339,7 +311,6 @@ else
                                 <input type="hidden" name="Input.RuntimeNodeId" id="setupPolicyRuntimeNodeId" />
                                 <input type="hidden" name="Input.Name" id="setupPolicyName" />
                                 <input type="hidden" name="Input.Code" id="setupPolicyCode" />
-                                <input type="hidden" name="Input.EnvironmentId" id="setupPolicyEnvironmentId" />
                                 <input type="hidden" name="Input.Description" id="setupPolicyDescription" />
                                 <input type="hidden" name="Input.EndpointBaseUri" id="setupPolicyEndpointBaseUri" />
                                 <div class="od-policy-options">
@@ -733,8 +704,7 @@ else
         }
 
         const summaryValues = currentNode.querySelectorAll('.od-runtime-card-summary strong');
-        if (summaryValues[0]) summaryValues[0].textContent = currentNode.dataset.environmentName || '-';
-        if (summaryValues[1]) summaryValues[1].textContent = currentNode.dataset.distributionModeLabel || '-';
+        if (summaryValues[0]) summaryValues[0].textContent = currentNode.dataset.distributionModeLabel || '-';
 
         const checkConnectionAction = currentNode.querySelector('[data-check-connection-action]');
         if (checkConnectionAction) {
@@ -814,7 +784,6 @@ else
         setValue('runtimeNodeIdInput', mode === 'edit' ? node?.dataset.id : '');
         setValue('nameInput', mode === 'edit' ? node?.dataset.name : '');
         setValue('codeInput', mode === 'edit' ? node?.dataset.code : '');
-        setValue('environmentIdInput', mode === 'edit' ? node?.dataset.environmentId : '');
         setValue('distributionModeInput', mode === 'edit' ? node?.dataset.distributionMode : 'HybridSync');
         setValue('endpointBaseUriInput', mode === 'edit' ? node?.dataset.endpointBaseUri : '');
         setValue('descriptionInput', mode === 'edit' ? node?.dataset.description : '');
@@ -825,7 +794,6 @@ else
     const fillReadOnlyFields = node => {
         setText('viewName', node.dataset.name);
         setText('viewCode', node.dataset.code);
-        setText('viewEnvironment', node.dataset.environmentName);
         setText('viewStatus', node.dataset.statusLabel || node.dataset.status);
         setText('viewRegisteredAt', node.dataset.registeredAt);
         setText('viewLastUpdatedAt', node.dataset.lastUpdatedAt);
@@ -863,7 +831,6 @@ else
         setValue('setupBasicRuntimeNodeId', node?.dataset.id);
         setValue('setupBasicName', node?.dataset.name);
         setValue('setupBasicCode', node?.dataset.code);
-        setValue('setupBasicEnvironmentId', node?.dataset.environmentId);
         setValue('setupBasicDescription', node?.dataset.description);
         setValue('setupBasicDistributionMode', mode);
         setValue('setupBasicEndpointBaseUri', node?.dataset.endpointBaseUri);
@@ -871,7 +838,6 @@ else
         setValue('setupPolicyRuntimeNodeId', node?.dataset.id);
         setValue('setupPolicyName', node?.dataset.name);
         setValue('setupPolicyCode', node?.dataset.code);
-        setValue('setupPolicyEnvironmentId', node?.dataset.environmentId);
         setValue('setupPolicyDescription', node?.dataset.description);
         setValue('setupPolicyEndpointBaseUri', node?.dataset.endpointBaseUri);
         setValue('setupGenerateRuntimeNodeId', node?.dataset.id);
@@ -904,7 +870,7 @@ else
         if (!viewModal || !node) return;
         currentNode = node;
         setText('runtimeNodeViewModalLabel', node.dataset.name);
-        setText('runtimeNodeViewSubtitle', `${node.dataset.code || '-'} | ${node.dataset.environmentName || '-'}`);
+        setText('runtimeNodeViewSubtitle', `${node.dataset.code || '-'} | ${node.dataset.distributionModeLabel || '-'}`);
         fillReadOnlyFields(node);
         viewModal.show();
     };

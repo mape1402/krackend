@@ -1,13 +1,12 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Contracts.Events;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core;
-using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Storage;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 
 /// <summary>
-/// Creates distribution artifacts and promotion records from design lifecycle operations.
+/// Creates distribution artifacts from design lifecycle operations.
 /// </summary>
 public sealed class ArtifactPublicationApplicationService : IArtifactPublicationApplicationService
 {
@@ -16,11 +15,6 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
     private readonly IArtifactBuilder<OrchestrationVersionArchivedEvent> _archiveBuilder;
     private readonly IEnumerable<IArtifactValidationPolicy> _policies;
     private readonly IArtifactRepository _artifactRepository;
-    private readonly IReleaseRepository _releaseRepository;
-    private readonly IReleaseTargetRepository _releaseTargetRepository;
-    private readonly IRuntimeNodeRepository _runtimeNodeRepository;
-    private readonly IOrchestrationNodePolicyRepository _policyRepository;
-    private readonly IArtifactDeliveryApplicationService _deliveryService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ArtifactPublicationApplicationService"/> class.
@@ -30,30 +24,19 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
         IArtifactBuilder<OrchestrationVersionDeprecatedEvent> deprecationBuilder,
         IArtifactBuilder<OrchestrationVersionArchivedEvent> archiveBuilder,
         IEnumerable<IArtifactValidationPolicy> policies,
-        IArtifactRepository artifactRepository,
-        IReleaseRepository releaseRepository,
-        IReleaseTargetRepository releaseTargetRepository,
-        IRuntimeNodeRepository runtimeNodeRepository,
-        IOrchestrationNodePolicyRepository policyRepository,
-        IArtifactDeliveryApplicationService deliveryService)
+        IArtifactRepository artifactRepository)
     {
         _deploymentBuilder = deploymentBuilder ?? throw new ArgumentNullException(nameof(deploymentBuilder));
         _deprecationBuilder = deprecationBuilder ?? throw new ArgumentNullException(nameof(deprecationBuilder));
         _archiveBuilder = archiveBuilder ?? throw new ArgumentNullException(nameof(archiveBuilder));
         _policies = policies ?? throw new ArgumentNullException(nameof(policies));
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
-        _releaseRepository = releaseRepository ?? throw new ArgumentNullException(nameof(releaseRepository));
-        _releaseTargetRepository = releaseTargetRepository ?? throw new ArgumentNullException(nameof(releaseTargetRepository));
-        _runtimeNodeRepository = runtimeNodeRepository ?? throw new ArgumentNullException(nameof(runtimeNodeRepository));
-        _policyRepository = policyRepository ?? throw new ArgumentNullException(nameof(policyRepository));
-        _deliveryService = deliveryService ?? throw new ArgumentNullException(nameof(deliveryService));
     }
 
     /// <inheritdoc />
     public async Task PublishDeployment(OrchestrationVersionDeployedEvent deployment, CancellationToken cancellationToken = default)
     {
-        var artifact = await GetOrCreateArtifact(_deploymentBuilder.Build(deployment), cancellationToken);
-        await PromoteArtifact(artifact, deployment, cancellationToken);
+        await GetOrCreateArtifact(_deploymentBuilder.Build(deployment), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -94,119 +77,4 @@ public sealed class ArtifactPublicationApplicationService : IArtifactPublication
         }
     }
 
-    private async Task PromoteArtifact(
-        Artifact artifact,
-        OrchestrationVersionDeployedEvent deployment,
-        CancellationToken cancellationToken)
-    {
-        var allowedNodeIds = await _policyRepository.GetAllowedRuntimeNodeIds(
-            artifact.OrchestrationDefinitionId,
-            cancellationToken);
-
-        if (allowedNodeIds.Count == 0)
-        {
-            return;
-        }
-
-        var enabledNodes = new List<RuntimeNode>();
-        foreach (var nodeId in allowedNodeIds)
-        {
-            var node = await _runtimeNodeRepository.GetById(nodeId, cancellationToken);
-            if (!node.IsDeleted && node.Status == RuntimeNodeStatus.Enabled)
-            {
-                enabledNodes.Add(node);
-            }
-        }
-
-        if (enabledNodes.Count == 0)
-        {
-            return;
-        }
-
-        var nodesNeedingTargets = new List<RuntimeNode>();
-        foreach (var node in enabledNodes)
-        {
-            var existingTarget = await _releaseTargetRepository.GetByArtifactAndRuntimeNode(
-                artifact.Id,
-                node.Id,
-                cancellationToken);
-
-            if (existingTarget is null)
-            {
-                nodesNeedingTargets.Add(node);
-                continue;
-            }
-
-            if (existingTarget.Status == ReleaseTargetStatus.Activated)
-            {
-                await _artifactRepository.SetPublished(artifact.Id, true, cancellationToken);
-                continue;
-            }
-
-            if (node.DistributionMode is DistributionMode.DesignPublishesToRuntime or DistributionMode.HybridSync
-                && existingTarget.Status != ReleaseTargetStatus.Activated)
-            {
-                await _deliveryService.Push(existingTarget.Id.ToString(), "design-deploy", cancellationToken);
-            }
-        }
-
-        if (nodesNeedingTargets.Count == 0)
-        {
-            return;
-        }
-
-        var release = new Release
-        {
-            Id = Id.New(),
-            ArtifactId = artifact.Id,
-            OrchestrationDefinitionId = artifact.OrchestrationDefinitionId,
-            RequestedBy = string.IsNullOrWhiteSpace(deployment.Actor)
-                ? "design-deploy"
-                : deployment.Actor.Trim(),
-            Strategy = "AutomaticDesignDeploy",
-            Status = ReleaseStatus.InProgress,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-
-        var planTargets = nodesNeedingTargets.Select(node => new ReleasePlanTarget
-        {
-            Id = Id.New(),
-            ReleaseId = release.Id,
-            RuntimeNodeId = node.Id,
-            Status = ReleaseStatus.InProgress,
-            CreatedAtUtc = DateTime.UtcNow,
-            Notes = "Created automatically from Design deploy."
-        }).ToArray();
-
-        await _releaseRepository.Create(release, planTargets, cancellationToken);
-
-        foreach (var node in nodesNeedingTargets)
-        {
-            var releaseTarget = new ReleaseTarget
-            {
-                Id = Id.New(),
-                RuntimeNodeId = node.Id,
-                ArtifactId = artifact.Id,
-                ReleaseId = release.Id,
-                RolloutGroup = release.Strategy,
-                Status = GetInitialTargetStatus(node.DistributionMode),
-                ActivationStatus = ActivationStatus.NotActivated,
-                AssignedAtUtc = DateTime.UtcNow,
-                AvailableAtUtc = node.DistributionMode == DistributionMode.RuntimeFetchesFromDesign ? DateTime.UtcNow : null,
-                CorrelationId = deployment.CorrelationId
-            };
-
-            await _releaseTargetRepository.Create(releaseTarget, cancellationToken);
-
-            if (node.DistributionMode is DistributionMode.DesignPublishesToRuntime or DistributionMode.HybridSync)
-            {
-                await _deliveryService.Push(releaseTarget.Id.ToString(), release.RequestedBy, cancellationToken);
-            }
-        }
-    }
-
-    private static ReleaseTargetStatus GetInitialTargetStatus(DistributionMode mode)
-        => mode == DistributionMode.RuntimeFetchesFromDesign
-            ? ReleaseTargetStatus.AvailableForPull
-            : ReleaseTargetStatus.PushScheduled;
 }

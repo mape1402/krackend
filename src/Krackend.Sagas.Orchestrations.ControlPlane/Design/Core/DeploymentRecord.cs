@@ -18,11 +18,6 @@ public sealed class DeploymentRecord
     public Id OrchestrationVersionId { get; set; }
 
     /// <summary>
-    /// Gets or sets environment key.
-    /// </summary>
-    public required string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets mode.
     /// </summary>
     public DeploymentMode Mode { get; set; }

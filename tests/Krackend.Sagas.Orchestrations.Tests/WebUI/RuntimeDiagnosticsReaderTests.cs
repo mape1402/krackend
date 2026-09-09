@@ -4,10 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
-using Krackend.Sagas.Orchestrations.Runtime;
-using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
-using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -69,8 +66,7 @@ public sealed class RuntimeDiagnosticsReaderTests
             new AttemptRepositoryStub(store),
             new DispatchRepositoryStub(store),
             new CompensationRepositoryStub(store),
-            new TransitionRepositoryStub(store),
-            Options.Create(new OrchestratorRuntimeWebUIOptions { EnvironmentKey = "local" }));
+            new TransitionRepositoryStub(store));
     }
 
     private sealed class RuntimeDiagnosticsStore
@@ -103,7 +99,6 @@ public sealed class RuntimeDiagnosticsReaderTests
                 Artifact = new RuntimeOrchestrationArtifact
                 {
                     Id = artifactId,
-                    EnvironmentKey = "local",
                     OrchestrationDefinitionKey = artifact.Key,
                     ArtifactType = "orchestration-version-snapshot",
                     SourceOrchestrationVersionId = artifact.OrchestrationVersionId,
@@ -119,7 +114,6 @@ public sealed class RuntimeDiagnosticsReaderTests
                 Instance = new OrchestrationInstance
                 {
                     Id = instanceId,
-                    EnvironmentKey = "local",
                     OrchestrationDefinitionKey = "orders",
                     RuntimeOrchestrationArtifactId = artifactId,
                     TriggerIntakeId = Id.New(),
@@ -329,12 +323,12 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task MarkProjectionStarted(Id artifactId, long ingressGeneration, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task MarkReady(Id artifactId, long ingressGeneration, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task MarkProjectionFailed(Id artifactId, long ingressGeneration, string error, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task DeactivateActiveArtifacts(string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
-        public Task<RuntimeOrchestrationArtifact> GetByVersion(string environmentKey, string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
-        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(string environmentKey, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
-        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(string environmentKey, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
-        public Task<RuntimeOrchestrationArtifact> GetActive(string environmentKey, string orchestrationDefinitionKey, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
+        public Task<RuntimeOrchestrationArtifact> GetByVersion(string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
+        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
+        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
+        public Task<RuntimeOrchestrationArtifact> GetActive(string orchestrationDefinitionKey, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
     }
 
     private sealed class InstanceRepositoryStub(RuntimeDiagnosticsStore store) : IOrchestrationInstanceRepository
@@ -344,8 +338,8 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult(store.Instance);
         public Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(string environmentKey, int take = 50, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>([store.Instance]);
-        public Task<RuntimeInstanceSummary> GetSummary(string environmentKey, DateTime recentSinceUtc, CancellationToken cancellationToken = default) => Task.FromResult(new RuntimeInstanceSummary(0, 0, 1, 0, recentSinceUtc));
+        public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>([store.Instance]);
+        public Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default) => Task.FromResult(new RuntimeInstanceSummary(0, 0, 1, 0, recentSinceUtc));
     }
 
     private sealed class StageRepositoryStub(RuntimeDiagnosticsStore store) : IStageExecutionRepository
@@ -404,7 +398,7 @@ public sealed class RuntimeDiagnosticsReaderTests
     {
         public Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<IReadOnlyCollection<ExecutionTransition>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>([store.NewerTransition, store.OlderTransition]);
-        public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(string environmentKey, int take = 250, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>([store.NewerTransition, store.OlderTransition]);
-        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeTrafficPoint>>(Array.Empty<RuntimeTrafficPoint>());
+        public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(int take = 250, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>([store.NewerTransition, store.OlderTransition]);
+        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(DateTime sinceUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeTrafficPoint>>(Array.Empty<RuntimeTrafficPoint>());
     }
 }

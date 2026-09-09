@@ -1,0 +1,128 @@
+@page
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel
+@{
+    ViewData["Title"] = "Runtime Artifacts";
+}
+
+@section Head {
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260908-artifacts-version-01" />
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Runtime Artifacts</h1>
+        <p class="od-page-subtitle">Runtime node artifact lifecycle</p>
+    </div>
+</div>
+
+<section class="od-panel">
+    <div class="od-section-head">
+        <div>
+            <h2 class="od-section-title">Artifacts</h2>
+            <p class="od-item-meta">Newest deployed first</p>
+        </div>
+        <span class="od-item-meta">@Model.Artifacts.Count visible</span>
+    </div>
+
+    <form method="get" class="od-instance-controls mb-3">
+        <label class="od-instance-search">
+            <i class="bi bi-search"></i>
+            <input asp-for="Search" type="search" placeholder="Search key, version, artifact id or checksum" autocomplete="off" />
+        </label>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-search"></i>
+            Search
+        </button>
+    </form>
+
+    @if (Model.Artifacts.Count == 0)
+    {
+        <p class="od-empty">No runtime artifacts found.</p>
+    }
+    else
+    {
+        <div class="od-instance-table-wrap">
+            <table class="od-instance-table">
+                <thead>
+                    <tr>
+                        <th>Orchestration</th>
+                        <th>Version</th>
+                        <th>Status</th>
+                        <th>Generation</th>
+                        <th>Deployed</th>
+                        <th>Projection</th>
+                        <th>Artifact</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var artifact in Model.Artifacts)
+                    {
+                        var isReady = string.Equals(artifact.Status, "Ready", StringComparison.OrdinalIgnoreCase) && artifact.IsActive;
+                        var statusClass = artifact.Status switch
+                        {
+                            "Ready" => "od-status-completed",
+                            "Pending" => "od-status-waiting",
+                            "Failed" => "od-status-danger",
+                            "Retired" => "od-status-muted",
+                            _ => "od-status-inactive"
+                        };
+                        <tr>
+                            <td>
+                                <strong>@artifact.OrchestrationDefinitionKey</strong>
+                            </td>
+                            <td>
+                                <span class="od-version-badge">v@(artifact.Version)</span>
+                            </td>
+                            <td>
+                                <span class="od-status @statusClass">@artifact.Status</span>
+                                <small>@(artifact.IsActive ? "Active" : "Inactive")</small>
+                            </td>
+                            <td>@artifact.IngressGeneration</td>
+                            <td>
+                                @artifact.DeployedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC
+                                @if (artifact.ActivatedOnUtc is not null)
+                                {
+                                    <small>Activated @artifact.ActivatedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</small>
+                                }
+                            </td>
+                            <td>
+                                @if (artifact.ProjectionCompletedOnUtc is not null)
+                                {
+                                    <span>@artifact.ProjectionCompletedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
+                                }
+                                else if (artifact.ProjectionFailedOnUtc is not null)
+                                {
+                                    <span>@artifact.ProjectionFailedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
+                                    <small>@artifact.ProjectionError</small>
+                                }
+                                else if (artifact.ProjectionStartedOnUtc is not null)
+                                {
+                                    <span>@artifact.ProjectionStartedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
+                                }
+                                else
+                                {
+                                    <span>-</span>
+                                }
+                            </td>
+                            <td>
+                                <small>Version @artifact.Version</small>
+                                <small>@artifact.ArtifactId</small>
+                                <small>@artifact.Checksum</small>
+                            </td>
+                            <td>
+                                <form method="post" asp-page-handler="RequestStandup" data-orchestrator-busy="true" data-busy-title="Requesting standup" data-busy-message="Runtime is scheduling local standup and notifying peer replicas when gossip is enabled.">
+                                    <input type="hidden" name="artifactId" value="@artifact.ArtifactId" />
+                                    <button type="submit" class="btn btn-sm btn-primary" disabled="@(!isReady)">
+                                        <i class="bi bi-broadcast-pin"></i>
+                                        Request standup
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

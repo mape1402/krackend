@@ -134,7 +134,8 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
         var rows = await _dbContext.ReleaseTargets.AsNoTracking()
             .Where(x => x.RuntimeNodeId == runtimeNodeId
                 && (x.Status == ReleaseTargetStatus.AvailableForPull
-                    || x.Status == ReleaseTargetStatus.Pending))
+                    || x.Status == ReleaseTargetStatus.Pending
+                    || x.Status == ReleaseTargetStatus.PushScheduled))
             .OrderBy(x => x.AssignedAtUtc)
             .ToArrayAsync(cancellationToken);
 

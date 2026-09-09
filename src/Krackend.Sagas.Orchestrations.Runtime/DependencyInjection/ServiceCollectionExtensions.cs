@@ -62,7 +62,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IRemoteCommandDispatcher, RemoteCommandDispatcher>();
             services.TryAddScoped<IMessagingCommandSerializer, DefaultMessagingCommandSerializer>();
             services.TryAddScoped<IMessagingDispatchAdapter, DefaultMessagingDispatchAdapter>();
-            services.AddOptions<RuntimeOptions>().BindConfiguration("Runtime");
             services.AddOptions<RuntimeReplicaOptions>().BindConfiguration("Runtime:Replica");
             services.AddOptions<RuntimeGossipOptions>().BindConfiguration("Runtime:Gossip");
             services.TryAddSingleton<IRuntimeReplicaIdentity, DefaultRuntimeReplicaIdentity>();

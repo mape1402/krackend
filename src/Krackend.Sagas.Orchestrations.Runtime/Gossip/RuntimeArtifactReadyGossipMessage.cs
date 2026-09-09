@@ -8,11 +8,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Gossip;
 public sealed class RuntimeArtifactReadyGossipMessage
 {
     /// <summary>
-    /// Gets or sets the runtime environment key.
-    /// </summary>
-    public required string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets the runtime artifact id.
     /// </summary>
     public required string ArtifactId { get; set; }
@@ -48,7 +43,6 @@ public sealed class RuntimeArtifactReadyGossipMessage
 
         return new RuntimeArtifactReadyGossipMessage
         {
-            EnvironmentKey = artifact.EnvironmentKey,
             ArtifactId = artifact.Id.ToString(),
             OrchestrationDefinitionKey = artifact.OrchestrationDefinitionKey,
             Version = artifact.Version.ToString(),

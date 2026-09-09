@@ -553,42 +553,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                     b.ToTable("Artifacts", "Distribution");
                 });
 
-            modelBuilder.Entity("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.EnvironmentEntity", b =>
-                {
-                    b.Property<byte[]>("Id")
-                        .HasColumnType("binary(16)");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.ToTable("Environments", "Distribution");
-                });
-
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.OrchestrationAllowedRuntimeNodeEntity", b =>
                 {
                     b.Property<byte[]>("Id")
@@ -869,10 +833,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
 
-                    b.Property<byte[]>("EnvironmentId")
-                        .IsRequired()
-                        .HasColumnType("binary(16)");
-
                     b.Property<string>("InboundAllowedScopes")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
@@ -971,8 +931,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                     b.HasIndex("Code")
                         .IsUnique()
                         .HasFilter("[IsDeleted] = 0");
-
-                    b.HasIndex("EnvironmentId");
 
                     b.HasIndex("InboundClientId")
                         .IsUnique()
@@ -1154,17 +1112,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                         .IsRequired();
 
                     b.Navigation("RuntimeNode");
-                });
-
-            modelBuilder.Entity("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.RuntimeNodeEntity", b =>
-                {
-                    b.HasOne("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.EnvironmentEntity", "Environment")
-                        .WithMany()
-                        .HasForeignKey("EnvironmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Environment");
                 });
 
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Security.Entities.TeamMemberEntity", b =>

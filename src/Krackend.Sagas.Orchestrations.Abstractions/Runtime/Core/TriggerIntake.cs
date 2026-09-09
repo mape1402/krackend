@@ -24,11 +24,6 @@ public sealed class TriggerIntake
     public required string TriggerKey { get; set; }
 
     /// <summary>
-    /// Gets or sets environment key.
-    /// </summary>
-    public required string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets correlation id.
     /// </summary>
     public string CorrelationId { get; set; }

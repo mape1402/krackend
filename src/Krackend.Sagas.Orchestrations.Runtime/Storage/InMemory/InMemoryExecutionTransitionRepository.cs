@@ -34,21 +34,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .OrderBy(x => x.OccurredOnUtc)
                 .ToArray());
 
-        public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(string environmentKey, int take = 250, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(int take = 250, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>(_store.Transitions
-                .Where(x => _store.Instances.TryGetValue(x.OrchestrationInstanceId, out var instance)
-                    && string.Equals(instance.EnvironmentKey, environmentKey, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(x => x.OccurredOnUtc)
                 .Take(take)
                 .ToArray());
 
-        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(string environmentKey, DateTime sinceUtc, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(DateTime sinceUtc, CancellationToken cancellationToken = default)
         {
             var nowUtc = DateTime.UtcNow;
             var bucketSize = GetBucketSize(sinceUtc, nowUtc);
             var firstBucketUtc = AlignBucket(sinceUtc, bucketSize);
             var instances = _store.Instances.Values
-                .Where(x => string.Equals(x.EnvironmentKey, environmentKey, StringComparison.OrdinalIgnoreCase))
                 .Where(x => x.StartedOnUtc <= nowUtc)
                 .Where(x => x.StartedOnUtc >= firstBucketUtc || HasRecentTerminalTimestamp(x, firstBucketUtc) || IsActiveStatus(x.Status))
                 .ToArray();
@@ -83,7 +80,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 Id = transition.Id,
                 EventName = ResolveEventName(transition.TransitionType),
                 TransitionType = transition.TransitionType,
-                EnvironmentKey = instance.EnvironmentKey,
                 OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,
                 OrchestrationVersion = orchestrationVersion,
                 OrchestrationInstanceId = transition.OrchestrationInstanceId,

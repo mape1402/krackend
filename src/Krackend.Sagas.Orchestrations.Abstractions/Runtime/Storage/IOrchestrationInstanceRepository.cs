@@ -27,12 +27,10 @@ public interface IOrchestrationInstanceRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(
-        string environmentKey,
         int take = 50,
         CancellationToken cancellationToken = default);
 
     Task<RuntimeInstanceSummary> GetSummary(
-        string environmentKey,
         DateTime recentSinceUtc,
         CancellationToken cancellationToken = default);
 }

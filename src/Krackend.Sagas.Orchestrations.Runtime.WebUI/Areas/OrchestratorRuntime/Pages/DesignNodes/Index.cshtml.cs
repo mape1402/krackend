@@ -515,7 +515,6 @@ public sealed class IndexModel : PageModel
                     ReleaseTargetId = x.ReleaseTargetId,
                     OrchestrationDefinitionKey = x.OrchestrationDefinitionKey,
                     Version = x.Version,
-                    EnvironmentKey = x.EnvironmentKey,
                     Checksum = x.Checksum,
                     CorrelationId = x.CorrelationId,
                     PromotedBy = x.PromotedBy,

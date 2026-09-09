@@ -92,11 +92,10 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         await SaveChanges(cancellationToken);
     }
 
-    public async Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
+    public async Task DeactivateActiveArtifacts(string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
     {
         var artifacts = await DbContext.RuntimeOrchestrationArtifacts
-            .Where(x => x.EnvironmentKey == environmentKey &&
-                x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
+            .Where(x => x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                 x.Id != exceptArtifactId &&
                 x.IsActive)
             .ToArrayAsync(cancellationToken);
@@ -118,30 +117,26 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == artifactId, cancellationToken)
             ?? throw new KeyNotFoundException($"Runtime artifact '{artifactId}' was not found.");
 
-    public async Task<RuntimeOrchestrationArtifact> GetByVersion(string environmentKey, string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default)
+    public async Task<RuntimeOrchestrationArtifact> GetByVersion(string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default)
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking().FirstOrDefaultAsync(x =>
-                x.EnvironmentKey == environmentKey &&
                 x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                 x.Version.Equals(version), cancellationToken)
             ?? throw new KeyNotFoundException($"Runtime artifact '{orchestrationDefinitionKey}' version '{version}' was not found.");
 
-    public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(string environmentKey, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default)
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
-            .Where(x => x.EnvironmentKey == environmentKey)
             .OrderByDescending(x => x.DeployedOnUtc)
             .ToArrayAsync(cancellationToken);
 
-    public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(string environmentKey, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default)
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
-            .Where(x => x.EnvironmentKey == environmentKey &&
-                x.IsActive &&
+            .Where(x => x.IsActive &&
                 x.Status == RuntimeOrchestrationArtifactStatus.Ready)
             .OrderByDescending(x => x.DeployedOnUtc)
             .ToArrayAsync(cancellationToken);
 
-    public async Task<RuntimeOrchestrationArtifact> GetActive(string environmentKey, string orchestrationDefinitionKey, CancellationToken cancellationToken = default)
+    public async Task<RuntimeOrchestrationArtifact> GetActive(string orchestrationDefinitionKey, CancellationToken cancellationToken = default)
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking().FirstOrDefaultAsync(x =>
-                x.EnvironmentKey == environmentKey &&
                 x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                 x.IsActive &&
                 x.Status == RuntimeOrchestrationArtifactStatus.Ready, cancellationToken)

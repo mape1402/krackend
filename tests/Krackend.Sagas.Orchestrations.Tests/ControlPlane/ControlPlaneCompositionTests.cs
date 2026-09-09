@@ -39,7 +39,6 @@ public sealed class ControlPlaneCompositionTests
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IOrchestrationApplicationService));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IDomainRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IRuntimeNodeApplicationService));
-        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IEnvironmentRepository));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITeamApplicationService));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ITeamRepository));
     }

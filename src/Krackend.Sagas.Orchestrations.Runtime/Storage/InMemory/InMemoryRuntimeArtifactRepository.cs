@@ -78,11 +78,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             return Task.CompletedTask;
         }
 
-        public async Task DeactivateActiveArtifacts(string environmentKey, string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
+        public async Task DeactivateActiveArtifacts(string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default)
         {
             var deactivatedArtifactIds = new List<Id>();
             foreach (var artifact in _store.Artifacts.Values.Where(x =>
-                x.EnvironmentKey == environmentKey &&
                 x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                 x.Id != exceptArtifactId &&
                 x.IsActive))
@@ -101,28 +100,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 ? artifact
                 : throw new KeyNotFoundException($"Runtime artifact '{artifactId}' was not found."));
 
-        public Task<RuntimeOrchestrationArtifact> GetByVersion(string environmentKey, string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default)
+        public Task<RuntimeOrchestrationArtifact> GetByVersion(string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default)
             => Task.FromResult(_store.Artifacts.Values.FirstOrDefault(x =>
-                    x.EnvironmentKey == environmentKey &&
                     x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                     x.Version.Equals(version))
                 ?? throw new KeyNotFoundException($"Runtime artifact '{orchestrationDefinitionKey}' version '{version}' was not found."));
 
-        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(string environmentKey, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(
-                _store.Artifacts.Values.Where(x => x.EnvironmentKey == environmentKey).ToArray());
+                _store.Artifacts.Values.ToArray());
 
-        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(string environmentKey, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(
                 _store.Artifacts.Values
-                    .Where(x => x.EnvironmentKey == environmentKey &&
-                        x.IsActive &&
+                    .Where(x => x.IsActive &&
                         x.Status == RuntimeOrchestrationArtifactStatus.Ready)
                     .ToArray());
 
-        public Task<RuntimeOrchestrationArtifact> GetActive(string environmentKey, string orchestrationDefinitionKey, CancellationToken cancellationToken = default)
+        public Task<RuntimeOrchestrationArtifact> GetActive(string orchestrationDefinitionKey, CancellationToken cancellationToken = default)
             => Task.FromResult(_store.Artifacts.Values.FirstOrDefault(x =>
-                    x.EnvironmentKey == environmentKey &&
                     x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                     x.IsActive &&
                     x.Status == RuntimeOrchestrationArtifactStatus.Ready)

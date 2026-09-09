@@ -41,9 +41,8 @@ public sealed class SignalRRuntimeReactiveEventDispatcher : BackgroundService
     {
         try
         {
-            var environmentGroup = RuntimeReactiveHubGroups.Environment(message.EnvironmentKey);
             var instanceGroup = RuntimeReactiveHubGroups.Instance(message.OrchestrationInstanceId);
-            await _hubContext.Clients.Groups(environmentGroup, instanceGroup)
+            await _hubContext.Clients.Groups(RuntimeReactiveHubGroups.Runtime, instanceGroup)
                 .SendAsync("runtime.transition", message, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
