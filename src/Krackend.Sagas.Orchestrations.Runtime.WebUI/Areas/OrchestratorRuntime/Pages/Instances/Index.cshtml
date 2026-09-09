@@ -5,7 +5,6 @@
     ViewData["Title"] = "Runtime Diagnostics";
     var dashboardConfig = new
     {
-        environmentKey = Model.EnvironmentKey,
         hubPath = Model.LiveHubPath,
         detailPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Detail" }),
         snapshotPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Snapshot" }),
@@ -27,7 +26,7 @@
 <div class="od-page-head">
     <div>
         <h1 class="od-page-title">Runtime Diagnostics</h1>
-        <p class="od-page-subtitle">Environment: @Model.EnvironmentKey</p>
+        <p class="od-page-subtitle">Runtime node diagnostics</p>
     </div>
     <div class="od-live-indicator" data-live-state="connecting">
         <span class="od-live-dot"></span>

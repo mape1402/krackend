@@ -21,8 +21,6 @@ public sealed class IndexModel : PageModel
         _options = options.Value;
     }
 
-    public string EnvironmentKey => string.IsNullOrWhiteSpace(_options.EnvironmentKey) ? "local" : _options.EnvironmentKey.Trim();
-
     /// <summary>
     /// Gets the SignalR hub path used by the runtime diagnostics dashboard.
     /// </summary>

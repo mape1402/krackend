@@ -10,14 +10,10 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationService
 {
     private readonly IRuntimeNodeRepository _repository;
-    private readonly IEnvironmentRepository _environmentRepository;
 
-    public RuntimeNodeApplicationService(
-        IRuntimeNodeRepository repository,
-        IEnvironmentRepository environmentRepository)
+    public RuntimeNodeApplicationService(IRuntimeNodeRepository repository)
     {
         _repository = repository;
-        _environmentRepository = environmentRepository;
     }
 
     public async Task<string> Upsert(UpsertRuntimeNodeInput input, CancellationToken cancellationToken = default)
@@ -36,24 +32,11 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
             }
         }
 
-        if (string.IsNullOrWhiteSpace(input.EnvironmentId))
-        {
-            throw new InvalidOperationException("Environment is required.");
-        }
-        var environmentId = new Id(Ulid.Parse(input.EnvironmentId));
-        var environment = await _environmentRepository.GetById(environmentId, cancellationToken);
-        if (!environment.IsEnabled)
-        {
-            throw new InvalidOperationException("Selected environment is disabled.");
-        }
-
         var entity = new RuntimeNode
         {
             Id = isUpdate ? new Id(parsedUlid) : Id.New(),
             Name = input.Name.Trim(),
             Code = input.Code.Trim(),
-            EnvironmentId = environmentId,
-            EnvironmentName = environment.Name,
             DistributionMode = input.DistributionMode,
             EndpointBaseUri = input.EndpointBaseUri?.Trim() ?? string.Empty,
             EndpointApiPath = existing?.EndpointApiPath ?? string.Empty,
@@ -129,7 +112,7 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
             TotalPages = result.TotalPages,
             Rows = result.Rows.Select(x => new RuntimeNodeModel
             {
-                Id = x.Id.ToString(), Name = x.Name, Code = x.Code, EnvironmentId = x.EnvironmentId.ToString(), EnvironmentName = x.EnvironmentName,
+                Id = x.Id.ToString(), Name = x.Name, Code = x.Code,
                 DistributionMode = x.DistributionMode.ToString(), EndpointBaseUri = x.EndpointBaseUri, EndpointApiPath = x.EndpointApiPath,
                 Status = x.Status.ToString(), IsEnabled = x.Status == RuntimeNodeStatus.Enabled, IsDeleted = x.IsDeleted, DeletedAtUtc = x.DeletedAtUtc,
                 Description = x.Description, RegisteredAtUtc = x.RegisteredAtUtc,

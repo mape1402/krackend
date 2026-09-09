@@ -50,6 +50,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         }
 
         var selectedNodes = new Dictionary<Id, RuntimeNode>();
+        var nodesNeedingTargets = new List<Id>();
         foreach (var nodeId in selectedNodeIds)
         {
             var node = await _runtimeNodeRepository.GetById(nodeId, cancellationToken);
@@ -58,7 +59,22 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
                 throw new InvalidOperationException($"Runtime node '{node.Name}' is not enabled.");
             }
 
+            var existingTarget = await _assignmentRepository.GetByArtifactAndRuntimeNode(
+                artifactId,
+                nodeId,
+                cancellationToken);
+            if (existingTarget is not null)
+            {
+                continue;
+            }
+
             selectedNodes[nodeId] = node;
+            nodesNeedingTargets.Add(nodeId);
+        }
+
+        if (nodesNeedingTargets.Count == 0)
+        {
+            throw new InvalidOperationException("Selected artifact already has a release target for the selected runtime node(s).");
         }
 
         var release = new Release
@@ -70,7 +86,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
             Strategy = string.IsNullOrWhiteSpace(input.Strategy) ? "Immediate" : input.Strategy.Trim(),
             Status = ReleaseStatus.InProgress, CreatedAtUtc = DateTime.UtcNow
         };
-        var targets = selectedNodeIds.Select(id => new ReleasePlanTarget
+        var targets = nodesNeedingTargets.Select(id => new ReleasePlanTarget
         {
             Id = Id.New(), ReleaseId = release.Id, RuntimeNodeId = id,
             Status = ReleaseStatus.InProgress, CreatedAtUtc = DateTime.UtcNow, Notes = input.Notes ?? string.Empty
@@ -86,7 +102,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
                 Id = Id.New(), RuntimeNodeId = target.RuntimeNodeId, ArtifactId = release.ArtifactId,
                 ReleaseId = release.Id, RolloutGroup = release.Strategy, Status = GetInitialTargetStatus(node.DistributionMode),
                 ActivationStatus = ActivationStatus.NotActivated, AssignedAtUtc = DateTime.UtcNow,
-                AvailableAtUtc = node.DistributionMode == DistributionMode.RuntimeFetchesFromDesign ? DateTime.UtcNow : null,
+                AvailableAtUtc = IsRuntimePullMode(node.DistributionMode) ? DateTime.UtcNow : null,
                 CorrelationId = release.Id.ToString()
             };
 
@@ -128,9 +144,12 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
     }
 
     private static ReleaseTargetStatus GetInitialTargetStatus(DistributionMode mode)
-        => mode == DistributionMode.RuntimeFetchesFromDesign
+        => IsRuntimePullMode(mode)
             ? ReleaseTargetStatus.AvailableForPull
             : ReleaseTargetStatus.PushScheduled;
+
+    private static bool IsRuntimePullMode(DistributionMode mode)
+        => mode is DistributionMode.RuntimeFetchesFromDesign or DistributionMode.HybridSync;
 }
 
 

@@ -1266,7 +1266,7 @@
 
     connection.onreconnected(async function () {
         setLiveState("connected", "Live");
-        await connection.invoke("WatchEnvironment", config.environmentKey);
+        await connection.invoke("WatchRuntime");
         if (selectedInstanceId) {
             await connection.invoke("WatchInstance", selectedInstanceId);
         }
@@ -1277,7 +1277,7 @@
     connection.start()
         .then(async function () {
             setLiveState("connected", "Live");
-            await connection.invoke("WatchEnvironment", config.environmentKey);
+            await connection.invoke("WatchRuntime");
             scheduleSummaryRefresh(0);
             scheduleSnapshotRefresh(0);
         })

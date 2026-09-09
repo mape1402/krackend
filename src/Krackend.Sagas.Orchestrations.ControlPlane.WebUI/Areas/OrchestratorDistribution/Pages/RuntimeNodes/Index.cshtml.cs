@@ -8,21 +8,17 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 public sealed class IndexModel : PageModel
 {
     private readonly IRuntimeNodeApplicationService _service;
-    private readonly IRuntimeEnvironmentApplicationService _environmentService;
     private readonly IRuntimeNodeConnectionApplicationService _connectionService;
 
     public IndexModel(
         IRuntimeNodeApplicationService service,
-        IRuntimeEnvironmentApplicationService environmentService,
         IRuntimeNodeConnectionApplicationService connectionService)
     {
         _service = service;
-        _environmentService = environmentService;
         _connectionService = connectionService;
     }
 
     public IReadOnlyCollection<RuntimeNodeModel> Rows { get; private set; } = Array.Empty<RuntimeNodeModel>();
-    public IReadOnlyCollection<RuntimeEnvironmentModel> Environments { get; private set; } = Array.Empty<RuntimeEnvironmentModel>();
     [BindProperty] public RuntimeNodeInput Input { get; set; } = new();
     [BindProperty] public RuntimeNodeCredentialsInput Credentials { get; set; } = new();
     public IReadOnlyCollection<RuntimeNodeDistributionModeOption> DistributionModeOptions { get; } =
@@ -53,10 +49,6 @@ public sealed class IndexModel : PageModel
     {
         var result = await _service.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 100 }, cancellationToken);
         Rows = result.Rows;
-        Environments = (await _environmentService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }, cancellationToken))
-            .Rows
-            .Where(x => x.IsEnabled)
-            .ToArray();
     }
 
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
@@ -73,7 +65,6 @@ public sealed class IndexModel : PageModel
             Input.RuntimeNodeId,
             Input.Name.Trim(),
             Input.Code.Trim(),
-            Input.EnvironmentId.Trim(),
             Input.DistributionMode,
             Input.EndpointBaseUri?.Trim() ?? string.Empty,
             Input.Description?.Trim() ?? string.Empty), cancellationToken);
@@ -196,7 +187,6 @@ public sealed class IndexModel : PageModel
                 Input.RuntimeNodeId,
                 Input.Name.Trim(),
                 Input.Code.Trim(),
-                Input.EnvironmentId.Trim(),
                 Input.DistributionMode,
                 Input.EndpointBaseUri?.Trim() ?? string.Empty,
                 Input.Description?.Trim() ?? string.Empty), cancellationToken);
@@ -365,8 +355,6 @@ public sealed class IndexModel : PageModel
             id = node.Id,
             name = node.Name,
             code = node.Code,
-            environmentId = node.EnvironmentId,
-            environmentName = node.EnvironmentName,
             distributionMode = node.DistributionMode,
             distributionModeLabel = DistributionModeLabel(node.DistributionMode),
             distributionModeDescription = DistributionModeDescription(node.DistributionMode),

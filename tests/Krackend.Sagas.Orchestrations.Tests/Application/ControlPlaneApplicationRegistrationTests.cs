@@ -37,7 +37,6 @@ public sealed class ControlPlaneApplicationRegistrationTests
 
         DistributionApplicationServices.AddOrchestratorDistributionApplication(services);
 
-        AssertRegistered<IRuntimeEnvironmentApplicationService>(services);
         AssertRegistered<IRuntimeNodeApplicationService>(services);
         AssertRegistered<IArtifactApplicationService>(services);
         AssertRegistered<IReleaseApplicationService>(services);

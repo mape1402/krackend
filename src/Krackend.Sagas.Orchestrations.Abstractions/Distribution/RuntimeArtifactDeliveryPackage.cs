@@ -26,11 +26,6 @@ public sealed class RuntimeArtifactDeliveryPackage
     public string SchemaVersion { get; set; }
 
     /// <summary>
-    /// Gets or sets the target runtime environment key.
-    /// </summary>
-    public string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets the orchestration definition identifier from the source control plane.
     /// </summary>
     public string OrchestrationDefinitionId { get; set; }

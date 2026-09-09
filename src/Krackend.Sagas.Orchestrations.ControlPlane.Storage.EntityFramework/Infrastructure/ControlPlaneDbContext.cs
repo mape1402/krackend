@@ -70,11 +70,6 @@ public sealed class ControlPlaneDbContext : DbContext
     public DbSet<BranchRuleDefinitionEntity> BranchRuleDefinitions => Set<BranchRuleDefinitionEntity>();
 
     /// <summary>
-    /// Gets runtime environments.
-    /// </summary>
-    public DbSet<EnvironmentEntity> Environments => Set<EnvironmentEntity>();
-
-    /// <summary>
     /// Gets runtime nodes.
     /// </summary>
     public DbSet<RuntimeNodeEntity> RuntimeNodes => Set<RuntimeNodeEntity>();
@@ -164,7 +159,6 @@ public sealed class ControlPlaneDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ArtifactEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ReleaseTargetEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ReleaseAttemptEntityConfiguration());
-        modelBuilder.ApplyConfiguration(new EnvironmentEntityConfiguration());
         modelBuilder.ApplyConfiguration(new OrchestrationAllowedRuntimeNodeEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ReleaseEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ReleasePlanTargetEntityConfiguration());

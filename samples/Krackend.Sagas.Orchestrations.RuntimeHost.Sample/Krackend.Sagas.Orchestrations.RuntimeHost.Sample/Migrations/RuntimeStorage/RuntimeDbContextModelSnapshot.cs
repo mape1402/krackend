@@ -83,11 +83,6 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime>("CreatedOnUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("EnvironmentKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
                     b.Property<bool>("IsResolved")
                         .HasColumnType("bit");
 
@@ -123,7 +118,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EnvironmentKey", "VariableKey")
+                    b.HasIndex("VariableKey")
                         .IsUnique();
 
                     b.ToTable("EnvironmentVariableValues", "Runtime");
@@ -278,11 +273,6 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("EnvironmentKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
                     b.Property<string>("ErrorSummary")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
@@ -342,7 +332,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasIndex("CorrelationId");
 
-                    b.HasIndex("EnvironmentKey", "LastUpdatedOnUtc");
+                    b.HasIndex("LastUpdatedOnUtc");
 
                     b.ToTable("OrchestrationInstances", "Runtime");
                 });
@@ -371,11 +361,6 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<DateTime>("DeployedOnUtc")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("EnvironmentKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
 
                     b.Property<long>("IngressGeneration")
                         .HasColumnType("bigint");
@@ -432,12 +417,12 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EnvironmentKey", "OrchestrationDefinitionKey", "IsActive");
+                    b.HasIndex("OrchestrationDefinitionKey", "IsActive");
 
-                    b.HasIndex("EnvironmentKey", "OrchestrationDefinitionKey", "Version")
+                    b.HasIndex("OrchestrationDefinitionKey", "Version")
                         .IsUnique();
 
-                    b.HasIndex("EnvironmentKey", "Status", "IsActive");
+                    b.HasIndex("Status", "IsActive");
 
                     b.ToTable("RuntimeOrchestrationArtifacts", "Runtime");
                 });

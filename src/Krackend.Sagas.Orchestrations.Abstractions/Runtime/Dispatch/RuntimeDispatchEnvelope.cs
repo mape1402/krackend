@@ -34,11 +34,6 @@ public sealed class RuntimeDispatchEnvelope
     public string SagaId { get; set; }
 
     /// <summary>
-    /// Gets or sets the runtime environment key.
-    /// </summary>
-    public required string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets the orchestration name.
     /// </summary>
     public required string OrchestrationName { get; set; }

@@ -54,16 +54,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(string environmentKey, int take = 50, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(_store.Instances.Values
-                .Where(x => x.EnvironmentKey == environmentKey)
                 .OrderByDescending(x => x.LastUpdatedOnUtc)
                 .Take(take)
                 .ToArray());
 
-        public Task<RuntimeInstanceSummary> GetSummary(string environmentKey, DateTime recentSinceUtc, CancellationToken cancellationToken = default)
+        public Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default)
         {
-            var instances = _store.Instances.Values.Where(x => x.EnvironmentKey == environmentKey).ToArray();
+            var instances = _store.Instances.Values.ToArray();
             return Task.FromResult(new RuntimeInstanceSummary(
                 instances.Count(x => x.Status is OrchestrationInstanceStatus.Created or OrchestrationInstanceStatus.Running),
                 instances.Count(x => x.Status == OrchestrationInstanceStatus.Waiting),

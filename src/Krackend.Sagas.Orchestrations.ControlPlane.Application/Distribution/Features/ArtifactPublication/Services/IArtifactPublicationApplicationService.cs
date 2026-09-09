@@ -8,7 +8,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 public interface IArtifactPublicationApplicationService
 {
     /// <summary>
-    /// Creates and promotes the deployment artifact for an orchestration version.
+    /// Creates the deployment artifact for an orchestration version.
     /// </summary>
     /// <param name="deployment">Deployment data created by the design workflow.</param>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>

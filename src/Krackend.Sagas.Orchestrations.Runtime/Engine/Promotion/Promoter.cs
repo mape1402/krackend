@@ -41,7 +41,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             var instance = new OrchestrationInstance
             {
                 Id = instanceId,
-                EnvironmentKey = resolvedArtifact.RuntimeArtifact.EnvironmentKey,
                 OrchestrationDefinitionKey = resolvedArtifact.RuntimeArtifact.OrchestrationDefinitionKey,
                 RuntimeOrchestrationArtifactId = resolvedArtifact.RuntimeArtifact.Id,
                 TriggerIntakeId = default,

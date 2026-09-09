@@ -25,16 +25,6 @@ public sealed class RuntimeNode
     public string Code { get; set; }
 
     /// <summary>
-    /// Gets or sets the runtime environment id.
-    /// </summary>
-    public Id EnvironmentId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the runtime environment display name.
-    /// </summary>
-    public string EnvironmentName { get; set; }
-
-    /// <summary>
     /// Gets or sets who can initiate artifact distribution.
     /// </summary>
     public DistributionMode DistributionMode { get; set; }

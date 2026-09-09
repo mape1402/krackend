@@ -36,6 +36,30 @@
     bool IsActivated(string status)
         => string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
 
+    bool IsDesignPushMode(string mode)
+        => string.Equals(mode, "DesignPublishesToRuntime", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "HybridSync", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "Push", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "Hybrid", StringComparison.OrdinalIgnoreCase);
+
+    bool IsRuntimePullMode(string mode)
+        => string.Equals(mode, "RuntimeFetchesFromDesign", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "HybridSync", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "Pull", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "Hybrid", StringComparison.OrdinalIgnoreCase);
+
+    string DisplayDistributionMode(string mode)
+    {
+        var normalized = (mode ?? string.Empty).Trim();
+        return normalized switch
+        {
+            "DesignPublishesToRuntime" => "Design publishes releases",
+            "RuntimeFetchesFromDesign" => "Runtime imports releases",
+            "HybridSync" => "Both directions",
+            _ => string.IsNullOrWhiteSpace(normalized) ? "Unknown mode" : normalized
+        };
+    }
+
     string ResolveReleaseStatus(Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution.ReleaseModel release)
     {
         var targetStatuses = release.Targets
@@ -163,12 +187,13 @@
                                     }
                                     Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{item.Id}|{target.RuntimeNodeId}", out var releaseTarget);
                                     var targetStatus = releaseTarget?.Status ?? target.Status;
-                                    var canPushTarget = string.Equals(nodeMode, "Push", StringComparison.OrdinalIgnoreCase)
-                                        || string.Equals(nodeMode, "Hybrid", StringComparison.OrdinalIgnoreCase);
+                                    var canPushTarget = IsDesignPushMode(nodeMode);
+                                    var canPullTarget = IsRuntimePullMode(nodeMode);
+                                    var displayNodeMode = DisplayDistributionMode(nodeMode);
                                     var isActivated = IsActivated(targetStatus);
                                     <div class="od-release-stage">
                                         <div class="od-release-stage-name">@nodeName</div>
-                                        <div class="od-release-stage-meta">@nodeCode � @nodeMode</div>
+                                        <div class="od-release-stage-meta">@nodeCode - @displayNodeMode</div>
                                         <div class="od-release-stage-status">@DisplayStageStatus(targetStatus)</div>
                                         @if (canPushTarget && releaseTarget is not null && !isActivated)
                                         {
@@ -192,7 +217,7 @@
                                         {
                                             <div class="od-release-stage-note">Promoted</div>
                                         }
-                                        else if (string.Equals(nodeMode, "Pull", StringComparison.OrdinalIgnoreCase))
+                                        else if (canPullTarget)
                                         {
                                             <div class="od-release-stage-note">Pull from runtime</div>
                                         }
@@ -268,7 +293,7 @@
                                                            id="runtimeNode_@i" />
                                                     <label class="od-stage-option" for="runtimeNode_@i">
                                                         <span class="od-stage-name">@node.Name</span>
-                                                        <span class="od-stage-meta">@node.Code � @node.EnvironmentName</span>
+                                                        <span class="od-stage-meta">@node.Code</span>
                                                     </label>
                                                 </div>
                                             }
@@ -319,7 +344,7 @@
                                            name="AllowedNodes.RuntimeNodeIds"
                                            value="@node.Id"
                                            id="allowedPolicyNode_@i" />
-                                    <label class="form-check-label" for="allowedPolicyNode_@i">@node.Name (@node.Code) - @node.EnvironmentName</label>
+                                    <label class="form-check-label" for="allowedPolicyNode_@i">@node.Name (@node.Code)</label>
                                 </div>
                             }
                         }
@@ -508,8 +533,32 @@
 
     const canPush = (mode, status) => {
         const modeValue = (mode || '').toLowerCase();
-        const isPushMode = modeValue === 'push' || modeValue === 'hybrid';
+        const isPushMode = modeValue === 'designpublishestoruntime' ||
+            modeValue === 'hybridsync' ||
+            modeValue === 'push' ||
+            modeValue === 'hybrid';
         return isPushMode;
+    };
+
+    const canPull = mode => {
+        const modeValue = (mode || '').toLowerCase();
+        return modeValue === 'runtimefetchesfromdesign' ||
+            modeValue === 'hybridsync' ||
+            modeValue === 'pull' ||
+            modeValue === 'hybrid';
+    };
+
+    const getDistributionModeLabel = mode => {
+        switch (mode) {
+            case 'DesignPublishesToRuntime':
+                return 'Design publishes releases';
+            case 'RuntimeFetchesFromDesign':
+                return 'Runtime imports releases';
+            case 'HybridSync':
+                return 'Both directions';
+            default:
+                return mode || 'Unknown mode';
+        }
     };
 
     const showReleaseDetails = (releaseId) => {
@@ -542,26 +591,29 @@
             const statusVariant = getStatusVariant(actualStatus);
             const displayStatus = getDisplayStatus(actualStatus);
             const pushAllowed = canPush(mode, actualStatus);
-            const isPullOnly = (mode || '').toLowerCase() === 'pull';
+            const pullAllowed = canPull(mode);
+            const modeLabel = getDistributionModeLabel(mode);
 
             return `
                 <article class="od-stage-card">
                     <div class="od-stage-card-head">
                         <div>
                             <h6 class="od-stage-card-title">${escapeHtml(node?.name || target.runtimeNodeId)}</h6>
-                            <p class="od-stage-card-meta">${escapeHtml(node ? `${node.code} � ${node.environmentName}` : target.runtimeNodeId)}</p>
+                            <p class="od-stage-card-meta">${escapeHtml(node ? `${node.code} - ${node.environmentName}` : target.runtimeNodeId)}</p>
                         </div>
                         <span class="od-stage-badge od-stage-badge-${statusVariant}">${escapeHtml(displayStatus)}</span>
                     </div>
                     <div class="od-stage-card-body">
-                        <div class="od-stage-kv"><span>Mode</span><strong>${escapeHtml(mode)}</strong></div>
+                        <div class="od-stage-kv"><span>Mode</span><strong>${escapeHtml(modeLabel)}</strong></div>
                     </div>
                     <div class="od-stage-card-foot">
-                        ${pushAllowed
-                            ? `<span class="od-stage-note">Push from release board</span>`
-                            : isPullOnly
-                                ? `<span class="od-stage-note">Pull by runtime</span>`
-                                : `<span class="od-stage-note">No manual action</span>`}
+                        ${pushAllowed && pullAllowed
+                            ? `<span class="od-stage-note">Push from board or pull by Runtime</span>`
+                            : pushAllowed
+                                ? `<span class="od-stage-note">Push from release board</span>`
+                                : pullAllowed
+                                    ? `<span class="od-stage-note">Pull by Runtime</span>`
+                                    : `<span class="od-stage-note">No manual action</span>`}
                     </div>
                 </article>
             `;

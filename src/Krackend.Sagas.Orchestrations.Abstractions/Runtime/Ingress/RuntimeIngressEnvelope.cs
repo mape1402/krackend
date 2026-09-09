@@ -19,11 +19,6 @@ public sealed class RuntimeIngressEnvelope
     public RuntimeIngressKind Kind { get; set; }
 
     /// <summary>
-    /// Gets or sets the runtime environment key.
-    /// </summary>
-    public required string EnvironmentKey { get; set; }
-
-    /// <summary>
     /// Gets or sets the trigger or orchestration key used to resolve the artifact.
     /// </summary>
     public required string OrchestrationName { get; set; }

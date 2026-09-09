@@ -15,7 +15,6 @@ public interface ITriggerIntakeRepository
     Task<TriggerIntake> GetById(Id intakeId, CancellationToken cancellationToken = default);
 
     Task<TriggerIntake> GetByIdempotencyKey(
-        string environmentKey,
         string idempotencyKey,
         CancellationToken cancellationToken = default);
 }

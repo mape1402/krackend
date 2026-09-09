@@ -19,7 +19,6 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
     private readonly IReleaseRepository _releaseRepository;
     private readonly IArtifactRepository _artifactRepository;
     private readonly IRuntimeNodeRepository _runtimeNodeRepository;
-    private readonly IEnvironmentRepository _environmentRepository;
     private readonly IRuntimeAccessTokenProvider _accessTokenProvider;
 
     public ArtifactDeliveryApplicationService(
@@ -28,7 +27,6 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         IReleaseRepository releaseRepository,
         IArtifactRepository artifactRepository,
         IRuntimeNodeRepository runtimeNodeRepository,
-        IEnvironmentRepository environmentRepository,
         IRuntimeAccessTokenProvider accessTokenProvider)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -36,7 +34,6 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         _releaseRepository = releaseRepository ?? throw new ArgumentNullException(nameof(releaseRepository));
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _runtimeNodeRepository = runtimeNodeRepository ?? throw new ArgumentNullException(nameof(runtimeNodeRepository));
-        _environmentRepository = environmentRepository ?? throw new ArgumentNullException(nameof(environmentRepository));
         _accessTokenProvider = accessTokenProvider ?? throw new ArgumentNullException(nameof(accessTokenProvider));
     }
 
@@ -152,16 +149,22 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         CancellationToken cancellationToken = default)
     {
         var node = await _runtimeNodeRepository.GetById(ParseId(runtimeNodeId), cancellationToken);
-        EnsureRuntimeNodeCanDistribute(node);
+        EnsureRuntimeNodeCanPull(node);
         var targets = await _releaseTargetRepository.GetPendingForRuntimeNode(node.Id, cancellationToken);
         var packages = new List<RuntimeArtifactDeliveryPackage>();
 
         foreach (var target in targets)
         {
-            if (target.Status == ReleaseTargetStatus.Pending)
+            if (target.Status == ReleaseTargetStatus.PushScheduled
+                && node.DistributionMode != DistributionMode.HybridSync)
+            {
+                continue;
+            }
+
+            if (target.Status is ReleaseTargetStatus.Pending or ReleaseTargetStatus.PushScheduled)
             {
                 target.Status = ReleaseTargetStatus.AvailableForPull;
-                target.AvailableAtUtc = DateTime.UtcNow;
+                target.AvailableAtUtc ??= DateTime.UtcNow;
                 await _releaseTargetRepository.Update(target, cancellationToken);
             }
 
@@ -178,22 +181,22 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         CancellationToken cancellationToken = default)
     {
         var node = await _runtimeNodeRepository.GetById(ParseId(runtimeNodeId), cancellationToken);
-        EnsureRuntimeNodeCanDistribute(node);
+        EnsureRuntimeNodeCanPull(node);
         var target = await _releaseTargetRepository.GetById(ParseId(releaseTargetId), cancellationToken);
         if (target.RuntimeNodeId != node.Id)
         {
             throw new InvalidOperationException("Release target does not belong to the runtime node.");
         }
 
-        if (target.Status is not (ReleaseTargetStatus.AvailableForPull or ReleaseTargetStatus.Pending))
+        if (!IsTargetAvailableForPull(node, target))
         {
             throw new InvalidOperationException("Release target is not available for pull.");
         }
 
-        if (target.Status == ReleaseTargetStatus.Pending)
+        if (target.Status is ReleaseTargetStatus.Pending or ReleaseTargetStatus.PushScheduled)
         {
             target.Status = ReleaseTargetStatus.AvailableForPull;
-            target.AvailableAtUtc = DateTime.UtcNow;
+            target.AvailableAtUtc ??= DateTime.UtcNow;
             await _releaseTargetRepository.Update(target, cancellationToken);
         }
 
@@ -242,14 +245,12 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         Artifact artifact,
         CancellationToken cancellationToken)
     {
-        var environment = await _environmentRepository.GetById(node.EnvironmentId, cancellationToken);
         return new RuntimeArtifactDeliveryPackage
         {
             ReleaseTargetId = target.Id.ToString(),
             ArtifactId = artifact.Id.ToString(),
             ArtifactType = artifact.ArtifactType,
             SchemaVersion = artifact.SchemaVersion,
-            EnvironmentKey = environment.Code,
             OrchestrationDefinitionId = artifact.OrchestrationDefinitionId,
             OrchestrationVersionId = artifact.OrchestrationVersionId,
             OrchestrationDefinitionKey = ExtractOrchestrationDefinitionKey(artifact.Payload, artifact.OrchestrationDefinitionId),
@@ -357,6 +358,21 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
     }
 
     private static Id ParseId(string value) => new(Ulid.Parse(value));
+
+    private static bool IsTargetAvailableForPull(RuntimeNode node, ReleaseTarget target)
+        => target.Status is ReleaseTargetStatus.AvailableForPull or ReleaseTargetStatus.Pending
+            || (node.DistributionMode == DistributionMode.HybridSync
+                && target.Status == ReleaseTargetStatus.PushScheduled);
+
+    private static void EnsureRuntimeNodeCanPull(RuntimeNode node)
+    {
+        EnsureRuntimeNodeCanDistribute(node);
+
+        if (node.DistributionMode is not (DistributionMode.RuntimeFetchesFromDesign or DistributionMode.HybridSync))
+        {
+            throw new InvalidOperationException($"Runtime node '{node.Name}' is not configured for pull.");
+        }
+    }
 
     private static void EnsureRuntimeNodeCanDistribute(RuntimeNode node)
     {

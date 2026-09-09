@@ -33,7 +33,6 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
         var entity = await _dbContext.RuntimeNodes.FirstAsync(x => x.Id == runtimeNode.Id, cancellationToken);
         entity.Name = runtimeNode.Name;
         entity.Code = runtimeNode.Code;
-        entity.EnvironmentId = runtimeNode.EnvironmentId;
         entity.DistributionMode = runtimeNode.DistributionMode;
         entity.EndpointBaseUri = runtimeNode.EndpointBaseUri;
         entity.EndpointApiPath = runtimeNode.EndpointApiPath;
@@ -91,7 +90,6 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
     {
         var entity = await _dbContext.RuntimeNodes
             .AsNoTracking()
-            .Include(x => x.Environment)
             .FirstAsync(x => x.Id == runtimeNodeId, cancellationToken);
         return Map(entity);
     }
@@ -100,7 +98,6 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
     {
         var entity = await _dbContext.RuntimeNodes
             .AsNoTracking()
-            .Include(x => x.Environment)
             .FirstOrDefaultAsync(x => !x.IsDeleted && x.Code == code, cancellationToken);
         return entity is null ? null : Map(entity);
     }
@@ -109,14 +106,13 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
     {
         var entity = await _dbContext.RuntimeNodes
             .AsNoTracking()
-            .Include(x => x.Environment)
             .FirstOrDefaultAsync(x => !x.IsDeleted && x.InboundClientId == clientId, cancellationToken);
         return entity is null ? null : Map(entity);
     }
 
     public async Task<PagedResult<RuntimeNode>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.RuntimeNodes.AsNoTracking().Include(x => x.Environment).Where(x => !x.IsDeleted).OrderBy(x => x.Name);
+        var query = _dbContext.RuntimeNodes.AsNoTracking().Where(x => !x.IsDeleted).OrderBy(x => x.Name);
         var processed = _sieveProcessor.Apply(new SieveModel { Page = pagedSettings.PageNumber, PageSize = pagedSettings.PageSize }, query);
         var rows = await processed.ToArrayAsync(cancellationToken);
         var totalRows = await query.CountAsync(cancellationToken);
@@ -129,7 +125,6 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
         Id = x.Id,
         Name = x.Name,
         Code = x.Code,
-        EnvironmentId = x.EnvironmentId,
         DistributionMode = x.DistributionMode,
         EndpointBaseUri = x.EndpointBaseUri,
         EndpointApiPath = x.EndpointApiPath,
@@ -168,8 +163,6 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
         Id = x.Id,
         Name = x.Name,
         Code = x.Code,
-        EnvironmentId = x.EnvironmentId,
-        EnvironmentName = x.Environment?.Name ?? string.Empty,
         DistributionMode = x.DistributionMode,
         EndpointBaseUri = x.EndpointBaseUri,
         EndpointApiPath = x.EndpointApiPath,

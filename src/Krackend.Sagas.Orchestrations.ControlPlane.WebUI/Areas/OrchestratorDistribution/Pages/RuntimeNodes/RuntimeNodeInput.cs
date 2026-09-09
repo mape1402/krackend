@@ -29,12 +29,6 @@ public sealed class RuntimeNodeInput
     public string Code { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the runtime environment id.
-    /// </summary>
-    [Required]
-    public string EnvironmentId { get; set; } = string.Empty;
-
-    /// <summary>
     /// Gets or sets who can initiate artifact distribution.
     /// </summary>
     [Required]

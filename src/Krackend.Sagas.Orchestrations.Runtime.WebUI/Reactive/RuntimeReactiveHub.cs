@@ -8,15 +8,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 public sealed class RuntimeReactiveHub : Hub
 {
     /// <summary>
-    /// Subscribes the connection to runtime events for an environment.
+    /// Subscribes the connection to runtime node events.
     /// </summary>
-    public Task WatchEnvironment(string environmentKey)
-    {
-        if (string.IsNullOrWhiteSpace(environmentKey))
-            return Task.CompletedTask;
-
-        return Groups.AddToGroupAsync(Context.ConnectionId, RuntimeReactiveHubGroups.Environment(environmentKey));
-    }
+    public Task WatchRuntime()
+        => Groups.AddToGroupAsync(Context.ConnectionId, RuntimeReactiveHubGroups.Runtime);
 
     /// <summary>
     /// Subscribes the connection to runtime events for one orchestration instance.

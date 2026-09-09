@@ -96,7 +96,6 @@ public sealed class RuntimeDbContext : DbContext
         builder.ToTable("RuntimeOrchestrationArtifacts");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.EnvironmentKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.ArtifactType).HasMaxLength(128).IsRequired();
         builder.Property(x => x.SourceOrchestrationVersionId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
@@ -107,9 +106,9 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.ProjectionError).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.SupersededByArtifactId).HasColumnType("binary(16)").HasConversion(new NullableIdToBytesConverter());
         builder.Property(x => x.Notes).HasMaxLength(2000).IsRequired(false);
-        builder.HasIndex(x => new { x.EnvironmentKey, x.OrchestrationDefinitionKey, x.Version }).IsUnique();
-        builder.HasIndex(x => new { x.EnvironmentKey, x.OrchestrationDefinitionKey, x.IsActive });
-        builder.HasIndex(x => new { x.EnvironmentKey, x.Status, x.IsActive });
+        builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.Version }).IsUnique();
+        builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.IsActive });
+        builder.HasIndex(x => new { x.Status, x.IsActive });
     }
 
     private static void ConfigureInstances(ModelBuilder modelBuilder)
@@ -120,7 +119,6 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
         builder.Property(x => x.RuntimeOrchestrationArtifactId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
         builder.Property(x => x.TriggerIntakeId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.EnvironmentKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.ExecutionKey).HasMaxLength(512).IsRequired();
@@ -133,7 +131,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.ActiveLeaseId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.SnapshotPayload).HasColumnType("nvarchar(max)").HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.Metadata).HasColumnType("nvarchar(max)").HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
-        builder.HasIndex(x => new { x.EnvironmentKey, x.LastUpdatedOnUtc });
+        builder.HasIndex(x => x.LastUpdatedOnUtc);
         builder.HasIndex(x => x.CorrelationId);
     }
 
@@ -250,13 +248,12 @@ public sealed class RuntimeDbContext : DbContext
 
         modelBuilder.Entity<EnvironmentVariableValue>().ToTable("EnvironmentVariableValues").HasKey(x => x.Id);
         modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.EnvironmentKey).HasMaxLength(128).IsRequired();
         modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.VariableKey).HasMaxLength(256).IsRequired();
         modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.ValueType).HasConversion<string>().HasMaxLength(64).IsRequired();
         modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.Value).HasColumnType("nvarchar(max)").HasConversion(new JsonNodeConverter()).IsRequired(false);
         modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired(false);
         modelBuilder.Entity<EnvironmentVariableValue>().Property(x => x.Notes).HasMaxLength(2000).IsRequired(false);
-        modelBuilder.Entity<EnvironmentVariableValue>().HasIndex(x => new { x.EnvironmentKey, x.VariableKey }).IsUnique();
+        modelBuilder.Entity<EnvironmentVariableValue>().HasIndex(x => x.VariableKey).IsUnique();
     }
 
     private static void ConfigureCompensations(ModelBuilder modelBuilder)
