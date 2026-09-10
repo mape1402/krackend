@@ -36,7 +36,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         {
             try
             {
-                _resultMetadataSetter.Set(_resultMetadataFactory.CreateSuccess(requestType, responseType));
+                _resultMetadataSetter.Set(_resultMetadataFactory.CreateSuccess(requestType, responseType, options));
                 await _publisher.PublishAsync(businessPayload, messageMetadata.ReplyAddress, cancellationToken);
             }
             finally
@@ -67,7 +67,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
 
         try
         {
-            _resultMetadataSetter.Set(_resultMetadataFactory.CreateFailure(requestType, exception));
+            _resultMetadataSetter.Set(_resultMetadataFactory.CreateFailure(requestType, exception, options));
             await _publisher.PublishAsync(null, messageMetadata.ReplyAddress, cancellationToken);
         }
         finally
