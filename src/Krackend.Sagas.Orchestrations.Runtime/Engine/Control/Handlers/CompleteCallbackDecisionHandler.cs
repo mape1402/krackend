@@ -256,6 +256,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 attempt.Metadata["ExecutionResponseType"] = JsonValue.Create(result.ResponseType);
             }
 
+            if (!string.IsNullOrWhiteSpace(result.ServiceName))
+            {
+                attempt.Metadata["ExecutionServiceName"] = JsonValue.Create(result.ServiceName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.OperationName))
+            {
+                attempt.Metadata["ExecutionOperationName"] = JsonValue.Create(result.OperationName);
+            }
+
             foreach (var metadata in result.Metadata)
             {
                 attempt.Metadata[$"Execution.{metadata.Key}"] = metadata.Value?.DeepClone();

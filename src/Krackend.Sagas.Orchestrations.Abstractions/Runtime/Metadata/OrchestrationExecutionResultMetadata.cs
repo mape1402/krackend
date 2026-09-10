@@ -58,6 +58,16 @@ public sealed class OrchestrationExecutionResultMetadata
     public string ResponseType { get; set; }
 
     /// <summary>
+    /// Gets or sets the logical service that executed the operation.
+    /// </summary>
+    public string ServiceName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the logical operation that was executed.
+    /// </summary>
+    public string OperationName { get; set; }
+
+    /// <summary>
     /// Gets or sets additional technical execution metadata.
     /// </summary>
     public Dictionary<string, JsonNode> Metadata { get; set; } = new();

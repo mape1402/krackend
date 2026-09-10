@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Text.Json.Nodes;
 
 public sealed class OrchestrationOperationClientTests
 {
@@ -34,13 +35,24 @@ public sealed class OrchestrationOperationClientTests
             typeof(string),
             typeof(int),
             new { ok = true },
-            new OrchestrationOperationOptions());
+            new OrchestrationOperationOptions
+            {
+                ServiceName = "inventories-api",
+                OperationName = "inventories.reserve",
+                Metadata =
+                {
+                    ["node"] = JsonValue.Create("local")
+                }
+            });
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
         Assert.NotNull(publisher.ResultMetadata);
         Assert.True(publisher.ResultMetadata.Succeeded);
         Assert.Equal(typeof(string).FullName, publisher.ResultMetadata.RequestType);
         Assert.Equal(typeof(int).FullName, publisher.ResultMetadata.ResponseType);
+        Assert.Equal("inventories-api", publisher.ResultMetadata.ServiceName);
+        Assert.Equal("inventories.reserve", publisher.ResultMetadata.OperationName);
+        Assert.Equal("local", publisher.ResultMetadata.Metadata["node"]?.GetValue<string>());
         Assert.NotNull(publisher.Payload);
     }
 
