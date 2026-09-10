@@ -1,4 +1,5 @@
 using FluentValidation;
+using global::ButterMorph.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Pelican.Mediator;
 
@@ -17,6 +18,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddOrchestratorDesignApplication(this IServiceCollection services)
     {
         services.AddPelican(typeof(ServiceCollectionExtensions).Assembly);
+        services.AddButterMorph();
         services.AddValidatorsFromAssemblyContaining<CreateOrchestrationDefinitionCommandValidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationPipelineBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(OrchestrationDraftMutationPipelineBehavior<,>));
@@ -40,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBranchRuleApplicationService, BranchRuleApplicationService>();
         services.AddScoped<IOrchestrationArtifactPayloadFactory, OrchestrationArtifactPayloadFactory>();
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
+        services.AddScoped<IOrchestrationArtifactDslValidationService, OrchestrationArtifactDslValidationService>();
         services.AddScoped<IOrchestrationSchemaContextBuilder, OrchestrationSchemaContextBuilder>();
         services.AddScoped<IOrchestrationVersionEditGuard, OrchestrationVersionEditGuard>();
         services.AddSingleton<IOrchestrationVersionTransitionPolicy, OrchestrationVersionTransitionPolicy>();
