@@ -45,7 +45,7 @@ internal sealed class EntityFrameworkRuntimeIngressStandupScheduler : IRuntimeIn
         ArgumentNullException.ThrowIfNull(request);
 
         var key = ActionKey.From(RuntimeArtifactActionNames.StandUpArtifactIngress);
-        var deduplicationKey = $"{request.ArtifactId}:{request.IngressGeneration}:{_replicaIdentity.ReplicaId}";
+        var deduplicationKey = $"{request.ArtifactId}:{request.IngressGeneration}:{_replicaIdentity.ReplicaBootId}";
         var current = await _dbContext.Set<DurableAction>().FirstOrDefaultAsync(
             x => x.Key == key && x.DeduplicationKey == deduplicationKey,
             cancellationToken);
@@ -77,6 +77,7 @@ internal sealed class EntityFrameworkRuntimeIngressStandupScheduler : IRuntimeIn
         var metadata = new Dictionary<string, string>
         {
             ["replicaId"] = _replicaIdentity.ReplicaId,
+            ["replicaBootId"] = _replicaIdentity.ReplicaBootId,
             ["reason"] = request.Reason ?? string.Empty,
             ["ingressGeneration"] = request.IngressGeneration.ToString()
         };
