@@ -23,6 +23,7 @@ public sealed class ButterMorphOrchestrationTransformationExecutor : IOrchestrat
     /// </summary>
     /// <param name="engine">ButterMorph execution engine.</param>
     /// <param name="dslParser">ButterMorph DSL parser.</param>
+    /// <param name="diagnosticMapper">Maps ButterMorph diagnostics into orchestration metadata.</param>
     public ButterMorphOrchestrationTransformationExecutor(
         IButterMorphEngine engine,
         IDslParser dslParser,
