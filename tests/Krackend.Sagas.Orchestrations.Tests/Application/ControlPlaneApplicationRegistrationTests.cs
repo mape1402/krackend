@@ -50,6 +50,7 @@ public sealed class ControlPlaneApplicationRegistrationTests
         AssertRegistered<IRuntimeAccessTokenProvider>(services);
         AssertRegistered<IOrchestrationNodePolicyApplicationService>(services);
         AssertRegistered<IArtifactValidationPolicy>(services);
+        AssertRegistered<IArtifactFactory>(services);
         AssertRegistered<IArtifactBuilder<OrchestrationVersionDeployedEvent>>(services);
         AssertRegistered<IArtifactBuilder<OrchestrationVersionDeprecatedEvent>>(services);
         AssertRegistered<IArtifactBuilder<OrchestrationVersionArchivedEvent>>(services);
