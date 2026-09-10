@@ -53,6 +53,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IOrchestrationPayloadContextFactory, DefaultOrchestrationPayloadContextFactory>();
             services.TryAddScoped<IOrchestrationTransformationExecutor, DefaultOrchestrationTransformationExecutor>();
             services.TryAddScoped<IOrchestrationValidationExecutor, DefaultOrchestrationValidationExecutor>();
+            services.TryAddScoped<ITaskDispatchRequestPayloadPreparer, DefaultTaskDispatchRequestPayloadPreparer>();
             services.TryAddScoped<IDecisionHandler<StartStageDecision>, StartStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DispatchTaskDecision>, DispatchTaskDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteStageDecision>, CompleteStageDecisionHandler>();
