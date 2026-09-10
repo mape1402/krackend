@@ -21,6 +21,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly ITaskExecutionAttemptRepository _attemptRepository;
         private readonly ITaskDispatchRepository _dispatchRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
+        private readonly IMuleTerminalFailureMarker _terminalFailureMarker;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RemoteCommandDispatchAction"/> class.
@@ -32,7 +33,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             ITaskExecutionRepository taskRepository,
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
-            IExecutionTransitionRepository transitionRepository)
+            IExecutionTransitionRepository transitionRepository,
+            IMuleTerminalFailureMarker terminalFailureMarker)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _messageMetadataSetter = messageMetadataSetter ?? throw new ArgumentNullException(nameof(messageMetadataSetter));
@@ -41,6 +43,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
             _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
+            _terminalFailureMarker = terminalFailureMarker ?? throw new ArgumentNullException(nameof(terminalFailureMarker));
         }
 
         /// <summary>
@@ -69,7 +72,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     await MarkDispatchFailedAsync(command, exception, cancellationToken);
                 }
 
-                context.Action.Attempts = int.MaxValue - 1;
+                _terminalFailureMarker.MarkTerminal(context);
                 throw;
             }
             catch (Exception exception)

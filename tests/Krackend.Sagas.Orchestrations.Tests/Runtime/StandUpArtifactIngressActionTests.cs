@@ -23,7 +23,8 @@ public sealed class StandUpArtifactIngressActionTests
             repository,
             new PermanentFailureIngressRegistry(Error),
             new TestRuntimeReplicaIdentity(),
-            NullLogger<StandUpArtifactIngressAction>.Instance);
+            NullLogger<StandUpArtifactIngressAction>.Instance,
+            new DefaultMuleTerminalFailureMarker());
         var request = new RuntimeIngressStandupRequest
         {
             ArtifactId = artifactId.ToString(),
@@ -65,7 +66,8 @@ public sealed class StandUpArtifactIngressActionTests
             repository,
             new TransientFailureIngressRegistry(Error),
             new TestRuntimeReplicaIdentity(),
-            NullLogger<StandUpArtifactIngressAction>.Instance);
+            NullLogger<StandUpArtifactIngressAction>.Instance,
+            new DefaultMuleTerminalFailureMarker());
         var request = new RuntimeIngressStandupRequest
         {
             ArtifactId = artifactId.ToString(),

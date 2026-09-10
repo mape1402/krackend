@@ -18,6 +18,7 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
     private readonly IIngressRegistry _ingressRegistry;
     private readonly IRuntimeReplicaIdentity _replicaIdentity;
     private readonly ILogger<StandUpArtifactIngressAction> _logger;
+    private readonly IMuleTerminalFailureMarker _terminalFailureMarker;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StandUpArtifactIngressAction"/> class.
@@ -26,12 +27,14 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
         IRuntimeArtifactRepository artifactRepository,
         IIngressRegistry ingressRegistry,
         IRuntimeReplicaIdentity replicaIdentity,
-        ILogger<StandUpArtifactIngressAction> logger)
+        ILogger<StandUpArtifactIngressAction> logger,
+        IMuleTerminalFailureMarker terminalFailureMarker)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _ingressRegistry = ingressRegistry ?? throw new ArgumentNullException(nameof(ingressRegistry));
         _replicaIdentity = replicaIdentity ?? throw new ArgumentNullException(nameof(replicaIdentity));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _terminalFailureMarker = terminalFailureMarker ?? throw new ArgumentNullException(nameof(terminalFailureMarker));
     }
 
     /// <inheritdoc />
@@ -70,8 +73,7 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
                 request.ArtifactId,
                 request.IngressGeneration);
 
-            // Mule calculates retry eligibility from the claimed action attempts.
-            context.Action.Attempts = int.MaxValue - 1;
+            _terminalFailureMarker.MarkTerminal(context);
             throw;
         }
     }
