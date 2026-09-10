@@ -5,8 +5,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads
 {
     internal interface IOrchestrationPayloadState
     {
+        JsonNode CreateInitialPayload(JsonNode triggerPayload);
+
         JsonNode GetDispatchPayload(OrchestrationInstance instance, JsonNode signalPayload);
 
-        JsonNode ApplyCallbackPayload(OrchestrationInstance instance, JsonNode callbackPayload);
+        JsonNode ApplyTaskRequestPayload(
+            OrchestrationInstance instance,
+            string stageKey,
+            string taskKey,
+            JsonNode requestPayload);
+
+        JsonNode ApplyCallbackPayload(
+            OrchestrationInstance instance,
+            string stageKey,
+            string taskKey,
+            JsonNode callbackPayload);
     }
 }
