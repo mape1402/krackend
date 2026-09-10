@@ -20,4 +20,12 @@ internal sealed class RuntimeIngressLocalState : IRuntimeIngressLocalState
             artifactId,
             ingressGeneration,
             (_, currentGeneration) => Math.Max(currentGeneration, ingressGeneration));
+
+    /// <inheritdoc />
+    public void Forget(string artifactId)
+        => _generations.TryRemove(artifactId, out _);
+
+    /// <inheritdoc />
+    public void Clear()
+        => _generations.Clear();
 }
