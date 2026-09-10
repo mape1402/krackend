@@ -37,9 +37,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             var orchestrationArtifact = _artifactSerializer.Deserialize(artifact.ArtifactPayload.ToJsonString());
             var now = DateTime.UtcNow;
-            var configurations = orchestrationArtifact.TriggerBindings
+            var triggerConfigurations = orchestrationArtifact.TriggerBindings
                 .Where(x => x.IsEnabled)
                 .SelectMany(x => BuildTriggerConfigurations(artifact.Id, x, now))
+                .ToArray();
+            if (triggerConfigurations.Length == 0)
+            {
+                throw new IngressProjectionConfigurationException(
+                    $"Artifact '{artifact.Id}' does not contain any enabled messaging trigger ingress configuration.");
+            }
+
+            var configurations = triggerConfigurations
                 .Append(BuildBackchannelConfiguration(artifact.Id, orchestrationArtifact, artifact.Version, now))
                 .ToArray();
 
@@ -54,6 +62,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             if (trigger.TriggerChannel is not EventTriggerChannelArtifact eventTrigger)
             {
                 yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(eventTrigger.Topic))
+            {
+                throw new IngressProjectionConfigurationException(
+                    $"Trigger '{trigger.Id}' does not define a messaging topic.");
             }
 
             yield return new RuntimeIngressConfiguration
