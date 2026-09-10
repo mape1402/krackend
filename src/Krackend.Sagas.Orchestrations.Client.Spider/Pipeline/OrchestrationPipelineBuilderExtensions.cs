@@ -1,6 +1,7 @@
 namespace Spider.Pipelines.Core;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
@@ -60,24 +61,23 @@ public static class OrchestrationPipelineBuilderExtensions
         builder.OnPreProcess(preProcess =>
             preProcess.OnPreProcess((context, arguments) =>
             {
-                context.Services.GetRequiredService<IOrchestrationOperationExecutionContext>().Start(typeof(TRequest));
-                _ = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get();
+                context.Services.GetRequiredService<IOrchestrationOperationClient>().Begin(typeof(TRequest));
                 return Task.CompletedTask;
             }));
 
         builder.OnPostProcess(postProcess =>
         {
             postProcess.OnSuccess((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
-                    .PublishSuccessAsync(
+                context.Services.GetRequiredService<IOrchestrationOperationClient>()
+                    .ReportSuccessAsync(
                         typeof(TRequest),
                         null,
                         transform(context.Request),
                         options,
                         context.CancellationToken));
             postProcess.OnFailure((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
-                    .PublishFailureAsync(
+                context.Services.GetRequiredService<IOrchestrationOperationClient>()
+                    .ReportFailureAsync(
                         typeof(TRequest),
                         context.Exception,
                         options,
@@ -165,24 +165,23 @@ public static class OrchestrationPipelineBuilderExtensions
         builder.OnPreProcess(preProcess =>
             preProcess.OnPreProcess((context, arguments) =>
             {
-                context.Services.GetRequiredService<IOrchestrationOperationExecutionContext>().Start(typeof(TRequest));
-                _ = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get();
+                context.Services.GetRequiredService<IOrchestrationOperationClient>().Begin(typeof(TRequest));
                 return Task.CompletedTask;
             }));
 
         builder.OnPostProcess(postProcess =>
         {
             postProcess.OnSuccess((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
-                    .PublishSuccessAsync(
+                context.Services.GetRequiredService<IOrchestrationOperationClient>()
+                    .ReportSuccessAsync(
                         typeof(TRequest),
                         typeof(TResponse),
                         transform(context.Request, context.Response, transformer),
                         options,
                         context.CancellationToken));
             postProcess.OnFailure((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationPipelinePublisher>()
-                    .PublishFailureAsync(
+                context.Services.GetRequiredService<IOrchestrationOperationClient>()
+                    .ReportFailureAsync(
                         typeof(TRequest),
                         context.Exception,
                         options,
