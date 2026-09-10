@@ -26,8 +26,9 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" Version="1.4.1" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" Version="1.4.1" />
-    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="2.8.0" />
+    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="3.1.0" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.ButterMorph\Krackend.Sagas.Orchestrations.Runtime.ButterMorph.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />

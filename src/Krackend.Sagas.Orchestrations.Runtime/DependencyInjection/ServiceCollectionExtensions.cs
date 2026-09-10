@@ -10,6 +10,8 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Http;
@@ -48,6 +50,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionControl, DecisionControl>();
             services.TryAddScoped<IDecisionExecutor, DecisionExecutor>();
             services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();
+            services.TryAddScoped<IOrchestrationPayloadContextFactory, DefaultOrchestrationPayloadContextFactory>();
+            services.TryAddScoped<IOrchestrationTransformationExecutor, DefaultOrchestrationTransformationExecutor>();
+            services.TryAddScoped<IOrchestrationValidationExecutor, DefaultOrchestrationValidationExecutor>();
             services.TryAddScoped<IDecisionHandler<StartStageDecision>, StartStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DispatchTaskDecision>, DispatchTaskDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteStageDecision>, CompleteStageDecisionHandler>();
