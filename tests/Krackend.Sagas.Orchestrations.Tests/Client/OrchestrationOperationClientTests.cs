@@ -62,7 +62,7 @@ public sealed class OrchestrationOperationClientTests
         var services = new ServiceCollection();
         services
             .AddKrackendOrchestrationsClient()
-            .MapException<InvalidOperationException>("BusinessRuleFailed");
+            .MapException<InvalidOperationException>("BusinessRuleFailed", isRetryableCandidate: false);
         services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
 
         using var scope = services.BuildServiceProvider().CreateScope();
@@ -93,6 +93,7 @@ public sealed class OrchestrationOperationClientTests
         Assert.NotNull(publisher.ResultMetadata);
         Assert.False(publisher.ResultMetadata.Succeeded);
         Assert.Equal("BusinessRuleFailed", publisher.ResultMetadata.ErrorCode);
+        Assert.False(publisher.ResultMetadata.IsRetryableCandidate);
         Assert.Equal("inventories-api", publisher.ResultMetadata.ServiceName);
         Assert.Equal("inventories.reserve", publisher.ResultMetadata.OperationName);
         Assert.Null(publisher.Payload);

@@ -11,7 +11,7 @@ internal sealed class DefaultOrchestrationExceptionErrorCodeMapper : IOrchestrat
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
-    public string Resolve(Exception exception)
+    public OrchestrationExceptionErrorCodeResolution Resolve(Exception exception)
     {
         var configured = _options.Value;
         if (exception is null)
@@ -21,21 +21,27 @@ internal sealed class DefaultOrchestrationExceptionErrorCodeMapper : IOrchestrat
 
         var exceptionType = exception.GetType();
         var mapping = configured.Mappings
-            .Where(candidate => candidate.ExceptionType.IsAssignableFrom(exceptionType))
+            .Where(candidate => candidate.Matches(exception))
             .OrderBy(candidate => GetInheritanceDistance(exceptionType, candidate.ExceptionType))
             .FirstOrDefault();
 
-        return mapping?.ErrorCode ?? ResolveDefaultErrorCode(configured, exception);
+        return mapping is null
+            ? ResolveDefaultErrorCode(configured, exception)
+            : new OrchestrationExceptionErrorCodeResolution(
+                mapping.ErrorCode,
+                mapping.IsRetryableCandidate);
     }
 
-    private string ResolveDefaultErrorCode(OrchestrationClientErrorMappingOptions options, Exception exception)
+    private OrchestrationExceptionErrorCodeResolution ResolveDefaultErrorCode(
+        OrchestrationClientErrorMappingOptions options,
+        Exception exception)
     {
         if (!string.IsNullOrWhiteSpace(options.DefaultErrorCode))
         {
-            return options.DefaultErrorCode;
+            return new OrchestrationExceptionErrorCodeResolution(options.DefaultErrorCode);
         }
 
-        return exception?.GetType().Name ?? "UnhandledException";
+        return new OrchestrationExceptionErrorCodeResolution(exception?.GetType().Name ?? "UnhandledException");
     }
 
     private static int GetInheritanceDistance(Type exceptionType, Type mappedType)
