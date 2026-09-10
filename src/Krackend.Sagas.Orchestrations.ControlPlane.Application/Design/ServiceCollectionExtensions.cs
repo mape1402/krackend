@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IParallelGroupApplicationService, ParallelGroupApplicationService>();
         services.AddScoped<IBranchRuleApplicationService, BranchRuleApplicationService>();
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
+        services.AddScoped<IOrchestrationSchemaContextBuilder, OrchestrationSchemaContextBuilder>();
         services.AddScoped<IOrchestrationVersionEditGuard, OrchestrationVersionEditGuard>();
         services.AddSingleton<IOrchestrationVersionTransitionPolicy, OrchestrationVersionTransitionPolicy>();
         return services;
