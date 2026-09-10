@@ -27,6 +27,17 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
     private const string RuntimeInboundSecret = "KrackendLocalRuntimeInboundSecret_ChangeMe";
     private const string RuntimeInboundScopes = "artifact:push connection:validate";
     private const string RuntimeOutboundScopes = "release:read artifact:read artifact:ack connection:validate";
+    private const string SaleCompletionTransformationDsl =
+        """
+        target {
+          SaleId: $trigger.SaleId
+          CustomerId: $trigger.CustomerId
+          Total: $trigger.Total
+          ReservationId: $responses.inventory_reservation.inventories_reserve.ReservationId
+          PaymentId: $responses.payment_capture.payments_capture.PaymentId
+        }
+        """;
+
     private static readonly HappyPathSeedDefinition[] SeedDefinitions =
     [
         new(
@@ -293,7 +304,8 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                         "sales.complete",
                         "Complete sale",
                         1,
-                        definition.CompletionTopic)
+                        definition.CompletionTopic,
+                        EnabledTransformation(SaleCompletionTransformationDsl))
                 ],
                 [],
                 [],
@@ -309,7 +321,8 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
         string key,
         string name,
         int order,
-        string topic)
+        string topic,
+        TransformationArtifact? transformation = null)
     {
         var schemaBinding = BuildSchemaBinding(id, ElementType.Task, stageId, registryProviderId, topic, version);
         var configuration = new MessagingTaskConfigurationArtifact(topic, version, schemaBinding);
@@ -324,7 +337,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
             TaskExecutionMode.Sequential,
             null,
             DisabledCondition(),
-            DisabledTransformation(),
+            transformation ?? DisabledTransformation(),
             configuration,
             DefaultRetryPolicy(),
             DefaultTimeoutPolicy(),
@@ -364,6 +377,12 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
         => new(EngineType.DSL, new DslTransformationConfigurationArtifact())
         {
             IsEnabled = false
+        };
+
+    private static TransformationArtifact EnabledTransformation(string dsl)
+        => new(EngineType.DSL, new DslTransformationConfigurationArtifact { Dsl = dsl })
+        {
+            IsEnabled = true
         };
 
     private static RetryPolicyArtifact DefaultRetryPolicy()

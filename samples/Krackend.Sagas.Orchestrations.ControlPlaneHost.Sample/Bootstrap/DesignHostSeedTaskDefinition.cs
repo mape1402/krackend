@@ -7,4 +7,5 @@ internal sealed record DesignHostSeedTaskDefinition(
     string Key,
     string Name,
     int Order,
-    string Topic);
+    string Topic,
+    string TransformationDsl = null);

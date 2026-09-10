@@ -3,7 +3,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.ButterMorph;
 using System.Text.Json.Nodes;
 using global::ButterMorph.Abstractions;
 using global::ButterMorph.Core;
-using global::ButterMorph.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 
@@ -15,8 +14,8 @@ public sealed class ButterMorphOrchestrationTransformationExecutor : IOrchestrat
     private readonly IButterMorphEngine _engine;
     private readonly IDslParser _dslParser;
     private readonly IButterMorphDiagnosticMetadataMapper _diagnosticMapper;
-    private readonly JsonReader _jsonReader = new();
-    private readonly JsonWriter _jsonWriter = new();
+    private readonly IButterMorphSourceGraphBuilder _sourceGraphBuilder;
+    private readonly global::ButterMorph.Json.JsonWriter _jsonWriter = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ButterMorphOrchestrationTransformationExecutor"/> class.
@@ -24,14 +23,17 @@ public sealed class ButterMorphOrchestrationTransformationExecutor : IOrchestrat
     /// <param name="engine">ButterMorph execution engine.</param>
     /// <param name="dslParser">ButterMorph DSL parser.</param>
     /// <param name="diagnosticMapper">Maps ButterMorph diagnostics into orchestration metadata.</param>
+    /// <param name="sourceGraphBuilder">Builds ButterMorph source graphs from the orchestration payload context.</param>
     public ButterMorphOrchestrationTransformationExecutor(
         IButterMorphEngine engine,
         IDslParser dslParser,
-        IButterMorphDiagnosticMetadataMapper diagnosticMapper)
+        IButterMorphDiagnosticMetadataMapper diagnosticMapper,
+        IButterMorphSourceGraphBuilder sourceGraphBuilder)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dslParser = dslParser ?? throw new ArgumentNullException(nameof(dslParser));
         _diagnosticMapper = diagnosticMapper ?? throw new ArgumentNullException(nameof(diagnosticMapper));
+        _sourceGraphBuilder = sourceGraphBuilder ?? throw new ArgumentNullException(nameof(sourceGraphBuilder));
     }
 
     /// <inheritdoc />
@@ -54,7 +56,7 @@ public sealed class ButterMorphOrchestrationTransformationExecutor : IOrchestrat
         try
         {
             var document = _dslParser.Parse(new DslDefinition { Content = configuration.Dsl });
-            var sources = BuildSources(request);
+            var sources = _sourceGraphBuilder.Build(request.PayloadContext);
             var result = _engine.Transform(new TransformationRequest
             {
                 Sources = sources,
@@ -83,32 +85,5 @@ public sealed class ButterMorphOrchestrationTransformationExecutor : IOrchestrat
                 exception.Message,
                 _diagnosticMapper.Map(exception)));
         }
-    }
-
-    private IReadOnlyDictionary<string, IStructureGraph> BuildSources(OrchestrationTransformationRequest request)
-    {
-        var sources = new Dictionary<string, IStructureGraph>(StringComparer.OrdinalIgnoreCase);
-        AddSource(sources, "context", request.PayloadContext.ContextPayload);
-        AddSource(sources, "trigger", request.PayloadContext.TriggerPayload);
-        return sources;
-    }
-
-    private void AddSource(
-        IDictionary<string, IStructureGraph> sources,
-        string alias,
-        JsonNode payload)
-    {
-        if (payload is null)
-        {
-            return;
-        }
-
-        var graph = _jsonReader.Read(new StructureInput
-        {
-            Format = "json",
-            Content = payload.ToJsonString()
-        });
-
-        sources[alias] = graph;
     }
 }
