@@ -8,6 +8,8 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfi
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
+using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 using TaskDefinitionModel = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TaskDefinition;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Mappings;
@@ -561,10 +563,16 @@ internal static class DefinitionEntityMapper
             Engine = source.Engine,
             Configuration = source.Configuration switch
             {
-                DslTransformationConfiguration => new TransformationConfigurationEnvelopeJsonModel
+                DslTransformationConfiguration dsl => new TransformationConfigurationEnvelopeJsonModel
                 {
                     Type = "dsl",
-                    Dsl = new DslTransformationConfigurationJsonModel(),
+                    Dsl = new DslTransformationConfigurationJsonModel
+                    {
+                        Dsl = dsl.Dsl,
+                        SourceContextHash = dsl.SourceContextHash,
+                        TargetSchemaHash = dsl.TargetSchemaHash,
+                        SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
+                    },
                 },
                 _ => throw new NotSupportedException($"Transformation configuration '{source.Configuration?.GetType().Name}' is not supported."),
             },
@@ -602,9 +610,20 @@ internal static class DefinitionEntityMapper
             Engine = source?.Engine ?? EngineType.DSL,
             Configuration = (source?.Configuration?.Type ?? string.Empty).ToLowerInvariant() switch
             {
-                "dsl" => new DslTransformationConfiguration(),
-                _ => new DslTransformationConfiguration(),
+                "dsl" => ToModel(source.Configuration.Dsl),
+                _ => ToModel(source?.Configuration?.Dsl),
             },
+        };
+
+    private static DslTransformationConfiguration ToModel(DslTransformationConfigurationJsonModel source)
+        => new()
+        {
+            Dsl = source?.Dsl ?? string.Empty,
+            SourceContextHash = source?.SourceContextHash ?? string.Empty,
+            TargetSchemaHash = source?.TargetSchemaHash ?? string.Empty,
+            SemanticDiagnosticsJson = string.IsNullOrWhiteSpace(source?.SemanticDiagnosticsJson)
+                ? "{}"
+                : source.SemanticDiagnosticsJson,
         };
 
     /// <summary>
@@ -636,6 +655,14 @@ internal static class DefinitionEntityMapper
                     Topic = messaging.Topic,
                     Version = messaging.Version.ToString(),
                     SchemaBinding = ToJson(messaging.SchemaBinding, messaging.HasSchemaValidation),
+                    RequestSchemaBinding = ToJson(
+                        messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+                        messaging.HasSchemaValidation,
+                        SchemaContractKind.CommandRequest),
+                    ResponseSchemaBinding = ToJson(
+                        messaging.ResponseSchemaBinding,
+                        messaging.HasSchemaValidation,
+                        SchemaContractKind.CommandResponse),
                 },
             },
             PluginTaskConfiguration plugin => new TaskConfigurationEnvelopeJsonModel
@@ -683,7 +710,11 @@ internal static class DefinitionEntityMapper
                 Topic = source.Messaging?.Topic,
                 Version = ParseSemanticVersion(source.Messaging?.Version),
                 SchemaBinding = ToModel(source.Messaging?.SchemaBinding),
-                HasSchemaValidation = IsSchemaValidationEnabled(source.Messaging?.SchemaBinding),
+                RequestSchemaBinding = ToModel(source.Messaging?.RequestSchemaBinding ?? source.Messaging?.SchemaBinding),
+                ResponseSchemaBinding = ToModel(source.Messaging?.ResponseSchemaBinding),
+                HasSchemaValidation = IsSchemaValidationEnabled(source.Messaging?.SchemaBinding) ||
+                    IsSchemaValidationEnabled(source.Messaging?.RequestSchemaBinding) ||
+                    IsSchemaValidationEnabled(source.Messaging?.ResponseSchemaBinding),
             },
             "plugin" => new PluginTaskConfiguration
             {
@@ -832,24 +863,35 @@ internal static class DefinitionEntityMapper
             ContractKey = source.ContractKey,
             ContractVersion = source.ContractVersion.ToString(),
             RegistryProviderId = source.RegistryProviderId.ToString(),
+            RegistryProviderKey = source.RegistryProviderKey,
+            ContractKind = source.ContractKind,
             StrictMode = source.StrictMode,
             IsValidationEnabled = source.IsValidationEnabled,
+            Snapshot = ToJson(source.Snapshot),
         };
 
     /// <summary>
     /// Executes ToJson.
     /// </summary>
     private static SchemaBindingJsonModel ToJson(SchemaBinding source, bool isValidationEnabled)
+        => ToJson(source, isValidationEnabled, source?.ContractKind ?? SchemaContractKind.Unspecified);
+
+    /// <summary>
+    /// Executes ToJson.
+    /// </summary>
+    private static SchemaBindingJsonModel ToJson(SchemaBinding source, bool isValidationEnabled, SchemaContractKind contractKind)
     {
         if (!isValidationEnabled)
         {
             var disabledJson = source is null ? new SchemaBindingJsonModel() : ToJson(source);
             disabledJson.IsValidationEnabled = false;
+            disabledJson.ContractKind = contractKind;
             return disabledJson;
         }
 
         var json = source is null ? new SchemaBindingJsonModel() : ToJson(source);
         json.IsValidationEnabled = true;
+        json.ContractKind = contractKind;
         return json;
     }
 
@@ -866,9 +908,46 @@ internal static class DefinitionEntityMapper
             ContractKey = source?.ContractKey ?? string.Empty,
             ContractVersion = ParseSemanticVersion(source?.ContractVersion),
             RegistryProviderId = ParseId(source?.RegistryProviderId),
+            RegistryProviderKey = source?.RegistryProviderKey ?? string.Empty,
+            ContractKind = source?.ContractKind ?? SchemaContractKind.Unspecified,
             StrictMode = source?.StrictMode ?? false,
+            Snapshot = ToModel(source?.Snapshot),
             IsValidationEnabled = IsSchemaValidationEnabled(source),
         };
+
+    private static SchemaContractSnapshotJsonModel ToJson(DesignSchemaContractSnapshot source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        return new SchemaContractSnapshotJsonModel
+        {
+            ContractKind = source.ContractKind,
+            SchemaFormat = source.SchemaFormat,
+            SchemaJson = source.SchemaJson,
+            ContentHash = source.ContentHash,
+            ResolvedAtUtc = source.ResolvedAtUtc,
+        };
+    }
+
+    private static DesignSchemaContractSnapshot ToModel(SchemaContractSnapshotJsonModel source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        return new DesignSchemaContractSnapshot
+        {
+            ContractKind = source.ContractKind,
+            SchemaFormat = string.IsNullOrWhiteSpace(source.SchemaFormat) ? "ButterMorph" : source.SchemaFormat,
+            SchemaJson = string.IsNullOrWhiteSpace(source.SchemaJson) ? "{}" : source.SchemaJson,
+            ContentHash = source.ContentHash ?? string.Empty,
+            ResolvedAtUtc = source.ResolvedAtUtc == default ? DateTimeOffset.UtcNow : source.ResolvedAtUtc,
+        };
+    }
 
     private static bool IsExecutionConditionEnabled(ExecutionConditionJsonModel source)
     {

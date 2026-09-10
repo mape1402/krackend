@@ -14,4 +14,14 @@ public sealed record MessagingTaskConfigurationArtifact(
     /// Gets messaging task kind.
     /// </summary>
     public TaskKind Kind => TaskKind.Messaging;
+
+    /// <summary>
+    /// Gets the schema binding for the command request payload sent to the worker service.
+    /// </summary>
+    public SchemaBindingArtifact RequestSchemaBinding { get; init; } = SchemaBinding;
+
+    /// <summary>
+    /// Gets the schema binding for the command response payload returned by the worker service.
+    /// </summary>
+    public SchemaBindingArtifact ResponseSchemaBinding { get; init; }
 }

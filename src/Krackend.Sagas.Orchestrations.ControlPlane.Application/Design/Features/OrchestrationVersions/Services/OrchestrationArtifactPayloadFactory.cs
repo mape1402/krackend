@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
@@ -49,7 +50,7 @@ public static class OrchestrationArtifactPayloadFactory
         => channel switch
         {
             EventTriggerChannel eventChannel => new EventTriggerChannelArtifact(
-                MapSchemaBinding(eventChannel.SchemaBinding, eventChannel.HasSchemaValidation),
+                MapSchemaBinding(eventChannel.SchemaBinding, eventChannel.HasSchemaValidation, SchemaContractKind.Event),
                 eventChannel.Topic,
                 eventChannel.Version),
             _ => throw new InvalidOperationException($"Trigger channel '{channel.GetType().Name}' is not supported.")
@@ -166,7 +167,13 @@ public static class OrchestrationArtifactPayloadFactory
     private static ITransformationConfigurationArtifact MapTransformationConfiguration(ITransformationConfiguration configuration)
         => configuration switch
         {
-            DslTransformationConfiguration => new DslTransformationConfigurationArtifact(),
+            DslTransformationConfiguration dsl => new DslTransformationConfigurationArtifact
+            {
+                Dsl = dsl.Dsl,
+                SourceContextHash = dsl.SourceContextHash,
+                TargetSchemaHash = dsl.TargetSchemaHash,
+                SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
+            },
             _ => throw new InvalidOperationException($"Transformation configuration '{configuration.GetType().Name}' is not supported.")
         };
 
@@ -176,7 +183,20 @@ public static class OrchestrationArtifactPayloadFactory
             MessagingTaskConfiguration messaging => new MessagingTaskConfigurationArtifact(
                 messaging.Topic,
                 messaging.Version,
-                MapSchemaBinding(messaging.SchemaBinding, messaging.HasSchemaValidation)),
+                MapSchemaBinding(
+                    messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+                    messaging.HasSchemaValidation,
+                    SchemaContractKind.CommandRequest))
+            {
+                RequestSchemaBinding = MapSchemaBinding(
+                    messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+                    messaging.HasSchemaValidation,
+                    SchemaContractKind.CommandRequest),
+                ResponseSchemaBinding = MapSchemaBinding(
+                    messaging.ResponseSchemaBinding,
+                    messaging.HasSchemaValidation,
+                    SchemaContractKind.CommandResponse),
+            },
             HttpTaskConfiguration http => new HttpTaskConfigurationArtifact(
                 MapSchemaBinding(http.SchemaBinding, http.HasSchemaValidation),
                 http.BaseUrlVariableRef,
@@ -224,6 +244,9 @@ public static class OrchestrationArtifactPayloadFactory
         };
 
     private static SchemaBindingArtifact MapSchemaBinding(SchemaBinding binding, bool isValidationEnabled)
+        => MapSchemaBinding(binding, isValidationEnabled, binding?.ContractKind ?? SchemaContractKind.Unspecified);
+
+    private static SchemaBindingArtifact MapSchemaBinding(SchemaBinding binding, bool isValidationEnabled, SchemaContractKind contractKind)
     {
         if (binding is null)
         {
@@ -236,6 +259,7 @@ public static class OrchestrationArtifactPayloadFactory
                 ContractKey = string.Empty,
                 ContractVersion = new SemanticVersion(0, 0, 0),
                 RegistryProviderId = Id.New(),
+                ContractKind = contractKind,
                 StrictMode = false,
                 IsValidationEnabled = false
             };
@@ -251,7 +275,32 @@ public static class OrchestrationArtifactPayloadFactory
             binding.RegistryProviderId,
             binding.StrictMode)
         {
-            IsValidationEnabled = isValidationEnabled && binding.IsValidationEnabled
+            IsValidationEnabled = isValidationEnabled && binding.IsValidationEnabled,
+            RegistryProviderKey = binding.RegistryProviderKey,
+            ContractKind = contractKind == SchemaContractKind.Unspecified ? binding.ContractKind : contractKind,
+            Snapshot = MapSnapshot(binding, contractKind)
+        };
+    }
+
+    private static SchemaContractSnapshotArtifact MapSnapshot(SchemaBinding binding, SchemaContractKind contractKind)
+    {
+        if (binding?.Snapshot is null)
+        {
+            return null;
+        }
+
+        return new SchemaContractSnapshotArtifact
+        {
+            ContractKind = contractKind == SchemaContractKind.Unspecified ? binding.Snapshot.ContractKind : contractKind,
+            RegistryProviderId = binding.RegistryProviderId.ToString(),
+            RegistryProviderKey = binding.RegistryProviderKey,
+            ContractId = binding.ContractId.ToString(),
+            ContractKey = binding.ContractKey,
+            ContractVersion = binding.ContractVersion.ToString(),
+            SchemaFormat = binding.Snapshot.SchemaFormat,
+            SchemaJson = binding.Snapshot.SchemaJson,
+            ContentHash = binding.Snapshot.ContentHash,
+            ResolvedAtUtc = binding.Snapshot.ResolvedAtUtc,
         };
     }
 }

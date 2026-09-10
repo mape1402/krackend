@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using System.Text.Json.Serialization;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
@@ -38,6 +39,15 @@ public sealed class SchemaBindingJsonModel
     /// </summary>
     public string RegistryProviderId { get; set; }
     /// <summary>
+    /// Gets or sets registry provider key.
+    /// </summary>
+    public string RegistryProviderKey { get; set; }
+    /// <summary>
+    /// Gets or sets contract kind.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SchemaContractKind ContractKind { get; set; }
+    /// <summary>
     /// Gets or sets StrictMode.
     /// </summary>
     public bool StrictMode { get; set; }
@@ -45,4 +55,8 @@ public sealed class SchemaBindingJsonModel
     /// Gets or sets whether schema validation is enabled.
     /// </summary>
     public bool IsValidationEnabled { get; set; }
+    /// <summary>
+    /// Gets or sets the resolved schema snapshot.
+    /// </summary>
+    public SchemaContractSnapshotJsonModel Snapshot { get; set; }
 }
