@@ -41,6 +41,13 @@ public sealed class ButterMorphOrchestrationValidationExecutor : IOrchestrationV
 
         if (string.IsNullOrWhiteSpace(request.ValidationDsl))
         {
+            if (request.SchemaBinding?.IsValidationEnabled == true)
+            {
+                return Task.FromResult(OrchestrationValidationResult.Failure(
+                    $"{request.Phase}SchemaValidationNotConfigured",
+                    $"{request.Phase} schema validation is enabled, but the artifact does not contain executable ButterMorph validation DSL."));
+            }
+
             return Task.FromResult(OrchestrationValidationResult.Success());
         }
 
