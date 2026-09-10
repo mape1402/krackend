@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurat
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Infrastructure;
 
@@ -151,7 +152,7 @@ public sealed class DetailsModel : PageModel
                         ? BuildExecutionCondition(NewTask.ConditionEngine, NewTask.ConditionDslExpression)
                         : null,
                     NewTask.HasTransformation
-                        ? BuildTransformation(NewTask.TransformationEngine)
+                        ? BuildTransformation(NewTask.TransformationEngine, NewTask.TransformationDsl)
                         : null,
                     BuildTaskConfiguration(editKind, NewTask),
                     NewTask.HasRetryPolicy
@@ -206,7 +207,7 @@ public sealed class DetailsModel : PageModel
                     ? BuildExecutionCondition(NewTask.ConditionEngine, NewTask.ConditionDslExpression)
                     : null,
                 NewTask.HasTransformation
-                    ? BuildTransformation(NewTask.TransformationEngine)
+                    ? BuildTransformation(NewTask.TransformationEngine, NewTask.TransformationDsl)
                     : null,
                 BuildTaskConfiguration(kind, NewTask),
                 NewTask.HasRetryPolicy
@@ -333,7 +334,7 @@ public sealed class DetailsModel : PageModel
         }
 
         var transformation = request.HasTransformation
-            ? BuildTransformation(request.TransformationEngine)
+            ? BuildTransformation(request.TransformationEngine, request.TransformationDsl)
             : null;
 
         var updated = await _taskService.SetTransformation(
@@ -693,11 +694,25 @@ public sealed class DetailsModel : PageModel
         var hasSchemaValidation = isCompensation ? NewTask.HasCompensationMessagingSchemaValidation : NewTask.HasMessagingSchemaValidation;
         var contractKey = isCompensation ? NewTask.CompensationMessagingSchemaContractKey : NewTask.MessagingSchemaContractKey;
         var registryProviderId = isCompensation ? NewTask.CompensationMessagingSchemaRegistryProviderId : NewTask.MessagingSchemaRegistryProviderId;
+        var hasRequestValidation = isCompensation ? NewTask.HasCompensationMessagingRequestValidation : NewTask.HasMessagingRequestValidation;
+        var requestValidationDsl = isCompensation ? NewTask.CompensationMessagingRequestValidationDsl : NewTask.MessagingRequestValidationDsl;
+        var hasResponseValidation = isCompensation ? NewTask.HasCompensationMessagingResponseValidation : NewTask.HasMessagingResponseValidation;
+        var responseValidationDsl = isCompensation ? NewTask.CompensationMessagingResponseValidationDsl : NewTask.MessagingResponseValidationDsl;
 
         AddRequired($"{prefix}MessagingTopic", topic, "Capture the messaging topic.");
         if (hasSchemaValidation)
         {
             AddRequired($"{prefix}MessagingSchemaContractKey", contractKey, "Capture the messaging schema contract key.");
+        }
+
+        if (hasRequestValidation)
+        {
+            AddRequired($"{prefix}MessagingRequestValidationDsl", requestValidationDsl, "Capture the request validation DSL.");
+        }
+
+        if (hasResponseValidation)
+        {
+            AddRequired($"{prefix}MessagingResponseValidationDsl", responseValidationDsl, "Capture the response validation DSL.");
         }
 
         ValidateOptionalUlid($"{prefix}MessagingSchemaRegistryProviderId", registryProviderId);
@@ -793,6 +808,7 @@ public sealed class DetailsModel : PageModel
             ["ConditionDslExpression"] = (task.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
             ["HasTransformation"] = task.HasTransformation,
             ["TransformationEngine"] = task.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
+            ["TransformationDsl"] = (task.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
             ["HasRetryPolicy"] = task.RetryPolicy is not null,
             ["HasTimeoutPolicy"] = task.TimeoutPolicy is not null,
             ["HasCompensation"] = task.CompensationDefinition is not null,
@@ -803,6 +819,7 @@ public sealed class DetailsModel : PageModel
             ["CompensationConditionDslExpression"] = (task.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
             ["HasCompensationTransformation"] = task.CompensationDefinition?.HasTransformation ?? false,
             ["CompensationTransformationEngine"] = task.CompensationDefinition?.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
+            ["CompensationTransformationDsl"] = (task.CompensationDefinition?.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
             ["HasCompensationRetryPolicy"] = task.CompensationDefinition?.RetryPolicy is not null,
             ["HasCompensationTimeoutPolicy"] = task.CompensationDefinition?.TimeoutPolicy is not null,
         };
@@ -829,6 +846,12 @@ public sealed class DetailsModel : PageModel
             payload["MessagingSchemaContractVersion"] = messaging.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
             payload["MessagingSchemaRegistryProviderId"] = messaging.SchemaBinding is null ? string.Empty : messaging.SchemaBinding.RegistryProviderId.ToString();
             payload["MessagingSchemaStrictMode"] = messaging.SchemaBinding?.StrictMode ?? false;
+            payload["HasMessagingRequestValidation"] = messaging.HasRequestValidation;
+            payload["MessagingRequestValidationDsl"] = (messaging.RequestValidation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty;
+            payload["MessagingRequestValidationErrorCode"] = messaging.RequestValidation?.ErrorCode ?? "RequestValidationFailed";
+            payload["HasMessagingResponseValidation"] = messaging.HasResponseValidation;
+            payload["MessagingResponseValidationDsl"] = (messaging.ResponseValidation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty;
+            payload["MessagingResponseValidationErrorCode"] = messaging.ResponseValidation?.ErrorCode ?? "ResponseValidationFailed";
         }
         else if (task.Configuration is PluginTaskConfiguration plugin)
         {
@@ -893,6 +916,12 @@ public sealed class DetailsModel : PageModel
                 payload["CompensationMessagingSchemaContractVersion"] = compMsg.SchemaBinding?.ContractVersion.ToString() ?? "1.0.0";
                 payload["CompensationMessagingSchemaRegistryProviderId"] = compMsg.SchemaBinding is null ? string.Empty : compMsg.SchemaBinding.RegistryProviderId.ToString();
                 payload["CompensationMessagingSchemaStrictMode"] = compMsg.SchemaBinding?.StrictMode ?? false;
+                payload["HasCompensationMessagingRequestValidation"] = compMsg.HasRequestValidation;
+                payload["CompensationMessagingRequestValidationDsl"] = (compMsg.RequestValidation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty;
+                payload["CompensationMessagingRequestValidationErrorCode"] = compMsg.RequestValidation?.ErrorCode ?? "RequestValidationFailed";
+                payload["HasCompensationMessagingResponseValidation"] = compMsg.HasResponseValidation;
+                payload["CompensationMessagingResponseValidationDsl"] = (compMsg.ResponseValidation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty;
+                payload["CompensationMessagingResponseValidationErrorCode"] = compMsg.ResponseValidation?.ErrorCode ?? "ResponseValidationFailed";
             }
             else if (task.CompensationDefinition.Configuration is PluginTaskConfiguration compPlugin)
             {
@@ -959,6 +988,7 @@ public sealed class DetailsModel : PageModel
             taskId = task.Id,
             hasTransformation = task.HasTransformation,
             transformationEngine = task.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
+            transformationDsl = (task.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
         };
     }
 
@@ -1089,7 +1119,7 @@ public sealed class DetailsModel : PageModel
         };
     }
 
-    private static TransformationDefinition BuildTransformation(string engineText)
+    private static TransformationDefinition BuildTransformation(string engineText, string dsl)
     {
         var engine = ParseEnum(engineText, EngineType.DSL);
         if (engine == EngineType.DSL)
@@ -1097,16 +1127,33 @@ public sealed class DetailsModel : PageModel
             return new TransformationDefinition
             {
                 Engine = engine,
-                Configuration = new DslTransformationConfiguration()
+                Configuration = new DslTransformationConfiguration
+                {
+                    Dsl = dsl ?? string.Empty
+                }
             };
         }
 
         return new TransformationDefinition
         {
             Engine = EngineType.DSL,
-            Configuration = new DslTransformationConfiguration()
+            Configuration = new DslTransformationConfiguration
+            {
+                Dsl = dsl ?? string.Empty
+            }
         };
     }
+
+    private static ValidationDefinition BuildValidation(string dsl, string errorCode)
+        => new()
+        {
+            Engine = EngineType.DSL,
+            ErrorCode = string.IsNullOrWhiteSpace(errorCode) ? "PayloadValidationFailed" : errorCode.Trim(),
+            Configuration = new DslValidationConfiguration
+            {
+                Dsl = dsl ?? string.Empty
+            }
+        };
 
     private static ITaskConfiguration BuildTaskConfiguration(TaskKind kind, CreateTaskInput input)
     {
@@ -1131,6 +1178,14 @@ public sealed class DetailsModel : PageModel
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
                 HasSchemaValidation = input.HasMessagingSchemaValidation,
+                HasRequestValidation = input.HasMessagingRequestValidation,
+                RequestValidation = input.HasMessagingRequestValidation
+                    ? BuildValidation(input.MessagingRequestValidationDsl, input.MessagingRequestValidationErrorCode)
+                    : null,
+                HasResponseValidation = input.HasMessagingResponseValidation,
+                ResponseValidation = input.HasMessagingResponseValidation
+                    ? BuildValidation(input.MessagingResponseValidationDsl, input.MessagingResponseValidationErrorCode)
+                    : null,
                 Topic = input.MessagingTopic.Trim(),
                 Version = ParseSemanticVersion(input.MessagingVersion, new SemanticVersion(1, 0, 0)),
                 SchemaBinding = input.HasMessagingSchemaValidation ? CreateSchemaBinding(
@@ -1172,6 +1227,14 @@ public sealed class DetailsModel : PageModel
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
                 HasSchemaValidation = input.HasCompensationMessagingSchemaValidation,
+                HasRequestValidation = input.HasCompensationMessagingRequestValidation,
+                RequestValidation = input.HasCompensationMessagingRequestValidation
+                    ? BuildValidation(input.CompensationMessagingRequestValidationDsl, input.CompensationMessagingRequestValidationErrorCode)
+                    : null,
+                HasResponseValidation = input.HasCompensationMessagingResponseValidation,
+                ResponseValidation = input.HasCompensationMessagingResponseValidation
+                    ? BuildValidation(input.CompensationMessagingResponseValidationDsl, input.CompensationMessagingResponseValidationErrorCode)
+                    : null,
                 Topic = input.CompensationMessagingTopic.Trim(),
                 Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
                 SchemaBinding = input.HasCompensationMessagingSchemaValidation ? CreateSchemaBinding(
@@ -1286,7 +1349,7 @@ public sealed class DetailsModel : PageModel
             : null;
         compensation.HasExecutionCondition = input.HasCompensationExecutionCondition;
         compensation.Transformation = input.HasCompensationTransformation
-            ? BuildTransformation(input.CompensationTransformationEngine)
+            ? BuildTransformation(input.CompensationTransformationEngine, input.CompensationTransformationDsl)
             : null;
         compensation.HasTransformation = input.HasCompensationTransformation;
         compensation.Configuration = BuildCompensationTaskConfiguration(compensationKind, input);
@@ -1456,6 +1519,8 @@ public sealed class DetailsModel : PageModel
 
         public bool HasTransformation { get; set; }
 
+        public string TransformationDsl { get; set; } = string.Empty;
+
         public string HttpBaseUrlVariableRef { get; set; } = string.Empty;
 
         public string HttpRelativePath { get; set; } = string.Empty;
@@ -1494,6 +1559,18 @@ public sealed class DetailsModel : PageModel
         public string MessagingSchemaRegistryProviderId { get; set; } = string.Empty;
 
         public bool MessagingSchemaStrictMode { get; set; }
+
+        public bool HasMessagingRequestValidation { get; set; }
+
+        public string MessagingRequestValidationDsl { get; set; } = string.Empty;
+
+        public string MessagingRequestValidationErrorCode { get; set; } = "RequestValidationFailed";
+
+        public bool HasMessagingResponseValidation { get; set; }
+
+        public string MessagingResponseValidationDsl { get; set; } = string.Empty;
+
+        public string MessagingResponseValidationErrorCode { get; set; } = "ResponseValidationFailed";
 
         public string PluginId { get; set; } = string.Empty;
 
@@ -1599,6 +1676,20 @@ public sealed class DetailsModel : PageModel
 
         [Required]
         public string CompensationTransformationEngine { get; set; } = EngineType.DSL.ToString();
+
+        public string CompensationTransformationDsl { get; set; } = string.Empty;
+
+        public bool HasCompensationMessagingRequestValidation { get; set; }
+
+        public string CompensationMessagingRequestValidationDsl { get; set; } = string.Empty;
+
+        public string CompensationMessagingRequestValidationErrorCode { get; set; } = "RequestValidationFailed";
+
+        public bool HasCompensationMessagingResponseValidation { get; set; }
+
+        public string CompensationMessagingResponseValidationDsl { get; set; } = string.Empty;
+
+        public string CompensationMessagingResponseValidationErrorCode { get; set; } = "ResponseValidationFailed";
 
         [Required]
         public string CompensationRetryStrategyType { get; set; } = Krackend.Sagas.Orchestrations.Abstractions.Primitives.RetryStrategyType.Fixed.ToString();
@@ -1791,5 +1882,10 @@ public sealed class DetailsModel : PageModel
         /// Gets or sets transformation engine.
         /// </summary>
         public string TransformationEngine { get; set; } = EngineType.DSL.ToString();
+
+        /// <summary>
+        /// Gets or sets transformation DSL.
+        /// </summary>
+        public string TransformationDsl { get; set; } = string.Empty;
     }
 }
