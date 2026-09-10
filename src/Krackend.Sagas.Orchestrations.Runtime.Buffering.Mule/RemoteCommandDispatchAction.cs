@@ -49,18 +49,28 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         public async ValueTask ExecuteAsync(MuleActionContext<RemoteCommand> context, CancellationToken cancellationToken)
         {
             var command = context.Payload ?? throw new InvalidOperationException("Remote command payload cannot be empty.");
-            var executor = _serviceProvider.GetKeyedService<IRemoteCommandExecutor>(command.RemoteCommandTransport)
-                ?? throw new InvalidOperationException($"No remote command executor is configured for '{command.RemoteCommandTransport}'.");
-
-            _messageMetadataSetter.Set(command.MessageMetadata ?? new OrchestrationMessageMetadata());
 
             try
             {
+                var executor = _serviceProvider.GetKeyedService<IRemoteCommandExecutor>(command.RemoteCommandTransport)
+                    ?? throw new RemoteCommandConfigurationException($"No remote command executor is configured for '{command.RemoteCommandTransport}'.");
+
+                _messageMetadataSetter.Set(command.MessageMetadata ?? new OrchestrationMessageMetadata());
                 await executor.ExecuteAsync(command, cancellationToken);
                 if (HasRuntimeDispatchState(command))
                 {
                     await MarkDispatchPublishedAsync(command, cancellationToken);
                 }
+            }
+            catch (RemoteCommandConfigurationException exception)
+            {
+                if (HasRuntimeDispatchState(command))
+                {
+                    await MarkDispatchFailedAsync(command, exception, cancellationToken);
+                }
+
+                context.Action.Attempts = int.MaxValue - 1;
+                throw;
             }
             catch (Exception exception)
             {
@@ -143,7 +153,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             task.FailedOnUtc = now;
             attempt.Status = TaskExecutionStatus.Failed;
             attempt.FailedOnUtc = now;
-            attempt.ErrorCode = exception.GetType().Name;
+            attempt.ErrorCode = exception is RemoteCommandConfigurationException
+                ? "RemoteCommandConfigurationError"
+                : "CommandDispatchFailed";
             attempt.ErrorMessage = exception.Message;
             instance.Status = task.OnErrorPolicy == OnErrorPolicy.Continue
                 ? OrchestrationInstanceStatus.Running

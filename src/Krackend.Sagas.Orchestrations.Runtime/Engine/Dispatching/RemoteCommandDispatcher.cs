@@ -26,9 +26,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
 
             if(executor == null)
             {
-                _logger.LogWarning("No has executor configured for '{transport}' transport.", command.RemoteCommandTransport);
-                //TODO: Should save log into db for tracking.
-                return;
+                var message = $"No remote command executor is configured for '{command.RemoteCommandTransport}'.";
+                _logger.LogError(message);
+                throw new RemoteCommandConfigurationException(message);
             }
 
             _messageMetadataSetter.Set(command.MessageMetadata ?? new OrchestrationMessageMetadata());
