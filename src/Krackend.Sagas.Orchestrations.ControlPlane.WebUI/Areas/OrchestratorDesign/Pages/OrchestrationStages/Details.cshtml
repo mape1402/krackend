@@ -304,9 +304,8 @@
                     </div>
 
                     <div class="task-transformation-config-block col-12" data-engine="DSL">
-                        <div class="alert alert-secondary mb-0">
-                            DSL transformation does not require additional fields.
-                        </div>
+                        <label class="form-label" for="taskTransformationDslQuick">DSL</label>
+                        <textarea class="form-control" id="taskTransformationDslQuick" rows="8"></textarea>
                     </div>
                 </div>
 
@@ -479,6 +478,34 @@
                                         <input asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-input" />
                                         <label asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-label">Strict mode</label>
                                     </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Payload validation</h6>
+                                    </div>
+                                    <div class="col-md-6 form-check form-switch ms-2">
+                                        <input asp-for="NewTask.HasMessagingRequestValidation" class="form-check-input" />
+                                        <label asp-for="NewTask.HasMessagingRequestValidation" class="form-check-label">Validate request</label>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label asp-for="NewTask.MessagingRequestValidationErrorCode" class="form-label">Request error code</label>
+                                        <input asp-for="NewTask.MessagingRequestValidationErrorCode" class="form-control" />
+                                    </div>
+                                    <div class="col-12">
+                                        <label asp-for="NewTask.MessagingRequestValidationDsl" class="form-label">Request validation DSL</label>
+                                        <textarea asp-for="NewTask.MessagingRequestValidationDsl" class="form-control" rows="3"></textarea>
+                                    </div>
+                                    <div class="col-md-6 form-check form-switch ms-2">
+                                        <input asp-for="NewTask.HasMessagingResponseValidation" class="form-check-input" />
+                                        <label asp-for="NewTask.HasMessagingResponseValidation" class="form-check-label">Validate response</label>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label asp-for="NewTask.MessagingResponseValidationErrorCode" class="form-label">Response error code</label>
+                                        <input asp-for="NewTask.MessagingResponseValidationErrorCode" class="form-control" />
+                                    </div>
+                                    <div class="col-12">
+                                        <label asp-for="NewTask.MessagingResponseValidationDsl" class="form-label">Response validation DSL</label>
+                                        <textarea asp-for="NewTask.MessagingResponseValidationDsl" class="form-control" rows="3"></textarea>
+                                    </div>
                                 </div>
                             </div>
                             <div class="task-config-block mb-2" data-kind="Plugin">
@@ -524,6 +551,7 @@
                                 <label asp-for="NewTask.HasTransformation" class="form-check-label">Enable transformation</label>
                             </div>
                             <input asp-for="NewTask.TransformationEngine" type="hidden" id="transformationEngineSelector" />
+                            <input asp-for="NewTask.TransformationDsl" type="hidden" />
                             <hr />
                             <div class="form-check form-switch mb-2">
                                 <input asp-for="NewTask.HasRetryPolicy" class="form-check-input" id="hasRetryPolicy" />
@@ -724,6 +752,34 @@
                                             <input asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-input" />
                                             <label asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-label">Strict mode</label>
                                         </div>
+                                        <div class="col-12"><hr class="my-2" /></div>
+                                        <div class="col-12">
+                                            <h6 class="mb-2">Payload validation</h6>
+                                        </div>
+                                        <div class="col-md-6 form-check form-switch ms-2">
+                                            <input asp-for="NewTask.HasCompensationMessagingRequestValidation" class="form-check-input" />
+                                            <label asp-for="NewTask.HasCompensationMessagingRequestValidation" class="form-check-label">Validate request</label>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label asp-for="NewTask.CompensationMessagingRequestValidationErrorCode" class="form-label">Request error code</label>
+                                            <input asp-for="NewTask.CompensationMessagingRequestValidationErrorCode" class="form-control" />
+                                        </div>
+                                        <div class="col-12">
+                                            <label asp-for="NewTask.CompensationMessagingRequestValidationDsl" class="form-label">Request validation DSL</label>
+                                            <textarea asp-for="NewTask.CompensationMessagingRequestValidationDsl" class="form-control" rows="3"></textarea>
+                                        </div>
+                                        <div class="col-md-6 form-check form-switch ms-2">
+                                            <input asp-for="NewTask.HasCompensationMessagingResponseValidation" class="form-check-input" />
+                                            <label asp-for="NewTask.HasCompensationMessagingResponseValidation" class="form-check-label">Validate response</label>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label asp-for="NewTask.CompensationMessagingResponseValidationErrorCode" class="form-label">Response error code</label>
+                                            <input asp-for="NewTask.CompensationMessagingResponseValidationErrorCode" class="form-control" />
+                                        </div>
+                                        <div class="col-12">
+                                            <label asp-for="NewTask.CompensationMessagingResponseValidationDsl" class="form-label">Response validation DSL</label>
+                                            <textarea asp-for="NewTask.CompensationMessagingResponseValidationDsl" class="form-control" rows="3"></textarea>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Plugin">
@@ -767,6 +823,10 @@
                                     <div class="col-md-3">
                                         <label asp-for="NewTask.CompensationTransformationEngine" class="form-label">Transformation engine</label>
                                         <select asp-for="NewTask.CompensationTransformationEngine" class="form-select" asp-items="Model.EngineTypes"></select>
+                                    </div>
+                                    <div class="col-md-9">
+                                        <label asp-for="NewTask.CompensationTransformationDsl" class="form-label">Transformation DSL</label>
+                                        <textarea asp-for="NewTask.CompensationTransformationDsl" class="form-control" rows="3"></textarea>
                                     </div>
                                 </div>
 
@@ -950,6 +1010,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const transformationTaskIdInput = document.getElementById('taskTransformationTaskId');
     const transformationEnabledInput = document.getElementById('taskHasTransformationQuick');
     const transformationEngineInput = document.getElementById('taskTransformationEngineQuick');
+    const transformationDslInput = document.getElementById('taskTransformationDslQuick');
     const transformationSection = document.getElementById('taskTransformationSectionQuick');
     const transformationWarning = document.getElementById('taskTransformationUnsupportedEngineWarningQuick');
     const saveTransformationButton = document.getElementById('taskTransformationSaveButton');
@@ -1155,7 +1216,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     }
 
     async function openTaskTransformationModal(taskId) {
-        if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationModalElement || !window.bootstrap?.Modal) {
+        if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationDslInput || !transformationModalElement || !window.bootstrap?.Modal) {
             return;
         }
 
@@ -1168,6 +1229,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         transformationTaskIdInput.value = payload.taskId || taskId;
         transformationEnabledInput.checked = !!payload.hasTransformation;
         transformationEngineInput.value = payload.transformationEngine || 'DSL';
+        transformationDslInput.value = payload.transformationDsl || '';
         refreshTransformationSectionVisibility();
         window.bootstrap.Modal.getOrCreateInstance(transformationModalElement).show();
     }
@@ -1502,7 +1564,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
                 return;
             }
 
-            if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationModalElement || !window.bootstrap?.Modal) {
+            if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationDslInput || !transformationModalElement || !window.bootstrap?.Modal) {
                 return;
             }
 
@@ -1516,7 +1578,8 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
                 const result = await postJson('SetTaskTransformation', {
                     taskId: taskId,
                     hasTransformation: !!transformationEnabledInput.checked,
-                    transformationEngine: transformationEngineInput.value || 'DSL'
+                    transformationEngine: transformationEngineInput.value || 'DSL',
+                    transformationDsl: transformationDslInput.value || ''
                 });
 
                 if (!result?.success) {
@@ -1675,6 +1738,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         ConditionDslExpression: 'true',
         HasTransformation: false,
         TransformationEngine: 'DSL',
+        TransformationDsl: '',
         HttpBaseUrlVariableRef: '',
         HttpRelativePath: '',
         HttpMethod: 'GET',
@@ -1692,6 +1756,12 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         MessagingSchemaContractVersion: '1.0.0',
         MessagingSchemaRegistryProviderId: '',
         MessagingSchemaStrictMode: false,
+        HasMessagingRequestValidation: false,
+        MessagingRequestValidationDsl: '',
+        MessagingRequestValidationErrorCode: 'RequestValidationFailed',
+        HasMessagingResponseValidation: false,
+        MessagingResponseValidationDsl: '',
+        MessagingResponseValidationErrorCode: 'ResponseValidationFailed',
         PluginId: '',
         RetryStrategyType: 'Fixed',
         RetryMaxRetries: 0,
@@ -1738,6 +1808,13 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         CompensationConditionEngine: 'DSL',
         CompensationConditionDslExpression: 'true',
         CompensationTransformationEngine: 'DSL',
+        CompensationTransformationDsl: '',
+        HasCompensationMessagingRequestValidation: false,
+        CompensationMessagingRequestValidationDsl: '',
+        CompensationMessagingRequestValidationErrorCode: 'RequestValidationFailed',
+        HasCompensationMessagingResponseValidation: false,
+        CompensationMessagingResponseValidationDsl: '',
+        CompensationMessagingResponseValidationErrorCode: 'ResponseValidationFailed',
         CompensationRetryStrategyType: 'Fixed',
         CompensationRetryMaxRetries: 0,
         CompensationRetryDelaySeconds: 1,
