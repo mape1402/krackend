@@ -83,12 +83,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             }
             catch (Exception exception)
             {
+                var shouldRetry = true;
                 if (HasRuntimeDispatchState(command))
                 {
-                    await MarkDispatchFailedAsync(command, exception, cancellationToken);
+                    shouldRetry = await MarkDispatchRetryPendingAsync(command, exception, cancellationToken);
                 }
 
-                throw;
+                if (shouldRetry)
+                {
+                    throw;
+                }
             }
         }
 
@@ -255,6 +259,77 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 Message = exception.Message,
                 ProducedBy = nameof(RemoteCommandDispatchAction)
             }, cancellationToken);
+        }
+
+        private async Task<bool> MarkDispatchRetryPendingAsync(RemoteCommand command, Exception exception, CancellationToken cancellationToken)
+        {
+            var now = DateTime.UtcNow;
+            var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId), cancellationToken);
+            var task = await _taskRepository.GetById(ParseId(command.TaskExecutionId), cancellationToken);
+            var attempt = await _attemptRepository.GetById(ParseId(command.TaskExecutionAttemptId), cancellationToken);
+            var dispatch = await _dispatchRepository.GetById(ParseId(command.DispatchId), cancellationToken);
+            if (IsFinished(dispatch.DispatchStatus))
+            {
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = task.StageExecutionId,
+                    TaskExecutionId = task.Id,
+                    TaskExecutionAttemptId = attempt.Id,
+                    TransitionType = "TaskDispatchFailureIgnored",
+                    FromStatus = dispatch.DispatchStatus,
+                    ToStatus = dispatch.DispatchStatus,
+                    OccurredOnUtc = now,
+                    Message = $"Dispatch failure ignored because task '{task.TaskKey}' already has a terminal callback state: {exception.Message}",
+                    ProducedBy = nameof(RemoteCommandDispatchAction)
+                }, cancellationToken);
+                return false;
+            }
+
+            var previousDispatchStatus = dispatch.DispatchStatus;
+            dispatch.DispatchStatus = "RetryPending";
+            dispatch.FailedOnUtc = now;
+            dispatch.FailureReason = exception.Message;
+
+            if (!IsTerminal(task.Status))
+            {
+                task.Status = TaskExecutionStatus.Running;
+                task.WaitingSinceUtc = null;
+            }
+
+            if (!IsTerminal(attempt.Status))
+            {
+                attempt.Status = TaskExecutionStatus.Running;
+                attempt.WaitingSinceUtc = null;
+            }
+
+            if (!IsTerminal(instance.Status))
+            {
+                instance.Status = OrchestrationInstanceStatus.Running;
+                instance.WaitingSinceUtc = null;
+                instance.LastUpdatedOnUtc = now;
+            }
+
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _taskRepository.Update(task, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = task.StageExecutionId,
+                TaskExecutionId = task.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskDispatchRetryPending",
+                FromStatus = previousDispatchStatus,
+                ToStatus = dispatch.DispatchStatus,
+                OccurredOnUtc = now,
+                Message = $"Task '{task.TaskKey}' command dispatch failed and will be retried by Mule: {exception.Message}",
+                ProducedBy = nameof(RemoteCommandDispatchAction)
+            }, cancellationToken);
+            return true;
         }
 
         private Id ParseId(string value)
