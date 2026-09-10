@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {
@@ -11,17 +12,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         private readonly IOrchestrationInstanceRepository _instanceRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IResolvedOrchestrationArtifactAccessor _artifactAccessor;
+        private readonly IOrchestrationPayloadState _payloadState;
 
         public Promoter(
             IRuntimeArtifactResolver artifactResolver,
             IOrchestrationInstanceRepository instanceRepository,
             IExecutionTransitionRepository transitionRepository,
-            IResolvedOrchestrationArtifactAccessor artifactAccessor)
+            IResolvedOrchestrationArtifactAccessor artifactAccessor,
+            IOrchestrationPayloadState payloadState)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _artifactAccessor = artifactAccessor ?? throw new ArgumentNullException(nameof(artifactAccessor));
+            _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
         }
 
         public async Task<PromotionResult> PromoteToInstanceAsync(PromotionRequest request, CancellationToken cancellationToken = default)
@@ -54,7 +58,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 LastUpdatedOnUtc = now,
                 FinalOutcome = string.Empty,
                 ErrorSummary = string.Empty,
-                SnapshotPayload = request.Payload?.DeepClone()
+                SnapshotPayload = _payloadState.CreateInitialPayload(request.Payload)
             };
 
             await _instanceRepository.Create(instance, cancellationToken);
