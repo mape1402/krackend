@@ -1,5 +1,6 @@
 using FluentValidation;
 using global::ButterMorph.DependencyInjection;
+using Krackend.Sagas.Orchestrations.SchemaRegistry.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Pelican.Mediator;
 
@@ -19,6 +20,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddPelican(typeof(ServiceCollectionExtensions).Assembly);
         services.AddButterMorph();
+        services.AddKrackendSchemaRegistry();
         services.AddValidatorsFromAssemblyContaining<CreateOrchestrationDefinitionCommandValidator>();
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationPipelineBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(OrchestrationDraftMutationPipelineBehavior<,>));
@@ -42,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBranchRuleApplicationService, BranchRuleApplicationService>();
         services.AddScoped<IOrchestrationArtifactPayloadFactory, OrchestrationArtifactPayloadFactory>();
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
+        services.AddScoped<IOrchestrationSchemaBindingSnapshotResolver, OrchestrationSchemaBindingSnapshotResolver>();
         services.AddScoped<IOrchestrationArtifactDslValidationService, OrchestrationArtifactDslValidationService>();
         services.AddScoped<IOrchestrationSchemaContextBuilder, OrchestrationSchemaContextBuilder>();
         services.AddScoped<IOrchestrationSchemaContextApplicationService, OrchestrationSchemaContextApplicationService>();
