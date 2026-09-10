@@ -34,6 +34,16 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private const string RuntimeInboundSecret = "KrackendLocalRuntimeInboundSecret_ChangeMe";
     private const string DesignInboundScopes = "release:read artifact:read artifact:ack connection:validate";
     private const string DesignOutboundScopes = "artifact:push connection:validate";
+    private const string SaleCompletionTransformationDsl =
+        """
+        target {
+          SaleId: $trigger.SaleId
+          CustomerId: $trigger.CustomerId
+          Total: $trigger.Total
+          ReservationId: $responses.inventory_reservation.inventories_reserve.ReservationId
+          PaymentId: $responses.payment_capture.payments_capture.PaymentId
+        }
+        """;
 
     private static readonly Id OwnerTeamId = StableId("01K00000000000000000000040");
     private static readonly Id DomainId = StableId("01K00000000000000000000041");
@@ -143,7 +153,8 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                             "sales.complete",
                             "Complete sale",
                             1,
-                            "commands.sales.sale.complete")
+                            "commands.sales.sale.complete",
+                            SaleCompletionTransformationDsl)
                     ])
             ])
     ];
@@ -473,7 +484,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 IsEnabled = true,
                 Notes = "Seeded from the runtime happy path.",
                 ExecutionCondition = DisabledCondition(),
-                Transformation = DisabledTransformation(),
+                Transformation = CreateTransformation(seedTask),
                 Configuration = configuration,
                 RetryPolicy = DefaultRetryPolicy(),
                 TimeoutPolicy = DefaultTimeoutPolicy(),
@@ -498,7 +509,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         task.IsEnabled = true;
         task.Notes = "Seeded from the runtime happy path.";
         task.ExecutionCondition = DisabledCondition();
-        task.Transformation = DisabledTransformation();
+        task.Transformation = CreateTransformation(seedTask);
         task.Configuration = configuration;
         task.RetryPolicy = DefaultRetryPolicy();
         task.TimeoutPolicy = DefaultTimeoutPolicy();
@@ -571,6 +582,23 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Dsl = new DslTransformationConfigurationJsonModel()
             }
         };
+
+    private static TransformationDefinitionJsonModel CreateTransformation(DesignHostSeedTaskDefinition seedTask)
+        => string.IsNullOrWhiteSpace(seedTask.TransformationDsl)
+            ? DisabledTransformation()
+            : new TransformationDefinitionJsonModel
+            {
+                IsEnabled = true,
+                Engine = EngineType.DSL,
+                Configuration = new TransformationConfigurationEnvelopeJsonModel
+                {
+                    Type = "dsl",
+                    Dsl = new DslTransformationConfigurationJsonModel
+                    {
+                        Dsl = seedTask.TransformationDsl
+                    }
+                }
+            };
 
     private static RetryPolicyJsonModel DefaultRetryPolicy()
         => new()

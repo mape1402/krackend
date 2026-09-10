@@ -12,10 +12,10 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Ulid" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
-    <PackageReference Include="Pigeon.Messaging" Version="2.8.0" />
+    <PackageReference Include="Pigeon.Messaging" Version="3.1.0" />
     <PackageReference Include="Pigeon.Messaging.Azure.ServiceBus" />
     <PackageReference Include="Pigeon.Messaging.Outbox.EntityFrameworkCore" />
-    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="2.8.0" />
+    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="3.1.0" />
     <PackageReference Include="Krackend.EventSourcing.EntityFrameworkCore" />
     <PackageReference Include="Spider.Pipelines" />
     <PackageReference Include="TurtlePath" />
@@ -39,6 +39,7 @@
     <ProjectReference Include="..\Payments.Business\Payments.Business.csproj" />
     <ProjectReference Include="..\Payments.Domain\Payments.Domain.csproj" />
     <ProjectReference Include="..\Payments.Persistence\Payments.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\Krackend.Sagas.Orchestrations.Client.Spider\Krackend.Sagas.Orchestrations.Client.Spider.csproj" />
     <ProjectReference Include="..\..\..\..\..\src\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.csproj" />
   </ItemGroup>
 
