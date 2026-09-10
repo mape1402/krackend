@@ -8,8 +8,17 @@ using Mule.Configuration;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 {
+    /// <summary>
+    /// Registers Mule buffering and durable action services for Krackend orchestration runtime.
+    /// </summary>
     public static class ServiceCollectionExtensions
     {
+        /// <summary>
+        /// Adds Mule as the runtime intake buffer and remote command dispatch scheduler.
+        /// </summary>
+        /// <param name="builder">Runtime builder.</param>
+        /// <param name="configure">Mule registration configuration.</param>
+        /// <returns>Runtime builder.</returns>
         public static KrackendOrchestrationsRuntimeBuilder AddMule(
             this KrackendOrchestrationsRuntimeBuilder builder,
             Action<IMuleRegistrationBuilder> configure)
@@ -32,6 +41,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             builder.Services.Replace(ServiceDescriptor.Scoped<IIntakeBuffer, IntakeBufferMule>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, MuleRemoteCommandDispatcher>());
+            builder.Services.TryAddSingleton<IMuleTerminalFailureMarker, DefaultMuleTerminalFailureMarker>();
             builder.Services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IConfigureOptions<MuleSettings>, MuleRuntimeArtifactLifecycleOptionsConfigurer>());
 

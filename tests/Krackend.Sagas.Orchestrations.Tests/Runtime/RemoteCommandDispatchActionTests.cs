@@ -22,7 +22,8 @@ public sealed class RemoteCommandDispatchActionTests
             Substitute.For<ITaskExecutionRepository>(),
             Substitute.For<ITaskExecutionAttemptRepository>(),
             Substitute.For<ITaskDispatchRepository>(),
-            Substitute.For<IExecutionTransitionRepository>());
+            Substitute.For<IExecutionTransitionRepository>(),
+            new DefaultMuleTerminalFailureMarker());
 
         var command = new RemoteCommand
         {
@@ -62,7 +63,8 @@ public sealed class RemoteCommandDispatchActionTests
             Substitute.For<ITaskExecutionRepository>(),
             Substitute.For<ITaskExecutionAttemptRepository>(),
             Substitute.For<ITaskDispatchRepository>(),
-            Substitute.For<IExecutionTransitionRepository>());
+            Substitute.For<IExecutionTransitionRepository>(),
+            new DefaultMuleTerminalFailureMarker());
 
         var command = new RemoteCommand
         {
