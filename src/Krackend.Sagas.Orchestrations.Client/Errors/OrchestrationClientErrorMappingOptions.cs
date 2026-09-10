@@ -13,6 +13,16 @@ public sealed class OrchestrationClientErrorMappingOptions
     public string DefaultErrorCode { get; set; } = "UnhandledException";
 
     /// <summary>
+    /// Gets or sets a value indicating whether failure metadata can include exception messages and CLR exception types.
+    /// </summary>
+    public bool IncludeExceptionDetails { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the failure message reported when exception details are disabled.
+    /// </summary>
+    public string RedactedExceptionMessage { get; set; } = "The operation failed.";
+
+    /// <summary>
     /// Gets the registered exception mappings.
     /// </summary>
     public IReadOnlyList<OrchestrationClientExceptionErrorMapping> Mappings => _mappings;
