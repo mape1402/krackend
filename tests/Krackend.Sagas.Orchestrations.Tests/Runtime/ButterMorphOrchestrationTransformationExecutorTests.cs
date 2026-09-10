@@ -87,6 +87,62 @@ public sealed class ButterMorphOrchestrationTransformationExecutorTests
         Assert.Null(result.Payload!["Error"]);
     }
 
+    [Fact]
+    public async Task TransformAsyncCanReadVariablesAndSanitizedStageAliases()
+    {
+        var executor = CreateExecutor();
+
+        var result = await executor.TransformAsync(new OrchestrationTransformationRequest
+        {
+            Task = CreateTask(
+                """
+                target {
+                  Region: $variables.Region
+                  ReservationId: $stages.inventory_reservation.tasks.inventories_reserve.response.ReservationId
+                }
+                """),
+            PayloadContext = new OrchestrationPayloadContext
+            {
+                ContextPayload = JsonNode.Parse(
+                    """
+                    {
+                      "trigger": {
+                        "payload": {
+                          "SaleId": "sale-1"
+                        }
+                      },
+                      "stages": {
+                        "inventory-reservation": {
+                          "tasks": {
+                            "inventories.reserve": {
+                              "response": {
+                                "ReservationId": "reservation-1"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "variables": {
+                        "Region": "north"
+                      }
+                    }
+                    """)!,
+                TriggerPayload = JsonNode.Parse(
+                    """
+                    {
+                      "SaleId": "sale-1"
+                    }
+                    """)!,
+                StageKey = "sale-completion",
+                TaskKey = "sales.complete"
+            }
+        });
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.Equal("north", result.Payload!["Region"]?.GetValue<string>());
+        Assert.Equal("reservation-1", result.Payload!["ReservationId"]?.GetValue<string>());
+    }
+
     private static IOrchestrationTransformationExecutor CreateExecutor()
     {
         var services = new ServiceCollection();
