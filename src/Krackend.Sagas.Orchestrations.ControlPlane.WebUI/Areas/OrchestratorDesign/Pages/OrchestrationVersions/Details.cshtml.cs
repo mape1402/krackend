@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Infrastructure;
 
@@ -462,6 +463,11 @@ public sealed class DetailsModel : PageModel
             ModelState.AddModelError(nameof(TriggerInput.EventSchemaContractKey), "Capture the schema contract key.");
         }
 
+        if (TriggerInput.HasEventValidation && string.IsNullOrWhiteSpace(TriggerInput.EventValidationDsl))
+        {
+            ModelState.AddModelError(nameof(TriggerInput.EventValidationDsl), "Capture the event validation DSL.");
+        }
+
         if (!string.IsNullOrWhiteSpace(TriggerInput.EventSchemaRegistryProviderId) &&
             !Ulid.TryParse(TriggerInput.EventSchemaRegistryProviderId, out _))
         {
@@ -487,6 +493,9 @@ public sealed class DetailsModel : PageModel
             EventSchemaContractVersion = schema?.ContractVersion.ToString() ?? "1.0.0",
             EventSchemaRegistryProviderId = schema is null || schema.RegistryProviderId == default ? string.Empty : schema.RegistryProviderId.ToString(),
             EventSchemaStrictMode = schema?.StrictMode ?? false,
+            HasEventValidation = eventChannel?.HasValidation ?? false,
+            EventValidationDsl = (eventChannel?.Validation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty,
+            EventValidationErrorCode = eventChannel?.Validation?.ErrorCode ?? "TriggerValidationFailed",
         };
     }
 
@@ -549,6 +558,10 @@ public sealed class DetailsModel : PageModel
             TriggerType.Event => new EventTriggerChannel
             {
                 HasSchemaValidation = input.HasEventSchemaValidation,
+                HasValidation = input.HasEventValidation,
+                Validation = input.HasEventValidation
+                    ? BuildValidation(input.EventValidationDsl, input.EventValidationErrorCode)
+                    : null,
                 Topic = input.EventTopic.Trim(),
                 Version = ParseSemanticVersion(input.EventVersion, new SemanticVersion(1, 0, 0)),
                 SchemaBinding = input.HasEventSchemaValidation ? CreateSchemaBinding(
@@ -562,11 +575,23 @@ public sealed class DetailsModel : PageModel
             _ => new EventTriggerChannel
             {
                 HasSchemaValidation = false,
+                HasValidation = false,
                 Topic = input.EventTopic.Trim(),
                 Version = new SemanticVersion(1, 0, 0),
             },
         };
     }
+
+    private static ValidationDefinition BuildValidation(string dsl, string errorCode)
+        => new()
+        {
+            Engine = EngineType.DSL,
+            ErrorCode = string.IsNullOrWhiteSpace(errorCode) ? "TriggerValidationFailed" : errorCode.Trim(),
+            Configuration = new DslValidationConfiguration
+            {
+                Dsl = dsl ?? string.Empty
+            }
+        };
 
     private static SchemaBinding CreateSchemaBinding(
         string contractKey,
@@ -668,6 +693,12 @@ public sealed class DetailsModel : PageModel
         public string EventSchemaRegistryProviderId { get; set; } = string.Empty;
 
         public bool EventSchemaStrictMode { get; set; }
+
+        public bool HasEventValidation { get; set; }
+
+        public string EventValidationDsl { get; set; } = string.Empty;
+
+        public string EventValidationErrorCode { get; set; } = "TriggerValidationFailed";
     }
 
     /// <summary>
