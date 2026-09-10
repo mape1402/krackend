@@ -7,7 +7,9 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 {
@@ -21,6 +23,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IRemoteCommandDispatcher _dispatcher;
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
+        private readonly IOrchestrationPayloadState _payloadState;
+        private readonly ITaskDispatchRequestPayloadPreparer _requestPayloadPreparer;
 
         public RetryDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -30,7 +34,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IRemoteCommandDispatcher dispatcher,
             IMessagingCommandSerializer messagingCommandSerializer,
-            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor)
+            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
+            IOrchestrationPayloadState payloadState,
+            ITaskDispatchRequestPayloadPreparer requestPayloadPreparer)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -40,6 +46,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
+            _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
+            _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
         }
 
         public async Task HandleAsync(RetryDecision decision, CancellationToken cancellationToken = default)
@@ -57,6 +65,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var taskExecution = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
             var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
             var attemptNumber = taskExecution.LastAttemptNumber + 1;
+            var requestPayload = ParsePayload(decision.Payload);
             var attempt = new TaskExecutionAttempt
             {
                 Id = Id.New(),
@@ -64,7 +73,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 AttemptNumber = attemptNumber,
                 Status = TaskExecutionStatus.Running,
                 StartedOnUtc = now,
-                RequestPayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload)
+                RequestPayload = requestPayload?.DeepClone()
             };
             var dispatch = new TaskDispatch
             {
@@ -72,8 +81,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 TaskExecutionAttemptId = attempt.Id,
                 DispatchType = decision.Task.DispatchType.ToString(),
                 Destination = $"{messagingConfiguration.Topic}:{messagingConfiguration.Version}",
-                RequestPayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
-                DispatchStatus = "Enqueued",
+                RequestPayload = requestPayload?.DeepClone(),
+                DispatchStatus = "Scheduled",
                 CommandId = Id.New().ToString(),
                 CorrelationId = taskExecution.CorrelationId,
                 ScheduledOnUtc = now
@@ -95,6 +104,49 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             await _dispatchRepository.Create(dispatch, cancellationToken);
             await _taskRepository.Update(taskExecution, cancellationToken);
             await _instanceRepository.Update(instance, cancellationToken);
+
+            try
+            {
+                var preparation = await _requestPayloadPreparer.PrepareAsync(
+                    new TaskDispatchRequestPayloadPreparationRequest
+                    {
+                        Instance = instance,
+                        StageKey = decision.StageKey,
+                        Task = decision.Task,
+                        MessagingConfiguration = messagingConfiguration,
+                        Payload = decision.Payload
+                    },
+                    cancellationToken);
+
+                requestPayload = preparation.Payload;
+                attempt.RequestPayload = requestPayload?.DeepClone();
+                dispatch.RequestPayload = requestPayload?.DeepClone();
+                instance.SnapshotPayload = _payloadState.ApplyTaskRequestPayload(
+                    instance,
+                    decision.StageKey,
+                    decision.Task.Key,
+                    requestPayload);
+            }
+            catch (TaskDispatchPreparationException exception)
+            {
+                await MarkPreparationFailedAsync(
+                    decision,
+                    instance,
+                    taskExecution,
+                    attempt,
+                    dispatch,
+                    exception,
+                    cancellationToken);
+                return;
+            }
+
+            var queuedOnUtc = DateTime.UtcNow;
+            dispatch.DispatchStatus = "Enqueued";
+            instance.LastUpdatedOnUtc = queuedOnUtc;
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await _taskRepository.Update(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),
@@ -105,9 +157,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 TransitionType = "TaskRetryEnqueued",
                 FromStatus = TaskExecutionStatus.Failed.ToString(),
                 ToStatus = dispatch.DispatchStatus,
-                OccurredOnUtc = now,
+                OccurredOnUtc = queuedOnUtc,
                 Message = $"Retry attempt {attemptNumber} enqueued for task '{decision.Task.Key}'.",
-                Payload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
+                Payload = requestPayload?.DeepClone(),
                 ProducedBy = nameof(RetryDecisionHandler)
             }, cancellationToken);
 
@@ -119,6 +171,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 attempt,
                 dispatch,
                 replyAddress,
+                requestPayload?.ToJsonString(),
                 cancellationToken);
         }
 
@@ -130,6 +183,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             TaskExecutionAttempt attempt,
             TaskDispatch dispatch,
             OrchestrationReplyAddress replyAddress,
+            string commandPayload,
             CancellationToken cancellationToken)
         {
             try
@@ -144,12 +198,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 {
                     Topic = messagingConfiguration.Topic,
                     Version = messagingConfiguration.Version.ToString(),
-                    Payload = decision.Payload
+                    Payload = commandPayload
                 };
 
                 await _dispatcher.DispatchAsync(new RemoteCommand
                 {
-                    Payload = decision.Payload,
+                    Payload = commandPayload,
                     RemoteCommandTransport = RemoteCommandTransport.Messaging,
                     SettingsPayload = _messagingCommandSerializer.Serialize(messagingCommand),
                     OrchestrationInstanceId = instance.Id.ToString(),
@@ -184,6 +238,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 taskExecution.FailedOnUtc = failedOnUtc;
                 attempt.Status = TaskExecutionStatus.Failed;
                 attempt.FailedOnUtc = failedOnUtc;
+                attempt.ErrorCode = "CommandDispatchFailed";
                 attempt.ErrorMessage = exception.Message;
                 instance.Status = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue
                     ? OrchestrationInstanceStatus.Running
@@ -211,6 +266,62 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     ProducedBy = nameof(RetryDecisionHandler)
                 }, cancellationToken);
             }
+        }
+
+        private static JsonNode ParsePayload(string payload)
+            => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
+
+        private async Task MarkPreparationFailedAsync(
+            RetryDecision decision,
+            OrchestrationInstance instance,
+            TaskExecution taskExecution,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            TaskDispatchPreparationException exception,
+            CancellationToken cancellationToken)
+        {
+            var failedOnUtc = DateTime.UtcNow;
+            dispatch.DispatchStatus = "Failed";
+            dispatch.FailedOnUtc = failedOnUtc;
+            dispatch.FailureReason = exception.Message;
+            taskExecution.Status = TaskExecutionStatus.Failed;
+            taskExecution.FailedOnUtc = failedOnUtc;
+            attempt.Status = TaskExecutionStatus.Failed;
+            attempt.FailedOnUtc = failedOnUtc;
+            attempt.ErrorCode = exception.ErrorCode;
+            attempt.ErrorMessage = exception.Message;
+            attempt.Metadata["PreparationErrorCode"] = JsonValue.Create(exception.ErrorCode);
+
+            foreach (var diagnostic in exception.Diagnostics)
+            {
+                attempt.Metadata[$"Preparation.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
+            }
+
+            instance.Status = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue
+                ? OrchestrationInstanceStatus.Running
+                : OrchestrationInstanceStatus.Failed;
+            instance.FailedOnUtc = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+            instance.ErrorSummary = exception.Message;
+            instance.LastUpdatedOnUtc = failedOnUtc;
+
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _taskRepository.Update(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = decision.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskRetryPreparationFailed",
+                FromStatus = TaskExecutionStatus.Running.ToString(),
+                ToStatus = TaskExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = failedOnUtc,
+                Message = exception.Message,
+                ProducedBy = nameof(RetryDecisionHandler)
+            }, cancellationToken);
         }
 
         private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(
