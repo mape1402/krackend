@@ -8,6 +8,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Replication;
 internal sealed class DefaultRuntimeReplicaIdentity : IRuntimeReplicaIdentity
 {
     private readonly string _replicaId;
+    private readonly string _replicaBootId;
     private readonly string _localStandupLane;
 
     /// <summary>
@@ -17,11 +18,15 @@ internal sealed class DefaultRuntimeReplicaIdentity : IRuntimeReplicaIdentity
     {
         var value = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _replicaId = NormalizeReplicaId(ResolveReplicaId(value));
+        _replicaBootId = $"{_replicaId}-{Guid.NewGuid():N}";
         _localStandupLane = $"{NormalizeLanePart(value.StandupLanePrefix, "runtime-standup")}:{_replicaId}";
     }
 
     /// <inheritdoc />
     public string ReplicaId => _replicaId;
+
+    /// <inheritdoc />
+    public string ReplicaBootId => _replicaBootId;
 
     /// <inheritdoc />
     public string LocalStandupLane => _localStandupLane;
