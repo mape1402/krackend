@@ -18,10 +18,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         /// </summary>
         /// <param name="builder">Runtime builder.</param>
         /// <param name="configure">Mule registration configuration.</param>
+        /// <param name="configureRuntime">Runtime-owned Mule lane configuration.</param>
         /// <returns>Runtime builder.</returns>
         public static KrackendOrchestrationsRuntimeBuilder AddMule(
             this KrackendOrchestrationsRuntimeBuilder builder,
-            Action<IMuleRegistrationBuilder> configure)
+            Action<IMuleRegistrationBuilder> configure,
+            Action<KrackendOrchestrationsMuleRuntimeOptions>? configureRuntime = null)
         {
             if (builder is null)
             {
@@ -38,6 +40,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 configure(mule);
                 mule.AddActionsFromAssemblyContaining<TriggerAction>();
             });
+
+            if (configureRuntime is not null)
+            {
+                builder.Services.Configure(configureRuntime);
+            }
 
             builder.Services.Replace(ServiceDescriptor.Scoped<IIntakeBuffer, IntakeBufferMule>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, MuleRemoteCommandDispatcher>());
