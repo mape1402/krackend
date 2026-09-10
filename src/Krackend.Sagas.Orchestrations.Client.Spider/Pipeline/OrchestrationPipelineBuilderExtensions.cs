@@ -67,21 +67,39 @@ public static class OrchestrationPipelineBuilderExtensions
 
         builder.OnPostProcess(postProcess =>
         {
-            postProcess.OnSuccess((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationOperationClient>()
-                    .ReportSuccessAsync(
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    await client.ReportSuccessAsync(
                         typeof(TRequest),
                         null,
                         transform(context.Request),
                         options,
-                        context.CancellationToken));
-            postProcess.OnFailure((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationOperationClient>()
-                    .ReportFailureAsync(
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+            });
+            postProcess.OnFailure(async (context, _) =>
+            {
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    await client.ReportFailureAsync(
                         typeof(TRequest),
                         context.Exception,
                         options,
-                        context.CancellationToken));
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+            });
         });
 
         return builder;
@@ -171,21 +189,39 @@ public static class OrchestrationPipelineBuilderExtensions
 
         builder.OnPostProcess(postProcess =>
         {
-            postProcess.OnSuccess((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationOperationClient>()
-                    .ReportSuccessAsync(
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    await client.ReportSuccessAsync(
                         typeof(TRequest),
                         typeof(TResponse),
                         transform(context.Request, context.Response, transformer),
                         options,
-                        context.CancellationToken));
-            postProcess.OnFailure((context, _) =>
-                context.Services.GetRequiredService<IOrchestrationOperationClient>()
-                    .ReportFailureAsync(
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+            });
+            postProcess.OnFailure(async (context, _) =>
+            {
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    await client.ReportFailureAsync(
                         typeof(TRequest),
                         context.Exception,
                         options,
-                        context.CancellationToken));
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+            });
         });
 
         return builder;
