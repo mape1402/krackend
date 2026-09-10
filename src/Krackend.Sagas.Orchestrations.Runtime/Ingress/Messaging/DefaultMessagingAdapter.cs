@@ -19,5 +19,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
 
             return Task.CompletedTask;
         }
+
+        public Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

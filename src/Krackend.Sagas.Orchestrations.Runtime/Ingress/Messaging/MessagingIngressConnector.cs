@@ -24,7 +24,7 @@
 
         public Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default)
         {
-            return Task.CompletedTask; // TODO: implement Disconnect!
+            return _messagingAdapter.DisconnectAsync(connectorId, cancellationToken);
         }
     }
 }

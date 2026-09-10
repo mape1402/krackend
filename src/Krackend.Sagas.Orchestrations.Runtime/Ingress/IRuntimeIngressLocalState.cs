@@ -19,4 +19,15 @@ public interface IRuntimeIngressLocalState
     /// <param name="artifactId">Runtime artifact id.</param>
     /// <param name="ingressGeneration">Ingress generation.</param>
     void MarkApplied(string artifactId, long ingressGeneration);
+
+    /// <summary>
+    /// Removes the local applied generation for an artifact.
+    /// </summary>
+    /// <param name="artifactId">Runtime artifact id.</param>
+    void Forget(string artifactId);
+
+    /// <summary>
+    /// Removes every local applied generation tracked by the current process.
+    /// </summary>
+    void Clear();
 }
