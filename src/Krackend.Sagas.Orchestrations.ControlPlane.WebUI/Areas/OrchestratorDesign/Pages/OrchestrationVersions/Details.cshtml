@@ -311,6 +311,22 @@
                                 <input asp-for="TriggerInput.EventSchemaStrictMode" class="form-check-input" />
                                 <label asp-for="TriggerInput.EventSchemaStrictMode" class="form-check-label">Strict mode</label>
                             </div>
+                            <div class="col-12"><hr class="my-2" /></div>
+                            <div class="col-12">
+                                <h6 class="mb-2">Payload validation</h6>
+                            </div>
+                            <div class="col-md-7 form-check form-switch ms-2">
+                                <input asp-for="TriggerInput.HasEventValidation" class="form-check-input" />
+                                <label asp-for="TriggerInput.HasEventValidation" class="form-check-label">Validate event payload</label>
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="TriggerInput.EventValidationErrorCode" class="form-label">Error code</label>
+                                <input asp-for="TriggerInput.EventValidationErrorCode" class="form-control" />
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="TriggerInput.EventValidationDsl" class="form-label">Validation DSL</label>
+                                <textarea asp-for="TriggerInput.EventValidationDsl" class="form-control" rows="4"></textarea>
+                            </div>
                         </div>
                     </div>
 
@@ -714,6 +730,9 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
         EventSchemaContractVersion: '1.0.0',
         EventSchemaRegistryProviderId: '',
         EventSchemaStrictMode: false,
+        HasEventValidation: false,
+        EventValidationDsl: '',
+        EventValidationErrorCode: 'TriggerValidationFailed',
     };
     const payloadFieldAliases = {
         triggerId: 'TriggerId',
@@ -727,6 +746,9 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
         eventSchemaContractVersion: 'EventSchemaContractVersion',
         eventSchemaRegistryProviderId: 'EventSchemaRegistryProviderId',
         eventSchemaStrictMode: 'EventSchemaStrictMode',
+        hasEventValidation: 'HasEventValidation',
+        eventValidationDsl: 'EventValidationDsl',
+        eventValidationErrorCode: 'EventValidationErrorCode',
     };
 
     function setInputValue(propertyName, value) {
