@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
         services.AddScoped<IOrchestrationArtifactDslValidationService, OrchestrationArtifactDslValidationService>();
         services.AddScoped<IOrchestrationSchemaContextBuilder, OrchestrationSchemaContextBuilder>();
+        services.AddScoped<IOrchestrationSchemaContextApplicationService, OrchestrationSchemaContextApplicationService>();
         services.AddScoped<IOrchestrationVersionEditGuard, OrchestrationVersionEditGuard>();
         services.AddSingleton<IOrchestrationVersionTransitionPolicy, OrchestrationVersionTransitionPolicy>();
         return services;
