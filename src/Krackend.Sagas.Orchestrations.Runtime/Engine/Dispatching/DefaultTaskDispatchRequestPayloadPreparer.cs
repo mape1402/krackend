@@ -68,7 +68,8 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
         }
 
         var validationBinding = GetRequestValidationBinding(request.MessagingConfiguration);
-        if (validationBinding?.IsValidationEnabled == true)
+        var validation = request.MessagingConfiguration.RequestValidation;
+        if (ShouldValidate(validationBinding, validation))
         {
             var validationResult = await _validationExecutor.ValidateAsync(
                 new OrchestrationValidationRequest
@@ -76,6 +77,7 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
                     Task = request.Task,
                     SchemaBinding = validationBinding,
                     Payload = requestPayload?.DeepClone(),
+                    ValidationDsl = GetValidationDsl(validation),
                     Phase = "Request"
                 },
                 cancellationToken);
@@ -83,7 +85,7 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
             if (!validationResult.Succeeded)
             {
                 throw new TaskDispatchPreparationException(
-                    string.IsNullOrWhiteSpace(validationResult.ErrorCode) ? "RequestValidationFailed" : validationResult.ErrorCode,
+                    GetValidationErrorCode(validationResult.ErrorCode, validation, "RequestValidationFailed"),
                     string.IsNullOrWhiteSpace(validationResult.ErrorMessage) ? "Task request validation failed." : validationResult.ErrorMessage,
                     validationResult.Diagnostics);
             }
@@ -97,4 +99,23 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
 
     private static SchemaBindingArtifact GetRequestValidationBinding(MessagingTaskConfigurationArtifact configuration)
         => configuration.RequestSchemaBinding ?? configuration.SchemaBinding;
+
+    private static bool ShouldValidate(SchemaBindingArtifact schemaBinding, ValidationArtifact validation)
+        => schemaBinding?.IsValidationEnabled == true || validation?.IsEnabled == true;
+
+    private static string GetValidationDsl(ValidationArtifact validation)
+        => validation?.Configuration is DslValidationConfigurationArtifact dsl ? dsl.Dsl : string.Empty;
+
+    private static string GetValidationErrorCode(
+        string adapterErrorCode,
+        ValidationArtifact validation,
+        string fallbackErrorCode)
+    {
+        if (!string.IsNullOrWhiteSpace(adapterErrorCode))
+        {
+            return adapterErrorCode;
+        }
+
+        return string.IsNullOrWhiteSpace(validation?.ErrorCode) ? fallbackErrorCode : validation.ErrorCode;
+    }
 }

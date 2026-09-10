@@ -24,4 +24,14 @@ public sealed record MessagingTaskConfigurationArtifact(
     /// Gets the schema binding for the command response payload returned by the worker service.
     /// </summary>
     public SchemaBindingArtifact ResponseSchemaBinding { get; init; }
+
+    /// <summary>
+    /// Gets the validation contract for the command request payload sent to the worker service.
+    /// </summary>
+    public ValidationArtifact RequestValidation { get; init; }
+
+    /// <summary>
+    /// Gets the validation contract for the command response payload returned by the worker service.
+    /// </summary>
+    public ValidationArtifact ResponseValidation { get; init; }
 }

@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPoli
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Design;
 
@@ -20,13 +21,18 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
 
         var payloadJson = OrchestrationArtifactPayloadFactory.CreatePayloadJson(definition, version);
         var artifact = JsonNode.Parse(payloadJson)!.AsObject();
+        var trigger = artifact["TriggerBindings"]!.AsArray()[0]!["TriggerChannel"]!.AsObject();
         var stage = artifact["StageDefinitions"]!.AsArray()[0]!.AsObject();
         var task = stage["TaskDefinitions"]!.AsArray()[0]!.AsObject();
+        var taskConfiguration = task["Configuration"]!.AsObject();
         var compensation = task["Compensation"]!.AsObject();
 
         Assert.Equal("order.fulfillment", artifact["Key"]!.GetValue<string>());
         Assert.Single(artifact["TriggerBindings"]!.AsArray());
         Assert.Single(artifact["VariableDefinitions"]!.AsArray());
+        Assert.Equal("orders.created", trigger["Topic"]!.GetValue<string>());
+        Assert.True(trigger["Validation"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.Equal("trigger payload validation", trigger["Validation"]!["Configuration"]!["Dsl"]!.GetValue<string>());
 
         Assert.Equal("reserve-inventory", stage["Key"]!.GetValue<string>());
         Assert.True(stage["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
@@ -42,9 +48,14 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Equal((int)OnErrorPolicy.StopAndCompensate, task["OnErrorPolicy"]!.GetValue<int>());
         Assert.True(task["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
         Assert.True(task["Transformation"]!["IsEnabled"]!.GetValue<bool>());
-        Assert.Equal("inventory.reserve", task["Configuration"]!["Topic"]!.GetValue<string>());
-        Assert.True(task["Configuration"]!["SchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
-        Assert.Equal("1.0.0", task["Configuration"]!["Version"]!.GetValue<string>());
+        Assert.Equal("inventory.reserve", taskConfiguration["Topic"]!.GetValue<string>());
+        Assert.True(taskConfiguration["RequestSchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
+        Assert.True(taskConfiguration["ResponseSchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
+        Assert.True(taskConfiguration["RequestValidation"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.Equal("request payload validation", taskConfiguration["RequestValidation"]!["Configuration"]!["Dsl"]!.GetValue<string>());
+        Assert.True(taskConfiguration["ResponseValidation"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.Equal("response payload validation", taskConfiguration["ResponseValidation"]!["Configuration"]!["Dsl"]!.GetValue<string>());
+        Assert.Equal("1.0.0", taskConfiguration["Version"]!.GetValue<string>());
         Assert.Equal((int)RetryStrategyType.Fixed, task["RetryPolicy"]!["StrategyType"]!.GetValue<int>());
         Assert.Equal(3, task["RetryPolicy"]!["MaxRetries"]!.GetValue<int>());
         Assert.Equal((int)TimeoutBehavior.Reconcile, task["TimeoutPolicy"]!["TimeoutBehavior"]!.GetValue<int>());
@@ -103,6 +114,8 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                         Topic = "orders.created",
                         Version = new SemanticVersion(1, 0, 0),
                         HasSchemaValidation = true,
+                        HasValidation = true,
+                        Validation = DslValidation("trigger payload validation", "TriggerValidationFailed"),
                         SchemaBinding = CreateSchemaBinding(ElementType.Orchestration, definitionId, "orders.created")
                     },
                     IsEnabled = true,
@@ -182,7 +195,13 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                                 Topic = "inventory.reserve",
                                 Version = new SemanticVersion(1, 0, 0),
                                 HasSchemaValidation = true,
-                                SchemaBinding = CreateSchemaBinding(ElementType.Task, taskId, "inventory.reserve")
+                                HasRequestValidation = true,
+                                RequestValidation = DslValidation("request payload validation", "RequestValidationFailed"),
+                                HasResponseValidation = true,
+                                ResponseValidation = DslValidation("response payload validation", "ResponseValidationFailed"),
+                                SchemaBinding = CreateSchemaBinding(ElementType.Task, taskId, "inventory.reserve"),
+                                RequestSchemaBinding = CreateSchemaBinding(ElementType.Task, taskId, "inventory.reserve.request"),
+                                ResponseSchemaBinding = CreateSchemaBinding(ElementType.Task, taskId, "inventory.reserve.response")
                             },
                             RetryPolicy = RetryPolicy(3),
                             TimeoutPolicy = ReconcileTimeoutPolicy(),
@@ -226,6 +245,19 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         {
             Engine = EngineType.DSL,
             Configuration = new DslTransformationConfiguration()
+        };
+
+    private static ValidationDefinition DslValidation(string dsl, string errorCode)
+        => new()
+        {
+            Engine = EngineType.DSL,
+            ErrorCode = errorCode,
+            Configuration = new DslValidationConfiguration
+            {
+                Dsl = dsl,
+                SchemaHash = "schema-hash",
+                SemanticDiagnosticsJson = "{}"
+            }
         };
 
     private static RetryPolicy RetryPolicy(int maxRetries)
