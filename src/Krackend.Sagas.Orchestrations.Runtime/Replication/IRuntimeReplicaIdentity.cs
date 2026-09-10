@@ -11,6 +11,11 @@ public interface IRuntimeReplicaIdentity
     string ReplicaId { get; }
 
     /// <summary>
+    /// Gets the ephemeral id assigned to this runtime replica process start.
+    /// </summary>
+    string ReplicaBootId { get; }
+
+    /// <summary>
     /// Gets the Mule lane used for work that must execute in this replica.
     /// </summary>
     string LocalStandupLane { get; }
