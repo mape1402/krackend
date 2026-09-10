@@ -26,7 +26,7 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" Version="1.4.1" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" Version="1.4.1" />
-    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="3.1.0" />
+    <PackageReference Include="Pigeon.Messaging.Rabbit" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.ButterMorph\Krackend.Sagas.Orchestrations.Runtime.ButterMorph.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.csproj" />
