@@ -12,6 +12,7 @@ public sealed class DeprecateOrchestrationVersionCommandHandler : IRequestHandle
     private readonly IOrchestrationDefinitionRepository _definitionRepository;
     private readonly IOrchestrationVersionTransitionPolicy _transitionPolicy;
     private readonly IOrchestrationVersionArtifactSnapshotBuilder _artifactSnapshotBuilder;
+    private readonly IOrchestrationArtifactPayloadFactory _artifactPayloadFactory;
     private readonly IArtifactPublicationApplicationService _artifactPublicationService;
 
     public DeprecateOrchestrationVersionCommandHandler(
@@ -19,12 +20,14 @@ public sealed class DeprecateOrchestrationVersionCommandHandler : IRequestHandle
         IOrchestrationDefinitionRepository definitionRepository,
         IOrchestrationVersionTransitionPolicy transitionPolicy,
         IOrchestrationVersionArtifactSnapshotBuilder artifactSnapshotBuilder,
+        IOrchestrationArtifactPayloadFactory artifactPayloadFactory,
         IArtifactPublicationApplicationService artifactPublicationService)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
         _transitionPolicy = transitionPolicy ?? throw new ArgumentNullException(nameof(transitionPolicy));
         _artifactSnapshotBuilder = artifactSnapshotBuilder ?? throw new ArgumentNullException(nameof(artifactSnapshotBuilder));
+        _artifactPayloadFactory = artifactPayloadFactory ?? throw new ArgumentNullException(nameof(artifactPayloadFactory));
         _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
     }
 
@@ -41,7 +44,7 @@ public sealed class DeprecateOrchestrationVersionCommandHandler : IRequestHandle
         await _repository.Update(current, cancellationToken);
         var definition = await _definitionRepository.GetById(current.OrchestrationDefinitionId, cancellationToken);
         var versionSnapshot = await _artifactSnapshotBuilder.Build(current, cancellationToken);
-        var artifactPayloadJson = OrchestrationArtifactPayloadFactory.CreatePayloadJson(definition, versionSnapshot);
+        var artifactPayloadJson = _artifactPayloadFactory.CreatePayloadJson(definition, versionSnapshot);
 
         await _artifactPublicationService.PublishDeprecation(new OrchestrationVersionDeprecatedEvent(
             current.Id.ToString(),

@@ -12,9 +12,13 @@ using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
-public static class OrchestrationArtifactPayloadFactory
+/// <summary>
+/// Builds immutable orchestration artifact payloads from design definitions.
+/// </summary>
+public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifactPayloadFactory
 {
-    public static string CreatePayloadJson(
+    /// <inheritdoc />
+    public string CreatePayloadJson(
         OrchestrationDefinition definition,
         OrchestrationVersion version)
     {
