@@ -357,7 +357,11 @@ public sealed class DetailsModel : PageModel
         }
 
         var transformation = request.HasTransformation
-            ? BuildTransformation(request.TransformationEngine, request.TransformationDsl)
+            ? BuildTransformation(
+                request.TransformationEngine,
+                request.TransformationDsl,
+                request.SourceContextHash,
+                request.TargetSchemaHash)
             : null;
 
         var updated = await _taskService.SetTransformation(
@@ -1012,6 +1016,8 @@ public sealed class DetailsModel : PageModel
             hasTransformation = task.HasTransformation,
             transformationEngine = task.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
             transformationDsl = (task.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
+            sourceContextHash = (task.Transformation?.Configuration as DslTransformationConfiguration)?.SourceContextHash ?? string.Empty,
+            targetSchemaHash = (task.Transformation?.Configuration as DslTransformationConfiguration)?.TargetSchemaHash ?? string.Empty,
         };
     }
 
@@ -1199,7 +1205,12 @@ public sealed class DetailsModel : PageModel
         };
     }
 
-    private static TransformationDefinition BuildTransformation(string engineText, string dsl)
+    private static TransformationDefinition BuildTransformation(
+        string engineText,
+        string dsl,
+        string sourceContextHash = "",
+        string targetSchemaHash = "",
+        string semanticDiagnosticsJson = "{}")
     {
         var engine = ParseEnum(engineText, EngineType.DSL);
         if (engine == EngineType.DSL)
@@ -1209,7 +1220,12 @@ public sealed class DetailsModel : PageModel
                 Engine = engine,
                 Configuration = new DslTransformationConfiguration
                 {
-                    Dsl = dsl ?? string.Empty
+                    Dsl = dsl ?? string.Empty,
+                    SourceContextHash = sourceContextHash ?? string.Empty,
+                    TargetSchemaHash = targetSchemaHash ?? string.Empty,
+                    SemanticDiagnosticsJson = string.IsNullOrWhiteSpace(semanticDiagnosticsJson)
+                        ? "{}"
+                        : semanticDiagnosticsJson
                 }
             };
         }
@@ -1219,7 +1235,12 @@ public sealed class DetailsModel : PageModel
             Engine = EngineType.DSL,
             Configuration = new DslTransformationConfiguration
             {
-                Dsl = dsl ?? string.Empty
+                Dsl = dsl ?? string.Empty,
+                SourceContextHash = sourceContextHash ?? string.Empty,
+                TargetSchemaHash = targetSchemaHash ?? string.Empty,
+                SemanticDiagnosticsJson = string.IsNullOrWhiteSpace(semanticDiagnosticsJson)
+                    ? "{}"
+                    : semanticDiagnosticsJson
             }
         };
     }
@@ -1967,5 +1988,15 @@ public sealed class DetailsModel : PageModel
         /// Gets or sets transformation DSL.
         /// </summary>
         public string TransformationDsl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets schema context signature used to author the transformation.
+        /// </summary>
+        public string SourceContextHash { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets target schema snapshot hash used to author the transformation.
+        /// </summary>
+        public string TargetSchemaHash { get; set; } = string.Empty;
     }
 }
