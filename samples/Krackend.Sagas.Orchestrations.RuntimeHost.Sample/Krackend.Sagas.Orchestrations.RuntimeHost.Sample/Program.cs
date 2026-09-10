@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
+using Krackend.Sagas.Orchestrations.Runtime.ButterMorph.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
@@ -100,6 +101,8 @@ builder.Services
             settings.DrainUntilEmpty = true;
         });
     });
+
+builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 
 var app = builder.Build();
 

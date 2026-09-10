@@ -1,9 +1,12 @@
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -17,6 +20,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly ITaskDispatchRepository _dispatchRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IOrchestrationPayloadState _payloadState;
+        private readonly IRuntimeArtifactResolver _artifactResolver;
+        private readonly IOrchestrationValidationExecutor _validationExecutor;
 
         public CompleteCallbackDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -25,7 +30,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
             IExecutionTransitionRepository transitionRepository,
-            IOrchestrationPayloadState payloadState)
+            IOrchestrationPayloadState payloadState,
+            IRuntimeArtifactResolver artifactResolver,
+            IOrchestrationValidationExecutor validationExecutor)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -34,6 +41,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
+            _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
+            _validationExecutor = validationExecutor ?? throw new ArgumentNullException(nameof(validationExecutor));
         }
 
         public async Task HandleAsync(CompleteCallbackDecision decision, CancellationToken cancellationToken = default)
@@ -45,9 +54,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var dispatch = await _dispatchRepository.GetById(decision.DispatchId, cancellationToken);
             var attempt = await _attemptRepository.GetByDispatchId(decision.DispatchId, cancellationToken);
             var result = decision.ExecutionResultMetadata ?? BuildMissingExecutionResultMetadata();
+            var responsePayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : JsonNode.Parse(decision.Payload);
+            result = await ApplyResponseValidationAsync(instance, stage, task, result, responsePayload, cancellationToken);
             var succeeded = result.Succeeded;
             var errorMessage = result.ErrorMessage;
-            var responsePayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : JsonNode.Parse(decision.Payload);
 
             dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
             dispatch.AcknowledgedOnUtc = succeeded ? now : null;
@@ -114,6 +124,71 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ErrorMessage = "Backchannel callback did not include orchestration execution result metadata.",
                 CompletedOnUtc = DateTime.UtcNow
             };
+
+        private async Task<OrchestrationExecutionResultMetadata> ApplyResponseValidationAsync(
+            OrchestrationInstance instance,
+            StageExecution stage,
+            TaskExecution task,
+            OrchestrationExecutionResultMetadata result,
+            JsonNode responsePayload,
+            CancellationToken cancellationToken)
+        {
+            if (!result.Succeeded)
+            {
+                return result;
+            }
+
+            var resolvedArtifact = await _artifactResolver.ResolveAsync(
+                instance.RuntimeOrchestrationArtifactId.ToString(),
+                cancellationToken);
+            var taskArtifact = resolvedArtifact.Artifact.StageDefinitions
+                .FirstOrDefault(x => x.Key == stage.StageKey)?
+                .TaskDefinitions
+                .FirstOrDefault(x => x.Key == task.TaskKey);
+
+            if (taskArtifact?.Configuration is not MessagingTaskConfigurationArtifact messagingConfiguration)
+            {
+                return result;
+            }
+
+            var validationBinding = messagingConfiguration.ResponseSchemaBinding ?? messagingConfiguration.SchemaBinding;
+            if (validationBinding?.IsValidationEnabled != true)
+            {
+                return result;
+            }
+
+            var validationResult = await _validationExecutor.ValidateAsync(
+                new OrchestrationValidationRequest
+                {
+                    Task = taskArtifact,
+                    SchemaBinding = validationBinding,
+                    Payload = responsePayload?.DeepClone(),
+                    Phase = "Response"
+                },
+                cancellationToken);
+
+            if (validationResult.Succeeded)
+            {
+                return result;
+            }
+
+            result.Succeeded = false;
+            result.Status = "Failed";
+            result.ErrorCode = string.IsNullOrWhiteSpace(validationResult.ErrorCode)
+                ? "ResponseValidationFailed"
+                : validationResult.ErrorCode;
+            result.ErrorMessage = string.IsNullOrWhiteSpace(validationResult.ErrorMessage)
+                ? "Task response validation failed."
+                : validationResult.ErrorMessage;
+            result.ErrorType = "Validation";
+
+            foreach (var diagnostic in validationResult.Diagnostics)
+            {
+                result.Metadata[$"Validation.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
+            }
+
+            return result;
+        }
 
         private static void CopyExecutionResultMetadata(
             TaskExecutionAttempt attempt,
