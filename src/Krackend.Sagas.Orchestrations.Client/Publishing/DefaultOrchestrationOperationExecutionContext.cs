@@ -11,4 +11,10 @@ internal sealed class DefaultOrchestrationOperationExecutionContext : IOrchestra
         RequestType = requestType;
         StartedOnUtc = DateTime.UtcNow;
     }
+
+    public void Clear()
+    {
+        RequestType = null;
+        StartedOnUtc = default;
+    }
 }
