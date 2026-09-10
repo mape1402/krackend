@@ -1,12 +1,16 @@
+namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core;
 
-namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
-
-internal static class ArtifactBuilderSupport
+/// <summary>
+/// Creates distribution artifact entities with the standard orchestration metadata.
+/// </summary>
+public sealed class ArtifactFactory : IArtifactFactory
 {
-    public static Artifact CreateArtifact(
+    /// <inheritdoc />
+    public Artifact Create(
         string orchestrationVersionId,
         string orchestrationDefinitionId,
         string orchestrationDisplayName,
