@@ -18,6 +18,7 @@
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane\Krackend.Sagas.Orchestrations.ControlPlane.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="ButterMorph" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.0" />
     <PackageReference Include="Pelican.Mediator" Version="1.1.2" />
