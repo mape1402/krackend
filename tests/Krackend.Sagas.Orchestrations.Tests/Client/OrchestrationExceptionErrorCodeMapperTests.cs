@@ -11,9 +11,10 @@ public sealed class OrchestrationExceptionErrorCodeMapperTests
         var mapper = CreateMapper(options =>
             options.Map<TimeoutException>("RemoteTimeout"));
 
-        var errorCode = mapper.Resolve(new TimeoutException("The remote service timed out."));
+        var resolution = mapper.Resolve(new TimeoutException("The remote service timed out."));
 
-        Assert.Equal("RemoteTimeout", errorCode);
+        Assert.Equal("RemoteTimeout", resolution.ErrorCode);
+        Assert.Null(resolution.IsRetryableCandidate);
     }
 
     [Fact]
@@ -25,9 +26,9 @@ public sealed class OrchestrationExceptionErrorCodeMapperTests
             options.Map<InvalidOperationException>("InvalidOperation");
         });
 
-        var errorCode = mapper.Resolve(new InvalidOperationException("Invalid state."));
+        var resolution = mapper.Resolve(new InvalidOperationException("Invalid state."));
 
-        Assert.Equal("InvalidOperation", errorCode);
+        Assert.Equal("InvalidOperation", resolution.ErrorCode);
     }
 
     [Fact]
@@ -36,9 +37,45 @@ public sealed class OrchestrationExceptionErrorCodeMapperTests
         var mapper = CreateMapper(options =>
             options.DefaultErrorCode = "UnknownClientFailure");
 
-        var errorCode = mapper.Resolve(new NotSupportedException("Not supported."));
+        var resolution = mapper.Resolve(new NotSupportedException("Not supported."));
 
-        Assert.Equal("UnknownClientFailure", errorCode);
+        Assert.Equal("UnknownClientFailure", resolution.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveUsesPredicateMappingWhenItMatches()
+    {
+        var mapper = CreateMapper(options =>
+        {
+            options.Map<InvalidOperationException>(
+                "InventoryTemporaryFailure",
+                exception => exception.Message.Contains("temporary", StringComparison.OrdinalIgnoreCase),
+                isRetryableCandidate: true);
+            options.Map<InvalidOperationException>("InventoryPermanentFailure", isRetryableCandidate: false);
+        });
+
+        var resolution = mapper.Resolve(new InvalidOperationException("Temporary inventory outage."));
+
+        Assert.Equal("InventoryTemporaryFailure", resolution.ErrorCode);
+        Assert.True(resolution.IsRetryableCandidate);
+    }
+
+    [Fact]
+    public void ResolveFallsBackToTypeMappingWhenPredicateDoesNotMatch()
+    {
+        var mapper = CreateMapper(options =>
+        {
+            options.Map<InvalidOperationException>(
+                "InventoryTemporaryFailure",
+                exception => exception.Message.Contains("temporary", StringComparison.OrdinalIgnoreCase),
+                isRetryableCandidate: true);
+            options.Map<InvalidOperationException>("InventoryPermanentFailure", isRetryableCandidate: false);
+        });
+
+        var resolution = mapper.Resolve(new InvalidOperationException("Permanent validation failure."));
+
+        Assert.Equal("InventoryPermanentFailure", resolution.ErrorCode);
+        Assert.False(resolution.IsRetryableCandidate);
     }
 
     private static IOrchestrationExceptionErrorCodeMapper CreateMapper(

@@ -49,14 +49,16 @@ internal sealed class DefaultOrchestrationExecutionResultMetadataFactory : IOrch
     {
         var completedOnUtc = DateTime.UtcNow;
         var startedOnUtc = ResolveStartedOnUtc();
+        var errorResolution = _errorCodeMapper.Resolve(exception);
 
         return new OrchestrationExecutionResultMetadata
         {
             Succeeded = false,
             Status = "Failed",
-            ErrorCode = _errorCodeMapper.Resolve(exception),
+            ErrorCode = errorResolution.ErrorCode,
             ErrorMessage = exception?.Message,
             ErrorType = exception?.GetType().FullName,
+            IsRetryableCandidate = errorResolution.IsRetryableCandidate,
             StartedOnUtc = startedOnUtc,
             CompletedOnUtc = completedOnUtc,
             ExecutionTimeMs = CalculateExecutionTimeMs(startedOnUtc, completedOnUtc),

@@ -9,6 +9,6 @@ public interface IOrchestrationExceptionErrorCodeMapper
     /// Resolves the configured orchestration error code for an exception.
     /// </summary>
     /// <param name="exception">Exception raised by the business operation.</param>
-    /// <returns>The error code sent to the orchestrator as execution metadata.</returns>
-    string Resolve(Exception exception);
+    /// <returns>The error-code resolution sent to the orchestrator as execution metadata.</returns>
+    OrchestrationExceptionErrorCodeResolution Resolve(Exception exception);
 }

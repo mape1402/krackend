@@ -43,8 +43,26 @@ public sealed class KrackendOrchestrationsClientBuilder
     /// </summary>
     /// <typeparam name="TException">Exception type matched by the mapping.</typeparam>
     /// <param name="errorCode">Error code understood by the orchestrator definition.</param>
+    /// <param name="isRetryableCandidate">Optional retryability hint reported to the orchestrator.</param>
     /// <returns>The same builder instance.</returns>
-    public KrackendOrchestrationsClientBuilder MapException<TException>(string errorCode)
+    public KrackendOrchestrationsClientBuilder MapException<TException>(
+        string errorCode,
+        bool? isRetryableCandidate = null)
         where TException : Exception
-        => ConfigureErrorMapping(options => options.Map<TException>(errorCode));
+        => ConfigureErrorMapping(options => options.Map<TException>(errorCode, isRetryableCandidate));
+
+    /// <summary>
+    /// Maps a client exception type to an orchestration error code when the predicate matches.
+    /// </summary>
+    /// <typeparam name="TException">Exception type matched by the mapping.</typeparam>
+    /// <param name="errorCode">Error code understood by the orchestrator definition.</param>
+    /// <param name="predicate">Predicate that must match the exception.</param>
+    /// <param name="isRetryableCandidate">Optional retryability hint reported to the orchestrator.</param>
+    /// <returns>The same builder instance.</returns>
+    public KrackendOrchestrationsClientBuilder MapException<TException>(
+        string errorCode,
+        Func<TException, bool> predicate,
+        bool? isRetryableCandidate = null)
+        where TException : Exception
+        => ConfigureErrorMapping(options => options.Map(errorCode, predicate, isRetryableCandidate));
 }

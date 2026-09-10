@@ -33,6 +33,11 @@ public sealed class OrchestrationExecutionResultMetadata
     public string ErrorType { get; set; }
 
     /// <summary>
+    /// Gets or sets an optional client-side hint indicating whether the error can be considered retryable.
+    /// </summary>
+    public bool? IsRetryableCandidate { get; set; }
+
+    /// <summary>
     /// Gets or sets the operation start timestamp in UTC.
     /// </summary>
     public DateTime? StartedOnUtc { get; set; }
