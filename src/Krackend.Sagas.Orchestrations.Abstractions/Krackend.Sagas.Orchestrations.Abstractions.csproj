@@ -18,4 +18,8 @@
     <PackageReference Include="Ulid" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions.csproj" />
+  </ItemGroup>
+
 </Project>

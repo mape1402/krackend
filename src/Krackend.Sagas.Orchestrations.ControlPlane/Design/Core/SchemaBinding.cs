@@ -1,6 +1,7 @@
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 /// <summary>
 /// Represents a schema contract binding associated with an orchestration element.
@@ -44,6 +45,21 @@ public sealed class SchemaBinding
     /// Gets or sets registry provider id.
     /// </summary>
     public Id RegistryProviderId { get; set; }
+
+    /// <summary>
+    /// Gets or sets registry provider key.
+    /// </summary>
+    public string RegistryProviderKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the orchestration payload role represented by this binding.
+    /// </summary>
+    public SchemaContractKind ContractKind { get; set; } = SchemaContractKind.Unspecified;
+
+    /// <summary>
+    /// Gets or sets the latest resolved schema snapshot for this binding.
+    /// </summary>
+    public SchemaContractSnapshot Snapshot { get; set; }
 
     /// <summary>
     /// Gets or sets strict mode.

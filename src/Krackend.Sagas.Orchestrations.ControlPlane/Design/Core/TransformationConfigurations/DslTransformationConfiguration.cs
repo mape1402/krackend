@@ -11,4 +11,24 @@ public class DslTransformationConfiguration : ITransformationConfiguration
     /// Gets the engine used to execute the transformation.
     /// </summary>
     public EngineType Engine => EngineType.DSL;
+
+    /// <summary>
+    /// Gets or sets the ButterMorph DSL document.
+    /// </summary>
+    public string Dsl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the source schema context hash used when the transformation was authored.
+    /// </summary>
+    public string SourceContextHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the target schema snapshot hash used when the transformation was authored.
+    /// </summary>
+    public string TargetSchemaHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the last semantic validation diagnostics captured by Design.
+    /// </summary>
+    public string SemanticDiagnosticsJson { get; set; } = "{}";
 }
