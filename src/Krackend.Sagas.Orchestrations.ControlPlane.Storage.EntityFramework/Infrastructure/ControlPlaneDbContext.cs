@@ -242,6 +242,7 @@ public sealed class ControlPlaneDbContext : DbContext
     {
         if (configuration is null || !string.IsNullOrWhiteSpace(configuration.Type))
         {
+            EnsureTaskValidationConfigurationTypes(configuration);
             return;
         }
 
@@ -252,6 +253,8 @@ public sealed class ControlPlaneDbContext : DbContext
             TaskKind.Plugin => "plugin",
             _ => "humanApproval",
         };
+
+        EnsureTaskValidationConfigurationTypes(configuration);
     }
 
     private static void EnsureConditionConfigurationType(ConditionConfigurationEnvelopeJsonModel configuration)
@@ -265,6 +268,16 @@ public sealed class ControlPlaneDbContext : DbContext
     }
 
     private static void EnsureTransformationConfigurationType(TransformationConfigurationEnvelopeJsonModel configuration)
+    {
+        if (configuration is null || !string.IsNullOrWhiteSpace(configuration.Type))
+        {
+            return;
+        }
+
+        configuration.Type = "dsl";
+    }
+
+    private static void EnsureValidationConfigurationType(ValidationConfigurationEnvelopeJsonModel configuration)
     {
         if (configuration is null || !string.IsNullOrWhiteSpace(configuration.Type))
         {
@@ -304,9 +317,22 @@ public sealed class ControlPlaneDbContext : DbContext
     {
         if (triggerChannel is null || !string.IsNullOrWhiteSpace(triggerChannel.Type))
         {
+            EnsureTriggerValidationConfigurationTypes(triggerChannel);
             return;
         }
 
         triggerChannel.Type = "event";
+        EnsureTriggerValidationConfigurationTypes(triggerChannel);
+    }
+
+    private static void EnsureTaskValidationConfigurationTypes(TaskConfigurationEnvelopeJsonModel configuration)
+    {
+        EnsureValidationConfigurationType(configuration?.Messaging?.RequestValidation?.Configuration);
+        EnsureValidationConfigurationType(configuration?.Messaging?.ResponseValidation?.Configuration);
+    }
+
+    private static void EnsureTriggerValidationConfigurationTypes(TriggerChannelEnvelopeJsonModel triggerChannel)
+    {
+        EnsureValidationConfigurationType(triggerChannel?.Event?.Validation?.Configuration);
     }
 }

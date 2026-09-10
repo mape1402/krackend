@@ -9,9 +9,14 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 public sealed record OrchestrationValidationRequest
 {
     /// <summary>
-    /// Gets the task that owns the validation.
+    /// Gets the task that owns the validation when validation is task-scoped.
     /// </summary>
     public TaskArtifact Task { get; init; }
+
+    /// <summary>
+    /// Gets the trigger that owns the validation when validation is trigger-scoped.
+    /// </summary>
+    public TriggerBindingArtifact Trigger { get; init; }
 
     /// <summary>
     /// Gets the schema binding used to validate the payload.

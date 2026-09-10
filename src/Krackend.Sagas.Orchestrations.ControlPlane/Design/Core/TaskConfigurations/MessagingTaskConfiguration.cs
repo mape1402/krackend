@@ -46,4 +46,24 @@ public sealed class MessagingTaskConfiguration : ITaskConfiguration
     /// Gets or sets whether schema validation is enabled for this task.
     /// </summary>
     public bool HasSchemaValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets the validation executed against the command request payload.
+    /// </summary>
+    public ValidationDefinition RequestValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether request payload validation is enabled for this task.
+    /// </summary>
+    public bool HasRequestValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets the validation executed against the command response payload.
+    /// </summary>
+    public ValidationDefinition ResponseValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether response payload validation is enabled for this task.
+    /// </summary>
+    public bool HasResponseValidation { get; set; }
 }

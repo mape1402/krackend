@@ -25,4 +25,12 @@ public sealed class MessagingTaskConfigurationJsonModel : TaskConfigurationJsonM
     /// Gets or sets response schema binding.
     /// </summary>
     public SchemaBindingJsonModel ResponseSchemaBinding { get; set; }
+    /// <summary>
+    /// Gets or sets request payload validation.
+    /// </summary>
+    public ValidationDefinitionJsonModel RequestValidation { get; set; }
+    /// <summary>
+    /// Gets or sets response payload validation.
+    /// </summary>
+    public ValidationDefinitionJsonModel ResponseValidation { get; set; }
 }

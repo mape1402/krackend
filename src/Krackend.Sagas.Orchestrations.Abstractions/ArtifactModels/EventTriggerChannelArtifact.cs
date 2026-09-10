@@ -11,6 +11,11 @@ public sealed record EventTriggerChannelArtifact(
     SemanticVersion Version) : ITriggerChannelArtifact
 {
     /// <summary>
+    /// Gets the validation contract for incoming trigger payloads.
+    /// </summary>
+    public ValidationArtifact Validation { get; init; }
+
+    /// <summary>
     /// Gets event trigger type.
     /// </summary>
     public TriggerType TriggerType => TriggerType.Event;

@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
@@ -52,7 +53,13 @@ public static class OrchestrationArtifactPayloadFactory
             EventTriggerChannel eventChannel => new EventTriggerChannelArtifact(
                 MapSchemaBinding(eventChannel.SchemaBinding, eventChannel.HasSchemaValidation, SchemaContractKind.Event),
                 eventChannel.Topic,
-                eventChannel.Version),
+                eventChannel.Version)
+            {
+                Validation = MapValidation(
+                    eventChannel.Validation,
+                    eventChannel.HasValidation || eventChannel.HasSchemaValidation,
+                    "TriggerValidationFailed"),
+            },
             _ => throw new InvalidOperationException($"Trigger channel '{channel.GetType().Name}' is not supported.")
         };
 
@@ -177,6 +184,40 @@ public static class OrchestrationArtifactPayloadFactory
             _ => throw new InvalidOperationException($"Transformation configuration '{configuration.GetType().Name}' is not supported.")
         };
 
+    private static ValidationArtifact MapValidation(
+        ValidationDefinition validation,
+        bool isEnabled,
+        string fallbackErrorCode)
+    {
+        if (validation is null)
+        {
+            return new ValidationArtifact(EngineType.DSL, new DslValidationConfigurationArtifact())
+            {
+                IsEnabled = isEnabled,
+                ErrorCode = fallbackErrorCode,
+            };
+        }
+
+        return new ValidationArtifact(validation.Engine, MapValidationConfiguration(validation.Configuration))
+        {
+            IsEnabled = isEnabled,
+            ErrorCode = string.IsNullOrWhiteSpace(validation.ErrorCode) ? fallbackErrorCode : validation.ErrorCode,
+        };
+    }
+
+    private static IValidationConfigurationArtifact MapValidationConfiguration(IValidationConfiguration configuration)
+        => configuration switch
+        {
+            DslValidationConfiguration dsl => new DslValidationConfigurationArtifact
+            {
+                Dsl = dsl.Dsl,
+                SchemaHash = dsl.SchemaHash,
+                SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
+            },
+            null => new DslValidationConfigurationArtifact(),
+            _ => throw new InvalidOperationException($"Validation configuration '{configuration.GetType().Name}' is not supported.")
+        };
+
     private static ITaskConfigurationArtifact MapTaskConfiguration(ITaskConfiguration configuration)
         => configuration switch
         {
@@ -185,17 +226,25 @@ public static class OrchestrationArtifactPayloadFactory
                 messaging.Version,
                 MapSchemaBinding(
                     messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
-                    messaging.HasSchemaValidation,
+                    IsRequestValidationEnabled(messaging),
                     SchemaContractKind.CommandRequest))
             {
                 RequestSchemaBinding = MapSchemaBinding(
                     messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
-                    messaging.HasSchemaValidation,
+                    IsRequestValidationEnabled(messaging),
                     SchemaContractKind.CommandRequest),
                 ResponseSchemaBinding = MapSchemaBinding(
                     messaging.ResponseSchemaBinding,
-                    messaging.HasSchemaValidation,
+                    IsResponseValidationEnabled(messaging),
                     SchemaContractKind.CommandResponse),
+                RequestValidation = MapValidation(
+                    messaging.RequestValidation,
+                    IsRequestValidationEnabled(messaging),
+                    "RequestValidationFailed"),
+                ResponseValidation = MapValidation(
+                    messaging.ResponseValidation,
+                    IsResponseValidationEnabled(messaging),
+                    "ResponseValidationFailed"),
             },
             HttpTaskConfiguration http => new HttpTaskConfigurationArtifact(
                 MapSchemaBinding(http.SchemaBinding, http.HasSchemaValidation),
@@ -303,4 +352,10 @@ public static class OrchestrationArtifactPayloadFactory
             ResolvedAtUtc = binding.Snapshot.ResolvedAtUtc,
         };
     }
+
+    private static bool IsRequestValidationEnabled(MessagingTaskConfiguration configuration)
+        => configuration?.HasRequestValidation == true || configuration?.HasSchemaValidation == true;
+
+    private static bool IsResponseValidationEnabled(MessagingTaskConfiguration configuration)
+        => configuration?.HasResponseValidation == true || configuration?.HasSchemaValidation == true;
 }
