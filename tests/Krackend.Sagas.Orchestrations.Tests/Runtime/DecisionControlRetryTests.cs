@@ -104,6 +104,7 @@ public sealed class DecisionControlRetryTests
             OrchestrationDefinitionKey = artifact.Key,
             RuntimeOrchestrationArtifactId = artifactId,
             CorrelationId = "sale-1",
+            SagaId = instanceId.ToString(),
             ExecutionKey = $"{artifact.Key}:{instanceId}",
             Status = OrchestrationInstanceStatus.Running,
             CurrentStageKey = "inventory",

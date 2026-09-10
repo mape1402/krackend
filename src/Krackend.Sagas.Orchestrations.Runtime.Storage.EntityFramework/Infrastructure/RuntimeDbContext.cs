@@ -121,6 +121,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.TriggerIntakeId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.SagaId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.ExecutionKey).HasMaxLength(512).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.CurrentStageKey).HasMaxLength(256).IsRequired(false);
@@ -133,6 +134,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Metadata).HasColumnType("nvarchar(max)").HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.LastUpdatedOnUtc);
         builder.HasIndex(x => x.CorrelationId);
+        builder.HasIndex(x => x.SagaId);
     }
 
     private static void ConfigureStages(ModelBuilder modelBuilder)

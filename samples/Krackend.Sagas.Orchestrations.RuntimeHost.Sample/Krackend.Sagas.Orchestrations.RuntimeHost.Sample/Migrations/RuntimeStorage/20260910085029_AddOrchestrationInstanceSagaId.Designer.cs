@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructu
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeStorage
 {
     [DbContext(typeof(RuntimeDbContext))]
-    partial class RuntimeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910085029_AddOrchestrationInstanceSagaId")]
+    partial class AddOrchestrationInstanceSagaId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

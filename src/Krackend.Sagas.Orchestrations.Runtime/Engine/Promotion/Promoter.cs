@@ -53,7 +53,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             var now = DateTime.UtcNow;
             var instanceId = Id.New();
             var correlationId = string.IsNullOrWhiteSpace(request.MessageMetadata?.CorrelationId)
-                ? instanceId.ToString()
+                ? Id.New().ToString()
                 : request.MessageMetadata.CorrelationId;
             var sagaId = string.IsNullOrWhiteSpace(request.MessageMetadata?.SagaId)
                 ? instanceId.ToString()
@@ -66,6 +66,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 RuntimeOrchestrationArtifactId = resolvedArtifact.RuntimeArtifact.Id,
                 TriggerIntakeId = default,
                 CorrelationId = correlationId,
+                SagaId = sagaId,
                 ExecutionKey = $"{resolvedArtifact.Artifact.Key}:{instanceId}",
                 Status = OrchestrationInstanceStatus.Created,
                 CurrentStageKey = string.Empty,

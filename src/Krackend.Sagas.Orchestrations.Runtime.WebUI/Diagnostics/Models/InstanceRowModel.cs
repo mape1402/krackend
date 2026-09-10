@@ -8,6 +8,7 @@ public sealed record InstanceRowModel(
     string OrchestrationDefinitionKey,
     string OrchestrationVersion,
     string CorrelationId,
+    string SagaId,
     string ExecutionKey,
     string Status,
     string StatusClass,

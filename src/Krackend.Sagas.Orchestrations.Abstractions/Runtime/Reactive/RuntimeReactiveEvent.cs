@@ -44,6 +44,11 @@ public sealed class RuntimeReactiveEvent
     public required string CorrelationId { get; set; }
 
     /// <summary>
+    /// Gets or sets saga id.
+    /// </summary>
+    public required string SagaId { get; set; }
+
+    /// <summary>
     /// Gets or sets execution key.
     /// </summary>
     public required string ExecutionKey { get; set; }
