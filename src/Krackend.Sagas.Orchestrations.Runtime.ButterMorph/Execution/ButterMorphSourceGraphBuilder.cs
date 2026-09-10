@@ -15,10 +15,13 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
     private const string TriggerAlias = "trigger";
     private const string RequestsAlias = "requests";
     private const string ResponsesAlias = "responses";
+    private const string StagesAlias = "stages";
+    private const string VariablesAlias = "variables";
     private const string StagesPropertyName = "stages";
     private const string TasksPropertyName = "tasks";
     private const string RequestPropertyName = "request";
     private const string ResponsePropertyName = "response";
+    private const string VariablesPropertyName = "variables";
 
     private readonly IButterMorphAliasNameFormatter _aliasNameFormatter;
     private readonly JsonReader _jsonReader = new();
@@ -42,8 +45,44 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
         AddSource(sources, TriggerAlias, payloadContext.TriggerPayload);
         AddSource(sources, RequestsAlias, BuildTaskPayloadCollection(payloadContext.ContextPayload, RequestPropertyName));
         AddSource(sources, ResponsesAlias, BuildTaskPayloadCollection(payloadContext.ContextPayload, ResponsePropertyName));
+        AddSource(sources, StagesAlias, BuildSanitizedStagesPayload(payloadContext.ContextPayload));
+        AddSource(sources, VariablesAlias, GetObjectPayload(payloadContext.ContextPayload, VariablesPropertyName));
 
         return sources;
+    }
+
+    private JsonNode BuildSanitizedStagesPayload(JsonNode contextPayload)
+    {
+        var result = new JsonObject();
+        if (contextPayload is not JsonObject root ||
+            root[StagesPropertyName] is not JsonObject stages)
+        {
+            return result;
+        }
+
+        foreach (var stageEntry in stages)
+        {
+            if (stageEntry.Value is not JsonObject stage ||
+                stage[TasksPropertyName] is not JsonObject tasks)
+            {
+                continue;
+            }
+
+            var sanitizedStage = new JsonObject();
+            var sanitizedTasks = new JsonObject();
+            foreach (var taskEntry in tasks)
+            {
+                if (taskEntry.Value is JsonNode task)
+                {
+                    sanitizedTasks[_aliasNameFormatter.Format(taskEntry.Key)] = task.DeepClone();
+                }
+            }
+
+            sanitizedStage[TasksPropertyName] = sanitizedTasks;
+            result[_aliasNameFormatter.Format(stageEntry.Key)] = sanitizedStage;
+        }
+
+        return result;
     }
 
     private JsonNode BuildTaskPayloadCollection(JsonNode contextPayload, string payloadPropertyName)
@@ -82,6 +121,17 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
         }
 
         return result;
+    }
+
+    private static JsonNode GetObjectPayload(JsonNode contextPayload, string propertyName)
+    {
+        if (contextPayload is JsonObject root &&
+            root[propertyName] is JsonNode payload)
+        {
+            return payload.DeepClone();
+        }
+
+        return new JsonObject();
     }
 
     private void AddSource(
