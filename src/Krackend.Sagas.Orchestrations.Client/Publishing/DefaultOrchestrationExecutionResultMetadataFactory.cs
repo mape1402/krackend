@@ -2,19 +2,23 @@ namespace Krackend.Sagas.Orchestrations.Client.Publishing;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Errors;
+using Microsoft.Extensions.Options;
 using System.Text.Json.Nodes;
 
 internal sealed class DefaultOrchestrationExecutionResultMetadataFactory : IOrchestrationExecutionResultMetadataFactory
 {
     private readonly IOrchestrationOperationExecutionContext _executionContext;
     private readonly IOrchestrationExceptionErrorCodeMapper _errorCodeMapper;
+    private readonly IOptions<OrchestrationClientErrorMappingOptions> _options;
 
     public DefaultOrchestrationExecutionResultMetadataFactory(
         IOrchestrationOperationExecutionContext executionContext,
-        IOrchestrationExceptionErrorCodeMapper errorCodeMapper)
+        IOrchestrationExceptionErrorCodeMapper errorCodeMapper,
+        IOptions<OrchestrationClientErrorMappingOptions> options)
     {
         _executionContext = executionContext ?? throw new ArgumentNullException(nameof(executionContext));
         _errorCodeMapper = errorCodeMapper ?? throw new ArgumentNullException(nameof(errorCodeMapper));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     public OrchestrationExecutionResultMetadata CreateSuccess(
@@ -50,14 +54,15 @@ internal sealed class DefaultOrchestrationExecutionResultMetadataFactory : IOrch
         var completedOnUtc = DateTime.UtcNow;
         var startedOnUtc = ResolveStartedOnUtc();
         var errorResolution = _errorCodeMapper.Resolve(exception);
+        var optionsValue = _options.Value;
 
         return new OrchestrationExecutionResultMetadata
         {
             Succeeded = false,
             Status = "Failed",
             ErrorCode = errorResolution.ErrorCode,
-            ErrorMessage = exception?.Message,
-            ErrorType = exception?.GetType().FullName,
+            ErrorMessage = ResolveErrorMessage(exception, errorResolution, optionsValue),
+            ErrorType = optionsValue.IncludeExceptionDetails ? exception?.GetType().FullName : null,
             IsRetryableCandidate = errorResolution.IsRetryableCandidate,
             StartedOnUtc = startedOnUtc,
             CompletedOnUtc = completedOnUtc,
@@ -69,6 +74,21 @@ internal sealed class DefaultOrchestrationExecutionResultMetadataFactory : IOrch
                 : options.OperationName,
             Metadata = CloneMetadata(options)
         };
+    }
+
+    private static string ResolveErrorMessage(
+        Exception exception,
+        OrchestrationExceptionErrorCodeResolution errorResolution,
+        OrchestrationClientErrorMappingOptions options)
+    {
+        if (options.IncludeExceptionDetails)
+        {
+            return exception?.Message;
+        }
+
+        return string.IsNullOrWhiteSpace(options.RedactedExceptionMessage)
+            ? errorResolution.ErrorCode
+            : options.RedactedExceptionMessage;
     }
 
     private DateTime ResolveStartedOnUtc()

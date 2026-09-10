@@ -100,6 +100,47 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task ReportFailureAsync_WhenExceptionDetailsAreDisabled_PublishesRedactedFailureMetadata()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient(options =>
+        {
+            options.IncludeExceptionDetails = false;
+            options.RedactedExceptionMessage = "Inventory operation failed.";
+            options.Map<InvalidOperationException>("InventoryFailure", isRetryableCandidate: true);
+        });
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<ReserveInventoryRequest>();
+
+        await client.ReportFailureAsync<ReserveInventoryRequest>(
+            new InvalidOperationException("Database password leaked in an internal message."));
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.False(publisher.ResultMetadata.Succeeded);
+        Assert.Equal("InventoryFailure", publisher.ResultMetadata.ErrorCode);
+        Assert.Equal("Inventory operation failed.", publisher.ResultMetadata.ErrorMessage);
+        Assert.Null(publisher.ResultMetadata.ErrorType);
+        Assert.True(publisher.ResultMetadata.IsRetryableCandidate);
+        Assert.Null(publisher.Payload);
+    }
+
+    [Fact]
     public async Task ReportSuccessAsyncPublishesBusinessPayloadWithoutWrappingExecutionMetadata()
     {
         var services = new ServiceCollection();
