@@ -41,6 +41,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         AddTriggerSources(version, sources);
         AddPreviousStageTaskResponseSources(stages, targetStage, sources);
         AddCurrentStageTaskResponseSources(targetStage, targetTask, sources);
+        AddShortTaskResponseAliases(sources);
 
         var target = CreateTarget(targetStage, targetTask);
         var context = new OrchestrationSchemaContext
@@ -144,6 +145,27 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             TaskKey = task.Key,
             SchemaBinding = responseBinding
         });
+    }
+
+    private static void AddShortTaskResponseAliases(ICollection<OrchestrationSchemaSource> sources)
+    {
+        var taskResponseSources = sources
+            .Where(source => source.SourceKind == OrchestrationSchemaContextSourceKind.TaskResponse)
+            .Where(source => !string.IsNullOrWhiteSpace(source.TaskKey))
+            .ToArray();
+
+        var uniqueTaskKeys = taskResponseSources
+            .GroupBy(source => source.TaskKey, StringComparer.Ordinal)
+            .Where(group => group.Count() == 1)
+            .Select(group => group.Single());
+
+        foreach (var source in uniqueTaskKeys)
+        {
+            sources.Add(source with
+            {
+                Alias = $"tasks.{source.TaskKey}.response"
+            });
+        }
     }
 
     private static OrchestrationSchemaTarget CreateTarget(StageDefinition stage, TaskDefinition task)
