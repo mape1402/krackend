@@ -11,6 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="**\bin\**;**\obj\**" />
