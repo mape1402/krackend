@@ -1,4 +1,5 @@
 using System.Reflection;
+using ClientSpiderServices = Spider.Pipelines.Core.OrchestrationPipelineBuilderExtensions;
 using MuleRuntimeServices = Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.ServiceCollectionExtensions;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Architecture;
@@ -39,6 +40,7 @@ public sealed class PackageBoundaryTests
         var referencedAssemblies = Assembly.GetExecutingAssembly()
             .GetReferencedAssemblies()
             .Select(assembly => assembly.Name)
+            .Append(typeof(ClientSpiderServices).Assembly.GetName().Name)
             .Append(typeof(MuleRuntimeServices).Assembly.GetName().Name)
             .Where(name => name is not null && name.StartsWith("Krackend.Sagas.Orchestrations", StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
@@ -46,6 +48,8 @@ public sealed class PackageBoundaryTests
         var expected = new[]
         {
             "Krackend.Sagas.Orchestrations.Abstractions",
+            "Krackend.Sagas.Orchestrations.Client",
+            "Krackend.Sagas.Orchestrations.Client.Spider",
             "Krackend.Sagas.Orchestrations.Contracts",
             "Krackend.Sagas.Orchestrations.ControlPlane",
             "Krackend.Sagas.Orchestrations.ControlPlane.Application",
