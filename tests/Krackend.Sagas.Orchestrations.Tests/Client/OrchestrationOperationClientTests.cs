@@ -56,6 +56,48 @@ public sealed class OrchestrationOperationClientTests
         Assert.NotNull(publisher.Payload);
     }
 
+    [Fact]
+    public async Task GenericReportFailureAsyncPublishesMappedErrorMetadata()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddKrackendOrchestrationsClient()
+            .MapException<InvalidOperationException>("BusinessRuleFailed");
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<string>();
+
+        await client.ReportFailureAsync<string>(
+            new InvalidOperationException("No inventory"),
+            new OrchestrationOperationOptions
+            {
+                ServiceName = "inventories-api",
+                OperationName = "inventories.reserve"
+            });
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.False(publisher.ResultMetadata.Succeeded);
+        Assert.Equal("BusinessRuleFailed", publisher.ResultMetadata.ErrorCode);
+        Assert.Equal("inventories-api", publisher.ResultMetadata.ServiceName);
+        Assert.Equal("inventories.reserve", publisher.ResultMetadata.OperationName);
+        Assert.Null(publisher.Payload);
+    }
+
     private sealed class RecordingOrchestrationClientPublisher : IOrchestrationClientPublisher
     {
         private readonly IOrchestrationExecutionResultMetadataAccessor _metadataAccessor;
