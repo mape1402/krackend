@@ -86,6 +86,7 @@
             orchestrationVersion,
             orchestrationLabel: read(item, "orchestrationLabel", "OrchestrationLabel") || formatOrchestrationLabel(orchestrationDefinitionKey, orchestrationVersion),
             correlationId: read(item, "correlationId", "CorrelationId") || "",
+            sagaId: read(item, "sagaId", "SagaId") || "",
             executionKey: read(item, "executionKey", "ExecutionKey") || "",
             status,
             statusClass: read(item, "statusClass", "StatusClass") || statusClass(status),
@@ -295,6 +296,7 @@
             orchestrationVersion: read(eventData, "orchestrationVersion", "OrchestrationVersion") || existing?.orchestrationVersion,
             orchestrationLabel: read(eventData, "orchestrationLabel", "OrchestrationLabel") || existing?.orchestrationLabel,
             correlationId: read(eventData, "correlationId", "CorrelationId") || existing?.correlationId,
+            sagaId: read(eventData, "sagaId", "SagaId") || existing?.sagaId,
             executionKey: read(eventData, "executionKey", "ExecutionKey") || existing?.executionKey,
             status: read(eventData, "instanceStatus", "InstanceStatus") || read(eventData, "toStatus", "ToStatus") || existing?.status,
             currentStageKey: read(eventData, "stageKey", "StageKey") || existing?.currentStageKey,
@@ -491,6 +493,7 @@
         return [
             row.id,
             row.correlationId,
+            row.sagaId,
             row.executionKey,
             row.orchestrationDefinitionKey,
             row.orchestrationVersion,
@@ -550,8 +553,8 @@
             </td>
             <td class="od-id-cell">
                 <span class="od-id-copy">
-                    <span class="od-copy-value">${escapeHtml(row.id)}</span>
-                    <button type="button" class="od-copy-button" data-copy-value="${escapeHtml(row.id)}" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
+                    <span class="od-copy-value">${escapeHtml(row.sagaId)}</span>
+                    <button type="button" class="od-copy-button" data-copy-value="${escapeHtml(row.sagaId)}" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
                 </span>
             </td>
             <td><span class="od-status ${statusClass(row.status)}" data-instance-status-label>${escapeHtml(row.status)}</span></td>
@@ -614,7 +617,7 @@
             detailTitle.textContent = orchestrationLabel;
         }
         if (detailSubtitle) {
-            detailSubtitle.textContent = `${instance.id} | ${instance.status} | ${instance.correlationId}`;
+            detailSubtitle.textContent = `${instance.id} | ${instance.status} | ${instance.correlationId} | ${instance.sagaId}`;
         }
         if (!detailBody) {
             return;

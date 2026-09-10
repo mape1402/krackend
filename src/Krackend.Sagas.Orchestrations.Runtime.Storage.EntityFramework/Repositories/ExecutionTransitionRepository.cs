@@ -88,6 +88,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             OrchestrationVersion = orchestrationVersion,
             OrchestrationInstanceId = transition.OrchestrationInstanceId,
             CorrelationId = instance.CorrelationId,
+            SagaId = instance.SagaId,
             ExecutionKey = instance.ExecutionKey,
             StageExecutionId = transition.StageExecutionId,
             StageKey = stageKey,
