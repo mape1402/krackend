@@ -17,4 +17,12 @@ public sealed class MessagingTaskConfigurationJsonModel : TaskConfigurationJsonM
     /// Gets or sets SchemaBinding.
     /// </summary>
     public SchemaBindingJsonModel SchemaBinding { get; set; }
+    /// <summary>
+    /// Gets or sets request schema binding.
+    /// </summary>
+    public SchemaBindingJsonModel RequestSchemaBinding { get; set; }
+    /// <summary>
+    /// Gets or sets response schema binding.
+    /// </summary>
+    public SchemaBindingJsonModel ResponseSchemaBinding { get; set; }
 }

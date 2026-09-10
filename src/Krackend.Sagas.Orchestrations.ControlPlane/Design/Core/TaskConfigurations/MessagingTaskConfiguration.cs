@@ -33,6 +33,16 @@ public sealed class MessagingTaskConfiguration : ITaskConfiguration
     public SchemaBinding SchemaBinding { get; set; }
 
     /// <summary>
+    /// Gets or sets the schema binding for the command request payload.
+    /// </summary>
+    public SchemaBinding RequestSchemaBinding { get; set; }
+
+    /// <summary>
+    /// Gets or sets the schema binding for the command response payload.
+    /// </summary>
+    public SchemaBinding ResponseSchemaBinding { get; set; }
+
+    /// <summary>
     /// Gets or sets whether schema validation is enabled for this task.
     /// </summary>
     public bool HasSchemaValidation { get; set; }
