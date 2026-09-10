@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging
 {
@@ -13,12 +14,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging
 
         public Task PublishAsync(MessagingCommand command, CancellationToken cancellationToken = default)
         {
-            _logger.LogWarning(
-                "Messaging command for topic '{topic}' and version '{version}' was ignored because no messaging dispatch adapter is registered.",
+            var message = $"No messaging dispatch adapter is registered for topic '{command.Topic}' and version '{command.Version}'.";
+
+            _logger.LogError(
+                "Messaging command for topic '{topic}' and version '{version}' cannot be published because no messaging dispatch adapter is registered.",
                 command.Topic,
                 command.Version);
 
-            return Task.CompletedTask;
+            throw new RemoteCommandConfigurationException(message);
         }
     }
 }
