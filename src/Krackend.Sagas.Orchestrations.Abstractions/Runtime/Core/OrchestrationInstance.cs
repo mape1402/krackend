@@ -34,6 +34,11 @@ public sealed class OrchestrationInstance
     public required string CorrelationId { get; set; }
 
     /// <summary>
+    /// Gets or sets the saga id propagated through orchestrated operations.
+    /// </summary>
+    public required string SagaId { get; set; }
+
+    /// <summary>
     /// Gets or sets execution key.
     /// </summary>
     public required string ExecutionKey { get; set; }

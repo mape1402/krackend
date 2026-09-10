@@ -20,6 +20,7 @@ public sealed class RuntimeDiagnosticsReaderTests
 
         Assert.Equal(store.Instance.Id.ToString(), detail.Instance.Id);
         Assert.Equal("corr-123", detail.Instance.CorrelationId);
+        Assert.Equal("saga-123", detail.Instance.SagaId);
         Assert.Equal("orders", detail.Instance.OrchestrationDefinitionKey);
         Assert.Equal("reserve-stock", Assert.Single(detail.Stages).StageKey);
         Assert.Equal("reserve", Assert.Single(detail.Tasks).TaskKey);
@@ -28,7 +29,7 @@ public sealed class RuntimeDiagnosticsReaderTests
         Assert.Equal("release-stock", Assert.Single(detail.Compensations).CompensationTaskKey);
 
         var task = Assert.Single(detail.Tasks);
-        Assert.Equal(store.Instance.Id.ToString(), task.SagaId);
+        Assert.Equal("saga-123", task.SagaId);
         Assert.Equal("StopAndCompensate", task.OnErrorPolicy);
         Assert.Equal(store.Dispatch.Id.ToString(), Assert.Single(task.Attempts).DispatchId);
         Assert.Equal("orders.reserve", Assert.Single(task.Attempts).Dispatch.Destination);
@@ -118,6 +119,7 @@ public sealed class RuntimeDiagnosticsReaderTests
                     RuntimeOrchestrationArtifactId = artifactId,
                     TriggerIntakeId = Id.New(),
                     CorrelationId = "corr-123",
+                    SagaId = "saga-123",
                     ExecutionKey = "orders:corr-123",
                     Status = OrchestrationInstanceStatus.Completed,
                     CurrentStageKey = "reserve-stock",

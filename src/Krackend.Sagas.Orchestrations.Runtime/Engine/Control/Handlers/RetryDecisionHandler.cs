@@ -216,7 +216,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     AwaitResponse = decision.Task.DispatchType != TaskDispatchType.FireAndForget,
                     MessageMetadata = new OrchestrationMessageMetadata
                     {
-                        SagaId = instance.CorrelationId,
+                        SagaId = GetSagaId(instance),
                         OrchestrationInstanceId = instance.Id.ToString(),
                         CurrentStage = decision.StageKey,
                         CurrentTasks = [decision.Task.Key],
@@ -270,6 +270,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         private static JsonNode ParsePayload(string payload)
             => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
+
+        private static string GetSagaId(OrchestrationInstance instance)
+            => string.IsNullOrWhiteSpace(instance.SagaId)
+                ? instance.Id.ToString()
+                : instance.SagaId;
 
         private async Task MarkPreparationFailedAsync(
             RetryDecision decision,

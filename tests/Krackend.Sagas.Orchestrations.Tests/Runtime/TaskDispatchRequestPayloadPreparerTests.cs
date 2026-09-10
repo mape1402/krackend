@@ -123,6 +123,7 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
             OrchestrationDefinitionKey = "sales.sale.created",
             RuntimeOrchestrationArtifactId = Id.New(),
             CorrelationId = "sale-1",
+            SagaId = Id.New().ToString(),
             ExecutionKey = "sales.sale.created:sale-1",
             SnapshotPayload = JsonNode.Parse(
                 """

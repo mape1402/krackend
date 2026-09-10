@@ -84,7 +84,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var runtimeArtifact = await TryGetRuntimeArtifact(instance, cancellationToken);
         var artifact = DeserializeArtifact(runtimeArtifact);
 
-        var taskDetails = await BuildTaskDetails(tasks, cancellationToken);
+        var taskDetails = await BuildTaskDetails(instance.SagaId, tasks, cancellationToken);
         var stageDetails = BuildStageDetails(stages, taskDetails, artifact);
         var allTaskDetails = stageDetails.SelectMany(x => x.Tasks).ToArray();
         var stageById = stages.ToDictionary(x => x.Id.ToString(), x => x.StageKey);
@@ -177,6 +177,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
     }
 
     private async Task<IReadOnlyCollection<TaskDetailModel>> BuildTaskDetails(
+        string sagaId,
         IReadOnlyCollection<TaskExecution> tasks,
         CancellationToken cancellationToken)
     {
@@ -231,7 +232,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
                 FormatJson(task.OutputVariablesPayload),
                 FormatJson(task.Metadata),
                 attemptDetails,
-                task.OrchestrationInstanceId.ToString(),
+                sagaId,
                 task.OnErrorPolicy.ToString(),
                 task.ParallelGroupId?.ToString(),
                 task.WasSkipped,
@@ -378,6 +379,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             instance.OrchestrationDefinitionKey,
             orchestrationVersion ?? string.Empty,
             instance.CorrelationId,
+            instance.SagaId,
             instance.ExecutionKey,
             instance.Status.ToString(),
             StatusClass(instance.Status.ToString()),

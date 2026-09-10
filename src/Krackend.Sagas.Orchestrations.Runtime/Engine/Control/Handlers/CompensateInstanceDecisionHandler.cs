@@ -103,7 +103,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     AwaitResponse = false,
                     MessageMetadata = new OrchestrationMessageMetadata
                     {
-                        SagaId = instance.CorrelationId,
+                        SagaId = GetSagaId(instance),
                         OrchestrationInstanceId = instance.Id.ToString(),
                         CorrelationId = instance.CorrelationId,
                         TaskExecutionId = task.Id.ToString(),
@@ -133,6 +133,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ProducedBy = nameof(CompensateInstanceDecisionHandler)
             }, cancellationToken);
         }
+
+        private static string GetSagaId(OrchestrationInstance instance)
+            => string.IsNullOrWhiteSpace(instance.SagaId)
+                ? instance.Id.ToString()
+                : instance.SagaId;
 
         private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(
             OrchestrationInstance instance,
