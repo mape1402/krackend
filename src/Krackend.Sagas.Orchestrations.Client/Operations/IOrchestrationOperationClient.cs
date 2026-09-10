@@ -14,6 +14,11 @@ public interface IOrchestrationOperationClient
     void Begin(Type requestType);
 
     /// <summary>
+    /// Clears the current orchestration operation execution context.
+    /// </summary>
+    void Close();
+
+    /// <summary>
     /// Reports a successful business operation using transport metadata for orchestration execution data.
     /// </summary>
     /// <param name="requestType">CLR request type handled by the operation.</param>

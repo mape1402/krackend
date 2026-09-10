@@ -18,6 +18,9 @@ internal sealed class DefaultOrchestrationOperationClient : IOrchestrationOperat
     public void Begin(Type requestType)
         => _executionContext.Start(requestType ?? throw new ArgumentNullException(nameof(requestType)));
 
+    public void Close()
+        => _executionContext.Clear();
+
     public Task ReportSuccessAsync(
         Type requestType,
         Type responseType,

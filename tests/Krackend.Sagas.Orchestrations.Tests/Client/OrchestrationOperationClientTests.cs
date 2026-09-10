@@ -1,0 +1,70 @@
+namespace Krackend.Sagas.Orchestrations.Tests.Client;
+
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Client.Operations;
+using Krackend.Sagas.Orchestrations.Client.Publishing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+public sealed class OrchestrationOperationClientTests
+{
+    [Fact]
+    public async Task ReportSuccessAsync_WhenContextWasClosed_PublishesExecutionMetadata()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin(typeof(string));
+        client.Close();
+
+        await client.ReportSuccessAsync(
+            typeof(string),
+            typeof(int),
+            new { ok = true },
+            new OrchestrationOperationOptions());
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.True(publisher.ResultMetadata.Succeeded);
+        Assert.Equal(typeof(string).FullName, publisher.ResultMetadata.RequestType);
+        Assert.Equal(typeof(int).FullName, publisher.ResultMetadata.ResponseType);
+        Assert.NotNull(publisher.Payload);
+    }
+
+    private sealed class RecordingOrchestrationClientPublisher : IOrchestrationClientPublisher
+    {
+        private readonly IOrchestrationExecutionResultMetadataAccessor _metadataAccessor;
+
+        public RecordingOrchestrationClientPublisher(IOrchestrationExecutionResultMetadataAccessor metadataAccessor)
+        {
+            _metadataAccessor = metadataAccessor ?? throw new ArgumentNullException(nameof(metadataAccessor));
+        }
+
+        public object? Payload { get; private set; }
+
+        public OrchestrationExecutionResultMetadata? ResultMetadata { get; private set; }
+
+        public Task PublishAsync(
+            object payload,
+            OrchestrationReplyAddress address,
+            CancellationToken cancellationToken = default)
+        {
+            Payload = payload;
+            ResultMetadata = _metadataAccessor.Get();
+            return Task.CompletedTask;
+        }
+    }
+}

@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
         }
 
+        services.AddOptions<OrchestrationClientErrorMappingOptions>();
         services.TryAddScoped<DefaultOrchestrationMessageMetadataAccessor>();
         services.TryAddScoped<IOrchestrationMessageMetadataAccessor>(provider =>
             provider.GetRequiredService<DefaultOrchestrationMessageMetadataAccessor>());
