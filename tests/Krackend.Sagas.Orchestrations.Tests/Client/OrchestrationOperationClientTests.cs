@@ -99,6 +99,59 @@ public sealed class OrchestrationOperationClientTests
         Assert.Null(publisher.Payload);
     }
 
+    [Fact]
+    public async Task ReportSuccessAsyncPublishesBusinessPayloadWithoutWrappingExecutionMetadata()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var businessPayload = JsonNode.Parse(
+            """
+            {
+              "reservationId": "reservation-1",
+              "saleId": "sale-1"
+            }
+            """);
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<ReserveInventoryRequest>();
+
+        await client.ReportSuccessAsync(
+            typeof(ReserveInventoryRequest),
+            typeof(ReserveInventoryResponse),
+            businessPayload,
+            new OrchestrationOperationOptions
+            {
+                ServiceName = "inventories-api",
+                OperationName = "inventories.reserve"
+            });
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        var publishedPayload = Assert.IsAssignableFrom<JsonNode>(publisher.Payload);
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.Equal("reservation-1", publishedPayload["reservationId"]?.GetValue<string>());
+        Assert.Equal("sale-1", publishedPayload["saleId"]?.GetValue<string>());
+        Assert.Null(publishedPayload["Succeeded"]);
+        Assert.Null(publishedPayload["Metadata"]);
+        Assert.Null(publishedPayload["ExecutionTimeMs"]);
+        Assert.Null(publishedPayload["Error"]);
+        Assert.True(publisher.ResultMetadata.Succeeded);
+    }
+
     private sealed class RecordingOrchestrationClientPublisher : IOrchestrationClientPublisher
     {
         private readonly IOrchestrationExecutionResultMetadataAccessor _metadataAccessor;
@@ -122,4 +175,8 @@ public sealed class OrchestrationOperationClientTests
             return Task.CompletedTask;
         }
     }
+
+    private sealed record ReserveInventoryRequest;
+
+    private sealed record ReserveInventoryResponse;
 }
