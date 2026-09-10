@@ -21,6 +21,8 @@ public static class ServiceCollectionExtensions
 
         services.AddButterMorph();
         services.AddSingleton<IButterMorphDiagnosticMetadataMapper, ButterMorphDiagnosticMetadataMapper>();
+        services.AddSingleton<IButterMorphAliasNameFormatter, ButterMorphAliasNameFormatter>();
+        services.AddSingleton<IButterMorphSourceGraphBuilder, ButterMorphSourceGraphBuilder>();
         services.AddScoped<IOrchestrationTransformationExecutor, ButterMorphOrchestrationTransformationExecutor>();
         services.AddScoped<IOrchestrationValidationExecutor, ButterMorphOrchestrationValidationExecutor>();
 

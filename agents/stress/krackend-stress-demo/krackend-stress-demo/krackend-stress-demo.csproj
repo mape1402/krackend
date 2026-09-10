@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
-    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="2.8.0" />
+    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="3.1.0" />
   </ItemGroup>
 
   <ItemGroup>

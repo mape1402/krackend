@@ -8,10 +8,10 @@
     <PackageReference Update="Scalar.AspNetCore" Version="2.16.18"/>
     <PackageReference Update="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Update="Pelican.Mediator" Version="2.0.0" />
-    <PackageReference Update="Pigeon.Messaging" Version="2.8.0" />
-    <PackageReference Update="Pigeon.Messaging.Azure.ServiceBus" Version="2.8.0" />
-    <PackageReference Update="Pigeon.Messaging.Outbox.EntityFrameworkCore" Version="2.8.0" />
-    <PackageReference Update="Pigeon.Messaging.Rabbit" Version="2.8.0" />
+    <PackageReference Update="Pigeon.Messaging" Version="3.1.0" />
+    <PackageReference Update="Pigeon.Messaging.Azure.ServiceBus" Version="3.1.0" />
+    <PackageReference Update="Pigeon.Messaging.Outbox.EntityFrameworkCore" Version="3.1.0" />
+    <PackageReference Update="Pigeon.Messaging.Rabbit" Version="3.1.0" />
     <PackageReference Update="Krackend.EventSourcing.EntityFrameworkCore" Version="1.2.1" />
     <PackageReference Update="Spider.Pipelines" Version="2.1.0" />
     <PackageReference Update="Microsoft.EntityFrameworkCore" Version="10.0.10" />
