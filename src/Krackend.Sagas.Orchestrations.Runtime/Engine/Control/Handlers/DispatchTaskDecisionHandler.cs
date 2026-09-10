@@ -6,9 +6,11 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 {
@@ -22,6 +24,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IRemoteCommandDispatcher _dispatcher;
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
+        private readonly IOrchestrationPayloadState _payloadState;
 
         public DispatchTaskDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -31,7 +34,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IRemoteCommandDispatcher dispatcher,
             IMessagingCommandSerializer messagingCommandSerializer,
-            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor)
+            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
+            IOrchestrationPayloadState payloadState)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -41,6 +45,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
+            _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
         }
 
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
@@ -56,6 +61,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
+            var requestPayload = ParsePayload(decision.Payload);
             var taskExecution = new TaskExecution
             {
                 Id = Id.New(),
@@ -82,7 +88,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 AttemptNumber = 1,
                 Status = TaskExecutionStatus.Running,
                 StartedOnUtc = now,
-                RequestPayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload)
+                RequestPayload = requestPayload?.DeepClone()
             };
             var dispatch = new TaskDispatch
             {
@@ -90,7 +96,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 TaskExecutionAttemptId = attempt.Id,
                 DispatchType = decision.Task.DispatchType.ToString(),
                 Destination = $"{messagingConfiguration.Topic}:{messagingConfiguration.Version}",
-                RequestPayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
+                RequestPayload = requestPayload?.DeepClone(),
                 DispatchStatus = "Scheduled",
                 CommandId = Id.New().ToString(),
                 CorrelationId = taskExecution.CorrelationId,
@@ -102,6 +108,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.CurrentStageKey = decision.StageKey;
             instance.CurrentTaskKey = decision.Task.Key;
             instance.LastUpdatedOnUtc = now;
+            instance.SnapshotPayload = _payloadState.ApplyTaskRequestPayload(
+                instance,
+                decision.StageKey,
+                decision.Task.Key,
+                requestPayload);
 
             taskExecution.Metadata["Timeout"] = System.Text.Json.Nodes.JsonValue.Create(decision.Task.TimeoutPolicy?.Timeout.ToString() ?? string.Empty);
 
@@ -129,7 +140,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ToStatus = dispatch.DispatchStatus,
                 OccurredOnUtc = queuedOnUtc,
                 Message = $"Task '{decision.Task.Key}' dispatch enqueued for transport '{RemoteCommandTransport.Messaging}'.",
-                Payload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload),
+                Payload = requestPayload?.DeepClone(),
                 ProducedBy = nameof(DispatchTaskDecisionHandler)
             }, cancellationToken);
 
@@ -237,6 +248,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 return false;
             }
         }
+
+        private static JsonNode ParsePayload(string payload)
+            => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
 
         private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(
             OrchestrationInstance instance,

@@ -11,6 +11,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
     internal sealed class CompleteCallbackDecisionHandler : IDecisionHandler<CompleteCallbackDecision>
     {
         private readonly IOrchestrationInstanceRepository _instanceRepository;
+        private readonly IStageExecutionRepository _stageRepository;
         private readonly ITaskExecutionRepository _taskRepository;
         private readonly ITaskExecutionAttemptRepository _attemptRepository;
         private readonly ITaskDispatchRepository _dispatchRepository;
@@ -19,6 +20,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         public CompleteCallbackDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
+            IStageExecutionRepository stageRepository,
             ITaskExecutionRepository taskRepository,
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
@@ -26,6 +28,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IOrchestrationPayloadState payloadState)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
+            _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
             _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
             _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
@@ -38,6 +41,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var task = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
+            var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
             var dispatch = await _dispatchRepository.GetById(decision.DispatchId, cancellationToken);
             var attempt = await _attemptRepository.GetByDispatchId(decision.DispatchId, cancellationToken);
             var result = decision.ExecutionResultMetadata ?? BuildMissingExecutionResultMetadata();
@@ -71,7 +75,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.LastUpdatedOnUtc = now;
             if (succeeded)
             {
-                instance.SnapshotPayload = _payloadState.ApplyCallbackPayload(instance, responsePayload);
+                instance.SnapshotPayload = _payloadState.ApplyCallbackPayload(
+                    instance,
+                    stage.StageKey,
+                    task.TaskKey,
+                    responsePayload);
             }
 
             await _dispatchRepository.Update(dispatch, cancellationToken);
