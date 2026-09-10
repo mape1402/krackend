@@ -8,17 +8,20 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
     private readonly IOrchestrationMessageMetadataAccessor _messageMetadataAccessor;
     private readonly IOrchestrationExecutionResultMetadataSetter _resultMetadataSetter;
     private readonly IOrchestrationExecutionResultMetadataFactory _resultMetadataFactory;
+    private readonly IOrchestrationPayloadSerializer _payloadSerializer;
     private readonly IOrchestrationClientPublisher _publisher;
 
     public DefaultOrchestrationPipelinePublisher(
         IOrchestrationMessageMetadataAccessor messageMetadataAccessor,
         IOrchestrationExecutionResultMetadataSetter resultMetadataSetter,
         IOrchestrationExecutionResultMetadataFactory resultMetadataFactory,
+        IOrchestrationPayloadSerializer payloadSerializer,
         IOrchestrationClientPublisher publisher)
     {
         _messageMetadataAccessor = messageMetadataAccessor ?? throw new ArgumentNullException(nameof(messageMetadataAccessor));
         _resultMetadataSetter = resultMetadataSetter ?? throw new ArgumentNullException(nameof(resultMetadataSetter));
         _resultMetadataFactory = resultMetadataFactory ?? throw new ArgumentNullException(nameof(resultMetadataFactory));
+        _payloadSerializer = payloadSerializer ?? throw new ArgumentNullException(nameof(payloadSerializer));
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
     }
 
@@ -30,7 +33,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         CancellationToken cancellationToken = default)
     {
         var messageMetadata = _messageMetadataAccessor.Get();
-        var businessPayload = OrchestrationPayloadSerializer.ToJsonNode(payload);
+        var businessPayload = _payloadSerializer.ToJsonNode(payload);
 
         if (HasReplyAddress(messageMetadata))
         {

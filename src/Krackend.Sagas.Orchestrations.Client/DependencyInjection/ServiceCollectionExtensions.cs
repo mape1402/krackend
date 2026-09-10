@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Client.Errors;
 using Krackend.Sagas.Orchestrations.Client.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
+using Krackend.Sagas.Orchestrations.Client.Serialization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
@@ -39,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IOrchestrationOperationExecutionContext, DefaultOrchestrationOperationExecutionContext>();
         services.TryAddScoped<IOrchestrationExecutionResultMetadataFactory, DefaultOrchestrationExecutionResultMetadataFactory>();
         services.TryAddScoped<IOrchestrationPipelinePublisher, DefaultOrchestrationPipelinePublisher>();
+        services.TryAddSingleton<IOrchestrationPayloadSerializer, DefaultOrchestrationPayloadSerializer>();
         services.TryAddSingleton<IOrchestrationExceptionErrorCodeMapper, DefaultOrchestrationExceptionErrorCodeMapper>();
 
         return new KrackendOrchestrationsClientBuilder(services);

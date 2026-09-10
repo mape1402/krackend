@@ -3,8 +3,8 @@ namespace Krackend.Sagas.Orchestrations.Client.Serialization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-internal static class OrchestrationPayloadSerializer
+internal sealed class DefaultOrchestrationPayloadSerializer : IOrchestrationPayloadSerializer
 {
-    public static JsonNode ToJsonNode(object payload)
+    public JsonNode ToJsonNode(object payload)
         => payload is null ? null : JsonSerializer.SerializeToNode(payload);
 }
