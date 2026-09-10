@@ -35,6 +35,7 @@ public sealed class OrchestrationSchemaContextBuilderTests
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
         Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.reserve-inventory.response");
+        Assert.Contains(context.Sources, x => x.Alias == "tasks.reserve-inventory.response");
         Assert.DoesNotContain(context.Sources, x => x.Alias == "stages.intake.tasks.authorize-payment.response");
     }
 
@@ -49,6 +50,8 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
         Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.reserve-inventory.response");
         Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.authorize-payment.response");
+        Assert.Contains(context.Sources, x => x.Alias == "tasks.reserve-inventory.response");
+        Assert.Contains(context.Sources, x => x.Alias == "tasks.authorize-payment.response");
         Assert.DoesNotContain(context.Sources, x => x.Alias == "stages.intake.tasks.notify-customer.response");
         Assert.DoesNotContain(context.Sources, x => x.Alias == "stages.intake.tasks.audit-sale.response");
     }
@@ -66,7 +69,22 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.authorize-payment.response");
         Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.notify-customer.response");
         Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.audit-sale.response");
+        Assert.Contains(context.Sources, x => x.Alias == "tasks.notify-customer.response");
+        Assert.Contains(context.Sources, x => x.Alias == "tasks.audit-sale.response");
         Assert.Equal("stages.fulfillment.tasks.close-sale.request", context.Target.Alias);
+    }
+
+    [Fact]
+    public async Task BuildForTask_DoesNotExposeShortAliasWhenTaskKeyIsAmbiguous()
+    {
+        var version = CreateVersionWithRepeatedTaskKey();
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, version.StageDefinitions[2].TaskDefinitions[0].Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.audit.response");
+        Assert.Contains(context.Sources, x => x.Alias == "stages.enrichment.tasks.audit.response");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "tasks.audit.response");
     }
 
     private static OrchestrationVersion CreateVersion()
@@ -166,6 +184,72 @@ public sealed class OrchestrationSchemaContextBuilderTests
                 ResponseSchemaBinding = Binding($"{key}.response", SchemaContractKind.CommandResponse)
             }
         };
+
+    private static OrchestrationVersion CreateVersionWithRepeatedTaskKey()
+    {
+        var versionId = Id.New();
+        var stageOneId = Id.New();
+        var stageTwoId = Id.New();
+        var stageThreeId = Id.New();
+
+        return new OrchestrationVersion
+        {
+            Id = versionId,
+            OrchestrationDefinitionId = Id.New(),
+            Version = new SemanticVersion(1, 2, 0),
+            Status = OrchestrationVersionStatus.Draft,
+            Checksum = new Checksum("schema-context-ambiguous-fixture"),
+            CreatedBy = "tests",
+            CreatedOnUtc = DateTime.UtcNow,
+            TriggerBindings =
+            [
+                new TriggerBinding
+                {
+                    Id = Id.New(),
+                    OrchestrationVersionId = versionId,
+                    Key = "sale-created",
+                    TriggerType = TriggerType.Event,
+                    IsEnabled = true,
+                    TriggerChannel = new EventTriggerChannel
+                    {
+                        Topic = "events.sales.sale.created",
+                        Version = new SemanticVersion(1, 2, 0),
+                        SchemaBinding = Binding("sales.sale.created", SchemaContractKind.Event)
+                    }
+                }
+            ],
+            StageDefinitions =
+            [
+                new StageDefinition
+                {
+                    Id = stageOneId,
+                    OrchestrationVersionId = versionId,
+                    Key = "intake",
+                    Name = "Intake",
+                    Order = 1,
+                    TaskDefinitions = [Task(stageOneId, "audit", 1)]
+                },
+                new StageDefinition
+                {
+                    Id = stageTwoId,
+                    OrchestrationVersionId = versionId,
+                    Key = "enrichment",
+                    Name = "Enrichment",
+                    Order = 2,
+                    TaskDefinitions = [Task(stageTwoId, "audit", 1)]
+                },
+                new StageDefinition
+                {
+                    Id = stageThreeId,
+                    OrchestrationVersionId = versionId,
+                    Key = "fulfillment",
+                    Name = "Fulfillment",
+                    Order = 3,
+                    TaskDefinitions = [Task(stageThreeId, "close-sale", 1)]
+                }
+            ]
+        };
+    }
 
     private static SchemaBinding Binding(string key, SchemaContractKind kind)
         => new()
