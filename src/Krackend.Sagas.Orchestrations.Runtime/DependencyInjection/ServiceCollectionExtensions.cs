@@ -47,6 +47,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IIntakeBuffer, DefaultIntakeBuffer>();
             services.TryAddScoped<ISagaEngine, SagaEngine>();
             services.TryAddScoped<IPromoter, Promoter>();
+            services.TryAddScoped<ITriggerPayloadValidator, DefaultTriggerPayloadValidator>();
             services.TryAddScoped<IDecisionControl, DecisionControl>();
             services.TryAddScoped<IDecisionExecutor, DecisionExecutor>();
             services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();

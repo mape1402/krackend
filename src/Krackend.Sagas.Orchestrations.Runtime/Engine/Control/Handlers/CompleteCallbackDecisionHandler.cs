@@ -152,7 +152,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             var validationBinding = messagingConfiguration.ResponseSchemaBinding ?? messagingConfiguration.SchemaBinding;
-            if (validationBinding?.IsValidationEnabled != true)
+            var validation = messagingConfiguration.ResponseValidation;
+            if (!ShouldValidate(validationBinding, validation))
             {
                 return result;
             }
@@ -163,6 +164,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     Task = taskArtifact,
                     SchemaBinding = validationBinding,
                     Payload = responsePayload?.DeepClone(),
+                    ValidationDsl = GetValidationDsl(validation),
                     Phase = "Response"
                 },
                 cancellationToken);
@@ -174,9 +176,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             result.Succeeded = false;
             result.Status = "Failed";
-            result.ErrorCode = string.IsNullOrWhiteSpace(validationResult.ErrorCode)
-                ? "ResponseValidationFailed"
-                : validationResult.ErrorCode;
+            result.ErrorCode = GetValidationErrorCode(validationResult.ErrorCode, validation, "ResponseValidationFailed");
             result.ErrorMessage = string.IsNullOrWhiteSpace(validationResult.ErrorMessage)
                 ? "Task response validation failed."
                 : validationResult.ErrorMessage;
@@ -188,6 +188,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             return result;
+        }
+
+        private static bool ShouldValidate(SchemaBindingArtifact schemaBinding, ValidationArtifact validation)
+            => schemaBinding?.IsValidationEnabled == true || validation?.IsEnabled == true;
+
+        private static string GetValidationDsl(ValidationArtifact validation)
+            => validation?.Configuration is DslValidationConfigurationArtifact dsl ? dsl.Dsl : string.Empty;
+
+        private static string GetValidationErrorCode(
+            string adapterErrorCode,
+            ValidationArtifact validation,
+            string fallbackErrorCode)
+        {
+            if (!string.IsNullOrWhiteSpace(adapterErrorCode))
+            {
+                return adapterErrorCode;
+            }
+
+            return string.IsNullOrWhiteSpace(validation?.ErrorCode) ? fallbackErrorCode : validation.ErrorCode;
         }
 
         private static void CopyExecutionResultMetadata(

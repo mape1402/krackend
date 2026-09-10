@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
@@ -629,6 +630,91 @@ internal static class DefinitionEntityMapper
     /// <summary>
     /// Executes ToJson.
     /// </summary>
+    private static ValidationDefinitionJsonModel ToJson(ValidationDefinition source)
+        => new()
+        {
+            IsEnabled = true,
+            Engine = source.Engine,
+            ErrorCode = string.IsNullOrWhiteSpace(source.ErrorCode) ? "PayloadValidationFailed" : source.ErrorCode,
+            Configuration = ToJson(source.Configuration),
+        };
+
+    private static ValidationConfigurationEnvelopeJsonModel ToJson(IValidationConfiguration configuration)
+        => configuration switch
+        {
+            DslValidationConfiguration dsl => new ValidationConfigurationEnvelopeJsonModel
+            {
+                Type = "dsl",
+                Dsl = new DslValidationConfigurationJsonModel
+                {
+                    Dsl = dsl.Dsl,
+                    SchemaHash = dsl.SchemaHash,
+                    SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
+                },
+            },
+            null => new ValidationConfigurationEnvelopeJsonModel
+            {
+                Type = "dsl",
+                Dsl = new DslValidationConfigurationJsonModel(),
+            },
+            _ => throw new NotSupportedException($"Validation configuration '{configuration.GetType().Name}' is not supported."),
+        };
+
+    /// <summary>
+    /// Executes ToOptionalJson.
+    /// </summary>
+    private static ValidationDefinitionJsonModel ToOptionalJson(
+        ValidationDefinition source,
+        bool isEnabled,
+        string fallbackErrorCode)
+    {
+        if (!isEnabled)
+        {
+            var json = source is null ? CreateEmptyValidationJson(fallbackErrorCode) : ToJson(source);
+            json.IsEnabled = false;
+            return json;
+        }
+
+        if (source is null)
+        {
+            var json = CreateEmptyValidationJson(fallbackErrorCode);
+            json.IsEnabled = true;
+            return json;
+        }
+
+        var enabledJson = ToJson(source);
+        enabledJson.IsEnabled = true;
+        return enabledJson;
+    }
+
+    /// <summary>
+    /// Executes ToModel.
+    /// </summary>
+    private static ValidationDefinition ToModel(ValidationDefinitionJsonModel source)
+        => new()
+        {
+            Engine = source?.Engine ?? EngineType.DSL,
+            ErrorCode = string.IsNullOrWhiteSpace(source?.ErrorCode) ? "PayloadValidationFailed" : source.ErrorCode,
+            Configuration = (source?.Configuration?.Type ?? string.Empty).ToLowerInvariant() switch
+            {
+                "dsl" => ToModel(source.Configuration.Dsl),
+                _ => ToModel(source?.Configuration?.Dsl),
+            },
+        };
+
+    private static DslValidationConfiguration ToModel(DslValidationConfigurationJsonModel source)
+        => new()
+        {
+            Dsl = source?.Dsl ?? string.Empty,
+            SchemaHash = source?.SchemaHash ?? string.Empty,
+            SemanticDiagnosticsJson = string.IsNullOrWhiteSpace(source?.SemanticDiagnosticsJson)
+                ? "{}"
+                : source.SemanticDiagnosticsJson,
+        };
+
+    /// <summary>
+    /// Executes ToJson.
+    /// </summary>
     private static TaskConfigurationEnvelopeJsonModel ToJson(ITaskConfiguration source)
         => source switch
         {
@@ -654,15 +740,23 @@ internal static class DefinitionEntityMapper
                 {
                     Topic = messaging.Topic,
                     Version = messaging.Version.ToString(),
-                    SchemaBinding = ToJson(messaging.SchemaBinding, messaging.HasSchemaValidation),
+                    SchemaBinding = ToJson(messaging.SchemaBinding, HasAnyMessagingValidation(messaging)),
                     RequestSchemaBinding = ToJson(
                         messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
-                        messaging.HasSchemaValidation,
+                        IsRequestValidationEnabled(messaging),
                         SchemaContractKind.CommandRequest),
                     ResponseSchemaBinding = ToJson(
                         messaging.ResponseSchemaBinding,
-                        messaging.HasSchemaValidation,
+                        IsResponseValidationEnabled(messaging),
                         SchemaContractKind.CommandResponse),
+                    RequestValidation = ToOptionalJson(
+                        messaging.RequestValidation,
+                        IsRequestValidationEnabled(messaging),
+                        "RequestValidationFailed"),
+                    ResponseValidation = ToOptionalJson(
+                        messaging.ResponseValidation,
+                        IsResponseValidationEnabled(messaging),
+                        "ResponseValidationFailed"),
                 },
             },
             PluginTaskConfiguration plugin => new TaskConfigurationEnvelopeJsonModel
@@ -705,17 +799,7 @@ internal static class DefinitionEntityMapper
                 ExpectedStatusCodes = source.Http?.ExpectedStatusCodes ?? new List<int>(),
                 AllowSyncResponse = source.Http?.AllowSyncResponse ?? false,
             },
-            "messaging" => new MessagingTaskConfiguration
-            {
-                Topic = source.Messaging?.Topic,
-                Version = ParseSemanticVersion(source.Messaging?.Version),
-                SchemaBinding = ToModel(source.Messaging?.SchemaBinding),
-                RequestSchemaBinding = ToModel(source.Messaging?.RequestSchemaBinding ?? source.Messaging?.SchemaBinding),
-                ResponseSchemaBinding = ToModel(source.Messaging?.ResponseSchemaBinding),
-                HasSchemaValidation = IsSchemaValidationEnabled(source.Messaging?.SchemaBinding) ||
-                    IsSchemaValidationEnabled(source.Messaging?.RequestSchemaBinding) ||
-                    IsSchemaValidationEnabled(source.Messaging?.ResponseSchemaBinding),
-            },
+            "messaging" => ToMessagingTaskConfiguration(source.Messaging),
             "plugin" => new PluginTaskConfiguration
             {
                 PluginId = ParseId(source.Plugin?.PluginId),
@@ -800,6 +884,12 @@ internal static class DefinitionEntityMapper
     /// <summary>
     /// Executes ToOptionalModel.
     /// </summary>
+    private static ValidationDefinition ToOptionalModel(ValidationDefinitionJsonModel source)
+        => IsValidationEnabled(source) ? ToModel(source) : null;
+
+    /// <summary>
+    /// Executes ToOptionalModel.
+    /// </summary>
     private static RetryPolicy ToOptionalModel(RetryPolicyJsonModel source)
         => source is null ? null : ToModel(source);
 
@@ -827,6 +917,10 @@ internal static class DefinitionEntityMapper
                 Event = new EventTriggerChannelJsonModel
                 {
                     SchemaBinding = ToJson(evt.SchemaBinding, evt.HasSchemaValidation),
+                    Validation = ToOptionalJson(
+                        evt.Validation,
+                        IsEventValidationEnabled(evt),
+                        "TriggerValidationFailed"),
                     Topic = evt.Topic,
                     Version = evt.Version.ToString(),
                 },
@@ -840,13 +934,7 @@ internal static class DefinitionEntityMapper
     private static ITriggerChannel ToModel(TriggerChannelEnvelopeJsonModel source)
         => (source?.Type ?? string.Empty).ToLowerInvariant() switch
         {
-            "event" => new EventTriggerChannel
-            {
-                SchemaBinding = ToModel(source.Event?.SchemaBinding),
-                HasSchemaValidation = IsSchemaValidationEnabled(source.Event?.SchemaBinding),
-                Topic = source.Event?.Topic,
-                Version = ParseSemanticVersion(source.Event?.Version),
-            },
+            "event" => ToEventTriggerChannel(source.Event),
             _ => new EventTriggerChannel(),
         };
 
@@ -949,6 +1037,69 @@ internal static class DefinitionEntityMapper
         };
     }
 
+    private static ValidationDefinitionJsonModel CreateEmptyValidationJson(string fallbackErrorCode)
+        => new()
+        {
+            IsEnabled = false,
+            Engine = EngineType.DSL,
+            ErrorCode = string.IsNullOrWhiteSpace(fallbackErrorCode) ? "PayloadValidationFailed" : fallbackErrorCode,
+            Configuration = new ValidationConfigurationEnvelopeJsonModel
+            {
+                Type = "dsl",
+                Dsl = new DslValidationConfigurationJsonModel(),
+            },
+        };
+
+    private static MessagingTaskConfiguration ToMessagingTaskConfiguration(MessagingTaskConfigurationJsonModel source)
+    {
+        var requestSchemaBinding = ToModel(source?.RequestSchemaBinding ?? source?.SchemaBinding);
+        var responseSchemaBinding = ToModel(source?.ResponseSchemaBinding);
+        var isRequestValidationEnabled = IsValidationEnabled(source?.RequestValidation) ||
+            IsSchemaValidationEnabled(source?.RequestSchemaBinding) ||
+            (source?.RequestSchemaBinding is null && IsSchemaValidationEnabled(source?.SchemaBinding));
+        var isResponseValidationEnabled = IsValidationEnabled(source?.ResponseValidation) ||
+            IsSchemaValidationEnabled(source?.ResponseSchemaBinding);
+
+        return new MessagingTaskConfiguration
+        {
+            Topic = source?.Topic,
+            Version = ParseSemanticVersion(source?.Version),
+            SchemaBinding = ToModel(source?.SchemaBinding),
+            RequestSchemaBinding = requestSchemaBinding,
+            ResponseSchemaBinding = responseSchemaBinding,
+            HasSchemaValidation = IsSchemaValidationEnabled(source?.SchemaBinding) ||
+                IsSchemaValidationEnabled(source?.RequestSchemaBinding) ||
+                IsSchemaValidationEnabled(source?.ResponseSchemaBinding),
+            RequestValidation = ToOptionalModel(source?.RequestValidation),
+            HasRequestValidation = isRequestValidationEnabled,
+            ResponseValidation = ToOptionalModel(source?.ResponseValidation),
+            HasResponseValidation = isResponseValidationEnabled,
+        };
+    }
+
+    private static EventTriggerChannel ToEventTriggerChannel(EventTriggerChannelJsonModel source)
+        => new()
+        {
+            SchemaBinding = ToModel(source?.SchemaBinding),
+            HasSchemaValidation = IsSchemaValidationEnabled(source?.SchemaBinding),
+            Validation = ToOptionalModel(source?.Validation),
+            HasValidation = IsValidationEnabled(source?.Validation) || IsSchemaValidationEnabled(source?.SchemaBinding),
+            Topic = source?.Topic,
+            Version = ParseSemanticVersion(source?.Version),
+        };
+
+    private static bool HasAnyMessagingValidation(MessagingTaskConfiguration source)
+        => IsRequestValidationEnabled(source) || IsResponseValidationEnabled(source);
+
+    private static bool IsRequestValidationEnabled(MessagingTaskConfiguration source)
+        => source?.HasRequestValidation == true || source?.HasSchemaValidation == true;
+
+    private static bool IsResponseValidationEnabled(MessagingTaskConfiguration source)
+        => source?.HasResponseValidation == true || source?.HasSchemaValidation == true;
+
+    private static bool IsEventValidationEnabled(EventTriggerChannel source)
+        => source?.HasValidation == true || source?.HasSchemaValidation == true;
+
     private static bool IsExecutionConditionEnabled(ExecutionConditionJsonModel source)
     {
         if (source is null)
@@ -960,6 +1111,16 @@ internal static class DefinitionEntityMapper
     }
 
     private static bool IsTransformationEnabled(TransformationDefinitionJsonModel source)
+    {
+        if (source is null)
+        {
+            return false;
+        }
+
+        return source.IsEnabled;
+    }
+
+    private static bool IsValidationEnabled(ValidationDefinitionJsonModel source)
     {
         if (source is null)
         {

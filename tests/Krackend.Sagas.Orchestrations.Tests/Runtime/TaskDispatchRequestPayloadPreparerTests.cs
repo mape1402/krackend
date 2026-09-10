@@ -81,6 +81,33 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
         Assert.True(exception.Diagnostics.ContainsKey("field"));
     }
 
+    [Fact]
+    public async Task PrepareAsyncPassesRequestValidationDslFromMessagingArtifact()
+    {
+        OrchestrationValidationRequest? capturedRequest = null;
+        var validationExecutor = Substitute.For<IOrchestrationValidationExecutor>();
+        validationExecutor.ValidateAsync(
+                Arg.Do<OrchestrationValidationRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationValidationResult.Success());
+
+        var preparer = CreatePreparer(validationExecutor: validationExecutor);
+
+        await preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+        {
+            Instance = CreateInstance(),
+            StageKey = "inventory-reservation",
+            Task = CreateTask(),
+            MessagingConfiguration = CreateMessagingConfiguration(
+                validationEnabled: true,
+                validationDsl: "request payload validation")
+        });
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("Request", capturedRequest.Phase);
+        Assert.Equal("request payload validation", capturedRequest.ValidationDsl);
+    }
+
     private static DefaultTaskDispatchRequestPayloadPreparer CreatePreparer(
         IOrchestrationTransformationExecutor? transformationExecutor = null,
         IOrchestrationValidationExecutor? validationExecutor = null)
@@ -134,7 +161,9 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
             TaskDispatchType.FireAndWait,
             true);
 
-    private static MessagingTaskConfigurationArtifact CreateMessagingConfiguration(bool validationEnabled = false)
+    private static MessagingTaskConfigurationArtifact CreateMessagingConfiguration(
+        bool validationEnabled = false,
+        string validationDsl = "")
         => new("inventories.reserve", new SemanticVersion(1, 0, 0), null)
         {
             RequestSchemaBinding = new SchemaBindingArtifact(
@@ -148,6 +177,14 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
                 true)
             {
                 IsValidationEnabled = validationEnabled
-            }
+            },
+            RequestValidation = new ValidationArtifact(EngineType.DSL, new DslValidationConfigurationArtifact
+            {
+                Dsl = validationDsl
+            })
+            {
+                IsEnabled = validationEnabled,
+                ErrorCode = "RequestValidationFailed"
+            },
         };
 }

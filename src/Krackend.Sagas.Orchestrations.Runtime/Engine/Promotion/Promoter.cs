@@ -13,25 +13,42 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IResolvedOrchestrationArtifactAccessor _artifactAccessor;
         private readonly IOrchestrationPayloadState _payloadState;
+        private readonly ITriggerPayloadValidator _triggerPayloadValidator;
 
         public Promoter(
             IRuntimeArtifactResolver artifactResolver,
             IOrchestrationInstanceRepository instanceRepository,
             IExecutionTransitionRepository transitionRepository,
             IResolvedOrchestrationArtifactAccessor artifactAccessor,
-            IOrchestrationPayloadState payloadState)
+            IOrchestrationPayloadState payloadState,
+            ITriggerPayloadValidator triggerPayloadValidator)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _artifactAccessor = artifactAccessor ?? throw new ArgumentNullException(nameof(artifactAccessor));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
+            _triggerPayloadValidator = triggerPayloadValidator ?? throw new ArgumentNullException(nameof(triggerPayloadValidator));
         }
 
         public async Task<PromotionResult> PromoteToInstanceAsync(PromotionRequest request, CancellationToken cancellationToken = default)
         {
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
             _artifactAccessor.Set(resolvedArtifact);
+            var validationResult = await _triggerPayloadValidator.ValidateAsync(
+                resolvedArtifact,
+                request.Payload,
+                cancellationToken);
+            if (!validationResult.Succeeded)
+            {
+                return new PromotionResult
+                {
+                    Success = false,
+                    ErrorMessage = string.IsNullOrWhiteSpace(validationResult.ErrorMessage)
+                        ? "Trigger payload validation failed."
+                        : validationResult.ErrorMessage
+                };
+            }
 
             var now = DateTime.UtcNow;
             var instanceId = Id.New();

@@ -23,6 +23,16 @@ public class EventTriggerChannel : ITriggerChannel
     public bool HasSchemaValidation { get; set; }
 
     /// <summary>
+    /// Gets or sets the validation executed against incoming event payloads.
+    /// </summary>
+    public ValidationDefinition Validation { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether incoming event validation is enabled.
+    /// </summary>
+    public bool HasValidation { get; set; }
+
+    /// <summary>
     /// Gets or sets the topic used to subscribe or publish orchestration trigger events.
     /// </summary>
     public string Topic { get; set; }

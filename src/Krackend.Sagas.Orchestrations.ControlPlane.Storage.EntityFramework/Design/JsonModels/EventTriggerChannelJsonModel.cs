@@ -10,6 +10,10 @@ public sealed class EventTriggerChannelJsonModel : TriggerChannelJsonModel
     /// </summary>
     public SchemaBindingJsonModel SchemaBinding { get; set; }
     /// <summary>
+    /// Gets or sets incoming payload validation.
+    /// </summary>
+    public ValidationDefinitionJsonModel Validation { get; set; }
+    /// <summary>
     /// Gets or sets Topic.
     /// </summary>
     public string Topic { get; set; }
