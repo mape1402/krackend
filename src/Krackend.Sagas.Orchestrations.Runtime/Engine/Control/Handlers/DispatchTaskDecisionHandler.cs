@@ -7,8 +7,6 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
@@ -27,9 +25,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
         private readonly IOrchestrationPayloadState _payloadState;
-        private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
-        private readonly IOrchestrationTransformationExecutor _transformationExecutor;
-        private readonly IOrchestrationValidationExecutor _validationExecutor;
+        private readonly ITaskDispatchRequestPayloadPreparer _requestPayloadPreparer;
 
         public DispatchTaskDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -41,9 +37,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IMessagingCommandSerializer messagingCommandSerializer,
             IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
             IOrchestrationPayloadState payloadState,
-            IOrchestrationPayloadContextFactory payloadContextFactory,
-            IOrchestrationTransformationExecutor transformationExecutor,
-            IOrchestrationValidationExecutor validationExecutor)
+            ITaskDispatchRequestPayloadPreparer requestPayloadPreparer)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -54,9 +48,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
-            _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
-            _transformationExecutor = transformationExecutor ?? throw new ArgumentNullException(nameof(transformationExecutor));
-            _validationExecutor = validationExecutor ?? throw new ArgumentNullException(nameof(validationExecutor));
+            _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
         }
 
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
@@ -134,11 +126,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             try
             {
-                requestPayload = await PrepareRequestPayloadAsync(
-                    decision,
-                    messagingConfiguration,
-                    instance,
+                var preparation = await _requestPayloadPreparer.PrepareAsync(
+                    new TaskDispatchRequestPayloadPreparationRequest
+                    {
+                        Instance = instance,
+                        StageKey = decision.StageKey,
+                        Task = decision.Task,
+                        MessagingConfiguration = messagingConfiguration,
+                        Payload = decision.Payload
+                    },
                     cancellationToken);
+
+                requestPayload = preparation.Payload;
 
                 attempt.RequestPayload = requestPayload?.DeepClone();
                 dispatch.RequestPayload = requestPayload?.DeepClone();
@@ -194,63 +193,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 replyAddress,
                 requestPayload?.ToJsonString(),
                 cancellationToken);
-        }
-
-        private async Task<JsonNode> PrepareRequestPayloadAsync(
-            DispatchTaskDecision decision,
-            MessagingTaskConfigurationArtifact messagingConfiguration,
-            OrchestrationInstance instance,
-            CancellationToken cancellationToken)
-        {
-            var payloadContext = _payloadContextFactory.Create(instance, decision.StageKey, decision.Task.Key);
-            var requestPayload = string.IsNullOrWhiteSpace(decision.Payload)
-                ? payloadContext.TriggerPayload?.DeepClone()
-                : ParsePayload(decision.Payload);
-
-            if (decision.Task.Transformation?.IsEnabled == true)
-            {
-                var transformResult = await _transformationExecutor.TransformAsync(
-                    new OrchestrationTransformationRequest
-                    {
-                        Task = decision.Task,
-                        PayloadContext = payloadContext
-                    },
-                    cancellationToken);
-
-                if (!transformResult.Succeeded)
-                {
-                    throw new TaskDispatchPreparationException(
-                        string.IsNullOrWhiteSpace(transformResult.ErrorCode) ? "TransformationFailed" : transformResult.ErrorCode,
-                        string.IsNullOrWhiteSpace(transformResult.ErrorMessage) ? "Task transformation failed." : transformResult.ErrorMessage,
-                        transformResult.Diagnostics);
-                }
-
-                requestPayload = transformResult.Payload?.DeepClone();
-            }
-
-            var validationBinding = GetRequestValidationBinding(messagingConfiguration);
-            if (validationBinding?.IsValidationEnabled == true)
-            {
-                var validationResult = await _validationExecutor.ValidateAsync(
-                    new OrchestrationValidationRequest
-                    {
-                        Task = decision.Task,
-                        SchemaBinding = validationBinding,
-                        Payload = requestPayload?.DeepClone(),
-                        Phase = "Request"
-                    },
-                    cancellationToken);
-
-                if (!validationResult.Succeeded)
-                {
-                    throw new TaskDispatchPreparationException(
-                        string.IsNullOrWhiteSpace(validationResult.ErrorCode) ? "RequestValidationFailed" : validationResult.ErrorCode,
-                        string.IsNullOrWhiteSpace(validationResult.ErrorMessage) ? "Task request validation failed." : validationResult.ErrorMessage,
-                        validationResult.Diagnostics);
-                }
-            }
-
-            return requestPayload;
         }
 
         private async Task<bool> TryQueueDispatchAsync(
@@ -351,9 +293,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         private static JsonNode ParsePayload(string payload)
             => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
-
-        private static SchemaBindingArtifact GetRequestValidationBinding(MessagingTaskConfigurationArtifact configuration)
-            => configuration.RequestSchemaBinding ?? configuration.SchemaBinding;
 
         private async Task MarkPreparationFailedAsync(
             DispatchTaskDecision decision,
