@@ -14,6 +14,7 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
     private readonly ITaskRepository _taskRepository;
     private readonly IParallelGroupRepository _parallelGroupRepository;
     private readonly IBranchRuleRepository _branchRuleRepository;
+    private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrchestrationVersionArtifactSnapshotBuilder"/> class.
@@ -24,7 +25,8 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
         IStageRepository stageRepository,
         ITaskRepository taskRepository,
         IParallelGroupRepository parallelGroupRepository,
-        IBranchRuleRepository branchRuleRepository)
+        IBranchRuleRepository branchRuleRepository,
+        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver)
     {
         _triggerBindingRepository = triggerBindingRepository ?? throw new ArgumentNullException(nameof(triggerBindingRepository));
         _variableDefinitionRepository = variableDefinitionRepository ?? throw new ArgumentNullException(nameof(variableDefinitionRepository));
@@ -32,6 +34,7 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
         _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
         _parallelGroupRepository = parallelGroupRepository ?? throw new ArgumentNullException(nameof(parallelGroupRepository));
         _branchRuleRepository = branchRuleRepository ?? throw new ArgumentNullException(nameof(branchRuleRepository));
+        _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver ?? throw new ArgumentNullException(nameof(schemaBindingSnapshotResolver));
     }
 
     /// <summary>
@@ -68,6 +71,7 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
                 .ToList();
         }
 
+        await _schemaBindingSnapshotResolver.ResolveAsync(version, cancellationToken);
         ValidateSnapshot(version);
         return version;
     }
