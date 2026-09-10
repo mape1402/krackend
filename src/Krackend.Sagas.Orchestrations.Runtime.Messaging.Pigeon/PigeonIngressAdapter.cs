@@ -31,7 +31,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
         {
             var version = SemanticVersion.Parse(configuration.Version);
             var endpointKey = BuildEndpointKey(configuration.Topic, configuration.Version, SubscriptionName);
-            if (!_consumerRegistry.TryBeginRegistration(endpointKey))
+            var registration = new PigeonIngressConsumerRegistration(
+                configuration.ConnectorId,
+                endpointKey,
+                configuration.Topic,
+                configuration.Version,
+                SubscriptionName);
+
+            if (!_consumerRegistry.TryAttach(registration, out var shouldRegisterEndpoint) ||
+                !shouldRegisterEndpoint)
             {
                 return Task.CompletedTask;
             }
@@ -78,11 +86,39 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             }
             catch
             {
-                _consumerRegistry.Forget(endpointKey);
+                _consumerRegistry.ForgetConnector(configuration.ConnectorId);
                 throw;
             }
 
             return Task.CompletedTask;   
+        }
+
+        public Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default)
+        {
+            if (!_consumerRegistry.TryDetach(
+                connectorId,
+                out var registration,
+                out var shouldRemoveEndpoint) ||
+                !shouldRemoveEndpoint)
+            {
+                return Task.CompletedTask;
+            }
+
+            var version = SemanticVersion.Parse(registration.Version);
+            try
+            {
+                _consumingConfigurator.RemoveConsumer(registration.Topic, version);
+            }
+            catch (InvalidOperationException ex) when (IsAlreadyRemoved(ex))
+            {
+                _logger.LogInformation(
+                    "Pigeon consumer for topic '{Topic}' version '{Version}' subscription '{Subscription}' was already removed.",
+                    registration.Topic,
+                    registration.Version,
+                    registration.Subscription);
+            }
+
+            return Task.CompletedTask;
         }
 
         private static bool Matches(
@@ -107,5 +143,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
         private static bool IsAlreadyRegistered(Exception exception)
             => exception.Message.Contains("already registered", StringComparison.OrdinalIgnoreCase) ||
                exception.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsAlreadyRemoved(Exception exception)
+            => exception.Message.Contains("not registered", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
     }
 }

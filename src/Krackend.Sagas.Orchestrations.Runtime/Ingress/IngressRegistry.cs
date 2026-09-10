@@ -8,7 +8,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IRuntimeIngressLocalState _localState;
 
-        private readonly ConcurrentDictionary<string, IList<string>> _connectors = new();
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, IngressConnectorRegistration>> _connectors = new();
 
         public IngressRegistry(
             IServiceScopeFactory scopeFactory,
@@ -56,14 +56,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
         public async Task ShutDownAllAsync(CancellationToken cancellationToken = default)
         {
-            foreach (var connectorsByArtifact in _connectors.Values)
-                await ShutDownConfigurationsAsync(connectorsByArtifact.AsReadOnly(), cancellationToken);
+            foreach (var artifactConnectors in _connectors.ToArray())
+            {
+                if (_connectors.TryRemove(artifactConnectors.Key, out var connectorsByArtifact))
+                {
+                    await ShutDownConfigurationsAsync(connectorsByArtifact.Values.ToArray(), cancellationToken);
+                }
+            }
+
+            _localState.Clear();
         }
 
         public async Task ShutDownOneAsync(string artifactId, CancellationToken cancellationToken = default)
         {
-            if(_connectors.TryGetValue(artifactId, out var connectorsByArtifact))
-                await ShutDownConfigurationsAsync(connectorsByArtifact.AsReadOnly(), cancellationToken);
+            if (_connectors.TryRemove(artifactId, out var connectorsByArtifact))
+            {
+                await ShutDownConfigurationsAsync(connectorsByArtifact.Values.ToArray(), cancellationToken);
+            }
+
+            _localState.Forget(artifactId);
         }
 
         private async Task StandUpConfigurationsAsync(
@@ -78,8 +89,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             foreach (var configuration in configurations)
             {
-                if (_connectors.TryGetValue(configuration.ArtifactId, out var existingConnectorIds)
-                    && existingConnectorIds.Contains(configuration.Id))
+                var connectorRegistrations = _connectors.GetOrAdd(
+                    configuration.ArtifactId,
+                    _ => new ConcurrentDictionary<string, IngressConnectorRegistration>());
+
+                if (!connectorRegistrations.TryAdd(
+                    configuration.Id,
+                    new IngressConnectorRegistration(configuration.Id, configuration.IngressTransport)))
                 {
                     continue;
                 }
@@ -88,22 +104,37 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
                 if (connector == null)
                 {
+                    connectorRegistrations.TryRemove(configuration.Id, out _);
                     throw new IngressStandupConfigurationException($"Cannot stand up ingress configuration '{configuration.Id}' for artifact '{configuration.ArtifactId}' because transport '{configuration.IngressTransport}' has no registered connector.");
                 }
 
-                await connector.ConnectAsync(configuration, cancellationToken);
-
-                if (!_connectors.TryGetValue(configuration.ArtifactId, out var connectorIds))
-                    connectorIds = new List<string>();
-
-                connectorIds.Add(configuration.Id);
-                _connectors.AddOrUpdate(configuration.ArtifactId, connectorIds, (_, _) => connectorIds);
+                try
+                {
+                    await connector.ConnectAsync(configuration, cancellationToken);
+                }
+                catch
+                {
+                    connectorRegistrations.TryRemove(configuration.Id, out _);
+                    throw;
+                }
             }
         }
 
-        private Task ShutDownConfigurationsAsync(IReadOnlyCollection<string> connectorIds, CancellationToken cancellationToken = default)
+        private async Task ShutDownConfigurationsAsync(
+            IReadOnlyCollection<IngressConnectorRegistration> connectorRegistrations,
+            CancellationToken cancellationToken = default)
         {
-            return Task.CompletedTask; //TODO: Implement shutdown!!!
+            using var scope = _scopeFactory.CreateScope();
+            foreach (var registration in connectorRegistrations)
+            {
+                var connector = scope.ServiceProvider.GetKeyedService<IIngressConector>(registration.IngressTransport);
+                if (connector is null)
+                {
+                    continue;
+                }
+
+                await connector.DisconnectAsync(registration.ConnectorId, cancellationToken);
+            }
         }
     }
 }
