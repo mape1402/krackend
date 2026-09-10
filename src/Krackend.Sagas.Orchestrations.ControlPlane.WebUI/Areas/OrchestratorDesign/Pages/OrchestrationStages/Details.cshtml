@@ -309,6 +309,23 @@
                     </div>
                 </div>
 
+                <div class="od-schema-context-panel mt-3" id="taskTransformationSchemaContext">
+                    <div class="d-flex justify-content-between gap-2 align-items-center mb-2">
+                        <strong>Schema context</strong>
+                        <span class="badge text-bg-light" id="taskTransformationSchemaSignature">-</span>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-7">
+                            <div class="small text-muted mb-1">Sources</div>
+                            <div class="od-schema-context-list" id="taskTransformationSchemaSources"></div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="small text-muted mb-1">Target</div>
+                            <div class="od-schema-context-list" id="taskTransformationSchemaTarget"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="taskTransformationUnsupportedEngineWarningQuick" class="alert alert-warning mt-3 d-none mb-0">
                     Selected transformation engine does not define specific configuration fields yet.
                 </div>
@@ -941,6 +958,7 @@
 @section Scripts {
 <script>
 const orchestrationStageCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+const orchestrationStageVersionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.VersionId));
 
 function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     if (!modalElement) {
@@ -1014,6 +1032,9 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const transformationSection = document.getElementById('taskTransformationSectionQuick');
     const transformationWarning = document.getElementById('taskTransformationUnsupportedEngineWarningQuick');
     const saveTransformationButton = document.getElementById('taskTransformationSaveButton');
+    const transformationSchemaSignature = document.getElementById('taskTransformationSchemaSignature');
+    const transformationSchemaSources = document.getElementById('taskTransformationSchemaSources');
+    const transformationSchemaTarget = document.getElementById('taskTransformationSchemaTarget');
     setStageModalReadOnly(executionConditionModalElement, !canEdit, saveExecutionConditionButton);
     setStageModalReadOnly(transformationModalElement, !canEdit, saveTransformationButton);
     setStageModalReadOnly(editGroupModalElement, !canEdit, saveParallelGroupButton);
@@ -1215,10 +1236,100 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         refreshTransformationConfigByEngine();
     }
 
+    function clearSchemaContext(container, emptyText) {
+        if (!container) {
+            return;
+        }
+
+        container.replaceChildren();
+        const empty = document.createElement('div');
+        empty.className = 'od-schema-context-item';
+        const label = document.createElement('span');
+        label.textContent = emptyText;
+        empty.appendChild(label);
+        container.appendChild(empty);
+    }
+
+    function createSchemaContextItem(title, detail, hash) {
+        const item = document.createElement('div');
+        item.className = 'od-schema-context-item';
+
+        const titleElement = document.createElement('strong');
+        titleElement.textContent = title || '-';
+        item.appendChild(titleElement);
+
+        const detailElement = document.createElement('span');
+        detailElement.textContent = detail || '-';
+        item.appendChild(detailElement);
+
+        if (hash) {
+            const hashElement = document.createElement('span');
+            hashElement.textContent = `snapshot ${hash}`;
+            item.appendChild(hashElement);
+        }
+
+        return item;
+    }
+
+    function schemaBindingDetail(schema) {
+        if (!schema) {
+            return 'No schema binding';
+        }
+
+        const contract = [schema.contractKind, schema.contractKey, schema.contractVersion]
+            .filter(value => value)
+            .join(' | ');
+        const provider = schema.registryProviderKey ? `provider ${schema.registryProviderKey}` : '';
+        return [contract, provider].filter(value => value).join(' | ') || 'Schema binding';
+    }
+
+    function renderTaskTransformationSchemaContext(context) {
+        if (transformationSchemaSignature) {
+            const signature = context?.signature || '-';
+            transformationSchemaSignature.textContent = signature === '-' ? signature : signature.substring(0, 12);
+            transformationSchemaSignature.title = signature;
+        }
+
+        if (!context) {
+            clearSchemaContext(transformationSchemaSources, 'Schema context unavailable');
+            clearSchemaContext(transformationSchemaTarget, 'Target unavailable');
+            return;
+        }
+
+        if (transformationSchemaSources) {
+            transformationSchemaSources.replaceChildren();
+            const sources = Array.isArray(context.sources) ? context.sources : [];
+            if (sources.length === 0) {
+                clearSchemaContext(transformationSchemaSources, 'No source schemas');
+            } else {
+                sources.forEach(source => {
+                    transformationSchemaSources.appendChild(createSchemaContextItem(
+                        source.alias,
+                        schemaBindingDetail(source.schema),
+                        source.schema?.snapshotHash));
+                });
+            }
+        }
+
+        if (transformationSchemaTarget) {
+            transformationSchemaTarget.replaceChildren();
+            if (!context.target) {
+                clearSchemaContext(transformationSchemaTarget, 'Target unavailable');
+            } else {
+                transformationSchemaTarget.appendChild(createSchemaContextItem(
+                    context.target.alias,
+                    schemaBindingDetail(context.target.schema),
+                    context.target.schema?.snapshotHash));
+            }
+        }
+    }
+
     async function openTaskTransformationModal(taskId) {
         if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationDslInput || !transformationModalElement || !window.bootstrap?.Modal) {
             return;
         }
+
+        renderTaskTransformationSchemaContext(null);
 
         const response = await fetch(`${window.location.pathname}?handler=TaskTransformationForEdit&taskId=${encodeURIComponent(taskId)}`);
         if (!response.ok) {
@@ -1226,6 +1337,11 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         }
 
         const payload = await response.json();
+        const schemaResponse = await fetch(`${window.location.pathname}?handler=TaskSchemaContext&versionId=${encodeURIComponent(orchestrationStageVersionId)}&taskId=${encodeURIComponent(taskId)}`);
+        if (schemaResponse.ok) {
+            renderTaskTransformationSchemaContext(await schemaResponse.json());
+        }
+
         transformationTaskIdInput.value = payload.taskId || taskId;
         transformationEnabledInput.checked = !!payload.hasTransformation;
         transformationEngineInput.value = payload.transformationEngine || 'DSL';

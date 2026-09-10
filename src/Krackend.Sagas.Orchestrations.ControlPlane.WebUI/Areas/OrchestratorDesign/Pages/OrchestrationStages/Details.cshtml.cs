@@ -24,17 +24,20 @@ public sealed class DetailsModel : PageModel
     private readonly ITaskApplicationService _taskService;
     private readonly IParallelGroupApplicationService _parallelGroupService;
     private readonly IOrchestrationVersionApplicationService _versionService;
+    private readonly IOrchestrationSchemaContextApplicationService _schemaContextService;
 
     public DetailsModel(
         IStageApplicationService stageService,
         ITaskApplicationService taskService,
         IParallelGroupApplicationService parallelGroupService,
-        IOrchestrationVersionApplicationService versionService)
+        IOrchestrationVersionApplicationService versionService,
+        IOrchestrationSchemaContextApplicationService schemaContextService)
     {
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
         _taskService = taskService ?? throw new ArgumentNullException(nameof(taskService));
         _parallelGroupService = parallelGroupService ?? throw new ArgumentNullException(nameof(parallelGroupService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
+        _schemaContextService = schemaContextService ?? throw new ArgumentNullException(nameof(schemaContextService));
     }
 
     [BindProperty(SupportsGet = true)]
@@ -321,6 +324,26 @@ public sealed class DetailsModel : PageModel
         }
 
         return new JsonResult(BuildTaskTransformationEditPayload(task));
+    }
+
+    /// <summary>
+    /// Loads schema context available to one task transformation.
+    /// </summary>
+    public async Task<IActionResult> OnGetTaskSchemaContextAsync(
+        string versionId,
+        string taskId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(versionId) || string.IsNullOrWhiteSpace(taskId))
+        {
+            return BadRequest();
+        }
+
+        var context = await _schemaContextService.GetForTask(
+            new GetTaskSchemaContextQuery(versionId, taskId),
+            cancellationToken);
+
+        return new JsonResult(BuildTaskSchemaContextPayload(context));
     }
 
     /// <summary>
@@ -989,6 +1012,63 @@ public sealed class DetailsModel : PageModel
             hasTransformation = task.HasTransformation,
             transformationEngine = task.Transformation?.Engine.ToString() ?? EngineType.DSL.ToString(),
             transformationDsl = (task.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
+        };
+    }
+
+    private static object BuildTaskSchemaContextPayload(OrchestrationSchemaContext context)
+    {
+        return new
+        {
+            orchestrationVersionId = context.OrchestrationVersionId,
+            orchestrationVersion = context.OrchestrationVersion,
+            stageKey = context.StageKey,
+            taskKey = context.TaskKey,
+            signature = context.Signature,
+            sources = context.Sources.Select(BuildTaskSchemaSourcePayload).ToArray(),
+            target = BuildTaskSchemaTargetPayload(context.Target)
+        };
+    }
+
+    private static object BuildTaskSchemaSourcePayload(OrchestrationSchemaSource source)
+    {
+        return new
+        {
+            alias = source.Alias,
+            sourceKind = source.SourceKind.ToString(),
+            stageKey = source.StageKey ?? string.Empty,
+            taskKey = source.TaskKey ?? string.Empty,
+            schema = BuildSchemaBindingPayload(source.SchemaBinding)
+        };
+    }
+
+    private static object BuildTaskSchemaTargetPayload(OrchestrationSchemaTarget target)
+    {
+        return new
+        {
+            alias = target?.Alias ?? string.Empty,
+            stageKey = target?.StageKey ?? string.Empty,
+            taskKey = target?.TaskKey ?? string.Empty,
+            schema = BuildSchemaBindingPayload(target?.SchemaBinding)
+        };
+    }
+
+    private static object BuildSchemaBindingPayload(SchemaBinding binding)
+    {
+        if (binding is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            contractKey = binding.ContractKey,
+            contractVersion = binding.ContractVersion.ToString(),
+            contractKind = binding.ContractKind.ToString(),
+            registryProviderKey = binding.RegistryProviderKey,
+            strictMode = binding.StrictMode,
+            isValidationEnabled = binding.IsValidationEnabled,
+            snapshotHash = binding.Snapshot?.ContentHash ?? string.Empty,
+            schemaFormat = binding.Snapshot?.SchemaFormat ?? string.Empty
         };
     }
 
