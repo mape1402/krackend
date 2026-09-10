@@ -19,7 +19,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         var definition = CreateDefinition();
         var version = CreateVersion(definition.Id);
 
-        var payloadJson = OrchestrationArtifactPayloadFactory.CreatePayloadJson(definition, version);
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
         var artifact = JsonNode.Parse(payloadJson)!.AsObject();
         var trigger = artifact["TriggerBindings"]!.AsArray()[0]!["TriggerChannel"]!.AsObject();
         var stage = artifact["StageDefinitions"]!.AsArray()[0]!.AsObject();
