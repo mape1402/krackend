@@ -11,15 +11,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigureOptions<MuleSettings>
 {
     private readonly IRuntimeReplicaIdentity _replicaIdentity;
-    private readonly int _parallelism;
+    private readonly KrackendOrchestrationsMuleRuntimeOptions _runtimeOptions;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MuleRuntimeArtifactLifecycleOptionsConfigurer"/> class.
     /// </summary>
-    public MuleRuntimeArtifactLifecycleOptionsConfigurer(IRuntimeReplicaIdentity replicaIdentity)
+    public MuleRuntimeArtifactLifecycleOptionsConfigurer(
+        IRuntimeReplicaIdentity replicaIdentity,
+        IOptions<KrackendOrchestrationsMuleRuntimeOptions> runtimeOptions)
     {
         _replicaIdentity = replicaIdentity ?? throw new ArgumentNullException(nameof(replicaIdentity));
-        _parallelism = Math.Max(64, Environment.ProcessorCount * 20);
+        _runtimeOptions = runtimeOptions?.Value ?? throw new ArgumentNullException(nameof(runtimeOptions));
     }
 
     /// <inheritdoc />
@@ -33,8 +35,8 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
             options.DispatchInterval = TimeSpan.FromSeconds(1);
         }
 
-        EnsureLane(options, RuntimeArtifactProjectionSchedulerDefaults.Lane, priority: 500, weight: 10, parallelism: _parallelism);
-        EnsureLane(options, _replicaIdentity.LocalStandupLane, priority: 450, weight: 10, parallelism: _parallelism);
+        EnsureLane(options, RuntimeArtifactProjectionSchedulerDefaults.Lane, priority: 500, weight: 10, _runtimeOptions);
+        EnsureLane(options, _replicaIdentity.LocalStandupLane, priority: 450, weight: 10, _runtimeOptions);
     }
 
     private static void EnsureLane(
@@ -42,7 +44,7 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
         string lane,
         int priority,
         int weight,
-        int parallelism)
+        KrackendOrchestrationsMuleRuntimeOptions runtimeOptions)
     {
         if (settings.Lanes.ContainsKey(lane))
         {
@@ -53,14 +55,16 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
         {
             Priority = priority,
             Weight = weight,
-            WorkerCount = parallelism,
-            MaxDegreeOfParallelism = parallelism,
-            DispatchBatchSize = 250,
-            DispatchQueueCapacity = 0,
-            ExecutionQueueCapacity = 0,
-            MaxDrainBatchesPerCycle = int.MaxValue,
-            MaxDrainActionsPerCycle = 0,
-            DrainUntilEmpty = true
+            WorkerCount = Math.Max(1, runtimeOptions.ArtifactLifecycleWorkerCount),
+            MaxDegreeOfParallelism = Math.Max(1, runtimeOptions.ArtifactLifecycleMaxDegreeOfParallelism),
+            DispatchBatchSize = Math.Max(1, runtimeOptions.ArtifactLifecycleDispatchBatchSize),
+            DispatchQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleDispatchQueueCapacity),
+            ExecutionQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleExecutionQueueCapacity),
+            MaxDrainBatchesPerCycle = runtimeOptions.ArtifactLifecycleMaxDrainBatchesPerCycle <= 0
+                ? int.MaxValue
+                : runtimeOptions.ArtifactLifecycleMaxDrainBatchesPerCycle,
+            MaxDrainActionsPerCycle = Math.Max(0, runtimeOptions.ArtifactLifecycleMaxDrainActionsPerCycle),
+            DrainUntilEmpty = runtimeOptions.ArtifactLifecycleDrainUntilEmpty
         };
     }
 }
