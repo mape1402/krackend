@@ -22,16 +22,44 @@ public sealed class OrchestrationClientErrorMappingOptions
     /// </summary>
     /// <typeparam name="TException">Exception type matched by the mapping.</typeparam>
     /// <param name="errorCode">Error code understood by the orchestrator definition.</param>
-    public void Map<TException>(string errorCode)
+    /// <param name="isRetryableCandidate">Optional retryability hint reported to the orchestrator.</param>
+    public void Map<TException>(string errorCode, bool? isRetryableCandidate = null)
         where TException : Exception
-        => Map(typeof(TException), errorCode);
+        => Map(typeof(TException), errorCode, null, isRetryableCandidate);
+
+    /// <summary>
+    /// Maps an exception type to an orchestration error code when the predicate matches.
+    /// </summary>
+    /// <typeparam name="TException">Exception type matched by the mapping.</typeparam>
+    /// <param name="errorCode">Error code understood by the orchestrator definition.</param>
+    /// <param name="predicate">Predicate that must match the exception.</param>
+    /// <param name="isRetryableCandidate">Optional retryability hint reported to the orchestrator.</param>
+    public void Map<TException>(
+        string errorCode,
+        Func<TException, bool> predicate,
+        bool? isRetryableCandidate = null)
+        where TException : Exception
+    {
+        if (predicate is null)
+        {
+            throw new ArgumentNullException(nameof(predicate));
+        }
+
+        Map(typeof(TException), errorCode, exception => predicate((TException)exception), isRetryableCandidate);
+    }
 
     /// <summary>
     /// Maps an exception type to an orchestration error code.
     /// </summary>
     /// <param name="exceptionType">Exception type matched by the mapping.</param>
     /// <param name="errorCode">Error code understood by the orchestrator definition.</param>
-    public void Map(Type exceptionType, string errorCode)
+    /// <param name="predicate">Optional predicate that must match the exception.</param>
+    /// <param name="isRetryableCandidate">Optional retryability hint reported to the orchestrator.</param>
+    public void Map(
+        Type exceptionType,
+        string errorCode,
+        Func<Exception, bool> predicate = null,
+        bool? isRetryableCandidate = null)
     {
         if (exceptionType is null)
         {
@@ -43,12 +71,18 @@ public sealed class OrchestrationClientErrorMappingOptions
             throw new ArgumentException("Mapped type must derive from Exception.", nameof(exceptionType));
         }
 
-        var existingIndex = _mappings.FindIndex(mapping => mapping.ExceptionType == exceptionType);
+        var existingIndex = predicate is null
+            ? _mappings.FindIndex(mapping => mapping.ExceptionType == exceptionType && mapping.Predicate is null)
+            : -1;
         if (existingIndex >= 0)
         {
             _mappings.RemoveAt(existingIndex);
         }
 
-        _mappings.Add(new OrchestrationClientExceptionErrorMapping(exceptionType, errorCode));
+        _mappings.Add(new OrchestrationClientExceptionErrorMapping(
+            exceptionType,
+            errorCode,
+            predicate,
+            isRetryableCandidate));
     }
 }
