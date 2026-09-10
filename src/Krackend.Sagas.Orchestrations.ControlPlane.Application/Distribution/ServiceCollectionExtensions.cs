@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IArtifactPublicationApplicationService, ArtifactPublicationApplicationService>();
         services.AddScoped<IOrchestrationNodePolicyApplicationService, OrchestrationNodePolicyApplicationService>();
         services.AddScoped<IArtifactValidationPolicy, JsonArtifactValidationPolicy>();
+        services.AddScoped<IArtifactFactory, ArtifactFactory>();
         services.AddScoped<IArtifactBuilder<OrchestrationVersionDeployedEvent>, DeployedArtifactBuilder>();
         services.AddScoped<IArtifactBuilder<OrchestrationVersionDeprecatedEvent>, DeprecatedArtifactBuilder>();
         services.AddScoped<IArtifactBuilder<OrchestrationVersionArchivedEvent>, ArchivedArtifactBuilder>();
