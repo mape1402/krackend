@@ -153,6 +153,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private readonly IOrchestrationVersionRepository _versionRepository;
     private readonly IOrchestrationDefinitionRepository _definitionRepository;
     private readonly IOrchestrationVersionArtifactSnapshotBuilder _artifactSnapshotBuilder;
+    private readonly IOrchestrationArtifactPayloadFactory _artifactPayloadFactory;
     private readonly IArtifactPublicationApplicationService _artifactPublicationService;
     private readonly IConnectionSecretHasher _secretHasher;
     private readonly IControlPlaneRuntimeNodeSecretProtector _secretProtector;
@@ -163,6 +164,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         IOrchestrationVersionRepository versionRepository,
         IOrchestrationDefinitionRepository definitionRepository,
         IOrchestrationVersionArtifactSnapshotBuilder artifactSnapshotBuilder,
+        IOrchestrationArtifactPayloadFactory artifactPayloadFactory,
         IArtifactPublicationApplicationService artifactPublicationService,
         IConnectionSecretHasher secretHasher,
         IControlPlaneRuntimeNodeSecretProtector secretProtector)
@@ -172,6 +174,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
         _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
         _artifactSnapshotBuilder = artifactSnapshotBuilder ?? throw new ArgumentNullException(nameof(artifactSnapshotBuilder));
+        _artifactPayloadFactory = artifactPayloadFactory ?? throw new ArgumentNullException(nameof(artifactPayloadFactory));
         _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
         _secretHasher = secretHasher ?? throw new ArgumentNullException(nameof(secretHasher));
         _secretProtector = secretProtector ?? throw new ArgumentNullException(nameof(secretProtector));
@@ -708,7 +711,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         var version = await _versionRepository.GetById(versionId, cancellationToken);
         var definition = await _definitionRepository.GetById(version.OrchestrationDefinitionId, cancellationToken);
         var snapshot = await _artifactSnapshotBuilder.Build(version, cancellationToken);
-        var payloadJson = OrchestrationArtifactPayloadFactory.CreatePayloadJson(definition, snapshot);
+        var payloadJson = _artifactPayloadFactory.CreatePayloadJson(definition, snapshot);
 
         await _artifactPublicationService.PublishDeployment(new OrchestrationVersionDeployedEvent(
             version.Id.ToString(),
