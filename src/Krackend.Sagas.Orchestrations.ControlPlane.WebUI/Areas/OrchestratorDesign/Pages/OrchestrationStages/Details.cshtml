@@ -292,6 +292,8 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="taskTransformationTaskId" />
+                <input type="hidden" id="taskTransformationSourceContextHashQuick" />
+                <input type="hidden" id="taskTransformationTargetSchemaHashQuick" />
                 <div class="form-check mb-3">
                     <input class="form-check-input" type="checkbox" id="taskHasTransformationQuick" />
                     <label class="form-check-label" for="taskHasTransformationQuick">Enable transformation</label>
@@ -1029,6 +1031,8 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const transformationEnabledInput = document.getElementById('taskHasTransformationQuick');
     const transformationEngineInput = document.getElementById('taskTransformationEngineQuick');
     const transformationDslInput = document.getElementById('taskTransformationDslQuick');
+    const transformationSourceContextHashInput = document.getElementById('taskTransformationSourceContextHashQuick');
+    const transformationTargetSchemaHashInput = document.getElementById('taskTransformationTargetSchemaHashQuick');
     const transformationSection = document.getElementById('taskTransformationSectionQuick');
     const transformationWarning = document.getElementById('taskTransformationUnsupportedEngineWarningQuick');
     const saveTransformationButton = document.getElementById('taskTransformationSaveButton');
@@ -1290,6 +1294,14 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
             transformationSchemaSignature.title = signature;
         }
 
+        if (transformationSourceContextHashInput) {
+            transformationSourceContextHashInput.value = context?.signature || '';
+        }
+
+        if (transformationTargetSchemaHashInput) {
+            transformationTargetSchemaHashInput.value = context?.target?.schema?.snapshotHash || '';
+        }
+
         if (!context) {
             clearSchemaContext(transformationSchemaSources, 'Schema context unavailable');
             clearSchemaContext(transformationSchemaTarget, 'Target unavailable');
@@ -1346,6 +1358,14 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         transformationEnabledInput.checked = !!payload.hasTransformation;
         transformationEngineInput.value = payload.transformationEngine || 'DSL';
         transformationDslInput.value = payload.transformationDsl || '';
+        if (transformationSourceContextHashInput && !transformationSourceContextHashInput.value) {
+            transformationSourceContextHashInput.value = payload.sourceContextHash || '';
+        }
+
+        if (transformationTargetSchemaHashInput && !transformationTargetSchemaHashInput.value) {
+            transformationTargetSchemaHashInput.value = payload.targetSchemaHash || '';
+        }
+
         refreshTransformationSectionVisibility();
         window.bootstrap.Modal.getOrCreateInstance(transformationModalElement).show();
     }
@@ -1695,7 +1715,9 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
                     taskId: taskId,
                     hasTransformation: !!transformationEnabledInput.checked,
                     transformationEngine: transformationEngineInput.value || 'DSL',
-                    transformationDsl: transformationDslInput.value || ''
+                    transformationDsl: transformationDslInput.value || '',
+                    sourceContextHash: transformationSourceContextHashInput?.value || '',
+                    targetSchemaHash: transformationTargetSchemaHashInput?.value || ''
                 });
 
                 if (!result?.success) {
