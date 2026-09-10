@@ -20,6 +20,7 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
     private readonly IRuntimeArtifactReadyNotifier _artifactReadyNotifier;
     private readonly ILogger<ProjectIngressConfigurationsAction> _logger;
+    private readonly IMuleTerminalFailureMarker _terminalFailureMarker;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProjectIngressConfigurationsAction"/> class.
@@ -29,13 +30,15 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
         IRuntimeIngressConfigurationProjector projector,
         IRuntimeStorageUnitOfWork unitOfWork,
         IRuntimeArtifactReadyNotifier artifactReadyNotifier,
-        ILogger<ProjectIngressConfigurationsAction> logger)
+        ILogger<ProjectIngressConfigurationsAction> logger,
+        IMuleTerminalFailureMarker terminalFailureMarker)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _projector = projector ?? throw new ArgumentNullException(nameof(projector));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _artifactReadyNotifier = artifactReadyNotifier ?? throw new ArgumentNullException(nameof(artifactReadyNotifier));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _terminalFailureMarker = terminalFailureMarker ?? throw new ArgumentNullException(nameof(terminalFailureMarker));
     }
 
     /// <inheritdoc />
@@ -58,14 +61,28 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
             return;
         }
 
-        if (artifact.Status != RuntimeOrchestrationArtifactStatus.Ready)
+        try
         {
-            artifact = await ProjectIngressConfigurationsAsync(request, artifact, artifactId, cancellationToken);
-        }
+            if (artifact.Status != RuntimeOrchestrationArtifactStatus.Ready)
+            {
+                artifact = await ProjectIngressConfigurationsAsync(request, artifact, artifactId, cancellationToken);
+            }
 
-        await _artifactReadyNotifier.NotifyReadyAsync(
-            RuntimeArtifactReadyGossipMessage.FromArtifact(artifact),
-            cancellationToken);
+            await _artifactReadyNotifier.NotifyReadyAsync(
+                RuntimeArtifactReadyGossipMessage.FromArtifact(artifact),
+                cancellationToken);
+        }
+        catch (IngressProjectionConfigurationException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Ingress projection for artifact {ArtifactId} generation {IngressGeneration} failed permanently because the artifact configuration is invalid.",
+                request.ArtifactId,
+                request.IngressGeneration);
+
+            _terminalFailureMarker.MarkTerminal(context);
+            throw;
+        }
     }
 
     private async Task<RuntimeOrchestrationArtifact> ProjectIngressConfigurationsAsync(
