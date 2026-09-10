@@ -20,7 +20,10 @@ StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configurat
 var rabbitConnectionString = builder.Configuration.GetConnectionString("RabbitMq");
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
-var muleParallelism = Math.Max(64, Environment.ProcessorCount * 20);
+var muleWorkerCount = Math.Max(1, builder.Configuration.GetValue("Mule:Runtime:WorkerCount", 256));
+var muleMaxDegreeOfParallelism = Math.Max(
+    1,
+    builder.Configuration.GetValue("Mule:Runtime:MaxDegreeOfParallelism", muleWorkerCount));
 
 if (string.IsNullOrWhiteSpace(redisConnectionString))
 {
@@ -73,34 +76,40 @@ builder.Services
         });
     })
     .AddRedisGossip(builder.Configuration)
-    .AddMule(mule =>
-    {
-        mule.UseEntityFrameworkCore<RuntimeDbContext>();
-        mule.UseFastLaneRedis(options =>
+    .AddMule(
+        mule =>
         {
-            options.ConnectionString = redisConnectionString;
-            options.KeyPrefix = "krackend:runtime";
-            options.IntentFlushSize = 1_000;
-            options.CompletionFlushSize = 2_000;
-            options.FlushInterval = TimeSpan.FromMilliseconds(25);
-            options.LeaseDuration = TimeSpan.FromMinutes(2);
-            options.DeduplicationRetention = TimeSpan.FromDays(7);
-        });
-        mule.Configure(settings =>
+            mule.UseEntityFrameworkCore<RuntimeDbContext>();
+            mule.UseFastLaneRedis(options =>
+            {
+                options.ConnectionString = redisConnectionString;
+                options.KeyPrefix = "krackend:runtime";
+                options.IntentFlushSize = 1_000;
+                options.CompletionFlushSize = 2_000;
+                options.FlushInterval = TimeSpan.FromMilliseconds(25);
+                options.LeaseDuration = TimeSpan.FromMinutes(2);
+                options.DeduplicationRetention = TimeSpan.FromDays(7);
+            });
+            mule.Configure(settings =>
+            {
+                settings.ImmediateDispatch = true;
+                settings.RecoveryMode = MuleRecoveryMode.Polling;
+                settings.DispatchInterval = TimeSpan.FromSeconds(1);
+                settings.DispatchBatchSize = 1_000;
+                settings.DispatchQueueCapacity = 0;
+                settings.ExecutionQueueCapacity = 0;
+                settings.WorkerCount = muleWorkerCount;
+                settings.MaxDegreeOfParallelism = muleMaxDegreeOfParallelism;
+                settings.MaxDrainBatchesPerCycle = int.MaxValue;
+                settings.MaxDrainActionsPerCycle = 0;
+                settings.DrainUntilEmpty = true;
+            });
+        },
+        runtimeMule =>
         {
-            settings.ImmediateDispatch = true;
-            settings.RecoveryMode = MuleRecoveryMode.Polling;
-            settings.DispatchInterval = TimeSpan.FromSeconds(1);
-            settings.DispatchBatchSize = 1_000;
-            settings.DispatchQueueCapacity = 0;
-            settings.ExecutionQueueCapacity = 0;
-            settings.WorkerCount = muleParallelism;
-            settings.MaxDegreeOfParallelism = muleParallelism;
-            settings.MaxDrainBatchesPerCycle = int.MaxValue;
-            settings.MaxDrainActionsPerCycle = 0;
-            settings.DrainUntilEmpty = true;
+            runtimeMule.ArtifactLifecycleWorkerCount = muleWorkerCount;
+            runtimeMule.ArtifactLifecycleMaxDegreeOfParallelism = muleMaxDegreeOfParallelism;
         });
-    });
 
 builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 
