@@ -2,10 +2,14 @@ using System.Text.Json;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
 {
-    internal sealed class DefaultMessagingConfigurationSerializer : IMessagingConfigurationSerializer
+    /// <summary>
+    /// Serializes messaging ingress configuration payloads.
+    /// </summary>
+    public sealed class DefaultMessagingConfigurationSerializer : IMessagingConfigurationSerializer
     {
         private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
+        /// <inheritdoc />
         public string Serialize(MessagingConfiguration configuration)
         {
             if (configuration is null)
@@ -20,6 +24,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
             }, SerializerOptions);
         }
 
+        /// <inheritdoc />
         public MessagingConfiguration Deserialize(string rawJson)
         {
             if (string.IsNullOrWhiteSpace(rawJson))

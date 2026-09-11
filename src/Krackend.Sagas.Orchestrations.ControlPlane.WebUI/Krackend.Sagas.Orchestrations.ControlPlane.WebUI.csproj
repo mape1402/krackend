@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane.Application\Krackend.Sagas.Orchestrations.ControlPlane.Application.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
   </ItemGroup>
   <ItemGroup>

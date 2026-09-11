@@ -16,6 +16,21 @@
         public string ArtifactId { get; set; }
 
         /// <summary>
+        /// Gets or sets the orchestration definition key that owns the artifact.
+        /// </summary>
+        public string OrchestrationDefinitionKey { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the orchestration artifact version that owns this ingress.
+        /// </summary>
+        public string OrchestrationVersion { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets when the owning runtime artifact was deployed in UTC.
+        /// </summary>
+        public DateTime DeployedOnUtc { get; set; }
+
+        /// <summary>
         /// Gets or sets the transport used by this ingress.
         /// </summary>
         public IngressTransport IngressTransport { get; set; }

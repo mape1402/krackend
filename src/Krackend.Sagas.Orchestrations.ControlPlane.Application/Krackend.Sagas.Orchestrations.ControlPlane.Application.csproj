@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Contracts\Krackend.Sagas.Orchestrations.Contracts.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane\Krackend.Sagas.Orchestrations.ControlPlane.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ButterMorph" />

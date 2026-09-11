@@ -392,6 +392,121 @@ public sealed class RemoteCommandDispatchActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenTaskTimesOutBeforeLateTransportFailure_DoesNotReopenDispatch()
+    {
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            OrchestrationDefinitionKey = "sales.sale.created",
+            CorrelationId = Id.New().ToString(),
+            SagaId = Id.New().ToString(),
+            ExecutionKey = "sales.sale.created",
+            Status = OrchestrationInstanceStatus.Running,
+            StartedOnUtc = DateTime.UtcNow,
+            LastUpdatedOnUtc = DateTime.UtcNow
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "payments.charge",
+            Status = TaskExecutionStatus.Running
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Running
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "FireAndWaitCallback",
+            DispatchStatus = "Enqueued"
+        };
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        executor
+            .ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                task.Status = TaskExecutionStatus.TimedOut;
+                task.WaitingSinceUtc = null;
+                task.TimedOutOnUtc = DateTime.UtcNow;
+                attempt.Status = TaskExecutionStatus.TimedOut;
+                attempt.WaitingSinceUtc = null;
+                attempt.TimedOutOnUtc = DateTime.UtcNow;
+                attempt.ErrorCode = "TIMEOUT";
+                dispatch.DispatchStatus = "TimedOut";
+                dispatch.FailedOnUtc = DateTime.UtcNow;
+                dispatch.FailureReason = "Task timed out.";
+                instance.Status = OrchestrationInstanceStatus.Failed;
+                instance.WaitingSinceUtc = null;
+                return Task.FromException(new InvalidOperationException("Late publish confirmation failed."));
+            });
+
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
+        var provider = services.BuildServiceProvider();
+        var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
+        var taskRepository = Substitute.For<ITaskExecutionRepository>();
+        var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
+        var transitionRepository = Substitute.For<IExecutionTransitionRepository>();
+        instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
+        dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        var action = new RemoteCommandDispatchAction(
+            provider,
+            Substitute.For<Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata.IOrchestrationMessageMetadataSetter>(),
+            instanceRepository,
+            taskRepository,
+            attemptRepository,
+            dispatchRepository,
+            transitionRepository,
+            new DefaultMuleTerminalFailureMarker());
+        var command = new RemoteCommand
+        {
+            RemoteCommandTransport = RemoteCommandTransport.Messaging,
+            Payload = "{}",
+            OrchestrationInstanceId = instance.Id.ToString(),
+            StageExecutionId = task.StageExecutionId.ToString(),
+            TaskExecutionId = task.Id.ToString(),
+            TaskExecutionAttemptId = attempt.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            AwaitResponse = true
+        };
+        var context = new MuleActionContext<RemoteCommand>(
+            new DurableAction
+            {
+                Key = ActionKey.From("RemoteCommandDispatch"),
+                Lane = "default",
+                CorrelationId = instance.CorrelationId,
+                DeduplicationKey = dispatch.Id.ToString(),
+                Status = DurableActionStatus.Pending
+            },
+            provider,
+            command);
+
+        await action.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(TaskExecutionStatus.TimedOut, task.Status);
+        Assert.Equal(TaskExecutionStatus.TimedOut, attempt.Status);
+        Assert.Equal("TimedOut", dispatch.DispatchStatus);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.NotEqual(int.MaxValue - 1, context.Action.Attempts);
+        await transitionRepository.Received(1).Create(
+            Arg.Is<ExecutionTransition>(transition =>
+                transition.TransitionType == "TaskDispatchFailureIgnored" &&
+                transition.FromStatus == "TimedOut" &&
+                transition.ToStatus == "TimedOut"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenMessagingAdapterIsMissing_MarksActionAsTerminal()
     {
         var services = new ServiceCollection();
