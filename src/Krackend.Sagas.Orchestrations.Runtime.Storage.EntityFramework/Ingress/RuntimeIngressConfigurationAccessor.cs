@@ -21,7 +21,7 @@ internal sealed class RuntimeIngressConfigurationAccessor :
 
     public async Task<IngressConfigurationReadingResult> ReadAsync(CancellationToken cancellationToken = default)
     {
-        var configurations = await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
+        var rows = await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
             .Join(
                 _dbContext.RuntimeOrchestrationArtifacts.AsNoTracking(),
                 configuration => configuration.RuntimeOrchestrationArtifactId,
@@ -34,15 +34,20 @@ internal sealed class RuntimeIngressConfigurationAccessor :
             .ThenBy(x => x.Configuration.ConfigurationKey)
             .Skip(_skip)
             .Take(PageSize)
+            .ToArrayAsync(cancellationToken);
+        var configurations = rows
             .Select(x => new IngressConfiguration
             {
                 Id = x.Configuration.Id.ToString(),
                 ArtifactId = x.Configuration.RuntimeOrchestrationArtifactId.ToString(),
+                OrchestrationDefinitionKey = x.Artifact.OrchestrationDefinitionKey,
+                OrchestrationVersion = x.Artifact.Version.ToString(),
+                DeployedOnUtc = x.Artifact.DeployedOnUtc,
                 IngressKind = x.Configuration.IngressKind,
                 IngressTransport = x.Configuration.IngressTransport,
                 SettingsPayload = x.Configuration.SettingsPayload
             })
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         _skip += configurations.Length;
 
@@ -58,7 +63,7 @@ internal sealed class RuntimeIngressConfigurationAccessor :
         CancellationToken cancellationToken = default)
     {
         var runtimeArtifactId = new Id(Ulid.Parse(artifactId));
-        return await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
+        var rows = await _dbContext.RuntimeIngressConfigurations.AsNoTracking()
             .Join(
                 _dbContext.RuntimeOrchestrationArtifacts.AsNoTracking(),
                 configuration => configuration.RuntimeOrchestrationArtifactId,
@@ -69,15 +74,21 @@ internal sealed class RuntimeIngressConfigurationAccessor :
                 x.Artifact.IsActive &&
                 x.Artifact.Status == RuntimeOrchestrationArtifactStatus.Ready)
             .OrderBy(x => x.Configuration.ConfigurationKey)
+            .ToArrayAsync(cancellationToken);
+
+        return rows
             .Select(x => new IngressConfiguration
             {
                 Id = x.Configuration.Id.ToString(),
                 ArtifactId = x.Configuration.RuntimeOrchestrationArtifactId.ToString(),
+                OrchestrationDefinitionKey = x.Artifact.OrchestrationDefinitionKey,
+                OrchestrationVersion = x.Artifact.Version.ToString(),
+                DeployedOnUtc = x.Artifact.DeployedOnUtc,
                 IngressKind = x.Configuration.IngressKind,
                 IngressTransport = x.Configuration.IngressTransport,
                 SettingsPayload = x.Configuration.SettingsPayload
             })
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
     }
 
     public void Dispose()

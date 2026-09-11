@@ -344,7 +344,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private static bool IsFinished(string status)
             => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase);
+               string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
 
         private static bool IsTerminal(TaskExecutionStatus status)
             => status is TaskExecutionStatus.Completed
