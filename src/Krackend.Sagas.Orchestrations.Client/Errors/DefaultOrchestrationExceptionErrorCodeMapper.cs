@@ -23,6 +23,7 @@ internal sealed class DefaultOrchestrationExceptionErrorCodeMapper : IOrchestrat
         var mapping = configured.Mappings
             .Where(candidate => candidate.Matches(exception))
             .OrderBy(candidate => GetInheritanceDistance(exceptionType, candidate.ExceptionType))
+            .ThenBy(candidate => candidate.Predicate is null ? 1 : 0)
             .FirstOrDefault();
 
         return mapping is null

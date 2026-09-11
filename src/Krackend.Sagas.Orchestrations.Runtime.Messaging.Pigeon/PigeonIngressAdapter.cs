@@ -15,15 +15,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
         private const string SubscriptionName = "Default";
         private readonly IConsumingConfigurator _consumingConfigurator;
         private readonly IPigeonIngressConsumerRegistry _consumerRegistry;
+        private readonly IMessagingIngressConfigurationSelector _ingressSelector;
         private readonly ILogger<PigeonIngressAdapter> _logger;
 
         public PigeonIngressAdapter(
             IConsumingConfigurator consumingConfigurator,
             IPigeonIngressConsumerRegistry consumerRegistry,
+            IMessagingIngressConfigurationSelector ingressSelector,
             ILogger<PigeonIngressAdapter> logger)
         {
             _consumingConfigurator = consumingConfigurator ?? throw new ArgumentNullException(nameof(consumingConfigurator));
             _consumerRegistry = consumerRegistry ?? throw new ArgumentNullException(nameof(consumerRegistry));
+            _ingressSelector = ingressSelector ?? throw new ArgumentNullException(nameof(ingressSelector));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -49,29 +52,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 _consumingConfigurator.AddConsumer<JsonNode>(configuration.Topic, version, SubscriptionName, async (context, message) =>
                 {
                     var intake = context.Services.GetRequiredService<IIntakeBuffer>();
-                    var serializer = context.Services.GetRequiredService<IMessagingConfigurationSerializer>();
                     var messageMetadataAccessor = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>();
                     var resultMetadataAccessor = context.Services.GetRequiredService<IOrchestrationExecutionResultMetadataAccessor>();
                     using var reader = context.Services.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
+                    var configurations = new List<IngressConfiguration>();
 
                     IngressConfigurationReadingResult dataset;
                     do
                     {
                         dataset = await reader.ReadAsync(cancellationToken);
-                        foreach (var ingress in dataset.Configurations.Where(x => Matches(x, serializer, configuration.Topic, configuration.Version)))
-                        {
-                            await intake.EnqueueWorkAsync(new WorkItem
-                            {
-                                ArtifactId = ingress.ArtifactId,
-                                IngressKind = ingress.IngressKind,
-                                IngressTransport = ingress.IngressTransport,
-                                Payload = message?.DeepClone(),
-                                MessageMetadata = messageMetadataAccessor.Get(),
-                                ExecutionResultMetadata = resultMetadataAccessor.Get()
-                            }, cancellationToken);
-                        }
+                        configurations.AddRange(dataset.Configurations);
                     }
                     while (dataset.HasMoreItems);
+
+                    foreach (var ingress in _ingressSelector.SelectMatching(configurations, configuration.Topic, configuration.Version))
+                    {
+                        await intake.EnqueueWorkAsync(new WorkItem
+                        {
+                            ArtifactId = ingress.ArtifactId,
+                            IngressKind = ingress.IngressKind,
+                            IngressTransport = ingress.IngressTransport,
+                            Payload = message?.DeepClone(),
+                            MessageMetadata = messageMetadataAccessor.Get(),
+                            ExecutionResultMetadata = resultMetadataAccessor.Get()
+                        }, cancellationToken);
+                    }
 
                     await context.CompleteAsync(cancellationToken);
                 });
@@ -119,22 +124,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             }
 
             return Task.CompletedTask;
-        }
-
-        private static bool Matches(
-            IngressConfiguration ingress,
-            IMessagingConfigurationSerializer serializer,
-            string topic,
-            string version)
-        {
-            if (ingress.IngressTransport != IngressTransport.Messaging)
-            {
-                return false;
-            }
-
-            var settings = serializer.Deserialize(ingress.SettingsPayload);
-            return string.Equals(settings.Topic, topic, StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(settings.Version, version, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string BuildEndpointKey(string topic, string version, string subscription)

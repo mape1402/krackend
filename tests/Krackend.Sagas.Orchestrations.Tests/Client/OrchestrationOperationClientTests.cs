@@ -3,6 +3,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Client;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
+using Krackend.Sagas.Orchestrations.Tests.Client.Support;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text.Json.Nodes;
@@ -141,6 +142,101 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task ReportFailureAsync_WhenSpecificPredicateMatches_PublishesPredicateErrorCode()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddKrackendOrchestrationsClient()
+            .MapException<InvalidOperationException>("GenericInvalidOperation")
+            .MapException<InvalidOperationException>(
+                "TransientInventoryUnavailable",
+                exception => exception.Message.Contains("transient", StringComparison.OrdinalIgnoreCase),
+                isRetryableCandidate: true);
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<ReserveInventoryRequest>();
+
+        await client.ReportFailureAsync<ReserveInventoryRequest>(
+            new InvalidOperationException("transient inventory outage"));
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.Equal("TransientInventoryUnavailable", publisher.ResultMetadata.ErrorCode);
+        Assert.True(publisher.ResultMetadata.IsRetryableCandidate);
+        Assert.Null(publisher.Payload);
+    }
+
+    [Fact]
+    public async Task ReportFailureAsync_WhenNoMappingMatches_PublishesDefaultErrorCode()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient(options => options.DefaultErrorCode = "UnhandledClientFailure");
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<ReserveInventoryRequest>();
+
+        await client.ReportFailureAsync<ReserveInventoryRequest>(
+            new ApplicationException("unmapped failure"));
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.Equal("UnhandledClientFailure", publisher.ResultMetadata.ErrorCode);
+        Assert.Null(publisher.Payload);
+    }
+
+    [Fact]
+    public async Task ReportFailureAsync_WhenNoBackchannelExists_DoesNotPublishFailure()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddKrackendOrchestrationsClient()
+            .MapException<InvalidOperationException>("FailureWithoutBackchannel");
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<ReserveInventoryRequest>();
+
+        await client.ReportFailureAsync<ReserveInventoryRequest>(
+            new InvalidOperationException("consumer used outside orchestration"));
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Equal(0, publisher.PublishCount);
+        Assert.Null(publisher.ResultMetadata);
+        Assert.Null(publisher.Payload);
+    }
+
+    [Fact]
     public async Task ReportSuccessAsyncPublishesBusinessPayloadWithoutWrappingExecutionMetadata()
     {
         var services = new ServiceCollection();
@@ -191,30 +287,6 @@ public sealed class OrchestrationOperationClientTests
         Assert.Null(publishedPayload["ExecutionTimeMs"]);
         Assert.Null(publishedPayload["Error"]);
         Assert.True(publisher.ResultMetadata.Succeeded);
-    }
-
-    private sealed class RecordingOrchestrationClientPublisher : IOrchestrationClientPublisher
-    {
-        private readonly IOrchestrationExecutionResultMetadataAccessor _metadataAccessor;
-
-        public RecordingOrchestrationClientPublisher(IOrchestrationExecutionResultMetadataAccessor metadataAccessor)
-        {
-            _metadataAccessor = metadataAccessor ?? throw new ArgumentNullException(nameof(metadataAccessor));
-        }
-
-        public object? Payload { get; private set; }
-
-        public OrchestrationExecutionResultMetadata? ResultMetadata { get; private set; }
-
-        public Task PublishAsync(
-            object payload,
-            OrchestrationReplyAddress address,
-            CancellationToken cancellationToken = default)
-        {
-            Payload = payload;
-            ResultMetadata = _metadataAccessor.Get();
-            return Task.CompletedTask;
-        }
     }
 
     private sealed record ReserveInventoryRequest;

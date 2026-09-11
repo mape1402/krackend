@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.Logging;
@@ -64,13 +65,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
 
         private async Task InternalOrchestrateAsync(ForwardIntent intent, CancellationToken cancellationToken = default)
         {
+            var messageMetadata = intent.MessageMetadata;
+            var executionResultMetadata = intent.ExecutionResultMetadata;
+
             for (var cycle = 0; cycle < MaxDecisionCycles; cycle++)
             {
                 var decisionRequest = new DecisionRequest
                 {
                     ArtifactId = intent.ArtifactId,
-                    MessageMetadata = intent.MessageMetadata,
-                    ExecutionResultMetadata = intent.ExecutionResultMetadata,
+                    MessageMetadata = messageMetadata,
+                    ExecutionResultMetadata = executionResultMetadata,
                     Payload = intent.Payload
                 };
 
@@ -84,9 +88,28 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 {
                     await _decisionExecutor.ExecuteAsync(decision, cancellationToken);
                 }
+
+                if (decisions.Any(static decision => decision is CompleteCallbackDecision))
+                {
+                    messageMetadata = ClearCallbackSignal(messageMetadata);
+                    executionResultMetadata = null;
+                }
             }
 
             _logger.LogWarning("SAGA engine reached the maximum decision cycles for artifact id '{id}'.", intent.ArtifactId);
         }
+
+        private static OrchestrationMessageMetadata ClearCallbackSignal(OrchestrationMessageMetadata metadata)
+            => metadata is null
+                ? null
+                : new OrchestrationMessageMetadata
+                {
+                    SagaId = metadata.SagaId,
+                    OrchestrationInstanceId = metadata.OrchestrationInstanceId,
+                    CurrentStage = metadata.CurrentStage,
+                    CurrentTasks = metadata.CurrentTasks,
+                    CorrelationId = metadata.CorrelationId,
+                    ReplyAddress = metadata.ReplyAddress
+                };
     }
 }

@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
@@ -15,6 +16,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         private readonly IOrchestrationInstanceRepository _instanceRepository;
         private readonly IStageExecutionRepository _stageRepository;
         private readonly ITaskExecutionRepository _taskRepository;
+        private readonly ITaskExecutionAttemptRepository _attemptRepository;
+        private readonly ITaskDispatchRepository _dispatchRepository;
         private readonly IOrchestrationPayloadState _payloadState;
 
         public DecisionControl(
@@ -22,12 +25,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             IOrchestrationInstanceRepository instanceRepository,
             IStageExecutionRepository stageRepository,
             ITaskExecutionRepository taskRepository,
+            ITaskExecutionAttemptRepository attemptRepository,
+            ITaskDispatchRepository dispatchRepository,
             IOrchestrationPayloadState payloadState)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
+            _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
+            _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
         }
 
@@ -37,6 +44,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             if (callbackDecision is not null)
             {
                 return [callbackDecision];
+            }
+
+            if (IsCallbackSignal(request.MessageMetadata) && !IsRuntimeTimeoutSignal(request))
+            {
+                return [];
             }
 
             if (string.IsNullOrWhiteSpace(request.MessageMetadata?.OrchestrationInstanceId))
@@ -75,11 +87,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 .ToArray();
             var dispatchPayload = _payloadState.GetDispatchPayload(instance, request.Payload);
 
-            var failedTask = taskExecutions.FirstOrDefault(x => x.Status == TaskExecutionStatus.Failed);
+            var failedTask = taskExecutions.FirstOrDefault(x =>
+                x.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut);
             if (failedTask is not null)
             {
                 var failedArtifact = tasks.FirstOrDefault(x => x.Key == failedTask.TaskKey);
-                if (ShouldRetry(failedTask, failedArtifact, request))
+                if (await ShouldRetryAsync(failedTask, failedArtifact, request, cancellationToken))
                 {
                     return [new RetryDecision(
                         instance.Id,
@@ -95,7 +108,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     return [new CompensateInstanceDecision(instance.Id, request.ArtifactId, dispatchPayload?.ToJsonString())];
                 }
 
-                if (failedArtifact?.OnErrorPolicy == OnErrorPolicy.Continue)
+                if (ShouldContinueAfterFailure(failedTask, failedArtifact))
                 {
                     return BuildNextTaskDecisions(instance, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload);
                 }
@@ -170,12 +183,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             return null;
         }
 
-        private static bool ShouldRetry(
+        private async Task<bool> ShouldRetryAsync(
             TaskExecution failedTask,
             TaskArtifact failedArtifact,
-            DecisionRequest request)
+            DecisionRequest request,
+            CancellationToken cancellationToken)
         {
-            var retryPolicy = failedArtifact?.RetryPolicy;
+            var retryPolicy = ResolveRetryPolicy(failedTask, failedArtifact);
             if (retryPolicy is null || failedTask.LastAttemptNumber > retryPolicy.MaxRetries)
             {
                 return false;
@@ -186,9 +200,76 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return true;
             }
 
-            var errorCode = request.ExecutionResultMetadata?.ErrorCode;
+            var errorCode = await ResolveFailureErrorCodeAsync(failedTask, request, cancellationToken);
             return !string.IsNullOrWhiteSpace(errorCode)
                 && retryPolicy.RetryableErrorCodes.Contains(errorCode, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private async Task<string> ResolveFailureErrorCodeAsync(
+            TaskExecution failedTask,
+            DecisionRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(request.ExecutionResultMetadata?.ErrorCode))
+            {
+                return request.ExecutionResultMetadata.ErrorCode;
+            }
+
+            var attempts = await _attemptRepository.GetByTaskExecutionId(failedTask.Id, cancellationToken);
+            var lastAttempt = attempts
+                .OrderByDescending(x => x.AttemptNumber)
+                .FirstOrDefault();
+
+            if (!string.IsNullOrWhiteSpace(lastAttempt?.ErrorCode))
+            {
+                return lastAttempt.ErrorCode;
+            }
+
+            return TryGetString(lastAttempt?.Metadata, "ExecutionErrorCode")
+                ?? TryGetString(lastAttempt?.Metadata, "PreparationErrorCode");
+        }
+
+        private static RetryPolicyArtifact ResolveRetryPolicy(
+            TaskExecution failedTask,
+            TaskArtifact failedArtifact)
+        {
+            if (failedTask.Status == TaskExecutionStatus.TimedOut &&
+                failedArtifact?.TimeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicyArtifact reconcile)
+            {
+                return reconcile.RetryPolicy;
+            }
+
+            return failedArtifact?.RetryPolicy;
+        }
+
+        private static bool ShouldContinueAfterFailure(
+            TaskExecution failedTask,
+            TaskArtifact failedArtifact)
+        {
+            if (failedArtifact?.OnErrorPolicy == OnErrorPolicy.Continue)
+            {
+                return true;
+            }
+
+            return failedTask.Status == TaskExecutionStatus.TimedOut &&
+                failedArtifact?.TimeoutPolicy?.TimeoutBehaviorPolicy is WaitTimeoutBehaviorPolicyArtifact wait &&
+                wait.OrchestrationAction == OrchestrationActionOnTimeout.Continue;
+        }
+
+        private static string TryGetString(
+            IReadOnlyDictionary<string, JsonNode> metadata,
+            string key)
+        {
+            if (metadata is null ||
+                !metadata.TryGetValue(key, out var value) ||
+                value is null)
+            {
+                return null;
+            }
+
+            return value.GetValueKind() == System.Text.Json.JsonValueKind.String
+                ? value.GetValue<string>()
+                : value.ToJsonString();
         }
 
         private async Task<IDecision> TryBuildCallbackDecision(DecisionRequest request, CancellationToken cancellationToken)
@@ -200,8 +281,34 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
-            var task = await _taskRepository.GetById(RuntimeIdParser.Parse(request.MessageMetadata.TaskExecutionId), cancellationToken);
-            if (task.Status != TaskExecutionStatus.WaitingResponse)
+            if (!TryParseId(request.MessageMetadata.OrchestrationInstanceId, out var instanceId) ||
+                !TryParseId(request.MessageMetadata.TaskExecutionId, out var taskExecutionId) ||
+                !TryParseId(request.MessageMetadata.DispatchId, out var dispatchId))
+            {
+                return null;
+            }
+
+            TaskExecution task;
+            TaskDispatch dispatch;
+            TaskExecutionAttempt attempt;
+            try
+            {
+                task = await _taskRepository.GetById(taskExecutionId, cancellationToken);
+                dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
+                attempt = await _attemptRepository.GetByDispatchId(dispatchId, cancellationToken);
+            }
+            catch (KeyNotFoundException)
+            {
+                return null;
+            }
+
+            if (task.Status != TaskExecutionStatus.WaitingResponse ||
+                task.OrchestrationInstanceId != instanceId ||
+                attempt.Status != TaskExecutionStatus.WaitingResponse ||
+                !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) ||
+                attempt.TaskExecutionId != task.Id ||
+                dispatch.TaskExecutionAttemptId != attempt.Id ||
+                (request.MessageMetadata.Attempt > 0 && request.MessageMetadata.Attempt != attempt.AttemptNumber))
             {
                 return null;
             }
@@ -209,11 +316,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             var payload = request.Payload?.ToJsonString();
 
             return new CompleteCallbackDecision(
-                RuntimeIdParser.Parse(request.MessageMetadata.OrchestrationInstanceId),
-                RuntimeIdParser.Parse(request.MessageMetadata.TaskExecutionId),
-                RuntimeIdParser.Parse(request.MessageMetadata.DispatchId),
+                instanceId,
+                taskExecutionId,
+                dispatchId,
                 payload,
                 request.ExecutionResultMetadata);
         }
+
+        private static bool TryParseId(string value, out Id id)
+        {
+            id = default;
+            if (string.IsNullOrWhiteSpace(value) || !Ulid.TryParse(value, out var parsed))
+            {
+                return false;
+            }
+
+            id = new Id(parsed);
+            return true;
+        }
+
+        private static bool IsCallbackSignal(OrchestrationMessageMetadata metadata)
+            => !string.IsNullOrWhiteSpace(metadata?.TaskExecutionId) ||
+                !string.IsNullOrWhiteSpace(metadata?.DispatchId);
+
+        private static bool IsRuntimeTimeoutSignal(DecisionRequest request)
+            => string.Equals(request.ExecutionResultMetadata?.ErrorType, "Timeout", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(request.ExecutionResultMetadata?.Status, "TimedOut", StringComparison.OrdinalIgnoreCase);
     }
 }
