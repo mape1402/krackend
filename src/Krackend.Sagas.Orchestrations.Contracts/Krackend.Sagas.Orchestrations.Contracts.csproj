@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -7,6 +8,6 @@
     <PackageId>Krackend.Sagas.Orchestrations.Contracts</PackageId>
     <Description>Shared contracts for Krackend saga orchestration modules.</Description>
     <PackageTags>saga;orchestration;contracts;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 </Project>

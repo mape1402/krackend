@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -7,7 +8,7 @@
     <PackageId>Krackend.Sagas.Orchestrations.Runtime.ButterMorph</PackageId>
     <Description>ButterMorph runtime transform and validation adapter for Krackend saga orchestrations.</Description>
     <PackageTags>saga;orchestration;runtime;buttermorph;transformation;validation;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />

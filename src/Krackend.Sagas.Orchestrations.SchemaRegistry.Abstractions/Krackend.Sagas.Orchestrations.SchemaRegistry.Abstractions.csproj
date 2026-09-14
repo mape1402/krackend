@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions</PackageId>
     <Description>Provider-neutral schema registry contracts for Krackend saga orchestrations.</Description>
     <PackageTags>saga;orchestration;schema-registry;contracts;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

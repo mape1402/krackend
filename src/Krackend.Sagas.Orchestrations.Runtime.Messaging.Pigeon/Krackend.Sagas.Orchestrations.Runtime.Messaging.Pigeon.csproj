@@ -1,6 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon</PackageId>
+    <Description>Pigeon messaging adapter for Krackend saga orchestration runtime ingress and command dispatching.</Description>
+    <PackageTags>saga;orchestration;runtime;pigeon;messaging;dotnet</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

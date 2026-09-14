@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -7,7 +8,7 @@
     <PackageId>Krackend.Sagas.Orchestrations.ControlPlane.Application</PackageId>
     <Description>Control-plane application layer for Krackend saga orchestration design, distribution, and security workflows.</Description>
     <PackageTags>saga;orchestration;control-plane;application;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
