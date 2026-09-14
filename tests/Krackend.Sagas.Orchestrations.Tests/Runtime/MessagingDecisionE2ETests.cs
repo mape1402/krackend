@@ -317,6 +317,48 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineIgnoresCallbackWhenDispatchIdDoesNotMatchRuntimeState()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.dispatch.guard", 1))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-invalid-dispatch");
+
+        var command = harness.Dispatcher.Commands.Single();
+        command.MessageMetadata.DispatchId = Id.New().ToString();
+        await harness.ForwardAsync(command, BusinessPayload("invalid-dispatch-callback"), Success());
+
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+        var transitions = await harness.GetTransitionsAsync(command);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
+        Assert.DoesNotContain(transitions, transition => transition.TransitionType == "TaskCallbackCompleted");
+    }
+
+    [Fact]
+    public async Task EngineIgnoresCallbackWhenAttemptNumberDoesNotMatchRuntimeState()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.attempt.guard", 1))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-invalid-attempt");
+
+        var command = harness.Dispatcher.Commands.Single();
+        command.MessageMetadata.Attempt = 2;
+        await harness.ForwardAsync(command, BusinessPayload("invalid-attempt-callback"), Success());
+
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+        var transitions = await harness.GetTransitionsAsync(command);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
+        Assert.DoesNotContain(transitions, transition => transition.TransitionType == "TaskCallbackCompleted");
+    }
+
+    [Fact]
     public async Task EngineRetriesDispatchFailureUsingPersistedAttemptErrorCode()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
