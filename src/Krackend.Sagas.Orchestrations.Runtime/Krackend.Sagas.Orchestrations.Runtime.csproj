@@ -1,6 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Krackend.Sagas.Orchestrations.Runtime</PackageId>
+    <Description>Runtime engine, ingress, dispatching, decisions, and distribution services for Krackend saga orchestrations.</Description>
+    <PackageTags>saga;orchestration;runtime;engine;dotnet</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

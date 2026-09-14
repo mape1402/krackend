@@ -31,8 +31,16 @@ using Microsoft.Extensions.Hosting;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
 {
+    /// <summary>
+    /// Provides dependency injection registration methods for the orchestration runtime.
+    /// </summary>
     public static class ServiceCollectionExtensions
     {
+        /// <summary>
+        /// Registers the default orchestration runtime services.
+        /// </summary>
+        /// <param name="services">Service collection to configure.</param>
+        /// <returns>A runtime builder that can be used by transport and storage adapters.</returns>
         public static KrackendOrchestrationsRuntimeBuilder AddKrackendOrchestrationsRuntime(this IServiceCollection services)
         {
             services.TryAddSingleton<IIngressRegistry, IngressRegistry>();

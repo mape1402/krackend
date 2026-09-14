@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon</PackageId>
     <Description>Pigeon transport adapter for Krackend orchestration client services.</Description>
     <PackageTags>saga;orchestration;client;pigeon;messaging;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>

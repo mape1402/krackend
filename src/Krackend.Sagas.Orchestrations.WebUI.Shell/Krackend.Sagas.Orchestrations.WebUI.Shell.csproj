@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <Nullable>disable</Nullable>
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>Krackend.Sagas.Orchestrations.WebUI.Shell</PackageId>
     <Description>Shared Razor Pages shell, navigation, and assets for Krackend Sagas Orchestrations UI modules.</Description>
     <PackageTags>krackend;sagas;orchestrations;webui;shell</PackageTags>
     <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>

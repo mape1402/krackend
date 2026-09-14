@@ -1,6 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule</PackageId>
+    <Description>Mule durable action adapter for Krackend saga orchestration runtime intake, dispatch, and artifact projection work.</Description>
+    <PackageTags>saga;orchestration;runtime;mule;durable-actions;dotnet</PackageTags>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
