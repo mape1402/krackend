@@ -2,7 +2,7 @@
 
 Modular backend building blocks for .NET services.
 
-[![Build](https://github.com/mape1402/krackend/actions/workflows/CI.yml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/CI.yml)
+[![Build](https://github.com/mape1402/krackend/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/build-and-release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Packages
@@ -10,48 +10,51 @@ Modular backend building blocks for .NET services.
 Event sourcing packages:
 
 ```bash
+dotnet add package Krackend.EventSourcing.Abstractions
 dotnet add package Krackend.EventSourcing
 dotnet add package Krackend.EventSourcing.EntityFrameworkCore
+dotnet add package Krackend.EventSourcing.Projections
 dotnet add package Krackend.EventSourcing.Analyzers
 dotnet add package Krackend.EventSourcing.Testing
 ```
 
-Optional event sourcing packages:
+Saga orchestration core packages:
 
 ```bash
-dotnet add package Krackend.EventSourcing.Abstractions
-```
-
-Saga orchestration packages:
-
-```bash
-dotnet add package Krackend.Sagas.Orchestrations
 dotnet add package Krackend.Sagas.Orchestrations.Abstractions
 dotnet add package Krackend.Sagas.Orchestrations.Contracts
-dotnet add package Krackend.Sagas.Orchestrations.Design
-dotnet add package Krackend.Sagas.Orchestrations.Design.Interaction
-dotnet add package Krackend.Sagas.Orchestrations.Design.Storage.SqlServer
-dotnet add package Krackend.Sagas.Orchestrations.Design.WebUI
-dotnet add package Krackend.Sagas.Orchestrations.Distribution
-dotnet add package Krackend.Sagas.Orchestrations.Distribution.Interaction
-dotnet add package Krackend.Sagas.Orchestrations.Distribution.Storage.SqlServer
-dotnet add package Krackend.Sagas.Orchestrations.Distribution.WebUI
-dotnet add package Krackend.Sagas.Orchestrations.Messaging.Abstractions
-dotnet add package Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer
-dotnet add package Krackend.Sagas.Orchestrations.Runtime.WebUI
-dotnet add package Krackend.Sagas.Orchestrations.Security
-dotnet add package Krackend.Sagas.Orchestrations.Security.Interaction
-dotnet add package Krackend.Sagas.Orchestrations.Security.Storage.SqlServer
-dotnet add package Krackend.Sagas.Orchestrations.Security.WebUI
-dotnet add package Krackend.Sagas.Orchestrations.Web
-dotnet add package Krackend.Sagas.Orchestrations.WebUI.Shell
 ```
 
-Optional saga orchestration packages:
+Saga orchestration control-plane packages:
 
 ```bash
-dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap
-dotnet add package Krackend.Sagas.Orchestrations.Messaging.Pigeon
+dotnet add package Krackend.Sagas.Orchestrations.ControlPlane
+dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.Application
+dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework
+dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.WebUI
+```
+
+Saga orchestration runtime packages:
+
+```bash
+dotnet add package Krackend.Sagas.Orchestrations.Runtime
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.ButterMorph
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.WebUI
+```
+
+Saga orchestration client and schema packages:
+
+```bash
+dotnet add package Krackend.Sagas.Orchestrations.Client
+dotnet add package Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon
+dotnet add package Krackend.Sagas.Orchestrations.Client.Spider
+dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions
+dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas
+dotnet add package Krackend.Sagas.Orchestrations.WebUI.Shell
 ```
 
 ## Event Sourcing
@@ -120,48 +123,64 @@ Samples:
 - `samples/Krackend.EventSourcing.Sqlite.Sample`: typed event-sourced write model with SQLite.
 - `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store with SQLite.
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
-- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample`: host that mounts saga orchestration runtime libraries and Runtime WebUI.
-- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample`: control-plane host that mounts Design, Distribution, Security, WebUI, Bootstrap, and EF migrations.
+- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample`: host that mounts runtime storage, Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, and Runtime WebUI.
+- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample`: control-plane host that mounts design, distribution, security, WebUI, artifact delivery endpoints, and EF migrations.
 
 ## Sagas Orchestrations
 
-`Krackend.Sagas.Orchestrations` provides saga orchestration runtime and control-plane modules as composable libraries. Hosts can reference only the pieces they need:
+Krackend Sagas Orchestrations is split into composable libraries so the runtime, control plane, transport adapters, client integrations, and UI modules can evolve independently:
 
-- `Krackend.Sagas.Orchestrations.Abstractions` for artifact, primitive, runtime and storage contracts
-- `Krackend.Sagas.Orchestrations` for runtime services, in-memory trigger intake and engine execution
-- `Krackend.Sagas.Orchestrations.Contracts` for cross-module integration events
-- `Krackend.Sagas.Orchestrations.Design*` for orchestration definition authoring, interaction services, SQL Server storage and Razor UI
-- `Krackend.Sagas.Orchestrations.Distribution*` for artifact release, promotion, runtime-node distribution, SQL Server storage and Razor UI
-- `Krackend.Sagas.Orchestrations.Security*` for teams/security interaction, SQL Server storage and Razor UI
-- `Krackend.Sagas.Orchestrations.Messaging.Abstractions` for broker-neutral publishing, consuming and orchestration metadata
-- `Krackend.Sagas.Orchestrations.EntityFrameworkCore.SqlServer` for SQL Server runtime storage
-- `Krackend.Sagas.Orchestrations.Web` for minimal API host endpoints
-- `Krackend.Sagas.Orchestrations.WebUI.Shell` and `Krackend.Sagas.Orchestrations.Runtime.WebUI` for Razor UI modules
-- `Krackend.Sagas.Orchestrations.ControlPlane.Bootstrap` for wiring Design, Distribution, Security and WebUI into a control-plane host
-- `Krackend.Sagas.Orchestrations.Messaging.Pigeon` for the optional Pigeon messaging adapter
+- `Krackend.Sagas.Orchestrations.ControlPlane*` captures orchestration definitions, versions, releases, runtime nodes, credentials, and artifact delivery.
+- `Krackend.Sagas.Orchestrations.Runtime*` consumes immutable artifacts, projects ingress configuration, runs durable Mule-backed work, dispatches transport-agnostic commands, tracks instances, and exposes runtime diagnostics.
+- `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
+- `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with Atlas available as the plug-in adapter.
+- `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 
-Minimal host setup:
+Minimal runtime host setup:
 
 ```csharp
-builder.Services.AddKrackendSagasOrchestrationsRuntime(options =>
+builder.Services.AddOrchestratorRuntimeWebUI(options =>
 {
-    options.EnvironmentKey = "local";
+    options.RoutePrefix = "runtime";
 });
 
-builder.Services.AddKrackendSagasOrchestrationsEngine();
-builder.Services.AddKrackendSagasOrchestrationsInMemoryIntakeBuffer();
-builder.Services.AddKrackendSagasOrchestrationsMessaging();
-builder.Services.AddKrackendSagasOrchestrationsSqlServer(options =>
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("SagasRuntime"));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("Runtime"));
 });
-builder.Services.AddKrackendSagasOrchestrationsWeb();
 
-app.MapKrackendSagasOrchestrationsArtifactEndpoints();
-app.MapKrackendSagasOrchestrationsEngineEndpoints();
+builder.Services
+    .AddKrackendOrchestrationsRuntime()
+    .AddPigeon(builder.Configuration)
+    .AddMule(mule =>
+    {
+        mule.UseEntityFrameworkCore<RuntimeDbContext>();
+    });
+
+builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
+
+app.MapOrchestratorRuntimeDistributionEndpoints();
+app.MapOrchestratorRuntimeReactiveHub();
+```
+
+Minimal control-plane host setup:
+
+```csharp
+builder.Services.AddOrchestratorControlPlane(options =>
+{
+    options.AdminRootPath = "admin";
+    options.ConfigureStorage = db =>
+        db.UseSqlServer(builder.Configuration.GetConnectionString("ControlPlane"));
+});
+
+app.MapOrchestratorArtifactDeliveryEndpoints();
 ```
 
 See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full package, function, endpoint, storage, WebUI, bootstrap, and migration-ownership reference. See [docs/sagas-orchestrations-end-to-end.md](docs/sagas-orchestrations-end-to-end.md) for the complete Orchestrator walkthrough with models, lifecycle steps, distribution flow, runtime execution, playbooks, risks, and diagnostics.
+
+## Release
+
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v1.3.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 

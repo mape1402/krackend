@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v1.3.0] - 2026-09-14
+
+- ### Added
+
+  - Added NuGet package metadata for all source libraries, including runtime, client, control-plane, storage, messaging, buffering, schema-registry, and WebUI modules.
+  - Added XML documentation generation for source packages and summaries for public runtime and adapter APIs introduced by the orchestration work.
+  - Added a unified `Build and Release` workflow with `.release` marker validation, release branch/tag creation, GitHub release notes, NuGet packing, and trusted publishing.
+  - Added package publication coverage for `Krackend.EventSourcing.Projections` and the current Krackend saga orchestration package layout.
+
+- ### Changed
+
+  - Changed package generation to run through explicit `dotnet pack` instead of package-on-build.
+  - Updated the README package list and orchestration setup guidance to the current ControlPlane, Runtime, Client, adapter, schema registry, and WebUI package structure.
+
+------
+
 ## [v1.2.1] - 2026-08-10
 
 - ### Fixed
