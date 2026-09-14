@@ -1,0 +1,31 @@
+@page
+@model ErrorModel
+@{
+    Layout = "_OrchestratorShellLayout";
+    ViewData["Title"] = "Unexpected Error";
+}
+
+<section class="od-error-page">
+    <article class="od-error-panel">
+        <div class="od-error-icon" aria-hidden="true">
+            <i class="bi bi-exclamation-triangle"></i>
+        </div>
+        <div>
+            <p class="od-item-meta">Control plane host</p>
+            <h1 class="od-page-title">Unexpected error</h1>
+            <p class="od-item-description">
+                The control plane could not complete the request. Use the request id to trace the failure.
+            </p>
+            @if (Model.ShowRequestId)
+            {
+                <div class="od-error-request">
+                    <span>Request id</span>
+                    <code>@Model.RequestId</code>
+                </div>
+            }
+            <div class="od-form-actions">
+                <a class="btn btn-primary" href="/">Go home</a>
+            </div>
+        </div>
+    </article>
+</section>

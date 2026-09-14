@@ -1,13 +1,20 @@
 <Project>
   <ItemGroup>
-    <PackageReference Update="Microsoft.EntityFrameworkCore" Version="9.0.7" />
     <PackageReference Update="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.7" />
     <PackageReference Update="Microsoft.EntityFrameworkCore.Relational" Version="9.0.7" />
-    <PackageReference Update="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7" />
     <PackageReference Update="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.7" />
-    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.7" />
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.7" Condition="'$(TargetFramework)' == 'net9.0'" />
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" Condition="'$(MSBuildProjectName)' == 'Krackend.Sagas.Orchestrations.Client'" />
     <PackageReference Update="MinVer" Version="6.0.0" />
-    <PackageReference Update="Pigeon.Messaging" Version="1.0.11" />
+    <PackageReference Update="ButterMorph" Version="1.0.2" />
+    <PackageReference Update="ButterMorph.Design" Version="1.0.2" />
+    <PackageReference Update="ButterMorph.Json" Version="1.0.2" />
+    <PackageReference Update="ButterMorph.Json.Schema" Version="1.0.2" />
+    <PackageReference Update="ButterMorph.SchemaDesign" Version="1.0.2" />
+    <PackageReference Update="ButterMorph.Web.Razor" Version="1.0.2" />
+    <PackageReference Update="Pigeon.Messaging" Version="3.1.0" />
+    <PackageReference Update="Pigeon.Messaging.Rabbit" Version="3.1.0" />
     <PackageReference Update="Spider.Pipelines" Version="1.0.0" />
     <PackageReference Update="Ulid" Version="1.4.1" />
   </ItemGroup>

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.7">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
+    <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" Version="1.4.1" />
+    <PackageReference Include="Mule.DurableActions.FastLane.Redis" Version="1.4.1" />
+    <PackageReference Include="Pigeon.Messaging.Rabbit" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.ButterMorph\Krackend.Sagas.Orchestrations.Runtime.ButterMorph.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

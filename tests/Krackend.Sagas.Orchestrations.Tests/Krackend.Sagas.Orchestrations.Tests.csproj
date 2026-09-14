@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" Version="1.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Spider\Krackend.Sagas.Orchestrations.Client.Spider.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client\Krackend.Sagas.Orchestrations.Client.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Contracts\Krackend.Sagas.Orchestrations.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Application\Krackend.Sagas.Orchestrations.ControlPlane.Application.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.WebUI\Krackend.Sagas.Orchestrations.ControlPlane.WebUI.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane\Krackend.Sagas.Orchestrations.ControlPlane.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule\Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.ButterMorph\Krackend.Sagas.Orchestrations.Runtime.ButterMorph.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas\Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

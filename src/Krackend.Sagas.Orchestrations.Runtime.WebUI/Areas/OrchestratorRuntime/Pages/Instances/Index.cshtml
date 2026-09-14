@@ -1,0 +1,185 @@
+@page
+@using System.Text.Json
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.IndexModel
+@{
+    ViewData["Title"] = "Runtime Diagnostics";
+    var dashboardConfig = new
+    {
+        hubPath = Model.LiveHubPath,
+        detailPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Detail" }),
+        snapshotPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Snapshot" }),
+        summaryPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Summary" }),
+        traffic = Model.Traffic,
+        hourlyTraffic = Model.HourlyTraffic,
+        instances = Model.Instances,
+        summary = Model.Summary
+    };
+    var initialPageSummary = Model.Instances.Count == 0
+        ? "0-0 of 0"
+        : $"1-{Math.Min(Model.Instances.Count, 25)} of {Model.Instances.Count}";
+}
+
+@section Head {
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260821-09" />
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Runtime Diagnostics</h1>
+        <p class="od-page-subtitle">Runtime node diagnostics</p>
+    </div>
+    <div class="od-live-indicator" data-live-state="connecting">
+        <span class="od-live-dot"></span>
+        <span data-live-label>Connecting</span>
+    </div>
+</div>
+
+<section class="od-runtime-hero" aria-label="Runtime traffic">
+    <div class="od-chart-head">
+        <div>
+            <h2 class="od-section-title">Traffic</h2>
+            <p class="od-item-meta">Operations and active sagas</p>
+        </div>
+        <div class="od-traffic-mode" role="group" aria-label="Traffic range">
+            <button type="button" class="active" data-traffic-mode="minute">Minute</button>
+            <button type="button" data-traffic-mode="hour">Hour</button>
+        </div>
+        <div class="od-metric-strip">
+            <span>Active now <strong data-counter="active">@Model.Summary.Active</strong></span>
+            <span>Waiting now <strong data-counter="waiting">@Model.Summary.Waiting</strong></span>
+            <span>Completed/min <strong data-counter="completed-minute">@Model.Summary.CompletedLastMinute</strong></span>
+            <span>Failed/min <strong data-counter="failed-minute">@Model.Summary.FailedLastMinute</strong></span>
+            <span>Completed/hr <strong data-counter="completed-hour">@Model.Summary.CompletedLastHour</strong></span>
+            <span>Failed/hr <strong data-counter="failed-hour">@Model.Summary.FailedLastHour</strong></span>
+        </div>
+    </div>
+    <canvas class="od-traffic-chart" data-traffic-chart height="170"></canvas>
+</section>
+
+<section class="od-panel od-instances-panel">
+    <div class="od-section-head">
+        <div>
+            <h2 class="od-section-title">Instances</h2>
+            <p class="od-item-meta">Created date descending</p>
+        </div>
+        <span class="od-item-meta"><span data-instance-count>@Model.Instances.Count</span> visible</span>
+    </div>
+
+    <div class="od-instance-controls">
+        <label class="od-instance-search">
+            <i class="bi bi-search"></i>
+            <input type="search" data-instance-search placeholder="Search orchestration key, saga id or correlation id" autocomplete="off" />
+        </label>
+        <div class="od-instance-pager">
+            <label>
+                <span>Rows</span>
+                <select data-page-size>
+                    <option value="15">15</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="75">75</option>
+                </select>
+            </label>
+            <button type="button" data-page-prev aria-label="Previous page"><i class="bi bi-chevron-left"></i></button>
+            <span data-page-summary>@initialPageSummary</span>
+            <button type="button" data-page-next aria-label="Next page"><i class="bi bi-chevron-right"></i></button>
+        </div>
+    </div>
+
+    <div class="od-instance-table-wrap">
+        <table class="od-instance-table">
+            <thead>
+                <tr>
+                    <th>Orchestration</th>
+                    <th>CorrelationId</th>
+                    <th>SagaId</th>
+                    <th>Status</th>
+                    <th>Stage</th>
+                    <th>Task</th>
+                    <th>Started</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody data-instance-grid>
+                @foreach (var instance in Model.Instances)
+                {
+                    <tr data-instance-id="@instance.Id" data-instance-status="@instance.Status" tabindex="0">
+                        <td>
+                            <strong>@instance.OrchestrationLabel</strong>
+                        </td>
+                        <td class="od-id-cell">
+                            <span class="od-id-copy">
+                                <span class="od-copy-value">@instance.CorrelationId</span>
+                                <button type="button" class="od-copy-button" data-copy-value="@instance.CorrelationId" aria-label="Copy correlation id" title="Copy CorrelationId"><i class="bi bi-copy"></i></button>
+                            </span>
+                        </td>
+                        <td class="od-id-cell">
+                            <span class="od-id-copy">
+                                <span class="od-copy-value">@instance.SagaId</span>
+                                <button type="button" class="od-copy-button" data-copy-value="@instance.SagaId" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
+                            </span>
+                        </td>
+                        <td><span class="od-status @instance.StatusClass" data-instance-status-label>@instance.Status</span></td>
+                        <td data-instance-stage>@(instance.CurrentStageKey ?? "-")</td>
+                        <td data-instance-task>@(instance.CurrentTaskKey ?? "-")</td>
+                        <td>@instance.StartedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td data-instance-updated>@instance.LastUpdatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<div class="modal fade od-detail-modal" id="runtimeInstanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable od-runtime-detail-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title" data-detail-title>Instance detail</h2>
+                    <p class="od-item-meta" data-detail-subtitle></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" data-detail-body></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade od-stage-modal" id="runtimeStageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title" data-stage-title>Stage detail</h2>
+                    <p class="od-item-meta" data-stage-subtitle></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" data-stage-body></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade od-timeline-modal" id="runtimeTimelineModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-md-down modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title" data-timeline-title>Timeline</h2>
+                    <p class="od-item-meta" data-timeline-subtitle></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" data-timeline-body></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.KrackendRuntimeDashboard = @Html.Raw(JsonSerializer.Serialize(dashboardConfig));
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260821-09"></script>
+}

@@ -1,0 +1,154 @@
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation
+@inject OrchestratorNavigationRegistry Navigation
+@{
+    var pageTitle = ViewData["Title"]?.ToString() ?? "Orchestrator";
+    var currentArea = ViewContext.RouteData.Values["area"]?.ToString() ?? string.Empty;
+    var currentPage = ViewContext.RouteData.Values["page"]?.ToString() ?? string.Empty;
+
+    var allItems = Navigation.GetItems();
+
+    bool IsActive(OrchestratorNavigationItem item) =>
+        string.Equals(currentArea, item.Area, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(currentPage, item.Page, StringComparison.OrdinalIgnoreCase);
+
+    var navGroups = new[]
+    {
+        new
+        {
+            Area = "OrchestratorDesign",
+            Label = "Design",
+            Icon = "bi-vector-pen",
+            Slug = "design",
+            Items = allItems.Where(x => string.Equals(x.Area, "OrchestratorDesign", StringComparison.OrdinalIgnoreCase)).ToArray()
+        },
+        new
+        {
+            Area = "OrchestratorDistribution",
+            Label = "Distribution",
+            Icon = "bi-signpost-split",
+            Slug = "distribution",
+            Items = allItems.Where(x => string.Equals(x.Area, "OrchestratorDistribution", StringComparison.OrdinalIgnoreCase)).ToArray()
+        },
+        new
+        {
+            Area = "OrchestratorRuntime",
+            Label = "Runtime",
+            Icon = "bi-cpu",
+            Slug = "runtime",
+            Items = allItems.Where(x => string.Equals(x.Area, "OrchestratorRuntime", StringComparison.OrdinalIgnoreCase)).ToArray()
+        },
+        new
+        {
+            Area = "OrchestratorSecurity",
+            Label = "Security",
+            Icon = "bi-shield-lock",
+            Slug = "security",
+            Items = allItems.Where(x => string.Equals(x.Area, "OrchestratorSecurity", StringComparison.OrdinalIgnoreCase)).ToArray()
+        }
+    }.Where(x => x.Items.Length > 0).ToArray();
+    var brandItem = navGroups.FirstOrDefault()?.Items.OrderBy(x => x.Order).FirstOrDefault();
+    var brandHref = brandItem is null
+        ? "/"
+        : Url.Page(brandItem.Page, new { area = brandItem.Area });
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@pageTitle - Orchestrator</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/css/orchestrator-shell.css" asp-append-version="true" />
+    @RenderSection("Head", required: false)
+</head>
+<body>
+    <div class="app-shell" id="orchestratorAppShell">
+        <nav class="sidebar" id="orchestratorSidebar">
+            <div class="sidebar-brand">
+                <a class="brand-link" href="@brandHref">
+                    <span class="brand-icon"><i class="bi bi-diagram-3-fill"></i></span>
+                    <span class="brand-name">Orchestrator</span>
+                </a>
+            </div>
+            <div class="sidebar-nav">
+                @foreach (var group in navGroups)
+                {
+                    var expanded = group.Items.Any(IsActive);
+                    <div class="nav-group">
+                        <button class="nav-group-toggle @(expanded ? string.Empty : "collapsed")"
+                                type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#orchestrator-nav-@group.Slug"
+                                aria-expanded="@(expanded ? "true" : "false")">
+                            <i class="bi @group.Icon nav-icon"></i>
+                            <span class="nav-label">@group.Label</span>
+                            <i class="bi bi-chevron-down nav-caret"></i>
+                        </button>
+                        <div id="orchestrator-nav-@group.Slug" class="collapse nav-group-items @(expanded ? "show" : string.Empty)">
+                            @foreach (var item in group.Items)
+                            {
+                                var active = IsActive(item);
+                                <a class="nav-item-link nav-child @(active ? "active" : string.Empty)"
+                                   href="@Url.Page(item.Page, new { area = item.Area })"
+                                   aria-current="@(active ? "page" : null)">
+                                    <span>@item.Label</span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </nav>
+
+        <div class="content-shell">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button id="sidebar-toggle" class="hamburger-btn" type="button" aria-label="Toggle sidebar">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <span class="topbar-title">@pageTitle</span>
+                </div>
+                <div class="topbar-actions">
+                    <span class="topbar-badge">Development</span>
+                </div>
+            </header>
+            <main class="content-body">
+                @RenderBody()
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-shell.js" asp-append-version="true"></script>
+    <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-messages.js" asp-append-version="true"></script>
+    @{
+        var pageError = ViewContext.ViewData.Model?.GetType().GetProperty("ErrorMessage")?.GetValue(ViewContext.ViewData.Model)?.ToString() ?? string.Empty;
+        var validationErrors = ViewContext.ModelState.Values
+            .SelectMany(x => x.Errors)
+            .Select(x => x.ErrorMessage)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+    }
+    @if (validationErrors.Length > 0 || !string.IsNullOrWhiteSpace(pageError))
+    {
+        <script>
+            window.OrchestratorMessages?.showValidation({
+                title: 'Review the capture',
+                errors: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(validationErrors.Length > 0 ? validationErrors : new[] { pageError }))
+            });
+        </script>
+    }
+    @if (TempData["OrchestratorMessage.Title"] is string messageTitle)
+    {
+        <script>
+            window.OrchestratorMessages?.notify({
+                title: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(messageTitle)),
+                message: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(TempData["OrchestratorMessage.Body"]?.ToString() ?? string.Empty)),
+                type: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(TempData["OrchestratorMessage.Type"]?.ToString() ?? "info"))
+            });
+        </script>
+    }
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

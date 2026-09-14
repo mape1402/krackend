@@ -52,6 +52,8 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+!src/Krackend.Sagas.Orchestrations.Runtime.WebUI/Areas/OrchestratorRuntime/Pages/Artifacts/
+!src/Krackend.Sagas.Orchestrations.Runtime.WebUI/Areas/OrchestratorRuntime/Pages/Artifacts/**
 **/Properties/launchSettings.json
 
 # StyleCop
@@ -323,8 +325,12 @@ ASALocalRun/
 # MSBuild Binary and Structured Log
 *.binlog
 
+# Internal migration notes and agent working files
+agents/
+
 # NVidia Nsight GPU debugger configuration file
 *.nvuser
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
+/agents/runtime-artifact-ingress-synchronization-plan.md

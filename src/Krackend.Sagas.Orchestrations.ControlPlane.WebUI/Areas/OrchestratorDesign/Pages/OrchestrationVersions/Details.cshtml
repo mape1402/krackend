@@ -1,0 +1,917 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationVersions.DetailsModel
+@using Krackend.Sagas.Orchestrations.Abstractions.Primitives
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
+@{
+    ViewData["Title"] = "Version roadmap";
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">@Model.Orchestration?.Name</h1>
+        <p class="od-page-subtitle">Roadmap @Model.SelectedVersion?.Version</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Details" asp-route-orchestrationId="@Model.OrchestrationId" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+@if (!Model.CanEdit)
+{
+    <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
+}
+
+<div class="od-roadmap-layout">
+    <aside class="od-list-shell od-roadmap-side">
+        <div class="od-trigger-shell">
+            <div class="od-trigger-head">
+                <h2 class="od-panel-title">Triggers</h2>
+            </div>
+
+            <div class="od-vertical-cards">
+                @foreach (var trigger in Model.TriggerBindings)
+                {
+                    <article class="od-trigger-item @(trigger.IsEnabled ? string.Empty : "od-task-disabled")">
+                        <div class="od-item-top">
+                            <div>
+                                <h3 class="od-item-title">@trigger.Key</h3>
+                                <p class="od-item-meta">@trigger.TriggerType</p>
+                            </div>
+                            <div class="dropdown">
+                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Trigger actions">&#8942;</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li>
+                                        <button type="button"
+                                                class="dropdown-item js-open-trigger-modal"
+                                                data-trigger-mode="edit"
+                                                data-trigger-id="@trigger.Id">
+                                            @(Model.CanEdit ? "Edit trigger" : "View trigger")
+                                        </button>
+                                    </li>
+                                    @if (Model.CanEdit)
+                                    {
+                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <form method="post" asp-page-handler="DeleteTrigger" class="od-inline-form" data-confirm="true" data-confirm-title="Delete trigger" data-confirm-message="Delete this trigger from the orchestration version?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting trigger" data-busy-message="Design is removing the trigger binding.">
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                                                <input type="hidden" name="triggerId" value="@trigger.Id" />
+                                                <button type="submit" class="dropdown-item text-danger">Delete trigger</button>
+                                            </form>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                        @if (Model.CanEdit)
+                        {
+                            <div class="od-task-toggle-row">
+                                <span class="od-task-toggle-label">Enabled</span>
+                                <div class="form-check form-switch od-task-toggle">
+                                    <input class="form-check-input js-trigger-enabled-toggle" type="checkbox" role="switch" data-trigger-id="@trigger.Id" @(trigger.IsEnabled ? "checked" : null) aria-label="Toggle trigger enabled" />
+                                </div>
+                            </div>
+                        }
+                    </article>
+                }
+
+                @if (!Model.TriggerBindings.Any())
+                {
+                    <p class="od-empty">No triggers yet.</p>
+                }
+
+                @if (Model.CanEdit)
+                {
+                    <article class="od-trigger-item od-trigger-empty-item">
+                        <button type="button" class="od-add-link js-open-trigger-modal" data-trigger-mode="create">+ Add trigger</button>
+                    </article>
+                }
+            </div>
+        </div>
+    </aside>
+
+    <section class="od-list-shell od-roadmap-main">
+        <div class="od-panel-head">
+            <h2 class="od-panel-title">Stages</h2>
+            <span class="od-item-meta">@(Model.CanEdit ? "Drag cards to reorder, click a card to open" : "Click a card to open")</span>
+        </div>
+
+        @if (!Model.Stages.Any())
+        {
+            <p class="od-empty">No stages yet.</p>
+        }
+
+        <div id="stagePipeline" class="od-pipeline">
+            @foreach (var stage in Model.Stages.OrderBy(s => s.Order))
+            {
+                var hasStageExecutionCondition = stage.HasExecutionCondition;
+
+                <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
+                    <div class="od-pipeline-card od-stage-card">
+                        <button type="button"
+                                class="od-stage-exec-btn js-stage-execution-btn @(hasStageExecutionCondition ? "od-stage-exec-btn-active" : "od-stage-exec-btn-inactive")"
+                                title="Execution condition"
+                                aria-label="Execution condition"
+                                data-stage-id="@stage.Id">
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
+                            </svg>
+                        </button>
+                        <div class="od-item-top">
+                            <div class="od-stage-head-main">
+                                <div class="od-stage-texts">
+                                    <h3 class="od-item-title">@stage.Key</h3>
+                                    <p class="od-item-meta">@stage.Name</p>
+                                </div>
+                            </div>
+                            <div class="dropdown">
+                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Stage actions">&#8942;</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li>
+                                        <button type="button"
+                                                class="dropdown-item js-open-stage-modal"
+                                                data-stage-mode="edit"
+                                                data-stage-id="@stage.Id">
+                                            @(Model.CanEdit ? "Edit stage" : "View stage")
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item"
+                                           asp-area="OrchestratorDesign"
+                                           asp-page="/OrchestrationStages/Details"
+                                           asp-route-orchestrationId="@Model.OrchestrationId"
+                                           asp-route-versionId="@Model.SelectedVersion?.Id"
+                                           asp-route-stageId="@stage.Id">Open stage</a>
+                                    </li>
+                                    @if (Model.CanEdit)
+                                    {
+                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <form method="post" asp-page-handler="DeleteStage" class="od-inline-form" data-confirm="true" data-confirm-title="Delete stage" data-confirm-message="Delete this stage from the orchestration version?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting stage" data-busy-message="Design is removing the stage definition.">
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                                                <input type="hidden" name="stageId" value="@stage.Id" />
+                                                <button type="submit" class="dropdown-item text-danger">Delete stage</button>
+                                            </form>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="od-stage-task-count-row">
+                            <span class="od-stage-task-count-badge">@((Model.StageTaskCounts.TryGetValue(stage.Id, out var count) ? count : 0)) tasks</span>
+                        </div>
+                    </div>
+                </article>
+            }
+
+            @if (Model.CanEdit)
+            {
+                <article class="od-pipeline-item od-add-item">
+                    <div class="od-pipeline-card">
+                        <button type="button" class="od-add-link js-open-stage-modal" data-stage-mode="create">+ Add stage</button>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+</div>
+
+<div class="modal fade" id="stageExecutionConditionModal" tabindex="-1" aria-labelledby="stageExecutionConditionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="stageExecutionConditionModalLabel">Execution condition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="stageExecutionConditionStageId" />
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="stageHasExecutionCondition" />
+                    <label class="form-check-label" for="stageHasExecutionCondition">Enable execution condition</label>
+                </div>
+
+                <div id="stageExecutionConditionSection" class="row g-2">
+                    <div class="col-md-12">
+                        <label class="form-label" for="stageConditionEngine">Condition engine</label>
+                        <select class="form-select" id="stageConditionEngine" asp-items="Model.EngineTypes"></select>
+                    </div>
+
+                    <div class="stage-condition-config-block col-12" data-engine="DSL">
+                        <label class="form-label" for="stageConditionDslExpression">DSL expression</label>
+                        <input class="form-control" id="stageConditionDslExpression" />
+                    </div>
+                </div>
+
+                <div id="stageConditionUnsupportedEngineWarning" class="alert alert-warning mt-3 d-none mb-0">
+                    Selected condition engine does not define specific configuration fields yet.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="stageExecutionConditionSaveButton">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="newStageModal" tabindex="-1" aria-labelledby="newStageModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="UpsertStage" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving stage" data-busy-message="Design is validating and storing the stage definition.">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="newStageModalLabel">Create stage</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                    <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                    <input asp-for="NewStage.StageId" type="hidden" id="stageModalStageId" />
+                    <div class="mb-2">
+                        <label asp-for="NewStage.Key" class="form-label"></label>
+                        <input asp-for="NewStage.Key" class="form-control" />
+                    </div>
+                    <div class="mb-2">
+                        <label asp-for="NewStage.Name" class="form-label"></label>
+                        <input asp-for="NewStage.Name" class="form-control" />
+                    </div>
+                    <div class="mb-2">
+                        <label asp-for="NewStage.Description" class="form-label"></label>
+                        <textarea asp-for="NewStage.Description" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="stageModalSubmitButton">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="UpsertTrigger" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving trigger" data-busy-message="Design is validating and storing the trigger binding.">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="triggerModalLabel">Create trigger</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                    <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                    <input asp-for="TriggerInput.TriggerId" type="hidden" id="triggerModalTriggerId" />
+
+                    <div class="mb-2">
+                        <label asp-for="TriggerInput.Key" class="form-label">Key</label>
+                        <input asp-for="TriggerInput.Key" class="form-control" />
+                    </div>
+                    <div class="mb-2">
+                        <label asp-for="TriggerInput.TriggerType" class="form-label">Trigger type</label>
+                        <select asp-for="TriggerInput.TriggerType" class="form-select" asp-items="Model.TriggerTypes" id="triggerTypeSelector"></select>
+                    </div>
+                    <div class="mb-2">
+                        <label asp-for="TriggerInput.Description" class="form-label">Description</label>
+                        <textarea asp-for="TriggerInput.Description" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div class="trigger-config-block" data-trigger-type="Event">
+                        <hr />
+                        <h6 class="mb-2">Event channel</h6>
+                        <div class="row g-2">
+                            <div class="col-md-7">
+                                <label asp-for="TriggerInput.EventTopic" class="form-label">Topic</label>
+                                <input asp-for="TriggerInput.EventTopic" class="form-control" data-orchestrator-key="true" />
+                            </div>
+                            <div class="col-md-5">
+                                <label asp-for="TriggerInput.EventVersion" class="form-label">Version</label>
+                                <input asp-for="TriggerInput.EventVersion" class="form-control" data-orchestrator-version="true" />
+                            </div>
+                            <div class="col-12"><hr class="my-2" /></div>
+                            <div class="col-12">
+                                <h6 class="mb-2">Schema binding</h6>
+                            </div>
+                            <div class="col-md-12 form-check form-switch ms-2">
+                                <input asp-for="TriggerInput.HasEventSchemaValidation" class="form-check-input" />
+                                <label asp-for="TriggerInput.HasEventSchemaValidation" class="form-check-label">Enable schema validation</label>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="TriggerInput.EventSchemaContractKey" class="form-label">Contract key</label>
+                                <input asp-for="TriggerInput.EventSchemaContractKey" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="TriggerInput.EventSchemaContractVersion" class="form-label">Contract version</label>
+                                <input asp-for="TriggerInput.EventSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
+                            </div>
+                            <div class="col-md-12">
+                                <label asp-for="TriggerInput.EventSchemaRegistryProviderId" class="form-label">Registry provider id</label>
+                                <input asp-for="TriggerInput.EventSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
+                            </div>
+                            <div class="col-md-12 form-check mt-2 ms-2">
+                                <input asp-for="TriggerInput.EventSchemaStrictMode" class="form-check-input" />
+                                <label asp-for="TriggerInput.EventSchemaStrictMode" class="form-check-label">Strict mode</label>
+                            </div>
+                            <div class="col-12"><hr class="my-2" /></div>
+                            <div class="col-12">
+                                <h6 class="mb-2">Payload validation</h6>
+                            </div>
+                            <div class="col-md-7 form-check form-switch ms-2">
+                                <input asp-for="TriggerInput.HasEventValidation" class="form-check-input" />
+                                <label asp-for="TriggerInput.HasEventValidation" class="form-check-label">Validate event payload</label>
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="TriggerInput.EventValidationErrorCode" class="form-label">Error code</label>
+                                <input asp-for="TriggerInput.EventValidationErrorCode" class="form-control" />
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="TriggerInput.EventValidationDsl" class="form-label">Validation DSL</label>
+                                <textarea asp-for="TriggerInput.EventValidationDsl" class="form-control" rows="4"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="triggerUnsupportedTypeWarning" class="alert alert-warning mt-3 d-none mb-0">
+                        Selected trigger type does not define specific channel fields yet.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="triggerModalSubmitButton">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<meta name="request-verification-token" content="@Antiforgery.GetAndStoreTokens(HttpContext).RequestToken" />
+
+@section Scripts {
+<script>
+const orchestrationVersionCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+
+function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
+    if (!modalElement) {
+        return;
+    }
+
+    modalElement.querySelectorAll('input, textarea, select').forEach(element => {
+        const type = (element.getAttribute('type') || '').toLowerCase();
+        if (type === 'hidden') {
+            return;
+        }
+
+        if (element.tagName === 'TEXTAREA' || (element.tagName === 'INPUT' && type !== 'checkbox' && type !== 'radio')) {
+            element.readOnly = readOnly;
+            element.toggleAttribute('readonly', readOnly);
+            return;
+        }
+
+        element.disabled = readOnly;
+    });
+
+    if (submitButton) {
+        submitButton.classList.toggle('d-none', readOnly);
+        submitButton.disabled = readOnly;
+    }
+
+    const dismissButton = modalElement.querySelector('.modal-footer [data-bs-dismiss="modal"]');
+    if (dismissButton) {
+        dismissButton.textContent = readOnly ? 'Close' : 'Cancel';
+    }
+}
+
+(() => {
+    const pipeline = document.getElementById('stagePipeline');
+    if (!pipeline) return;
+
+    const canEdit = orchestrationVersionCanEdit;
+
+    const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
+    let dragged = null;
+
+    pipeline.addEventListener('dragstart', event => {
+        if (!canEdit) {
+            event.preventDefault();
+            return;
+        }
+
+        const card = event.target.closest('.od-pipeline-item');
+        if (!card || card.classList.contains('od-add-item')) {
+            event.preventDefault();
+            return;
+        }
+
+        dragged = card;
+        card.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', card.dataset.stageId || '');
+    });
+
+    pipeline.addEventListener('dragend', async () => {
+        if (!canEdit) {
+            return;
+        }
+
+        if (!dragged) {
+            return;
+        }
+
+        dragged.classList.remove('dragging');
+        dragged = null;
+        await persistOrder();
+    });
+
+    pipeline.addEventListener('dragover', event => {
+        if (!canEdit) {
+            return;
+        }
+
+        event.preventDefault();
+        if (!dragged) {
+            return;
+        }
+
+        const target = event.target.closest('.od-pipeline-item');
+        if (!target || target === dragged) {
+            return;
+        }
+
+        if (target.classList.contains('od-add-item')) {
+            pipeline.insertBefore(dragged, target);
+            return;
+        }
+
+        const targetRect = target.getBoundingClientRect();
+        const shouldPlaceBefore = event.clientX < targetRect.left + (targetRect.width / 2);
+        pipeline.insertBefore(dragged, shouldPlaceBefore ? target : target.nextSibling);
+    });
+
+    pipeline.addEventListener('click', event => {
+        if (event.target.closest('.js-stage-execution-btn')) {
+            return;
+        }
+
+        if (event.target.closest('.dropdown')) {
+            return;
+        }
+
+        const card = event.target.closest('.od-pipeline-item');
+        if (!card || card.classList.contains('od-add-item') || card.classList.contains('dragging')) {
+            return;
+        }
+
+        const stageId = card.dataset.stageId;
+        if (!stageId) {
+            return;
+        }
+
+        const url = '@Url.Page("/OrchestrationStages/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = Model.SelectedVersion?.Id, stageId = "__stageId__" })';
+        window.location.href = url.replace('__stageId__', encodeURIComponent(stageId));
+    });
+
+    async function persistOrder() {
+        const stageIds = Array.from(pipeline.querySelectorAll('.od-pipeline-item[data-stage-id]')).map(x => x.dataset.stageId);
+        if (stageIds.length === 0) {
+            return;
+        }
+
+        await fetch(`${window.location.pathname}?handler=ReorderStages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': antiForgeryToken
+            },
+            body: JSON.stringify({ versionId: '@Model.VersionId', stageIds: stageIds })
+        });
+    }
+})();
+
+(() => {
+    const stageModalElement = document.getElementById('newStageModal');
+    const stageModalTitle = document.getElementById('newStageModalLabel');
+    const stageSubmitButton = document.getElementById('stageModalSubmitButton');
+    const stageIdInput = document.getElementById('stageModalStageId');
+    const stageForm = stageModalElement?.querySelector('form');
+    const canEdit = orchestrationVersionCanEdit;
+    if (!stageModalElement || !stageModalTitle || !stageSubmitButton || !stageIdInput) {
+        return;
+    }
+
+    if (stageForm && !canEdit) {
+        stageForm.addEventListener('submit', event => event.preventDefault());
+    }
+
+    const defaultValues = {
+        StageId: '',
+        Key: '',
+        Name: '',
+        Description: '',
+    };
+    const payloadFieldAliases = {
+        stageId: 'StageId',
+        key: 'Key',
+        name: 'Name',
+        description: 'Description',
+    };
+
+    function setInputValue(propertyName, value) {
+        const element = document.getElementById(`NewStage_${propertyName}`);
+        if (!element) {
+            return;
+        }
+
+        element.value = value ?? '';
+    }
+
+    function applyPayload(payload) {
+        Object.keys(defaultValues).forEach(key => setInputValue(key, defaultValues[key]));
+        Object.keys(payload || {}).forEach(key => {
+            const fieldName = payloadFieldAliases[key] || key;
+            setInputValue(fieldName, payload[key]);
+        });
+
+        stageIdInput.value = payload?.stageId || payload?.StageId || '';
+    }
+
+    function openModal() {
+        if (!window.bootstrap || !window.bootstrap.Modal) {
+            return;
+        }
+
+        window.bootstrap.Modal.getOrCreateInstance(stageModalElement).show();
+    }
+
+    document.querySelectorAll('.js-open-stage-modal').forEach(button => {
+        button.addEventListener('click', async () => {
+            const mode = button.getAttribute('data-stage-mode') || 'create';
+
+            if (mode === 'edit') {
+                const stageId = button.getAttribute('data-stage-id') || '';
+                if (!stageId) {
+                    return;
+                }
+
+                const response = await fetch(`${window.location.pathname}?handler=StageForEdit&stageId=${encodeURIComponent(stageId)}`);
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                stageModalTitle.textContent = canEdit ? 'Edit stage' : 'Stage configuration';
+                stageSubmitButton.textContent = 'Save';
+                applyPayload(payload);
+                setVersionModalReadOnly(stageModalElement, !canEdit, stageSubmitButton);
+                openModal();
+                return;
+            }
+
+            if (!canEdit) {
+                return;
+            }
+
+            stageModalTitle.textContent = 'Create stage';
+            stageSubmitButton.textContent = 'Create';
+            applyPayload({});
+            setVersionModalReadOnly(stageModalElement, false, stageSubmitButton);
+            openModal();
+        });
+    });
+})();
+
+(() => {
+    const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
+    const modalElement = document.getElementById('stageExecutionConditionModal');
+    const stageIdInput = document.getElementById('stageExecutionConditionStageId');
+    const hasExecutionConditionInput = document.getElementById('stageHasExecutionCondition');
+    const conditionEngineInput = document.getElementById('stageConditionEngine');
+    const conditionDslExpressionInput = document.getElementById('stageConditionDslExpression');
+    const conditionSection = document.getElementById('stageExecutionConditionSection');
+    const unsupportedEngineWarning = document.getElementById('stageConditionUnsupportedEngineWarning');
+    const saveButton = document.getElementById('stageExecutionConditionSaveButton');
+    const canEdit = orchestrationVersionCanEdit;
+    if (!modalElement || !stageIdInput || !hasExecutionConditionInput || !conditionEngineInput || !conditionDslExpressionInput || !conditionSection || !unsupportedEngineWarning || !saveButton) {
+        return;
+    }
+
+    setVersionModalReadOnly(modalElement, !canEdit, saveButton);
+
+    function refreshConditionConfigByEngine() {
+        const selectedEngine = (conditionEngineInput.value || '').toLowerCase();
+        let hasVisibleConfig = false;
+
+        document.querySelectorAll('.stage-condition-config-block[data-engine]').forEach(element => {
+            const currentEngine = (element.getAttribute('data-engine') || '').toLowerCase();
+            const visible = currentEngine === selectedEngine;
+            element.classList.toggle('d-none', !visible);
+            hasVisibleConfig = hasVisibleConfig || visible;
+        });
+
+        unsupportedEngineWarning.classList.toggle('d-none', hasVisibleConfig || !hasExecutionConditionInput.checked);
+    }
+
+    function refreshConditionSectionVisibility() {
+        conditionSection.classList.toggle('d-none', !hasExecutionConditionInput.checked);
+        if (!hasExecutionConditionInput.checked) {
+            unsupportedEngineWarning.classList.add('d-none');
+            return;
+        }
+
+        refreshConditionConfigByEngine();
+    }
+
+    async function openExecutionConditionModal(stageId) {
+        const response = await fetch(`${window.location.pathname}?handler=StageExecutionConditionForEdit&stageId=${encodeURIComponent(stageId)}`);
+        if (!response.ok) {
+            return;
+        }
+
+        const payload = await response.json();
+        stageIdInput.value = payload.stageId || payload.StageId || stageId;
+        hasExecutionConditionInput.checked = !!(payload.hasExecutionCondition ?? payload.HasExecutionCondition);
+        conditionEngineInput.value = payload.conditionEngine || payload.ConditionEngine || 'DSL';
+        conditionDslExpressionInput.value = payload.conditionDslExpression || payload.ConditionDslExpression || 'true';
+        refreshConditionSectionVisibility();
+        window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    }
+
+    async function saveExecutionCondition() {
+        if (!canEdit) {
+            return;
+        }
+
+        const stageId = stageIdInput.value || '';
+        if (!stageId) {
+            return;
+        }
+
+        const body = {
+            stageId: stageId,
+            hasExecutionCondition: !!hasExecutionConditionInput.checked,
+            conditionEngine: conditionEngineInput.value || 'DSL',
+            conditionDslExpression: conditionDslExpressionInput.value || 'true'
+        };
+
+        saveButton.disabled = true;
+        try {
+            const response = await fetch(`${window.location.pathname}?handler=SetStageExecutionCondition`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': antiForgeryToken
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const result = await response.json();
+            if (result && result.success === false) {
+                return;
+            }
+
+            const resolvedStageId = result?.stageId || result?.StageId || stageId;
+            const resolvedHasCondition = !!(result?.hasExecutionCondition ?? result?.HasExecutionCondition ?? hasExecutionConditionInput.checked);
+            const triggerButton = document.querySelector(`.js-stage-execution-btn[data-stage-id="${resolvedStageId}"]`);
+            if (triggerButton) {
+                triggerButton.classList.toggle('od-stage-exec-btn-active', resolvedHasCondition);
+                triggerButton.classList.toggle('od-stage-exec-btn-inactive', !resolvedHasCondition);
+            }
+
+            window.bootstrap.Modal.getOrCreateInstance(modalElement).hide();
+        } finally {
+            saveButton.disabled = false;
+        }
+    }
+
+    document.querySelectorAll('.js-stage-execution-btn').forEach(button => {
+        button.addEventListener('click', async () => {
+            const stageId = button.getAttribute('data-stage-id') || '';
+            if (!stageId) {
+                return;
+            }
+
+            await openExecutionConditionModal(stageId);
+        });
+    });
+
+    hasExecutionConditionInput.addEventListener('change', refreshConditionSectionVisibility);
+    conditionEngineInput.addEventListener('change', refreshConditionConfigByEngine);
+    saveButton.addEventListener('click', saveExecutionCondition);
+})();
+
+(() => {
+    const triggerTypeSelector = document.getElementById('triggerTypeSelector');
+    const triggerModalElement = document.getElementById('triggerModal');
+    const triggerModalTitle = document.getElementById('triggerModalLabel');
+    const triggerSubmitButton = document.getElementById('triggerModalSubmitButton');
+    const triggerIdInput = document.getElementById('triggerModalTriggerId');
+    const unsupportedWarning = document.getElementById('triggerUnsupportedTypeWarning');
+    const triggerForm = triggerModalElement?.querySelector('form');
+    const canEdit = orchestrationVersionCanEdit;
+    if (!triggerTypeSelector || !triggerModalElement || !triggerModalTitle || !triggerSubmitButton || !triggerIdInput) {
+        return;
+    }
+
+    if (triggerForm && !canEdit) {
+        triggerForm.addEventListener('submit', event => event.preventDefault());
+    }
+
+    const defaultValues = {
+        TriggerId: '',
+        Key: '',
+        TriggerType: 'Event',
+        Description: '',
+        EventTopic: '',
+        EventVersion: '1.0.0',
+        HasEventSchemaValidation: false,
+        EventSchemaContractKey: '',
+        EventSchemaContractVersion: '1.0.0',
+        EventSchemaRegistryProviderId: '',
+        EventSchemaStrictMode: false,
+        HasEventValidation: false,
+        EventValidationDsl: '',
+        EventValidationErrorCode: 'TriggerValidationFailed',
+    };
+    const payloadFieldAliases = {
+        triggerId: 'TriggerId',
+        key: 'Key',
+        triggerType: 'TriggerType',
+        description: 'Description',
+        eventTopic: 'EventTopic',
+        eventVersion: 'EventVersion',
+        hasEventSchemaValidation: 'HasEventSchemaValidation',
+        eventSchemaContractKey: 'EventSchemaContractKey',
+        eventSchemaContractVersion: 'EventSchemaContractVersion',
+        eventSchemaRegistryProviderId: 'EventSchemaRegistryProviderId',
+        eventSchemaStrictMode: 'EventSchemaStrictMode',
+        hasEventValidation: 'HasEventValidation',
+        eventValidationDsl: 'EventValidationDsl',
+        eventValidationErrorCode: 'EventValidationErrorCode',
+    };
+
+    function setInputValue(propertyName, value) {
+        const element = document.getElementById(`TriggerInput_${propertyName}`);
+        if (!element) {
+            return;
+        }
+
+        const type = (element.getAttribute('type') || '').toLowerCase();
+        if (type === 'checkbox') {
+            element.checked = value === true || value === 'true' || value === 1;
+            return;
+        }
+
+        element.value = value ?? '';
+    }
+
+    function applyPayload(payload) {
+        Object.keys(defaultValues).forEach(key => setInputValue(key, defaultValues[key]));
+        Object.keys(payload || {}).forEach(key => {
+            const fieldName = payloadFieldAliases[key] || key;
+            setInputValue(fieldName, payload[key]);
+        });
+
+        triggerIdInput.value = payload?.triggerId || payload?.TriggerId || '';
+        refreshTriggerType();
+    }
+
+    function refreshTriggerType() {
+        const selectedType = (triggerTypeSelector.value || '').toLowerCase();
+        let hasVisibleConfig = false;
+
+        document.querySelectorAll('.trigger-config-block[data-trigger-type]').forEach(element => {
+            const configType = (element.getAttribute('data-trigger-type') || '').toLowerCase();
+            const visible = configType === selectedType;
+            element.classList.toggle('d-none', !visible);
+            hasVisibleConfig = hasVisibleConfig || visible;
+        });
+
+        if (unsupportedWarning) {
+            unsupportedWarning.classList.toggle('d-none', hasVisibleConfig);
+        }
+    }
+
+    function openModal() {
+        if (!window.bootstrap || !window.bootstrap.Modal) {
+            return;
+        }
+
+        window.bootstrap.Modal.getOrCreateInstance(triggerModalElement).show();
+    }
+
+    triggerTypeSelector.addEventListener('change', refreshTriggerType);
+
+    document.querySelectorAll('.js-open-trigger-modal').forEach(button => {
+        button.addEventListener('click', async () => {
+            const mode = button.getAttribute('data-trigger-mode') || 'create';
+
+            if (mode === 'edit') {
+                const triggerId = button.getAttribute('data-trigger-id') || '';
+                if (!triggerId) {
+                    return;
+                }
+
+                const response = await fetch(`${window.location.pathname}?handler=TriggerForEdit&triggerId=${encodeURIComponent(triggerId)}`);
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                triggerModalTitle.textContent = canEdit ? 'Edit trigger' : 'Trigger configuration';
+                triggerSubmitButton.textContent = 'Save';
+                applyPayload(payload);
+                setVersionModalReadOnly(triggerModalElement, !canEdit, triggerSubmitButton);
+                openModal();
+                return;
+            }
+
+            if (!canEdit) {
+                return;
+            }
+
+            triggerModalTitle.textContent = 'Create trigger';
+            triggerSubmitButton.textContent = 'Create';
+            applyPayload({});
+            setVersionModalReadOnly(triggerModalElement, false, triggerSubmitButton);
+            openModal();
+        });
+    });
+
+    refreshTriggerType();
+})();
+
+(() => {
+    const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
+    const toggles = document.querySelectorAll('.js-trigger-enabled-toggle');
+    if (!toggles.length) {
+        return;
+    }
+
+    async function setTriggerEnabled(triggerId, isEnabled) {
+        const response = await fetch(`${window.location.pathname}?handler=SetTriggerEnabled`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': antiForgeryToken
+            },
+            body: JSON.stringify({ triggerId: triggerId, isEnabled: isEnabled })
+        });
+
+        return response.ok;
+    }
+
+    toggles.forEach(toggle => {
+        toggle.addEventListener('change', async event => {
+            const input = event.target;
+            const triggerId = input.getAttribute('data-trigger-id') || '';
+            if (!triggerId) {
+                return;
+            }
+
+            const nextValue = !!input.checked;
+            const success = await setTriggerEnabled(triggerId, nextValue);
+            if (!success) {
+                input.checked = !nextValue;
+                return;
+            }
+
+            const card = input.closest('.od-trigger-item');
+            if (card) {
+                card.classList.toggle('od-task-disabled', !nextValue);
+            }
+        });
+    });
+})();
+
+(() => {
+    const emptyCard = document.querySelector('.od-trigger-empty-item');
+    if (!emptyCard) {
+        return;
+    }
+
+    function syncAddTriggerCardHeight() {
+        const firstRealCard = document.querySelector('.od-trigger-item:not(.od-trigger-empty-item)');
+        if (!firstRealCard) {
+            emptyCard.style.removeProperty('height');
+            emptyCard.style.removeProperty('width');
+            return;
+        }
+
+        const rect = firstRealCard.getBoundingClientRect();
+        const height = rect.height;
+        const width = rect.width;
+        if (height > 0) {
+            emptyCard.style.height = `${Math.ceil(height)}px`;
+        }
+        if (width > 0) {
+            emptyCard.style.width = `${Math.ceil(width)}px`;
+        }
+    }
+
+    syncAddTriggerCardHeight();
+    window.addEventListener('resize', syncAddTriggerCardHeight);
+})();
+</script>
+}

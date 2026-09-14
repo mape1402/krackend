@@ -1,0 +1,48 @@
+namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+
+using System.Text.Json;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core;
+
+/// <summary>
+/// Creates distribution artifact entities with the standard orchestration metadata.
+/// </summary>
+public sealed class ArtifactFactory : IArtifactFactory
+{
+    /// <inheritdoc />
+    public Artifact Create(
+        string orchestrationVersionId,
+        string orchestrationDefinitionId,
+        string orchestrationDisplayName,
+        string versionLabel,
+        string versionNumber,
+        string payload,
+        string checksum,
+        string sourceEvent,
+        DateTime occurredAtUtc)
+    {
+        return new Artifact
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = orchestrationVersionId,
+            OrchestrationDefinitionId = orchestrationDefinitionId,
+            OrchestrationDisplayName = orchestrationDisplayName,
+            VersionLabel = versionLabel,
+            VersionNumber = versionNumber,
+            ArtifactType = ArtifactTypes.OrchestrationVersionSnapshot,
+            SchemaVersion = ArtifactTypes.SchemaVersion,
+            Payload = payload,
+            Metadata = JsonSerializer.Serialize(new
+            {
+                sourceEvent,
+                occurredAtUtc
+            }),
+            SourceEvent = sourceEvent,
+            SourceVersion = versionNumber,
+            Checksum = checksum,
+            IsPublished = false,
+            CreatedAtUtc = DateTime.UtcNow,
+            PublishedAtUtc = null
+        };
+    }
+}

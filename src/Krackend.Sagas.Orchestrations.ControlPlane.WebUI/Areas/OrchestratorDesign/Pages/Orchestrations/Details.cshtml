@@ -1,0 +1,252 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.DetailsModel
+@using Krackend.Sagas.Orchestrations.Abstractions.Primitives
+@{
+    ViewData["Title"] = "Orchestration details";
+
+    string StatusClass(OrchestrationVersionStatus status)
+    {
+        return status switch
+        {
+            OrchestrationVersionStatus.Draft => "od-status od-status-draft",
+            OrchestrationVersionStatus.InReview => "od-status od-status-inreview",
+            OrchestrationVersionStatus.Approved => "od-status od-status-approved",
+            OrchestrationVersionStatus.Deployed => "od-status od-status-deployed",
+            OrchestrationVersionStatus.Deprecated => "od-status od-status-deprecated",
+            OrchestrationVersionStatus.Archived => "od-status od-status-archived",
+            _ => "od-status od-status-draft"
+        };
+    }
+
+    string StatusLabel(OrchestrationVersionStatus status)
+    {
+        return status switch
+        {
+            OrchestrationVersionStatus.InReview => "In review",
+            _ => status.ToString()
+        };
+    }
+
+    string ActionLabel(string action)
+    {
+        return action switch
+        {
+            "SetInReview" => "Send to review",
+            "ReturnToDraft" => "Return to draft",
+            "ReopenReview" => "Reopen review",
+            "Approve" => "Approve version",
+            "Deploy" => "Deploy version",
+            "Deprecate" => "Deprecate version",
+            "Archive" => "Archive version",
+            _ => action
+        };
+    }
+
+    string FormatTimestamp(string value)
+    {
+        if (DateTimeOffset.TryParse(value, out var parsed))
+        {
+            return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+        }
+
+        return value;
+    }
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">@Model.Orchestration?.Name</h1>
+        <p class="od-page-subtitle">@Model.Orchestration?.Key</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index" class="btn btn-outline-secondary">Back</a>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newVersionModal">New version</button>
+    </div>
+</div>
+
+<section class="od-list-shell">
+    @if (!Model.Versions.Any())
+    {
+        <p class="od-empty">No versions yet.</p>
+    }
+    else
+    {
+        <div class="od-grid od-versions-grid">
+            @foreach (var version in Model.Versions)
+            {
+                <article class="od-item-card od-version-card"
+                         data-version-id="@version.Id"
+                         data-open-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = version.Id })"
+                         data-version="@version.Version"
+                         data-version-label="@version.VersionLabel"
+                         data-version-description="@version.Description"
+                         data-version-notes="@version.Notes"
+                         data-version-checksum="@version.Checksum">
+                    <div class="od-item-top">
+                        <div>
+                            <h3 class="od-item-title">@version.Version</h3>
+                            <p class="od-item-meta">@version.VersionLabel</p>
+                        </div>
+                        <div class="d-flex align-items-start gap-2">
+                            <span class="@StatusClass(version.Status)">@StatusLabel(version.Status)</span>
+                            <div class="dropdown">
+                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Version actions">&#8942;</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li>
+                                        <button type="button" class="dropdown-item js-open-version-modal" data-version-mode="edit">Edit version</button>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item"
+                                           asp-area="OrchestratorDesign"
+                                           asp-page="/OrchestrationVersions/Details"
+                                           asp-route-orchestrationId="@Model.OrchestrationId"
+                                           asp-route-versionId="@version.Id">Open roadmap</a>
+                                    </li>
+                                    <li><hr class="dropdown-divider" /></li>
+                                    @foreach (var action in Model.GetAllowedActions(version.Status))
+                                    {
+                                        <li>
+                                            <form method="post" asp-page-handler="VersionAction" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected version transition.">
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <input type="hidden" name="versionId" value="@version.Id" />
+                                                <input type="hidden" name="action" value="@action" />
+                                                <button type="submit" class="dropdown-item @(action == "Archive" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
+                                            </form>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="od-item-description">@version.Description</p>
+                    <p class="od-item-meta od-item-time mt-auto">Created: @FormatTimestamp(version.CreatedOnUtc)</p>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<div class="modal fade" id="newVersionModal" tabindex="-1" aria-labelledby="newVersionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="CreateVersion" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving version" data-busy-message="Design is validating and storing the orchestration version.">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="newVersionModalLabel">Create version</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                    <input asp-for="NewVersion.VersionId" type="hidden" id="versionModalVersionId" />
+                    <input asp-for="NewVersion.Checksum" type="hidden" id="versionModalChecksum" />
+                    <input asp-for="NewVersion.Notes" type="hidden" id="versionModalNotes" />
+                    <div class="mb-2">
+                        <label asp-for="NewVersion.Version" class="form-label"></label>
+                        <input asp-for="NewVersion.Version" class="form-control" id="versionModalVersion" data-orchestrator-version="true" />
+                    </div>
+                    <div class="mb-2">
+                        <label asp-for="NewVersion.VersionLabel" class="form-label"></label>
+                        <input asp-for="NewVersion.VersionLabel" class="form-control" id="versionModalVersionLabel" />
+                    </div>
+                    <div class="mb-2">
+                        <label asp-for="NewVersion.Description" class="form-label"></label>
+                        <textarea asp-for="NewVersion.Description" class="form-control" rows="2" id="versionModalDescription"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="versionModalSubmitButton">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const modalElement = document.getElementById('newVersionModal');
+    const modalTitle = document.getElementById('newVersionModalLabel');
+    const submitButton = document.getElementById('versionModalSubmitButton');
+    const versionIdInput = document.getElementById('versionModalVersionId');
+    const versionInput = document.getElementById('versionModalVersion');
+    const versionLabelInput = document.getElementById('versionModalVersionLabel');
+    const descriptionInput = document.getElementById('versionModalDescription');
+    const checksumInput = document.getElementById('versionModalChecksum');
+    const notesInput = document.getElementById('versionModalNotes');
+    if (!modalElement || !modalTitle || !submitButton || !versionIdInput || !versionInput || !versionLabelInput || !descriptionInput || !checksumInput || !notesInput || !window.bootstrap?.Modal) {
+        return;
+    }
+
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
+    const defaults = {
+        version: '',
+        versionLabel: '',
+        description: '',
+        notes: '',
+        checksum: ''
+    };
+
+    function openCreateMode() {
+        modalTitle.textContent = 'Create version';
+        submitButton.textContent = 'Create';
+        versionIdInput.value = '';
+        versionInput.value = defaults.version;
+        versionInput.readOnly = false;
+        versionLabelInput.value = defaults.versionLabel;
+        descriptionInput.value = defaults.description;
+        notesInput.value = defaults.notes;
+        checksumInput.value = defaults.checksum;
+        modal.show();
+    }
+
+    function openEditMode(card) {
+        if (!card) {
+            return;
+        }
+
+        modalTitle.textContent = 'Edit version';
+        submitButton.textContent = 'Save';
+        versionIdInput.value = card.getAttribute('data-version-id') || '';
+        versionInput.value = card.getAttribute('data-version') || defaults.version;
+        versionInput.readOnly = true;
+        versionLabelInput.value = card.getAttribute('data-version-label') || '';
+        descriptionInput.value = card.getAttribute('data-version-description') || '';
+        notesInput.value = card.getAttribute('data-version-notes') || '';
+        checksumInput.value = card.getAttribute('data-version-checksum') || '';
+        modal.show();
+    }
+
+    document.querySelectorAll('[data-bs-target="#newVersionModal"]:not(.js-open-version-modal)').forEach(button => {
+        button.addEventListener('click', openCreateMode);
+    });
+
+    document.querySelectorAll('.js-open-version-modal[data-version-mode="edit"]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            const card = button.closest('.od-version-card');
+            openEditMode(card);
+        });
+    });
+
+    document.querySelectorAll('.od-version-card[data-open-url]').forEach(card => {
+        card.addEventListener('click', event => {
+            if (event.target.closest('a, button, input, textarea, select, label, form, .dropdown')) {
+                return;
+            }
+
+            const openUrl = card.getAttribute('data-open-url') || '';
+            if (!openUrl) {
+                return;
+            }
+
+            window.location.href = openUrl;
+        });
+    });
+
+    modalElement.addEventListener('hidden.bs.modal', () => {
+        versionInput.readOnly = false;
+    });
+})();
+</script>
+}
+

@@ -1,0 +1,402 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel
+@{
+    ViewData["Title"] = "Artifacts";
+    var artifactRows = Model.Rows
+        .OrderByDescending(x => x.CreatedAtUtc)
+        .ToArray();
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">
+            @(string.IsNullOrWhiteSpace(Model.OrchestrationId)
+                ? "Artifacts"
+                : $"Artifacts - {Model.SelectedOrchestration?.Name}")
+        </h1>
+        <p class="od-page-subtitle">Select an orchestration to view its artifacts.</p>
+    </div>
+</div>
+
+<section class="od-release-split">
+    <aside class="od-list-shell od-release-left">
+        @if (!Model.Orchestrations.Any())
+        {
+            <p class="od-empty">No orchestrations available in distribution mirror.</p>
+        }
+        else
+        {
+            <div class="od-grid">
+                @foreach (var orchestration in Model.Orchestrations.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    var isSelected = string.Equals(Model.OrchestrationId, orchestration.Id, StringComparison.Ordinal);
+                    <a class="od-item-card od-orch-card text-decoration-none @(isSelected ? "od-selected" : string.Empty)"
+                       asp-area="OrchestratorDistribution"
+                       asp-page="/ArtifactReleases/Index"
+                       asp-route-orchestrationId="@orchestration.Id">
+                        <div class="od-item-top">
+                            <div>
+                                <h2 class="od-item-title od-orch-title">@orchestration.Name</h2>
+                                <p class="od-item-meta">@orchestration.Key</p>
+                            </div>
+                            <span class="od-status @(orchestration.IsActive ? "od-status-active" : "od-status-inactive")">
+                                @(orchestration.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </aside>
+
+    <div class="od-list-shell od-release-right">
+        @if (string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        {
+            <p class="od-empty">Select an orchestration to view its artifacts.</p>
+        }
+        else if (!artifactRows.Any())
+        {
+            <p class="od-empty">No artifacts found for this orchestration.</p>
+        }
+        else
+        {
+            <div class="od-release-board">
+                @foreach (var item in artifactRows)
+                {
+                    <article class="od-release-row"
+                             data-display-name="@item.OrchestrationDisplayName"
+                             data-version-id="@item.OrchestrationVersionId"
+                             data-version-label="@item.VersionLabel"
+                             data-version-number="@item.VersionNumber"
+                             data-artifact-type="@item.ArtifactType"
+                             data-checksum="@item.Checksum"
+                             data-created-at="@item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")"
+                             data-payload="@item.Payload">
+                        <div class="od-release-row-main">
+                            <div class="od-release-row-head">
+                                <span class="od-status od-status-active">@item.ArtifactType</span>
+                                <p class="od-item-meta od-release-id">@item.Id</p>
+                            </div>
+                            <div class="od-chip-row">
+                                <span class="od-meta-chip">Version: @item.VersionNumber - @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "Unlabeled" : item.VersionLabel)</span>
+                                <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                            </div>
+                        </div>
+                        <div class="od-release-row-actions">
+                            <button type="button"
+                                    class="btn btn-sm od-release-details-btn js-open-artifact-details"
+                                    data-display-name="@item.OrchestrationDisplayName"
+                                    data-version-id="@item.OrchestrationVersionId"
+                                    data-version-number="@item.VersionNumber"
+                                    data-version-label="@item.VersionLabel"
+                                    data-artifact-type="@item.ArtifactType"
+                                    data-checksum="@item.Checksum"
+                                    data-created-at="@item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")"
+                                    data-payload="@item.Payload">
+                                View details
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+<div class="modal fade" id="artifactDetailsModal" tabindex="-1" aria-labelledby="artifactDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content artifact-modal">
+            <div class="modal-header artifact-modal-header">
+                <h5 class="modal-title" id="artifactDetailsModalLabel">Artifact details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body artifact-modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label artifact-label">Orchestration</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailDisplayName" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label artifact-label">Artifact Type</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailType" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label artifact-label">Version Id</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailVersionId" readonly />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label artifact-label">Version Number</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailVersionNumber" readonly />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label artifact-label">Version Label</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailVersionLabel" readonly />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label artifact-label">Created At</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailCreatedAt" readonly />
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label artifact-label">Checksum</label>
+                        <input class="form-control artifact-readonly" id="artifactDetailChecksum" readonly />
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label artifact-label">Payload (JSON)</label>
+                        <pre id="artifactDetailPayload" class="od-json-block"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(() => {
+    const modalElement = document.getElementById('artifactDetailsModal');
+    const modal = window.bootstrap?.Modal?.getOrCreateInstance(modalElement);
+    if (!modalElement || !modal) return;
+
+    const fields = {
+        displayName: document.getElementById('artifactDetailDisplayName'),
+        artifactType: document.getElementById('artifactDetailType'),
+        versionId: document.getElementById('artifactDetailVersionId'),
+        versionNumber: document.getElementById('artifactDetailVersionNumber'),
+        versionLabel: document.getElementById('artifactDetailVersionLabel'),
+        createdAt: document.getElementById('artifactDetailCreatedAt'),
+        checksum: document.getElementById('artifactDetailChecksum'),
+        payload: document.getElementById('artifactDetailPayload')
+    };
+
+    const setValue = (element, value) => {
+        if (!element) return;
+        element.value = value ?? '';
+    };
+
+    const setPrettyJson = (element, rawValue) => {
+        if (!element) return;
+        const value = rawValue ?? '';
+        if (!value.trim()) {
+            element.textContent = '{}';
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(value);
+            element.textContent = JSON.stringify(parsed, null, 2);
+        } catch {
+            element.textContent = value;
+        }
+    };
+
+    document.querySelectorAll('.js-open-artifact-details').forEach(button => {
+        button.addEventListener('click', () => {
+            setValue(fields.displayName, button.getAttribute('data-display-name'));
+            setValue(fields.artifactType, button.getAttribute('data-artifact-type'));
+            setValue(fields.versionId, button.getAttribute('data-version-id'));
+            setValue(fields.versionNumber, button.getAttribute('data-version-number'));
+            setValue(fields.versionLabel, button.getAttribute('data-version-label'));
+            setValue(fields.createdAt, button.getAttribute('data-created-at'));
+            setValue(fields.checksum, button.getAttribute('data-checksum'));
+            setPrettyJson(fields.payload, button.getAttribute('data-payload'));
+
+            modal.show();
+        });
+    });
+})();
+</script>
+<style>
+.od-json-block {
+    margin: 0;
+    padding: 1rem 1.1rem;
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid #bfcdea;
+    border-radius: 0.65rem;
+    background: linear-gradient(180deg, #f4f7ff 0%, #edf3ff 100%);
+    color: #16233f;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.artifact-modal {
+    border: 1px solid #cbd7ec;
+    box-shadow: 0 14px 36px rgba(24, 39, 74, 0.16);
+}
+
+.artifact-modal-header {
+    background: linear-gradient(180deg, #f3f7ff 0%, #e9f0ff 100%);
+    color: #1a2a4b;
+    border-bottom: 1px solid #c9d7f1;
+}
+
+.artifact-modal-header .modal-title {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.artifact-modal-body {
+    background: linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%);
+}
+
+.artifact-label {
+    color: #3a4f78;
+    font-weight: 600;
+    font-size: 0.83rem;
+    letter-spacing: 0.005em;
+}
+
+.artifact-readonly {
+    background: #ffffff;
+    border-color: #c9d6ee;
+    color: #1e2d4b;
+    font-weight: 450;
+}
+
+.artifact-readonly:focus {
+    border-color: #9db5e1;
+    box-shadow: 0 0 0 0.16rem rgba(93, 132, 205, 0.16);
+}
+
+.od-orch-card {
+    min-height: 0 !important;
+    padding: 0.75rem 0.9rem;
+}
+
+.od-orch-title {
+    color: #111111;
+}
+
+.od-selected {
+    border-color: #7e90ff !important;
+    box-shadow: 0 0 0 2px rgba(126, 144, 255, 0.16);
+}
+
+.od-release-split {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: stretch;
+    min-height: calc(100vh - 190px);
+    height: calc(100vh - 190px);
+}
+
+.od-release-left,
+.od-release-right {
+    border: 1px solid #dbe4f3;
+    border-radius: 0.65rem;
+    padding: 0.55rem;
+    min-height: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+.od-release-left {
+    background: #edf3fb;
+    border-right: 2px solid #cfdaee;
+    max-height: 100%;
+}
+
+.od-release-right {
+    background: #f1f6ff;
+    min-height: 100%;
+}
+
+.od-release-id {
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+}
+
+.od-release-board {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.od-release-row {
+    border: 1px solid #d4ddef;
+    border-radius: 0.75rem;
+    background: #ffffff;
+    padding: 1.15rem 1rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1.1rem;
+    align-items: center;
+}
+
+.od-release-row-main {
+    min-width: 0;
+}
+
+.od-release-row-head {
+    display: flex;
+    justify-content: flex-start;
+    gap: 0.9rem;
+    align-items: center;
+    margin-bottom: 0.45rem;
+}
+
+.od-release-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: end;
+    padding-left: 0.45rem;
+}
+
+.od-release-details-btn {
+    border: 1px solid #9eb3d8;
+    background: #f8fbff;
+    color: #2a456d;
+    border-radius: 0.5rem;
+    padding: 0.24rem 0.58rem;
+    line-height: 1.2;
+    font-weight: 600;
+}
+
+.od-release-details-btn:hover {
+    background: #eef4ff;
+    border-color: #87a3d2;
+    color: #1d3557;
+}
+
+@@media (max-width: 991.98px) {
+    .od-release-split {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: auto;
+    }
+
+    .od-release-left {
+        max-height: none;
+        min-height: auto;
+        height: auto;
+        border-right: 1px solid #dbe4f3;
+    }
+
+    .od-release-right {
+        min-height: auto;
+        height: auto;
+    }
+
+    .od-release-row {
+        grid-template-columns: 1fr;
+    }
+
+    .od-release-row-actions {
+        justify-content: flex-end;
+    }
+}
+</style>
+}

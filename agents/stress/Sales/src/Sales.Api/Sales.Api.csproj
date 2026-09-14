@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);AV0029;AV0030</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Asp.Versioning.Mvc" />
+    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Ulid" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Pigeon.Messaging" Version="3.1.0" />
+    <PackageReference Include="Pigeon.Messaging.Azure.ServiceBus" />
+    <PackageReference Include="Pigeon.Messaging.Outbox.EntityFrameworkCore" />
+    <PackageReference Include="Pigeon.Messaging.Rabbit" Version="3.1.0" />
+    <PackageReference Include="Krackend.EventSourcing.EntityFrameworkCore" />
+    <PackageReference Include="Spider.Pipelines" />
+    <PackageReference Include="TurtlePath" />
+    <PackageReference Include="TurtlePath.Automations" />
+    <PackageReference Include="TurtlePath.Crabalidator" />
+    <PackageReference Include="TurtlePath.DataScorpio" />
+    <PackageReference Include="TurtlePath.Domain" />
+    <PackageReference Include="TurtlePath.EntityFrameworkCore" />
+    <PackageReference Include="TurtlePath.EventSourcing" />
+    <PackageReference Include="TurtlePath.ExceptionHandling.Consumers" />
+    <PackageReference Include="TurtlePath.ExceptionHandling" />
+    <PackageReference Include="TurtlePath.ExceptionHandling.AspNetCore" />
+    <PackageReference Include="TurtlePath.ExceptionHandling.Workers" />
+    <PackageReference Include="TurtlePath.Jobs" />
+    <PackageReference Include="TurtlePath.OctoMap" />
+    <PackageReference Include="TurtlePath.Spider" />
+    <PackageReference Include="TurtlePath.Spider.Transactions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sales.Business\Sales.Business.csproj" />
+    <ProjectReference Include="..\Sales.Domain\Sales.Domain.csproj" />
+    <ProjectReference Include="..\Sales.Persistence\Sales.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\Krackend.Sagas.Orchestrations.Client.Spider\Krackend.Sagas.Orchestrations.Client.Spider.csproj" />
+    <ProjectReference Include="..\..\..\..\..\src\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,1290 @@
+(function () {
+    const config = window.KrackendRuntimeDashboard;
+    if (!config || !window.signalR) {
+        return;
+    }
+
+    const liveState = document.querySelector("[data-live-state]");
+    const liveLabel = document.querySelector("[data-live-label]");
+    const grid = document.querySelector("[data-instance-grid]");
+    const instanceCount = document.querySelector("[data-instance-count]");
+    const chartCanvas = document.querySelector("[data-traffic-chart]");
+    const searchInput = document.querySelector("[data-instance-search]");
+    const pageSizeInput = document.querySelector("[data-page-size]");
+    const pagePrev = document.querySelector("[data-page-prev]");
+    const pageNext = document.querySelector("[data-page-next]");
+    const pageSummary = document.querySelector("[data-page-summary]");
+    const trafficModeButtons = document.querySelectorAll("[data-traffic-mode]");
+
+    const detailModalElement = document.getElementById("runtimeInstanceModal");
+    const detailTitle = document.querySelector("[data-detail-title]");
+    const detailSubtitle = document.querySelector("[data-detail-subtitle]");
+    const detailBody = document.querySelector("[data-detail-body]");
+    const detailModal = detailModalElement && window.bootstrap ? new bootstrap.Modal(detailModalElement) : null;
+
+    const stageModalElement = document.getElementById("runtimeStageModal");
+    const stageTitle = document.querySelector("[data-stage-title]");
+    const stageSubtitle = document.querySelector("[data-stage-subtitle]");
+    const stageBody = document.querySelector("[data-stage-body]");
+    const stageModal = stageModalElement && window.bootstrap ? new bootstrap.Modal(stageModalElement) : null;
+
+    const timelineModalElement = document.getElementById("runtimeTimelineModal");
+    const timelineTitle = document.querySelector("[data-timeline-title]");
+    const timelineSubtitle = document.querySelector("[data-timeline-subtitle]");
+    const timelineBody = document.querySelector("[data-timeline-body]");
+    const timelineModal = timelineModalElement && window.bootstrap ? new bootstrap.Modal(timelineModalElement) : null;
+
+    const instances = new Map();
+    const traffic = new Map();
+    const hourlyTraffic = new Map();
+    let summary = normalizeSummary(config.summary || config.Summary);
+    let trafficMode = "minute";
+    let selectedInstanceId = null;
+    let selectedStageId = null;
+    let currentDetail = null;
+    let detailRefreshTimer = null;
+    let snapshotTimer = null;
+    let snapshotInFlight = false;
+    let summaryTimer = null;
+    let summaryInFlight = false;
+    let summaryPending = false;
+    let lastSummaryRefreshAt = 0;
+    let searchTerm = "";
+    let currentPage = 1;
+    let pageSize = Number(pageSizeInput?.value || 25);
+
+    (config.instances || []).forEach(item => {
+        const row = normalizeRow(item);
+        if (row.id) {
+            instances.set(row.id, row);
+        }
+    });
+    (config.traffic || []).forEach(item => {
+        const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "minute");
+        if (bucket) {
+            traffic.set(bucket, normalizeTrafficPoint(item));
+        }
+    });
+    (config.hourlyTraffic || config.HourlyTraffic || []).forEach(item => {
+        const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "hour");
+        if (bucket) {
+            hourlyTraffic.set(bucket, normalizeTrafficPoint(item));
+        }
+    });
+
+    renderCounters();
+    renderGrid();
+    drawTraffic();
+
+    function normalizeRow(item) {
+        const status = read(item, "status", "Status") || "";
+        const orchestrationDefinitionKey = read(item, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || "";
+        const orchestrationVersion = read(item, "orchestrationVersion", "OrchestrationVersion") || "";
+        return {
+            id: read(item, "id", "Id"),
+            orchestrationDefinitionKey,
+            orchestrationVersion,
+            orchestrationLabel: read(item, "orchestrationLabel", "OrchestrationLabel") || formatOrchestrationLabel(orchestrationDefinitionKey, orchestrationVersion),
+            correlationId: read(item, "correlationId", "CorrelationId") || "",
+            sagaId: read(item, "sagaId", "SagaId") || "",
+            executionKey: read(item, "executionKey", "ExecutionKey") || "",
+            status,
+            statusClass: read(item, "statusClass", "StatusClass") || statusClass(status),
+            currentStageKey: read(item, "currentStageKey", "CurrentStageKey") || "",
+            currentTaskKey: read(item, "currentTaskKey", "CurrentTaskKey") || "",
+            startedOnUtc: read(item, "startedOnUtc", "StartedOnUtc"),
+            lastUpdatedOnUtc: read(item, "lastUpdatedOnUtc", "LastUpdatedOnUtc"),
+            waitingSinceUtc: read(item, "waitingSinceUtc", "WaitingSinceUtc"),
+            completedOnUtc: read(item, "completedOnUtc", "CompletedOnUtc"),
+            failedOnUtc: read(item, "failedOnUtc", "FailedOnUtc"),
+            errorSummary: read(item, "errorSummary", "ErrorSummary") || ""
+        };
+    }
+
+    function normalizeSummary(item) {
+        return {
+            active: Number(read(item, "active", "Active") || 0),
+            waiting: Number(read(item, "waiting", "Waiting") || 0),
+            completedLastMinute: Number(read(item, "completedLastMinute", "CompletedLastMinute") || read(item, "completedRecent", "CompletedRecent") || 0),
+            failedLastMinute: Number(read(item, "failedLastMinute", "FailedLastMinute") || read(item, "failedRecent", "FailedRecent") || 0),
+            completedLastHour: Number(read(item, "completedLastHour", "CompletedLastHour") || 0),
+            failedLastHour: Number(read(item, "failedLastHour", "FailedLastHour") || 0),
+            minuteSinceUtc: read(item, "minuteSinceUtc", "MinuteSinceUtc"),
+            hourSinceUtc: read(item, "hourSinceUtc", "HourSinceUtc")
+        };
+    }
+
+    function normalizeTrafficPoint(item) {
+        return {
+            active: Number(read(item, "active", "Active") || 0),
+            started: Number(read(item, "started", "Started") || read(item, "count", "Count") || 0),
+            completed: Number(read(item, "completed", "Completed") || 0),
+            failed: Number(read(item, "failed", "Failed") || 0)
+        };
+    }
+
+    function read(item, camelName, pascalName) {
+        if (!item) {
+            return undefined;
+        }
+
+        return item[camelName] ?? item[pascalName];
+    }
+
+    function readId(item, camelName, pascalName) {
+        const value = read(item, camelName, pascalName);
+        if (!value) {
+            return "";
+        }
+
+        if (typeof value === "string") {
+            return value;
+        }
+
+        return value.value || value.Value || String(value);
+    }
+
+    function setLiveState(state, label) {
+        liveState?.setAttribute("data-live-state", state);
+        if (liveLabel) {
+            liveLabel.textContent = label;
+        }
+    }
+
+    function bucketKey(value, mode) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return "";
+        }
+
+        if (mode === "hour") {
+            date.setMinutes(0, 0, 0);
+        } else {
+            date.setSeconds(0, 0);
+        }
+
+        return date.toISOString();
+    }
+
+    function formatDate(value) {
+        if (!value) {
+            return "-";
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return "-";
+        }
+
+        return date.toISOString().replace("T", " ").substring(0, 19);
+    }
+
+    function renderCounters() {
+        setCounter("active", summary.active);
+        setCounter("waiting", summary.waiting);
+        setCounter("completed-minute", summary.completedLastMinute);
+        setCounter("failed-minute", summary.failedLastMinute);
+        setCounter("completed-hour", summary.completedLastHour);
+        setCounter("failed-hour", summary.failedLastHour);
+    }
+
+    function setCounter(name, value) {
+        const element = document.querySelector(`[data-counter="${name}"]`);
+        if (element) {
+            element.textContent = value;
+        }
+    }
+
+    function drawTraffic() {
+        if (!chartCanvas) {
+            return;
+        }
+
+        const context = chartCanvas.getContext("2d");
+        const width = chartCanvas.clientWidth || chartCanvas.width;
+        const height = chartCanvas.height;
+        const ratio = window.devicePixelRatio || 1;
+        chartCanvas.width = width * ratio;
+        chartCanvas.height = height * ratio;
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.clearRect(0, 0, width, height);
+
+        const source = trafficMode === "hour" ? hourlyTraffic : traffic;
+        const points = Array.from(source.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(trafficMode === "hour" ? -24 : -60);
+        const max = Math.max(1, ...points.flatMap(x => [x[1].active, x[1].started, x[1].completed, x[1].failed]));
+        const padding = { top: 16, right: 18, bottom: 28, left: 34 };
+        const plotWidth = Math.max(1, width - padding.left - padding.right);
+        const plotHeight = Math.max(1, height - padding.top - padding.bottom);
+
+        context.strokeStyle = "#d9deee";
+        context.lineWidth = 1;
+        for (let i = 0; i <= 3; i++) {
+            const y = padding.top + (plotHeight / 3) * i;
+            context.beginPath();
+            context.moveTo(padding.left, y);
+            context.lineTo(width - padding.right, y);
+            context.stroke();
+        }
+
+        if (points.length === 0) {
+            context.fillStyle = "#5f6687";
+            context.font = "13px system-ui";
+            context.fillText("No traffic yet", padding.left, padding.top + 20);
+            return;
+        }
+
+        drawTrafficSeries(context, points, "active", "#176b87", padding, plotWidth, plotHeight, max);
+        drawTrafficSeries(context, points, "started", "#4856d7", padding, plotWidth, plotHeight, max);
+        drawTrafficSeries(context, points, "completed", "#0f8c55", padding, plotWidth, plotHeight, max);
+        drawTrafficSeries(context, points, "failed", "#d64a4a", padding, plotWidth, plotHeight, max);
+
+        context.fillStyle = "#5f6687";
+        context.font = "11px system-ui";
+        context.fillText(String(max), 6, padding.top + 4);
+        context.fillText("0", 18, padding.top + plotHeight + 4);
+        context.fillText(trafficMode === "hour" ? "24h" : "60m", padding.left, height - 8);
+        context.fillText("now", width - padding.right - 20, height - 8);
+
+        drawLegend(context, width, padding);
+    }
+
+    function drawTrafficSeries(context, points, key, color, padding, plotWidth, plotHeight, max) {
+        context.strokeStyle = color;
+        context.lineWidth = key === "failed" ? 1.8 : 2.5;
+        context.beginPath();
+        points.forEach((point, index) => {
+            const x = padding.left + (points.length === 1 ? plotWidth : (plotWidth / (points.length - 1)) * index);
+            const y = padding.top + plotHeight - ((point[1][key] || 0) / max) * plotHeight;
+            if (index === 0) {
+                context.moveTo(x, y);
+            } else {
+                context.lineTo(x, y);
+            }
+        });
+        context.stroke();
+    }
+
+    function drawLegend(context, width, padding) {
+        const items = [
+            ["active", "#176b87"],
+            ["started", "#4856d7"],
+            ["completed", "#0f8c55"],
+            ["failed", "#d64a4a"]
+        ];
+        let x = Math.max(padding.left, width - 320);
+        context.font = "11px system-ui";
+        items.forEach(([label, color]) => {
+            context.fillStyle = color;
+            context.fillRect(x, padding.top - 8, 8, 8);
+            context.fillStyle = "#5f6687";
+            context.fillText(label, x + 12, padding.top);
+            x += 78;
+        });
+    }
+
+    function applyEvent(eventData) {
+        const id = readId(eventData, "orchestrationInstanceId", "OrchestrationInstanceId");
+        if (!id) {
+            scheduleSummaryRefresh(0);
+            return;
+        }
+
+        const existing = instances.get(id);
+        const row = normalizeRow({
+            id,
+            orchestrationDefinitionKey: read(eventData, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || existing?.orchestrationDefinitionKey,
+            orchestrationVersion: read(eventData, "orchestrationVersion", "OrchestrationVersion") || existing?.orchestrationVersion,
+            orchestrationLabel: read(eventData, "orchestrationLabel", "OrchestrationLabel") || existing?.orchestrationLabel,
+            correlationId: read(eventData, "correlationId", "CorrelationId") || existing?.correlationId,
+            sagaId: read(eventData, "sagaId", "SagaId") || existing?.sagaId,
+            executionKey: read(eventData, "executionKey", "ExecutionKey") || existing?.executionKey,
+            status: read(eventData, "instanceStatus", "InstanceStatus") || read(eventData, "toStatus", "ToStatus") || existing?.status,
+            currentStageKey: read(eventData, "stageKey", "StageKey") || existing?.currentStageKey,
+            currentTaskKey: read(eventData, "taskKey", "TaskKey") || existing?.currentTaskKey,
+            startedOnUtc: existing?.startedOnUtc || read(eventData, "occurredOnUtc", "OccurredOnUtc"),
+            lastUpdatedOnUtc: read(eventData, "occurredOnUtc", "OccurredOnUtc"),
+            waitingSinceUtc: existing?.waitingSinceUtc,
+            completedOnUtc: read(eventData, "instanceStatus", "InstanceStatus") === "Completed" ? read(eventData, "occurredOnUtc", "OccurredOnUtc") : existing?.completedOnUtc,
+            failedOnUtc: read(eventData, "instanceStatus", "InstanceStatus") === "Failed" ? read(eventData, "occurredOnUtc", "OccurredOnUtc") : existing?.failedOnUtc,
+            errorSummary: existing?.errorSummary
+        });
+
+        instances.set(id, row);
+
+        applyTrafficEvent(traffic, read(eventData, "occurredOnUtc", "OccurredOnUtc"), "minute", eventData);
+        applyTrafficEvent(hourlyTraffic, read(eventData, "occurredOnUtc", "OccurredOnUtc"), "hour", eventData);
+
+        renderGrid();
+        drawTraffic();
+        scheduleSummaryRefresh(250);
+
+        if (selectedInstanceId === id) {
+            scheduleDetailRefresh(id);
+        }
+    }
+
+    function applySnapshot(snapshot) {
+        applySummary(snapshot);
+
+        const nextInstances = read(snapshot, "instances", "Instances") || [];
+        instances.clear();
+        nextInstances.forEach(item => {
+            const row = normalizeRow(item);
+            if (row.id) {
+                instances.set(row.id, row);
+            }
+        });
+
+        renderGrid();
+
+        if (selectedInstanceId && instances.has(selectedInstanceId)) {
+            scheduleDetailRefresh(selectedInstanceId);
+        }
+    }
+
+    function applySummary(snapshot) {
+        const nextSummary = read(snapshot, "summary", "Summary");
+        if (nextSummary) {
+            summary = normalizeSummary(nextSummary);
+        }
+
+        const nextTraffic = read(snapshot, "traffic", "Traffic") || [];
+        traffic.clear();
+        nextTraffic.forEach(item => {
+            const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "minute");
+            if (bucket) {
+                traffic.set(bucket, normalizeTrafficPoint(item));
+            }
+        });
+
+        const nextHourlyTraffic = read(snapshot, "hourlyTraffic", "HourlyTraffic") || [];
+        hourlyTraffic.clear();
+        nextHourlyTraffic.forEach(item => {
+            const bucket = bucketKey(read(item, "bucketUtc", "BucketUtc"), "hour");
+            if (bucket) {
+                hourlyTraffic.set(bucket, normalizeTrafficPoint(item));
+            }
+        });
+
+        renderCounters();
+        drawTraffic();
+    }
+
+    function applyTrafficEvent(target, occurredOnUtc, mode, eventData) {
+        const bucket = bucketKey(occurredOnUtc, mode);
+        if (!bucket) {
+            return;
+        }
+
+        const currentTraffic = target.get(bucket) || { active: 0, started: 0, completed: 0, failed: 0 };
+        const transitionType = read(eventData, "transitionType", "TransitionType");
+        if (transitionType === "InstancePromoted" || transitionType === "InstanceStarted") {
+            currentTraffic.started += 1;
+        } else if (transitionType === "InstanceCompleted") {
+            currentTraffic.completed += 1;
+        } else if (transitionType === "InstanceFailed") {
+            currentTraffic.failed += 1;
+        }
+        target.set(bucket, currentTraffic);
+    }
+
+    function scheduleSnapshotRefresh(delay) {
+        if (!config.snapshotPath) {
+            return;
+        }
+
+        if (snapshotTimer || snapshotInFlight) {
+            return;
+        }
+
+        snapshotTimer = window.setTimeout(refreshSnapshot, delay);
+    }
+
+    async function refreshSnapshot() {
+        snapshotTimer = null;
+        if (!config.snapshotPath || snapshotInFlight || document.visibilityState === "hidden") {
+            return;
+        }
+
+        snapshotInFlight = true;
+        try {
+            const response = await fetch(config.snapshotPath, {
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+            });
+            if (!response.ok) {
+                throw new Error(`Snapshot request failed: ${response.status}`);
+            }
+
+            applySnapshot(await response.json());
+        } catch {
+            // SignalR keeps feeding the board; the snapshot is only a reconciliation path.
+        } finally {
+            snapshotInFlight = false;
+        }
+    }
+
+    function scheduleSummaryRefresh(delay) {
+        if (!config.summaryPath) {
+            scheduleSnapshotRefresh(delay);
+            return;
+        }
+
+        if (summaryInFlight) {
+            summaryPending = true;
+            return;
+        }
+
+        if (summaryTimer) {
+            return;
+        }
+
+        const elapsed = Date.now() - lastSummaryRefreshAt;
+        const throttleWait = Math.max(0, 1000 - elapsed);
+        summaryTimer = window.setTimeout(refreshSummary, Math.max(delay, throttleWait));
+    }
+
+    async function refreshSummary() {
+        if (!config.summaryPath || document.visibilityState === "hidden") {
+            summaryTimer = null;
+            return;
+        }
+
+        summaryTimer = null;
+        summaryInFlight = true;
+        try {
+            const response = await fetch(config.summaryPath, {
+                headers: { "Accept": "application/json" },
+                cache: "no-store"
+            });
+            if (!response.ok) {
+                throw new Error(`Summary request failed: ${response.status}`);
+            }
+
+            lastSummaryRefreshAt = Date.now();
+            applySummary(await response.json());
+        } catch {
+            scheduleSnapshotRefresh(0);
+        } finally {
+            summaryInFlight = false;
+            if (summaryPending) {
+                summaryPending = false;
+                scheduleSummaryRefresh(0);
+            }
+        }
+    }
+
+    function getFilteredRows() {
+        const term = searchTerm.trim().toLowerCase();
+        const rows = Array.from(instances.values()).sort((left, right) => {
+            const leftTime = new Date(left.startedOnUtc || left.lastUpdatedOnUtc || 0).getTime();
+            const rightTime = new Date(right.startedOnUtc || right.lastUpdatedOnUtc || 0).getTime();
+            return rightTime - leftTime;
+        });
+
+        if (!term) {
+            return rows;
+        }
+
+        return rows.filter(row => getSearchText(row).includes(term));
+    }
+
+    function getSearchText(row) {
+        return [
+            row.id,
+            row.correlationId,
+            row.sagaId,
+            row.executionKey,
+            row.orchestrationDefinitionKey,
+            row.orchestrationVersion,
+            row.orchestrationLabel,
+            row.currentStageKey,
+            row.currentTaskKey,
+            row.status
+        ].join(" ").toLowerCase();
+    }
+
+    function renderGrid() {
+        if (!grid) {
+            return;
+        }
+
+        const rows = getFilteredRows();
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        currentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+        const start = (currentPage - 1) * pageSize;
+        const pageRows = rows.slice(start, start + pageSize);
+
+        if (instanceCount) {
+            instanceCount.textContent = rows.length;
+        }
+
+        if (pageSummary) {
+            const first = rows.length === 0 ? 0 : start + 1;
+            const last = Math.min(start + pageRows.length, rows.length);
+            pageSummary.textContent = `${first}-${last} of ${rows.length}`;
+        }
+
+        if (pagePrev) {
+            pagePrev.disabled = currentPage <= 1;
+        }
+
+        if (pageNext) {
+            pageNext.disabled = currentPage >= totalPages;
+        }
+
+        grid.innerHTML = pageRows.length === 0
+            ? `<tr class="od-empty-row"><td colspan="8">No instances found.</td></tr>`
+            : pageRows.map(renderGridRow).join("");
+    }
+
+    function renderGridRow(row) {
+        return `
+            <tr data-instance-id="${escapeHtml(row.id)}" data-instance-status="${escapeHtml(row.status)}" tabindex="0">
+            <td>
+                <strong title="${escapeHtml(row.orchestrationLabel)}">${escapeHtml(row.orchestrationLabel)}</strong>
+            </td>
+            <td class="od-id-cell">
+                <span class="od-id-copy">
+                    <span class="od-copy-value">${escapeHtml(row.correlationId)}</span>
+                    <button type="button" class="od-copy-button" data-copy-value="${escapeHtml(row.correlationId)}" aria-label="Copy correlation id" title="Copy CorrelationId"><i class="bi bi-copy"></i></button>
+                </span>
+            </td>
+            <td class="od-id-cell">
+                <span class="od-id-copy">
+                    <span class="od-copy-value">${escapeHtml(row.sagaId)}</span>
+                    <button type="button" class="od-copy-button" data-copy-value="${escapeHtml(row.sagaId)}" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
+                </span>
+            </td>
+            <td><span class="od-status ${statusClass(row.status)}" data-instance-status-label>${escapeHtml(row.status)}</span></td>
+            <td data-instance-stage>${escapeHtml(row.currentStageKey || "-")}</td>
+            <td data-instance-task>${escapeHtml(row.currentTaskKey || "-")}</td>
+            <td>${formatDate(row.startedOnUtc)}</td>
+            <td data-instance-updated>${formatDate(row.lastUpdatedOnUtc)}</td>
+            </tr>`;
+    }
+
+    async function openDetail(instanceId) {
+        selectedInstanceId = instanceId;
+        selectedStageId = null;
+        currentDetail = null;
+
+        if (detailTitle) {
+            detailTitle.textContent = "Loading trace";
+        }
+        if (detailSubtitle) {
+            detailSubtitle.textContent = instanceId;
+        }
+        if (detailBody) {
+            detailBody.innerHTML = `<p class="od-empty">Loading full execution trace...</p>`;
+        }
+
+        detailModal?.show();
+        await loadDetail(instanceId);
+    }
+
+    function scheduleDetailRefresh(instanceId) {
+        window.clearTimeout(detailRefreshTimer);
+        detailRefreshTimer = window.setTimeout(() => loadDetail(instanceId, true), 80);
+    }
+
+    async function loadDetail(instanceId, silent) {
+        try {
+            const separator = config.detailPath.includes("?") ? "&" : "?";
+            const response = await fetch(`${config.detailPath}${separator}instanceId=${encodeURIComponent(instanceId)}`, {
+                headers: { "Accept": "application/json" }
+            });
+            if (!response.ok) {
+                throw new Error(`Detail request failed: ${response.status}`);
+            }
+
+            renderDetail(await response.json());
+        } catch (error) {
+            if (!silent && detailBody) {
+                detailBody.innerHTML = `<p class="od-runtime-error">${escapeHtml(error.message)}</p>`;
+            }
+        }
+    }
+
+    function renderDetail(detail) {
+        currentDetail = detail;
+        const instance = detail.instance;
+        const stages = detail.stages || [];
+        const orchestrationLabel = instance.orchestrationLabel || formatOrchestrationLabel(instance.orchestrationDefinitionKey, instance.orchestrationVersion);
+
+        if (detailTitle) {
+            detailTitle.textContent = orchestrationLabel;
+        }
+        if (detailSubtitle) {
+            detailSubtitle.textContent = `${instance.id} | ${instance.status} | ${instance.correlationId} | ${instance.sagaId}`;
+        }
+        if (!detailBody) {
+            return;
+        }
+
+        detailBody.innerHTML = `
+            <section class="od-trace-shell">
+                <section class="od-trace-fixed">
+                    <div class="od-trace-toolbar">
+                        <div class="od-trace-meta">
+                            ${badge(instance.status)}
+                            ${metaPill("Stage", instance.currentStageKey || "-")}
+                            ${metaPill("Task", instance.currentTaskKey || "-")}
+                            ${metaPill("Started", formatDate(instance.startedOnUtc))}
+                            ${metaPill("Updated", formatDate(instance.lastUpdatedOnUtc))}
+                        </div>
+                    </div>
+                    <div class="od-execution-key" title="${escapeHtml(instance.executionKey || "-")}">${escapeHtml(instance.executionKey || "-")}</div>
+                    <section class="od-process-track" aria-label="Stages">
+                        ${stages.map((stage, index) => renderStageStep(stage, index, stages.length)).join("") || `<p class="od-empty">No stages recorded.</p>`}
+                    </section>
+                </section>
+                <section class="od-inline-storyline">
+                    <header>
+                        <h3>Storyline</h3>
+                        <span>${(detail.transitions || []).length} transitions</span>
+                    </header>
+                    <div class="od-timeline-control">
+                        ${(detail.transitions || []).map(renderTimelineEntry).join("") || `<p class="od-empty">No transitions recorded.</p>`}
+                    </div>
+                </section>
+            </section>`;
+    }
+
+    function renderStageStep(stage, index, total) {
+        const taskCount = (stage.tasks || []).length;
+        const waitingTask = (stage.tasks || []).find(task => task.status === "Waiting" || task.status === "WaitingResponse" || task.waitingSinceUtc);
+        const stateClass = stage.status === "Completed"
+            ? "is-completed"
+            : stage.status === "Running" || stage.status === "Waiting"
+                ? "is-current"
+                : stage.status === "Failed"
+                    ? "is-failed"
+                    : "is-pending";
+        const marker = stage.status === "Completed"
+            ? `<i class="bi bi-check-lg"></i>`
+            : `<span></span>`;
+        return `
+            <button type="button" class="od-process-step ${stateClass}" data-open-stage="${escapeHtml(stage.id)}" style="--step-index:${index}; --step-total:${total};">
+                <span class="od-process-line" aria-hidden="true"></span>
+                <span class="od-process-marker">${marker}</span>
+                <span class="od-process-copy">
+                    <strong>${escapeHtml(stage.stageKey)}</strong>
+                    <span>${escapeHtml(stage.status)} | ${taskCount} task${taskCount === 1 ? "" : "s"}</span>
+                    ${waitingTask ? `<em>Waiting: ${escapeHtml(waitingTask.taskKey)}</em>` : ""}
+                </span>
+            </button>`;
+    }
+
+    function openStage(stageId) {
+        const stage = findStage(stageId);
+        if (!stage || !stageBody || !currentDetail) {
+            return;
+        }
+
+        selectedStageId = stage.id;
+        stageBody.classList.remove("is-task-detail");
+        stageBody.classList.add("is-stage-detail");
+        if (stageTitle) {
+            stageTitle.textContent = stage.stageKey;
+        }
+        if (stageSubtitle) {
+            stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
+        }
+        stageBody.innerHTML = renderStageDetail(stage);
+        stageModal?.show();
+    }
+
+    function renderStageDetail(stage) {
+        const tasks = stage.tasks || [];
+        return `
+            <article class="od-stage-focus-card">
+                <header class="od-stage-focus-head">
+                    <div>
+                        <p class="od-kicker">Stage ${escapeHtml(stage.order)}</p>
+                        <h3>${escapeHtml(stage.stageKey)}</h3>
+                        <small>${escapeHtml(stage.configuredName || "-")} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}</small>
+                    </div>
+                    ${badge(stage.status)}
+                </header>
+                ${stage.errorSummary ? `<p class="od-runtime-error">${escapeHtml(stage.errorSummary)}</p>` : ""}
+                <div class="od-detail-grid od-stage-stats">
+                    ${field("Started", formatDate(stage.startedOnUtc))}
+                    ${field("Completed", formatDate(stage.completedOnUtc))}
+                    ${field("Failed", formatDate(stage.failedOnUtc))}
+                    ${field("Tasks", String(tasks.length))}
+                    ${field("Source", stage.hasExecution === false ? "Artifact" : "Runtime")}
+                </div>
+                <div class="od-stage-payload-strip">
+                    <details>
+                        <summary>Stage metadata</summary>
+                        ${codeBlock(stage.metadata)}
+                    </details>
+                </div>
+                <div class="od-task-list">
+                    ${tasks.map(renderTaskRow).join("") || `<p class="od-empty">No task executions recorded for this stage.</p>`}
+                </div>
+            </article>`;
+    }
+
+    function renderTaskRow(task) {
+        const attempts = task.attempts || [];
+        const latestAttempt = attempts[attempts.length - 1];
+        const windowText = `${formatDate(task.startedOnUtc)} -> ${formatDate(task.completedOnUtc || task.failedOnUtc || task.waitingSinceUtc)}`;
+        return `
+            <button type="button" class="od-task-card" data-open-task="${escapeHtml(task.id)}">
+                <span class="od-task-main">
+                    <strong>${escapeHtml(task.taskKey)}</strong>
+                    <small>${escapeHtml(task.configuredName || task.taskKind)} | ${escapeHtml(task.executionMode)} | ${windowText}</small>
+                    ${task.errorSummary ? `<em>${escapeHtml(task.errorSummary)}</em>` : ""}
+                </span>
+                <span class="od-task-side">
+                    ${badge(task.status)}
+                    <small>${attempts.length} attempt${attempts.length === 1 ? "" : "s"}</small>
+                    <small>${escapeHtml(latestAttempt?.correlationId || task.correlationId || "-")}</small>
+                </span>
+            </button>`;
+    }
+
+    function openTask(taskId) {
+        const task = findTask(taskId);
+        const stage = findStageForTask(taskId);
+        if (!task || !stage || !stageBody) {
+            return;
+        }
+
+        selectedStageId = stage.id;
+        const attempts = task.attempts || [];
+        stageBody.classList.remove("is-stage-detail");
+        stageBody.classList.add("is-task-detail");
+        if (stageTitle) {
+            stageTitle.textContent = task.taskKey;
+        }
+        if (stageSubtitle) {
+            stageSubtitle.textContent = `${stage.stageKey} | ${task.status} | ${task.correlationId || "-"}`;
+        }
+        stageBody.innerHTML = `
+            <section class="od-task-detail-shell">
+                <section class="od-task-fixed">
+                    <button type="button" class="btn btn-outline-secondary od-back-action" data-back-stage="${escapeHtml(stage.id)}">
+                        Back to ${escapeHtml(stage.stageKey)}
+                    </button>
+                    <div class="od-task-detail-head">
+                        <header class="od-stage-focus-head">
+                            <div>
+                                <p class="od-kicker">${escapeHtml(stage.stageKey)}</p>
+                                <h3>${escapeHtml(task.taskKey)}</h3>
+                                <small>${escapeHtml(task.correlationId || "-")}</small>
+                            </div>
+                            ${badge(task.status)}
+                        </header>
+                        <div class="od-detail-grid">
+                            ${field("Status", badge(task.status), true)}
+                            ${field("Kind", task.taskKind || "-")}
+                            ${field("Mode", task.executionMode || "-")}
+                            ${field("Await response", task.awaitResponse ? "yes" : "no")}
+                            ${field("Started", formatDate(task.startedOnUtc))}
+                            ${field("Waiting", formatDate(task.waitingSinceUtc))}
+                            ${field("Completed", formatDate(task.completedOnUtc))}
+                            ${field("Failed", formatDate(task.failedOnUtc))}
+                            ${field("Last attempt", String(task.lastAttemptNumber))}
+                            ${field("Source", task.hasExecution === false ? "Artifact" : "Runtime")}
+                        </div>
+                    </div>
+                    ${task.errorSummary ? `<p class="od-runtime-error">${escapeHtml(task.errorSummary)}</p>` : ""}
+                    <section class="od-detail-split">
+                        <article>
+                            <h5>Task output variables</h5>
+                            ${codeBlock(task.outputVariablesPayload)}
+                        </article>
+                        <article>
+                            <h5>Task metadata</h5>
+                            ${codeBlock(task.metadata)}
+                        </article>
+                    </section>
+                </section>
+                <section class="od-attempt-stack">
+                    <h3>Attempts</h3>
+                    <div class="od-attempt-list">
+                        ${attempts.map(renderAttemptDetail).join("") || `<p class="od-empty">No attempts recorded.</p>`}
+                    </div>
+                </section>
+            </section>`;
+        stageModal?.show();
+    }
+
+    function renderAttemptDetail(attempt) {
+        return `
+            <details class="od-attempt-card">
+                <summary class="od-attempt-summary">
+                    <div>
+                        <strong>Attempt ${attempt.attemptNumber}</strong>
+                        <small>${formatDate(attempt.startedOnUtc)} -> ${formatDate(attempt.completedOnUtc || attempt.failedOnUtc || attempt.waitingSinceUtc)}</small>
+                    </div>
+                    <span class="od-attempt-summary-side">
+                        ${badge(attempt.status)}
+                        <i class="bi bi-chevron-right od-attempt-caret" aria-hidden="true"></i>
+                    </span>
+                </summary>
+                <div class="od-attempt-body">
+                    <div class="od-detail-grid">
+                        ${field("Started", formatDate(attempt.startedOnUtc))}
+                        ${field("Waiting", formatDate(attempt.waitingSinceUtc))}
+                        ${field("Completed", formatDate(attempt.completedOnUtc))}
+                        ${field("Failed", formatDate(attempt.failedOnUtc))}
+                        ${field("Timed out", formatDate(attempt.timedOutOnUtc))}
+                        ${field("Error", attempt.errorMessage || attempt.errorCode || "-")}
+                    </div>
+                    <div class="od-detail-split">
+                        <article>
+                            <h5>Input</h5>
+                            ${codeBlock(attempt.requestPayload)}
+                        </article>
+                        <article>
+                            <h5>Output</h5>
+                            ${codeBlock(attempt.responsePayload)}
+                        </article>
+                    </div>
+                    <div class="od-detail-split">
+                        <article>
+                            <h5>Attempt metadata</h5>
+                            ${codeBlock(attempt.metadata)}
+                        </article>
+                    </div>
+                    ${attempt.dispatch ? renderDispatch(attempt.dispatch) : ""}
+                </div>
+            </details>`;
+    }
+
+    function renderDispatch(dispatch) {
+        return `
+            <section class="od-dispatch">
+                <h5>Dispatch</h5>
+                <div class="od-detail-grid">
+                    ${field("Type", dispatch.dispatchType)}
+                    ${field("Destination", dispatch.destination)}
+                    ${field("Status", dispatch.dispatchStatus)}
+                    ${field("Command", dispatch.commandId)}
+                    ${field("Correlation", dispatch.correlationId)}
+                    ${field("Sent", formatDate(dispatch.sentOnUtc))}
+                    ${field("Ack", formatDate(dispatch.acknowledgedOnUtc))}
+                    ${field("Failure", dispatch.failureReason || "-")}
+                </div>
+                <div class="od-detail-split">
+                    <article>
+                        <h5>Dispatch payload</h5>
+                        ${codeBlock(dispatch.requestPayload)}
+                    </article>
+                    <article>
+                        <h5>Dispatch metadata</h5>
+                        ${codeBlock(dispatch.metadata)}
+                    </article>
+                </div>
+            </section>`;
+    }
+
+    function openTimeline() {
+        if (!currentDetail || !timelineBody) {
+            return;
+        }
+
+        const instance = currentDetail.instance;
+        const transitions = currentDetail.transitions || [];
+        if (timelineTitle) {
+            timelineTitle.textContent = "Execution timeline";
+        }
+        if (timelineSubtitle) {
+            timelineSubtitle.textContent = `${instance.id} | ${instance.status}`;
+        }
+
+        timelineBody.innerHTML = `
+            <section class="od-timeline-control">
+                ${transitions.map(renderTimelineEntry).join("") || `<p class="od-empty">No transitions recorded.</p>`}
+            </section>`;
+        timelineModal?.show();
+    }
+
+    function renderTimelineEntry(transition, index) {
+        const context = describeTransition(transition);
+        return `
+            <article class="od-timeline-entry">
+                <div class="od-timeline-marker">
+                    <span>${index + 1}</span>
+                </div>
+                <div class="od-timeline-content">
+                    <header>
+                        <div>
+                            <strong>${escapeHtml(transition.transitionType)}</strong>
+                            <small>${escapeHtml(context.summary)}</small>
+                        </div>
+                        <time>${formatDate(transition.occurredOnUtc)}</time>
+                    </header>
+                    <div class="od-transition-status">${escapeHtml(transition.fromStatus || "-")} -> ${escapeHtml(transition.toStatus || "-")}</div>
+                    ${shouldRenderTransitionMessage(transition, context) ? `<p>${escapeHtml(transition.message)}</p>` : ""}
+                    ${context.chips.length ? `<div class="od-chip-row">${context.chips.map(chip => `<span class="od-meta-chip">${escapeHtml(chip)}</span>`).join("")}</div>` : ""}
+                    ${transition.payload ? `<details><summary>Payload</summary>${codeBlock(transition.payload)}</details>` : ""}
+                </div>
+            </article>`;
+    }
+
+    function describeTransition(transition) {
+        const stage = transition.stageExecutionId ? findStage(transition.stageExecutionId) : findStageForTask(transition.taskExecutionId);
+        const inferredTask = findTaskForAttempt(transition.taskExecutionAttemptId) || findPreviousTaskForTransition(transition);
+        const task = transition.taskExecutionId ? findTask(transition.taskExecutionId) : inferredTask;
+        const attempt = transition.taskExecutionAttemptId ? findAttempt(transition.taskExecutionAttemptId) : null;
+        const dispatch = attempt?.dispatch;
+        const chips = [];
+
+        if (stage) {
+            chips.push(`Stage: ${stage.stageKey}`);
+        }
+        if (task) {
+            chips.push(`Task: ${task.taskKey}`);
+        }
+        if (attempt) {
+            chips.push(`Attempt: ${attempt.attemptNumber}`);
+        }
+        if (dispatch?.destination) {
+            chips.push(`Destination: ${dispatch.destination}`);
+        }
+
+        let summary = transition.message || transition.transitionType;
+        if (transition.transitionType?.startsWith("Stage") && stage) {
+            summary = `${stage.stageKey} | ${transition.transitionType}`;
+        } else if (transition.transitionType?.startsWith("Task") && task) {
+            summary = `${task.taskKey} | ${transition.transitionType}`;
+        } else if (transition.transitionType === "InstanceWaitingResponse" && task) {
+            summary = `Instance waiting for ${task.taskKey}`;
+        } else if (transition.transitionType === "InstanceStarted") {
+            const instance = currentDetail?.instance;
+            summary = `Instance started: ${instance?.orchestrationLabel || formatOrchestrationLabel(instance?.orchestrationDefinitionKey, instance?.orchestrationVersion) || "-"}`;
+        }
+
+        return { summary, chips };
+    }
+
+    function shouldRenderTransitionMessage(transition, context) {
+        if (!transition.message) {
+            return false;
+        }
+
+        return transition.message !== transition.transitionType && transition.message !== context.summary;
+    }
+
+    function findStage(stageId) {
+        return (currentDetail?.stages || []).find(stage => stage.id === stageId);
+    }
+
+    function findTask(taskId) {
+        if (!taskId) {
+            return null;
+        }
+
+        for (const stage of currentDetail?.stages || []) {
+            const task = (stage.tasks || []).find(item => item.id === taskId);
+            if (task) {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
+    function findTaskForAttempt(attemptId) {
+        if (!attemptId) {
+            return null;
+        }
+
+        for (const stage of currentDetail?.stages || []) {
+            const task = (stage.tasks || []).find(item => (item.attempts || []).some(attempt => attempt.id === attemptId));
+            if (task) {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
+    function findAttempt(attemptId) {
+        const task = findTaskForAttempt(attemptId);
+        return (task?.attempts || []).find(attempt => attempt.id === attemptId) || null;
+    }
+
+    function findPreviousTaskForTransition(transition) {
+        const transitions = currentDetail?.transitions || [];
+        const index = transitions.findIndex(item => item.id === transition.id);
+        if (index < 1) {
+            return null;
+        }
+
+        for (let i = index - 1; i >= 0; i--) {
+            const candidate = transitions[i];
+            const task = candidate.taskExecutionId ? findTask(candidate.taskExecutionId) : findTaskForAttempt(candidate.taskExecutionAttemptId);
+            if (task) {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
+    function findStageForTask(taskId) {
+        if (!taskId) {
+            return null;
+        }
+
+        return (currentDetail?.stages || []).find(stage => (stage.tasks || []).some(task => task.id === taskId));
+    }
+
+    function field(label, value, allowHtml) {
+        const content = allowHtml ? value : escapeHtml(value);
+        return `<div class="od-detail-field"><span>${escapeHtml(label)}</span><strong>${content}</strong></div>`;
+    }
+
+    function metaPill(label, value) {
+        return `
+            <span class="od-meta-pill">
+                <small>${escapeHtml(label)}</small>
+                <strong>${escapeHtml(value)}</strong>
+            </span>`;
+    }
+
+    function formatOrchestrationLabel(orchestrationDefinitionKey, orchestrationVersion) {
+        if (!orchestrationDefinitionKey) {
+            return "";
+        }
+
+        if (!orchestrationVersion) {
+            return orchestrationDefinitionKey;
+        }
+
+        return `${orchestrationDefinitionKey} v${orchestrationVersion}`;
+    }
+
+    function badge(status) {
+        return `<span class="od-status ${statusClass(status)}">${escapeHtml(status || "-")}</span>`;
+    }
+
+    function codeBlock(value) {
+        return `<pre class="od-json">${escapeHtml(value || "{}")}</pre>`;
+    }
+
+    function statusClass(status) {
+        switch (status) {
+            case "Created":
+            case "Pending":
+            case "Skipped":
+            case "Stopped":
+                return "od-status-inactive";
+            case "Running":
+                return "od-status-running";
+            case "Retrying":
+            case "CompletedWithErrors":
+                return "od-status-warning";
+            case "Waiting":
+            case "WaitingResponse":
+            case "Compensating":
+                return "od-status-waiting";
+            case "Completed":
+            case "Compensated":
+                return "od-status-active";
+            case "Failed":
+            case "TimedOut":
+            case "Cancelled":
+                return "od-status-danger";
+            default:
+                return "od-status-inactive";
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll("\"", "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    async function copyToClipboard(button) {
+        const value = button.getAttribute("data-copy-value") || "";
+        if (!value) {
+            return;
+        }
+
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+        } else {
+            const input = document.createElement("textarea");
+            input.value = value;
+            input.setAttribute("readonly", "");
+            input.style.position = "fixed";
+            input.style.opacity = "0";
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand("copy");
+            input.remove();
+        }
+
+        button.classList.add("copied");
+        button.setAttribute("title", "Copied");
+        window.setTimeout(() => {
+            button.classList.remove("copied");
+            button.setAttribute("title", button.getAttribute("aria-label") || "Copy");
+        }, 1200);
+    }
+
+    function syncSearch() {
+        searchTerm = searchInput.value;
+        currentPage = 1;
+        renderGrid();
+    }
+
+    searchInput?.addEventListener("input", syncSearch);
+    searchInput?.addEventListener("search", syncSearch);
+    searchInput?.addEventListener("change", syncSearch);
+
+    pageSizeInput?.addEventListener("change", function () {
+        pageSize = Number(pageSizeInput.value || 25);
+        currentPage = 1;
+        renderGrid();
+    });
+
+    pagePrev?.addEventListener("click", function () {
+        currentPage -= 1;
+        renderGrid();
+    });
+
+    pageNext?.addEventListener("click", function () {
+        currentPage += 1;
+        renderGrid();
+    });
+
+    trafficModeButtons.forEach(button => {
+        button.addEventListener("click", function () {
+            trafficMode = button.getAttribute("data-traffic-mode") === "hour" ? "hour" : "minute";
+            trafficModeButtons.forEach(item => item.classList.toggle("active", item === button));
+            drawTraffic();
+        });
+    });
+
+    document.addEventListener("click", function (event) {
+        const copyButton = event.target.closest("[data-copy-value]");
+        if (copyButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            copyToClipboard(copyButton).catch(() => {
+                copyButton.classList.add("copy-failed");
+                window.setTimeout(() => copyButton.classList.remove("copy-failed"), 1200);
+            });
+            return;
+        }
+
+        const row = event.target.closest("[data-instance-id]");
+        if (row && row.closest("[data-instance-grid]")) {
+            openDetail(row.getAttribute("data-instance-id"));
+            return;
+        }
+
+        const stageStep = event.target.closest("[data-open-stage]");
+        if (stageStep) {
+            openStage(stageStep.getAttribute("data-open-stage"));
+            return;
+        }
+
+        const taskTrigger = event.target.closest("[data-open-task]");
+        if (taskTrigger) {
+            openTask(taskTrigger.getAttribute("data-open-task"));
+            return;
+        }
+
+        const backToStage = event.target.closest("[data-back-stage]");
+        if (backToStage) {
+            selectedStageId = backToStage.getAttribute("data-back-stage");
+            const stage = findStage(selectedStageId);
+            if (stage && stageBody) {
+                stageBody.classList.remove("is-task-detail");
+                stageBody.classList.add("is-stage-detail");
+                if (stageTitle) {
+                    stageTitle.textContent = stage.stageKey;
+                }
+                if (stageSubtitle) {
+                    stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
+                }
+                stageBody.innerHTML = renderStageDetail(stage);
+            }
+            return;
+        }
+
+        const timelineTrigger = event.target.closest("[data-open-timeline]");
+        if (timelineTrigger) {
+            openTimeline();
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter") {
+            return;
+        }
+
+        if (event.target.closest("[data-copy-value]")) {
+            return;
+        }
+
+        const row = event.target.closest("[data-instance-id]");
+        if (row && row.closest("[data-instance-grid]")) {
+            openDetail(row.getAttribute("data-instance-id"));
+        }
+    });
+
+    window.addEventListener("resize", drawTraffic);
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState !== "hidden") {
+            scheduleSummaryRefresh(0);
+            scheduleSnapshotRefresh(0);
+        }
+    });
+    window.setInterval(function () {
+        if (connection.state === signalR.HubConnectionState.Connected) {
+            scheduleSummaryRefresh(0);
+        }
+    }, 2000);
+    window.setInterval(function () {
+        if (connection.state === signalR.HubConnectionState.Connected) {
+            scheduleSnapshotRefresh(0);
+        }
+    }, 10000);
+
+    const connection = new signalR.HubConnectionBuilder()
+        .withUrl(config.hubPath)
+        .withAutomaticReconnect()
+        .build();
+
+    connection.on("runtime.transition", applyEvent);
+
+    connection.onreconnecting(function () {
+        setLiveState("connecting", "Reconnecting");
+    });
+
+    connection.onreconnected(async function () {
+        setLiveState("connected", "Live");
+        await connection.invoke("WatchRuntime");
+        if (selectedInstanceId) {
+            await connection.invoke("WatchInstance", selectedInstanceId);
+        }
+        scheduleSummaryRefresh(0);
+        scheduleSnapshotRefresh(0);
+    });
+
+    connection.start()
+        .then(async function () {
+            setLiveState("connected", "Live");
+            await connection.invoke("WatchRuntime");
+            scheduleSummaryRefresh(0);
+            scheduleSnapshotRefresh(0);
+        })
+        .catch(function () {
+            setLiveState("disconnected", "Offline");
+        });
+})();

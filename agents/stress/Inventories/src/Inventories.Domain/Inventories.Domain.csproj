@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TurtlePath.Domain" />
+    <PackageReference Include="TurtlePath.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

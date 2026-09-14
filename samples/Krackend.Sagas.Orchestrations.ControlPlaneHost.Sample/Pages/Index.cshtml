@@ -1,0 +1,191 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+
+<div class="app-container">
+    <section class="platform-card" style="padding: 0; overflow: hidden; border-radius: 16px;">
+        <div style="
+            padding: 2rem 2rem 2.25rem;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(99,102,241,0.22), transparent 28%),
+                radial-gradient(circle at 70% 20%, rgba(79,70,229,0.18), transparent 26%),
+                linear-gradient(135deg, #15172b 0%, #1b1e38 45%, #232750 100%);
+            color: #fff;">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+                <div>
+                    <div style="display:flex; align-items:center; gap:.75rem; margin-bottom:.75rem;">
+                        <div style="
+                            width: 18px;
+                            height: 18px;
+                            background: linear-gradient(135deg, #6366f1, #4f46e5);
+                            clip-path: polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%);
+                            box-shadow: 0 0 18px rgba(99,102,241,.45);">
+                        </div>
+                        <h1 style="margin:0; color:#fff; font-size:2rem; font-weight:700;">Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample</h1>
+                    </div>
+
+                    <p style="margin:0; max-width:760px; color:rgba(255,255,255,.82); font-size:1rem;">
+                        Centraliza la definición, administración y monitoreo de orquestaciones para procesos distribuidos,
+                        eventos de dominio y flujos de integración entre servicios.
+                    </p>
+                </div>
+
+                <span class="badge-soft" style="
+                    background: rgba(255,255,255,.08);
+                    color: #fff !important;
+                    border-color: rgba(255,255,255,.16);">
+                    Development
+                </span>
+            </div>
+        </div>
+    </section>
+
+    <div style="height: 1.5rem;"></div>
+
+    <section>
+        <h2 class="section-title" style="font-size:1rem; letter-spacing:.04em; text-transform:uppercase; color:#6b6e8c; margin-bottom:1rem;">
+            Acceso rápido
+        </h2>
+
+        <div class="cards-grid">
+            <article class="platform-card">
+                <div style="display:flex; align-items:flex-start; gap:1rem;">
+                    <div style="
+                        width:44px; height:44px; border-radius:12px;
+                        background: rgba(99,102,241,.10);
+                        color:#4f46e5;
+                        display:flex; align-items:center; justify-content:center;
+                        flex-shrink:0;">
+                        <span style="font-size:1.15rem;">=</span>
+                    </div>
+                    <div style="flex:1;">
+                        <h3 style="margin:0 0 .35rem; font-size:1.05rem;">Orchestrations</h3>
+                        <p style="margin:0; color:#6b6e8c;">
+                            Explora, edita y administra los flujos registrados en el sistema.
+                        </p>
+                    </div>
+                    <a asp-page="/Orchestrations/Index" style="align-self:center; font-size:1.2rem; text-decoration:none;">?</a>
+                </div>
+            </article>
+
+            <article class="platform-card">
+                <div style="display:flex; align-items:flex-start; gap:1rem;">
+                    <div style="
+                        width:44px; height:44px; border-radius:12px;
+                        background: rgba(79,70,229,.10);
+                        color:#4f46e5;
+                        display:flex; align-items:center; justify-content:center;
+                        flex-shrink:0;">
+                        <span style="font-size:1.15rem;">?</span>
+                    </div>
+                    <div style="flex:1;">
+                        <h3 style="margin:0 0 .35rem; font-size:1.05rem;">Triggers</h3>
+                        <p style="margin:0; color:#6b6e8c;">
+                            Define eventos de entrada y revisa qué procesos reaccionan a cada trigger.
+                        </p>
+                    </div>
+                    <a asp-page="/Orchestrations/Index" style="align-self:center; font-size:1.2rem; text-decoration:none;">?</a>
+                </div>
+            </article>
+
+            <article class="platform-card">
+                <div style="display:flex; align-items:flex-start; gap:1rem;">
+                    <div style="
+                        width:44px; height:44px; border-radius:12px;
+                        background: rgba(99,102,241,.10);
+                        color:#4f46e5;
+                        display:flex; align-items:center; justify-content:center;
+                        flex-shrink:0;">
+                        <span style="font-size:1.15rem;">?</span>
+                    </div>
+                    <div style="flex:1;">
+                        <h3 style="margin:0 0 .35rem; font-size:1.05rem;">Stages</h3>
+                        <p style="margin:0; color:#6b6e8c;">
+                            Visualiza las etapas y tareas que componen cada orquestación.
+                        </p>
+                    </div>
+                    <a asp-page="/Orchestrations/Index" style="align-self:center; font-size:1.2rem; text-decoration:none;">?</a>
+                </div>
+            </article>
+
+            <article class="platform-card">
+                <div style="display:flex; align-items:flex-start; gap:1rem;">
+                    <div style="
+                        width:44px; height:44px; border-radius:12px;
+                        background: rgba(22,163,74,.10);
+                        color:#16a34a;
+                        display:flex; align-items:center; justify-content:center;
+                        flex-shrink:0;">
+                        <span style="font-size:1.15rem;">+</span>
+                    </div>
+                    <div style="flex:1;">
+                        <h3 style="margin:0 0 .35rem; font-size:1.05rem;">Nueva orquestación</h3>
+                        <p style="margin:0; color:#6b6e8c;">
+                            Registra un nuevo flujo para comenzar a modelar procesos del sistema.
+                        </p>
+                    </div>
+                    <a asp-page="/Orchestrations/Create" style="align-self:center; font-size:1.2rem; text-decoration:none;">?</a>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <div style="height: 1.75rem;"></div>
+
+    <section>
+        <h2 class="section-title" style="font-size:1rem; letter-spacing:.04em; text-transform:uppercase; color:#6b6e8c; margin-bottom:1rem;">
+            Resumen de la plataforma
+        </h2>
+
+        <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <article class="platform-card" style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:#4f46e5; line-height:1;">--</div>
+                <div style="margin-top:.5rem; color:#6b6e8c;">Orquestaciones registradas</div>
+            </article>
+
+            <article class="platform-card" style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:#4f46e5; line-height:1;">--</div>
+                <div style="margin-top:.5rem; color:#6b6e8c;">Triggers configurados</div>
+            </article>
+
+            <article class="platform-card" style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:#4f46e5; line-height:1;">--</div>
+                <div style="margin-top:.5rem; color:#6b6e8c;">Stages activas</div>
+            </article>
+
+            <article class="platform-card" style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:#4f46e5; line-height:1;">--</div>
+                <div style="margin-top:.5rem; color:#6b6e8c;">Versiones publicadas</div>
+            </article>
+        </div>
+    </section>
+
+    <div style="height: 1.75rem;"></div>
+
+    <section class="platform-card">
+        <div class="platform-card-header">
+            <span>Primeros pasos</span>
+        </div>
+
+        <ol style="margin:0; padding-left:1.25rem; color:#4d536d;">
+            <li style="padding:.45rem 0;">
+                <strong style="color:#1a1a2e;">Crea una orquestación</strong>
+                <span style="color:#6b6e8c;"> — registra el flujo principal y define su nombre, descripción y versión.</span>
+            </li>
+            <li style="padding:.45rem 0;">
+                <strong style="color:#1a1a2e;">Configura el trigger de entrada</strong>
+                <span style="color:#6b6e8c;"> — especifica el evento o comando que iniciará el proceso.</span>
+            </li>
+            <li style="padding:.45rem 0;">
+                <strong style="color:#1a1a2e;">Agrega stages y tareas</strong>
+                <span style="color:#6b6e8c;"> — modela cada paso que formará parte de la ejecución.</span>
+            </li>
+            <li style="padding:.45rem 0;">
+                <strong style="color:#1a1a2e;">Valida y publica</strong>
+                <span style="color:#6b6e8c;"> — revisa la configuración antes de mover la orquestación a un estado utilizable.</span>
+            </li>
+        </ol>
+    </section>
+</div>
