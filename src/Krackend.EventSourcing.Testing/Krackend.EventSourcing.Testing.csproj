@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -8,10 +9,11 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Krackend.EventSourcing.Testing</PackageId>
     <Description>Krackend.EventSourcing.Testing provides helpers for testing event streams, reducers, deciders, and initial state factories.</Description>
     <PackageTags>event-sourcing;testing;event-store;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <UseRootPackageReadme>false</UseRootPackageReadme>
   </PropertyGroup>
 

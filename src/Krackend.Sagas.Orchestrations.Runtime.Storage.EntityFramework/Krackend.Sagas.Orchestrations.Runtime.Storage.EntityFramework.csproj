@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <Nullable>disable</Nullable>
@@ -8,7 +9,7 @@
     <PackageId>Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework</PackageId>
     <Description>Entity Framework storage adapter for Krackend saga orchestration runtime state.</Description>
     <PackageTags>saga;orchestration;runtime;entity-framework-core;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />

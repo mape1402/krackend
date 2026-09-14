@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis</PackageId>
     <Description>Redis gossip adapter for Krackend saga orchestration runtime artifact activation notifications.</Description>
     <PackageTags>saga;orchestration;runtime;redis;gossip;dotnet</PackageTags>

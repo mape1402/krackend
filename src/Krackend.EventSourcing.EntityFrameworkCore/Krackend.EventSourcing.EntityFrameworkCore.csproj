@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -8,10 +9,11 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Krackend.EventSourcing.EntityFrameworkCore</PackageId>
     <Description>Krackend.EventSourcing.EntityFrameworkCore provides EF Core storage adapters for Krackend event stores, snapshots, and snapshot candidates.</Description>
     <PackageTags>event-sourcing;event-store;entity-framework-core;storage-adapter;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <UseRootPackageReadme>false</UseRootPackageReadme>
   </PropertyGroup>
 

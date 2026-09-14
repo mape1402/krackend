@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Krackend.Sagas.Orchestrations.Client.Spider</PackageId>
     <Description>Spider pipeline extensions for Krackend orchestration client services.</Description>
     <PackageTags>saga;orchestration;client;spider;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>

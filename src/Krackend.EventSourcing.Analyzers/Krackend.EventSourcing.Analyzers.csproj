@@ -21,7 +21,7 @@
     <PackageId>Krackend.EventSourcing.Analyzers</PackageId>
     <Description>Krackend.EventSourcing.Analyzers provides Roslyn diagnostics for event schema registration and reducer coverage.</Description>
     <PackageTags>event-sourcing;analyzers;roslyn;dotnet</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <UseRootPackageReadme>false</UseRootPackageReadme>
   </PropertyGroup>
 
