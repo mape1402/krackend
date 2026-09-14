@@ -66,6 +66,56 @@ public sealed class MessagingIngressConfigurationSelectorTests
         Assert.Equal("artifact-v2", Assert.Single(selected).ArtifactId);
     }
 
+    [Fact]
+    public void SelectMatchingIgnoresMalformedMessagingSettings()
+    {
+        var selector = CreateSelector();
+        var configurations = new[]
+        {
+            CreateTrigger("artifact-valid", "orders.created", "1.0.0", "orders.fulfillment", "1.0.0", DateTime.UtcNow),
+            new IngressConfiguration
+            {
+                Id = "artifact-bad:trigger",
+                ArtifactId = "artifact-bad",
+                OrchestrationDefinitionKey = "orders.fulfillment",
+                OrchestrationVersion = "1.0.0",
+                DeployedOnUtc = DateTime.UtcNow.AddMinutes(1),
+                IngressKind = IngressKind.Trigger,
+                IngressTransport = IngressTransport.Messaging,
+                SettingsPayload = "{"
+            }
+        };
+
+        var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-valid", Assert.Single(selected).ArtifactId);
+    }
+
+    [Fact]
+    public void SelectMatchingIgnoresConfigurationsForOtherTransports()
+    {
+        var selector = CreateSelector();
+        var configurations = new[]
+        {
+            CreateTrigger("artifact-valid", "orders.created", "1.0.0", "orders.fulfillment", "1.0.0", DateTime.UtcNow),
+            new IngressConfiguration
+            {
+                Id = "artifact-http:trigger",
+                ArtifactId = "artifact-http",
+                OrchestrationDefinitionKey = "orders.fulfillment",
+                OrchestrationVersion = "1.0.0",
+                DeployedOnUtc = DateTime.UtcNow.AddMinutes(1),
+                IngressKind = IngressKind.Trigger,
+                IngressTransport = IngressTransport.Http,
+                SettingsPayload = """{"topic":"orders.created","version":"1.0.0"}"""
+            }
+        };
+
+        var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-valid", Assert.Single(selected).ArtifactId);
+    }
+
     private static IMessagingIngressConfigurationSelector CreateSelector()
         => new DefaultMessagingIngressConfigurationSelector(
             new DefaultMessagingConfigurationSerializer(),

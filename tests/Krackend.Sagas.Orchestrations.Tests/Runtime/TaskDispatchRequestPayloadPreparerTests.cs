@@ -51,6 +51,37 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
     }
 
     [Fact]
+    public async Task PrepareAsyncThrowsPreparationExceptionWhenTransformationFails()
+    {
+        var transformationExecutor = Substitute.For<IOrchestrationTransformationExecutor>();
+        transformationExecutor.TransformAsync(
+                Arg.Any<OrchestrationTransformationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationTransformationResult.Failure(
+                "TransformSchemaMismatch",
+                "The configured transformation does not match the current payload context.",
+                new Dictionary<string, JsonNode>
+                {
+                    ["phase"] = JsonValue.Create("transform")
+                }));
+
+        var preparer = CreatePreparer(transformationExecutor: transformationExecutor);
+
+        var exception = await Assert.ThrowsAsync<TaskDispatchPreparationException>(() =>
+            preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+            {
+                Instance = CreateInstance(),
+                StageKey = "inventory-reservation",
+                Task = CreateTask(transformEnabled: true),
+                MessagingConfiguration = CreateMessagingConfiguration()
+            }));
+
+        Assert.Equal("TransformSchemaMismatch", exception.ErrorCode);
+        Assert.Equal("The configured transformation does not match the current payload context.", exception.Message);
+        Assert.True(exception.Diagnostics.ContainsKey("phase"));
+    }
+
+    [Fact]
     public async Task PrepareAsyncThrowsPreparationExceptionWhenRequestValidationFails()
     {
         var validationExecutor = Substitute.For<IOrchestrationValidationExecutor>();

@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
@@ -112,7 +110,6 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
         {
             var artifact = BuildArtifact(definition);
             var payload = JsonSerializer.Serialize(artifact, SerializerOptions);
-            var checksum = ComputeChecksum(payload);
             var now = DateTime.UtcNow;
 
             await _deploymentService.DeployAsync(new RuntimeArtifactDeliveryPackage
@@ -125,7 +122,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                 OrchestrationVersionId = artifact.OrchestrationVersionId.ToString(),
                 OrchestrationDefinitionKey = artifact.Key,
                 Version = artifact.Version.ToString(),
-                Checksum = checksum,
+                Checksum = artifact.Checksum.Value,
                 PayloadJson = payload,
                 CorrelationId = $"runtime-sample-seed:{artifact.Key}:{artifact.Version}",
                 PromotedBy = "runtime-host-sample",
@@ -181,7 +178,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
             OrchestrationName,
             "sales",
             definition.Version,
-            new Checksum("seeded"),
+            new Checksum($"seeded-{OrchestrationKey}-{definition.Version}"),
             [
                 new TriggerBindingArtifact(
                     definition.TriggerId,
@@ -411,8 +408,5 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
 
     private static Id StableId(string value)
         => new(Ulid.Parse(value));
-
-    private static string ComputeChecksum(string payload)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
 
 }
