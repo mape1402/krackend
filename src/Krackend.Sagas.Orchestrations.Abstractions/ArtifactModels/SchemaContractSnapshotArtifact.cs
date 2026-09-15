@@ -53,6 +53,16 @@ public sealed record SchemaContractSnapshotArtifact
     public string ContentHash { get; init; } = string.Empty;
 
     /// <summary>
+    /// Gets the provider-specific source artifact id.
+    /// </summary>
+    public string SourceArtifactId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the provider that resolved the snapshot.
+    /// </summary>
+    public string ResolvedBy { get; init; } = string.Empty;
+
+    /// <summary>
     /// Gets when the schema was resolved.
     /// </summary>
     public DateTimeOffset ResolvedAtUtc { get; init; } = DateTimeOffset.UtcNow;

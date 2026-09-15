@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Bootstrap;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
+using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.Data.SqlClient;
@@ -46,9 +47,25 @@ builder.Services.AddHealthChecks()
 builder.Services.AddOrchestratorControlPlane(options =>
 {
     options.AdminRootPath = adminRootPath;
+    options.DefaultSchemaRegistryProviderKey = builder.Configuration["SchemaRegistry:KnOwl:ProviderKey"] ?? "knowl";
     options.ConfigureStorage = db => db.UseSqlServer(
         sqlConnection,
         sql => sql.MigrationsAssembly(migrationsAssembly));
+});
+builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
+{
+    var section = builder.Configuration.GetSection("SchemaRegistry:KnOwl");
+    var baseUriValue = section["BaseUri"];
+    options.Enabled = section.GetValue("Enabled", !string.IsNullOrWhiteSpace(baseUriValue));
+    options.ProviderKey = string.IsNullOrWhiteSpace(section["ProviderKey"]) ? "knowl" : section["ProviderKey"];
+    options.AllowLatestVersionResolution = section.GetValue("AllowLatestVersionResolution", false);
+    options.SchemaFormat = string.IsNullOrWhiteSpace(section["SchemaFormat"]) ? "ButterMorph" : section["SchemaFormat"];
+    options.Timeout = TimeSpan.FromSeconds(section.GetValue("TimeoutSeconds", 30));
+
+    if (!string.IsNullOrWhiteSpace(baseUriValue) && Uri.TryCreate(baseUriValue, UriKind.Absolute, out var baseUri))
+    {
+        options.BaseUri = baseUri;
+    }
 });
 builder.Services.AddScoped<IDesignHostSeedDataSeeder, DesignHostSeedDataSeeder>();
 

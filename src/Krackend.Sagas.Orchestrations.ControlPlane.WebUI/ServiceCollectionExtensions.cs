@@ -41,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.AddOrchestratorControlPlaneWebUI(ui =>
         {
             ui.DesignRoutePrefix = adminRootPath;
+            ui.DefaultSchemaRegistryProviderKey = NormalizeSchemaRegistryProviderKey(options.DefaultSchemaRegistryProviderKey);
             ui.DistributionRoutePrefix = $"{adminRootPath}/orchestrator-distribution";
             ui.SecurityRoutePrefix = $"{adminRootPath}/orchestrator-security";
         });
@@ -77,7 +78,11 @@ public static class ServiceCollectionExtensions
         configureOptions(options);
 
         services.AddOrchestratorWebUIShell();
-        DesignWebUIServices.AddOrchestratorDesignWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.DesignRoutePrefix, "admin"));
+        DesignWebUIServices.AddOrchestratorDesignWebUI(services, ui =>
+        {
+            ui.RoutePrefix = NormalizePrefix(options.DesignRoutePrefix, "admin");
+            ui.DefaultSchemaRegistryProviderKey = NormalizeSchemaRegistryProviderKey(options.DefaultSchemaRegistryProviderKey);
+        });
         DistributionWebUIServices.AddOrchestratorDistributionWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.DistributionRoutePrefix, "admin/orchestrator-distribution"));
         SecurityWebUIServices.AddOrchestratorSecurityWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.SecurityRoutePrefix, "admin/orchestrator-security"));
         return services;
@@ -93,4 +98,7 @@ public static class ServiceCollectionExtensions
         var normalized = routePrefix.Trim().Trim('/');
         return string.IsNullOrWhiteSpace(normalized) ? fallback : normalized;
     }
+
+    private static string NormalizeSchemaRegistryProviderKey(string providerKey)
+        => string.IsNullOrWhiteSpace(providerKey) ? "knowl" : providerKey.Trim();
 }

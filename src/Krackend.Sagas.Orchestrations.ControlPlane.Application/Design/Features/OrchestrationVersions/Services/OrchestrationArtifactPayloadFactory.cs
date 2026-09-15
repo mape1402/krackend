@@ -345,14 +345,16 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
         return new SchemaContractSnapshotArtifact
         {
             ContractKind = contractKind == SchemaContractKind.Unspecified ? binding.Snapshot.ContractKind : contractKind,
-            RegistryProviderId = binding.RegistryProviderId.ToString(),
-            RegistryProviderKey = binding.RegistryProviderKey,
-            ContractId = binding.ContractId.ToString(),
-            ContractKey = binding.ContractKey,
-            ContractVersion = binding.ContractVersion.ToString(),
+            RegistryProviderId = string.IsNullOrWhiteSpace(binding.Snapshot.RegistryProviderId) ? binding.RegistryProviderId.ToString() : binding.Snapshot.RegistryProviderId,
+            RegistryProviderKey = string.IsNullOrWhiteSpace(binding.Snapshot.RegistryProviderKey) ? binding.RegistryProviderKey : binding.Snapshot.RegistryProviderKey,
+            ContractId = string.IsNullOrWhiteSpace(binding.Snapshot.ContractId) ? binding.ContractId.ToString() : binding.Snapshot.ContractId,
+            ContractKey = string.IsNullOrWhiteSpace(binding.Snapshot.ContractKey) ? binding.ContractKey : binding.Snapshot.ContractKey,
+            ContractVersion = string.IsNullOrWhiteSpace(binding.Snapshot.ContractVersion) ? binding.ContractVersion.ToString() : binding.Snapshot.ContractVersion,
             SchemaFormat = binding.Snapshot.SchemaFormat,
             SchemaJson = binding.Snapshot.SchemaJson,
             ContentHash = binding.Snapshot.ContentHash,
+            SourceArtifactId = binding.Snapshot.SourceArtifactId,
+            ResolvedBy = binding.Snapshot.ResolvedBy,
             ResolvedAtUtc = binding.Snapshot.ResolvedAtUtc,
         };
     }

@@ -13,6 +13,11 @@ public sealed class OrchestratorControlPlaneOptions
     public string AdminRootPath { get; set; } = "admin";
 
     /// <summary>
+    /// Gets or sets the default schema registry provider key used when creating schema bindings from the designer UI.
+    /// </summary>
+    public string DefaultSchemaRegistryProviderKey { get; set; } = "knowl";
+
+    /// <summary>
     /// Gets or sets the Entity Framework storage configuration used by the control plane.
     /// </summary>
     public Action<DbContextOptionsBuilder> ConfigureStorage { get; set; }

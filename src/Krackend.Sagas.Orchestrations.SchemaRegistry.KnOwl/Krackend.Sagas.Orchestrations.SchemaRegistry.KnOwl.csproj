@@ -2,14 +2,15 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas</PackageId>
-    <Description>Atlas schema registry adapter for Krackend saga orchestrations.</Description>
-    <PackageTags>saga;orchestration;schema-registry;atlas;dotnet</PackageTags>
+    <PackageId>Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl</PackageId>
+    <Description>KnOwl Control Plane schema registry adapter for Krackend saga orchestrations.</Description>
+    <PackageTags>saga;orchestration;schema-registry;knowl;dotnet</PackageTags>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="KnOwl.Contracts" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.7" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />

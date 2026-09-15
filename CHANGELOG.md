@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v2.0.1] - 2026-09-15
+
+- ### Added
+
+  - Added `Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl`, a KnOwl Control Plane schema registry adapter for resolving deployed ButterMorph event and command contracts.
+  - Added HTTP catalog resolution for KnOwl deployed contract artifacts by exact version and latest deployed version.
+  - Added schema registry configuration wiring to the Control Plane sample host.
+
+- ### Changed
+
+  - Replaced the placeholder Atlas schema registry package with the KnOwl Control Plane adapter.
+  - Enriched design and artifact schema snapshots with contract identity, source artifact id, resolver name, schema payload, and content hash so published orchestration artifacts remain self-contained.
+  - Made the designer default schema registry provider key configurable through Control Plane WebUI options.
+
+- ### Fixed
+
+  - Fixed schema snapshot reuse so existing legacy snapshots remain usable while newly resolved snapshots are compared against their contract identity.
+  - Fixed schema snapshot projection between Design storage, publish-time resolution, generated artifacts, and the transformation context payload.
+
+------
+
 ## [v2.0.0] - 2026-09-14
 
 - ### Added

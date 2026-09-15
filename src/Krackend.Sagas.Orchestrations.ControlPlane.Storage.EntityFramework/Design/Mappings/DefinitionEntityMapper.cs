@@ -1013,9 +1013,16 @@ internal static class DefinitionEntityMapper
         return new SchemaContractSnapshotJsonModel
         {
             ContractKind = source.ContractKind,
+            RegistryProviderId = source.RegistryProviderId,
+            RegistryProviderKey = source.RegistryProviderKey,
+            ContractId = source.ContractId,
+            ContractKey = source.ContractKey,
+            ContractVersion = source.ContractVersion,
             SchemaFormat = source.SchemaFormat,
             SchemaJson = source.SchemaJson,
             ContentHash = source.ContentHash,
+            SourceArtifactId = source.SourceArtifactId,
+            ResolvedBy = source.ResolvedBy,
             ResolvedAtUtc = source.ResolvedAtUtc,
         };
     }
@@ -1030,9 +1037,16 @@ internal static class DefinitionEntityMapper
         return new DesignSchemaContractSnapshot
         {
             ContractKind = source.ContractKind,
+            RegistryProviderId = source.RegistryProviderId ?? string.Empty,
+            RegistryProviderKey = source.RegistryProviderKey ?? string.Empty,
+            ContractId = source.ContractId ?? string.Empty,
+            ContractKey = source.ContractKey ?? string.Empty,
+            ContractVersion = source.ContractVersion ?? string.Empty,
             SchemaFormat = string.IsNullOrWhiteSpace(source.SchemaFormat) ? "ButterMorph" : source.SchemaFormat,
             SchemaJson = string.IsNullOrWhiteSpace(source.SchemaJson) ? "{}" : source.SchemaJson,
             ContentHash = source.ContentHash ?? string.Empty,
+            SourceArtifactId = source.SourceArtifactId ?? string.Empty,
+            ResolvedBy = source.ResolvedBy ?? string.Empty,
             ResolvedAtUtc = source.ResolvedAtUtc == default ? DateTimeOffset.UtcNow : source.ResolvedAtUtc,
         };
     }
