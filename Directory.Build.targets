@@ -13,6 +13,7 @@
     <PackageReference Update="ButterMorph.Json.Schema" Version="1.0.2" />
     <PackageReference Update="ButterMorph.SchemaDesign" Version="1.0.2" />
     <PackageReference Update="ButterMorph.Web.Razor" Version="1.0.2" />
+    <PackageReference Update="KnOwl.Contracts" Version="1.0.2" />
     <PackageReference Update="Pigeon.Messaging" Version="3.1.0" />
     <PackageReference Update="Pigeon.Messaging.Rabbit" Version="3.1.0" />
     <PackageReference Update="Spider.Pipelines" Version="1.0.0" />

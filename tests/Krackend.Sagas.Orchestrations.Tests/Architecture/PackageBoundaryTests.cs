@@ -1,7 +1,7 @@
 using System.Reflection;
-using AtlasSchemaRegistryServices = Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas.DependencyInjection.ServiceCollectionExtensions;
 using ClientPigeonServices = Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions;
 using ClientSpiderServices = Spider.Pipelines.Core.OrchestrationPipelineBuilderExtensions;
+using KnOwlSchemaRegistryServices = Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection.ServiceCollectionExtensions;
 using MuleRuntimeServices = Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.ServiceCollectionExtensions;
 using RuntimeButterMorphServices = Krackend.Sagas.Orchestrations.Runtime.ButterMorph.DependencyInjection.ServiceCollectionExtensions;
 using RuntimeGossipRedisServices = Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.ServiceCollectionExtensions;
@@ -46,9 +46,9 @@ public sealed class PackageBoundaryTests
         var referencedAssemblies = Assembly.GetExecutingAssembly()
             .GetReferencedAssemblies()
             .Select(assembly => assembly.Name)
-            .Append(typeof(AtlasSchemaRegistryServices).Assembly.GetName().Name)
             .Append(typeof(ClientPigeonServices).Assembly.GetName().Name)
             .Append(typeof(ClientSpiderServices).Assembly.GetName().Name)
+            .Append(typeof(KnOwlSchemaRegistryServices).Assembly.GetName().Name)
             .Append(typeof(MuleRuntimeServices).Assembly.GetName().Name)
             .Append(typeof(RuntimeButterMorphServices).Assembly.GetName().Name)
             .Append(typeof(RuntimeGossipRedisServices).Assembly.GetName().Name)
@@ -76,7 +76,7 @@ public sealed class PackageBoundaryTests
             "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework",
             "Krackend.Sagas.Orchestrations.Runtime.WebUI",
             "Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions",
-            "Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas",
+            "Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl",
             "Krackend.Sagas.Orchestrations.WebUI.Shell",
         };
 

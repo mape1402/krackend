@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Application\Krackend.Sagas.Orchestrations.ControlPlane.Application.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.WebUI\Krackend.Sagas.Orchestrations.ControlPlane.WebUI.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl\Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.csproj" />
   </ItemGroup>
 
 </Project>

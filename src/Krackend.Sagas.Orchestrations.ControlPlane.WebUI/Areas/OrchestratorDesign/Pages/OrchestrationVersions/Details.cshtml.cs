@@ -2,13 +2,16 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Infrastructure;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationVersions;
 
@@ -22,19 +25,22 @@ public sealed class DetailsModel : PageModel
     private readonly IStageApplicationService _stageService;
     private readonly ITaskApplicationService _taskService;
     private readonly ITriggerBindingApplicationService _triggerBindingService;
+    private readonly string _defaultSchemaRegistryProviderKey;
 
     public DetailsModel(
         IOrchestrationApplicationService orchestrationService,
         IOrchestrationVersionApplicationService versionService,
         IStageApplicationService stageService,
         ITaskApplicationService taskService,
-        ITriggerBindingApplicationService triggerBindingService)
+        ITriggerBindingApplicationService triggerBindingService,
+        IOptions<OrchestratorDesignWebUIOptions> uiOptions)
     {
         _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
         _taskService = taskService ?? throw new ArgumentNullException(nameof(taskService));
         _triggerBindingService = triggerBindingService ?? throw new ArgumentNullException(nameof(triggerBindingService));
+        _defaultSchemaRegistryProviderKey = NormalizeProviderKey(uiOptions?.Value?.DefaultSchemaRegistryProviderKey);
     }
 
     [BindProperty(SupportsGet = true)]
@@ -261,7 +267,7 @@ public sealed class DetailsModel : PageModel
 
         var key = TriggerInput.Key.Trim();
         var triggerType = ParseEnum(TriggerInput.TriggerType, TriggerType.Event);
-        var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId);
+        var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
         var description = TriggerInput.Description ?? string.Empty;
 
         if (!string.IsNullOrWhiteSpace(TriggerInput.TriggerId))
@@ -551,7 +557,11 @@ public sealed class DetailsModel : PageModel
         };
     }
 
-    private static ITriggerChannel BuildTriggerChannel(TriggerType triggerType, UpsertTriggerInput input, string orchestrationId)
+    private static ITriggerChannel BuildTriggerChannel(
+        TriggerType triggerType,
+        UpsertTriggerInput input,
+        string orchestrationId,
+        string defaultSchemaRegistryProviderKey)
     {
         return triggerType switch
         {
@@ -570,7 +580,8 @@ public sealed class DetailsModel : PageModel
                     input.EventSchemaRegistryProviderId,
                     input.EventSchemaStrictMode,
                     input.HasEventSchemaValidation,
-                    orchestrationId) : null,
+                    orchestrationId,
+                    defaultSchemaRegistryProviderKey) : null,
             },
             _ => new EventTriggerChannel
             {
@@ -599,7 +610,8 @@ public sealed class DetailsModel : PageModel
         string registryProviderId,
         bool strictMode,
         bool isValidationEnabled,
-        string orchestrationId)
+        string orchestrationId,
+        string defaultSchemaRegistryProviderKey)
     {
         return new SchemaBinding
         {
@@ -610,10 +622,15 @@ public sealed class DetailsModel : PageModel
             ContractKey = contractKey.Trim(),
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
+            RegistryProviderKey = defaultSchemaRegistryProviderKey,
+            ContractKind = SchemaContractKind.Event,
             StrictMode = strictMode,
             IsValidationEnabled = isValidationEnabled,
         };
     }
+
+    private static string NormalizeProviderKey(string providerKey)
+        => string.IsNullOrWhiteSpace(providerKey) ? "knowl" : providerKey.Trim();
 
     private static TEnum ParseEnum<TEnum>(string value, TEnum fallback)
         where TEnum : struct, Enum

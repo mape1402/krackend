@@ -100,10 +100,29 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
         SchemaContractKind contractKind,
         CancellationToken cancellationToken)
     {
-        if (binding is null ||
-            HasSnapshot(binding) ||
-            string.IsNullOrWhiteSpace(binding.RegistryProviderKey) ||
-            string.IsNullOrWhiteSpace(binding.ContractKey))
+        if (binding is null)
+        {
+            return;
+        }
+
+        var effectiveKind = contractKind == SchemaContractKind.Unspecified ? binding.ContractKind : contractKind;
+        if (HasCurrentSnapshot(binding, effectiveKind))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(binding.RegistryProviderKey))
+        {
+            if (binding.StrictMode || binding.IsValidationEnabled)
+            {
+                throw new SchemaRegistryException(
+                    $"Schema contract '{binding.ContractKey}' v{binding.ContractVersion} does not define a schema registry provider key.");
+            }
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(binding.ContractKey))
         {
             return;
         }
@@ -115,7 +134,7 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
             ContractId = binding.ContractId.ToString(),
             ContractKey = binding.ContractKey,
             ContractVersion = binding.ContractVersion.ToString(),
-            Kind = contractKind == SchemaContractKind.Unspecified ? binding.ContractKind : contractKind,
+            Kind = effectiveKind,
             StrictMode = binding.StrictMode,
             IsValidationEnabled = binding.IsValidationEnabled
         };
@@ -146,22 +165,47 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
         }
     }
 
-    private static bool HasSnapshot(SchemaBinding binding)
-        => !string.IsNullOrWhiteSpace(binding.Snapshot?.ContentHash);
+    private static bool HasCurrentSnapshot(SchemaBinding binding, SchemaContractKind contractKind)
+    {
+        var snapshot = binding.Snapshot;
+        if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.ContentHash))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(snapshot.RegistryProviderKey) &&
+            string.IsNullOrWhiteSpace(snapshot.ContractKey) &&
+            string.IsNullOrWhiteSpace(snapshot.ContractVersion))
+        {
+            return true;
+        }
+
+        return snapshot.ContractKind == contractKind &&
+            string.Equals(snapshot.RegistryProviderKey, binding.RegistryProviderKey, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(snapshot.ContractKey, binding.ContractKey, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(snapshot.ContractVersion, binding.ContractVersion.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool MustHaveSnapshot(
         SchemaBinding binding,
         SchemaContractResolutionStatus status)
-        => (status is SchemaContractResolutionStatus.Invalid or SchemaContractResolutionStatus.NotFound or SchemaContractResolutionStatus.Unavailable) &&
+        => (status is SchemaContractResolutionStatus.NotConfigured or SchemaContractResolutionStatus.Invalid or SchemaContractResolutionStatus.NotFound or SchemaContractResolutionStatus.Unavailable) &&
             (binding.StrictMode || binding.IsValidationEnabled);
 
     private static DesignSchemaContractSnapshot MapSnapshot(RegistrySchemaContractSnapshot snapshot)
         => new()
         {
             ContractKind = snapshot.Reference.Kind,
+            RegistryProviderId = snapshot.Reference.ProviderId,
+            RegistryProviderKey = snapshot.Reference.ProviderKey,
+            ContractId = snapshot.Reference.ContractId,
+            ContractKey = snapshot.Reference.ContractKey,
+            ContractVersion = snapshot.Reference.ContractVersion,
             SchemaFormat = snapshot.SchemaFormat,
             SchemaJson = snapshot.SchemaJson,
             ContentHash = snapshot.ContentHash,
+            SourceArtifactId = snapshot.SourceArtifactId,
+            ResolvedBy = snapshot.ResolvedBy,
             ResolvedAtUtc = snapshot.ResolvedAtUtc
         };
 }
