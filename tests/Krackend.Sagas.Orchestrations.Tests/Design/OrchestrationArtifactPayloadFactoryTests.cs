@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfi
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Design;
 
@@ -51,6 +52,9 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Equal("inventory.reserve", taskConfiguration["Topic"]!.GetValue<string>());
         Assert.True(taskConfiguration["RequestSchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
         Assert.True(taskConfiguration["ResponseSchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
+        Assert.Equal("knowl:inventory.reserve.request", taskConfiguration["RequestSchemaBinding"]!["Snapshot"]!["ContractId"]!.GetValue<string>());
+        Assert.Equal("source:inventory.reserve.request", taskConfiguration["RequestSchemaBinding"]!["Snapshot"]!["SourceArtifactId"]!.GetValue<string>());
+        Assert.Equal("knowl", taskConfiguration["RequestSchemaBinding"]!["Snapshot"]!["ResolvedBy"]!.GetValue<string>());
         Assert.True(taskConfiguration["RequestValidation"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("request payload validation", taskConfiguration["RequestValidation"]!["Configuration"]!["Dsl"]!.GetValue<string>());
         Assert.True(taskConfiguration["ResponseValidation"]!["IsEnabled"]!.GetValue<bool>());
@@ -300,7 +304,23 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
             ContractKey = contractKey,
             ContractVersion = new SemanticVersion(1, 0, 0),
             RegistryProviderId = Id.New(),
+            RegistryProviderKey = "knowl",
             StrictMode = true,
-            IsValidationEnabled = true
+            IsValidationEnabled = true,
+            Snapshot = new Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot
+            {
+                ContractKind = SchemaContractKind.CommandRequest,
+                RegistryProviderId = "provider-001",
+                RegistryProviderKey = "knowl",
+                ContractId = $"knowl:{contractKey}",
+                ContractKey = contractKey,
+                ContractVersion = "1.0.0",
+                SchemaFormat = "ButterMorph",
+                SchemaJson = """{"type":"object"}""",
+                ContentHash = $"hash:{contractKey}",
+                SourceArtifactId = $"source:{contractKey}",
+                ResolvedBy = "knowl",
+                ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
+            }
         };
 }

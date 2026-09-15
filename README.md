@@ -53,7 +53,7 @@ dotnet add package Krackend.Sagas.Orchestrations.Client
 dotnet add package Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon
 dotnet add package Krackend.Sagas.Orchestrations.Client.Spider
 dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions
-dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.Atlas
+dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl
 dotnet add package Krackend.Sagas.Orchestrations.WebUI.Shell
 ```
 
@@ -133,8 +133,18 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.ControlPlane*` captures orchestration definitions, versions, releases, runtime nodes, credentials, and artifact delivery.
 - `Krackend.Sagas.Orchestrations.Runtime*` consumes immutable artifacts, projects ingress configuration, runs durable Mule-backed work, dispatches transport-agnostic commands, tracks instances, and exposes runtime diagnostics.
 - `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
-- `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with Atlas available as the plug-in adapter.
+- `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
+
+KnOwl schema registry setup for a design/control-plane host:
+
+```csharp
+builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
+{
+    options.BaseUri = new Uri("https://knowl-control-plane.local");
+    options.ProviderKey = "knowl";
+});
+```
 
 Minimal runtime host setup:
 
@@ -180,7 +190,7 @@ See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full pa
 
 ## Release
 
-Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.0.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.0.1`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 

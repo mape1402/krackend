@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
@@ -11,7 +12,9 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPoli
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Infrastructure;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationStages;
 
@@ -25,19 +28,22 @@ public sealed class DetailsModel : PageModel
     private readonly IParallelGroupApplicationService _parallelGroupService;
     private readonly IOrchestrationVersionApplicationService _versionService;
     private readonly IOrchestrationSchemaContextApplicationService _schemaContextService;
+    private readonly string _defaultSchemaRegistryProviderKey;
 
     public DetailsModel(
         IStageApplicationService stageService,
         ITaskApplicationService taskService,
         IParallelGroupApplicationService parallelGroupService,
         IOrchestrationVersionApplicationService versionService,
-        IOrchestrationSchemaContextApplicationService schemaContextService)
+        IOrchestrationSchemaContextApplicationService schemaContextService,
+        IOptions<OrchestratorDesignWebUIOptions> uiOptions)
     {
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
         _taskService = taskService ?? throw new ArgumentNullException(nameof(taskService));
         _parallelGroupService = parallelGroupService ?? throw new ArgumentNullException(nameof(parallelGroupService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
         _schemaContextService = schemaContextService ?? throw new ArgumentNullException(nameof(schemaContextService));
+        _defaultSchemaRegistryProviderKey = NormalizeProviderKey(uiOptions?.Value?.DefaultSchemaRegistryProviderKey);
     }
 
     [BindProperty(SupportsGet = true)]
@@ -157,7 +163,7 @@ public sealed class DetailsModel : PageModel
                     NewTask.HasTransformation
                         ? BuildTransformation(NewTask.TransformationEngine, NewTask.TransformationDsl)
                         : null,
-                    BuildTaskConfiguration(editKind, NewTask),
+                    BuildTaskConfiguration(editKind, NewTask, _defaultSchemaRegistryProviderKey),
                     NewTask.HasRetryPolicy
                         ? BuildRetryPolicy(
                             NewTask.RetryStrategyType,
@@ -180,7 +186,7 @@ public sealed class DetailsModel : PageModel
                             NewTask.TimeoutReconcileStopOnNonRetryableError)
                         : null,
                     editOnErrorPolicy,
-                    NewTask.HasCompensation ? BuildCompensationDefinition(NewTask) : null,
+                    NewTask.HasCompensation ? BuildCompensationDefinition(NewTask, _defaultSchemaRegistryProviderKey) : null,
                     editDispatchType,
                     current.IsEnabled),
                 cancellationToken);
@@ -212,7 +218,7 @@ public sealed class DetailsModel : PageModel
                 NewTask.HasTransformation
                     ? BuildTransformation(NewTask.TransformationEngine, NewTask.TransformationDsl)
                     : null,
-                BuildTaskConfiguration(kind, NewTask),
+                BuildTaskConfiguration(kind, NewTask, _defaultSchemaRegistryProviderKey),
                 NewTask.HasRetryPolicy
                     ? BuildRetryPolicy(
                         NewTask.RetryStrategyType,
@@ -235,7 +241,7 @@ public sealed class DetailsModel : PageModel
                         NewTask.TimeoutReconcileStopOnNonRetryableError)
                     : null,
                 onErrorPolicy,
-                NewTask.HasCompensation ? BuildCompensationDefinition(NewTask) : null,
+                NewTask.HasCompensation ? BuildCompensationDefinition(NewTask, _defaultSchemaRegistryProviderKey) : null,
                 dispatchType,
                 true),
             cancellationToken);
@@ -1074,7 +1080,11 @@ public sealed class DetailsModel : PageModel
             strictMode = binding.StrictMode,
             isValidationEnabled = binding.IsValidationEnabled,
             snapshotHash = binding.Snapshot?.ContentHash ?? string.Empty,
-            schemaFormat = binding.Snapshot?.SchemaFormat ?? string.Empty
+            schemaFormat = binding.Snapshot?.SchemaFormat ?? string.Empty,
+            schemaJson = binding.Snapshot?.SchemaJson ?? string.Empty,
+            sourceArtifactId = binding.Snapshot?.SourceArtifactId ?? string.Empty,
+            resolvedBy = binding.Snapshot?.ResolvedBy ?? string.Empty,
+            resolvedAtUtc = binding.Snapshot?.ResolvedAtUtc
         };
     }
 
@@ -1256,7 +1266,10 @@ public sealed class DetailsModel : PageModel
             }
         };
 
-    private static ITaskConfiguration BuildTaskConfiguration(TaskKind kind, CreateTaskInput input)
+    private static ITaskConfiguration BuildTaskConfiguration(
+        TaskKind kind,
+        CreateTaskInput input,
+        string defaultSchemaRegistryProviderKey)
     {
         return kind switch
         {
@@ -1273,6 +1286,8 @@ public sealed class DetailsModel : PageModel
                     input.HttpSchemaContractKey,
                     input.HttpSchemaContractVersion,
                     input.HttpSchemaRegistryProviderId,
+                    SchemaContractKind.CommandRequest,
+                    defaultSchemaRegistryProviderKey,
                     input.HttpSchemaStrictMode,
                     input.HasHttpSchemaValidation) : null
             },
@@ -1294,6 +1309,8 @@ public sealed class DetailsModel : PageModel
                     input.MessagingSchemaContractKey,
                     input.MessagingSchemaContractVersion,
                     input.MessagingSchemaRegistryProviderId,
+                    SchemaContractKind.CommandRequest,
+                    defaultSchemaRegistryProviderKey,
                     input.MessagingSchemaStrictMode,
                     input.HasMessagingSchemaValidation) : null
             },
@@ -1305,7 +1322,10 @@ public sealed class DetailsModel : PageModel
         };
     }
 
-    private static ITaskConfiguration BuildCompensationTaskConfiguration(TaskKind kind, CreateTaskInput input)
+    private static ITaskConfiguration BuildCompensationTaskConfiguration(
+        TaskKind kind,
+        CreateTaskInput input,
+        string defaultSchemaRegistryProviderKey)
     {
         return kind switch
         {
@@ -1322,6 +1342,8 @@ public sealed class DetailsModel : PageModel
                     input.CompensationHttpSchemaContractKey,
                     input.CompensationHttpSchemaContractVersion,
                     input.CompensationHttpSchemaRegistryProviderId,
+                    SchemaContractKind.CommandRequest,
+                    defaultSchemaRegistryProviderKey,
                     input.CompensationHttpSchemaStrictMode,
                     input.HasCompensationHttpSchemaValidation) : null
             },
@@ -1343,6 +1365,8 @@ public sealed class DetailsModel : PageModel
                     input.CompensationMessagingSchemaContractKey,
                     input.CompensationMessagingSchemaContractVersion,
                     input.CompensationMessagingSchemaRegistryProviderId,
+                    SchemaContractKind.CommandRequest,
+                    defaultSchemaRegistryProviderKey,
                     input.CompensationMessagingSchemaStrictMode,
                     input.HasCompensationMessagingSchemaValidation) : null
             },
@@ -1438,7 +1462,9 @@ public sealed class DetailsModel : PageModel
         };
     }
 
-    private static CompensationDefinition BuildCompensationDefinition(CreateTaskInput input)
+    private static CompensationDefinition BuildCompensationDefinition(
+        CreateTaskInput input,
+        string defaultSchemaRegistryProviderKey)
     {
         var compensationKind = ParseEnum(input.CompensationKind, TaskKind.HumanApproval);
         var compensationDispatchType = ResolveDispatchType(compensationKind, ParseEnum(input.CompensationDispatchType, TaskDispatchType.FireAndWait));
@@ -1453,7 +1479,7 @@ public sealed class DetailsModel : PageModel
             ? BuildTransformation(input.CompensationTransformationEngine, input.CompensationTransformationDsl)
             : null;
         compensation.HasTransformation = input.HasCompensationTransformation;
-        compensation.Configuration = BuildCompensationTaskConfiguration(compensationKind, input);
+        compensation.Configuration = BuildCompensationTaskConfiguration(compensationKind, input, defaultSchemaRegistryProviderKey);
         compensation.RetryPolicy = input.HasCompensationRetryPolicy
             ? BuildRetryPolicy(
                 input.CompensationRetryStrategyType,
@@ -1559,6 +1585,8 @@ public sealed class DetailsModel : PageModel
         string contractKey,
         string contractVersion,
         string registryProviderId,
+        SchemaContractKind contractKind,
+        string defaultSchemaRegistryProviderKey,
         bool strictMode,
         bool isValidationEnabled = true)
     {
@@ -1571,10 +1599,15 @@ public sealed class DetailsModel : PageModel
             ContractKey = contractKey.Trim(),
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
+            RegistryProviderKey = defaultSchemaRegistryProviderKey,
+            ContractKind = contractKind,
             StrictMode = strictMode,
             IsValidationEnabled = isValidationEnabled
         };
     }
+
+    private static string NormalizeProviderKey(string providerKey)
+        => string.IsNullOrWhiteSpace(providerKey) ? "knowl" : providerKey.Trim();
 
     public sealed class CreateTaskInput
     {

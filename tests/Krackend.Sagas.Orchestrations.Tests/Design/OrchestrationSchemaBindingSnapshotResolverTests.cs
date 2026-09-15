@@ -20,10 +20,20 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
             .ResolveAsync(Arg.Any<SchemaContractResolutionRequest>(), Arg.Any<CancellationToken>())
             .Returns(SchemaContractResolutionResult.Resolved(new RegistrySchemaContractSnapshot
             {
-                Reference = new SchemaContractReference { Kind = SchemaContractKind.Event },
+                Reference = new SchemaContractReference
+                {
+                    ProviderId = "provider-001",
+                    ProviderKey = "knowl",
+                    ContractId = "contract-001",
+                    ContractKey = "sales.sale.created",
+                    ContractVersion = "1.0.0",
+                    Kind = SchemaContractKind.Event
+                },
                 SchemaFormat = "JsonSchema",
                 SchemaJson = """{"type":"object"}""",
                 ContentHash = "sales.sale.created.hash",
+                SourceArtifactId = "artifact-001",
+                ResolvedBy = "knowl",
                 ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
             }));
         var catalog = Substitute.For<ISchemaContractResolverCatalog>();
@@ -36,6 +46,13 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         Assert.Equal("sales.sale.created.hash", eventChannel.SchemaBinding.Snapshot.ContentHash);
         Assert.Equal("JsonSchema", eventChannel.SchemaBinding.Snapshot.SchemaFormat);
         Assert.Equal("""{"type":"object"}""", eventChannel.SchemaBinding.Snapshot.SchemaJson);
+        Assert.Equal("provider-001", eventChannel.SchemaBinding.Snapshot.RegistryProviderId);
+        Assert.Equal("knowl", eventChannel.SchemaBinding.Snapshot.RegistryProviderKey);
+        Assert.Equal("contract-001", eventChannel.SchemaBinding.Snapshot.ContractId);
+        Assert.Equal("sales.sale.created", eventChannel.SchemaBinding.Snapshot.ContractKey);
+        Assert.Equal("1.0.0", eventChannel.SchemaBinding.Snapshot.ContractVersion);
+        Assert.Equal("artifact-001", eventChannel.SchemaBinding.Snapshot.SourceArtifactId);
+        Assert.Equal("knowl", eventChannel.SchemaBinding.Snapshot.ResolvedBy);
     }
 
     [Fact]

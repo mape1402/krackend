@@ -11,6 +11,11 @@ public sealed class OrchestratorControlPlaneWebUIOptions
     public string DesignRoutePrefix { get; set; } = "admin";
 
     /// <summary>
+    /// Gets or sets the default schema registry provider key used when creating schema bindings from the designer UI.
+    /// </summary>
+    public string DefaultSchemaRegistryProviderKey { get; set; } = "knowl";
+
+    /// <summary>
     /// Gets or sets the route prefix used by the distribution area.
     /// </summary>
     public string DistributionRoutePrefix { get; set; } = "admin/orchestrator-distribution";
