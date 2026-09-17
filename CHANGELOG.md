@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ### Added
+
+  - Added provider-agnostic `Krackend.Security` and `Krackend.Security.Storage.EntityFramework` packages for product authorization with subjects, roles, direct permissions, external group role mappings, bootstrap administrators, ASP.NET Core policies, EF storage, and optional administration endpoints.
+  - Added granular authorization options to the Control Plane and Runtime REST API packages so hosts can protect read, write, release, runtime management, and artifact apply operations independently.
+  - Added unit and integration coverage for subject resolution, bootstrap admin sync, direct permission assignments, direct role assignments, external group role assignments, wildcard admin access, scoped denial, and ASP.NET Core policy behavior.
+
+- ### Changed
+
+  - Moved runtime diagnostics contracts and reader from Runtime WebUI into Runtime core so WebUI and REST API remain sibling entry points over shared runtime services.
+  - Updated Control Plane REST API actor resolution to prefer the authenticated principal when one exists while preserving the previous request-body fallback for unauthenticated compatibility scenarios.
+
 ------
 
 ## [v2.2.0] - 2026-09-17

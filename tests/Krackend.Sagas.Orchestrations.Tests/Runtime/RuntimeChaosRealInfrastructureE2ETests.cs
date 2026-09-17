@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure.RealMessagingArtifactFactory;
 
-[Collection(RuntimeChaosRealInfrastructureCollection.Name)]
+[Collection(RuntimeRealInfrastructureCollection.Name)]
 public sealed class RuntimeChaosRealInfrastructureE2ETests
 {
     private readonly RuntimeRealInfrastructureFixture _infrastructure;

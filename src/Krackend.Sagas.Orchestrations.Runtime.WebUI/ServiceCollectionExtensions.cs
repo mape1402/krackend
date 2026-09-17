@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
-using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Navigation;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Routing;
