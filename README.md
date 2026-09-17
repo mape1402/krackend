@@ -32,6 +32,7 @@ dotnet add package Krackend.Sagas.Orchestrations.ControlPlane
 dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.Application
 dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework
 dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.WebUI
+dotnet add package Krackend.Sagas.Orchestrations.ControlPlane.Api
 ```
 
 Saga orchestration runtime packages:
@@ -44,6 +45,7 @@ dotnet add package Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.ButterMorph
 dotnet add package Krackend.Sagas.Orchestrations.Runtime.WebUI
+dotnet add package Krackend.Sagas.Orchestrations.Runtime.Api
 ```
 
 Saga orchestration client and schema packages:
@@ -135,6 +137,7 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
+- `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 
 KnOwl schema registry setup for a design/control-plane host:
 
@@ -172,6 +175,7 @@ builder.Services
 builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 
 app.MapOrchestratorRuntimeDistributionEndpoints();
+app.MapKrackendOrchestrationsRuntimeApi();
 app.MapOrchestratorRuntimeReactiveHub();
 ```
 
@@ -186,13 +190,14 @@ builder.Services.AddOrchestratorControlPlane(options =>
 });
 
 app.MapOrchestratorArtifactDeliveryEndpoints();
+app.MapKrackendOrchestrationsControlPlaneApi();
 ```
 
 See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full package, function, endpoint, storage, WebUI, bootstrap, and migration-ownership reference. See [docs/sagas-orchestrations-end-to-end.md](docs/sagas-orchestrations-end-to-end.md) for the complete Orchestrator walkthrough with models, lifecycle steps, distribution flow, runtime execution, playbooks, risks, and diagnostics.
 
 ## Release
 
-Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.1.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.2.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 

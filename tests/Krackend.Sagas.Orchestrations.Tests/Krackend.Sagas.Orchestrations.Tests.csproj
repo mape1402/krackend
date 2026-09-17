@@ -36,6 +36,8 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions\Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl\Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Api\Krackend.Sagas.Orchestrations.ControlPlane.Api.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Api\Krackend.Sagas.Orchestrations.Runtime.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
