@@ -61,9 +61,20 @@ public static class RuntimeDistributionEndpointRouteBuilderExtensions
                 return Results.Unauthorized();
             }
 
-            var package = JsonSerializer.Deserialize<RuntimeArtifactDeliveryPackage>(
-                body,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            RuntimeArtifactDeliveryPackage package;
+            try
+            {
+                package = string.IsNullOrWhiteSpace(body)
+                    ? null
+                    : JsonSerializer.Deserialize<RuntimeArtifactDeliveryPackage>(
+                        body,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException)
+            {
+                package = null;
+            }
+
             if (package is null)
             {
                 return Results.BadRequest(new RuntimeArtifactDeploymentResult

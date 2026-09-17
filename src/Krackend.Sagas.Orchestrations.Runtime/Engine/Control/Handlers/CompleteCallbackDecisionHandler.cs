@@ -54,7 +54,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var dispatch = await _dispatchRepository.GetById(decision.DispatchId, cancellationToken);
             var attempt = await _attemptRepository.GetByDispatchId(decision.DispatchId, cancellationToken);
             var result = decision.ExecutionResultMetadata ?? BuildMissingExecutionResultMetadata();
-            var responsePayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : JsonNode.Parse(decision.Payload);
+            var responsePayload = ResolveResponsePayload(decision.Payload, result);
             result = await ApplyResponseValidationAsync(instance, stage, task, result, responsePayload, cancellationToken);
             var succeeded = result.Succeeded;
             var errorMessage = result.ErrorMessage;
@@ -113,6 +113,46 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 Payload = responsePayload?.DeepClone(),
                 ProducedBy = nameof(CompleteCallbackDecisionHandler)
             }, cancellationToken);
+        }
+
+        private static JsonNode ResolveResponsePayload(
+            string payload,
+            OrchestrationExecutionResultMetadata result)
+        {
+            if (PayloadWasNull(result))
+            {
+                return null;
+            }
+
+            return string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
+        }
+
+        private static bool PayloadWasNull(OrchestrationExecutionResultMetadata result)
+        {
+            if (result?.Metadata is null ||
+                !result.Metadata.TryGetValue(
+                    OrchestrationMetadataConstants.OrchestrationPayloadWasNullMetadataKey,
+                    out var value) ||
+                value is null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return value.GetValueKind() == System.Text.Json.JsonValueKind.True ||
+                    (value.GetValueKind() == System.Text.Json.JsonValueKind.String &&
+                    bool.TryParse(value.GetValue<string>(), out var parsed) &&
+                    parsed);
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
         }
 
         private static OrchestrationExecutionResultMetadata BuildMissingExecutionResultMetadata()
@@ -273,6 +313,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             foreach (var metadata in result.Metadata)
             {
+                if (string.Equals(
+                    metadata.Key,
+                    OrchestrationMetadataConstants.OrchestrationPayloadWasNullMetadataKey,
+                    StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 attempt.Metadata[$"Execution.{metadata.Key}"] = metadata.Value?.DeepClone();
             }
         }

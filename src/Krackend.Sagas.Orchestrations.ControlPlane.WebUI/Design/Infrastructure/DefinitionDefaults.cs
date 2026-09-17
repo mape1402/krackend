@@ -120,7 +120,9 @@ internal static class DefinitionDefaults
             Configuration = CreateTaskConfiguration(kind),
             RetryPolicy = CreateRetryPolicy(),
             TimeoutPolicy = CreateTimeoutPolicy(),
-            DispatchType = TaskDispatchType.FireAndWait
+            DispatchType = kind == TaskKind.Messaging
+                ? TaskDispatchType.FireAndForget
+                : TaskDispatchType.FireAndWait
         };
     }
 }

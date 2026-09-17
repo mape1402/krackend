@@ -837,7 +837,7 @@ internal static class DefinitionEntityMapper
     private static CompensationDefinition ToModel(CompensationDefinitionJsonModel source)
         => new()
         {
-            CompensationTaskKind = source?.CompensationTaskKind ?? TaskKind.Http,
+            CompensationTaskKind = source?.CompensationTaskKind ?? TaskKind.Messaging,
             Transformation = ToOptionalModel(source?.Transformation),
             HasTransformation = source?.HasTransformation ?? false,
             ExecutionCondition = ToOptionalModel(source?.ExecutionCondition),

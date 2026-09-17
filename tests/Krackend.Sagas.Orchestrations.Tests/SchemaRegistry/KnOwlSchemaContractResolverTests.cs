@@ -33,6 +33,36 @@ public sealed class KnOwlSchemaContractResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenContractKeyIsMissing_ReturnsInvalid()
+    {
+        var resolver = CreateResolver(options =>
+        {
+            options.Enabled = true;
+            options.BaseUri = new Uri("https://knowl-control-plane.local");
+        });
+
+        var result = await resolver.ResolveAsync(CreateRequest(contractKey: " "));
+
+        Assert.Equal(SchemaContractResolutionStatus.Invalid, result.Status);
+        Assert.Contains("key", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenContractKindIsUnsupported_ReturnsInvalid()
+    {
+        var resolver = CreateResolver(options =>
+        {
+            options.Enabled = true;
+            options.BaseUri = new Uri("https://knowl-control-plane.local");
+        });
+
+        var result = await resolver.ResolveAsync(CreateRequest(contractKind: (SchemaContractKind)999));
+
+        Assert.Equal(SchemaContractResolutionStatus.Invalid, result.Status);
+        Assert.Contains("not supported", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenExactEventContractIsDeployed_ReturnsSnapshot()
     {
         var contractId = Guid.NewGuid();
@@ -118,6 +148,65 @@ public sealed class KnOwlSchemaContractResolverTests
 
         Assert.Equal(SchemaContractResolutionStatus.Invalid, result.Status);
         Assert.Contains("version", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenCatalogReturnsNoResult_ReturnsUnavailable()
+    {
+        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        catalog.GetExactAsync(ContractArtifactType.Event, "sales.sale.created", "1.0.0", Arg.Any<CancellationToken>())
+            .Returns((KnOwlContractCatalogResult)null!);
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+            },
+            catalog);
+
+        var result = await resolver.ResolveAsync(CreateRequest());
+
+        Assert.Equal(SchemaContractResolutionStatus.Unavailable, result.Status);
+        Assert.Contains("no result", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(KnOwlContractCatalogStatus.NotFound, SchemaContractResolutionStatus.NotFound)]
+    [InlineData(KnOwlContractCatalogStatus.Invalid, SchemaContractResolutionStatus.Invalid)]
+    [InlineData(KnOwlContractCatalogStatus.Unavailable, SchemaContractResolutionStatus.Unavailable)]
+    public async Task ResolveAsync_WhenCatalogDoesNotFindContract_MapsCatalogStatus(
+        KnOwlContractCatalogStatus catalogStatus,
+        SchemaContractResolutionStatus expectedStatus)
+    {
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+            },
+            KnOwlContractCatalogResult.Failed(catalogStatus, "catalog message"));
+
+        var result = await resolver.ResolveAsync(CreateRequest());
+
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.Equal("catalog message", result.Message);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenCatalogFoundButContractIsNull_ReturnsNotFound()
+    {
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+            },
+            KnOwlContractCatalogResult.Found(null!));
+
+        var result = await resolver.ResolveAsync(CreateRequest());
+
+        Assert.Equal(SchemaContractResolutionStatus.NotFound, result.Status);
+        Assert.Contains("no contract", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

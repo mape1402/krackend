@@ -52,19 +52,37 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         public async Task HandleAsync(RetryDecision decision, CancellationToken cancellationToken = default)
         {
-            if (decision.Task.Kind != TaskKind.Messaging)
-            {
-                throw new NotSupportedException($"Task kind '{decision.Task.Kind}' is not supported by retry dispatch.");
-            }
-
-            var messagingConfiguration = decision.Task.Configuration as MessagingTaskConfigurationArtifact
-                ?? throw new InvalidOperationException($"Task '{decision.Task.Key}' does not contain a messaging configuration.");
-
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var taskExecution = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
+            if (decision.Task.Kind != TaskKind.Messaging)
+            {
+                await MarkRetryConfigurationFailedAsync(
+                    decision,
+                    instance,
+                    taskExecution,
+                    now,
+                    $"Task kind '{decision.Task.Kind}' is not supported by retry dispatch.",
+                    cancellationToken);
+                return;
+            }
+
+            if (decision.Task.Configuration is not MessagingTaskConfigurationArtifact messagingConfiguration)
+            {
+                await MarkRetryConfigurationFailedAsync(
+                    decision,
+                    instance,
+                    taskExecution,
+                    now,
+                    $"Task '{decision.Task.Key}' does not contain a messaging configuration.",
+                    cancellationToken);
+                return;
+            }
+
             var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
             var attemptNumber = taskExecution.LastAttemptNumber + 1;
+            var scheduledOnUtc = ResolveRetryScheduledOnUtc(taskExecution, decision.Task, now);
+            var hasDeferredDispatch = scheduledOnUtc > DateTimeOffset.UtcNow;
             var requestPayload = ParsePayload(decision.Payload);
             var attempt = new TaskExecutionAttempt
             {
@@ -85,7 +103,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 DispatchStatus = "Scheduled",
                 CommandId = Id.New().ToString(),
                 CorrelationId = taskExecution.CorrelationId,
-                ScheduledOnUtc = now
+                ScheduledOnUtc = scheduledOnUtc.UtcDateTime
             };
             attempt.DispatchId = dispatch.Id;
 
@@ -141,7 +159,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             var queuedOnUtc = DateTime.UtcNow;
-            dispatch.DispatchStatus = "Enqueued";
+            dispatch.DispatchStatus = hasDeferredDispatch ? "Scheduled" : "Enqueued";
             instance.LastUpdatedOnUtc = queuedOnUtc;
             await _attemptRepository.Update(attempt, cancellationToken);
             await _dispatchRepository.Update(dispatch, cancellationToken);
@@ -154,11 +172,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 StageExecutionId = decision.StageExecutionId,
                 TaskExecutionId = taskExecution.Id,
                 TaskExecutionAttemptId = attempt.Id,
-                TransitionType = "TaskRetryEnqueued",
+                TransitionType = hasDeferredDispatch ? "TaskRetryScheduled" : "TaskRetryEnqueued",
                 FromStatus = TaskExecutionStatus.Failed.ToString(),
                 ToStatus = dispatch.DispatchStatus,
                 OccurredOnUtc = queuedOnUtc,
-                Message = $"Retry attempt {attemptNumber} enqueued for task '{decision.Task.Key}'.",
+                Message = hasDeferredDispatch
+                    ? $"Retry attempt {attemptNumber} scheduled for task '{decision.Task.Key}' at {scheduledOnUtc:O}."
+                    : $"Retry attempt {attemptNumber} enqueued for task '{decision.Task.Key}'.",
                 Payload = requestPayload?.DeepClone(),
                 ProducedBy = nameof(RetryDecisionHandler)
             }, cancellationToken);
@@ -171,6 +191,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 attempt,
                 dispatch,
                 replyAddress,
+                hasDeferredDispatch ? scheduledOnUtc : null,
                 requestPayload?.ToJsonString(),
                 cancellationToken);
         }
@@ -183,6 +204,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             TaskExecutionAttempt attempt,
             TaskDispatch dispatch,
             OrchestrationReplyAddress replyAddress,
+            DateTimeOffset? scheduledOnUtc,
             string commandPayload,
             CancellationToken cancellationToken)
         {
@@ -214,6 +236,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     StageKey = decision.StageKey,
                     TaskKey = decision.Task.Key,
                     AwaitResponse = decision.Task.DispatchType != TaskDispatchType.FireAndForget,
+                    ScheduledOnUtc = scheduledOnUtc,
                     MessageMetadata = new OrchestrationMessageMetadata
                     {
                         SagaId = GetSagaId(instance),
@@ -266,6 +289,34 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     ProducedBy = nameof(RetryDecisionHandler)
                 }, cancellationToken);
             }
+        }
+
+        private static DateTimeOffset ResolveRetryScheduledOnUtc(
+            TaskExecution failedTask,
+            TaskArtifact taskArtifact,
+            DateTime now)
+        {
+            var retryPolicy = ResolveRetryPolicy(failedTask, taskArtifact);
+            if (retryPolicy?.Strategy is not FixedRetryStrategyArtifact fixedRetry ||
+                fixedRetry.Delay.Value <= TimeSpan.Zero)
+            {
+                return new DateTimeOffset(now, TimeSpan.Zero);
+            }
+
+            return new DateTimeOffset(now, TimeSpan.Zero).Add(fixedRetry.Delay.Value);
+        }
+
+        private static RetryPolicyArtifact ResolveRetryPolicy(
+            TaskExecution failedTask,
+            TaskArtifact taskArtifact)
+        {
+            if (failedTask.Status == TaskExecutionStatus.TimedOut &&
+                taskArtifact?.TimeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicyArtifact reconcile)
+            {
+                return reconcile.RetryPolicy;
+            }
+
+            return taskArtifact?.RetryPolicy;
         }
 
         private static JsonNode ParsePayload(string payload)
@@ -325,6 +376,42 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ToStatus = TaskExecutionStatus.Failed.ToString(),
                 OccurredOnUtc = failedOnUtc,
                 Message = exception.Message,
+                ProducedBy = nameof(RetryDecisionHandler)
+            }, cancellationToken);
+        }
+
+        private async Task MarkRetryConfigurationFailedAsync(
+            RetryDecision decision,
+            OrchestrationInstance instance,
+            TaskExecution taskExecution,
+            DateTime failedOnUtc,
+            string message,
+            CancellationToken cancellationToken)
+        {
+            taskExecution.Status = TaskExecutionStatus.Failed;
+            taskExecution.FailedOnUtc = failedOnUtc;
+            taskExecution.Metadata["RetrySuppressed"] = JsonValue.Create(true);
+            taskExecution.Metadata["RetryConfigurationError"] = JsonValue.Create(message);
+            instance.Status = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue
+                ? OrchestrationInstanceStatus.Running
+                : OrchestrationInstanceStatus.Failed;
+            instance.FailedOnUtc = decision.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+            instance.ErrorSummary = message;
+            instance.LastUpdatedOnUtc = failedOnUtc;
+
+            await _taskRepository.Update(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = decision.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TransitionType = "TaskRetryConfigurationFailed",
+                FromStatus = TaskExecutionStatus.Failed.ToString(),
+                ToStatus = taskExecution.Status.ToString(),
+                OccurredOnUtc = failedOnUtc,
+                Message = message,
                 ProducedBy = nameof(RetryDecisionHandler)
             }, cancellationToken);
         }

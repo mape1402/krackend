@@ -14,4 +14,9 @@ public static class OrchestrationMetadataConstants
     /// Gets the metadata key used to carry orchestration execution result metadata.
     /// </summary>
     public const string OrchestrationExecutionResultMetadataKey = "Krackend.Sagas.Orchestrations.Execution.Result.Metadata";
+
+    /// <summary>
+    /// Gets the execution metadata key used to indicate that the original business payload was null.
+    /// </summary>
+    public const string OrchestrationPayloadWasNullMetadataKey = "Krackend.Sagas.Orchestrations.Payload.WasNull";
 }

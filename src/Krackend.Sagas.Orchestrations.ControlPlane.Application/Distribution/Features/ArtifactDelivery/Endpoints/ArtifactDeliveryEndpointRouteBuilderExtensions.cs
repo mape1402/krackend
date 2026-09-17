@@ -115,9 +115,20 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
                 return Results.Unauthorized();
             }
 
-            var request = JsonSerializer.Deserialize<RuntimeArtifactPullAckRequest>(
-                body,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            RuntimeArtifactPullAckRequest request;
+            try
+            {
+                request = string.IsNullOrWhiteSpace(body)
+                    ? null
+                    : JsonSerializer.Deserialize<RuntimeArtifactPullAckRequest>(
+                        body,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
             var result = await service.AcknowledgePull(
                 runtimeNodeId,
                 releaseTargetId,

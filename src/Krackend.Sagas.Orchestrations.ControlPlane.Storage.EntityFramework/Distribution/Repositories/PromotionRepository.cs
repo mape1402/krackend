@@ -67,15 +67,18 @@ public sealed class ReleaseRepository : IReleaseRepository
         var release = await _dbContext.Releases.FirstAsync(x => x.Id == releaseId, cancellationToken);
         var targetStatuses = await _dbContext.ReleasePlanTargets
             .Where(x => x.ReleaseId == releaseId)
-            .Select(x => x.Status)
+            .Select(x => new { x.RuntimeNodeId, x.Status })
             .ToArrayAsync(cancellationToken);
+        var effectiveStatuses = targetStatuses
+            .Select(x => x.RuntimeNodeId == runtimeNodeId ? status : x.Status)
+            .ToArray();
 
-        if (targetStatuses.Length > 0 && targetStatuses.All(x => x == ReleaseStatus.Completed))
+        if (effectiveStatuses.Length > 0 && effectiveStatuses.All(x => x == ReleaseStatus.Completed))
         {
             release.Status = ReleaseStatus.Completed;
             release.CompletedAtUtc = DateTime.UtcNow;
         }
-        else if (targetStatuses.Any(x => x == ReleaseStatus.Failed))
+        else if (effectiveStatuses.Any(x => x == ReleaseStatus.Failed))
         {
             release.Status = ReleaseStatus.Failed;
             release.CompletedAtUtc = DateTime.UtcNow;

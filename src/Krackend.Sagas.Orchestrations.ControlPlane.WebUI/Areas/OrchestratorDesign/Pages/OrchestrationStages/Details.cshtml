@@ -603,9 +603,6 @@
                                         <input asp-for="NewTask.RetryStopOnNonRetryableError" class="form-check-input" />
                                         <label asp-for="NewTask.RetryStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
                                     </div>
-                                    <div class="col-md-12">
-                                        <div id="retryFallbackWarning" class="alert alert-warning d-none mb-0">Some retry strategy types still have no concrete model. Current implementation uses fixed strategy fallback while preserving selected type metadata.</div>
-                                    </div>
                                 </div>
                             </div>
                             <hr />
@@ -684,7 +681,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label asp-for="NewTask.CompensationDispatchType" class="form-label">Dispatch type</label>
-                                    <select asp-for="NewTask.CompensationDispatchType" class="form-select" asp-items="Model.DispatchTypes" id="compensationDispatchTypeSelector"></select>
+                                    <select asp-for="NewTask.CompensationDispatchType" class="form-select" asp-items="Model.CompensationDispatchTypes" id="compensationDispatchTypeSelector"></select>
                                 </div>
                                 <div class="col-md-12">
                                     <h6 class="mb-2 mt-1">Rollback task configuration</h6>
@@ -1864,9 +1861,9 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         TaskId: '',
         Key: '',
         Name: '',
-        Kind: 'HumanApproval',
+        Kind: 'Messaging',
         ExecutionMode: 'Sequential',
-        DispatchType: 'FireAndWait',
+        DispatchType: 'FireAndWaitCallback',
         OnErrorPolicy: 'Stop',
         ParallelGroupId: '',
         IsEnabled: true,
@@ -1918,7 +1915,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         TimeoutReconcileRetryableErrorCodes: '',
         TimeoutReconcileStopOnNonRetryableError: false,
         HasTimeoutPolicy: false,
-        CompensationKind: 'HumanApproval',
+        CompensationKind: 'Messaging',
         HasCompensation: false,
         HasCompensationExecutionCondition: false,
         HasCompensationTransformation: false,
@@ -1942,7 +1939,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         CompensationMessagingSchemaRegistryProviderId: '',
         CompensationMessagingSchemaStrictMode: false,
         CompensationPluginId: '',
-        CompensationDispatchType: 'FireAndWait',
+        CompensationDispatchType: 'FireAndForget',
         CompensationConditionEngine: 'DSL',
         CompensationConditionDslExpression: 'true',
         CompensationTransformationEngine: 'DSL',
@@ -2110,8 +2107,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const conditionEngineSelector = document.getElementById('conditionEngineSelector');
     const transformationEngineSelector = document.getElementById('transformationEngineSelector');
     const compensationTimeoutSelector = document.getElementById('compensationTimeoutBehaviorSelector');
-    const engineFallbackWarning = document.getElementById('engineFallbackWarning');
-    const retryFallbackWarning = document.getElementById('retryFallbackWarning');
     const hasRetryPolicy = document.getElementById('hasRetryPolicy');
     const hasTimeoutPolicy = document.getElementById('hasTimeoutPolicy');
     const hasExecutionCondition = document.getElementById('hasExecutionCondition');
@@ -2161,19 +2156,23 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
 
     function allowedDispatchTypesByKind(kind) {
         switch (kind) {
-            case 'HumanApproval':
-                return ['FireAndWaitCallback'];
             case 'Messaging':
                 return ['FireAndForget', 'FireAndWaitCallback'];
-            case 'Http':
-            case 'Plugin':
-                return ['FireAndWait', 'FireAndForget', 'FireAndWaitCallback'];
             default:
-                return ['FireAndWait', 'FireAndForget', 'FireAndWaitCallback'];
+                return ['FireAndForget', 'FireAndWaitCallback'];
         }
     }
 
-    function refreshDispatchOptions(kindSelect, dispatchSelect) {
+    function allowedCompensationDispatchTypesByKind(kind) {
+        switch (kind) {
+            case 'Messaging':
+                return ['FireAndForget'];
+            default:
+                return ['FireAndForget'];
+        }
+    }
+
+    function refreshDispatchOptions(kindSelect, dispatchSelect, allowedFactory = allowedDispatchTypesByKind) {
         if (!kindSelect || !dispatchSelect) {
             return;
         }
@@ -2182,7 +2181,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
             return;
         }
 
-        const allowed = allowedDispatchTypesByKind(kindSelect.value);
+        const allowed = allowedFactory(kindSelect.value);
         let firstAllowed = '';
         Array.from(dispatchSelect.options).forEach(option => {
             const isAllowed = allowed.includes(option.value);
@@ -2263,22 +2262,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     }
 
     function refreshWarnings() {
-        if (retryFallbackWarning && hasRetryPolicy) {
-            if (!hasRetryPolicy.checked) {
-                retryFallbackWarning.classList.add('d-none');
-            } else {
-            retryFallbackWarning.classList.toggle('d-none', retrySelector.value === 'Fixed');
-            }
-        }
-
-        if (engineFallbackWarning && (hasExecutionCondition || hasTransformation)) {
-            if ((hasExecutionCondition && !hasExecutionCondition.checked) && (hasTransformation && !hasTransformation.checked)) {
-                engineFallbackWarning.classList.add('d-none');
-            } else {
-            const unsupportedEngine = conditionEngineSelector.value !== 'DSL' || transformationEngineSelector.value !== 'DSL';
-            engineFallbackWarning.classList.toggle('d-none', !unsupportedEngine);
-            }
-        }
     }
 
     function initializeChipEditors() {
@@ -2389,7 +2372,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     refreshKind();
     refreshCompensationKind();
     refreshDispatchOptions(kindSelector, taskDispatchTypeSelector);
-    refreshDispatchOptions(compensationKindSelector, compensationDispatchTypeSelector);
+    refreshDispatchOptions(compensationKindSelector, compensationDispatchTypeSelector, allowedCompensationDispatchTypesByKind);
     refreshTimeout();
     refreshRetryFields();
     refreshCompensationRetryFields();
@@ -2407,7 +2390,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     if (compensationKindSelector) {
         compensationKindSelector.addEventListener('change', () => {
             refreshCompensationKind();
-            refreshDispatchOptions(compensationKindSelector, compensationDispatchTypeSelector);
+            refreshDispatchOptions(compensationKindSelector, compensationDispatchTypeSelector, allowedCompensationDispatchTypesByKind);
         });
     }
     timeoutSelector.addEventListener('change', refreshTimeout);

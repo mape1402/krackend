@@ -4,6 +4,7 @@ using System.Text.Json;
 using global::ButterMorph.Abstractions;
 using global::ButterMorph.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
@@ -41,16 +42,31 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
 
         foreach (var stage in version.StageDefinitions.OrderBy(x => x.Order))
         {
+            if (stage.HasExecutionCondition)
+            {
+                ValidateCondition(
+                    stage.ExecutionCondition,
+                    $"stage:{stage.Key}:condition");
+            }
+
             foreach (var task in stage.TaskDefinitions.Where(x => x.IsEnabled).OrderBy(x => x.Order))
             {
                 ValidateTask(stage, task);
+            }
+
+            foreach (var branchRule in stage.BranchRules)
+            {
+                ValidateCondition(
+                    branchRule.Condition,
+                    $"stage:{stage.Key}:branch:{branchRule.Id}:condition");
             }
         }
     }
 
     private void ValidateTrigger(TriggerBinding trigger)
     {
-        if (trigger.TriggerChannel is EventTriggerChannel eventChannel && eventChannel.HasValidation)
+        if (trigger.TriggerChannel is EventTriggerChannel eventChannel &&
+            (eventChannel.HasValidation || eventChannel.HasSchemaValidation))
         {
             ValidateValidation(
                 eventChannel.Validation,
@@ -67,16 +83,23 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
                 $"stage:{stage.Key}:task:{task.Key}:transformation");
         }
 
+        if (task.HasExecutionCondition)
+        {
+            ValidateCondition(
+                task.ExecutionCondition,
+                $"stage:{stage.Key}:task:{task.Key}:condition");
+        }
+
         if (task.Configuration is MessagingTaskConfiguration messaging)
         {
-            if (messaging.HasRequestValidation)
+            if (messaging.HasRequestValidation || messaging.HasSchemaValidation)
             {
                 ValidateValidation(
                     messaging.RequestValidation,
                     $"stage:{stage.Key}:task:{task.Key}:request-validation");
             }
 
-            if (messaging.HasResponseValidation)
+            if (messaging.HasResponseValidation || messaging.ResponseSchemaBinding?.IsValidationEnabled == true)
             {
                 ValidateValidation(
                     messaging.ResponseValidation,
@@ -102,19 +125,26 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
                 $"stage:{stage.Key}:task:{task.Key}:compensation-transformation");
         }
 
+        if (compensation.HasExecutionCondition)
+        {
+            ValidateCondition(
+                compensation.ExecutionCondition,
+                $"stage:{stage.Key}:task:{task.Key}:compensation-condition");
+        }
+
         if (compensation.Configuration is not MessagingTaskConfiguration messaging)
         {
             return;
         }
 
-        if (messaging.HasRequestValidation)
+        if (messaging.HasRequestValidation || messaging.HasSchemaValidation)
         {
             ValidateValidation(
                 messaging.RequestValidation,
                 $"stage:{stage.Key}:task:{task.Key}:compensation-request-validation");
         }
 
-        if (messaging.HasResponseValidation)
+        if (messaging.HasResponseValidation || messaging.ResponseSchemaBinding?.IsValidationEnabled == true)
         {
             ValidateValidation(
                 messaging.ResponseValidation,
@@ -158,6 +188,31 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
         }
 
         Analyze(configuration.Dsl, path);
+    }
+
+    private void ValidateCondition(ExecutionCondition condition, string path)
+    {
+        if (condition?.Configuration is not DslConditionConfiguration configuration)
+        {
+            throw new OrchestrationArtifactDslValidationException(
+                path,
+                $"Condition '{path}' must use ButterMorph DSL configuration.");
+        }
+
+        var expression = configuration.Expression.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            throw new OrchestrationArtifactDslValidationException(
+                path,
+                $"Condition '{path}' is enabled but does not contain an expression.");
+        }
+
+        if (bool.TryParse(expression, out _))
+        {
+            return;
+        }
+
+        Analyze(BuildConditionDsl(expression), path);
     }
 
     private void Analyze(string dsl, string path)
@@ -209,4 +264,11 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
             ExceptionType = exception.GetType().FullName,
             exception.Message
         });
+
+    private static string BuildConditionDsl(string expression)
+        => $$"""
+           target {
+             Result: {{expression}}
+           }
+           """;
 }

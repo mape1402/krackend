@@ -110,10 +110,107 @@ internal sealed class MessagingEngineHarness : IDisposable
             .GetRequiredService<ITaskExecutionAttemptRepository>()
             .GetByTaskExecutionId(ParseId(command.TaskExecutionId));
 
+    public Task<IReadOnlyCollection<TaskExecution>> GetTasksAsync(RemoteCommand command)
+        => Services
+            .GetRequiredService<ITaskExecutionRepository>()
+            .GetByInstanceId(ParseId(command.OrchestrationInstanceId));
+
+    public Task<IReadOnlyCollection<StageExecution>> GetStagesAsync(RemoteCommand command)
+        => Services
+            .GetRequiredService<IStageExecutionRepository>()
+            .GetByInstanceId(ParseId(command.OrchestrationInstanceId));
+
+    public Task<IReadOnlyCollection<CompensationExecution>> GetCompensationsAsync(RemoteCommand command)
+        => Services
+            .GetRequiredService<ICompensationExecutionRepository>()
+            .GetByInstanceId(ParseId(command.OrchestrationInstanceId));
+
     public async Task<IReadOnlyCollection<ExecutionTransition>> GetTransitionsAsync(RemoteCommand command)
     {
         var repository = Services.GetRequiredService<IExecutionTransitionRepository>();
         return await repository.GetByInstanceId(ParseId(command.OrchestrationInstanceId));
+    }
+
+    public async Task<(OrchestrationInstance Instance, StageExecution Stage, TaskExecution Task, TaskExecutionAttempt Attempt)> SeedFailedTaskAsync(
+        string stageKey,
+        TaskArtifact taskArtifact,
+        string errorCode,
+        JsonNode? payload = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stageKey);
+        ArgumentNullException.ThrowIfNull(taskArtifact);
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+
+        var now = DateTime.UtcNow;
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            RuntimeOrchestrationArtifactId = ArtifactId,
+            OrchestrationDefinitionKey = Artifact.Key,
+            CorrelationId = $"correlation-{Guid.NewGuid():N}",
+            SagaId = Id.New().ToString(),
+            ExecutionKey = $"{Artifact.Key}:{Guid.NewGuid():N}",
+            Status = OrchestrationInstanceStatus.Failed,
+            CurrentStageKey = stageKey,
+            CurrentTaskKey = taskArtifact.Key,
+            StartedOnUtc = now.AddSeconds(-5),
+            LastUpdatedOnUtc = now,
+            FailedOnUtc = now,
+            ErrorSummary = errorCode,
+            SnapshotPayload = new JsonObject
+            {
+                ["trigger"] = new JsonObject
+                {
+                    ["payload"] = payload?.DeepClone() ?? JsonNode.Parse("""{"value":"seed"}""")
+                },
+                ["stages"] = new JsonObject(),
+                ["variables"] = new JsonObject()
+            }
+        };
+        var stage = new StageExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageKey = stageKey,
+            Order = 1,
+            Status = StageExecutionStatus.Running,
+            StartedOnUtc = now.AddSeconds(-5)
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = stage.Id,
+            TaskKey = taskArtifact.Key,
+            TaskKind = taskArtifact.Kind,
+            ExecutionMode = taskArtifact.ExecutionMode,
+            ParallelGroupId = taskArtifact.ParallelGroupId,
+            Status = TaskExecutionStatus.Failed,
+            OnErrorPolicy = taskArtifact.OnErrorPolicy,
+            AwaitResponse = taskArtifact.DispatchType != TaskDispatchType.FireAndForget,
+            StartedOnUtc = now.AddSeconds(-4),
+            FailedOnUtc = now,
+            LastAttemptNumber = 1,
+            CorrelationId = instance.CorrelationId
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Failed,
+            StartedOnUtc = now.AddSeconds(-4),
+            FailedOnUtc = now,
+            ErrorCode = errorCode,
+            ErrorMessage = $"Seeded failure '{errorCode}'."
+        };
+
+        await Services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+        await Services.GetRequiredService<IStageExecutionRepository>().Create(stage);
+        await Services.GetRequiredService<ITaskExecutionRepository>().Create(task);
+        await Services.GetRequiredService<ITaskExecutionAttemptRepository>().Create(attempt);
+
+        return (instance, stage, task, attempt);
     }
 
     public T GetRequiredService<T>()

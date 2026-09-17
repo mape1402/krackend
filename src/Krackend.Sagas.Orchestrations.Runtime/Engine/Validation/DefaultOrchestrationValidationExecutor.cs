@@ -1,7 +1,7 @@
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 
 /// <summary>
-/// Provides successful validation behavior when no validation adapter is configured.
+/// Fails enabled validations when no validation adapter is configured.
 /// </summary>
 public sealed class DefaultOrchestrationValidationExecutor : IOrchestrationValidationExecutor
 {

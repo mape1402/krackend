@@ -7,6 +7,43 @@ namespace Krackend.Sagas.Orchestrations.Tests.SchemaRegistry;
 public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
 {
     [Fact]
+    public async Task GetAllDeployedAsync_UsesKnOwlCatalogRouteAndDeserializesContracts()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """
+            [
+              {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "artifactType": 0,
+                "topic": "sales.sale.created",
+                "versionNumber": "1.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "event-hash",
+                "sourceStatus": "Deployed"
+              },
+              {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "artifactType": 1,
+                "topic": "inventories.reserve",
+                "versionNumber": "1.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "command-hash",
+                "sourceStatus": "Deployed"
+              }
+            ]
+            """));
+        var client = CreateClient(handler);
+
+        var result = await client.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Equal("/contracts/artifacts", handler.RequestUri.AbsolutePath);
+        Assert.Equal(2, result.Contracts.Count);
+        Assert.Contains(result.Contracts, contract => contract.Topic == "sales.sale.created");
+        Assert.Contains(result.Contracts, contract => contract.Topic == "inventories.reserve");
+    }
+
+    [Fact]
     public async Task GetExactAsync_UsesKnOwlExactDeployedContractRoute()
     {
         var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
@@ -63,6 +100,54 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
         var result = await client.GetExactAsync(ContractArtifactType.Event, "missing.event", "1.0.0");
 
         Assert.Equal(KnOwlContractCatalogStatus.NotFound, result.Status);
+    }
+
+    [Fact]
+    public async Task GetAllDeployedAsync_WhenCatalogReturnsServerError_MapsToUnavailable()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("{}", HttpStatusCode.InternalServerError));
+        var client = CreateClient(handler);
+
+        var result = await client.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, result.Status);
+        Assert.Contains("HTTP 500", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetAllDeployedAsync_WhenTransportFails_MapsToUnavailable()
+    {
+        var timeout = CreateClient(new RecordingHttpMessageHandler(_ => throw new OperationCanceledException()));
+        var transportError = CreateClient(new RecordingHttpMessageHandler(_ => throw new HttpRequestException("network down")));
+        var invalidBaseAddress = new KnOwlControlPlaneContractCatalogHttpClient(
+            new HttpClient(new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("[]"))));
+
+        var timeoutResult = await timeout.GetAllDeployedAsync();
+        var transportResult = await transportError.GetAllDeployedAsync();
+        var invalidResult = await invalidBaseAddress.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, timeoutResult.Status);
+        Assert.Contains("timed out", timeoutResult.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, transportResult.Status);
+        Assert.Contains("network down", transportResult.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, invalidResult.Status);
+    }
+
+    [Fact]
+    public async Task GetExactAsync_WhenTransportFails_MapsToUnavailable()
+    {
+        var timeout = CreateClient(new RecordingHttpMessageHandler(_ => throw new OperationCanceledException()));
+        var transportError = CreateClient(new RecordingHttpMessageHandler(_ => throw new HttpRequestException("network down")));
+        var invalidBaseAddress = new KnOwlControlPlaneContractCatalogHttpClient(
+            new HttpClient(new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("{}"))));
+
+        var timeoutResult = await timeout.GetExactAsync(ContractArtifactType.Event, "sales.sale.created", "1.0.0");
+        var transportResult = await transportError.GetExactAsync(ContractArtifactType.Event, "sales.sale.created", "1.0.0");
+        var invalidResult = await invalidBaseAddress.GetExactAsync(ContractArtifactType.Event, "sales.sale.created", "1.0.0");
+
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, timeoutResult.Status);
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, transportResult.Status);
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, invalidResult.Status);
     }
 
     private static KnOwlControlPlaneContractCatalogHttpClient CreateClient(RecordingHttpMessageHandler handler)

@@ -34,7 +34,9 @@ internal sealed class KrackendClientPublishInterceptor : IPublishInterceptor
     }
 
     private bool HasMessageMetadata(OrchestrationMessageMetadata metadata)
-        => !string.IsNullOrWhiteSpace(metadata?.OrchestrationInstanceId)
+        => !string.IsNullOrWhiteSpace(metadata?.SagaId)
+            || !string.IsNullOrWhiteSpace(metadata?.OrchestrationInstanceId)
+            || !string.IsNullOrWhiteSpace(metadata?.CorrelationId)
             || !string.IsNullOrWhiteSpace(metadata?.TaskExecutionId)
             || metadata?.ReplyAddress is not null;
 }

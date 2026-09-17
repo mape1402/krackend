@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using global::Pigeon.Messaging.Consuming.Configuration;
 using global::Pigeon.Messaging.Contracts;
+using global::Pigeon.Messaging.Topology;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
@@ -17,20 +18,37 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
         private readonly IPigeonIngressConsumerRegistry _consumerRegistry;
         private readonly IMessagingIngressConfigurationSelector _ingressSelector;
         private readonly ILogger<PigeonIngressAdapter> _logger;
+        private readonly ITopologyProvisioningService _topologyProvisioning;
 
         public PigeonIngressAdapter(
             IConsumingConfigurator consumingConfigurator,
             IPigeonIngressConsumerRegistry consumerRegistry,
             IMessagingIngressConfigurationSelector ingressSelector,
             ILogger<PigeonIngressAdapter> logger)
+            : this(
+                consumingConfigurator,
+                consumerRegistry,
+                ingressSelector,
+                logger,
+                null)
+        {
+        }
+
+        public PigeonIngressAdapter(
+            IConsumingConfigurator consumingConfigurator,
+            IPigeonIngressConsumerRegistry consumerRegistry,
+            IMessagingIngressConfigurationSelector ingressSelector,
+            ILogger<PigeonIngressAdapter> logger,
+            ITopologyProvisioningService topologyProvisioning)
         {
             _consumingConfigurator = consumingConfigurator ?? throw new ArgumentNullException(nameof(consumingConfigurator));
             _consumerRegistry = consumerRegistry ?? throw new ArgumentNullException(nameof(consumerRegistry));
             _ingressSelector = ingressSelector ?? throw new ArgumentNullException(nameof(ingressSelector));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _topologyProvisioning = topologyProvisioning;
         }
 
-        public Task ConnectAsync(MessagingConfiguration configuration, CancellationToken cancellationToken = default)
+        public async Task ConnectAsync(MessagingConfiguration configuration, CancellationToken cancellationToken = default)
         {
             var version = SemanticVersion.Parse(configuration.Version);
             var endpointKey = BuildEndpointKey(configuration.Topic, configuration.Version, SubscriptionName);
@@ -44,11 +62,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             if (!_consumerRegistry.TryAttach(registration, out var shouldRegisterEndpoint) ||
                 !shouldRegisterEndpoint)
             {
-                return Task.CompletedTask;
+                return;
             }
 
             try
             {
+                if (_topologyProvisioning is not null)
+                {
+                    await _topologyProvisioning.EnsureConsumeTopologyAsync(
+                        new ConsumerEndpoint(configuration.Topic, SubscriptionName),
+                        cancellationToken);
+                }
+
                 _consumingConfigurator.AddConsumer<JsonNode>(configuration.Topic, version, SubscriptionName, async (context, message) =>
                 {
                     var intake = context.Services.GetRequiredService<IIntakeBuffer>();
@@ -94,8 +119,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 _consumerRegistry.ForgetConnector(configuration.ConnectorId);
                 throw;
             }
-
-            return Task.CompletedTask;   
         }
 
         public Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default)

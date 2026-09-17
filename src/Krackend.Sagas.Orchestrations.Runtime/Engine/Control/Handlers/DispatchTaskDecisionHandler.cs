@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
@@ -25,6 +26,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IMessagingCommandSerializer _messagingCommandSerializer;
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
         private readonly IOrchestrationPayloadState _payloadState;
+        private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
+        private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly ITaskDispatchRequestPayloadPreparer _requestPayloadPreparer;
 
         public DispatchTaskDecisionHandler(
@@ -37,6 +40,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IMessagingCommandSerializer messagingCommandSerializer,
             IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
             IOrchestrationPayloadState payloadState,
+            IOrchestrationPayloadContextFactory payloadContextFactory,
+            IOrchestrationConditionEvaluator conditionEvaluator,
             ITaskDispatchRequestPayloadPreparer requestPayloadPreparer)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -48,21 +53,46 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
+            _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
+            _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
         }
 
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
         {
+            var now = DateTime.UtcNow;
+            var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var condition = await _conditionEvaluator.EvaluateAsync(
+                new OrchestrationConditionEvaluationRequest
+                {
+                    Condition = decision.Task.ExecutionCondition,
+                    PayloadContext = _payloadContextFactory.Create(instance, decision.StageKey, decision.Task.Key),
+                    ElementKey = decision.Task.Key,
+                    Phase = "Task"
+                },
+                cancellationToken);
+
+            if (!condition.Succeeded)
+            {
+                await MarkConditionFailedAsync(decision, instance, condition, now, cancellationToken);
+                return;
+            }
+
+            if (!condition.ShouldExecute)
+            {
+                await SkipTaskAsync(decision, instance, now, cancellationToken);
+                return;
+            }
+
             if (decision.Task.Kind != TaskKind.Messaging)
             {
-                throw new NotSupportedException($"Task kind '{decision.Task.Kind}' is not supported by the minimal runtime engine.");
+                await MarkUnsupportedTaskKindAsync(decision, instance, now, cancellationToken);
+                return;
             }
 
             var messagingConfiguration = decision.Task.Configuration as MessagingTaskConfigurationArtifact
                 ?? throw new InvalidOperationException($"Task '{decision.Task.Key}' does not contain a messaging configuration.");
 
-            var now = DateTime.UtcNow;
-            var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
             var requestPayload = ParsePayload(decision.Payload);
             var taskExecution = new TaskExecution
@@ -350,6 +380,186 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 Message = exception.Message,
                 ProducedBy = nameof(DispatchTaskDecisionHandler)
             }, cancellationToken);
+        }
+
+        private async Task MarkConditionFailedAsync(
+            DispatchTaskDecision decision,
+            OrchestrationInstance instance,
+            OrchestrationConditionEvaluationResult condition,
+            DateTime now,
+            CancellationToken cancellationToken)
+        {
+            var taskExecution = new TaskExecution
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = decision.InstanceId,
+                StageExecutionId = decision.StageExecutionId,
+                TaskKey = decision.Task.Key,
+                TaskKind = decision.Task.Kind,
+                ExecutionMode = decision.Task.ExecutionMode,
+                ParallelGroupId = decision.Task.ParallelGroupId,
+                Status = TaskExecutionStatus.Failed,
+                WasSkipped = false,
+                SkipReason = string.Empty,
+                ExecutionConditionResult = null,
+                OnErrorPolicy = decision.Task.OnErrorPolicy,
+                AwaitResponse = false,
+                StartedOnUtc = now,
+                FailedOnUtc = now,
+                LastAttemptNumber = 0,
+                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+            };
+
+            taskExecution.Metadata["ConditionErrorCode"] = JsonValue.Create(condition.ErrorCode);
+            taskExecution.Metadata["ConditionErrorMessage"] = JsonValue.Create(condition.ErrorMessage);
+            taskExecution.Metadata["RetrySuppressed"] = JsonValue.Create(true);
+            CopyDiagnostics(taskExecution.Metadata, condition.Diagnostics);
+
+            instance.Status = OrchestrationInstanceStatus.Failed;
+            instance.CurrentStageKey = decision.StageKey;
+            instance.CurrentTaskKey = decision.Task.Key;
+            instance.FailedOnUtc = now;
+            instance.ErrorSummary = condition.ErrorMessage;
+            instance.LastUpdatedOnUtc = now;
+            instance.WaitingSinceUtc = null;
+
+            await _taskRepository.Create(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = decision.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TransitionType = "TaskConditionFailed",
+                FromStatus = TaskExecutionStatus.Pending.ToString(),
+                ToStatus = TaskExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = now,
+                Message = condition.ErrorMessage,
+                ProducedBy = nameof(DispatchTaskDecisionHandler)
+            }, cancellationToken);
+        }
+
+        private async Task SkipTaskAsync(
+            DispatchTaskDecision decision,
+            OrchestrationInstance instance,
+            DateTime now,
+            CancellationToken cancellationToken)
+        {
+            var taskExecution = new TaskExecution
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = decision.InstanceId,
+                StageExecutionId = decision.StageExecutionId,
+                TaskKey = decision.Task.Key,
+                TaskKind = decision.Task.Kind,
+                ExecutionMode = decision.Task.ExecutionMode,
+                ParallelGroupId = decision.Task.ParallelGroupId,
+                Status = TaskExecutionStatus.Skipped,
+                WasSkipped = true,
+                SkipReason = "Execution condition evaluated to false.",
+                ExecutionConditionResult = false,
+                OnErrorPolicy = decision.Task.OnErrorPolicy,
+                AwaitResponse = false,
+                StartedOnUtc = now,
+                CompletedOnUtc = now,
+                LastAttemptNumber = 0,
+                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+            };
+
+            instance.Status = OrchestrationInstanceStatus.Running;
+            instance.CurrentStageKey = decision.StageKey;
+            instance.CurrentTaskKey = string.Empty;
+            instance.LastUpdatedOnUtc = now;
+            instance.WaitingSinceUtc = null;
+
+            await _taskRepository.Create(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = decision.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TransitionType = "TaskSkipped",
+                FromStatus = TaskExecutionStatus.Pending.ToString(),
+                ToStatus = TaskExecutionStatus.Skipped.ToString(),
+                OccurredOnUtc = now,
+                Message = $"Task '{decision.Task.Key}' skipped because its execution condition evaluated to false.",
+                ProducedBy = nameof(DispatchTaskDecisionHandler)
+            }, cancellationToken);
+        }
+
+        private async Task MarkUnsupportedTaskKindAsync(
+            DispatchTaskDecision decision,
+            OrchestrationInstance instance,
+            DateTime now,
+            CancellationToken cancellationToken)
+        {
+            var message = $"Task kind '{decision.Task.Kind}' is not supported by the runtime messaging engine.";
+            var taskExecution = new TaskExecution
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = decision.InstanceId,
+                StageExecutionId = decision.StageExecutionId,
+                TaskKey = decision.Task.Key,
+                TaskKind = decision.Task.Kind,
+                ExecutionMode = decision.Task.ExecutionMode,
+                ParallelGroupId = decision.Task.ParallelGroupId,
+                Status = TaskExecutionStatus.Failed,
+                WasSkipped = false,
+                SkipReason = string.Empty,
+                ExecutionConditionResult = true,
+                OnErrorPolicy = decision.Task.OnErrorPolicy,
+                AwaitResponse = false,
+                StartedOnUtc = now,
+                FailedOnUtc = now,
+                LastAttemptNumber = 0,
+                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+            };
+
+            taskExecution.Metadata["ExecutionErrorCode"] = JsonValue.Create("UnsupportedTaskKind");
+            taskExecution.Metadata["ExecutionErrorMessage"] = JsonValue.Create(message);
+            taskExecution.Metadata["RetrySuppressed"] = JsonValue.Create(true);
+
+            instance.Status = OrchestrationInstanceStatus.Failed;
+            instance.CurrentStageKey = decision.StageKey;
+            instance.CurrentTaskKey = decision.Task.Key;
+            instance.FailedOnUtc = now;
+            instance.ErrorSummary = message;
+            instance.LastUpdatedOnUtc = now;
+            instance.WaitingSinceUtc = null;
+
+            await _taskRepository.Create(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = decision.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TransitionType = "TaskDispatchUnsupported",
+                FromStatus = TaskExecutionStatus.Pending.ToString(),
+                ToStatus = TaskExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = now,
+                Message = message,
+                ProducedBy = nameof(DispatchTaskDecisionHandler)
+            }, cancellationToken);
+        }
+
+        private static void CopyDiagnostics(
+            IDictionary<string, JsonNode> metadata,
+            IReadOnlyDictionary<string, JsonNode> diagnostics)
+        {
+            if (diagnostics is null)
+            {
+                return;
+            }
+
+            foreach (var diagnostic in diagnostics)
+            {
+                metadata[$"Condition.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
+            }
         }
 
         private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(

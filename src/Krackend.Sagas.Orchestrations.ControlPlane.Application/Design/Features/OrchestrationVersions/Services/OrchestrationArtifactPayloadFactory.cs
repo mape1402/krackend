@@ -127,7 +127,9 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             task.IsEnabled);
 
     private static CompensationArtifact MapCompensation(CompensationDefinition compensation)
-        => new(
+        => compensation is null
+            ? null
+            : new(
             compensation.CompensationTaskKind,
             MapTransformation(compensation.Transformation, compensation.HasTransformation),
             MapCondition(compensation.ExecutionCondition, compensation.HasExecutionCondition),
@@ -265,7 +267,9 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
         };
 
     private static RetryPolicyArtifact MapRetryPolicy(RetryPolicy retryPolicy)
-        => new(
+        => retryPolicy is null
+            ? null
+            : new(
             retryPolicy.MaxRetries,
             retryPolicy.StrategyType,
             MapRetryStrategy(retryPolicy.Strategy),
@@ -280,7 +284,9 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
         };
 
     private static TimeoutPolicyArtifact MapTimeoutPolicy(TimeoutPolicy timeoutPolicy)
-        => new(
+        => timeoutPolicy is null
+            ? null
+            : new(
             timeoutPolicy.Timeout,
             timeoutPolicy.TimeoutBehavior,
             MapTimeoutBehaviorPolicy(timeoutPolicy.TimeoutBehaviorPolicy));
@@ -363,5 +369,5 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
         => configuration?.HasRequestValidation == true || configuration?.HasSchemaValidation == true;
 
     private static bool IsResponseValidationEnabled(MessagingTaskConfiguration configuration)
-        => configuration?.HasResponseValidation == true || configuration?.HasSchemaValidation == true;
+        => configuration?.HasResponseValidation == true || configuration?.ResponseSchemaBinding?.IsValidationEnabled == true;
 }

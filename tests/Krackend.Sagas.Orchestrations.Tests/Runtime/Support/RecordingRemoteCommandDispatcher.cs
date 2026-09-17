@@ -14,6 +14,7 @@ internal sealed class RecordingRemoteCommandDispatcher : IRemoteCommandDispatche
     private readonly ITaskExecutionAttemptRepository _attemptRepository;
     private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly Queue<Exception> _plannedFailures = new();
+    private readonly List<PlannedFailure> _plannedMatchingFailures = new();
     private readonly List<RemoteCommand> _commands = new();
 
     public RecordingRemoteCommandDispatcher(
@@ -36,11 +37,27 @@ internal sealed class RecordingRemoteCommandDispatcher : IRemoteCommandDispatche
         _plannedFailures.Enqueue(exception);
     }
 
+    public void FailNextMatching(Func<RemoteCommand, bool> predicate, Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        _plannedMatchingFailures.Add(new PlannedFailure(predicate, exception));
+    }
+
     public async Task DispatchAsync(RemoteCommand command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
         _commands.Add(Clone(command));
+        var matchingFailure = _plannedMatchingFailures.FindIndex(failure => failure.Predicate(command));
+        if (matchingFailure >= 0)
+        {
+            var exception = _plannedMatchingFailures[matchingFailure].Exception;
+            _plannedMatchingFailures.RemoveAt(matchingFailure);
+            throw exception;
+        }
+
         if (_plannedFailures.Count > 0)
         {
             throw _plannedFailures.Dequeue();
@@ -104,6 +121,7 @@ internal sealed class RecordingRemoteCommandDispatcher : IRemoteCommandDispatche
             StageKey = command.StageKey,
             TaskKey = command.TaskKey,
             AwaitResponse = command.AwaitResponse,
+            ScheduledOnUtc = command.ScheduledOnUtc,
             MessageMetadata = Clone(command.MessageMetadata)!
         };
 
@@ -144,4 +162,6 @@ internal sealed class RecordingRemoteCommandDispatcher : IRemoteCommandDispatche
 
     private static Id ParseId(string value)
         => new(Ulid.Parse(value));
+
+    private sealed record PlannedFailure(Func<RemoteCommand, bool> Predicate, Exception Exception);
 }

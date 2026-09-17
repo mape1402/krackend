@@ -108,15 +108,5 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
         {
             throw new InvalidOperationException($"Task '{task.Key}' does not have a configuration.");
         }
-
-        if (task.RetryPolicy is null)
-        {
-            throw new InvalidOperationException($"Task '{task.Key}' does not have a retry policy.");
-        }
-
-        if (task.TimeoutPolicy is null)
-        {
-            throw new InvalidOperationException($"Task '{task.Key}' does not have a timeout policy.");
-        }
     }
 }

@@ -61,6 +61,11 @@
         public bool AwaitResponse { get; set; }
 
         /// <summary>
+        /// Gets or sets the UTC instant when the transport command can be executed.
+        /// </summary>
+        public DateTimeOffset? ScheduledOnUtc { get; set; }
+
+        /// <summary>
         /// Gets or sets the orchestration message metadata that must be attached by the transport adapter.
         /// </summary>
         public Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata.OrchestrationMessageMetadata MessageMetadata { get; set; }

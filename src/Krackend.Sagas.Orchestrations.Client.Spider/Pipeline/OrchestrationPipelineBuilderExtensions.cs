@@ -178,6 +178,11 @@ public static class OrchestrationPipelineBuilderExtensions
             throw new ArgumentNullException(nameof(transform));
         }
 
+        if (transformer is null)
+        {
+            throw new ArgumentNullException(nameof(transformer));
+        }
+
         var options = CreateMessagingOptions(topic, version);
 
         builder.OnPreProcess(preProcess =>

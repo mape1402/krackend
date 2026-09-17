@@ -44,4 +44,14 @@ public sealed class KrackendOrchestrationsMuleRuntimeOptions
     /// Gets or sets whether artifact lifecycle lanes should keep draining until no pending actions remain.
     /// </summary>
     public bool ArtifactLifecycleDrainUntilEmpty { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the maximum retry attempts for transient artifact lifecycle failures.
+    /// </summary>
+    public int ArtifactLifecycleMaxAttempts { get; set; } = 120;
+
+    /// <summary>
+    /// Gets or sets the delay between artifact lifecycle retry attempts.
+    /// </summary>
+    public TimeSpan ArtifactLifecycleRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
 }

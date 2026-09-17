@@ -3,6 +3,8 @@ using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Branching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
@@ -62,6 +64,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionExecutor, DecisionExecutor>();
             services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();
             services.TryAddScoped<IOrchestrationPayloadContextFactory, DefaultOrchestrationPayloadContextFactory>();
+            services.TryAddScoped<IOrchestrationConditionEvaluator, DefaultOrchestrationConditionEvaluator>();
+            services.TryAddScoped<IOrchestrationBranchNavigator, DefaultOrchestrationBranchNavigator>();
             services.TryAddScoped<IOrchestrationTransformationExecutor, DefaultOrchestrationTransformationExecutor>();
             services.TryAddScoped<IOrchestrationValidationExecutor, DefaultOrchestrationValidationExecutor>();
             services.TryAddScoped<ITaskDispatchRequestPayloadPreparer, DefaultTaskDispatchRequestPayloadPreparer>();
@@ -100,6 +104,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddSingleton<IRuntimeDesignNodeSecretProtector, DataProtectionRuntimeDesignNodeSecretProtector>();
             services.TryAddScoped<IControlPlaneDistributionSourceProvider, RuntimeDesignNodeDistributionSourceProvider>();
             services.TryAddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
+            services.TryAddScoped<IRuntimeArtifactCompatibilityValidator, MessagingRuntimeArtifactCompatibilityValidator>();
             services.TryAddScoped<IRuntimeArtifactDeliveryEndpointAuthenticator, RuntimeArtifactDeliveryEndpointAuthenticator>();
             services.TryAddScoped<IRuntimeConnectionTokenIssuer, RuntimeConnectionTokenIssuer>();
             services.TryAddScoped<IRuntimeConnectionTokenValidator, RuntimeConnectionTokenValidator>();

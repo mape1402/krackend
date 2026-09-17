@@ -2,7 +2,9 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
 using Mule;
 
@@ -69,6 +71,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 if (HasRuntimeDispatchState(command))
                 {
                     await MarkDispatchPublishedAsync(command, dispatchedOnUtc, cancellationToken);
+                    await ContinueFireAndForgetAsync(command, cancellationToken);
                 }
             }
             catch (RemoteCommandConfigurationException exception)
@@ -182,15 +185,30 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             else
             {
                 dispatch.DispatchStatus = "Completed";
-                task.Status = TaskExecutionStatus.Completed;
-                task.CompletedOnUtc = now;
-                attempt.Status = TaskExecutionStatus.Completed;
-                attempt.CompletedOnUtc = now;
-                instance.Status = OrchestrationInstanceStatus.Running;
-                instance.WaitingSinceUtc = null;
+
+                if (!IsTerminal(task.Status))
+                {
+                    task.Status = TaskExecutionStatus.Completed;
+                    task.CompletedOnUtc = now;
+                }
+
+                if (!IsTerminal(attempt.Status))
+                {
+                    attempt.Status = TaskExecutionStatus.Completed;
+                    attempt.CompletedOnUtc = now;
+                }
+
+                if (!IsTerminal(instance.Status))
+                {
+                    instance.Status = OrchestrationInstanceStatus.Running;
+                    instance.WaitingSinceUtc = null;
+                }
             }
 
-            instance.LastUpdatedOnUtc = now;
+            if (!IsTerminal(instance.Status))
+            {
+                instance.LastUpdatedOnUtc = now;
+            }
 
             await _dispatchRepository.Update(dispatch, cancellationToken);
             await _attemptRepository.Update(attempt, cancellationToken);
@@ -212,6 +230,43 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 Message = $"Task '{task.TaskKey}' command published with transport '{command.RemoteCommandTransport}'.",
                 Payload = string.IsNullOrWhiteSpace(command.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(command.Payload),
                 ProducedBy = nameof(RemoteCommandDispatchAction)
+            }, cancellationToken);
+        }
+
+        private async Task ContinueFireAndForgetAsync(RemoteCommand command, CancellationToken cancellationToken)
+        {
+            if (command.AwaitResponse)
+            {
+                return;
+            }
+
+            var sagaEngine = _serviceProvider.GetService<ISagaEngine>();
+            if (sagaEngine is null)
+            {
+                return;
+            }
+
+            var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId), cancellationToken);
+            if (IsTerminal(instance.Status))
+            {
+                return;
+            }
+
+            await sagaEngine.OrchestrateAsync(new ForwardIntent
+            {
+                ArtifactId = instance.RuntimeOrchestrationArtifactId.ToString(),
+                IngressTransport = IngressTransport.Messaging,
+                MessageMetadata = new OrchestrationMessageMetadata
+                {
+                    SagaId = string.IsNullOrWhiteSpace(instance.SagaId) ? instance.Id.ToString() : instance.SagaId,
+                    OrchestrationInstanceId = instance.Id.ToString(),
+                    CurrentStage = command.StageKey,
+                    CurrentTasks = string.IsNullOrWhiteSpace(command.TaskKey)
+                        ? Array.Empty<string>()
+                        : [command.TaskKey],
+                    CorrelationId = instance.CorrelationId
+                },
+                Payload = instance.SnapshotPayload?.DeepClone()
             }, cancellationToken);
         }
 
@@ -357,6 +412,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
         private static bool IsTerminal(OrchestrationInstanceStatus status)
             => status is OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
                 or OrchestrationInstanceStatus.Failed
                 or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated

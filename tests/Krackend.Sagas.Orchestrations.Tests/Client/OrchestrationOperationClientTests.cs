@@ -11,6 +11,40 @@ using System.Text.Json.Nodes;
 public sealed class OrchestrationOperationClientTests
 {
     [Fact]
+    public async Task GenericReportSuccessAsyncDelegatesToPublisherWithDefaultOptions()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        client.Begin<ReserveInventoryRequest>();
+
+        await client.ReportSuccessAsync<ReserveInventoryRequest, ReserveInventoryResponse>(
+            new ReserveInventoryResponse());
+
+        client.Close();
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.NotNull(publisher.ResultMetadata);
+        Assert.True(publisher.ResultMetadata.Succeeded);
+        Assert.Equal(typeof(ReserveInventoryRequest).FullName, publisher.ResultMetadata.RequestType);
+        Assert.Equal(typeof(ReserveInventoryResponse).FullName, publisher.ResultMetadata.ResponseType);
+        Assert.IsAssignableFrom<JsonNode>(publisher.Payload);
+    }
+
+    [Fact]
     public async Task ReportSuccessAsync_WhenContextWasClosed_PublishesExecutionMetadata()
     {
         var services = new ServiceCollection();
@@ -237,6 +271,38 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task ReportSuccessAsync_WhenNoBackchannelExistsAndTriggerDestinationIsConfigured_PublishesTriggerPayload()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var payload = JsonNode.Parse("""{"saleId":"sale-1"}""");
+
+        await client.ReportSuccessAsync(
+            typeof(ReserveInventoryRequest),
+            typeof(ReserveInventoryResponse),
+            payload!,
+            new OrchestrationOperationOptions
+            {
+                TriggerAddress = new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = """{"topic":"events.sales.sale.created","version":"1.0.0"}"""
+                }
+            });
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Equal(payload!.ToJsonString(), Assert.IsAssignableFrom<JsonNode>(publisher.Payload).ToJsonString());
+        Assert.Null(publisher.ResultMetadata);
+        Assert.Equal(OrchestrationTransportNames.Messaging, publisher.Address?.Transport);
+        Assert.Contains("events.sales.sale.created", publisher.Address?.SettingsPayload);
+    }
+
+    [Fact]
     public async Task ReportSuccessAsyncPublishesBusinessPayloadWithoutWrappingExecutionMetadata()
     {
         var services = new ServiceCollection();
@@ -287,6 +353,25 @@ public sealed class OrchestrationOperationClientTests
         Assert.Null(publishedPayload["ExecutionTimeMs"]);
         Assert.Null(publishedPayload["Error"]);
         Assert.True(publisher.ResultMetadata.Succeeded);
+    }
+
+    [Fact]
+    public void ErrorMappingOptionsValidateExceptionTypesAndReplaceDefaultMappings()
+    {
+        var options = new Krackend.Sagas.Orchestrations.Client.Errors.OrchestrationClientErrorMappingOptions();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            options.Map<InvalidOperationException>("Invalid", (Func<InvalidOperationException, bool>)null!));
+        Assert.Throws<ArgumentNullException>(() => options.Map(null!, "Invalid"));
+        Assert.Throws<ArgumentException>(() => options.Map(typeof(string), "Invalid"));
+
+        options.Map<InvalidOperationException>("First");
+        options.Map<InvalidOperationException>("Second");
+        options.Map<InvalidOperationException>("Predicate", exception => exception.Message.Contains("match", StringComparison.Ordinal));
+
+        Assert.Equal(2, options.Mappings.Count);
+        Assert.Contains(options.Mappings, mapping => mapping.ErrorCode == "Second" && mapping.Predicate is null);
+        Assert.Contains(options.Mappings, mapping => mapping.ErrorCode == "Predicate" && mapping.Predicate is not null);
     }
 
     private sealed record ReserveInventoryRequest;
