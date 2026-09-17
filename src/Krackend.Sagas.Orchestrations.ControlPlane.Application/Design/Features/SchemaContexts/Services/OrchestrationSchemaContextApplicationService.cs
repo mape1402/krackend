@@ -9,6 +9,7 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
 {
     private readonly IOrchestrationVersionRepository _versionRepository;
     private readonly IOrchestrationSchemaContextBuilder _contextBuilder;
+    private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrchestrationSchemaContextApplicationService"/> class.
@@ -17,10 +18,12 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
     /// <param name="contextBuilder">Schema context builder.</param>
     public OrchestrationSchemaContextApplicationService(
         IOrchestrationVersionRepository versionRepository,
-        IOrchestrationSchemaContextBuilder contextBuilder)
+        IOrchestrationSchemaContextBuilder contextBuilder,
+        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver = null)
     {
         _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
         _contextBuilder = contextBuilder ?? throw new ArgumentNullException(nameof(contextBuilder));
+        _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver;
     }
 
     /// <inheritdoc />
@@ -33,6 +36,11 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
         var version = await _versionRepository.GetById(
             PrimitiveParser.ParseId(query.OrchestrationVersionId),
             cancellationToken);
+
+        if (_schemaBindingSnapshotResolver is not null)
+        {
+            await _schemaBindingSnapshotResolver.ResolveAsync(version, cancellationToken);
+        }
 
         return await _contextBuilder.BuildForTask(
             version,

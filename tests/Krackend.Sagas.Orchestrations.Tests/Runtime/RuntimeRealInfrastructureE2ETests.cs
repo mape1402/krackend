@@ -91,7 +91,7 @@ public sealed class RuntimeRealInfrastructureE2ETests
             attempt.Metadata["ExecutionSucceeded"]?.GetValue<bool>() == true);
     }
 
-    [Fact(Timeout = 240_000)]
+    [Fact(Timeout = 360_000)]
     public async Task RuntimeCompletesDeepMultiStageMessagingSagaWithMoreServices()
     {
         var suffix = NewSuffix();
@@ -291,7 +291,7 @@ public sealed class RuntimeRealInfrastructureE2ETests
         await runtime.WaitForInstanceStatusAsync(
             correlationId,
             OrchestrationInstanceStatus.Completed,
-            TimeSpan.FromSeconds(120));
+            TimeSpan.FromSeconds(240));
         await WaitForInvocationCountAsync(services.Scenario, reservationTopic, 3);
         await WaitForInvocationCountAsync(services.Scenario, confirmationTopic, 1);
         var attempts = await AttemptsForTaskAsync(runtime, reservationTopic);

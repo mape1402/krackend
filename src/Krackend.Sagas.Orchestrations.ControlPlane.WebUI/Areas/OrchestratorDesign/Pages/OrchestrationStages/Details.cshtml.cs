@@ -1315,7 +1315,7 @@ public sealed class DetailsModel : PageModel
                     input.MessagingSchemaContractKey,
                     input.MessagingSchemaContractVersion,
                     input.MessagingSchemaRegistryProviderId,
-                    SchemaContractKind.CommandRequest,
+                    SchemaContractKind.Command,
                     defaultSchemaRegistryProviderKey,
                     input.MessagingSchemaStrictMode,
                     input.HasMessagingSchemaValidation) : null
@@ -1371,7 +1371,7 @@ public sealed class DetailsModel : PageModel
                     input.CompensationMessagingSchemaContractKey,
                     input.CompensationMessagingSchemaContractVersion,
                     input.CompensationMessagingSchemaRegistryProviderId,
-                    SchemaContractKind.CommandRequest,
+                    SchemaContractKind.Command,
                     defaultSchemaRegistryProviderKey,
                     input.CompensationMessagingSchemaStrictMode,
                     input.HasCompensationMessagingSchemaValidation) : null

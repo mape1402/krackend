@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v2.1.0] - 2026-09-17
+
+- ### Added
+
+  - Added KnOwl Control Plane command catalog resolution for exact and latest deployed command contracts, including request and reply contract artifacts.
+  - Added design-time command schema bindings so orchestration tasks can reference a KnOwl command once and resolve request and response payload contracts separately.
+  - Added schema context snapshot resolution before opening orchestration transform and validation contexts, keeping ButterMorph inputs aligned with the latest deployed KnOwl contracts.
+
+- ### Changed
+
+  - Updated the KnOwl schema registry adapter to consume the command request/reply catalog shape exposed by KnOwl `1.0.3`.
+  - Changed orchestration artifact generation to expand command bindings into command request and command response snapshots while keeping published artifacts self-contained.
+  - Updated orchestration stage design UI labels to expose command-level schema bindings without forcing users to pick request and response contracts independently.
+
+- ### Fixed
+
+  - Fixed command response schema resolution for orchestration artifacts and designer schema contexts.
+  - Fixed KnOwl catalog path handling for deployed event and command contracts.
+  - Fixed central package version alignment for EF Core and dependency injection packages across `net9.0` and `net10.0` builds.
+  - Hardened runtime and schema registry test coverage around command request/reply resolution and versioned messaging orchestration scenarios.
+
+------
+
 ## [v2.0.1] - 2026-09-15
 
 - ### Added

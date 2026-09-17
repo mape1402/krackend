@@ -184,6 +184,105 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenMessagingUsesCommandBinding_ExpandsRequestAndResponseSnapshotsFromSameCommand()
+    {
+        var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
+        var task = version.StageDefinitions[0].TaskDefinitions[0];
+        var commandBinding = CreateBinding("inventories.reserve", SchemaContractKind.Command);
+        task.Configuration = new MessagingTaskConfiguration
+        {
+            Topic = "commands.inventories.reserve",
+            Version = new SemanticVersion(1, 0, 0),
+            SchemaBinding = commandBinding,
+            HasSchemaValidation = true,
+            HasResponseValidation = true
+        };
+        var resolver = Substitute.For<ISchemaContractResolver>();
+        resolver
+            .ResolveAsync(Arg.Any<SchemaContractResolutionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var reference = call.Arg<SchemaContractResolutionRequest>().Reference;
+                return SchemaContractResolutionResult.Resolved(new RegistrySchemaContractSnapshot
+                {
+                    Reference = reference,
+                    SchemaFormat = "ButterMorph",
+                    SchemaJson = """{"type":"object"}""",
+                    ContentHash = $"{reference.ContractKey}.{reference.Kind}.hash",
+                    SourceArtifactId = $"artifact-{reference.Kind}",
+                    ResolvedBy = "tests",
+                    ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
+                });
+            });
+        var catalog = Substitute.For<ISchemaContractResolverCatalog>();
+        catalog.GetResolver(Arg.Any<SchemaContractReference>()).Returns(resolver);
+        var snapshotResolver = new OrchestrationSchemaBindingSnapshotResolver(catalog);
+
+        await snapshotResolver.ResolveAsync(version);
+
+        var messaging = Assert.IsType<MessagingTaskConfiguration>(task.Configuration);
+        Assert.NotNull(messaging.RequestSchemaBinding);
+        Assert.NotNull(messaging.ResponseSchemaBinding);
+        Assert.Equal(SchemaContractKind.CommandRequest, messaging.RequestSchemaBinding.ContractKind);
+        Assert.Equal(SchemaContractKind.CommandResponse, messaging.ResponseSchemaBinding.ContractKind);
+        Assert.Equal("inventories.reserve.CommandRequest.hash", messaging.RequestSchemaBinding.Snapshot!.ContentHash);
+        Assert.Equal("inventories.reserve.CommandResponse.hash", messaging.ResponseSchemaBinding.Snapshot!.ContentHash);
+        await resolver.Received().ResolveAsync(
+            Arg.Is<SchemaContractResolutionRequest>(request =>
+                request.Reference.ContractKey == "inventories.reserve" &&
+                request.Reference.Kind == SchemaContractKind.CommandRequest),
+            Arg.Any<CancellationToken>());
+        await resolver.Received().ResolveAsync(
+            Arg.Is<SchemaContractResolutionRequest>(request =>
+                request.Reference.ContractKey == "inventories.reserve" &&
+                request.Reference.Kind == SchemaContractKind.CommandResponse),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenCommandReplyIsMissingAndResponseValidationIsDisabled_KeepsRequestSnapshot()
+    {
+        var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
+        var task = version.StageDefinitions[0].TaskDefinitions[0];
+        task.Configuration = new MessagingTaskConfiguration
+        {
+            Topic = "commands.inventories.reserve",
+            Version = new SemanticVersion(1, 0, 0),
+            SchemaBinding = CreateBinding("inventories.reserve", SchemaContractKind.Command),
+            HasSchemaValidation = true,
+            HasResponseValidation = false
+        };
+        var resolver = Substitute.For<ISchemaContractResolver>();
+        resolver
+            .ResolveAsync(Arg.Any<SchemaContractResolutionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var reference = call.Arg<SchemaContractResolutionRequest>().Reference;
+                return reference.Kind == SchemaContractKind.CommandResponse
+                    ? SchemaContractResolutionResult.Failed(SchemaContractResolutionStatus.NotFound, "Reply artifact was not found.")
+                    : SchemaContractResolutionResult.Resolved(new RegistrySchemaContractSnapshot
+                    {
+                        Reference = reference,
+                        SchemaFormat = "ButterMorph",
+                        SchemaJson = """{"type":"object"}""",
+                        ContentHash = "request.hash",
+                        SourceArtifactId = "request-artifact",
+                        ResolvedBy = "tests",
+                        ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
+                    });
+            });
+        var catalog = Substitute.For<ISchemaContractResolverCatalog>();
+        catalog.GetResolver(Arg.Any<SchemaContractReference>()).Returns(resolver);
+        var snapshotResolver = new OrchestrationSchemaBindingSnapshotResolver(catalog);
+
+        await snapshotResolver.ResolveAsync(version);
+
+        var messaging = Assert.IsType<MessagingTaskConfiguration>(task.Configuration);
+        Assert.Equal("request.hash", messaging.RequestSchemaBinding.Snapshot!.ContentHash);
+        Assert.Null(messaging.ResponseSchemaBinding.Snapshot);
+    }
+
+    [Fact]
     public async Task ResolveAsync_AllowsOptionalBindingWithoutProviderButRejectsRequiredBindingWithoutProvider()
     {
         var optional = CreateBinding("optional.command", SchemaContractKind.CommandRequest);
@@ -236,6 +335,34 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         await repository.Received(1).GetById(version.Id, Arg.Any<CancellationToken>());
         await builder.Received(1).BuildForTask(version, taskId, Arg.Any<CancellationToken>());
         await Assert.ThrowsAsync<ArgumentNullException>(() => service.GetForTask(null!));
+    }
+
+    [Fact]
+    public async Task SchemaContextApplicationServiceResolvesSnapshotsBeforeBuildingContext()
+    {
+        var taskId = Id.New();
+        var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
+        var repository = Substitute.For<IOrchestrationVersionRepository>();
+        var snapshotResolver = Substitute.For<IOrchestrationSchemaBindingSnapshotResolver>();
+        var builder = Substitute.For<IOrchestrationSchemaContextBuilder>();
+        repository.GetById(version.Id, Arg.Any<CancellationToken>()).Returns(version);
+        builder
+            .BuildForTask(version, taskId, Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationSchemaContext
+            {
+                OrchestrationVersionId = version.Id.ToString(),
+                OrchestrationVersion = version.Version.ToString(),
+                StageKey = "fulfillment",
+                Signature = "signature-1",
+                TaskKey = "inventories.reserve"
+            });
+        var service = new OrchestrationSchemaContextApplicationService(repository, builder, snapshotResolver);
+
+        var context = await service.GetForTask(new GetTaskSchemaContextQuery(version.Id.ToString(), taskId.ToString()));
+
+        Assert.Equal("inventories.reserve", context.TaskKey);
+        await snapshotResolver.Received(1).ResolveAsync(version, Arg.Any<CancellationToken>());
+        await builder.Received(1).BuildForTask(version, taskId, Arg.Any<CancellationToken>());
     }
 
     private static OrchestrationVersion CreateVersion(SchemaBinding triggerBinding)

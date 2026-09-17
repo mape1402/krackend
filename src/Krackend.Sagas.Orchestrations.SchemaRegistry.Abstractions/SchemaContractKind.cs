@@ -33,5 +33,10 @@ public enum SchemaContractKind
     /// <summary>
     /// A metadata payload contract.
     /// </summary>
-    Metadata = 5
+    Metadata = 5,
+
+    /// <summary>
+    /// A design-time command contract reference that resolves to request and reply payload contracts.
+    /// </summary>
+    Command = 6
 }

@@ -165,8 +165,11 @@ public sealed class KnOwlSchemaContractResolver : ISchemaContractResolver
                 artifactType = ContractArtifactType.Event;
                 return true;
             case SchemaContractKind.CommandRequest:
+            case SchemaContractKind.Command:
+                artifactType = ContractArtifactType.CommandRequest;
+                return true;
             case SchemaContractKind.CommandResponse:
-                artifactType = ContractArtifactType.Command;
+                artifactType = ContractArtifactType.CommandReply;
                 return true;
             default:
                 artifactType = default;
