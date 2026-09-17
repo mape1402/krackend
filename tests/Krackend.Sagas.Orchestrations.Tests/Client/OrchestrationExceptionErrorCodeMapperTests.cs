@@ -43,6 +43,28 @@ public sealed class OrchestrationExceptionErrorCodeMapperTests
     }
 
     [Fact]
+    public void ResolveUsesUnhandledExceptionWhenExceptionIsNullAndNoDefaultCodeIsConfigured()
+    {
+        var mapper = CreateMapper(options =>
+            options.DefaultErrorCode = " ");
+
+        var resolution = mapper.Resolve(null!);
+
+        Assert.Equal("UnhandledException", resolution.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveUsesExceptionTypeWhenNoDefaultCodeIsConfigured()
+    {
+        var mapper = CreateMapper(options =>
+            options.DefaultErrorCode = " ");
+
+        var resolution = mapper.Resolve(new NotSupportedException("Not supported."));
+
+        Assert.Equal(nameof(NotSupportedException), resolution.ErrorCode);
+    }
+
+    [Fact]
     public void ResolveUsesPredicateMappingWhenItMatches()
     {
         var mapper = CreateMapper(options =>

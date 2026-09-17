@@ -38,8 +38,10 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Equal("reserve-inventory", stage["Key"]!.GetValue<string>());
         Assert.True(stage["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal((int)EngineType.DSL, stage["ExecutionCondition"]!["Engine"]!.GetValue<int>());
+        Assert.Equal("payload.total > 0", stage["ExecutionCondition"]!["Configuration"]!["Expression"]!["Value"]!.GetValue<string>());
         Assert.Single(stage["ParallelGroups"]!.AsArray());
         Assert.Single(stage["BranchRules"]!.AsArray());
+        Assert.Equal("outputs.reserveStock.reserved == true", stage["BranchRules"]!.AsArray()[0]!["Condition"]!["Configuration"]!["Expression"]!["Value"]!.GetValue<string>());
 
         Assert.Equal("reserve-stock", task["Key"]!.GetValue<string>());
         Assert.Equal((int)TaskKind.Messaging, task["Kind"]!.GetValue<int>());
@@ -48,6 +50,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.True(task["IsEnabled"]!.GetValue<bool>());
         Assert.Equal((int)OnErrorPolicy.StopAndCompensate, task["OnErrorPolicy"]!.GetValue<int>());
         Assert.True(task["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.Equal("payload.items.length > 0", task["ExecutionCondition"]!["Configuration"]!["Expression"]!["Value"]!.GetValue<string>());
         Assert.True(task["Transformation"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("inventory.reserve", taskConfiguration["Topic"]!.GetValue<string>());
         Assert.True(taskConfiguration["RequestSchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
@@ -66,10 +69,160 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
 
         Assert.Equal((int)TaskKind.Messaging, compensation["CompensationTaskKind"]!.GetValue<int>());
         Assert.True(compensation["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
+        Assert.Equal("outputs.reserveStock.reserved == true", compensation["ExecutionCondition"]!["Configuration"]!["Expression"]!["Value"]!.GetValue<string>());
         Assert.True(compensation["Transformation"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("inventory.release", compensation["Configuration"]!["Topic"]!.GetValue<string>());
         Assert.True(compensation["Configuration"]!["SchemaBinding"]!["IsValidationEnabled"]!.GetValue<bool>());
         Assert.Equal((int)RetryStrategyType.Fixed, compensation["RetryPolicy"]!["StrategyType"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void CreatePayloadJson_WhenTaskHasNoOptionalPolicies_EmitsDeployableArtifact()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var artifact = JsonNode.Parse(payloadJson)!.AsObject();
+        var task = artifact["StageDefinitions"]!.AsArray()[0]!["TaskDefinitions"]!.AsArray()[0]!.AsObject();
+
+        Assert.Equal((int)TaskKind.Messaging, task["Kind"]!.GetValue<int>());
+        Assert.Equal((int)TaskDispatchType.FireAndWaitCallback, task["DispatchType"]!.GetValue<int>());
+        Assert.Null(task["RetryPolicy"]);
+        Assert.Null(task["TimeoutPolicy"]);
+        Assert.Null(task["Compensation"]);
+    }
+
+    [Fact]
+    public void CreatePayloadJson_MapsHttpPluginHumanAndWaitTimeoutConfigurations()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithMixedTaskConfigurations(definition.Id);
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var tasks = JsonNode.Parse(payloadJson)!["StageDefinitions"]!.AsArray()[0]!["TaskDefinitions"]!.AsArray();
+        var httpTask = tasks[0]!.AsObject();
+        var pluginTask = tasks[1]!.AsObject();
+        var humanTask = tasks[2]!.AsObject();
+
+        Assert.Equal("http", httpTask["Configuration"]!["$artifactType"]!.GetValue<string>());
+        Assert.Equal("customer-api", httpTask["Configuration"]!["BaseUrlVariableRef"]!.GetValue<string>());
+        Assert.Equal("/customers/{customerId}", httpTask["Configuration"]!["RelativePath"]!.GetValue<string>());
+        Assert.Equal("POST", httpTask["Configuration"]!["Method"]!.GetValue<string>());
+        Assert.Equal("Bearer ${token}", httpTask["Configuration"]!["HeadersTemplate"]!["Authorization"]!.GetValue<string>());
+        Assert.Equal("full", httpTask["Configuration"]!["QueryTemplate"]!["mode"]!.GetValue<string>());
+        Assert.Equal(202, httpTask["Configuration"]!["ExpectedStatusCodes"]!.AsArray()[1]!.GetValue<int>());
+        Assert.True(httpTask["Configuration"]!["AllowSyncResponse"]!.GetValue<bool>());
+        Assert.Equal("wait", httpTask["TimeoutPolicy"]!["TimeoutBehaviorPolicy"]!["$artifactType"]!.GetValue<string>());
+        Assert.Equal((int)OrchestrationActionOnTimeout.Continue, httpTask["TimeoutPolicy"]!["TimeoutBehaviorPolicy"]!["OrchestrationAction"]!.GetValue<int>());
+
+        Assert.Equal("plugin", pluginTask["Configuration"]!["$artifactType"]!.GetValue<string>());
+        Assert.NotNull(pluginTask["Configuration"]!["PluginId"]);
+        Assert.Equal("humanApproval", humanTask["Configuration"]!["$artifactType"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void CreatePayloadJson_UsesFallbackValidationArtifactWhenConfigurationIsMissing()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+        version.TriggerBindings.Add(new TriggerBinding
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = version.Id,
+            Key = "sale-created",
+            TriggerType = TriggerType.Event,
+            IsEnabled = true,
+            TriggerChannel = new EventTriggerChannel
+            {
+                Topic = "sales.sale.created",
+                Version = new SemanticVersion(1, 0, 0),
+                HasValidation = true,
+                Validation = new ValidationDefinition
+                {
+                    Engine = EngineType.DSL,
+                    ErrorCode = string.Empty,
+                    Configuration = null!
+                }
+            }
+        });
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var validation = JsonNode.Parse(payloadJson)!["TriggerBindings"]!.AsArray()[0]!["TriggerChannel"]!["Validation"]!.AsObject();
+
+        Assert.True(validation["IsEnabled"]!.GetValue<bool>());
+        Assert.Equal("TriggerValidationFailed", validation["ErrorCode"]!.GetValue<string>());
+        Assert.Equal("dsl", validation["Configuration"]!["$artifactType"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void CreatePayloadJson_ThrowsForUnsupportedDesignConfigurations()
+    {
+        var definition = CreateDefinition();
+        var unsupportedCases = new Dictionary<string, Action<OrchestrationVersion>>(StringComparer.Ordinal)
+        {
+            ["Trigger channel"] = version => version.TriggerBindings.Add(new TriggerBinding
+            {
+                Id = Id.New(),
+                OrchestrationVersionId = version.Id,
+                Key = "unsupported",
+                TriggerType = TriggerType.Event,
+                TriggerChannel = new UnsupportedTriggerChannel()
+            }),
+            ["Condition configuration"] = version =>
+            {
+                version.StageDefinitions[0].HasExecutionCondition = true;
+                version.StageDefinitions[0].ExecutionCondition = new ExecutionCondition
+                {
+                    Engine = EngineType.DSL,
+                    Configuration = new UnsupportedConditionConfiguration()
+                };
+            },
+            ["Transformation configuration"] = version =>
+            {
+                var task = version.StageDefinitions[0].TaskDefinitions[0];
+                task.HasTransformation = true;
+                task.Transformation = new TransformationDefinition
+                {
+                    Engine = EngineType.DSL,
+                    Configuration = new UnsupportedTransformationConfiguration()
+                };
+            },
+            ["Validation configuration"] = version =>
+            {
+                var messaging = (MessagingTaskConfiguration)version.StageDefinitions[0].TaskDefinitions[0].Configuration;
+                messaging.HasRequestValidation = true;
+                messaging.RequestValidation = new ValidationDefinition
+                {
+                    Engine = EngineType.DSL,
+                    Configuration = new UnsupportedValidationConfiguration()
+                };
+            },
+            ["Task configuration"] = version => version.StageDefinitions[0].TaskDefinitions[0].Configuration = new UnsupportedTaskConfiguration(),
+            ["Retry strategy"] = version => version.StageDefinitions[0].TaskDefinitions[0].RetryPolicy = new RetryPolicy
+            {
+                MaxRetries = 1,
+                StrategyType = RetryStrategyType.Fixed,
+                Strategy = new UnsupportedRetryStrategy()
+            },
+            ["Timeout behavior policy"] = version => version.StageDefinitions[0].TaskDefinitions[0].TimeoutPolicy = new TimeoutPolicy
+            {
+                Timeout = Duration.FromSeconds(1),
+                TimeoutBehavior = TimeoutBehavior.Fail,
+                TimeoutBehaviorPolicy = new UnsupportedTimeoutBehaviorPolicy()
+            }
+        };
+
+        foreach (var unsupportedCase in unsupportedCases)
+        {
+            var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+            unsupportedCase.Value(version);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version));
+
+            Assert.Contains(unsupportedCase.Key.Split(' ')[0], exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static OrchestrationDefinition CreateDefinition()
@@ -237,6 +390,156 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         };
     }
 
+    private static OrchestrationVersion CreateVersionWithoutOptionalTaskPolicies(Id definitionId)
+    {
+        var versionId = Id.New();
+        var stageId = Id.New();
+        var taskId = Id.New();
+
+        return new OrchestrationVersion
+        {
+            Id = versionId,
+            OrchestrationDefinitionId = definitionId,
+            Version = new SemanticVersion(1, 0, 0),
+            Status = OrchestrationVersionStatus.Deployed,
+            VersionLabel = "1.0.0",
+            Description = "Runtime parity artifact.",
+            Checksum = new Checksum("checksum-without-optional-policies"),
+            Notes = "testing",
+            CreatedBy = "tests",
+            CreatedOnUtc = DateTime.UtcNow,
+            StageDefinitions =
+            [
+                new StageDefinition
+                {
+                    Id = stageId,
+                    OrchestrationVersionId = versionId,
+                    Key = "reserve-inventory",
+                    Name = "Reserve inventory",
+                    Description = "Reserve stock before payment.",
+                    Order = 1,
+                    HasExecutionCondition = false,
+                    TaskDefinitions =
+                    [
+                        new TaskDefinition
+                        {
+                            Id = taskId,
+                            StageDefinitionId = stageId,
+                            Key = "reserve-stock",
+                            Name = "Reserve stock",
+                            Order = 1,
+                            Notes = string.Empty,
+                            Kind = TaskKind.Messaging,
+                            ExecutionMode = TaskExecutionMode.Sequential,
+                            HasExecutionCondition = false,
+                            HasTransformation = false,
+                            Configuration = new MessagingTaskConfiguration
+                            {
+                                Topic = "inventory.reserve",
+                                Version = new SemanticVersion(1, 0, 0)
+                            },
+                            OnErrorPolicy = OnErrorPolicy.Stop,
+                            DispatchType = TaskDispatchType.FireAndWaitCallback,
+                            IsEnabled = true
+                        }
+                    ]
+                }
+            ]
+        };
+    }
+
+    private static OrchestrationVersion CreateVersionWithMixedTaskConfigurations(Id definitionId)
+    {
+        var versionId = Id.New();
+        var stageId = Id.New();
+
+        return new OrchestrationVersion
+        {
+            Id = versionId,
+            OrchestrationDefinitionId = definitionId,
+            Version = new SemanticVersion(2, 0, 0),
+            Status = OrchestrationVersionStatus.Approved,
+            VersionLabel = "2.0.0",
+            Checksum = new Checksum("checksum-mixed-task-configurations"),
+            CreatedBy = "tests",
+            CreatedOnUtc = DateTime.UtcNow,
+            StageDefinitions =
+            [
+                new StageDefinition
+                {
+                    Id = stageId,
+                    OrchestrationVersionId = versionId,
+                    Key = "mixed",
+                    Name = "Mixed stage",
+                    Order = 1,
+                    TaskDefinitions =
+                    [
+                        new TaskDefinition
+                        {
+                            Id = Id.New(),
+                            StageDefinitionId = stageId,
+                            Key = "http.customer",
+                            Name = "HTTP customer",
+                            Order = 1,
+                            Kind = TaskKind.Http,
+                            Configuration = new HttpTaskConfiguration
+                            {
+                                BaseUrlVariableRef = "customer-api",
+                                RelativePath = "/customers/{customerId}",
+                                Method = "POST",
+                                HeadersTemplate = JsonNode.Parse("""{"Authorization":"Bearer ${token}"}"""),
+                                QueryTemplate = JsonNode.Parse("""{"mode":"full"}"""),
+                                ExpectedStatusCodes = [200, 202],
+                                AllowSyncResponse = true,
+                                HasSchemaValidation = true,
+                                SchemaBinding = CreateSchemaBinding(ElementType.Task, Id.New(), "customer.command")
+                            },
+                            TimeoutPolicy = new TimeoutPolicy
+                            {
+                                Timeout = Duration.FromSeconds(10),
+                                TimeoutBehavior = TimeoutBehavior.Wait,
+                                TimeoutBehaviorPolicy = new WaitTimeoutBehaviorPolicy
+                                {
+                                    OrchestrationAction = OrchestrationActionOnTimeout.Continue,
+                                    WaitingTime = Duration.FromSeconds(3)
+                                }
+                            },
+                            OnErrorPolicy = OnErrorPolicy.Stop,
+                            DispatchType = TaskDispatchType.FireAndForget,
+                            IsEnabled = true
+                        },
+                        new TaskDefinition
+                        {
+                            Id = Id.New(),
+                            StageDefinitionId = stageId,
+                            Key = "plugin.credit",
+                            Name = "Plugin credit",
+                            Order = 2,
+                            Kind = TaskKind.Plugin,
+                            Configuration = new PluginTaskConfiguration { PluginId = Id.New() },
+                            OnErrorPolicy = OnErrorPolicy.Stop,
+                            DispatchType = TaskDispatchType.FireAndForget,
+                            IsEnabled = true
+                        },
+                        new TaskDefinition
+                        {
+                            Id = Id.New(),
+                            StageDefinitionId = stageId,
+                            Key = "approval.manual",
+                            Name = "Manual approval",
+                            Order = 3,
+                            Kind = TaskKind.HumanApproval,
+                            Configuration = new HumanApprovalTaskConfiguration(),
+                            OnErrorPolicy = OnErrorPolicy.Stop,
+                            DispatchType = TaskDispatchType.FireAndForget,
+                            IsEnabled = true
+                        }
+                    ]
+                }
+            ]
+        };
+    }
+
     private static ExecutionCondition DslCondition(string expression)
         => new()
         {
@@ -323,4 +626,41 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                 ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
             }
         };
+
+    private sealed class UnsupportedTriggerChannel : ITriggerChannel
+    {
+        public TriggerType TriggerType => TriggerType.Event;
+
+        public SchemaBinding SchemaBinding { get; set; } = null!;
+    }
+
+    private sealed class UnsupportedConditionConfiguration : IConditionConfiguration
+    {
+        public EngineType Engine => EngineType.DSL;
+    }
+
+    private sealed class UnsupportedTransformationConfiguration : ITransformationConfiguration
+    {
+        public EngineType Engine => EngineType.DSL;
+    }
+
+    private sealed class UnsupportedValidationConfiguration : IValidationConfiguration
+    {
+        public EngineType Engine => EngineType.DSL;
+    }
+
+    private sealed class UnsupportedTaskConfiguration : ITaskConfiguration
+    {
+        public TaskKind Kind => TaskKind.Messaging;
+    }
+
+    private sealed class UnsupportedRetryStrategy : IRetryStrategy
+    {
+        public RetryStrategyType Type => RetryStrategyType.Fixed;
+    }
+
+    private sealed class UnsupportedTimeoutBehaviorPolicy : ITimeoutBehaviorPolicy
+    {
+        public TimeoutBehavior Behavior => TimeoutBehavior.Fail;
+    }
 }

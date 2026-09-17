@@ -68,10 +68,10 @@ public sealed class DetailsModel : PageModel
     public UpsertTriggerInput TriggerInput { get; set; } = new();
 
     public IEnumerable<SelectListItem> TriggerTypes =>
-        Enum.GetValues<TriggerType>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+        new[] { TriggerType.Event }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public IEnumerable<SelectListItem> EngineTypes =>
-        Enum.GetValues<EngineType>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+        new[] { EngineType.DSL }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public string ErrorMessage { get; private set; } = string.Empty;
 
@@ -266,7 +266,7 @@ public sealed class DetailsModel : PageModel
         }
 
         var key = TriggerInput.Key.Trim();
-        var triggerType = ParseEnum(TriggerInput.TriggerType, TriggerType.Event);
+        var triggerType = ResolveTriggerType(ParseEnum(TriggerInput.TriggerType, TriggerType.Event));
         var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
         var description = TriggerInput.Description ?? string.Empty;
 
@@ -458,7 +458,7 @@ public sealed class DetailsModel : PageModel
 
     private void ValidateTriggerInput()
     {
-        var triggerType = ParseEnum(TriggerInput.TriggerType, TriggerType.Event);
+        var triggerType = ResolveTriggerType(ParseEnum(TriggerInput.TriggerType, TriggerType.Event));
         if (triggerType == TriggerType.Event && string.IsNullOrWhiteSpace(TriggerInput.EventTopic))
         {
             ModelState.AddModelError(nameof(TriggerInput.EventTopic), "Capture the event topic.");
@@ -469,7 +469,8 @@ public sealed class DetailsModel : PageModel
             ModelState.AddModelError(nameof(TriggerInput.EventSchemaContractKey), "Capture the schema contract key.");
         }
 
-        if (TriggerInput.HasEventValidation && string.IsNullOrWhiteSpace(TriggerInput.EventValidationDsl))
+        if ((TriggerInput.HasEventValidation || TriggerInput.HasEventSchemaValidation) &&
+            string.IsNullOrWhiteSpace(TriggerInput.EventValidationDsl))
         {
             ModelState.AddModelError(nameof(TriggerInput.EventValidationDsl), "Capture the event validation DSL.");
         }
@@ -569,7 +570,7 @@ public sealed class DetailsModel : PageModel
             {
                 HasSchemaValidation = input.HasEventSchemaValidation,
                 HasValidation = input.HasEventValidation,
-                Validation = input.HasEventValidation
+                Validation = input.HasEventValidation || input.HasEventSchemaValidation
                     ? BuildValidation(input.EventValidationDsl, input.EventValidationErrorCode)
                     : null,
                 Topic = input.EventTopic.Trim(),
@@ -631,6 +632,9 @@ public sealed class DetailsModel : PageModel
 
     private static string NormalizeProviderKey(string providerKey)
         => string.IsNullOrWhiteSpace(providerKey) ? "knowl" : providerKey.Trim();
+
+    private static TriggerType ResolveTriggerType(TriggerType requested)
+        => requested == TriggerType.Event ? requested : TriggerType.Event;
 
     private static TEnum ParseEnum<TEnum>(string value, TEnum fallback)
         where TEnum : struct, Enum

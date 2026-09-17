@@ -11,6 +11,18 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class RuntimeMuleRegistrationTests
 {
     [Fact]
+    public void RuntimeMuleRegistrationRejectsInvalidArguments()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.ServiceCollectionExtensions.AddMule(null!, _ => { }));
+
+        var services = new ServiceCollection();
+        var builder = services.AddKrackendOrchestrationsRuntime();
+
+        Assert.Throws<ArgumentNullException>(() => builder.AddMule(null!));
+    }
+
+    [Fact]
     public void RuntimeMuleRegistrationConfiguresArtifactLifecycleLanes()
     {
         var services = new ServiceCollection();

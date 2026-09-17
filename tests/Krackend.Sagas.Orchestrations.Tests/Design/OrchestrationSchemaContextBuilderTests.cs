@@ -87,6 +87,38 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.DoesNotContain(context.Sources, x => x.Alias == "tasks.audit.response");
     }
 
+    [Fact]
+    public async Task BuildForTask_ThrowsWhenTaskDoesNotExist()
+    {
+        var version = CreateVersion();
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            builder.BuildForTask(version, Id.New()));
+
+        Assert.Contains("was not found", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildForTask_AllowsMissingTriggerAndMissingBindings()
+    {
+        var version = CreateVersion();
+        version.TriggerBindings.Clear();
+        version.StageDefinitions[0].TaskDefinitions[0].Configuration = new PluginTaskConfiguration { PluginId = Id.New() };
+        var target = version.StageDefinitions[0].TaskDefinitions[1];
+        var targetConfiguration = (MessagingTaskConfiguration)target.Configuration;
+        targetConfiguration.RequestSchemaBinding = null;
+        targetConfiguration.SchemaBinding = null;
+
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, target.Id);
+
+        Assert.Empty(context.Sources);
+        Assert.Null(context.Target.SchemaBinding);
+        Assert.False(string.IsNullOrWhiteSpace(context.Signature));
+    }
+
     private static OrchestrationVersion CreateVersion()
     {
         var versionId = Id.New();

@@ -64,7 +64,13 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
                 ? int.MaxValue
                 : runtimeOptions.ArtifactLifecycleMaxDrainBatchesPerCycle,
             MaxDrainActionsPerCycle = Math.Max(0, runtimeOptions.ArtifactLifecycleMaxDrainActionsPerCycle),
-            DrainUntilEmpty = runtimeOptions.ArtifactLifecycleDrainUntilEmpty
+            DrainUntilEmpty = runtimeOptions.ArtifactLifecycleDrainUntilEmpty,
+            MaxAttempts = runtimeOptions.ArtifactLifecycleMaxAttempts <= 0
+                ? int.MaxValue
+                : runtimeOptions.ArtifactLifecycleMaxAttempts,
+            RetryDelay = runtimeOptions.ArtifactLifecycleRetryDelay <= TimeSpan.Zero
+                ? TimeSpan.FromSeconds(1)
+                : runtimeOptions.ArtifactLifecycleRetryDelay
         };
     }
 }

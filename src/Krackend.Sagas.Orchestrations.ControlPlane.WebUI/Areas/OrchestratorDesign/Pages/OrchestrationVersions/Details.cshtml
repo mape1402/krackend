@@ -202,10 +202,6 @@
                         <input class="form-control" id="stageConditionDslExpression" />
                     </div>
                 </div>
-
-                <div id="stageConditionUnsupportedEngineWarning" class="alert alert-warning mt-3 d-none mb-0">
-                    Selected condition engine does not define specific configuration fields yet.
-                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -586,10 +582,9 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
     const conditionEngineInput = document.getElementById('stageConditionEngine');
     const conditionDslExpressionInput = document.getElementById('stageConditionDslExpression');
     const conditionSection = document.getElementById('stageExecutionConditionSection');
-    const unsupportedEngineWarning = document.getElementById('stageConditionUnsupportedEngineWarning');
     const saveButton = document.getElementById('stageExecutionConditionSaveButton');
     const canEdit = orchestrationVersionCanEdit;
-    if (!modalElement || !stageIdInput || !hasExecutionConditionInput || !conditionEngineInput || !conditionDslExpressionInput || !conditionSection || !unsupportedEngineWarning || !saveButton) {
+    if (!modalElement || !stageIdInput || !hasExecutionConditionInput || !conditionEngineInput || !conditionDslExpressionInput || !conditionSection || !saveButton) {
         return;
     }
 
@@ -597,22 +592,17 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
 
     function refreshConditionConfigByEngine() {
         const selectedEngine = (conditionEngineInput.value || '').toLowerCase();
-        let hasVisibleConfig = false;
 
         document.querySelectorAll('.stage-condition-config-block[data-engine]').forEach(element => {
             const currentEngine = (element.getAttribute('data-engine') || '').toLowerCase();
             const visible = currentEngine === selectedEngine;
             element.classList.toggle('d-none', !visible);
-            hasVisibleConfig = hasVisibleConfig || visible;
         });
-
-        unsupportedEngineWarning.classList.toggle('d-none', hasVisibleConfig || !hasExecutionConditionInput.checked);
     }
 
     function refreshConditionSectionVisibility() {
         conditionSection.classList.toggle('d-none', !hasExecutionConditionInput.checked);
         if (!hasExecutionConditionInput.checked) {
-            unsupportedEngineWarning.classList.add('d-none');
             return;
         }
 

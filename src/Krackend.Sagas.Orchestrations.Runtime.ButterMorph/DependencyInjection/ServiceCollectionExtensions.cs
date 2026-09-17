@@ -1,6 +1,7 @@
 namespace Krackend.Sagas.Orchestrations.Runtime.ButterMorph.DependencyInjection;
 
 using global::ButterMorph.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IButterMorphDiagnosticMetadataMapper, ButterMorphDiagnosticMetadataMapper>();
         services.AddSingleton<IButterMorphAliasNameFormatter, ButterMorphAliasNameFormatter>();
         services.AddSingleton<IButterMorphSourceGraphBuilder, ButterMorphSourceGraphBuilder>();
+        services.AddScoped<IOrchestrationConditionEvaluator, ButterMorphOrchestrationConditionEvaluator>();
         services.AddScoped<IOrchestrationTransformationExecutor, ButterMorphOrchestrationTransformationExecutor>();
         services.AddScoped<IOrchestrationValidationExecutor, ButterMorphOrchestrationValidationExecutor>();
 

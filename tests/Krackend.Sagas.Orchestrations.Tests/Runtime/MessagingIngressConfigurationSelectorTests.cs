@@ -7,6 +7,28 @@ using Microsoft.Extensions.Logging.Abstractions;
 public sealed class MessagingIngressConfigurationSelectorTests
 {
     [Fact]
+    public void SelectMatchingReturnsEmptyForNullEmptyAndNonMatchingConfigurations()
+    {
+        var selector = CreateSelector();
+
+        Assert.Empty(selector.SelectMatching(null!, "orders.created", "1.0.0"));
+        Assert.Empty(selector.SelectMatching([], "orders.created", "1.0.0"));
+        Assert.Empty(selector.SelectMatching(
+            [CreateTrigger("artifact-v1", "orders.created", "1.0.0", "orders.fulfillment", "1.0.0", DateTime.UtcNow)],
+            "orders.cancelled",
+            "1.0.0"));
+    }
+
+    [Fact]
+    public void SerializerRejectsNullAndEmptyPayloads()
+    {
+        var serializer = new DefaultMessagingConfigurationSerializer();
+
+        Assert.Throws<ArgumentNullException>(() => serializer.Serialize(null!));
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize(" "));
+    }
+
+    [Fact]
     public void SelectMatchingKeepsFanoutAcrossDifferentOrchestrations()
     {
         var selector = CreateSelector();
@@ -49,6 +71,21 @@ public sealed class MessagingIngressConfigurationSelectorTests
         var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
 
         Assert.Equal("artifact-v3", Assert.Single(selected).ArtifactId);
+    }
+
+    [Fact]
+    public void SelectMatchingFallsBackToDeployDateWhenArtifactVersionIsInvalid()
+    {
+        var selector = CreateSelector();
+        var configurations = new[]
+        {
+            CreateTrigger("artifact-old", "orders.created", "1.0.0", "orders.fulfillment", "bad", DateTime.UtcNow.AddMinutes(-5)),
+            CreateTrigger("artifact-new", "orders.created", "1.0.0", "orders.fulfillment", "also-bad", DateTime.UtcNow.AddMinutes(-1))
+        };
+
+        var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-new", Assert.Single(selected).ArtifactId);
     }
 
     [Fact]

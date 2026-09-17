@@ -15,6 +15,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     private readonly IRuntimeArtifactRepository _artifactRepository;
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
     private readonly IRuntimeArtifactProjectionScheduler _projectionScheduler;
+    private readonly IRuntimeArtifactCompatibilityValidator _compatibilityValidator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
@@ -22,11 +23,13 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     public RuntimeArtifactDeploymentService(
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeStorageUnitOfWork unitOfWork,
-        IRuntimeArtifactProjectionScheduler projectionScheduler)
+        IRuntimeArtifactProjectionScheduler projectionScheduler,
+        IRuntimeArtifactCompatibilityValidator compatibilityValidator)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _projectionScheduler = projectionScheduler ?? throw new ArgumentNullException(nameof(projectionScheduler));
+        _compatibilityValidator = compatibilityValidator ?? throw new ArgumentNullException(nameof(compatibilityValidator));
     }
 
     /// <inheritdoc />
@@ -40,6 +43,13 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         if (!TryValidatePackage(package, out var packageValidationError, out var payload, out var version, out var artifactId, out var sourceVersionId))
         {
             return Rejected(packageValidationError);
+        }
+
+        var compatibility = await _compatibilityValidator.ValidateAsync(payload, cancellationToken);
+        if (!compatibility.Succeeded)
+        {
+            return Rejected(
+                $"Artifact runtime compatibility validation failed ({compatibility.ErrorCode}): {compatibility.ErrorMessage}");
         }
 
         var existingArtifact = await TryGetExistingArtifact(

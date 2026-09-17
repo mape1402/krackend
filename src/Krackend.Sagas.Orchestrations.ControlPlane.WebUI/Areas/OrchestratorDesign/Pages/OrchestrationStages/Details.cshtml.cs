@@ -71,17 +71,23 @@ public sealed class DetailsModel : PageModel
     [BindProperty]
     public CreateTaskInput NewTask { get; set; } = new();
 
-    public IEnumerable<SelectListItem> TaskKinds => Enum.GetValues<TaskKind>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+    public IEnumerable<SelectListItem> TaskKinds => new[] { TaskKind.Messaging }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public IEnumerable<SelectListItem> ExecutionModes => Enum.GetValues<TaskExecutionMode>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
-    public IEnumerable<SelectListItem> DispatchTypes => Enum.GetValues<TaskDispatchType>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+    public IEnumerable<SelectListItem> DispatchTypes =>
+        new[] { TaskDispatchType.FireAndForget, TaskDispatchType.FireAndWaitCallback }
+            .Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> CompensationDispatchTypes =>
+        new[] { TaskDispatchType.FireAndForget }
+            .Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public IEnumerable<SelectListItem> OnErrorPolicies => Enum.GetValues<OnErrorPolicy>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
-    public IEnumerable<SelectListItem> EngineTypes => Enum.GetValues<EngineType>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+    public IEnumerable<SelectListItem> EngineTypes => new[] { EngineType.DSL }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
-    public IEnumerable<SelectListItem> RetryStrategyTypes => Enum.GetValues<RetryStrategyType>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+    public IEnumerable<SelectListItem> RetryStrategyTypes => new[] { RetryStrategyType.Fixed }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public IEnumerable<SelectListItem> TimeoutBehaviors => Enum.GetValues<TimeoutBehavior>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
@@ -141,7 +147,7 @@ public sealed class DetailsModel : PageModel
                 return RedirectToPage("/OrchestrationStages/Details", new { area = "OrchestratorDesign", orchestrationId, versionId, stageId = NewTask.StageId });
             }
 
-            var editKind = ParseEnum(NewTask.Kind, current.Kind);
+            var editKind = ResolveTaskKind(ParseEnum(NewTask.Kind, current.Kind));
             var editExecutionMode = ParseEnum(NewTask.ExecutionMode, current.ExecutionMode);
             var editDispatchType = ResolveDispatchType(editKind, ParseEnum(NewTask.DispatchType, current.DispatchType));
             var editOnErrorPolicy = ParseEnum(NewTask.OnErrorPolicy, current.OnErrorPolicy);
@@ -194,9 +200,9 @@ public sealed class DetailsModel : PageModel
             return RedirectToPage("/OrchestrationStages/Details", new { area = "OrchestratorDesign", orchestrationId, versionId, stageId = NewTask.StageId });
         }
 
-        var kind = ParseEnum(NewTask.Kind, TaskKind.HumanApproval);
+        var kind = ResolveTaskKind(ParseEnum(NewTask.Kind, TaskKind.Messaging));
         var executionMode = ParseEnum(NewTask.ExecutionMode, TaskExecutionMode.Sequential);
-        var dispatchType = ResolveDispatchType(kind, ParseEnum(NewTask.DispatchType, TaskDispatchType.FireAndWait));
+        var dispatchType = ResolveDispatchType(kind, ParseEnum(NewTask.DispatchType, TaskDispatchType.FireAndWaitCallback));
         var onErrorPolicy = ParseEnum(NewTask.OnErrorPolicy, OnErrorPolicy.Stop);
         var parallelGroupId = NormalizeUlid(NewTask.ParallelGroupId);
 
@@ -626,7 +632,7 @@ public sealed class DetailsModel : PageModel
 
     private void ValidateTaskInput()
     {
-        var kind = ParseEnum(NewTask.Kind, TaskKind.HumanApproval);
+        var kind = ResolveTaskKind(ParseEnum(NewTask.Kind, TaskKind.Messaging));
         ValidateTaskConfiguration(kind, string.Empty);
 
         if (NewTask.HasRetryPolicy)
@@ -652,7 +658,7 @@ public sealed class DetailsModel : PageModel
             return;
         }
 
-        var compensationKind = ParseEnum(NewTask.CompensationKind, TaskKind.HumanApproval);
+        var compensationKind = ResolveTaskKind(ParseEnum(NewTask.CompensationKind, TaskKind.Messaging));
         ValidateTaskConfiguration(compensationKind, "Compensation");
 
         if (NewTask.HasCompensationRetryPolicy)
@@ -738,7 +744,7 @@ public sealed class DetailsModel : PageModel
             AddRequired($"{prefix}MessagingSchemaContractKey", contractKey, "Capture the messaging schema contract key.");
         }
 
-        if (hasRequestValidation)
+        if (hasRequestValidation || hasSchemaValidation)
         {
             AddRequired($"{prefix}MessagingRequestValidationDsl", requestValidationDsl, "Capture the request validation DSL.");
         }
@@ -845,8 +851,8 @@ public sealed class DetailsModel : PageModel
             ["HasRetryPolicy"] = task.RetryPolicy is not null,
             ["HasTimeoutPolicy"] = task.TimeoutPolicy is not null,
             ["HasCompensation"] = task.CompensationDefinition is not null,
-            ["CompensationKind"] = task.CompensationDefinition?.CompensationTaskKind.ToString() ?? TaskKind.HumanApproval.ToString(),
-            ["CompensationDispatchType"] = task.CompensationDefinition?.DispatchType.ToString() ?? TaskDispatchType.FireAndWait.ToString(),
+            ["CompensationKind"] = task.CompensationDefinition?.CompensationTaskKind.ToString() ?? TaskKind.Messaging.ToString(),
+            ["CompensationDispatchType"] = task.CompensationDefinition?.DispatchType.ToString() ?? TaskDispatchType.FireAndForget.ToString(),
             ["HasCompensationExecutionCondition"] = task.CompensationDefinition?.HasExecutionCondition ?? false,
             ["CompensationConditionEngine"] = task.CompensationDefinition?.ExecutionCondition?.Engine.ToString() ?? EngineType.DSL.ToString(),
             ["CompensationConditionDslExpression"] = (task.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
@@ -1295,7 +1301,7 @@ public sealed class DetailsModel : PageModel
             {
                 HasSchemaValidation = input.HasMessagingSchemaValidation,
                 HasRequestValidation = input.HasMessagingRequestValidation,
-                RequestValidation = input.HasMessagingRequestValidation
+                RequestValidation = input.HasMessagingRequestValidation || input.HasMessagingSchemaValidation
                     ? BuildValidation(input.MessagingRequestValidationDsl, input.MessagingRequestValidationErrorCode)
                     : null,
                 HasResponseValidation = input.HasMessagingResponseValidation,
@@ -1351,7 +1357,7 @@ public sealed class DetailsModel : PageModel
             {
                 HasSchemaValidation = input.HasCompensationMessagingSchemaValidation,
                 HasRequestValidation = input.HasCompensationMessagingRequestValidation,
-                RequestValidation = input.HasCompensationMessagingRequestValidation
+                RequestValidation = input.HasCompensationMessagingRequestValidation || input.HasCompensationMessagingSchemaValidation
                     ? BuildValidation(input.CompensationMessagingRequestValidationDsl, input.CompensationMessagingRequestValidationErrorCode)
                     : null,
                 HasResponseValidation = input.HasCompensationMessagingResponseValidation,
@@ -1386,22 +1392,15 @@ public sealed class DetailsModel : PageModel
         bool stopOnNonRetryableError)
     {
         var requestedStrategy = ParseEnum(strategyType, RetryStrategyType.Fixed);
-        var strategy = requestedStrategy switch
+        var strategy = new FixedRetryStrategy
         {
-            RetryStrategyType.Fixed => new FixedRetryStrategy
-            {
-                Delay = Duration.FromSeconds(Math.Max(0, fixedDelaySeconds))
-            },
-            _ => new FixedRetryStrategy
-            {
-                Delay = Duration.FromSeconds(Math.Max(0, fixedDelaySeconds))
-            }
+            Delay = Duration.FromSeconds(Math.Max(0, fixedDelaySeconds))
         };
 
         return new RetryPolicy
         {
             MaxRetries = Math.Max(0, maxRetries),
-            StrategyType = requestedStrategy,
+            StrategyType = requestedStrategy == RetryStrategyType.Fixed ? requestedStrategy : RetryStrategyType.Fixed,
             Strategy = strategy,
             RetryableErrorCodes = ParseStringList(retryableErrorCodes),
             StopOnNonRetryableError = stopOnNonRetryableError
@@ -1466,8 +1465,8 @@ public sealed class DetailsModel : PageModel
         CreateTaskInput input,
         string defaultSchemaRegistryProviderKey)
     {
-        var compensationKind = ParseEnum(input.CompensationKind, TaskKind.HumanApproval);
-        var compensationDispatchType = ResolveDispatchType(compensationKind, ParseEnum(input.CompensationDispatchType, TaskDispatchType.FireAndWait));
+        var compensationKind = ResolveTaskKind(ParseEnum(input.CompensationKind, TaskKind.Messaging));
+        var compensationDispatchType = ResolveCompensationDispatchType(compensationKind, ParseEnum(input.CompensationDispatchType, TaskDispatchType.FireAndForget));
 
         var compensation = DefinitionDefaults.CreateCompensationDefinition(compensationKind);
         compensation.DispatchType = compensationDispatchType;
@@ -1511,15 +1510,30 @@ public sealed class DetailsModel : PageModel
         return allowed.Contains(requested) ? requested : allowed[0];
     }
 
+    private static TaskDispatchType ResolveCompensationDispatchType(TaskKind kind, TaskDispatchType requested)
+    {
+        var allowed = GetAllowedCompensationDispatchTypes(kind);
+        return allowed.Contains(requested) ? requested : allowed[0];
+    }
+
+    private static TaskKind ResolveTaskKind(TaskKind requested)
+        => requested == TaskKind.Messaging ? requested : TaskKind.Messaging;
+
     private static TaskDispatchType[] GetAllowedDispatchTypes(TaskKind kind)
     {
         return kind switch
         {
-            TaskKind.HumanApproval => new[] { TaskDispatchType.FireAndWaitCallback },
             TaskKind.Messaging => new[] { TaskDispatchType.FireAndForget, TaskDispatchType.FireAndWaitCallback },
-            TaskKind.Http => new[] { TaskDispatchType.FireAndWait, TaskDispatchType.FireAndForget, TaskDispatchType.FireAndWaitCallback },
-            TaskKind.Plugin => new[] { TaskDispatchType.FireAndWait, TaskDispatchType.FireAndForget, TaskDispatchType.FireAndWaitCallback },
-            _ => new[] { TaskDispatchType.FireAndWait, TaskDispatchType.FireAndForget, TaskDispatchType.FireAndWaitCallback },
+            _ => new[] { TaskDispatchType.FireAndForget, TaskDispatchType.FireAndWaitCallback },
+        };
+    }
+
+    private static TaskDispatchType[] GetAllowedCompensationDispatchTypes(TaskKind kind)
+    {
+        return kind switch
+        {
+            TaskKind.Messaging => new[] { TaskDispatchType.FireAndForget },
+            _ => new[] { TaskDispatchType.FireAndForget },
         };
     }
 
@@ -1624,7 +1638,7 @@ public sealed class DetailsModel : PageModel
         public string Name { get; set; } = string.Empty;
 
         [Required]
-        public string Kind { get; set; } = TaskKind.HumanApproval.ToString();
+        public string Kind { get; set; } = TaskKind.Messaging.ToString();
 
         [Required]
         public string ExecutionMode { get; set; } = TaskExecutionMode.Sequential.ToString();
@@ -1632,7 +1646,7 @@ public sealed class DetailsModel : PageModel
         public string ParallelGroupId { get; set; } = string.Empty;
 
         [Required]
-        public string DispatchType { get; set; } = TaskDispatchType.FireAndWait.ToString();
+        public string DispatchType { get; set; } = TaskDispatchType.FireAndWaitCallback.ToString();
 
         [Required]
         public string OnErrorPolicy { get; set; } = Krackend.Sagas.Orchestrations.Abstractions.Primitives.OnErrorPolicy.Stop.ToString();
@@ -1747,7 +1761,7 @@ public sealed class DetailsModel : PageModel
         public bool HasTimeoutPolicy { get; set; }
 
         [Required]
-        public string CompensationKind { get; set; } = TaskKind.HumanApproval.ToString();
+        public string CompensationKind { get; set; } = TaskKind.Messaging.ToString();
 
         public bool HasCompensation { get; set; }
 
@@ -1801,7 +1815,7 @@ public sealed class DetailsModel : PageModel
         public string CompensationPluginId { get; set; } = string.Empty;
 
         [Required]
-        public string CompensationDispatchType { get; set; } = TaskDispatchType.FireAndWait.ToString();
+        public string CompensationDispatchType { get; set; } = TaskDispatchType.FireAndForget.ToString();
 
         [Required]
         public string CompensationConditionEngine { get; set; } = EngineType.DSL.ToString();

@@ -57,6 +57,151 @@ public sealed class RuntimeDiagnosticsReaderTests
             second => Assert.Equal(store.NewerTransition.Id.ToString(), second.Id));
     }
 
+    [Fact]
+    public async Task GetSnapshotAndSummary_ReturnTrafficAndVersionedRows()
+    {
+        var bucket = new DateTime(2026, 8, 12, 12, 1, 0, DateTimeKind.Utc);
+        var store = RuntimeDiagnosticsStore.Create();
+        store.TrafficPoints = [new RuntimeTrafficPoint(bucket, 2, 3, 4, 5)];
+        var reader = CreateReader(store);
+
+        var snapshot = await reader.GetSnapshot();
+        var summary = await reader.GetSummary();
+
+        var instance = Assert.Single(snapshot.Instances);
+        Assert.Equal("1.0.0", instance.OrchestrationVersion);
+        Assert.Equal("orders v1.0.0", instance.OrchestrationLabel);
+        Assert.Equal(1, snapshot.Summary.CompletedLastMinute);
+        Assert.Equal(bucket, Assert.Single(snapshot.Traffic).BucketUtc);
+        Assert.Equal(5, Assert.Single(summary.Traffic).Failed);
+        Assert.Equal(5, Assert.Single(summary.HourlyTraffic).Failed);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenArtifactCannotBeLoaded_ReturnsExecutedTraceWithoutConfiguredVersion()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.ArtifactLookupFails = true;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Empty(detail.Instance.OrchestrationVersion);
+        Assert.True(Assert.Single(detail.Stages).HasExecution);
+        Assert.True(Assert.Single(detail.Tasks).HasExecution);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenArtifactPayloadIsInvalid_ReturnsExecutedTraceWithoutConfiguredStages()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Artifact.ArtifactPayload = JsonNode.Parse("""{"version":"not-a-semver"}""")!;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Single(detail.Stages);
+        Assert.Single(detail.Tasks);
+        Assert.True(Assert.Single(detail.Tasks).HasExecution);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenArtifactContainsConfiguredItems_AddsPendingStagesAndTasks()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Collection(
+            detail.Stages,
+            stage =>
+            {
+                Assert.Equal("reserve-stock", stage.StageKey);
+                Assert.True(stage.HasExecution);
+                Assert.Contains(stage.Tasks, task => task.TaskKey == "notify-customer" && !task.HasExecution);
+            },
+            stage =>
+            {
+                Assert.Equal("capture-payment", stage.StageKey);
+                Assert.False(stage.HasExecution);
+                Assert.Equal("Pending", stage.Status);
+                Assert.Contains("TaskCount", stage.Metadata);
+                Assert.All(stage.Tasks, task => Assert.False(task.HasExecution));
+            });
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenExecutedTaskIsNotInArtifact_KeepsItAfterConfiguredPendingTasks()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Task.TaskKey = "legacy-task";
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Contains(detail.Tasks, task => task.TaskKey == "reserve" && !task.HasExecution);
+        Assert.Contains(detail.Tasks, task => task.TaskKey == "legacy-task" && task.HasExecution);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenAttemptDoesNotReferenceDispatch_LoadsDispatchByAttempt()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Attempt.DispatchId = null;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Equal(store.Dispatch.Id.ToString(), Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch.Id);
+    }
+
+    [Fact]
+    public async Task GetDetail_FormatsMetadataDictionaries()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Instance.Metadata["tenant"] = JsonValue.Create("north")!;
+        store.Task.Metadata["worker"] = JsonValue.Create("inventory")!;
+        store.Attempt.Metadata["elapsed"] = JsonValue.Create(123)!;
+        store.Dispatch.Metadata["provider"] = JsonValue.Create("pigeon")!;
+        store.Compensation.Metadata["reason"] = JsonValue.Create("rollback")!;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Contains("\"tenant\": \"north\"", detail.Metadata);
+        Assert.Contains("\"worker\": \"inventory\"", Assert.Single(detail.Tasks).Metadata);
+        var attempt = Assert.Single(Assert.Single(detail.Tasks).Attempts);
+        Assert.Contains("\"elapsed\": 123", attempt.Metadata);
+        Assert.Contains("\"provider\": \"pigeon\"", attempt.Dispatch.Metadata);
+        Assert.Contains("\"reason\": \"rollback\"", Assert.Single(detail.Compensations).Metadata);
+    }
+
+    [Theory]
+    [InlineData("", typeof(ArgumentException))]
+    [InlineData("not-an-ulid", typeof(ArgumentException))]
+    public async Task GetDetail_RejectsInvalidInstanceIds(string instanceId, Type exceptionType)
+    {
+        var reader = CreateReader(RuntimeDiagnosticsStore.Create());
+
+        var exception = await Record.ExceptionAsync(() => reader.GetDetail(instanceId));
+
+        Assert.NotNull(exception);
+        Assert.IsType(exceptionType, exception);
+    }
+
+    [Theory]
+    [InlineData("Created", "od-status-inactive")]
+    [InlineData("Running", "od-status-running")]
+    [InlineData("Retrying", "od-status-warning")]
+    [InlineData("WaitingResponse", "od-status-waiting")]
+    [InlineData("Completed", "od-status-active")]
+    [InlineData("Failed", "od-status-danger")]
+    [InlineData("anything-else", "od-status-inactive")]
+    public void StatusClass_MapsRuntimeStatuses(string status, string expectedClass)
+        => Assert.Equal(expectedClass, RuntimeDiagnosticsReader.StatusClass(status));
+
     private static RuntimeDiagnosticsReader CreateReader(RuntimeDiagnosticsStore store)
     {
         return new RuntimeDiagnosticsReader(
@@ -83,6 +228,9 @@ public sealed class RuntimeDiagnosticsReaderTests
         public required CompensationExecution Compensation { get; init; }
         public required ExecutionTransition OlderTransition { get; init; }
         public required ExecutionTransition NewerTransition { get; init; }
+        public bool ArtifactLookupFails { get; set; }
+        public IReadOnlyCollection<RuntimeTrafficPoint> TrafficPoints { get; set; } = [];
+        public IReadOnlyCollection<TaskExecution> ExtraTasks { get; set; } = [];
 
         public static RuntimeDiagnosticsStore Create()
         {
@@ -220,7 +368,17 @@ public sealed class RuntimeDiagnosticsReaderTests
             };
         }
 
-        private static OrchestrationArtifact BuildArtifact(Id stageId, Id taskId)
+        public void UseArtifactWithPendingConfiguredItems()
+        {
+            var artifact = BuildArtifact(Stage.Id, Task.Id, includePendingConfiguredItems: true);
+            Artifact.Version = artifact.Version;
+            Artifact.ArtifactPayload = JsonSerializer.SerializeToNode(artifact, SerializerOptions)!;
+        }
+
+        private static OrchestrationArtifact BuildArtifact(
+            Id stageId,
+            Id taskId,
+            bool includePendingConfiguredItems = false)
         {
             var version = new SemanticVersion(1, 0, 0);
             var schemaBinding = new SchemaBindingArtifact(
@@ -237,6 +395,96 @@ public sealed class RuntimeDiagnosticsReaderTests
             };
 
             var configuration = new MessagingTaskConfigurationArtifact("orders.reserve", version, schemaBinding);
+            var reserveTasks = new List<TaskArtifact>
+            {
+                new(
+                    taskId,
+                    "reserve",
+                    "Reserve inventory",
+                    1,
+                    string.Empty,
+                    TaskKind.Messaging,
+                    TaskExecutionMode.Sequential,
+                    null,
+                    DisabledCondition(),
+                    DisabledTransformation(),
+                    configuration,
+                    DefaultRetryPolicy(),
+                    DefaultTimeoutPolicy(),
+                    OnErrorPolicy.StopAndCompensate,
+                    DefaultCompensation(configuration),
+                    TaskDispatchType.FireAndWaitCallback,
+                    true)
+            };
+
+            if (includePendingConfiguredItems)
+            {
+                reserveTasks.Add(new TaskArtifact(
+                    Id.New(),
+                    "notify-customer",
+                    "Notify customer",
+                    2,
+                    "Configured but not reached yet.",
+                    TaskKind.Messaging,
+                    TaskExecutionMode.Sequential,
+                    null,
+                    DisabledCondition(),
+                    DisabledTransformation(),
+                    configuration,
+                    DefaultRetryPolicy(),
+                    DefaultTimeoutPolicy(),
+                    OnErrorPolicy.Stop,
+                    null,
+                    TaskDispatchType.FireAndForget,
+                    true));
+            }
+
+            var stages = new List<StageArtifact>
+            {
+                new(
+                    stageId,
+                    "reserve-stock",
+                    "Reserve stock",
+                    1,
+                    DisabledCondition(),
+                    reserveTasks,
+                    [],
+                    [],
+                    "Reserve inventory before charging the order.")
+            };
+
+            if (includePendingConfiguredItems)
+            {
+                stages.Add(new StageArtifact(
+                    Id.New(),
+                    "capture-payment",
+                    "Capture payment",
+                    2,
+                    DisabledCondition(),
+                    [
+                        new TaskArtifact(
+                            Id.New(),
+                            "charge-card",
+                            "Charge card",
+                            1,
+                            "Configured future stage.",
+                            TaskKind.Messaging,
+                            TaskExecutionMode.Sequential,
+                            null,
+                            DisabledCondition(),
+                            DisabledTransformation(),
+                            configuration,
+                            DefaultRetryPolicy(),
+                            DefaultTimeoutPolicy(),
+                            OnErrorPolicy.Stop,
+                            null,
+                            TaskDispatchType.FireAndWaitCallback,
+                            true)
+                    ],
+                    [],
+                    [],
+                    "Capture money once stock is reserved."));
+            }
 
             return new OrchestrationArtifact(
                 Id.New(),
@@ -248,37 +496,7 @@ public sealed class RuntimeDiagnosticsReaderTests
                 new Checksum("test"),
                 [],
                 [],
-                [
-                    new StageArtifact(
-                        stageId,
-                        "reserve-stock",
-                        "Reserve stock",
-                        1,
-                        DisabledCondition(),
-                        [
-                            new TaskArtifact(
-                                taskId,
-                                "reserve",
-                                "Reserve inventory",
-                                1,
-                                string.Empty,
-                                TaskKind.Messaging,
-                                TaskExecutionMode.Sequential,
-                                null,
-                                DisabledCondition(),
-                                DisabledTransformation(),
-                                configuration,
-                                DefaultRetryPolicy(),
-                                DefaultTimeoutPolicy(),
-                                OnErrorPolicy.StopAndCompensate,
-                                DefaultCompensation(configuration),
-                                TaskDispatchType.FireAndWaitCallback,
-                                true)
-                        ],
-                        [],
-                        [],
-                        "Reserve inventory before charging the order.")
-                ],
+                stages,
                 "Test artifact.");
         }
 
@@ -326,7 +544,10 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task MarkReady(Id artifactId, long ingressGeneration, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task MarkProjectionFailed(Id artifactId, long ingressGeneration, string error, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DeactivateActiveArtifacts(string orchestrationDefinitionKey, Id exceptArtifactId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
+        public Task<RuntimeOrchestrationArtifact> GetById(Id artifactId, CancellationToken cancellationToken = default)
+            => store.ArtifactLookupFails
+                ? Task.FromException<RuntimeOrchestrationArtifact>(new InvalidOperationException("Artifact not available."))
+                : Task.FromResult(store.Artifact);
         public Task<RuntimeOrchestrationArtifact> GetByVersion(string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>([store.Artifact]);
@@ -360,7 +581,8 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task<TaskExecution> GetById(Id taskExecutionId, CancellationToken cancellationToken = default) => Task.FromResult(store.Task);
         public Task<TaskExecution> GetByCorrelationId(string correlationId, CancellationToken cancellationToken = default) => Task.FromResult(store.Task);
         public Task<TaskExecution> GetByStageAndKey(Id stageExecutionId, string taskKey, CancellationToken cancellationToken = default) => Task.FromResult(store.Task);
-        public Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskExecution>>([store.Task]);
+        public Task<IReadOnlyCollection<TaskExecution>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskExecution>>([store.Task, .. store.ExtraTasks]);
         public Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskExecution>>(Array.Empty<TaskExecution>());
     }
 
@@ -401,6 +623,6 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<IReadOnlyCollection<ExecutionTransition>> GetByInstanceId(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>([store.NewerTransition, store.OlderTransition]);
         public Task<IReadOnlyCollection<ExecutionTransition>> GetRecent(int take = 250, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<ExecutionTransition>>([store.NewerTransition, store.OlderTransition]);
-        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(DateTime sinceUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<RuntimeTrafficPoint>>(Array.Empty<RuntimeTrafficPoint>());
+        public Task<IReadOnlyCollection<RuntimeTrafficPoint>> GetTraffic(DateTime sinceUtc, CancellationToken cancellationToken = default) => Task.FromResult(store.TrafficPoints);
     }
 }

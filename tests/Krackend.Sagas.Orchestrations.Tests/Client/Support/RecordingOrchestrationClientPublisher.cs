@@ -14,6 +14,8 @@ internal sealed class RecordingOrchestrationClientPublisher : IOrchestrationClie
 
     public object? Payload { get; private set; }
 
+    public OrchestrationReplyAddress? Address { get; private set; }
+
     public OrchestrationExecutionResultMetadata? ResultMetadata { get; private set; }
 
     public int PublishCount { get; private set; }
@@ -25,6 +27,7 @@ internal sealed class RecordingOrchestrationClientPublisher : IOrchestrationClie
     {
         PublishCount++;
         Payload = payload;
+        Address = address;
         ResultMetadata = _metadataAccessor.Get();
         return Task.CompletedTask;
     }
