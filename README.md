@@ -146,6 +146,8 @@ builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
 });
 ```
 
+The KnOwl adapter reads deployed contracts from the KnOwl Control Plane. Event bindings resolve one event artifact, while command bindings can resolve the command request and reply artifacts together so orchestration artifacts keep immutable snapshots for validation, transformation, runtime dispatch, and response handling.
+
 Minimal runtime host setup:
 
 ```csharp
@@ -190,7 +192,7 @@ See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full pa
 
 ## Release
 
-Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.0.1`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.1.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 

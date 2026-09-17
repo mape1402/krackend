@@ -94,6 +94,34 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
     }
 
     [Fact]
+    public void CreatePayloadJson_WhenMessagingUsesCommandBinding_NormalizesRuntimeRequestAndResponseBindings()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+        var task = version.StageDefinitions[0].TaskDefinitions[0];
+        task.Configuration = new MessagingTaskConfiguration
+        {
+            Topic = "inventory.reserve",
+            Version = new SemanticVersion(1, 0, 0),
+            SchemaBinding = CreateSchemaBinding(
+                ElementType.Task,
+                task.Id,
+                "inventory.reserve",
+                SchemaContractKind.Command),
+            HasSchemaValidation = true
+        };
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var taskConfiguration = JsonNode.Parse(payloadJson)!["StageDefinitions"]!.AsArray()[0]!["TaskDefinitions"]!.AsArray()[0]!["Configuration"]!.AsObject();
+
+        Assert.Equal((int)SchemaContractKind.CommandRequest, taskConfiguration["SchemaBinding"]!["ContractKind"]!.GetValue<int>());
+        Assert.Equal((int)SchemaContractKind.CommandRequest, taskConfiguration["RequestSchemaBinding"]!["ContractKind"]!.GetValue<int>());
+        Assert.Equal((int)SchemaContractKind.CommandResponse, taskConfiguration["ResponseSchemaBinding"]!["ContractKind"]!.GetValue<int>());
+        Assert.Equal("inventory.reserve", taskConfiguration["RequestSchemaBinding"]!["ContractKey"]!.GetValue<string>());
+        Assert.Equal("inventory.reserve", taskConfiguration["ResponseSchemaBinding"]!["ContractKey"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void CreatePayloadJson_MapsHttpPluginHumanAndWaitTimeoutConfigurations()
     {
         var definition = CreateDefinition();
@@ -597,7 +625,11 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
             TimeoutBehaviorPolicy = new FailTimeoutBehaviorPolicy { ErrorCode = "CompensationTimeout" }
         };
 
-    private static SchemaBinding CreateSchemaBinding(ElementType elementType, Id elementId, string contractKey)
+    private static SchemaBinding CreateSchemaBinding(
+        ElementType elementType,
+        Id elementId,
+        string contractKey,
+        SchemaContractKind contractKind = SchemaContractKind.CommandRequest)
         => new()
         {
             Id = Id.New(),
@@ -610,9 +642,10 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
             RegistryProviderKey = "knowl",
             StrictMode = true,
             IsValidationEnabled = true,
+            ContractKind = contractKind,
             Snapshot = new Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot
             {
-                ContractKind = SchemaContractKind.CommandRequest,
+                ContractKind = contractKind,
                 RegistryProviderId = "provider-001",
                 RegistryProviderKey = "knowl",
                 ContractId = $"knowl:{contractKey}",

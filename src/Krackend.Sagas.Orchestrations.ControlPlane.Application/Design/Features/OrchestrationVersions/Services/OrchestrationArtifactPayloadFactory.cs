@@ -231,16 +231,16 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
                 messaging.Topic,
                 messaging.Version,
                 MapSchemaBinding(
-                    messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+                    GetRequestSchemaBinding(messaging),
                     IsRequestValidationEnabled(messaging),
                     SchemaContractKind.CommandRequest))
             {
                 RequestSchemaBinding = MapSchemaBinding(
-                    messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+                    GetRequestSchemaBinding(messaging),
                     IsRequestValidationEnabled(messaging),
                     SchemaContractKind.CommandRequest),
                 ResponseSchemaBinding = MapSchemaBinding(
-                    messaging.ResponseSchemaBinding,
+                    GetResponseSchemaBinding(messaging),
                     IsResponseValidationEnabled(messaging),
                     SchemaContractKind.CommandResponse),
                 RequestValidation = MapValidation(
@@ -370,4 +370,37 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
 
     private static bool IsResponseValidationEnabled(MessagingTaskConfiguration configuration)
         => configuration?.HasResponseValidation == true || configuration?.ResponseSchemaBinding?.IsValidationEnabled == true;
+
+    private static SchemaBinding GetRequestSchemaBinding(MessagingTaskConfiguration configuration)
+        => configuration?.RequestSchemaBinding ??
+            CreateCommandSideBinding(configuration?.SchemaBinding, SchemaContractKind.CommandRequest) ??
+            configuration?.SchemaBinding;
+
+    private static SchemaBinding GetResponseSchemaBinding(MessagingTaskConfiguration configuration)
+        => configuration?.ResponseSchemaBinding ??
+            CreateCommandSideBinding(configuration?.SchemaBinding, SchemaContractKind.CommandResponse);
+
+    private static SchemaBinding CreateCommandSideBinding(SchemaBinding binding, SchemaContractKind contractKind)
+    {
+        if (binding?.ContractKind != SchemaContractKind.Command)
+        {
+            return null;
+        }
+
+        return new SchemaBinding
+        {
+            Id = binding.Id,
+            ElementType = binding.ElementType,
+            ElementId = binding.ElementId,
+            ContractId = binding.ContractId,
+            ContractKey = binding.ContractKey,
+            ContractVersion = binding.ContractVersion,
+            RegistryProviderId = binding.RegistryProviderId,
+            RegistryProviderKey = binding.RegistryProviderKey,
+            ContractKind = contractKind,
+            StrictMode = binding.StrictMode,
+            IsValidationEnabled = contractKind == SchemaContractKind.CommandRequest && binding.IsValidationEnabled,
+            Snapshot = binding.Snapshot?.ContractKind == contractKind ? binding.Snapshot : null
+        };
+    }
 }

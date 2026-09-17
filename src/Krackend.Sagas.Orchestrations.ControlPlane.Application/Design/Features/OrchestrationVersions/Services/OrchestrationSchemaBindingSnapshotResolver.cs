@@ -66,6 +66,12 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
             return;
         }
 
+        if (IsCommandReference(messaging.SchemaBinding))
+        {
+            await ResolveCommandReferenceAsync(messaging, cancellationToken);
+            return;
+        }
+
         await ResolveBindingAsync(
             messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
             SchemaContractKind.CommandRequest,
@@ -85,8 +91,40 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
             return;
         }
 
+        if (IsCommandReference(messaging.SchemaBinding))
+        {
+            await ResolveCommandReferenceAsync(messaging, cancellationToken);
+            return;
+        }
+
         await ResolveBindingAsync(
             messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+            SchemaContractKind.CommandRequest,
+            cancellationToken);
+        await ResolveBindingAsync(
+            messaging.ResponseSchemaBinding,
+            SchemaContractKind.CommandResponse,
+            cancellationToken);
+    }
+
+    private async Task ResolveCommandReferenceAsync(
+        MessagingTaskConfiguration messaging,
+        CancellationToken cancellationToken)
+    {
+        var commandBinding = messaging.SchemaBinding;
+        messaging.RequestSchemaBinding = CreateCommandSideBinding(
+            commandBinding,
+            SchemaContractKind.CommandRequest,
+            commandBinding.IsValidationEnabled || messaging.HasRequestValidation || messaging.HasSchemaValidation,
+            commandBinding.StrictMode);
+        messaging.ResponseSchemaBinding = CreateCommandSideBinding(
+            commandBinding,
+            SchemaContractKind.CommandResponse,
+            messaging.HasResponseValidation,
+            messaging.HasResponseValidation && commandBinding.StrictMode);
+
+        await ResolveBindingAsync(
+            messaging.RequestSchemaBinding,
             SchemaContractKind.CommandRequest,
             cancellationToken);
         await ResolveBindingAsync(
@@ -164,6 +202,34 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
                 $"Schema contract '{binding.ContractKey}' v{binding.ContractVersion} could not be resolved: {result.Message}");
         }
     }
+
+    private static bool IsCommandReference(SchemaBinding binding)
+        => binding is not null &&
+            binding.ContractKind == SchemaContractKind.Command &&
+            !string.IsNullOrWhiteSpace(binding.ContractKey);
+
+    private static SchemaBinding CreateCommandSideBinding(
+        SchemaBinding commandBinding,
+        SchemaContractKind contractKind,
+        bool isValidationEnabled,
+        bool strictMode)
+        => new()
+        {
+            Id = commandBinding.Id,
+            ElementType = commandBinding.ElementType,
+            ElementId = commandBinding.ElementId,
+            ContractId = commandBinding.ContractId,
+            ContractKey = commandBinding.ContractKey,
+            ContractVersion = commandBinding.ContractVersion,
+            RegistryProviderId = commandBinding.RegistryProviderId,
+            RegistryProviderKey = commandBinding.RegistryProviderKey,
+            ContractKind = contractKind,
+            StrictMode = strictMode,
+            IsValidationEnabled = isValidationEnabled,
+            Snapshot = commandBinding.Snapshot?.ContractKind == contractKind
+                ? commandBinding.Snapshot
+                : null
+        };
 
     private static bool HasCurrentSnapshot(SchemaBinding binding, SchemaContractKind contractKind)
     {

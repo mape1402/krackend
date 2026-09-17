@@ -103,15 +103,15 @@ public sealed class KnOwlSchemaContractResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_WhenCommandResponseIsRequested_UsesKnOwlCommandArtifactType()
+    public async Task ResolveAsync_WhenCommandResponseIsRequested_UsesKnOwlCommandReplyArtifactType()
     {
         var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
-        catalog.GetExactAsync(ContractArtifactType.Command, "inventories.reserve.completed", "1.0.0", Arg.Any<CancellationToken>())
+        catalog.GetExactAsync(ContractArtifactType.CommandReply, "inventories.reserve", "1.0.0", Arg.Any<CancellationToken>())
             .Returns(KnOwlContractCatalogResult.Found(new ContractArtifact
             {
                 Id = Guid.NewGuid(),
-                ArtifactType = ContractArtifactType.Command,
-                Topic = "inventories.reserve.completed",
+                ArtifactType = ContractArtifactType.CommandReply,
+                Topic = "inventories.reserve",
                 VersionNumber = "1.0.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "response-schema-hash",
@@ -126,13 +126,47 @@ public sealed class KnOwlSchemaContractResolverTests
             catalog);
 
         var result = await resolver.ResolveAsync(CreateRequest(
-            "inventories.reserve.completed",
+            "inventories.reserve",
             "1.0.0",
             SchemaContractKind.CommandResponse));
 
         Assert.Equal(SchemaContractResolutionStatus.Resolved, result.Status);
         Assert.Equal(SchemaContractKind.CommandResponse, result.Snapshot.Reference.Kind);
-        await catalog.Received(1).GetExactAsync(ContractArtifactType.Command, "inventories.reserve.completed", "1.0.0", Arg.Any<CancellationToken>());
+        await catalog.Received(1).GetExactAsync(ContractArtifactType.CommandReply, "inventories.reserve", "1.0.0", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenCommandIsRequested_UsesKnOwlCommandRequestArtifactType()
+    {
+        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        catalog.GetExactAsync(ContractArtifactType.CommandRequest, "inventories.reserve", "1.0.0", Arg.Any<CancellationToken>())
+            .Returns(KnOwlContractCatalogResult.Found(new ContractArtifact
+            {
+                Id = Guid.NewGuid(),
+                ArtifactType = ContractArtifactType.CommandRequest,
+                Topic = "inventories.reserve",
+                VersionNumber = "1.0.0",
+                PayloadSchemaJson = "{\"type\":\"object\"}",
+                ContentHash = "request-schema-hash",
+                SourceStatus = "Deployed"
+            }));
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+            },
+            catalog);
+
+        var result = await resolver.ResolveAsync(CreateRequest(
+            "inventories.reserve",
+            "1.0.0",
+            SchemaContractKind.Command));
+
+        Assert.Equal(SchemaContractResolutionStatus.Resolved, result.Status);
+        Assert.Equal(SchemaContractKind.Command, result.Snapshot.Reference.Kind);
+        Assert.Equal("request-schema-hash", result.Snapshot.ContentHash);
+        await catalog.Received(1).GetExactAsync(ContractArtifactType.CommandRequest, "inventories.reserve", "1.0.0", Arg.Any<CancellationToken>());
     }
 
     [Fact]
