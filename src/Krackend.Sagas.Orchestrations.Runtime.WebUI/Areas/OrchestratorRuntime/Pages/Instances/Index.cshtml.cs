@@ -1,4 +1,4 @@
-using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;

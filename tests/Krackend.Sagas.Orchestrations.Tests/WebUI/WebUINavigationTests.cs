@@ -5,7 +5,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
-using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;

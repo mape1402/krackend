@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Krackend.Security\Krackend.Security.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.ControlPlane.Application\Krackend.Sagas.Orchestrations.ControlPlane.Application.csproj" />
   </ItemGroup>
 

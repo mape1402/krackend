@@ -15,6 +15,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -166,8 +167,10 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
         await using (var scope = host.Services.CreateAsyncScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
-            await dbContext.Database.EnsureCreatedAsync();
+            await EnsureRuntimeDatabaseCreatedAsync(dbContext);
         }
+
+        await WaitForRuntimeDatabaseAsync(connectionString);
 
         await host.StartAsync();
         return new RealMessagingRuntimeHarness(host, resolvedDatabaseName, connectionString);
@@ -177,6 +180,82 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
     {
         await _host.StopAsync();
         _host.Dispose();
+    }
+
+    private static bool IsDatabaseAlreadyCreated(SqlException exception)
+        => exception.Errors.Cast<SqlError>().Any(error => error.Number == 1801);
+
+    private static async Task EnsureRuntimeDatabaseCreatedAsync(RuntimeDbContext dbContext)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(1);
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                await dbContext.Database.EnsureCreatedAsync();
+                return;
+            }
+            catch (SqlException exception) when (IsDatabaseAlreadyCreated(exception))
+            {
+                // SQL Server can report a freshly restarted database as missing and then reject CREATE DATABASE.
+                // The chaos tests intentionally restart SQL and reconnect to the same database.
+                return;
+            }
+            catch (Exception exception) when (IsTransientDatabaseAvailabilityFailure(exception))
+            {
+                lastError = exception;
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+        }
+
+        throw new TimeoutException("Runtime test database did not become available for creation.", lastError);
+    }
+
+    private static async Task WaitForRuntimeDatabaseAsync(string connectionString)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(1);
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                await using var connection = new SqlConnection(connectionString);
+                await connection.OpenAsync();
+                await using var command = new SqlCommand("SELECT 1", connection);
+                await command.ExecuteScalarAsync();
+                return;
+            }
+            catch (Exception exception) when (IsTransientDatabaseAvailabilityFailure(exception))
+            {
+                lastError = exception;
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+        }
+
+        throw new TimeoutException("Runtime test database did not become queryable.", lastError);
+    }
+
+    private static bool IsTransientDatabaseAvailabilityFailure(Exception exception)
+    {
+        var sqlException = FindSqlException(exception);
+        return sqlException is not null &&
+            sqlException.Errors.Cast<SqlError>().Any(error => error.Number is 4060 or 18456 or 233 or 64 or -2);
+    }
+
+    private static SqlException? FindSqlException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException!)
+        {
+            if (current is SqlException sqlException)
+            {
+                return sqlException;
+            }
+        }
+
+        return null;
     }
 
     public async Task<RuntimeArtifactDeploymentResult> DeployAndWaitReadyAsync(

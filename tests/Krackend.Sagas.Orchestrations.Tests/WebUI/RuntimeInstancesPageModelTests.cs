@@ -2,7 +2,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances;
-using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 

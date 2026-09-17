@@ -55,6 +55,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var taskExecution = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
+            if (!CanRetryCurrentTaskState(taskExecution, decision.Task))
+            {
+                return;
+            }
+
             if (decision.Task.Kind != TaskKind.Messaging)
             {
                 await MarkRetryConfigurationFailedAsync(
@@ -317,6 +322,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             return taskArtifact?.RetryPolicy;
+        }
+
+        private static bool CanRetryCurrentTaskState(
+            TaskExecution taskExecution,
+            TaskArtifact taskArtifact)
+        {
+            if (taskExecution.Status is not (TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut))
+            {
+                return false;
+            }
+
+            var retryPolicy = ResolveRetryPolicy(taskExecution, taskArtifact);
+            return retryPolicy is not null &&
+                taskExecution.LastAttemptNumber <= retryPolicy.MaxRetries;
         }
 
         private static JsonNode ParsePayload(string payload)

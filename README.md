@@ -59,6 +59,13 @@ dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl
 dotnet add package Krackend.Sagas.Orchestrations.WebUI.Shell
 ```
 
+Security packages:
+
+```bash
+dotnet add package Krackend.Security
+dotnet add package Krackend.Security.Storage.EntityFramework
+```
+
 ## Event Sourcing
 
 `Krackend.EventSourcing` provides a modular write-model runtime for event sourcing:
@@ -138,6 +145,59 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
+- `Krackend.Security*` keeps authentication in the host and adds provider-agnostic product authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
+
+Security model:
+
+Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates product permissions.
+
+```csharp
+builder.Services
+    .AddAuthentication("HostScheme")
+    .AddJwtBearer("HostScheme", options =>
+    {
+        // Host-owned authentication configuration.
+    });
+
+builder.Services.AddKrackendSecurity(options =>
+{
+    options.RequireKnownSubject = true;
+    options.Subject.Provider = "entra-id";
+    options.BootstrapAdmins.Add(new KrackendBootstrapSubject
+    {
+        Provider = "entra-id",
+        SubjectId = "external-user-object-id"
+    });
+});
+
+builder.Services.AddKrackendSecurityStorageEntityFramework(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("Security"));
+});
+```
+
+REST APIs can keep an optional global policy and also opt into granular product policies:
+
+```csharp
+app.MapKrackendOrchestrationsControlPlaneApi(options =>
+{
+    options.Authorization.UseKrackendDefaults();
+});
+
+app.MapKrackendOrchestrationsRuntimeApi(options =>
+{
+    options.Authorization.UseKrackendDefaults();
+});
+
+app.MapKrackendSecurityAdministrationApi();
+```
+
+The WebUI and REST API are sibling entry points over the same application/runtime services:
+
+```text
+WebUI -> Application/Runtime services
+API   -> Application/Runtime services
+```
 
 KnOwl schema registry setup for a design/control-plane host:
 

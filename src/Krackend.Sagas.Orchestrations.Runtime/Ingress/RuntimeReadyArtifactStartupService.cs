@@ -11,6 +11,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress;
 public sealed class RuntimeReadyArtifactStartupService : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IIngressRegistry _ingressRegistry;
     private readonly IRuntimeReplicaIdentity _replicaIdentity;
 
     /// <summary>
@@ -18,9 +19,11 @@ public sealed class RuntimeReadyArtifactStartupService : IHostedService
     /// </summary>
     public RuntimeReadyArtifactStartupService(
         IServiceScopeFactory scopeFactory,
+        IIngressRegistry ingressRegistry,
         IRuntimeReplicaIdentity replicaIdentity)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _ingressRegistry = ingressRegistry ?? throw new ArgumentNullException(nameof(ingressRegistry));
         _replicaIdentity = replicaIdentity ?? throw new ArgumentNullException(nameof(replicaIdentity));
     }
 
@@ -47,8 +50,6 @@ public sealed class RuntimeReadyArtifactStartupService : IHostedService
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var ingressRegistry = scope.ServiceProvider.GetRequiredService<IIngressRegistry>();
-        await ingressRegistry.ShutDownAllAsync(cancellationToken);
+        await _ingressRegistry.ShutDownAllAsync(cancellationToken);
     }
 }

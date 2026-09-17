@@ -35,6 +35,7 @@ public sealed class RuntimeStartupAndGossipTests
         await using var provider = services.BuildServiceProvider();
         var service = new RuntimeReadyArtifactStartupService(
             provider.GetRequiredService<IServiceScopeFactory>(),
+            ingressRegistry,
             new TestRuntimeReplicaIdentity { ReplicaId = "replica-x" });
 
         await service.StartAsync(CancellationToken.None);

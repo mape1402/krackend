@@ -16,6 +16,11 @@ public sealed class RuntimeRestApiOptions
     public string AuthorizationPolicy { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets the granular authorization policy options.
+    /// </summary>
+    public RuntimeRestApiAuthorizationOptions Authorization { get; } = new();
+
+    /// <summary>
     /// Gets or sets the default page size used by list endpoints.
     /// </summary>
     public int DefaultPageSize { get; set; } = 50;

@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
-using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -45,28 +45,30 @@ public static class EndpointRouteBuilderExtensions
         }
 
         group.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
-        MapDiagnostics(group);
-        MapArtifacts(group);
+        MapDiagnostics(group, options);
+        MapArtifacts(group, options);
         MapIngresses(group, options);
-        MapDesignNodes(group);
-        MapManualPull(group);
+        MapDesignNodes(group, options);
+        MapManualPull(group, options);
 
         return endpoints;
     }
 
-    private static void MapDiagnostics(RouteGroupBuilder group)
+    private static void MapDiagnostics(RouteGroupBuilder group, RuntimeRestApiOptions options)
     {
-        group.MapGet("/instances/snapshot", async (
+        var instancesGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.InstancesReadPolicy);
+
+        instancesGroup.MapGet("/instances/snapshot", async (
             [FromServices] IRuntimeDiagnosticsReader diagnostics,
             CancellationToken cancellationToken)
             => Results.Ok(await diagnostics.GetSnapshot(cancellationToken)));
 
-        group.MapGet("/instances/summary", async (
+        instancesGroup.MapGet("/instances/summary", async (
             [FromServices] IRuntimeDiagnosticsReader diagnostics,
             CancellationToken cancellationToken)
             => Results.Ok(await diagnostics.GetSummary(cancellationToken)));
 
-        group.MapGet("/instances/{instanceId}", async (
+        instancesGroup.MapGet("/instances/{instanceId}", async (
             string instanceId,
             [FromServices] IRuntimeDiagnosticsReader diagnostics,
             CancellationToken cancellationToken)
@@ -75,9 +77,12 @@ public static class EndpointRouteBuilderExtensions
                 : Results.Ok(await diagnostics.GetDetail(instanceId, cancellationToken)));
     }
 
-    private static void MapArtifacts(RouteGroupBuilder group)
+    private static void MapArtifacts(RouteGroupBuilder group, RuntimeRestApiOptions options)
     {
-        group.MapGet("/artifacts", async (
+        var readGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReadPolicy);
+        var applyGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ArtifactApplyPolicy);
+
+        readGroup.MapGet("/artifacts", async (
             string search,
             [FromServices] IRuntimeArtifactRepository repository,
             CancellationToken cancellationToken)
@@ -93,7 +98,7 @@ public static class EndpointRouteBuilderExtensions
                 return Results.Ok(rows);
             });
 
-        group.MapGet("/artifacts/{artifactId}", async (
+        readGroup.MapGet("/artifacts/{artifactId}", async (
             string artifactId,
             [FromServices] IRuntimeArtifactRepository repository,
             CancellationToken cancellationToken)
@@ -107,7 +112,7 @@ public static class EndpointRouteBuilderExtensions
                 return Results.Ok(await repository.GetById(id, cancellationToken));
             });
 
-        group.MapPost("/artifacts/{artifactId}/standup", async (
+        applyGroup.MapPost("/artifacts/{artifactId}/standup", async (
             string artifactId,
             [FromServices] IRuntimeArtifactRepository repository,
             [FromServices] IRuntimeArtifactReadyNotifier notifier,
@@ -138,7 +143,9 @@ public static class EndpointRouteBuilderExtensions
 
     private static void MapIngresses(RouteGroupBuilder group, RuntimeRestApiOptions options)
     {
-        group.MapGet("/ingresses", async (
+        var readGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReadPolicy);
+
+        readGroup.MapGet("/ingresses", async (
             string artifactId,
             int? skip,
             int? take,
@@ -168,16 +175,19 @@ public static class EndpointRouteBuilderExtensions
             });
     }
 
-    private static void MapDesignNodes(RouteGroupBuilder group)
+    private static void MapDesignNodes(RouteGroupBuilder group, RuntimeRestApiOptions options)
     {
-        group.MapGet("/design-nodes", async (
+        var readGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReadPolicy);
+        var manageGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ManagePolicy);
+
+        readGroup.MapGet("/design-nodes", async (
             [FromServices] IRuntimeDesignNodeRepository repository,
             CancellationToken cancellationToken)
             => Results.Ok((await repository.GetAllAsync(cancellationToken))
                 .Select(RuntimeApiModelMapper.ToApiModel)
                 .ToArray()));
 
-        group.MapGet("/design-nodes/{designNodeId}", async (
+        readGroup.MapGet("/design-nodes/{designNodeId}", async (
             string designNodeId,
             [FromServices] IRuntimeDesignNodeRepository repository,
             CancellationToken cancellationToken)
@@ -191,7 +201,7 @@ public static class EndpointRouteBuilderExtensions
                 return Results.Ok(RuntimeApiModelMapper.ToApiModel(await repository.GetByIdAsync(id, cancellationToken)));
             });
 
-        group.MapPost("/design-nodes", async (
+        manageGroup.MapPost("/design-nodes", async (
             UpsertRuntimeDesignNodeRequest request,
             [FromServices] IRuntimeDesignNodeRepository repository,
             CancellationToken cancellationToken)
@@ -202,7 +212,7 @@ public static class EndpointRouteBuilderExtensions
                 return Results.Created(string.Empty, new { id = node.Id.ToString() });
             });
 
-        group.MapPut("/design-nodes/{designNodeId}", async (
+        manageGroup.MapPut("/design-nodes/{designNodeId}", async (
             string designNodeId,
             UpsertRuntimeDesignNodeRequest request,
             [FromServices] IRuntimeDesignNodeRepository repository,
@@ -220,7 +230,7 @@ public static class EndpointRouteBuilderExtensions
                 return Results.Ok(new { id = node.Id.ToString() });
             });
 
-        group.MapPost("/design-nodes/{designNodeId}/status", async (
+        manageGroup.MapPost("/design-nodes/{designNodeId}/status", async (
             string designNodeId,
             RuntimeDesignNodeStatusRequest request,
             [FromServices] IRuntimeDesignNodeRepository repository,
@@ -236,7 +246,7 @@ public static class EndpointRouteBuilderExtensions
                 return Results.NoContent();
             });
 
-        group.MapPost("/design-nodes/{designNodeId}/enabled", async (
+        manageGroup.MapPost("/design-nodes/{designNodeId}/enabled", async (
             string designNodeId,
             RuntimeDesignNodeEnabledRequest request,
             [FromServices] IRuntimeDesignNodeRepository repository,
@@ -252,14 +262,14 @@ public static class EndpointRouteBuilderExtensions
                 return Results.NoContent();
             });
 
-        group.MapPost("/design-nodes/{designNodeId}/credentials/generate", async (
+        manageGroup.MapPost("/design-nodes/{designNodeId}/credentials/generate", async (
             string designNodeId,
             CredentialIssuerRequest request,
             [FromServices] IRuntimeDesignNodeConnectionService service,
             CancellationToken cancellationToken)
             => Results.Ok(await service.GenerateCredentialPackageAsync(designNodeId, request.IssuerBaseUrl, cancellationToken)));
 
-        group.MapPost("/design-nodes/credentials/import", async (
+        manageGroup.MapPost("/design-nodes/credentials/import", async (
             ImportRuntimeDesignNodeCredentialPackageInput input,
             [FromServices] IRuntimeDesignNodeConnectionService service,
             CancellationToken cancellationToken)
@@ -269,25 +279,28 @@ public static class EndpointRouteBuilderExtensions
                 return Results.NoContent();
             });
 
-        group.MapPost("/design-nodes/{designNodeId}/validate", async (
+        manageGroup.MapPost("/design-nodes/{designNodeId}/validate", async (
             string designNodeId,
             [FromServices] IRuntimeDesignNodeConnectionService service,
             CancellationToken cancellationToken)
             => Results.Ok(await service.ValidateConnectionAsync(designNodeId, cancellationToken)));
     }
 
-    private static void MapManualPull(RouteGroupBuilder group)
+    private static void MapManualPull(RouteGroupBuilder group, RuntimeRestApiOptions options)
     {
-        group.MapGet("/control-planes", ([FromServices] IControlPlaneArtifactPullService service)
+        var readGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReadPolicy);
+        var applyGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ArtifactApplyPolicy);
+
+        readGroup.MapGet("/control-planes", ([FromServices] IControlPlaneArtifactPullService service)
             => Results.Ok(service.GetSources()));
 
-        group.MapGet("/control-planes/{sourceKey}/artifacts/pending", async (
+        readGroup.MapGet("/control-planes/{sourceKey}/artifacts/pending", async (
             string sourceKey,
             [FromServices] IControlPlaneArtifactPullService service,
             CancellationToken cancellationToken)
             => Results.Ok(await service.GetPendingAsync(sourceKey, cancellationToken)));
 
-        group.MapPost("/control-planes/{sourceKey}/artifacts/{releaseTargetId}/apply", async (
+        applyGroup.MapPost("/control-planes/{sourceKey}/artifacts/{releaseTargetId}/apply", async (
             string sourceKey,
             string releaseTargetId,
             [FromServices] IControlPlaneArtifactPullService service,
@@ -350,6 +363,16 @@ public static class EndpointRouteBuilderExtensions
     {
         var requested = take <= 0 ? options.DefaultPageSize : take;
         return Math.Clamp(requested, 1, options.MaxPageSize);
+    }
+
+    private static RouteGroupBuilder RequirePolicy(RouteGroupBuilder group, string policy)
+    {
+        if (!string.IsNullOrWhiteSpace(policy))
+        {
+            group.RequireAuthorization(policy);
+        }
+
+        return group;
     }
 
     private static string NormalizePrefix(string prefix)

@@ -16,6 +16,11 @@ public sealed class ControlPlaneRestApiOptions
     public string AuthorizationPolicy { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets the granular authorization policy options.
+    /// </summary>
+    public ControlPlaneRestApiAuthorizationOptions Authorization { get; } = new();
+
+    /// <summary>
     /// Gets or sets the default page size used by paged endpoints.
     /// </summary>
     public int DefaultPageSize { get; set; } = 25;

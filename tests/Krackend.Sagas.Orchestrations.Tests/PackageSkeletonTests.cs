@@ -1,7 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
-using Krackend.Sagas.Orchestrations.Runtime.WebUI.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 
 namespace Krackend.Sagas.Orchestrations.Tests;
 
@@ -20,7 +20,7 @@ public sealed class PackageSkeletonTests
             "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework",
             typeof(RuntimeDbContext).Assembly.GetName().Name);
         Assert.Equal(
-            "Krackend.Sagas.Orchestrations.Runtime.WebUI",
+            "Krackend.Sagas.Orchestrations.Runtime",
             typeof(RuntimeDiagnosticsReader).Assembly.GetName().Name);
     }
 }
