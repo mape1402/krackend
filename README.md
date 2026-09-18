@@ -176,6 +176,24 @@ builder.Services.AddKrackendSecurityStorageEntityFramework(options =>
 });
 ```
 
+Entity Framework storage provider model:
+
+The `*.Storage.EntityFramework` packages define portable EF Core storage mappings and repository implementations, but they do not choose SQL Server, PostgreSQL, SQLite, or any other database provider. The host owns the provider package, connection string, migrations assembly, and any provider-specific model details.
+
+```csharp
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
+    db => db.UseSqlServer(
+        builder.Configuration.GetConnectionString("Runtime"),
+        sql => sql.MigrationsAssembly(typeof(Program).Assembly.GetName().Name)),
+    storage => storage.ConfigureModel = modelBuilder =>
+    {
+        // Optional host-owned SQL Server details, such as filtered indexes
+        // or provider-specific column types used by this host's migrations.
+    });
+```
+
+The same pattern is available for Control Plane and Security storage. The sample hosts keep their SQL Server-specific model customization beside their migrations so another host can choose a different EF Core provider without changing Krackend packages.
+
 REST APIs can keep an optional global policy and also opt into granular product policies:
 
 ```csharp
@@ -257,7 +275,7 @@ See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full pa
 
 ## Release
 
-Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.2.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.3.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 
