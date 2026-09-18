@@ -657,10 +657,25 @@ public sealed class RuntimeRealInfrastructureE2ETests
             BusinessPayload(("saleId", $"S-{suffix}")),
             correlationId);
 
-        await runtime.WaitForInstanceStatusAsync(
-            correlationId,
-            OrchestrationInstanceStatus.Completed,
-            TimeSpan.FromSeconds(240));
+        try
+        {
+            await runtime.WaitForInstanceStatusAsync(
+                correlationId,
+                OrchestrationInstanceStatus.Completed,
+                TimeSpan.FromSeconds(240));
+        }
+        catch (TimeoutException exception)
+        {
+            var invocationSummary = string.Join(
+                " | ",
+                services.Scenario.Invocations.Select(invocation =>
+                    $"{invocation.Topic}:task={invocation.MessageMetadata.TaskExecutionId}:attempt={invocation.MessageMetadata.Attempt}:dispatch={invocation.MessageMetadata.DispatchId}:reply={invocation.MessageMetadata.ReplyAddress?.Transport}"));
+
+            throw new TimeoutException(
+                $"{exception.Message}. Service invocations=[{invocationSummary}]",
+                exception);
+        }
+
         await WaitForInvocationCountAsync(services.Scenario, paymentTopic, 2);
         await WaitForInvocationCountAsync(services.Scenario, notificationTopic, 1);
         var paymentAttempts = await AttemptsForTaskAsync(runtime, paymentTopic);

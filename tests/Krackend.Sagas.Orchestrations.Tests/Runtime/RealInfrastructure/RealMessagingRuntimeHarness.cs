@@ -62,13 +62,14 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
         var resolvedReplicaId = string.IsNullOrWhiteSpace(replicaId)
             ? $"runtime-{Guid.NewGuid():N}"
             : replicaId;
+        var runtimeDomain = $"Krackend.RealMessagingRuntimeHarness.{resolvedDatabaseName.Replace("_", ".", StringComparison.Ordinal)}";
 
         var settings = new Dictionary<string, string?>
         {
             ["ConnectionStrings:RabbitMq"] = infrastructure.RabbitMqConnectionString,
             ["ConnectionStrings:Redis"] = infrastructure.RedisConnectionString,
             ["ConnectionStrings:Mule"] = connectionString,
-            ["Pigeon:Domain"] = "Krackend.RealMessagingRuntimeHarness",
+            ["Pigeon:Domain"] = runtimeDomain,
             ["Pigeon:MessageBrokers:RabbitMq:Url"] = infrastructure.RabbitMqConnectionString,
             ["Pigeon:MessageBrokers:RabbitMq:ConnectionString"] = infrastructure.RabbitMqConnectionString,
             ["Runtime:Replica:ReplicaId"] = resolvedReplicaId,
@@ -356,14 +357,78 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
                 var observed = string.Join(
                     "; ",
                     instances.Select(instance => $"{instance.CorrelationId}:{instance.Status}:{instance.OrchestrationDefinitionKey}"));
+                var diagnostics = matching is null
+                    ? "No matching instance."
+                    : await BuildInstanceDiagnosticsAsync(dbContext, matching.Id);
 
-                return new RealMessagingInstanceReadiness(matching, instances.Length, observed);
+                return new RealMessagingInstanceReadiness(matching, instances.Length, observed, diagnostics);
             }),
             readiness => readiness.MatchingInstance?.Status == status,
             $"Orchestration instance with correlation '{correlationId}' did not reach status '{status}'",
             timeout ?? TimeSpan.FromSeconds(60));
 
         return readiness.MatchingInstance!;
+    }
+
+    private static async Task<string> BuildInstanceDiagnosticsAsync(RuntimeDbContext dbContext, Id instanceId)
+    {
+        var stages = await dbContext.StageExecutions
+            .AsNoTracking()
+            .Where(stage => stage.OrchestrationInstanceId == instanceId)
+            .OrderBy(stage => stage.Order)
+            .ToArrayAsync();
+        var tasks = await dbContext.TaskExecutions
+            .AsNoTracking()
+            .Where(task => task.OrchestrationInstanceId == instanceId)
+            .OrderBy(task => task.TaskKey)
+            .ToArrayAsync();
+        var taskIds = tasks.Select(task => task.Id).ToArray();
+        var attempts = await dbContext.TaskExecutionAttempts
+            .AsNoTracking()
+            .Where(attempt => taskIds.Contains(attempt.TaskExecutionId))
+            .OrderBy(attempt => attempt.AttemptNumber)
+            .ToArrayAsync();
+        var attemptIds = attempts.Select(attempt => attempt.Id).ToArray();
+        var dispatches = await dbContext.TaskDispatches
+            .AsNoTracking()
+            .Where(dispatch => attemptIds.Contains(dispatch.TaskExecutionAttemptId))
+            .OrderBy(dispatch => dispatch.ScheduledOnUtc)
+            .ThenBy(dispatch => dispatch.SentOnUtc)
+            .ToArrayAsync();
+        var transitions = await dbContext.ExecutionTransitions
+            .AsNoTracking()
+            .Where(transition => transition.OrchestrationInstanceId == instanceId)
+            .OrderByDescending(transition => transition.OccurredOnUtc)
+            .Take(30)
+            .ToArrayAsync();
+
+        var taskKeys = tasks.ToDictionary(task => task.Id, task => task.TaskKey);
+        var attemptTasks = attempts.ToDictionary(attempt => attempt.Id, attempt => attempt.TaskExecutionId);
+        var stageSummary = string.Join(
+            " | ",
+            stages.Select(stage => $"{stage.StageKey}:{stage.Status}:started={stage.StartedOnUtc:o}:completed={stage.CompletedOnUtc:o}:failed={stage.FailedOnUtc:o}"));
+        var taskSummary = string.Join(
+            " | ",
+            tasks.Select(task => $"{task.TaskKey}:{task.Status}:attempt={task.LastAttemptNumber}:await={task.AwaitResponse}:waiting={task.WaitingSinceUtc:o}:completed={task.CompletedOnUtc:o}:failed={task.FailedOnUtc:o}"));
+        var attemptSummary = string.Join(
+            " | ",
+            attempts.Select(attempt =>
+                $"{taskKeys.GetValueOrDefault(attempt.TaskExecutionId, attempt.TaskExecutionId.ToString())}#{attempt.AttemptNumber}:{attempt.Status}:dispatch={attempt.DispatchId}:error={attempt.ErrorCode}:{attempt.ErrorMessage}"));
+        var dispatchSummary = string.Join(
+            " | ",
+            dispatches.Select(dispatch =>
+            {
+                var taskId = attemptTasks.GetValueOrDefault(dispatch.TaskExecutionAttemptId);
+                var taskKey = taskId == default ? dispatch.TaskExecutionAttemptId.ToString() : taskKeys.GetValueOrDefault(taskId, taskId.ToString());
+                return $"{taskKey}:{dispatch.DispatchStatus}:dest={dispatch.Destination}:scheduled={dispatch.ScheduledOnUtc:o}:sent={dispatch.SentOnUtc:o}:failed={dispatch.FailedOnUtc:o}:reason={dispatch.FailureReason}";
+            }));
+        var transitionSummary = string.Join(
+            " | ",
+            transitions
+                .OrderBy(transition => transition.OccurredOnUtc)
+                .Select(transition => $"{transition.OccurredOnUtc:o}:{transition.TransitionType}:{transition.FromStatus}->{transition.ToStatus}:{transition.Message}"));
+
+        return $"Stages=[{stageSummary}]; Tasks=[{taskSummary}]; Attempts=[{attemptSummary}]; Dispatches=[{dispatchSummary}]; Transitions=[{transitionSummary}]";
     }
 
     private static Id ParseId(string value)

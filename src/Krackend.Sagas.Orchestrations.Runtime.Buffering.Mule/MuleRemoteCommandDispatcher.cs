@@ -95,14 +95,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private void ScheduleDueNotification(Guid actionId, string lane, DateTimeOffset scheduledOnUtc)
         {
             var delay = scheduledOnUtc - DateTimeOffset.UtcNow;
-            if (delay <= TimeSpan.Zero || delay > MaxInProcessWakeUpDelay)
+            if (delay > MaxInProcessWakeUpDelay)
             {
                 return;
             }
 
+            if (delay < TimeSpan.Zero)
+            {
+                delay = TimeSpan.Zero;
+            }
+
             _ = Task.Run(async () =>
             {
-                await Task.Delay(delay);
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay);
+                }
 
                 try
                 {
