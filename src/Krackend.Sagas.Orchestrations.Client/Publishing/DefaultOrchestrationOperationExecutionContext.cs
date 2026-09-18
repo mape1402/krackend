@@ -2,19 +2,17 @@ namespace Krackend.Sagas.Orchestrations.Client.Publishing;
 
 internal sealed class DefaultOrchestrationOperationExecutionContext : IOrchestrationOperationExecutionContext
 {
-    public DateTime StartedOnUtc { get; private set; }
+    private readonly AsyncLocal<ExecutionContextState> _state = new();
 
-    public Type RequestType { get; private set; }
+    public DateTime StartedOnUtc => _state.Value?.StartedOnUtc ?? default;
+
+    public Type RequestType => _state.Value?.RequestType;
 
     public void Start(Type requestType)
-    {
-        RequestType = requestType;
-        StartedOnUtc = DateTime.UtcNow;
-    }
+        => _state.Value = new ExecutionContextState(requestType, DateTime.UtcNow);
 
     public void Clear()
-    {
-        RequestType = null;
-        StartedOnUtc = default;
-    }
+        => _state.Value = null;
+
+    private sealed record ExecutionContextState(Type RequestType, DateTime StartedOnUtc);
 }

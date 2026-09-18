@@ -6,14 +6,14 @@ internal sealed class DefaultOrchestrationExecutionResultMetadataAccessor :
     IOrchestrationExecutionResultMetadataAccessor,
     IOrchestrationExecutionResultMetadataSetter
 {
-    private OrchestrationExecutionResultMetadata _metadata;
+    private readonly AsyncLocal<OrchestrationExecutionResultMetadata> _metadata = new();
 
     public OrchestrationExecutionResultMetadata Get()
-        => _metadata;
+        => _metadata.Value;
 
     public void Set(OrchestrationExecutionResultMetadata metadata)
-        => _metadata = metadata;
+        => _metadata.Value = metadata;
 
     public void Clear()
-        => _metadata = null;
+        => _metadata.Value = null;
 }
