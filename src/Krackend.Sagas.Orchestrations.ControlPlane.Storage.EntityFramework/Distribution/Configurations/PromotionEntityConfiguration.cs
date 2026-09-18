@@ -11,8 +11,8 @@ internal sealed class ReleaseEntityConfiguration : IEntityTypeConfiguration<Rele
     {
         builder.ToTable("Releases");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.ArtifactId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.ArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationDefinitionId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.RequestedBy).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Strategy).HasMaxLength(64).IsRequired();

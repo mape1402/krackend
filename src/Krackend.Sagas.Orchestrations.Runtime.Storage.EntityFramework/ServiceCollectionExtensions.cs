@@ -1,3 +1,5 @@
+#nullable enable
+
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
@@ -7,6 +9,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -14,11 +17,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Adds the runtime Entity Framework storage adapter.
+    /// </summary>
+    /// <param name="services">Service collection to configure.</param>
+    /// <param name="configureDbContext">Callback used to configure the Entity Framework provider.</param>
+    /// <param name="configureStorage">Optional callback used to customize the portable Entity Framework model.</param>
+    /// <returns>Configured service collection.</returns>
     public static IServiceCollection AddOrchestratorRuntimeStorageEntityFramework(
         this IServiceCollection services,
-        Action<DbContextOptionsBuilder> configureDbContext)
+        Action<DbContextOptionsBuilder> configureDbContext,
+        Action<RuntimeEntityFrameworkStorageOptions>? configureStorage = null)
     {
-        services.AddDbContext<RuntimeDbContext>(configureDbContext);
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configureDbContext);
+
+        if (configureStorage is not null)
+        {
+            services.Configure(configureStorage);
+        }
+
+        services.AddDbContext<RuntimeDbContext>(options =>
+        {
+            configureDbContext(options);
+            options.ReplaceService<IModelCacheKeyFactory, RuntimeEntityFrameworkModelCacheKeyFactory>();
+        });
         services.Replace(ServiceDescriptor.Scoped<IRuntimeStorageUnitOfWork, RuntimeStorageUnitOfWork>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeDesignNodeRepository, RuntimeDesignNodeRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>());

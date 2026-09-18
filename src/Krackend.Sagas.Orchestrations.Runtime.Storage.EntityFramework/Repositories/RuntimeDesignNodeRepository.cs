@@ -54,6 +54,7 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
     {
         ArgumentNullException.ThrowIfNull(designNode);
 
+        await EnsureInboundClientIdIsUniqueAsync(designNode, cancellationToken);
         var current = await DbContext.RuntimeDesignNodes.FirstOrDefaultAsync(x => x.Id == designNode.Id, cancellationToken);
         if (current is null)
         {
@@ -95,6 +96,25 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
         }
 
         await SaveChanges(cancellationToken);
+    }
+
+    private async Task EnsureInboundClientIdIsUniqueAsync(RuntimeDesignNode designNode, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(designNode.InboundClientId))
+        {
+            return;
+        }
+
+        var duplicateInboundClient = await DbContext.RuntimeDesignNodes
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.Id != designNode.Id && x.InboundClientId == designNode.InboundClientId,
+                cancellationToken);
+
+        if (duplicateInboundClient)
+        {
+            throw new InvalidOperationException($"Runtime design node inbound client id '{designNode.InboundClientId}' is already registered.");
+        }
     }
 
     /// <inheritdoc />

@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructu
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
+using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using Mule;
@@ -24,6 +25,7 @@ var muleWorkerCount = Math.Max(1, builder.Configuration.GetValue("Mule:Runtime:W
 var muleMaxDegreeOfParallelism = Math.Max(
     1,
     builder.Configuration.GetValue("Mule:Runtime:MaxDegreeOfParallelism", muleWorkerCount));
+var sqlServerStorageModelCustomizer = new RuntimeSqlServerStorageModelCustomizer();
 
 if (string.IsNullOrWhiteSpace(redisConnectionString))
 {
@@ -47,14 +49,16 @@ builder.Services.AddOrchestratorRuntimeWebUI(options =>
 builder.Services.AddScoped<IHappyPathOrchestrationSeeder, HappyPathOrchestrationSeeder>();
 builder.Services.AddSingleton<IDatabaseMigrationLock, SqlServerDatabaseMigrationLock>();
 
-builder.Services.AddOrchestratorRuntimeStorageEntityFramework(options =>
-{
-    options.UseSqlServer(muleConnectionString, sql =>
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
+    options =>
     {
-        sql.MigrationsAssembly(typeof(Program).Assembly.GetName().Name);
-        sql.MigrationsHistoryTable("__RuntimeStorageMigrationsHistory", "Runtime");
-    });
-});
+        options.UseSqlServer(muleConnectionString, sql =>
+        {
+            sql.MigrationsAssembly(typeof(Program).Assembly.GetName().Name);
+            sql.MigrationsHistoryTable("__RuntimeStorageMigrationsHistory", "Runtime");
+        });
+    },
+    storage => storage.ConfigureModel = sqlServerStorageModelCustomizer.Configure);
 
 builder.Services
     .AddKrackendOrchestrationsRuntime()

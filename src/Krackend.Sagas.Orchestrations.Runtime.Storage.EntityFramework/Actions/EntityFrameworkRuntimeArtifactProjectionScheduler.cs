@@ -2,7 +2,6 @@ using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Mule;
 using Mule.Dispatching;
@@ -117,7 +116,7 @@ internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRunti
             await _unitOfWork.SaveChanges(cancellationToken);
             await _commitNotifier.NotifySavedAsync(actionId, lane, cancellationToken);
         }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        catch (DbUpdateException)
         {
             DetachPendingAction(actionId);
 
@@ -147,7 +146,4 @@ internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRunti
             entry.State = EntityState.Detached;
         }
     }
-
-    private bool IsUniqueConstraintViolation(DbUpdateException exception)
-        => exception.GetBaseException() is SqlException { Number: 2601 or 2627 };
 }

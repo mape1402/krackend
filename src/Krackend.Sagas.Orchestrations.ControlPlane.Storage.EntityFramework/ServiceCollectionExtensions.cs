@@ -1,4 +1,7 @@
+#nullable enable
+
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
@@ -23,17 +26,26 @@ public static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">Service collection to configure.</param>
     /// <param name="configureDbContext">Callback used to configure the Entity Framework provider.</param>
+    /// <param name="configureStorage">Optional callback used to customize the portable Entity Framework model.</param>
     /// <returns>Configured service collection.</returns>
     public static IServiceCollection AddOrchestratorControlPlaneStorageEntityFramework(
         this IServiceCollection services,
-        Action<DbContextOptionsBuilder> configureDbContext)
+        Action<DbContextOptionsBuilder> configureDbContext,
+        Action<ControlPlaneEntityFrameworkStorageOptions>? configureStorage = null)
     {
-        if (configureDbContext is null)
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configureDbContext);
+
+        if (configureStorage is not null)
         {
-            throw new ArgumentNullException(nameof(configureDbContext));
+            services.Configure(configureStorage);
         }
 
-        services.AddDbContext<ControlPlaneDbContext>(configureDbContext);
+        services.AddDbContext<ControlPlaneDbContext>(options =>
+        {
+            configureDbContext(options);
+            options.ReplaceService<IModelCacheKeyFactory, ControlPlaneEntityFrameworkModelCacheKeyFactory>();
+        });
         services.TryAddScoped<IControlPlaneUnitOfWork, EntityFrameworkControlPlaneUnitOfWork>();
         services.TryAddSingleton<ISieveProcessor, SieveProcessor>();
 

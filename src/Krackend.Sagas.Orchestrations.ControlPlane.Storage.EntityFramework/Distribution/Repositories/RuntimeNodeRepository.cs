@@ -24,12 +24,14 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
 
     public async Task Create(RuntimeNode runtimeNode, CancellationToken cancellationToken = default)
     {
+        await EnsureActiveRuntimeNodeIsUnique(runtimeNode, cancellationToken);
         _dbContext.RuntimeNodes.Add(Map(runtimeNode));
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task Update(RuntimeNode runtimeNode, CancellationToken cancellationToken = default)
     {
+        await EnsureActiveRuntimeNodeIsUnique(runtimeNode, cancellationToken);
         var entity = await _dbContext.RuntimeNodes.FirstAsync(x => x.Id == runtimeNode.Id, cancellationToken);
         entity.Name = runtimeNode.Name;
         entity.Code = runtimeNode.Code;
@@ -118,6 +120,41 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
         var totalRows = await query.CountAsync(cancellationToken);
         var totalPages = totalRows == 0 ? 1 : (int)Math.Ceiling(totalRows / (double)pagedSettings.PageSize);
         return new PagedResult<RuntimeNode>(pagedSettings.PageNumber, totalPages, totalRows, pagedSettings.PageSize, rows.Select(Map).ToArray());
+    }
+
+    private async Task EnsureActiveRuntimeNodeIsUnique(RuntimeNode runtimeNode, CancellationToken cancellationToken)
+    {
+        if (runtimeNode is null || runtimeNode.IsDeleted)
+        {
+            return;
+        }
+
+        var duplicateCode = await _dbContext.RuntimeNodes
+            .AsNoTracking()
+            .AnyAsync(x => !x.IsDeleted && x.Id != runtimeNode.Id && x.Code == runtimeNode.Code, cancellationToken);
+
+        if (duplicateCode)
+        {
+            throw new InvalidOperationException($"Runtime node code '{runtimeNode.Code}' is already registered.");
+        }
+
+        if (string.IsNullOrWhiteSpace(runtimeNode.InboundClientId))
+        {
+            return;
+        }
+
+        var duplicateInboundClient = await _dbContext.RuntimeNodes
+            .AsNoTracking()
+            .AnyAsync(
+                x => !x.IsDeleted
+                    && x.Id != runtimeNode.Id
+                    && x.InboundClientId == runtimeNode.InboundClientId,
+                cancellationToken);
+
+        if (duplicateInboundClient)
+        {
+            throw new InvalidOperationException($"Runtime node inbound client id '{runtimeNode.InboundClientId}' is already registered.");
+        }
     }
 
     private static RuntimeNodeEntity Map(RuntimeNode x) => new()

@@ -1,6 +1,9 @@
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.DesignTime;
 
@@ -19,7 +22,13 @@ public sealed class ControlPlaneDbContextDesignTimeFactory : IDesignTimeDbContex
                 sql => sql.MigrationsAssembly(typeof(ControlPlaneDbContextDesignTimeFactory).Assembly.GetName().Name))
             .Options;
 
-        return new ControlPlaneDbContext(options);
+        var sqlServerStorageModelCustomizer = new ControlPlaneSqlServerStorageModelCustomizer();
+        var storageOptions = Options.Create(new ControlPlaneEntityFrameworkStorageOptions
+        {
+            ConfigureModel = sqlServerStorageModelCustomizer.Configure
+        });
+
+        return new ControlPlaneDbContext(options, storageOptions);
     }
 
     private static string ResolveConnectionString()

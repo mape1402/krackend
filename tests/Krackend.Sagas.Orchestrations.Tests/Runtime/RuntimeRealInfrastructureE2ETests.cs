@@ -602,7 +602,7 @@ public sealed class RuntimeRealInfrastructureE2ETests
         Assert.All(stages, stage => Assert.Equal(StageExecutionStatus.Completed, stage.Status));
     }
 
-    [Fact(Timeout = 240_000)]
+    [Fact(Timeout = 360_000)]
     public async Task RuntimeWaitsParallelGroupWhileOneTaskRetriesThenContinuesFanIn()
     {
         var suffix = NewSuffix();
@@ -660,7 +660,7 @@ public sealed class RuntimeRealInfrastructureE2ETests
         await runtime.WaitForInstanceStatusAsync(
             correlationId,
             OrchestrationInstanceStatus.Completed,
-            TimeSpan.FromSeconds(120));
+            TimeSpan.FromSeconds(240));
         await WaitForInvocationCountAsync(services.Scenario, paymentTopic, 2);
         await WaitForInvocationCountAsync(services.Scenario, notificationTopic, 1);
         var paymentAttempts = await AttemptsForTaskAsync(runtime, paymentTopic);

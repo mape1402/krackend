@@ -1,6 +1,9 @@
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.DesignTime;
 
@@ -23,7 +26,13 @@ public sealed class RuntimeDbContextDesignTimeFactory : IDesignTimeDbContextFact
                 })
             .Options;
 
-        return new RuntimeDbContext(options);
+        var sqlServerStorageModelCustomizer = new RuntimeSqlServerStorageModelCustomizer();
+        var storageOptions = Options.Create(new RuntimeEntityFrameworkStorageOptions
+        {
+            ConfigureModel = sqlServerStorageModelCustomizer.Configure
+        });
+
+        return new RuntimeDbContext(options, storageOptions);
     }
 
     private static string ResolveConnectionString()

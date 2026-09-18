@@ -20,16 +20,15 @@ internal sealed class BranchRuleDefinitionEntityConfiguration : IEntityTypeConfi
         builder.ToTable("BranchRuleDefinitions");
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.StageDefinitionId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.StageDefinitionId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.FromType).HasConversion<string>().HasMaxLength(64).IsRequired();
-        builder.Property(x => x.FromId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.FromId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.NavigateToType).HasConversion<string>().HasMaxLength(64).IsRequired();
-        builder.Property(x => x.NavigateToId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.NavigateToId).HasConversion(new IdToBytesConverter());
 
         builder.Property(x => x.Condition)
             .HasColumnName("ConditionJson")
-            .HasColumnType("nvarchar(max)")
             .HasConversion(
                 value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
                 value => JsonSerializer.Deserialize<ExecutionConditionJsonModel>(value, (JsonSerializerOptions)null));

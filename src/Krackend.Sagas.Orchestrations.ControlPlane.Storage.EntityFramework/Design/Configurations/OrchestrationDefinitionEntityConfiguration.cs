@@ -18,16 +18,16 @@ internal sealed class OrchestrationDefinitionEntityConfiguration : IEntityTypeCo
         builder.ToTable("OrchestrationDefinitions");
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Key).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.Property(x => x.Domain).HasMaxLength(128).IsRequired(false);
-        builder.Property(x => x.DomainId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter()).IsRequired(false);
+        builder.Property(x => x.DomainId).HasConversion(new IdToBytesConverter()).IsRequired(false);
         builder.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         builder.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.Description).HasMaxLength(2048).IsRequired(false);
         builder.Property(x => x.OwnerTeam).HasMaxLength(256).IsRequired(false);
-        builder.Property(x => x.OwnerTeamId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter()).IsRequired(false);
+        builder.Property(x => x.OwnerTeamId).HasConversion(new IdToBytesConverter()).IsRequired(false);
 
         builder.PrimitiveCollection(x => x.Tags);
 
