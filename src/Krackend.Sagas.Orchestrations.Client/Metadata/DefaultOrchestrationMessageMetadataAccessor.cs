@@ -6,11 +6,11 @@ internal sealed class DefaultOrchestrationMessageMetadataAccessor :
     IOrchestrationMessageMetadataAccessor,
     IOrchestrationMessageMetadataSetter
 {
-    private OrchestrationMessageMetadata _metadata = new();
+    private readonly AsyncLocal<OrchestrationMessageMetadata> _metadata = new();
 
     public OrchestrationMessageMetadata Get()
-        => _metadata;
+        => _metadata.Value ?? new OrchestrationMessageMetadata();
 
     public void Set(OrchestrationMessageMetadata metadata)
-        => _metadata = metadata ?? new OrchestrationMessageMetadata();
+        => _metadata.Value = metadata ?? new OrchestrationMessageMetadata();
 }

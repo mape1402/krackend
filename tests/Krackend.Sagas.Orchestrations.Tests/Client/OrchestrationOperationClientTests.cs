@@ -356,6 +356,68 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task ConcurrentOperationsKeepMessageAndResultMetadataIsolated()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var firstMetadataWasSet = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondMetadataWasSet = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = Task.Run(async () =>
+        {
+            metadataSetter.Set(MessageMetadata("saga-one", "first-task", "first-dispatch", "reply.first"));
+            client.Begin<ReserveInventoryRequest>();
+            firstMetadataWasSet.SetResult();
+
+            await secondMetadataWasSet.Task;
+            await client.ReportSuccessAsync<ReserveInventoryRequest, ReserveInventoryResponse>(
+                new ReserveInventoryResponse(),
+                new OrchestrationOperationOptions { OperationName = "first-operation" });
+            client.Close();
+        });
+
+        var second = Task.Run(async () =>
+        {
+            await firstMetadataWasSet.Task;
+
+            metadataSetter.Set(MessageMetadata("saga-two", "second-task", "second-dispatch", "reply.second"));
+            client.Begin<ReleaseInventoryRequest>();
+            secondMetadataWasSet.SetResult();
+
+            await client.ReportSuccessAsync<ReleaseInventoryRequest, ReleaseInventoryResponse>(
+                new ReleaseInventoryResponse(),
+                new OrchestrationOperationOptions { OperationName = "second-operation" });
+            client.Close();
+        });
+
+        await Task.WhenAll(first, second);
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        var messages = publisher.Messages.ToArray();
+        var summary = string.Join(
+            " | ",
+            messages.Select(message =>
+                $"{message.Address?.SettingsPayload}:{message.ResultMetadata?.OperationName}:{message.ResultMetadata?.RequestType}"));
+
+        Assert.Equal(2, messages.Length);
+        Assert.True(
+            messages.Any(message =>
+                message.Address?.SettingsPayload == "reply.first" &&
+                message.ResultMetadata?.OperationName == "first-operation"),
+            summary);
+        Assert.True(
+            messages.Any(message =>
+                message.Address?.SettingsPayload == "reply.second" &&
+                message.ResultMetadata?.OperationName == "second-operation"),
+            summary);
+    }
+
+    [Fact]
     public void ErrorMappingOptionsValidateExceptionTypesAndReplaceDefaultMappings()
     {
         var options = new Krackend.Sagas.Orchestrations.Client.Errors.OrchestrationClientErrorMappingOptions();
@@ -374,7 +436,30 @@ public sealed class OrchestrationOperationClientTests
         Assert.Contains(options.Mappings, mapping => mapping.ErrorCode == "Predicate" && mapping.Predicate is not null);
     }
 
+    private static OrchestrationMessageMetadata MessageMetadata(
+        string sagaId,
+        string taskExecutionId,
+        string dispatchId,
+        string replyAddress)
+        => new()
+        {
+            SagaId = sagaId,
+            OrchestrationInstanceId = $"{sagaId}-instance",
+            CorrelationId = $"{sagaId}-correlation",
+            TaskExecutionId = taskExecutionId,
+            DispatchId = dispatchId,
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = replyAddress
+            }
+        };
+
     private sealed record ReserveInventoryRequest;
 
     private sealed record ReserveInventoryResponse;
+
+    private sealed record ReleaseInventoryRequest;
+
+    private sealed record ReleaseInventoryResponse;
 }
