@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Krackend.Security\Krackend.Security.csproj" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Security\Krackend.Sagas.Orchestrations.Security.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.9.12105.275
@@ -89,9 +89,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestratio
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Runtime.Api", "src\Krackend.Sagas.Orchestrations.Runtime.Api\Krackend.Sagas.Orchestrations.Runtime.Api.csproj", "{4FAD9214-C324-4187-AE39-6330A5E434F4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Security", "src\Krackend.Security\Krackend.Security.csproj", "{525514B4-3E8E-41A6-8F46-2E46BE090AD7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Security", "src\Krackend.Sagas.Orchestrations.Security\Krackend.Sagas.Orchestrations.Security.csproj", "{525514B4-3E8E-41A6-8F46-2E46BE090AD7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Security.Storage.EntityFramework", "src\Krackend.Security.Storage.EntityFramework\Krackend.Security.Storage.EntityFramework.csproj", "{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework", "src\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework.csproj", "{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

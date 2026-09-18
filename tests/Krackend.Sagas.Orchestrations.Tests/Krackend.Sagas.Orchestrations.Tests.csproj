@@ -40,8 +40,8 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Api\Krackend.Sagas.Orchestrations.ControlPlane.Api.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Api\Krackend.Sagas.Orchestrations.Runtime.Api.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Security\Krackend.Security.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Security.Storage.EntityFramework\Krackend.Security.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security\Krackend.Sagas.Orchestrations.Security.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework.csproj" />
   </ItemGroup>
 
   <ItemGroup>

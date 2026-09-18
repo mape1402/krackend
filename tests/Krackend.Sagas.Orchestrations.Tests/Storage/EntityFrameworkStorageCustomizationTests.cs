@@ -4,8 +4,8 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrast
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
-using Krackend.Security.Core;
-using Krackend.Security.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Security.Core;
+using Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

@@ -1,4 +1,4 @@
-using Krackend.Security.AspNetCore;
+using Krackend.Sagas.Orchestrations.Security.AspNetCore;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Api;
 
