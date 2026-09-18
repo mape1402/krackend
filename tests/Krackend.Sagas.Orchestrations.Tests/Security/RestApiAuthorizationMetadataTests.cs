@@ -1,4 +1,4 @@
-using Krackend.Security.AspNetCore;
+using Krackend.Sagas.Orchestrations.Security.AspNetCore;
 using Krackend.Sagas.Orchestrations.ControlPlane.Api;
 using Krackend.Sagas.Orchestrations.Runtime.Api;
 using Microsoft.AspNetCore.Authorization;

@@ -62,8 +62,8 @@ dotnet add package Krackend.Sagas.Orchestrations.WebUI.Shell
 Security packages:
 
 ```bash
-dotnet add package Krackend.Security
-dotnet add package Krackend.Security.Storage.EntityFramework
+dotnet add package Krackend.Sagas.Orchestrations.Security
+dotnet add package Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework
 ```
 
 ## Event Sourcing
@@ -145,11 +145,11 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
-- `Krackend.Security*` keeps authentication in the host and adds provider-agnostic product authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
+- `Krackend.Sagas.Orchestrations.Security*` keeps authentication in the host and adds provider-agnostic orchestration authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
 
 Security model:
 
-Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates product permissions.
+Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates orchestration permissions.
 
 ```csharp
 builder.Services

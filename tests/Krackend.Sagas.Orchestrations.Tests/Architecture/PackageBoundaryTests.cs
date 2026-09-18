@@ -77,6 +77,8 @@ public sealed class PackageBoundaryTests
             "Krackend.Sagas.Orchestrations.Runtime.WebUI",
             "Krackend.Sagas.Orchestrations.SchemaRegistry.Abstractions",
             "Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl",
+            "Krackend.Sagas.Orchestrations.Security",
+            "Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework",
             "Krackend.Sagas.Orchestrations.WebUI.Shell",
         };
 
@@ -87,7 +89,6 @@ public sealed class PackageBoundaryTests
 
         Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Design", referencedAssemblies);
         Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Distribution", referencedAssemblies);
-        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Security", referencedAssemblies);
         Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Runtime.Storage.SqlServer", referencedAssemblies);
     }
 
@@ -119,7 +120,7 @@ public sealed class PackageBoundaryTests
         {
             Path.Combine(repositoryRoot, "src", "Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework"),
             Path.Combine(repositoryRoot, "src", "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework"),
-            Path.Combine(repositoryRoot, "src", "Krackend.Security.Storage.EntityFramework"),
+            Path.Combine(repositoryRoot, "src", "Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework"),
         };
         var forbiddenTerms = new[]
         {

@@ -1,10 +1,10 @@
 using System.Security.Claims;
-using Krackend.Security.Authorization;
-using Krackend.Security.Configuration;
-using Krackend.Security.Core;
-using Krackend.Security.DependencyInjection;
-using Krackend.Security.Storage;
-using Krackend.Security.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Security.Authorization;
+using Krackend.Sagas.Orchestrations.Security.Configuration;
+using Krackend.Sagas.Orchestrations.Security.Core;
+using Krackend.Sagas.Orchestrations.Security.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Security.Storage;
+using Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
