@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Bootstrap;
+using Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
@@ -22,6 +23,7 @@ if (string.IsNullOrWhiteSpace(sqlConnection))
 
 var redisConnection = builder.Configuration.GetConnectionString("Redis");
 var migrationsAssembly = typeof(Program).Assembly.GetName().Name;
+var sqlServerStorageModelCustomizer = new ControlPlaneSqlServerStorageModelCustomizer();
 
 if (string.IsNullOrWhiteSpace(redisConnection))
 {
@@ -51,6 +53,7 @@ builder.Services.AddOrchestratorControlPlane(options =>
     options.ConfigureStorage = db => db.UseSqlServer(
         sqlConnection,
         sql => sql.MigrationsAssembly(migrationsAssembly));
+    options.ConfigureStorageModel = storage => storage.ConfigureModel = sqlServerStorageModelCustomizer.Configure;
 });
 builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
 {

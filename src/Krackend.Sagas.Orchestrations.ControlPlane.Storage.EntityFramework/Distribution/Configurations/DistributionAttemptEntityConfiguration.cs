@@ -11,8 +11,8 @@ internal sealed class ReleaseAttemptEntityConfiguration : IEntityTypeConfigurati
     {
         builder.ToTable("ReleaseAttempts");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.ReleaseTargetId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.ReleaseTargetId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Action).HasMaxLength(64).IsRequired();
         builder.Property(x => x.InitiatedBy).HasMaxLength(128).IsRequired();
         builder.Property(x => x.ErrorCode).HasMaxLength(128).IsRequired(false);

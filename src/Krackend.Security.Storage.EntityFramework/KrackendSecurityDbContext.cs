@@ -1,5 +1,6 @@
 using Krackend.Security.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Security.Storage.EntityFramework;
 
@@ -8,13 +9,31 @@ namespace Krackend.Security.Storage.EntityFramework;
 /// </summary>
 public sealed class KrackendSecurityDbContext : DbContext
 {
+    private readonly KrackendSecurityEntityFrameworkStorageOptions storageOptions;
+
+    internal int ModelCustomizationCacheKey => storageOptions.ConfigureModel?.GetHashCode() ?? 0;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="KrackendSecurityDbContext"/> class.
     /// </summary>
     /// <param name="options">Database context options.</param>
     public KrackendSecurityDbContext(DbContextOptions<KrackendSecurityDbContext> options)
+        : this(options, Options.Create(new KrackendSecurityEntityFrameworkStorageOptions()))
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KrackendSecurityDbContext"/> class.
+    /// </summary>
+    /// <param name="options">Database context options.</param>
+    /// <param name="storageOptions">Host-level storage customization options.</param>
+    public KrackendSecurityDbContext(
+        DbContextOptions<KrackendSecurityDbContext> options,
+        IOptions<KrackendSecurityEntityFrameworkStorageOptions> storageOptions)
         : base(options)
     {
+        ArgumentNullException.ThrowIfNull(storageOptions);
+        this.storageOptions = storageOptions.Value;
     }
 
     /// <summary>
@@ -96,5 +115,7 @@ public sealed class KrackendSecurityDbContext : DbContext
             builder.Property(x => x.Source).HasMaxLength(64).IsRequired();
             builder.HasIndex(x => new { x.Provider, x.ExternalGroupId, x.Role, x.ScopeType, x.ScopeId }).IsUnique();
         });
+
+        storageOptions.ConfigureModel?.Invoke(modelBuilder);
     }
 }

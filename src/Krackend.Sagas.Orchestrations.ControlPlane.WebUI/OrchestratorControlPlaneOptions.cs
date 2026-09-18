@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 
@@ -21,4 +22,9 @@ public sealed class OrchestratorControlPlaneOptions
     /// Gets or sets the Entity Framework storage configuration used by the control plane.
     /// </summary>
     public Action<DbContextOptionsBuilder> ConfigureStorage { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional Entity Framework model customization applied by the host after the portable storage model is configured.
+    /// </summary>
+    public Action<ControlPlaneEntityFrameworkStorageOptions> ConfigureStorageModel { get; set; }
 }

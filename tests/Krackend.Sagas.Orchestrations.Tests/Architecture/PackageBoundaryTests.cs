@@ -112,6 +112,46 @@ public sealed class PackageBoundaryTests
     }
 
     [Fact]
+    public void EntityFrameworkStoragePackagesDoNotChooseDatabaseProvider()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var storageRoots = new[]
+        {
+            Path.Combine(repositoryRoot, "src", "Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework"),
+            Path.Combine(repositoryRoot, "src", "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework"),
+            Path.Combine(repositoryRoot, "src", "Krackend.Security.Storage.EntityFramework"),
+        };
+        var forbiddenTerms = new[]
+        {
+            "Microsoft.EntityFrameworkCore.SqlServer",
+            "Microsoft.Data.SqlClient",
+            "System.Data.SqlClient",
+            "HasColumnType(",
+            "HasFilter(",
+            "FromSql",
+            "ExecuteSql",
+            "SqlQuery",
+            "SqlCommand",
+            "migrationBuilder.Sql",
+        };
+
+        foreach (var storageRoot in storageRoots)
+        {
+            foreach (var sourceFile in Directory.EnumerateFiles(storageRoot, "*.*", SearchOption.AllDirectories)
+                         .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                             || file.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)))
+            {
+                var contents = File.ReadAllText(sourceFile);
+
+                foreach (var forbiddenTerm in forbiddenTerms)
+                {
+                    Assert.DoesNotContain(forbiddenTerm, contents, StringComparison.Ordinal);
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void RuntimeCoreDoesNotContainDemoBusinessHardcodes()
     {
         var repositoryRoot = FindRepositoryRoot();

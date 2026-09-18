@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Configurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
@@ -15,13 +17,31 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Inf
 /// </summary>
 public sealed class ControlPlaneDbContext : DbContext
 {
+    private readonly ControlPlaneEntityFrameworkStorageOptions storageOptions;
+
+    internal int ModelCustomizationCacheKey => storageOptions.ConfigureModel?.GetHashCode() ?? 0;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="ControlPlaneDbContext"/> class.
     /// </summary>
     /// <param name="options">Entity Framework options for the context.</param>
     public ControlPlaneDbContext(DbContextOptions<ControlPlaneDbContext> options)
+        : this(options, Options.Create(new ControlPlaneEntityFrameworkStorageOptions()))
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ControlPlaneDbContext"/> class.
+    /// </summary>
+    /// <param name="options">Entity Framework options for the context.</param>
+    /// <param name="storageOptions">Host-level storage customization options.</param>
+    public ControlPlaneDbContext(
+        DbContextOptions<ControlPlaneDbContext> options,
+        IOptions<ControlPlaneEntityFrameworkStorageOptions> storageOptions)
         : base(options)
     {
+        ArgumentNullException.ThrowIfNull(storageOptions);
+        this.storageOptions = storageOptions.Value;
     }
 
     /// <summary>
@@ -173,6 +193,7 @@ public sealed class ControlPlaneDbContext : DbContext
         ApplySchema(modelBuilder, ".Security.", "Security");
 
         base.OnModelCreating(modelBuilder);
+        storageOptions.ConfigureModel?.Invoke(modelBuilder);
     }
 
     private static void ApplySchema(ModelBuilder modelBuilder, string namespaceSegment, string schema)

@@ -8,7 +8,8 @@ internal sealed class NullableIdToBytesConverter : ValueConverter<Id?, byte[]>
     public NullableIdToBytesConverter()
         : base(
             id => id.HasValue ? id.Value.Value.ToByteArray() : null,
-            value => value == null ? null : new Id(new Ulid(value)))
+            value => value == null ? null : new Id(new Ulid(value)),
+            new ConverterMappingHints(size: 16))
     {
     }
 }

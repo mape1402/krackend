@@ -8,7 +8,8 @@ internal sealed class IdToBytesConverter : ValueConverter<Id, byte[]>
     public IdToBytesConverter()
         : base(
             id => id.Value.ToByteArray(),
-            value => new Id(new Ulid(value)))
+            value => new Id(new Ulid(value)),
+            new ConverterMappingHints(size: 16))
     {
     }
 }

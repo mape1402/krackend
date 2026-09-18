@@ -11,9 +11,9 @@ internal sealed class OrchestrationAllowedRuntimeNodeEntityConfiguration : IEnti
     {
         builder.ToTable("OrchestrationAllowedRuntimeNodes");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationDefinitionId).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.RuntimeNodeId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.RuntimeNodeId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         builder.Property(x => x.CreatedAtUtc).IsRequired();
 

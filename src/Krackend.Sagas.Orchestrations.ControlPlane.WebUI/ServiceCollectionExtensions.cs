@@ -46,7 +46,7 @@ public static class ServiceCollectionExtensions
             ui.SecurityRoutePrefix = $"{adminRootPath}/orchestrator-security";
         });
         services.AddOrchestratorControlPlaneApplication();
-        services.AddOrchestratorControlPlaneStorageEntityFramework(options.ConfigureStorage);
+        services.AddOrchestratorControlPlaneStorageEntityFramework(options.ConfigureStorage, options.ConfigureStorageModel);
 
         return services;
     }

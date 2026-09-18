@@ -18,8 +18,8 @@ internal sealed class OrchestrationVersionEntityConfiguration : IEntityTypeConfi
         builder.ToTable("OrchestrationVersions");
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.OrchestrationDefinitionId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.OrchestrationDefinitionId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Version).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.VersionLabel).HasMaxLength(128).IsRequired(false);

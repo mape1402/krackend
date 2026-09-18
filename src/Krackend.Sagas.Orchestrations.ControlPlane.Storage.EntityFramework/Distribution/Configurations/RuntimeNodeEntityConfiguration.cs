@@ -11,7 +11,7 @@ internal sealed class RuntimeNodeEntityConfiguration : IEntityTypeConfiguration<
     {
         builder.ToTable("RuntimeNodes");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.Property(x => x.Code).HasMaxLength(128).IsRequired();
         builder.Property(x => x.EndpointBaseUri).HasMaxLength(1024).IsRequired(false);
@@ -23,17 +23,17 @@ internal sealed class RuntimeNodeEntityConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Description).HasMaxLength(2048).IsRequired(false);
         builder.Property(x => x.InboundClientId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.InboundKeyId).HasMaxLength(256).IsRequired(false);
-        builder.Property(x => x.InboundSecretHash).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(x => x.InboundSecretHash).IsRequired(false);
         builder.Property(x => x.InboundAllowedScopes).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.InboundCredentialStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.InboundLastFailureReason).HasMaxLength(2000).IsRequired(false);
         builder.Property(x => x.OutboundClientId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.OutboundKeyId).HasMaxLength(256).IsRequired(false);
-        builder.Property(x => x.ProtectedOutboundSecret).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(x => x.ProtectedOutboundSecret).IsRequired(false);
         builder.Property(x => x.OutboundRequestedScopes).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.OutboundCredentialStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
-        builder.HasIndex(x => x.Code).IsUnique().HasFilter("[IsDeleted] = 0");
-        builder.HasIndex(x => x.InboundClientId).IsUnique().HasFilter("[IsDeleted] = 0 AND [InboundClientId] IS NOT NULL AND [InboundClientId] <> ''");
+        builder.HasIndex(x => x.Code);
+        builder.HasIndex(x => x.InboundClientId);
         builder.HasIndex(x => x.IsDeleted);
     }
 }

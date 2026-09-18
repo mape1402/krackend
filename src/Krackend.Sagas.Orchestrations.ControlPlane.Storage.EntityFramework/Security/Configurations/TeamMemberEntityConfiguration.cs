@@ -16,8 +16,8 @@ internal sealed class TeamMemberEntityConfiguration : IEntityTypeConfiguration<T
         builder.ToTable("TeamMembers");
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.TeamId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.TeamId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.ExternalUserId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.DisplayName).HasMaxLength(256).IsRequired(false);
 

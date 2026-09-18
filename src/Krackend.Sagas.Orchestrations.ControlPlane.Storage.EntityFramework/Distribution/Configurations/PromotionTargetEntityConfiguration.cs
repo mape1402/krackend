@@ -11,9 +11,9 @@ internal sealed class ReleasePlanTargetEntityConfiguration : IEntityTypeConfigur
     {
         builder.ToTable("ReleasePlanTargets");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.ReleaseId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.RuntimeNodeId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.ReleaseId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.RuntimeNodeId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Notes).HasMaxLength(2048).IsRequired(false);
 
         builder.HasOne(x => x.Release)

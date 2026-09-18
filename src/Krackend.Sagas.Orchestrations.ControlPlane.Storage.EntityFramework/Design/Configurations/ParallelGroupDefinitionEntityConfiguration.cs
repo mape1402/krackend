@@ -18,8 +18,8 @@ internal sealed class ParallelGroupDefinitionEntityConfiguration : IEntityTypeCo
         builder.ToTable("ParallelGroupDefinitions");
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Id).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.StageDefinitionId).HasColumnType("binary(16)").HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.StageDefinitionId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Name).HasMaxLength(128).IsRequired();
         builder.Property(x => x.JoinPolicy).HasConversion<string>().HasMaxLength(64).IsRequired();
 
