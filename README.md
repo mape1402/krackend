@@ -275,7 +275,7 @@ See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full pa
 
 ## Release
 
-Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v3.0.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.3.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 
