@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v2.3.1] - 2026-09-18
+
+- ### Fixed
+
+  - Fixed orchestration messaging metadata isolation so concurrent callbacks keep their own backchannel and execution result metadata.
+  - Stabilized real infrastructure orchestration E2E test execution for parallel messaging retries across `net9.0` and `net10.0`.
+
+------
+
 ## [v2.3.0] - 2026-09-18
 
 - ### Added
