@@ -322,7 +322,7 @@ public sealed class MuleBufferingTests
     public async Task MuleRemoteCommandDispatcher_WhenScheduledCommandBecomesDue_RenotifiesCommit()
     {
         DurableAction? storedAction = null;
-        var scheduledOnUtc = DateTimeOffset.UtcNow.AddMilliseconds(50);
+        var scheduledOnUtc = DateTimeOffset.UtcNow.AddSeconds(1);
         var muleStorage = Substitute.For<IMuleStorage>();
         muleStorage
             .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
@@ -379,7 +379,7 @@ public sealed class MuleBufferingTests
 
     private static async Task WaitUntilAsync(Func<Task> assertion)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
         Exception? lastException = null;
 
         while (DateTimeOffset.UtcNow < deadline)

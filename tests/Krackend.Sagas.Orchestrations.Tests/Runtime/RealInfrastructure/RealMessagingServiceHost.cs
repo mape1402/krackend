@@ -36,9 +36,10 @@ internal sealed class RealMessagingServiceHost : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var scenario = new RealMessagingScenario();
+        var serviceDomain = $"Krackend.RealMessagingServiceHost.{Guid.NewGuid():N}";
         var settings = new Dictionary<string, string?>
         {
-            ["Pigeon:Domain"] = "Krackend.RealMessagingServiceHost",
+            ["Pigeon:Domain"] = serviceDomain,
             ["Pigeon:MessageBrokers:RabbitMq:Url"] = infrastructure.RabbitMqConnectionString,
             ["Pigeon:MessageBrokers:RabbitMq:ConnectionString"] = infrastructure.RabbitMqConnectionString
         };
@@ -82,6 +83,7 @@ internal sealed class RealMessagingServiceHost : IAsyncDisposable
             .Build();
 
         var consumingConfigurator = host.Services.GetRequiredService<IConsumingConfigurator>();
+        var topologyProvisioning = host.Services.GetRequiredService<ITopologyProvisioningService>();
         foreach (var endpoint in endpoints)
         {
             consumingConfigurator.AddConsumer<JsonNode>(
@@ -96,6 +98,8 @@ internal sealed class RealMessagingServiceHost : IAsyncDisposable
                         message);
                 });
         }
+
+        await topologyProvisioning.EnsureStartupTopologyAsync(CancellationToken.None);
 
         await host.StartAsync();
         return new RealMessagingServiceHost(host, scenario);
