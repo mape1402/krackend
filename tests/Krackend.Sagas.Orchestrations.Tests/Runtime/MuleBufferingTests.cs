@@ -318,6 +318,47 @@ public sealed class MuleBufferingTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task MuleRemoteCommandDispatcher_WhenScheduledCommandBecomesDue_RenotifiesCommit()
+    {
+        DurableAction? storedAction = null;
+        var scheduledOnUtc = DateTimeOffset.UtcNow.AddMilliseconds(50);
+        var muleStorage = Substitute.For<IMuleStorage>();
+        muleStorage
+            .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        muleStorage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        muleStorage
+            .FindByDeduplicationKeyAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => storedAction!.Id);
+        var serializer = Substitute.For<IMuleSerializer>();
+        serializer.Serialize(Arg.Any<RemoteCommand>()).Returns("{\"serialized\":true}");
+        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
+        var dispatcher = BuildServiceProvider(
+                Substitute.For<IMuleClient>(),
+                muleStorage,
+                serializer,
+                commitNotifier)
+            .GetRequiredService<IRemoteCommandDispatcher>();
+        var command = new RemoteCommand
+        {
+            OrchestrationInstanceId = "instance-1",
+            TaskExecutionAttemptId = "attempt-1",
+            DispatchId = "dispatch-1",
+            ScheduledOnUtc = scheduledOnUtc
+        };
+
+        await dispatcher.DispatchAsync(command, CancellationToken.None);
+        await WaitUntilAsync(async () =>
+            await commitNotifier.Received(2).NotifySavedAsync(
+                storedAction!.Id,
+                MuleSettings.DefaultLane,
+                Arg.Any<CancellationToken>()));
+    }
+
     private static ServiceProvider BuildServiceProvider(
         IMuleClient muleClient,
         IMuleStorage? muleStorage = null,
@@ -334,5 +375,27 @@ public sealed class MuleBufferingTests
         services.AddSingleton(muleSerializer ?? Substitute.For<IMuleSerializer>());
         services.AddSingleton(commitNotifier ?? Substitute.For<IMuleCommitNotifier>());
         return services.BuildServiceProvider();
+    }
+
+    private static async Task WaitUntilAsync(Func<Task> assertion)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        Exception? lastException = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                await assertion();
+                return;
+            }
+            catch (Exception exception)
+            {
+                lastException = exception;
+                await Task.Delay(25);
+            }
+        }
+
+        throw new TimeoutException("The expected condition was not reached.", lastException);
     }
 }
