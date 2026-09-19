@@ -134,6 +134,8 @@ Samples:
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
 - `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample`: host that mounts runtime storage, Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, and Runtime WebUI.
 - `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample`: control-plane host that mounts design, distribution, security, WebUI, artifact delivery endpoints, and EF migrations.
+- `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample`: Mongo-backed runtime host that uses the MongoDB EF Core provider while keeping Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, Runtime WebUI, and runtime APIs wired through the same orchestration packages.
+- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample`: Mongo-backed control-plane host that uses the MongoDB EF Core provider with design, distribution, security, WebUI, artifact delivery endpoints, APIs, and seed data.
 
 ## Sagas Orchestrations
 
@@ -193,6 +195,17 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
 ```
 
 The same pattern is available for Control Plane and Security storage. The sample hosts keep their SQL Server-specific model customization beside their migrations so another host can choose a different EF Core provider without changing Krackend packages.
+
+MongoDB sample hosts are included to validate that provider choice belongs to the host:
+
+```csharp
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
+    db => db.UseMongoDB(
+        builder.Configuration.GetConnectionString("Runtime")!,
+        builder.Configuration.GetValue("Mongo:DatabaseName", "KrackendRuntime")));
+```
+
+The Mongo samples expect MongoDB to run as a replica set because the orchestration runtime uses transactions for durable state changes.
 
 REST APIs can keep an optional global policy and also opt into granular product policies:
 
