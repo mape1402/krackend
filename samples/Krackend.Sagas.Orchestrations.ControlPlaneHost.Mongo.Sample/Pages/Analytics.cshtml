@@ -1,0 +1,860 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample.Pages.AnalyticsModel
+@{
+    ViewData["Title"] = "Analytics";
+}
+
+<div class="app-container analytics-page">
+    <section class="analytics-hero-card">
+        <div class="analytics-hero-card__bg"></div>
+        <div class="analytics-hero-card__content">
+            <div>
+                <div class="analytics-hero-card__eyebrow">Realtime Monitoring</div>
+                <h1 class="analytics-hero-card__title">Saga Analytics</h1>
+                <p class="analytics-hero-card__subtitle">
+                    Observabilidad simulada para orquestaciones, sagas distribuidas, compensaciones,
+                    retries y throughput del sistema.
+                </p>
+            </div>
+
+            <div class="analytics-hero-card__status">
+                <span class="analytics-live-pill">
+                    <span class="analytics-live-pill__dot"></span>
+                    Live
+                </span>
+            </div>
+        </div>
+    </section>
+
+    <section class="analytics-kpis">
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card__label">Sagas activas</div>
+            <div class="analytics-kpi-card__value" id="kpiActive">24</div>
+            <div class="analytics-kpi-card__trend analytics-kpi-card__trend--up" id="kpiActiveTrend">+3 vs último corte</div>
+        </article>
+
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card__label">Throughput</div>
+            <div class="analytics-kpi-card__value" id="kpiThroughput">61/min</div>
+            <div class="analytics-kpi-card__trend" id="kpiThroughputTrend">Carga estable</div>
+        </article>
+
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card__label">Compensations</div>
+            <div class="analytics-kpi-card__value" id="kpiCompensations">12</div>
+            <div class="analytics-kpi-card__trend analytics-kpi-card__trend--warn" id="kpiCompensationsTrend">Picos intermitentes</div>
+        </article>
+
+        <article class="analytics-kpi-card">
+            <div class="analytics-kpi-card__label">Error rate</div>
+            <div class="analytics-kpi-card__value analytics-kpi-card__value--danger" id="kpiErrorRate">3.1%</div>
+            <div class="analytics-kpi-card__trend analytics-kpi-card__trend--danger" id="kpiErrorTrend">2 sagas con retry alto</div>
+        </article>
+    </section>
+
+    <section class="analytics-main-grid">
+        <section class="platform-card analytics-panel analytics-panel--chart">
+            <div class="platform-card-header">
+                <span>Actividad por ventana</span>
+                <span class="analytics-panel__hint">últimos 12 intervalos</span>
+            </div>
+
+            <div class="spark-bars" id="sparkBars">
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:40%"></div><span>01</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:52%"></div><span>02</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:47%"></div><span>03</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:68%"></div><span>04</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:73%"></div><span>05</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:61%"></div><span>06</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:84%"></div><span>07</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:70%"></div><span>08</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:88%"></div><span>09</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:64%"></div><span>10</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:57%"></div><span>11</span></div>
+                <div class="spark-bars__item"><div class="spark-bars__bar" style="height:79%"></div><span>12</span></div>
+            </div>
+        </section>
+
+        <section class="platform-card analytics-panel">
+            <div class="platform-card-header">
+                <span>System health</span>
+                <span class="analytics-panel__hint">snapshot actual</span>
+            </div>
+
+            <div class="health-meters">
+                <div class="health-meter">
+                    <div class="health-meter__top">
+                        <span>Running</span>
+                        <strong id="healthRunningText">62%</strong>
+                    </div>
+                    <div class="health-meter__track">
+                        <div class="health-meter__fill health-meter__fill--running" id="healthRunningBar" style="width:62%"></div>
+                    </div>
+                </div>
+
+                <div class="health-meter">
+                    <div class="health-meter__top">
+                        <span>Completed</span>
+                        <strong id="healthCompletedText">27%</strong>
+                    </div>
+                    <div class="health-meter__track">
+                        <div class="health-meter__fill health-meter__fill--completed" id="healthCompletedBar" style="width:27%"></div>
+                    </div>
+                </div>
+
+                <div class="health-meter">
+                    <div class="health-meter__top">
+                        <span>Failed</span>
+                        <strong id="healthFailedText">11%</strong>
+                    </div>
+                    <div class="health-meter__track">
+                        <div class="health-meter__fill health-meter__fill--failed" id="healthFailedBar" style="width:11%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="analytics-health-stats">
+                <div class="analytics-health-stat">
+                    <span>Avg latency</span>
+                    <strong id="avgLatency">412 ms</strong>
+                </div>
+                <div class="analytics-health-stat">
+                    <span>Retries</span>
+                    <strong id="retryCount">27</strong>
+                </div>
+                <div class="analytics-health-stat">
+                    <span>Deadletters</span>
+                    <strong id="deadletters">4</strong>
+                </div>
+            </div>
+        </section>
+    </section>
+
+    <section class="analytics-bottom-grid">
+        <section class="platform-card analytics-panel">
+            <div class="platform-card-header">
+                <span>Actividad en tiempo real</span>
+                <span class="analytics-panel__hint">stream dummy</span>
+            </div>
+
+            <div class="live-timeline" id="liveTimeline">
+                <div class="live-timeline__item">
+                    <div class="live-timeline__dot live-timeline__dot--running"></div>
+                    <div class="live-timeline__time">12:14:03</div>
+                    <div class="live-timeline__content">
+                        <span class="timeline-badge timeline-badge--running">RUNNING</span>
+                        Saga <strong>LoanApprovalSaga</strong> avanzó a <strong>ValidateCustomerRisk</strong>.
+                    </div>
+                </div>
+
+                <div class="live-timeline__item">
+                    <div class="live-timeline__dot live-timeline__dot--completed"></div>
+                    <div class="live-timeline__time">12:14:07</div>
+                    <div class="live-timeline__content">
+                        <span class="timeline-badge timeline-badge--completed">COMPLETED</span>
+                        Saga <strong>PaymentCollectionSaga</strong> terminó correctamente.
+                    </div>
+                </div>
+
+                <div class="live-timeline__item">
+                    <div class="live-timeline__dot live-timeline__dot--failed"></div>
+                    <div class="live-timeline__time">12:14:11</div>
+                    <div class="live-timeline__content">
+                        <span class="timeline-badge timeline-badge--failed">FAILED</span>
+                        Saga <strong>DisbursementSaga</strong> ejecutó compensación en <strong>ReserveFunds</strong>.
+                    </div>
+                </div>
+
+                <div class="live-timeline__item">
+                    <div class="live-timeline__dot live-timeline__dot--running"></div>
+                    <div class="live-timeline__time">12:14:15</div>
+                    <div class="live-timeline__content">
+                        <span class="timeline-badge timeline-badge--running">RUNNING</span>
+                        Saga <strong>CustomerOnboardingSaga</strong> ejecutó tarea <strong>CreateProfile</strong>.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="platform-card analytics-panel">
+            <div class="platform-card-header">
+                <span>Sagas activas</span>
+                <span class="analytics-panel__hint">tabla simulada</span>
+            </div>
+
+            <div class="analytics-table-wrap">
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>Saga</th>
+                            <th>Stage</th>
+                            <th>Status</th>
+                            <th>Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeSagasTable">
+                        <tr>
+                            <td>LoanApprovalSaga</td>
+                            <td>ValidateCustomerRisk</td>
+                            <td><span class="table-badge table-badge--running">Running</span></td>
+                            <td>381 ms</td>
+                        </tr>
+                        <tr>
+                            <td>DisbursementSaga</td>
+                            <td>ReserveFunds</td>
+                            <td><span class="table-badge table-badge--failed">Failed</span></td>
+                            <td>921 ms</td>
+                        </tr>
+                        <tr>
+                            <td>PaymentCollectionSaga</td>
+                            <td>ApplyBalance</td>
+                            <td><span class="table-badge table-badge--running">Running</span></td>
+                            <td>447 ms</td>
+                        </tr>
+                        <tr>
+                            <td>CustomerOnboardingSaga</td>
+                            <td>CreateProfile</td>
+                            <td><span class="table-badge table-badge--completed">Completed</span></td>
+                            <td>298 ms</td>
+                        </tr>
+                        <tr>
+                            <td>ContractGenerationSaga</td>
+                            <td>GenerateContract</td>
+                            <td><span class="table-badge table-badge--running">Running</span></td>
+                            <td>532 ms</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </section>
+</div>
+
+<style>
+    .analytics-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+
+    .analytics-hero-card {
+        position: relative;
+        overflow: hidden;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.06);
+        background: linear-gradient(135deg, #14172a 0%, #1a1d37 45%, #222754 100%);
+        box-shadow: 0 16px 40px rgba(12, 14, 28, 0.18);
+    }
+
+    .analytics-hero-card__bg {
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 18% 28%, rgba(99,102,241,0.28), transparent 24%),
+            radial-gradient(circle at 72% 18%, rgba(79,70,229,0.22), transparent 22%),
+            radial-gradient(circle at 86% 75%, rgba(99,102,241,0.14), transparent 18%);
+        pointer-events: none;
+    }
+
+    .analytics-hero-card__content {
+        position: relative;
+        z-index: 1;
+        padding: 1.75rem 1.75rem 1.9rem;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .analytics-hero-card__eyebrow {
+        color: rgba(255,255,255,0.66);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        font-size: .75rem;
+        margin-bottom: .55rem;
+        font-weight: 700;
+    }
+
+    .analytics-hero-card__title {
+        margin: 0 0 .35rem;
+        color: #fff;
+        font-size: 2rem;
+        font-weight: 700;
+    }
+
+    .analytics-hero-card__subtitle {
+        margin: 0;
+        max-width: 760px;
+        color: rgba(255,255,255,0.80);
+        font-size: .96rem;
+    }
+
+    .analytics-live-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .38rem .72rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        color: #fff;
+        font-size: .82rem;
+        font-weight: 700;
+    }
+
+    .analytics-live-pill__dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #34d399;
+        box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+        animation: analyticsPulse 1.7s infinite;
+    }
+
+    .analytics-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .analytics-kpi-card {
+        background: #fff;
+        border: 1px solid var(--border-soft);
+        border-radius: 14px;
+        box-shadow: var(--shadow-sm);
+        padding: 1.1rem 1.15rem;
+    }
+
+    .analytics-kpi-card__label {
+        color: var(--muted);
+        font-size: .78rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin-bottom: .55rem;
+        font-weight: 700;
+    }
+
+    .analytics-kpi-card__value {
+        color: var(--brand-accent);
+        font-size: 2rem;
+        line-height: 1;
+        font-weight: 700;
+        margin-bottom: .45rem;
+    }
+
+    .analytics-kpi-card__value--danger {
+        color: var(--danger);
+    }
+
+    .analytics-kpi-card__trend {
+        color: var(--muted);
+        font-size: .84rem;
+    }
+
+    .analytics-kpi-card__trend--up {
+        color: #15803d;
+    }
+
+    .analytics-kpi-card__trend--warn {
+        color: #b45309;
+    }
+
+    .analytics-kpi-card__trend--danger {
+        color: #dc2626;
+    }
+
+    .analytics-main-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+        gap: 1.25rem;
+    }
+
+    .analytics-bottom-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+        gap: 1.25rem;
+    }
+
+    .analytics-panel {
+        padding: 1rem 1.1rem 1.15rem;
+    }
+
+    .analytics-panel__hint {
+        color: var(--muted);
+        font-size: .82rem;
+        font-weight: 500;
+    }
+
+    .spark-bars {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        align-items: end;
+        gap: .65rem;
+        min-height: 260px;
+        padding-top: .8rem;
+    }
+
+    .spark-bars__item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: end;
+        gap: .5rem;
+        min-height: 250px;
+    }
+
+    .spark-bars__bar {
+        width: 100%;
+        min-height: 18px;
+        border-radius: 10px 10px 4px 4px;
+        background: linear-gradient(180deg, #7f88ff 0%, #4f46e5 100%);
+        box-shadow: 0 10px 20px rgba(79, 70, 229, 0.18);
+        transition: height .35s ease;
+    }
+
+    .spark-bars__item span {
+        color: var(--muted);
+        font-size: .75rem;
+    }
+
+    .health-meters {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-top: .5rem;
+    }
+
+    .health-meter__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: .38rem;
+        color: var(--text);
+        font-weight: 600;
+    }
+
+    .health-meter__track {
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        background: #eceef8;
+        overflow: hidden;
+    }
+
+    .health-meter__fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width .3s ease;
+    }
+
+    .health-meter__fill--running {
+        background: linear-gradient(90deg, #7c83ff, #4f46e5);
+    }
+
+    .health-meter__fill--completed {
+        background: linear-gradient(90deg, #34d399, #16a34a);
+    }
+
+    .health-meter__fill--failed {
+        background: linear-gradient(90deg, #fb7185, #ef4444);
+    }
+
+    .analytics-health-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .75rem;
+        margin-top: 1.2rem;
+    }
+
+    .analytics-health-stat {
+        border: 1px solid var(--border-soft);
+        border-radius: 12px;
+        background: #fafafe;
+        padding: .85rem .9rem;
+    }
+
+    .analytics-health-stat span {
+        display: block;
+        color: var(--muted);
+        font-size: .8rem;
+        margin-bottom: .35rem;
+    }
+
+    .analytics-health-stat strong {
+        color: var(--text);
+        font-size: 1rem;
+    }
+
+    .live-timeline {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: .9rem;
+        margin-top: .25rem;
+        max-height: 460px;
+        overflow: auto;
+        padding-right: .25rem;
+    }
+
+    .live-timeline__item {
+        display: grid;
+        grid-template-columns: 14px 78px 1fr;
+        gap: .8rem;
+        align-items: start;
+        padding: .9rem .95rem;
+        border: 1px solid var(--border-soft);
+        border-radius: 12px;
+        background: #fcfcff;
+        animation: fadeItem .25s ease;
+    }
+
+    .live-timeline__dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-top: .32rem;
+    }
+
+    .live-timeline__dot--running { background: #4f46e5; }
+    .live-timeline__dot--completed { background: #16a34a; }
+    .live-timeline__dot--failed { background: #ef4444; }
+
+    .live-timeline__time {
+        color: var(--muted);
+        font-size: .82rem;
+        font-weight: 700;
+    }
+
+    .live-timeline__content {
+        color: var(--muted-strong);
+    }
+
+    .timeline-badge,
+    .table-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: .12rem .55rem;
+        border-radius: 999px;
+        font-size: .7rem;
+        font-weight: 700;
+        letter-spacing: .03em;
+        white-space: nowrap;
+    }
+
+    .timeline-badge {
+        margin-right: .45rem;
+        vertical-align: middle;
+    }
+
+    .timeline-badge--running,
+    .table-badge--running {
+        background: rgba(99, 102, 241, .12);
+        color: #4f46e5;
+    }
+
+    .timeline-badge--completed,
+    .table-badge--completed {
+        background: rgba(22, 163, 74, .12);
+        color: #15803d;
+    }
+
+    .timeline-badge--failed,
+    .table-badge--failed {
+        background: rgba(239, 68, 68, .12);
+        color: #dc2626;
+    }
+
+    .analytics-table-wrap {
+        overflow: auto;
+    }
+
+    .analytics-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .analytics-table th,
+    .analytics-table td {
+        text-align: left;
+        padding: .8rem .6rem;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: middle;
+    }
+
+    .analytics-table th {
+        color: var(--muted-strong);
+        font-size: .82rem;
+        font-weight: 700;
+        background: #fafafe;
+    }
+
+    .analytics-table td {
+        color: var(--text);
+    }
+
+    @@keyframes analyticsPulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+        }
+        70% {
+            box-shadow: 0 0 0 10px rgba(52, 211, 153, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+        }
+    }
+
+    @@keyframes fadeItem {
+        from {
+            opacity: 0;
+            transform: translateY(6px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @@media (max-width: 1100px) {
+        .analytics-kpis,
+        .analytics-main-grid,
+        .analytics-bottom-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @@media (max-width: 680px) {
+        .analytics-health-stats {
+            grid-template-columns: 1fr;
+        }
+
+        .live-timeline__item {
+            grid-template-columns: 1fr;
+        }
+
+        .spark-bars {
+            gap: .45rem;
+        }
+    }
+</style>
+
+<script>
+    (() => {
+        const sagaNames = [
+            "LoanApprovalSaga",
+            "PaymentCollectionSaga",
+            "DisbursementSaga",
+            "CustomerOnboardingSaga",
+            "ContractGenerationSaga",
+            "BalanceAdjustmentSaga",
+            "InstallmentScheduleSaga"
+        ];
+
+        const stages = [
+            "ValidateCustomerRisk",
+            "ReserveFunds",
+            "GenerateContract",
+            "NotifyCustomer",
+            "ApplyBalance",
+            "ScheduleInstallments",
+            "ConfirmDisbursement",
+            "CreateProfile",
+            "PublishDomainEvent"
+        ];
+
+        const sparkBars = document.querySelectorAll("#sparkBars .spark-bars__bar");
+        const liveTimeline = document.getElementById("liveTimeline");
+        const activeSagasTable = document.getElementById("activeSagasTable");
+
+        const kpiActive = document.getElementById("kpiActive");
+        const kpiThroughput = document.getElementById("kpiThroughput");
+        const kpiCompensations = document.getElementById("kpiCompensations");
+        const kpiErrorRate = document.getElementById("kpiErrorRate");
+
+        const kpiActiveTrend = document.getElementById("kpiActiveTrend");
+        const kpiThroughputTrend = document.getElementById("kpiThroughputTrend");
+        const kpiCompensationsTrend = document.getElementById("kpiCompensationsTrend");
+        const kpiErrorTrend = document.getElementById("kpiErrorTrend");
+
+        const healthRunningBar = document.getElementById("healthRunningBar");
+        const healthCompletedBar = document.getElementById("healthCompletedBar");
+        const healthFailedBar = document.getElementById("healthFailedBar");
+
+        const healthRunningText = document.getElementById("healthRunningText");
+        const healthCompletedText = document.getElementById("healthCompletedText");
+        const healthFailedText = document.getElementById("healthFailedText");
+
+        const avgLatency = document.getElementById("avgLatency");
+        const retryCount = document.getElementById("retryCount");
+        const deadletters = document.getElementById("deadletters");
+
+        let active = 24;
+        let throughput = 61;
+        let compensations = 12;
+        let errorRate = 3.1;
+        let retries = 27;
+        let dlq = 4;
+
+        function randomOf(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        function timeNow() {
+            return new Date().toLocaleTimeString("es-MX", {
+                hour12: false,
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+        }
+
+        function randomLatency() {
+            return `${260 + Math.floor(Math.random() * 760)} ms`;
+        }
+
+        function randomState() {
+            const n = Math.random();
+            if (n < 0.56) return "running";
+            if (n < 0.82) return "completed";
+            return "failed";
+        }
+
+        function stateText(state) {
+            if (state === "running") return "Running";
+            if (state === "completed") return "Completed";
+            return "Failed";
+        }
+
+        function timelineMessage(state, saga, stage) {
+            if (state === "running") {
+                const templates = [
+                    `Saga <strong>${saga}</strong> avanzó a <strong>${stage}</strong>.`,
+                    `Saga <strong>${saga}</strong> ejecutó tarea <strong>${stage}</strong>.`,
+                    `Saga <strong>${saga}</strong> continúa procesando <strong>${stage}</strong>.`
+                ];
+                return randomOf(templates);
+            }
+
+            if (state === "completed") {
+                const templates = [
+                    `Saga <strong>${saga}</strong> terminó correctamente.`,
+                    `Saga <strong>${saga}</strong> completó todas sus etapas.`,
+                    `Saga <strong>${saga}</strong> cerró con resultado exitoso.`
+                ];
+                return randomOf(templates);
+            }
+
+            const templates = [
+                `Saga <strong>${saga}</strong> ejecutó compensación en <strong>${stage}</strong>.`,
+                `Saga <strong>${saga}</strong> falló durante <strong>${stage}</strong> y entró en retry.`,
+                `Saga <strong>${saga}</strong> marcó error en <strong>${stage}</strong>.`
+            ];
+            return randomOf(templates);
+        }
+
+        function badgeClass(state) {
+            if (state === "running") return "running";
+            if (state === "completed") return "completed";
+            return "failed";
+        }
+
+        function addTimelineItem() {
+            const saga = randomOf(sagaNames);
+            const stage = randomOf(stages);
+            const state = randomState();
+
+            const item = document.createElement("div");
+            item.className = "live-timeline__item";
+            item.innerHTML = `
+                <div class="live-timeline__dot live-timeline__dot--${badgeClass(state)}"></div>
+                <div class="live-timeline__time">${timeNow()}</div>
+                <div class="live-timeline__content">
+                    <span class="timeline-badge timeline-badge--${badgeClass(state)}">${stateText(state).toUpperCase()}</span>
+                    ${timelineMessage(state, saga, stage)}
+                </div>
+            `;
+
+            liveTimeline.prepend(item);
+
+            while (liveTimeline.children.length > 10) {
+                liveTimeline.removeChild(liveTimeline.lastElementChild);
+            }
+        }
+
+        function updateSparkBars() {
+            sparkBars.forEach(bar => {
+                const next = 36 + Math.floor(Math.random() * 56);
+                bar.style.height = `${next}%`;
+            });
+        }
+
+        function updateKpis() {
+            active = Math.max(10, active + Math.floor(Math.random() * 5) - 2);
+            throughput = Math.max(20, throughput + Math.floor(Math.random() * 9) - 4);
+            compensations = Math.max(1, compensations + (Math.random() > 0.72 ? 1 : 0) - (Math.random() > 0.90 ? 1 : 0));
+            errorRate = Math.max(0.6, Math.min(8.8, errorRate + ((Math.random() * 0.8) - 0.4)));
+
+            kpiActive.textContent = active;
+            kpiThroughput.textContent = `${throughput}/min`;
+            kpiCompensations.textContent = compensations;
+            kpiErrorRate.textContent = `${errorRate.toFixed(1)}%`;
+
+            kpiActiveTrend.textContent = `${Math.random() > 0.5 ? "+" : "-"}${1 + Math.floor(Math.random() * 4)} vs último corte`;
+            kpiThroughputTrend.textContent = Math.random() > 0.5 ? "Carga estable" : "Variación ligera";
+            kpiCompensationsTrend.textContent = Math.random() > 0.55 ? "Picos intermitentes" : "Bajo control";
+            kpiErrorTrend.textContent = Math.random() > 0.6 ? "2 sagas con retry alto" : "Sin presión crítica";
+        }
+
+        function updateHealth() {
+            const running = 48 + Math.floor(Math.random() * 22);
+            const completed = 20 + Math.floor(Math.random() * 22);
+            const failed = Math.max(5, 100 - running - completed);
+
+            healthRunningBar.style.width = `${running}%`;
+            healthCompletedBar.style.width = `${completed}%`;
+            healthFailedBar.style.width = `${failed}%`;
+
+            healthRunningText.textContent = `${running}%`;
+            healthCompletedText.textContent = `${completed}%`;
+            healthFailedText.textContent = `${failed}%`;
+
+            retries = Math.max(0, retries + Math.floor(Math.random() * 5) - 2);
+            dlq = Math.max(0, dlq + (Math.random() > 0.8 ? 1 : 0) - (Math.random() > 0.9 ? 1 : 0));
+
+            avgLatency.textContent = `${300 + Math.floor(Math.random() * 320)} ms`;
+            retryCount.textContent = retries;
+            deadletters.textContent = dlq;
+        }
+
+        function updateTable() {
+            const rows = Array.from(activeSagasTable.querySelectorAll("tr"));
+            rows.forEach(row => {
+                const saga = randomOf(sagaNames);
+                const stage = randomOf(stages);
+                const state = randomState();
+                const latency = randomLatency();
+
+                row.innerHTML = `
+                    <td>${saga}</td>
+                    <td>${stage}</td>
+                    <td><span class="table-badge table-badge--${badgeClass(state)}">${stateText(state)}</span></td>
+                    <td>${latency}</td>
+                `;
+            });
+        }
+
+        setInterval(() => {
+            addTimelineItem();
+            updateKpis();
+            updateHealth();
+            updateTable();
+        }, 2200);
+
+        setInterval(() => {
+            updateSparkBars();
+        }, 2800);
+    })();
+</script>

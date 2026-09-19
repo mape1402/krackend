@@ -29,7 +29,9 @@ internal sealed class OrchestrationDefinitionEntityConfiguration : IEntityTypeCo
         builder.Property(x => x.OwnerTeam).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.OwnerTeamId).HasConversion(new IdToBytesConverter()).IsRequired(false);
 
-        builder.PrimitiveCollection(x => x.Tags);
+        builder.Property(x => x.Tags)
+            .HasConversion(new StringListJsonConverter(), new StringListValueComparer())
+            .IsRequired();
 
         builder.HasIndex(x => x.Key).IsUnique();
         builder.HasIndex(x => x.DomainId);
