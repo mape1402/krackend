@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v2.3.2] - 2026-09-18
+
+- ### Added
+
+  - Added MongoDB-backed Control Plane and Runtime sample hosts that configure `MongoDB.EntityFrameworkCore` as the host-owned EF Core provider.
+
+- ### Changed
+
+  - Made Control Plane definition tags and Runtime nullable `Id` mappings compatible with non-SQL EF Core providers.
+  - Changed Mule intake buffering to enqueue trigger and backchannel work through `IMuleClient`, preserving Mule/FastLane deduplication and notification behavior.
+
+- ### Fixed
+
+  - Fixed the real messaging parallel retry race where a backchannel callback could be lost when intake work bypassed Mule client enqueue semantics.
+
+------
+
 ## [v2.3.1] - 2026-09-18
 
 - ### Fixed
