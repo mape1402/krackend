@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.9.12105.275
@@ -92,6 +92,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Security", "src\Krackend.Sagas.Orchestrations.Security\Krackend.Sagas.Orchestrations.Security.csproj", "{525514B4-3E8E-41A6-8F46-2E46BE090AD7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework", "src\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework.csproj", "{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample", "samples\Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample\Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample.csproj", "{BF6FAB21-445D-4E78-A95D-2F5E73020285}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample", "samples\Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample\Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample\Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample.csproj", "{85055F27-F5E3-40F9-A235-48B316F30CC2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -535,6 +539,30 @@ Global
 		{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3}.Release|x64.Build.0 = Release|Any CPU
 		{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3}.Release|x86.ActiveCfg = Release|Any CPU
 		{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3}.Release|x86.Build.0 = Release|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Debug|x64.Build.0 = Debug|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Debug|x86.Build.0 = Debug|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Release|x64.ActiveCfg = Release|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Release|x64.Build.0 = Release|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Release|x86.ActiveCfg = Release|Any CPU
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285}.Release|x86.Build.0 = Release|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Debug|x64.Build.0 = Debug|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Debug|x86.Build.0 = Debug|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Release|x64.ActiveCfg = Release|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Release|x64.Build.0 = Release|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Release|x86.ActiveCfg = Release|Any CPU
+		{85055F27-F5E3-40F9-A235-48B316F30CC2}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -579,6 +607,8 @@ Global
 		{4FAD9214-C324-4187-AE39-6330A5E434F4} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
 		{525514B4-3E8E-41A6-8F46-2E46BE090AD7} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
 		{9FA024AB-E2EF-4885-80AE-C3BCC302C2B3} = {6711B2C7-0746-4A45-8E61-BA235480C06A}
+		{BF6FAB21-445D-4E78-A95D-2F5E73020285} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{85055F27-F5E3-40F9-A235-48B316F30CC2} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3F2B5274-3B0F-4F73-B211-9BD128E1AF56}

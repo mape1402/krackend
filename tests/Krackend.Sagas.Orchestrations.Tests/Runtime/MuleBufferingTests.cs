@@ -17,16 +17,17 @@ public sealed class MuleBufferingTests
     public async Task IntakeBufferMule_WhenWorkItemIsTrigger_EnqueuesTriggerActionWithCorrelation()
     {
         var muleClient = Substitute.For<IMuleClient>();
-        DurableAction? storedAction = null;
-        var muleStorage = Substitute.For<IMuleStorage>();
-        muleStorage
-            .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        muleStorage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var serializer = Substitute.For<IMuleSerializer>();
-        serializer.Serialize(Arg.Any<WorkItem>()).Returns("{\"serialized\":true}");
-        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
-        var buffer = BuildServiceProvider(muleClient, muleStorage, serializer, commitNotifier).GetRequiredService<IIntakeBuffer>();
+        ActionKey? capturedKey = null;
+        WorkItem? capturedPayload = null;
+        Action<EnqueueOptions>? capturedOptions = null;
+        muleClient
+            .EnqueueAsync(
+                Arg.Do<ActionKey>(key => capturedKey = key),
+                Arg.Do<WorkItem>(payload => capturedPayload = payload),
+                Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
             ArtifactId = "artifact-1",
@@ -40,15 +41,13 @@ public sealed class MuleBufferingTests
 
         await buffer.EnqueueWorkAsync(workItem, CancellationToken.None);
 
-        Assert.NotNull(storedAction);
-        Assert.Equal("TriggerSaga", storedAction!.Key.ToString());
-        Assert.Equal("correlation-1", storedAction.CorrelationId);
-        Assert.Equal("trigger:artifact-1:correlation-1", storedAction.DeduplicationKey);
-        Assert.Equal("{\"serialized\":true}", storedAction.Payload);
-        await commitNotifier.Received(1).NotifySavedAsync(
-            storedAction.Id,
-            MuleSettings.DefaultLane,
-            Arg.Any<CancellationToken>());
+        var options = new EnqueueOptions();
+        capturedOptions!(options);
+        Assert.Equal("TriggerSaga", capturedKey!.ToString());
+        Assert.Same(workItem, capturedPayload);
+        Assert.Equal(MuleSettings.DefaultLane, options.Lane);
+        Assert.Equal("correlation-1", options.CorrelationId);
+        Assert.Equal("trigger:artifact-1:correlation-1", options.DeduplicationKey);
     }
 
     [Theory]
@@ -61,16 +60,16 @@ public sealed class MuleBufferingTests
         string expectedDeduplicationKey)
     {
         var muleClient = Substitute.For<IMuleClient>();
-        DurableAction? storedAction = null;
-        var muleStorage = Substitute.For<IMuleStorage>();
-        muleStorage
-            .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        muleStorage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var serializer = Substitute.For<IMuleSerializer>();
-        serializer.Serialize(Arg.Any<WorkItem>()).Returns("{\"serialized\":true}");
-        var buffer = BuildServiceProvider(muleClient, muleStorage, serializer, Substitute.For<IMuleCommitNotifier>())
-            .GetRequiredService<IIntakeBuffer>();
+        ActionKey? capturedKey = null;
+        Action<EnqueueOptions>? capturedOptions = null;
+        muleClient
+            .EnqueueAsync(
+                Arg.Do<ActionKey>(key => capturedKey = key),
+                Arg.Any<WorkItem>(),
+                Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
             ArtifactId = "artifact-1",
@@ -87,18 +86,19 @@ public sealed class MuleBufferingTests
 
         await buffer.EnqueueWorkAsync(workItem, CancellationToken.None);
 
-        Assert.NotNull(storedAction);
-        Assert.Equal("BackchannelSaga", storedAction!.Key.ToString());
-        Assert.Equal("instance-1", storedAction.CorrelationId);
-        Assert.Equal(expectedDeduplicationKey, storedAction.DeduplicationKey);
+        var options = new EnqueueOptions();
+        capturedOptions!(options);
+        Assert.Equal("BackchannelSaga", capturedKey!.ToString());
+        Assert.Equal(MuleSettings.DefaultLane, options.Lane);
+        Assert.Equal("instance-1", options.CorrelationId);
+        Assert.Equal(expectedDeduplicationKey, options.DeduplicationKey);
     }
 
     [Fact]
     public async Task IntakeBufferMule_WhenWorkItemKindIsUnsupported_IgnoresIt()
     {
         var muleClient = Substitute.For<IMuleClient>();
-        var muleStorage = Substitute.For<IMuleStorage>();
-        var buffer = BuildServiceProvider(muleClient, muleStorage).GetRequiredService<IIntakeBuffer>();
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
             ArtifactId = "artifact-1",
@@ -107,20 +107,26 @@ public sealed class MuleBufferingTests
 
         await buffer.EnqueueWorkAsync(workItem, CancellationToken.None);
 
-        await muleStorage.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await muleClient.DidNotReceiveWithAnyArgs().EnqueueAsync<WorkItem>(
+            default!,
+            default!,
+            default!,
+            default);
     }
 
     [Fact]
     public async Task IntakeBufferMule_WhenBackchannelHasNoMetadata_EnqueuesWithoutDeduplication()
     {
         var muleClient = Substitute.For<IMuleClient>();
-        DurableAction? storedAction = null;
-        var muleStorage = Substitute.For<IMuleStorage>();
-        muleStorage
-            .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        muleStorage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var buffer = BuildServiceProvider(muleClient, muleStorage).GetRequiredService<IIntakeBuffer>();
+        Action<EnqueueOptions>? capturedOptions = null;
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<WorkItem>(),
+                Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
             ArtifactId = "artifact-1",
@@ -130,9 +136,10 @@ public sealed class MuleBufferingTests
 
         await buffer.EnqueueWorkAsync(workItem, CancellationToken.None);
 
-        Assert.NotNull(storedAction);
-        Assert.Null(storedAction!.CorrelationId);
-        Assert.Null(storedAction.DeduplicationKey);
+        var options = new EnqueueOptions();
+        capturedOptions!(options);
+        Assert.Null(options.CorrelationId);
+        Assert.Null(options.DeduplicationKey);
     }
 
     [Fact]
@@ -147,23 +154,17 @@ public sealed class MuleBufferingTests
     }
 
     [Fact]
-    public async Task IntakeBufferMule_WhenFastLaneNotifyFails_PersistsActionAndThrowsForTransportRedelivery()
+    public async Task IntakeBufferMule_WhenMuleClientFails_ThrowsForTransportRedelivery()
     {
-        DurableAction? storedAction = null;
         var muleClient = Substitute.For<IMuleClient>();
-        var muleStorage = Substitute.For<IMuleStorage>();
-        muleStorage
-            .AddAsync(Arg.Do<DurableAction>(action => storedAction = action), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        muleStorage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var serializer = Substitute.For<IMuleSerializer>();
-        serializer.Serialize(Arg.Any<WorkItem>()).Returns("{\"serialized\":true}");
-        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
-        commitNotifier
-            .NotifySavedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask(Task.FromException(new InvalidOperationException("redis unavailable"))));
-        var buffer = BuildServiceProvider(muleClient, muleStorage, serializer, commitNotifier)
-            .GetRequiredService<IIntakeBuffer>();
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<WorkItem>(),
+                Arg.Any<Action<EnqueueOptions>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<Guid>(Task.FromException<Guid>(new InvalidOperationException("redis unavailable"))));
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
             ArtifactId = "artifact-1",
@@ -177,18 +178,10 @@ public sealed class MuleBufferingTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             buffer.EnqueueWorkAsync(workItem, CancellationToken.None));
 
-        Assert.NotNull(storedAction);
-        Assert.Equal("TriggerSaga", storedAction!.Key.ToString());
-        Assert.Equal(MuleSettings.DefaultLane, storedAction.Lane);
-        Assert.Equal("{\"serialized\":true}", storedAction.Payload);
-        Assert.Equal(typeof(WorkItem).AssemblyQualifiedName, storedAction.PayloadType);
-        Assert.Equal("correlation-1", storedAction.CorrelationId);
-        Assert.Equal("trigger:artifact-1:correlation-1", storedAction.DeduplicationKey);
-        Assert.Equal(DurableActionStatus.Pending, storedAction.Status);
-        await muleStorage.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
-        await commitNotifier.Received(1).NotifySavedAsync(
-            storedAction.Id,
-            MuleSettings.DefaultLane,
+        await muleClient.Received(1).EnqueueAsync(
+            Arg.Is<ActionKey>(key => key.ToString() == "TriggerSaga"),
+            workItem,
+            Arg.Any<Action<EnqueueOptions>>(),
             Arg.Any<CancellationToken>());
     }
 

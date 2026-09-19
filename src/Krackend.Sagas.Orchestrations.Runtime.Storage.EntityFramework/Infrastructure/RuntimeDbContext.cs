@@ -120,7 +120,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.ArtifactPayload).HasConversion(new JsonNodeConverter()).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationArtifactStatus.Pending).IsRequired();
         builder.Property(x => x.ProjectionError).HasMaxLength(4000).IsRequired(false);
-        builder.Property(x => x.SupersededByArtifactId).HasConversion(new NullableIdToBytesConverter());
+        builder.Property(x => x.SupersededByArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Notes).HasMaxLength(2000).IsRequired(false);
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.Version }).IsUnique();
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.IsActive });
@@ -176,7 +176,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationInstanceId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.StageExecutionId).HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.ParallelGroupId).HasConversion(new NullableIdToBytesConverter());
+        builder.Property(x => x.ParallelGroupId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.TaskKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.TaskKind).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.ExecutionMode).HasConversion<string>().HasMaxLength(64).IsRequired();
@@ -198,7 +198,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.TaskExecutionId).HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.DispatchId).HasConversion(new NullableIdToBytesConverter());
+        builder.Property(x => x.DispatchId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.RequestPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.ResponsePayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
@@ -237,9 +237,9 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationInstanceId).HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.StageExecutionId).HasConversion(new NullableIdToBytesConverter());
-        builder.Property(x => x.TaskExecutionId).HasConversion(new NullableIdToBytesConverter());
-        builder.Property(x => x.TaskExecutionAttemptId).HasConversion(new NullableIdToBytesConverter());
+        builder.Property(x => x.StageExecutionId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.TaskExecutionId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.TaskExecutionAttemptId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.TransitionType).HasMaxLength(128).IsRequired();
         builder.Property(x => x.FromStatus).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.ToStatus).HasMaxLength(128).IsRequired(false);
