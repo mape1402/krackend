@@ -25,6 +25,21 @@ public sealed class RuntimeNode
     public string Code { get; set; }
 
     /// <summary>
+    /// Gets or sets the logical Control Plane environment that owns this runtime node.
+    /// </summary>
+    public Id EnvironmentId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the logical environment display name.
+    /// </summary>
+    public string EnvironmentName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the logical environment code.
+    /// </summary>
+    public string EnvironmentCode { get; set; }
+
+    /// <summary>
     /// Gets or sets who can initiate artifact distribution.
     /// </summary>
     public DistributionMode DistributionMode { get; set; }

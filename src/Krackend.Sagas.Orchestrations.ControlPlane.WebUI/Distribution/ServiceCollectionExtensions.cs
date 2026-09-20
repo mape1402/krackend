@@ -32,6 +32,7 @@ public static class ServiceCollectionExtensions
         public void Configure(RazorPagesOptions options)
         {
             var prefix = string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "orchestrator-distribution" : _options.RoutePrefix.Trim('/');
+            options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Environments/Index", $"{prefix}/environments");
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/RuntimeNodes/Index", prefix);
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/ArtifactReleases/Index", $"{prefix}/artifacts");
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Promotions/Index", $"{prefix}/releases");

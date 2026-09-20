@@ -18,12 +18,14 @@ public sealed class ControlPlaneRuntimeNodeTests
     public async Task RuntimeNodeApplicationServiceCreatesUpdatesMapsAndDeletesNodes()
     {
         var repository = new RecordingRuntimeNodeRepository();
-        var service = new RuntimeNodeApplicationService(repository);
+        var environmentRepository = new RecordingDistributionEnvironmentRepository();
+        var service = new RuntimeNodeApplicationService(repository, environmentRepository);
 
         var id = await service.Upsert(new UpsertRuntimeNodeInput(
             "",
             " Local Runtime ",
             " local-runtime ",
+            environmentRepository.Environment.Id.ToString(),
             DistributionMode.DesignPublishesToRuntime,
             " https://runtime.local ",
             " dev node "));
@@ -47,6 +49,7 @@ public sealed class ControlPlaneRuntimeNodeTests
             id,
             "Runtime updated",
             "runtime-updated",
+            environmentRepository.Environment.Id.ToString(),
             DistributionMode.HybridSync,
             "https://runtime-updated.local",
             "updated"));
@@ -69,14 +72,14 @@ public sealed class ControlPlaneRuntimeNodeTests
         await service.Delete(id);
 
         Assert.True(updated.IsDeleted);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.Upsert(new UpsertRuntimeNodeInput(id, "Deleted", "deleted", DistributionMode.HybridSync, "", "")));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.Upsert(new UpsertRuntimeNodeInput(id, "Deleted", "deleted", environmentRepository.Environment.Id.ToString(), DistributionMode.HybridSync, "", "")));
     }
 
     [Fact]
     public async Task RuntimeNodeApplicationServiceBlocksInvalidTransitionsAndMissingCredentials()
     {
         var repository = new RecordingRuntimeNodeRepository();
-        var service = new RuntimeNodeApplicationService(repository);
+        var service = new RuntimeNodeApplicationService(repository, new RecordingDistributionEnvironmentRepository());
         var pullOnly = RuntimeNode(DistributionMode.RuntimeFetchesFromDesign);
         pullOnly.InboundCredentialStatus = ConnectionCredentialStatus.Missing;
         var push = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
@@ -103,6 +106,18 @@ public sealed class ControlPlaneRuntimeNodeTests
         await using var provider = CreateProvider();
         using var scope = provider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IRuntimeNodeRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure.ControlPlaneDbContext>();
+        dbContext.DistributionEnvironments.Add(new Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.DistributionEnvironmentEntity
+        {
+            Id = RecordingDistributionEnvironmentRepository.EnvironmentId,
+            Name = "Dev",
+            Code = "dev",
+            Description = "Development",
+            IsEnabled = true,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
         var node = RuntimeNode(DistributionMode.HybridSync);
         node.Name = "Zulu Runtime";
         node.Code = "zulu";
@@ -164,6 +179,9 @@ public sealed class ControlPlaneRuntimeNodeTests
             Id = Id.New(),
             Name = "Local Runtime",
             Code = $"runtime-{Guid.NewGuid():N}",
+            EnvironmentId = RecordingDistributionEnvironmentRepository.EnvironmentId,
+            EnvironmentName = "Dev",
+            EnvironmentCode = "dev",
             DistributionMode = mode,
             EndpointBaseUri = "https://runtime.local",
             EndpointApiPath = "runtime/artifacts/deploy",
@@ -242,5 +260,35 @@ public sealed class ControlPlaneRuntimeNodeTests
                 .ToArray();
             return Task.FromResult(new PagedResult<RuntimeNode>(pagedSettings.PageNumber, 1, rows.Length, pagedSettings.PageSize, rows));
         }
+    }
+
+    private sealed class RecordingDistributionEnvironmentRepository : IDistributionEnvironmentRepository
+    {
+        public static readonly Id EnvironmentId = Id.New();
+
+        public DistributionEnvironment Environment { get; } = new()
+        {
+            Id = EnvironmentId,
+            Name = "Dev",
+            Code = "dev",
+            Description = "Development",
+            IsEnabled = true,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+
+        public Task Create(DistributionEnvironment environment, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task Update(DistributionEnvironment environment, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<DistributionEnvironment> GetById(Id environmentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Environment);
+
+        public Task<DistributionEnvironment> GetByCode(string code, CancellationToken cancellationToken = default)
+            => Task.FromResult(Environment);
+
+        public Task<PagedResult<DistributionEnvironment>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default)
+            => Task.FromResult(new PagedResult<DistributionEnvironment>(pagedSettings.PageNumber, 1, 1, pagedSettings.PageSize, [Environment]));
     }
 }

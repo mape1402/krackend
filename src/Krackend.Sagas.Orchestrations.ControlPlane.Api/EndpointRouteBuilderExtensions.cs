@@ -324,6 +324,13 @@ public static class EndpointRouteBuilderExtensions
         var readGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReadPolicy);
         var executeGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReleaseExecutePolicy);
 
+        readGroup.MapGet("/distribution/environments", async ([FromServices] CPDistribution.IDistributionEnvironmentApplicationService service, int pageNumber, int pageSize, CancellationToken cancellationToken)
+            => Results.Ok(await service.GetAll(DistributionPaged(options, pageNumber, pageSize), cancellationToken)));
+        executeGroup.MapPost("/distribution/environments", async (CPDistribution.UpsertDistributionEnvironmentInput input, [FromServices] CPDistribution.IDistributionEnvironmentApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Created(await service.Upsert(input, cancellationToken)));
+        executeGroup.MapPut("/distribution/environments/{environmentId}", async (string environmentId, CPDistribution.UpsertDistributionEnvironmentInput input, [FromServices] CPDistribution.IDistributionEnvironmentApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Created(await service.Upsert(input with { EnvironmentId = string.IsNullOrWhiteSpace(input.EnvironmentId) ? environmentId : input.EnvironmentId }, cancellationToken)));
+
         readGroup.MapGet("/distribution/runtime-nodes", async ([FromServices] CPDistribution.IRuntimeNodeApplicationService service, int pageNumber, int pageSize, CancellationToken cancellationToken)
             => Results.Ok(await service.GetAll(DistributionPaged(options, pageNumber, pageSize), cancellationToken)));
         executeGroup.MapPost("/distribution/runtime-nodes", async (CPDistribution.UpsertRuntimeNodeInput input, [FromServices] CPDistribution.IRuntimeNodeApplicationService service, CancellationToken cancellationToken)

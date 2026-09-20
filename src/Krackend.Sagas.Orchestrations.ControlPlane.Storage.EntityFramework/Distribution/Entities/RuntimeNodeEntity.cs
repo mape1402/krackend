@@ -9,6 +9,8 @@ public sealed class RuntimeNodeEntity
     public Id Id { get; set; }
     public string Name { get; set; }
     public string Code { get; set; }
+    public Id EnvironmentId { get; set; }
+    public DistributionEnvironmentEntity Environment { get; set; }
     public DistributionMode DistributionMode { get; set; }
     public string EndpointBaseUri { get; set; }
     public string EndpointApiPath { get; set; }

@@ -23,6 +23,21 @@ public sealed class RuntimeNodeModel
     public string Code { get; set; }
 
     /// <summary>
+    /// Gets or sets the logical environment id that owns this runtime node.
+    /// </summary>
+    public string EnvironmentId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the logical environment display name.
+    /// </summary>
+    public string EnvironmentName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the logical environment code.
+    /// </summary>
+    public string EnvironmentCode { get; set; }
+
+    /// <summary>
     /// Gets or sets the distribution mode label.
     /// </summary>
     public string DistributionMode { get; set; }
@@ -184,6 +199,10 @@ public sealed record UpsertRuntimeNodeInput(
     /// Runtime node code.
     /// </summary>
     string Code,
+    /// <summary>
+    /// Logical Control Plane environment id.
+    /// </summary>
+    string EnvironmentId,
     /// <summary>
     /// Distribution mode.
     /// </summary>
