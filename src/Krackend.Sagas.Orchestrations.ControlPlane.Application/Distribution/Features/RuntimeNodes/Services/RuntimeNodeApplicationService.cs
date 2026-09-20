@@ -10,10 +10,14 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationService
 {
     private readonly IRuntimeNodeRepository _repository;
+    private readonly IDistributionEnvironmentRepository _environmentRepository;
 
-    public RuntimeNodeApplicationService(IRuntimeNodeRepository repository)
+    public RuntimeNodeApplicationService(
+        IRuntimeNodeRepository repository,
+        IDistributionEnvironmentRepository environmentRepository)
     {
         _repository = repository;
+        _environmentRepository = environmentRepository;
     }
 
     public async Task<string> Upsert(UpsertRuntimeNodeInput input, CancellationToken cancellationToken = default)
@@ -32,11 +36,21 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
             }
         }
 
+        var environmentId = ResolveEnvironmentId(input.EnvironmentId, existing);
+        var environment = await _environmentRepository.GetById(environmentId, cancellationToken);
+        if (!environment.IsEnabled)
+        {
+            throw new InvalidOperationException($"Environment '{environment.Code}' is disabled.");
+        }
+
         var entity = new RuntimeNode
         {
             Id = isUpdate ? new Id(parsedUlid) : Id.New(),
             Name = input.Name.Trim(),
             Code = input.Code.Trim(),
+            EnvironmentId = environmentId,
+            EnvironmentName = environment.Name,
+            EnvironmentCode = environment.Code,
             DistributionMode = input.DistributionMode,
             EndpointBaseUri = input.EndpointBaseUri?.Trim() ?? string.Empty,
             EndpointApiPath = existing?.EndpointApiPath ?? string.Empty,
@@ -113,6 +127,7 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
             Rows = result.Rows.Select(x => new RuntimeNodeModel
             {
                 Id = x.Id.ToString(), Name = x.Name, Code = x.Code,
+                EnvironmentId = x.EnvironmentId.ToString(), EnvironmentName = x.EnvironmentName, EnvironmentCode = x.EnvironmentCode,
                 DistributionMode = x.DistributionMode.ToString(), EndpointBaseUri = x.EndpointBaseUri, EndpointApiPath = x.EndpointApiPath,
                 Status = x.Status.ToString(), IsEnabled = x.Status == RuntimeNodeStatus.Enabled, IsDeleted = x.IsDeleted, DeletedAtUtc = x.DeletedAtUtc,
                 Description = x.Description, RegisteredAtUtc = x.RegisteredAtUtc,
@@ -128,6 +143,21 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
                 LastUpdatedAtUtc = x.LastUpdatedAtUtc
             }).ToArray()
         };
+    }
+
+    private static Id ResolveEnvironmentId(string environmentId, RuntimeNode existing)
+    {
+        if (!string.IsNullOrWhiteSpace(environmentId) && Ulid.TryParse(environmentId, out var parsedEnvironmentId))
+        {
+            return new Id(parsedEnvironmentId);
+        }
+
+        if (existing is not null && existing.EnvironmentId.Value != default)
+        {
+            return existing.EnvironmentId;
+        }
+
+        throw new InvalidOperationException("Environment is required for runtime node configuration.");
     }
 
     private static bool CanTransition(RuntimeNodeStatus current, RuntimeNodeStatus next)

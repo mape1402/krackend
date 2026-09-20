@@ -9,16 +9,20 @@ public sealed class IndexModel : PageModel
 {
     private readonly IRuntimeNodeApplicationService _service;
     private readonly IRuntimeNodeConnectionApplicationService _connectionService;
+    private readonly IDistributionEnvironmentApplicationService _environmentService;
 
     public IndexModel(
         IRuntimeNodeApplicationService service,
-        IRuntimeNodeConnectionApplicationService connectionService)
+        IRuntimeNodeConnectionApplicationService connectionService,
+        IDistributionEnvironmentApplicationService environmentService)
     {
         _service = service;
         _connectionService = connectionService;
+        _environmentService = environmentService;
     }
 
     public IReadOnlyCollection<RuntimeNodeModel> Rows { get; private set; } = Array.Empty<RuntimeNodeModel>();
+    public IReadOnlyCollection<DistributionEnvironmentModel> Environments { get; private set; } = Array.Empty<DistributionEnvironmentModel>();
     [BindProperty] public RuntimeNodeInput Input { get; set; } = new();
     [BindProperty] public RuntimeNodeCredentialsInput Credentials { get; set; } = new();
     public IReadOnlyCollection<RuntimeNodeDistributionModeOption> DistributionModeOptions { get; } =
@@ -49,6 +53,8 @@ public sealed class IndexModel : PageModel
     {
         var result = await _service.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 100 }, cancellationToken);
         Rows = result.Rows;
+        var environments = await _environmentService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }, cancellationToken);
+        Environments = environments.Rows;
     }
 
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
@@ -65,6 +71,7 @@ public sealed class IndexModel : PageModel
             Input.RuntimeNodeId,
             Input.Name.Trim(),
             Input.Code.Trim(),
+            Input.EnvironmentId,
             Input.DistributionMode,
             Input.EndpointBaseUri?.Trim() ?? string.Empty,
             Input.Description?.Trim() ?? string.Empty), cancellationToken);
@@ -187,6 +194,7 @@ public sealed class IndexModel : PageModel
                 Input.RuntimeNodeId,
                 Input.Name.Trim(),
                 Input.Code.Trim(),
+                Input.EnvironmentId,
                 Input.DistributionMode,
                 Input.EndpointBaseUri?.Trim() ?? string.Empty,
                 Input.Description?.Trim() ?? string.Empty), cancellationToken);
@@ -355,6 +363,9 @@ public sealed class IndexModel : PageModel
             id = node.Id,
             name = node.Name,
             code = node.Code,
+            environmentId = node.EnvironmentId,
+            environmentName = node.EnvironmentName,
+            environmentCode = node.EnvironmentCode,
             distributionMode = node.DistributionMode,
             distributionModeLabel = DistributionModeLabel(node.DistributionMode),
             distributionModeDescription = DistributionModeDescription(node.DistributionMode),

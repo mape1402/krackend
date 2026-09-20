@@ -14,6 +14,7 @@ internal sealed class RuntimeNodeEntityConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.Property(x => x.Code).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.EnvironmentId).HasConversion(new IdToBytesConverter()).IsRequired();
         builder.Property(x => x.EndpointBaseUri).HasMaxLength(1024).IsRequired(false);
         builder.Property(x => x.EndpointApiPath).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
@@ -33,8 +34,13 @@ internal sealed class RuntimeNodeEntityConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.OutboundRequestedScopes).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.OutboundCredentialStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.HasIndex(x => x.Code);
+        builder.HasIndex(x => x.EnvironmentId);
         builder.HasIndex(x => x.InboundClientId);
         builder.HasIndex(x => x.IsDeleted);
+        builder.HasOne(x => x.Environment)
+            .WithMany(x => x.RuntimeNodes)
+            .HasForeignKey(x => x.EnvironmentId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

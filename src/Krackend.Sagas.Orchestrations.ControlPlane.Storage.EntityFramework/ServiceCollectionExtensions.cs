@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IParallelGroupRepository, ParallelGroupRepository>();
         services.AddScoped<IBranchRuleRepository, BranchRuleRepository>();
 
+        services.AddScoped<IDistributionEnvironmentRepository, DistributionEnvironmentRepository>();
         services.AddScoped<IRuntimeNodeRepository, RuntimeNodeRepository>();
         services.AddScoped<IArtifactRepository, ArtifactRepository>();
         services.AddScoped<IReleaseRepository, ReleaseRepository>();

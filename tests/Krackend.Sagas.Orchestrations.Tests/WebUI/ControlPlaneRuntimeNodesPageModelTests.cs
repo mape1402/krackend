@@ -30,6 +30,7 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
         var page = CreatePage(service);
         page.Input.Name = "Local Runtime";
         page.Input.Code = "local-runtime";
+        page.Input.EnvironmentId = "env-1";
         page.Input.DistributionMode = DistributionMode.HybridSync;
         page.Input.EndpointBaseUri = "https://runtime.local";
         page.Input.Description = "Local runtime node";
@@ -50,6 +51,7 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
         page.Input.RuntimeNodeId = "node-1";
         page.Input.Name = " Runtime One ";
         page.Input.Code = " runtime-one ";
+        page.Input.EnvironmentId = "env-1";
         page.Input.DistributionMode = DistributionMode.DesignPublishesToRuntime;
         page.Input.EndpointBaseUri = " https://runtime-one.local ";
         page.Input.Description = " Updated ";
@@ -232,6 +234,7 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
         var page = CreatePage(service, connection);
         page.Input.Name = "Runtime";
         page.Input.Code = "runtime";
+        page.Input.EnvironmentId = "env-1";
         page.Credentials.RuntimeNodeId = node.Id;
         page.Credentials.CredentialsJson = "{}";
 
@@ -321,7 +324,10 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
         FakeRuntimeNodeApplicationService service,
         FakeRuntimeNodeConnectionApplicationService? connection = null)
     {
-        var page = new RuntimeNodesIndexModel(service, connection ?? new FakeRuntimeNodeConnectionApplicationService());
+        var page = new RuntimeNodesIndexModel(
+            service,
+            connection ?? new FakeRuntimeNodeConnectionApplicationService(),
+            new FakeDistributionEnvironmentApplicationService());
         AttachPageContext(page);
         return page;
     }
@@ -342,6 +348,9 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
             Id = id,
             Name = "Local Runtime",
             Code = "local-runtime",
+            EnvironmentId = "env-1",
+            EnvironmentName = "Dev",
+            EnvironmentCode = "dev",
             DistributionMode = DistributionMode.HybridSync.ToString(),
             EndpointBaseUri = "https://runtime.local",
             EndpointApiPath = "/api/orchestrator/runtime/artifacts",
@@ -405,6 +414,9 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
             var node = existing ?? CreateNode(id);
             node.Name = input.Name;
             node.Code = input.Code;
+            node.EnvironmentId = input.EnvironmentId;
+            node.EnvironmentName = "Dev";
+            node.EnvironmentCode = "dev";
             node.DistributionMode = input.DistributionMode.ToString();
             node.EndpointBaseUri = input.EndpointBaseUri;
             node.Description = input.Description;
@@ -515,6 +527,35 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
 
             return Task.FromResult(Validation);
         }
+    }
+
+    private sealed class FakeDistributionEnvironmentApplicationService : IDistributionEnvironmentApplicationService
+    {
+        public Task<string> Upsert(UpsertDistributionEnvironmentInput input, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.IsNullOrWhiteSpace(input.EnvironmentId) ? "env-1" : input.EnvironmentId);
+
+        public Task<ApplicationPagedResult<DistributionEnvironmentModel>> GetAll(
+            ApplicationPagedSettings settings,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ApplicationPagedResult<DistributionEnvironmentModel>
+            {
+                PageNumber = settings.PageNumber,
+                PageSize = settings.PageSize,
+                TotalRows = 1,
+                TotalPages = 1,
+                Rows =
+                [
+                    new DistributionEnvironmentModel
+                    {
+                        Id = "env-1",
+                        Name = "Dev",
+                        Code = "dev",
+                        Description = "Development",
+                        IsEnabled = true,
+                        CreatedAtUtc = DateTime.UtcNow
+                    }
+                ]
+            });
     }
 
     private sealed class InMemoryTempDataProvider : ITempDataProvider

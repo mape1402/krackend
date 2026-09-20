@@ -25,6 +25,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private const string TriggerTopic = "events.sales.sale.created";
     private const string OwnerTeamKey = "sales-platform";
     private const string OwnerTeamName = "Sales Platform";
+    private const string EnvironmentCode = "dev";
     private const string RuntimeNodeCode = "local-runtime";
     private const string DesignInboundClientId = "local-runtime-pull";
     private const string DesignInboundKeyId = "local-design-pull-key";
@@ -48,6 +49,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private static readonly Id OwnerTeamId = StableId("01K00000000000000000000040");
     private static readonly Id DomainId = StableId("01K00000000000000000000041");
     private static readonly Id DefinitionId = StableId("01K00000000000000000000042");
+    private static readonly Id EnvironmentId = StableId("01K00000000000000000000050");
     private static readonly Id RuntimeNodeId = StableId("01K00000000000000000000051");
     private static readonly Id RuntimeNodePolicyId = StableId("01K00000000000000000000052");
 
@@ -647,6 +649,27 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
 
     private async Task UpsertDistributionAsync(DateTime now, CancellationToken cancellationToken)
     {
+        var environment = await _dbContext.DistributionEnvironments.FirstOrDefaultAsync(x => x.Code == EnvironmentCode, cancellationToken);
+        if (environment is null)
+        {
+            _dbContext.DistributionEnvironments.Add(new DistributionEnvironmentEntity
+            {
+                Id = EnvironmentId,
+                Name = "Dev",
+                Code = EnvironmentCode,
+                Description = "Local development environment seeded for demos.",
+                IsEnabled = true,
+                CreatedAtUtc = now
+            });
+        }
+        else
+        {
+            environment.Name = "Dev";
+            environment.Description = "Local development environment seeded for demos.";
+            environment.IsEnabled = true;
+            environment.UpdatedAtUtc = now;
+        }
+
         var runtimeNode = await _dbContext.RuntimeNodes.FirstOrDefaultAsync(x => x.Code == RuntimeNodeCode, cancellationToken);
         if (runtimeNode is null)
         {
@@ -655,6 +678,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Id = RuntimeNodeId,
                 Name = "Local Runtime",
                 Code = RuntimeNodeCode,
+                EnvironmentId = EnvironmentId,
                 DistributionMode = DistributionMode.HybridSync,
                 EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227",
                 EndpointApiPath = "runtime/artifacts/deploy",
@@ -686,6 +710,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         else
         {
             runtimeNode.Name = "Local Runtime";
+            runtimeNode.EnvironmentId = EnvironmentId;
             runtimeNode.DistributionMode = DistributionMode.HybridSync;
             runtimeNode.EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227";
             runtimeNode.EndpointApiPath = "runtime/artifacts/deploy";

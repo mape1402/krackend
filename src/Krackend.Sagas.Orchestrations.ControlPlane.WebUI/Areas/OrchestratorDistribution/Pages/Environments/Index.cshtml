@@ -1,0 +1,142 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Environments.IndexModel
+@{
+    ViewData["Title"] = "Environments";
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Environments</h1>
+        <p class="od-page-subtitle">Logical deployment groups for runtime nodes.</p>
+    </div>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#environmentModal">Create environment</button>
+</div>
+
+@if (!Model.Rows.Any())
+{
+    <section class="od-panel">
+        <p class="od-empty">No environments found.</p>
+    </section>
+}
+else
+{
+    <section class="od-list-shell">
+        <div class="od-grid">
+            @foreach (var item in Model.Rows)
+            {
+                <article class="od-item-card"
+                         data-environment="true"
+                         data-id="@item.Id"
+                         data-name="@item.Name"
+                         data-code="@item.Code"
+                         data-description="@item.Description"
+                         data-is-enabled="@item.IsEnabled">
+                    <div class="od-item-top">
+                        <div>
+                            <h2 class="od-item-title">@item.Name</h2>
+                            <p class="od-item-meta">@item.Code</p>
+                        </div>
+                        <span class="@(item.IsEnabled ? "od-status od-status-active" : "od-status od-status-inactive")">@(item.IsEnabled ? "Enabled" : "Disabled")</span>
+                    </div>
+                    <p class="od-item-description" title="@item.Description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
+                    <p class="od-item-meta">Updated @DateOrDash(item.UpdatedAtUtc ?? item.CreatedAtUtc)</p>
+                    <div class="od-card-actions">
+                        <button type="button" class="btn btn-outline-primary btn-sm js-edit-environment">Edit</button>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+<div class="modal fade" id="environmentModal" tabindex="-1" aria-labelledby="environmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving environment" data-busy-message="Control Plane is storing the environment.">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="environmentModalLabel">Create environment</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input asp-for="Input.EnvironmentId" type="hidden" id="environmentIdInput" />
+                    <div class="mb-3">
+                        <label asp-for="Input.Name" class="form-label"></label>
+                        <input asp-for="Input.Name" class="form-control" id="environmentNameInput" />
+                        <span asp-validation-for="Input.Name" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Code" class="form-label"></label>
+                        <input asp-for="Input.Code" class="form-control" id="environmentCodeInput" data-orchestrator-key="true" />
+                        <span asp-validation-for="Input.Code" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Description" class="form-label"></label>
+                        <textarea asp-for="Input.Description" class="form-control" id="environmentDescriptionInput" rows="3"></textarea>
+                        <span asp-validation-for="Input.Description" class="text-danger"></span>
+                    </div>
+                    <div class="form-check">
+                        <input asp-for="Input.IsEnabled" class="form-check-input" id="environmentEnabledInput" />
+                        <label asp-for="Input.IsEnabled" class="form-check-label">Enabled</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="environmentSubmitButton">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@functions {
+    private static string DateOrDash(DateTime? value)
+        => value.HasValue ? value.Value.ToString("yyyy-MM-dd HH:mm:ss") : "-";
+
+    private static string DateOrDash(DateTime value)
+        => value.ToString("yyyy-MM-dd HH:mm:ss");
+}
+
+@section Scripts {
+<script>
+(() => {
+    const modalElement = document.getElementById('environmentModal');
+    const modal = window.bootstrap?.Modal?.getOrCreateInstance(modalElement);
+
+    const setValue = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.value = value || '';
+    };
+
+    const setChecked = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.checked = value === 'True' || value === 'true';
+    };
+
+    document.querySelector('[data-bs-target="#environmentModal"]')?.addEventListener('click', () => {
+        document.getElementById('environmentModalLabel').textContent = 'Create environment';
+        document.getElementById('environmentSubmitButton').textContent = 'Create';
+        setValue('environmentIdInput', '');
+        setValue('environmentNameInput', '');
+        setValue('environmentCodeInput', '');
+        setValue('environmentDescriptionInput', '');
+        setChecked('environmentEnabledInput', 'true');
+    });
+
+    document.querySelectorAll('.js-edit-environment').forEach(button => {
+        button.addEventListener('click', () => {
+            const environment = button.closest('[data-environment]');
+            if (!environment || !modal) return;
+
+            document.getElementById('environmentModalLabel').textContent = 'Edit environment';
+            document.getElementById('environmentSubmitButton').textContent = 'Save';
+            setValue('environmentIdInput', environment.dataset.id);
+            setValue('environmentNameInput', environment.dataset.name);
+            setValue('environmentCodeInput', environment.dataset.code);
+            setValue('environmentDescriptionInput', environment.dataset.description);
+            setChecked('environmentEnabledInput', environment.dataset.isEnabled);
+            modal.show();
+        });
+    });
+})();
+</script>
+}
