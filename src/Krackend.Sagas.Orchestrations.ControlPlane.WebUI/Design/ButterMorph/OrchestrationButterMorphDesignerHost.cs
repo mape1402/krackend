@@ -51,12 +51,15 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
                 designerContext.TaskDefinitionId));
             var task = await _taskApplicationService.GetById(new GetTaskDefinitionByIdQuery(designerContext.TaskDefinitionId));
             var diagnostics = new List<string>();
+            AddMissingSnapshotDiagnostics(schemaContext, diagnostics);
+
             var sources = ImportSources(schemaContext, diagnostics);
             var target = ImportTarget(schemaContext, diagnostics);
 
             if (target is null)
             {
                 diagnostics.Add("The current task does not have a usable request schema target.");
+                return CreateLoadFailure(BuildLoadFailureMessage(diagnostics));
             }
 
             return new ButterMorphDesignerLoadResult
@@ -112,6 +115,28 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
         }
     }
 
+    private static void AddMissingSnapshotDiagnostics(OrchestrationSchemaContext schemaContext, ICollection<string> diagnostics)
+    {
+        if (schemaContext?.Target?.SchemaBinding is null)
+        {
+            diagnostics.Add("The current task does not define a request schema target.");
+        }
+        else if (schemaContext.Target.SchemaBinding.Snapshot is null)
+        {
+            diagnostics.Add(BuildMissingSnapshotMessage("Target", schemaContext.Target.Alias, schemaContext.Target.SchemaBinding));
+        }
+
+        if (schemaContext?.Sources is null)
+        {
+            return;
+        }
+
+        foreach (var source in schemaContext.Sources.Where(source => source.SchemaBinding?.Snapshot is null))
+        {
+            diagnostics.Add(BuildMissingSnapshotMessage("Source", source.Alias, source.SchemaBinding));
+        }
+    }
+
     private IReadOnlyDictionary<string, IStructureSchema> ImportSources(
         OrchestrationSchemaContext schemaContext,
         ICollection<string> diagnostics)
@@ -120,6 +145,11 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
 
         foreach (var source in schemaContext.Sources)
         {
+            if (source.SchemaBinding?.Snapshot is null)
+            {
+                continue;
+            }
+
             if (_schemaImporter.TryImport(source.SchemaBinding, out var schema, out var message))
             {
                 sources[source.Alias] = schema;
@@ -134,7 +164,7 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
 
     private IStructureSchema ImportTarget(OrchestrationSchemaContext schemaContext, ICollection<string> diagnostics)
     {
-        if (schemaContext.Target?.SchemaBinding is null)
+        if (schemaContext.Target?.SchemaBinding?.Snapshot is null)
         {
             return null;
         }
@@ -147,6 +177,23 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
         diagnostics.Add($"{schemaContext.Target.Alias}: {message}");
         return null;
     }
+
+    private static string BuildMissingSnapshotMessage(string role, string alias, SchemaBinding binding)
+    {
+        var contract = binding is null
+            ? "unknown contract"
+            : $"{binding.ContractKey} v{binding.ContractVersion}";
+        var provider = binding is null || string.IsNullOrWhiteSpace(binding.RegistryProviderKey)
+            ? "schema registry"
+            : $"schema registry '{binding.RegistryProviderKey}'";
+
+        return $"{role} '{alias}' could not resolve {contract} from {provider}. Verify the contract is deployed and the registry endpoint is available.";
+    }
+
+    private static string BuildLoadFailureMessage(IReadOnlyCollection<string> diagnostics)
+        => diagnostics is null || diagnostics.Count == 0
+            ? "ButterMorph could not load the orchestration schema context."
+            : string.Join(Environment.NewLine, diagnostics.Distinct(StringComparer.Ordinal));
 
     private static TransformationDefinition CreateTransformation(
         string dsl,

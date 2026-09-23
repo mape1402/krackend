@@ -18,5 +18,10 @@ public enum OrchestrationSchemaContextSourceKind
     /// <summary>
     /// Source comes from orchestration variables.
     /// </summary>
-    Variables = 3
+    Variables = 3,
+
+    /// <summary>
+    /// Source comes from a previously dispatched task request.
+    /// </summary>
+    TaskRequest = 4
 }

@@ -814,7 +814,7 @@
 }
 
 @section Scripts {
-<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js"></script>
+<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=1.1.3"></script>
 <script>
 const orchestrationStageCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
 const orchestrationStageVersionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.VersionId));
