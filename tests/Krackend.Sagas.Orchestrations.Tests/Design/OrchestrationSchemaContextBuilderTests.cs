@@ -20,13 +20,13 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var source = Assert.Single(context.Sources);
         Assert.Equal("trigger", source.Alias);
         Assert.Equal(SchemaContractKind.Event, source.SchemaBinding.ContractKind);
-        Assert.Equal("stages.intake.tasks.reserve-inventory.request", context.Target.Alias);
+        Assert.Equal("intake_reserve_inventory_request", context.Target.Alias);
         Assert.Equal(SchemaContractKind.CommandRequest, context.Target.SchemaBinding.ContractKind);
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }
 
     [Fact]
-    public async Task BuildForTask_ExposesPreviousSequentialResponses()
+    public async Task BuildForTask_ExposesPreviousSequentialTaskRequestsAndResponses()
     {
         var version = CreateVersion();
         var builder = new OrchestrationSchemaContextBuilder();
@@ -34,13 +34,14 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[1].Id);
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.reserve-inventory.response");
-        Assert.Contains(context.Sources, x => x.Alias == "tasks.reserve-inventory.response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "stages.intake.tasks.authorize-payment.response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_response");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_authorize_payment_request");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_authorize_payment_response");
     }
 
     [Fact]
-    public async Task BuildForTask_DoesNotExposeParallelSiblingResponses()
+    public async Task BuildForTask_DoesNotExposeParallelSiblingRequestsOrResponses()
     {
         var version = CreateVersion();
         var builder = new OrchestrationSchemaContextBuilder();
@@ -48,16 +49,18 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[2].Id);
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.reserve-inventory.response");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.authorize-payment.response");
-        Assert.Contains(context.Sources, x => x.Alias == "tasks.reserve-inventory.response");
-        Assert.Contains(context.Sources, x => x.Alias == "tasks.authorize-payment.response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "stages.intake.tasks.notify-customer.response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "stages.intake.tasks.audit-sale.response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_response");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_notify_customer_request");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_notify_customer_response");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_audit_sale_request");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_audit_sale_response");
     }
 
     [Fact]
-    public async Task BuildForTask_ExposesPreviousStageAndJoinedParallelResponses()
+    public async Task BuildForTask_ExposesPreviousStageAndJoinedParallelRequestsAndResponses()
     {
         var version = CreateVersion();
         var builder = new OrchestrationSchemaContextBuilder();
@@ -65,26 +68,35 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, version.StageDefinitions[1].TaskDefinitions[0].Id);
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.reserve-inventory.response");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.authorize-payment.response");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.notify-customer.response");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.audit-sale.response");
-        Assert.Contains(context.Sources, x => x.Alias == "tasks.notify-customer.response");
-        Assert.Contains(context.Sources, x => x.Alias == "tasks.audit-sale.response");
-        Assert.Equal("stages.fulfillment.tasks.close-sale.request", context.Target.Alias);
+        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_notify_customer_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_notify_customer_response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_sale_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_sale_response");
+        Assert.Equal("fulfillment_close_sale_request", context.Target.Alias);
     }
 
     [Fact]
-    public async Task BuildForTask_DoesNotExposeShortAliasWhenTaskKeyIsAmbiguous()
+    public async Task BuildForTask_UsesDslSafeAliases()
     {
         var version = CreateVersionWithRepeatedTaskKey();
         var builder = new OrchestrationSchemaContextBuilder();
 
         var context = await builder.BuildForTask(version, version.StageDefinitions[2].TaskDefinitions[0].Id);
 
-        Assert.Contains(context.Sources, x => x.Alias == "stages.intake.tasks.audit.response");
-        Assert.Contains(context.Sources, x => x.Alias == "stages.enrichment.tasks.audit.response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "tasks.audit.response");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_request");
+        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_response");
+        Assert.Contains(context.Sources, x => x.Alias == "enrichment_audit_request");
+        Assert.Contains(context.Sources, x => x.Alias == "enrichment_audit_response");
+        Assert.Equal("fulfillment_close_sale_request", context.Target.Alias);
+        Assert.All(context.Sources.Append(new OrchestrationSchemaSource { Alias = context.Target.Alias }), source =>
+        {
+            Assert.DoesNotContain(".", source.Alias, StringComparison.Ordinal);
+            Assert.DoesNotContain("-", source.Alias, StringComparison.Ordinal);
+        });
     }
 
     [Fact]

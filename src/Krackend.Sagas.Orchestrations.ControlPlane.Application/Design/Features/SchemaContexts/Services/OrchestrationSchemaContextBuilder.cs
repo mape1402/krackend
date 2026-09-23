@@ -39,9 +39,8 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
-        AddPreviousStageTaskResponseSources(stages, targetStage, sources);
-        AddCurrentStageTaskResponseSources(targetStage, targetTask, sources);
-        AddShortTaskResponseAliases(sources);
+        AddPreviousStageTaskSources(stages, targetStage, sources);
+        AddCurrentStageTaskSources(targetStage, targetTask, sources);
 
         var target = CreateTarget(targetStage, targetTask);
         var context = new OrchestrationSchemaContext
@@ -78,7 +77,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         });
     }
 
-    private static void AddPreviousStageTaskResponseSources(
+    private static void AddPreviousStageTaskSources(
         IEnumerable<StageDefinition> stages,
         StageDefinition targetStage,
         ICollection<OrchestrationSchemaSource> sources)
@@ -87,12 +86,13 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         {
             foreach (var task in GetEnabledTasks(stage))
             {
+                AddTaskRequestSource(stage, task, sources);
                 AddTaskResponseSource(stage, task, sources);
             }
         }
     }
 
-    private static void AddCurrentStageTaskResponseSources(
+    private static void AddCurrentStageTaskSources(
         StageDefinition stage,
         TaskDefinition targetTask,
         ICollection<OrchestrationSchemaSource> sources)
@@ -102,6 +102,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         foreach (var task in tasks.Where(task => task.Order < targetOrderBoundary))
         {
+            AddTaskRequestSource(stage, task, sources);
             AddTaskResponseSource(stage, task, sources);
         }
     }
@@ -126,6 +127,27 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             .OrderBy(x => x.Order)
             .ThenBy(x => x.Key, StringComparer.Ordinal);
 
+    private static void AddTaskRequestSource(
+        StageDefinition stage,
+        TaskDefinition task,
+        ICollection<OrchestrationSchemaSource> sources)
+    {
+        var requestBinding = GetRequestSchemaBinding(task);
+        if (requestBinding is null)
+        {
+            return;
+        }
+
+        sources.Add(new OrchestrationSchemaSource
+        {
+            Alias = BuildPayloadAlias(stage.Key, task.Key, "request"),
+            SourceKind = OrchestrationSchemaContextSourceKind.TaskRequest,
+            StageKey = stage.Key,
+            TaskKey = task.Key,
+            SchemaBinding = requestBinding
+        });
+    }
+
     private static void AddTaskResponseSource(
         StageDefinition stage,
         TaskDefinition task,
@@ -139,7 +161,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         sources.Add(new OrchestrationSchemaSource
         {
-            Alias = $"stages.{stage.Key}.tasks.{task.Key}.response",
+            Alias = BuildPayloadAlias(stage.Key, task.Key, "response"),
             SourceKind = OrchestrationSchemaContextSourceKind.TaskResponse,
             StageKey = stage.Key,
             TaskKey = task.Key,
@@ -147,31 +169,10 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         });
     }
 
-    private static void AddShortTaskResponseAliases(ICollection<OrchestrationSchemaSource> sources)
-    {
-        var taskResponseSources = sources
-            .Where(source => source.SourceKind == OrchestrationSchemaContextSourceKind.TaskResponse)
-            .Where(source => !string.IsNullOrWhiteSpace(source.TaskKey))
-            .ToArray();
-
-        var uniqueTaskKeys = taskResponseSources
-            .GroupBy(source => source.TaskKey, StringComparer.Ordinal)
-            .Where(group => group.Count() == 1)
-            .Select(group => group.Single());
-
-        foreach (var source in uniqueTaskKeys)
-        {
-            sources.Add(source with
-            {
-                Alias = $"tasks.{source.TaskKey}.response"
-            });
-        }
-    }
-
     private static OrchestrationSchemaTarget CreateTarget(StageDefinition stage, TaskDefinition task)
         => new()
         {
-            Alias = $"stages.{stage.Key}.tasks.{task.Key}.request",
+            Alias = BuildPayloadAlias(stage.Key, task.Key, "request"),
             StageKey = stage.Key,
             TaskKey = task.Key,
             SchemaBinding = GetRequestSchemaBinding(task)
@@ -190,6 +191,39 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             MessagingTaskConfiguration messaging => messaging.ResponseSchemaBinding,
             _ => null
         };
+
+    private static string BuildPayloadAlias(string stageKey, string taskKey, string payloadName)
+        => SanitizeAlias($"{stageKey}_{taskKey}_{payloadName}");
+
+    private static string SanitizeAlias(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        var previousWasSeparator = false;
+
+        foreach (var character in value)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+                previousWasSeparator = false;
+                continue;
+            }
+
+            if (!previousWasSeparator)
+            {
+                builder.Append('_');
+                previousWasSeparator = true;
+            }
+        }
+
+        var alias = builder.ToString().Trim('_');
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            return "payload";
+        }
+
+        return char.IsDigit(alias[0]) ? $"p_{alias}" : alias;
+    }
 
     private static string BuildSignature(
         IReadOnlyCollection<OrchestrationSchemaSource> sources,
