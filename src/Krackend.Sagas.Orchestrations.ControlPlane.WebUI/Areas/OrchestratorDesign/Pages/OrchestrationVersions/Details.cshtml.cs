@@ -25,6 +25,7 @@ public sealed class DetailsModel : PageModel
     private readonly IStageApplicationService _stageService;
     private readonly ITaskApplicationService _taskService;
     private readonly ITriggerBindingApplicationService _triggerBindingService;
+    private readonly ISchemaContractCatalog _schemaContractCatalog;
     private readonly string _defaultSchemaRegistryProviderKey;
 
     public DetailsModel(
@@ -33,6 +34,7 @@ public sealed class DetailsModel : PageModel
         IStageApplicationService stageService,
         ITaskApplicationService taskService,
         ITriggerBindingApplicationService triggerBindingService,
+        ISchemaContractCatalog schemaContractCatalog,
         IOptions<OrchestratorDesignWebUIOptions> uiOptions)
     {
         _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
@@ -40,6 +42,7 @@ public sealed class DetailsModel : PageModel
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
         _taskService = taskService ?? throw new ArgumentNullException(nameof(taskService));
         _triggerBindingService = triggerBindingService ?? throw new ArgumentNullException(nameof(triggerBindingService));
+        _schemaContractCatalog = schemaContractCatalog ?? throw new ArgumentNullException(nameof(schemaContractCatalog));
         _defaultSchemaRegistryProviderKey = NormalizeProviderKey(uiOptions?.Value?.DefaultSchemaRegistryProviderKey);
     }
 
@@ -128,6 +131,9 @@ public sealed class DetailsModel : PageModel
 
     public async Task<IActionResult> OnPostUpsertStageAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
     {
+        ModelState.Clear();
+        ValidateInputModel(NewStage, nameof(NewStage));
+
         if (!ModelState.IsValid)
         {
             OrchestrationId = orchestrationId;
@@ -194,6 +200,39 @@ public sealed class DetailsModel : PageModel
         });
     }
 
+    /// <summary>
+    /// Searches schema contracts available to trigger configuration.
+    /// </summary>
+    public async Task<IActionResult> OnGetSchemaContractsAsync(
+        string contractKind = "",
+        string term = "",
+        int take = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var items = await _schemaContractCatalog.SearchAsync(
+            new SchemaContractCatalogSearchRequest
+            {
+                ProviderKey = _defaultSchemaRegistryProviderKey,
+                ContractKind = ParseEnum(contractKind, SchemaContractKind.Event),
+                SearchText = term ?? string.Empty,
+                Take = take
+            },
+            cancellationToken);
+
+        return new JsonResult(items.Select(item => new
+        {
+            providerKey = item.ProviderKey,
+            contractId = item.ContractId,
+            contractKey = item.ContractKey,
+            contractVersion = item.ContractVersion,
+            contractKind = item.ContractKind.ToString(),
+            contentHash = item.ContentHash,
+            displayName = string.IsNullOrWhiteSpace(item.DisplayName)
+                ? $"{item.ContractKey} v{item.ContractVersion}"
+                : item.DisplayName
+        }));
+    }
+
     public async Task<IActionResult> OnPostDeleteStageAsync(string orchestrationId, string versionId, string stageId, CancellationToken cancellationToken = default)
     {
         await _stageService.Delete(new DeleteStageDefinitionCommand(stageId), cancellationToken);
@@ -256,6 +295,20 @@ public sealed class DetailsModel : PageModel
 
     public async Task<IActionResult> OnPostUpsertTriggerAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
     {
+        ModelState.Clear();
+
+        TriggerBindingModel existingTrigger = null;
+        if (!string.IsNullOrWhiteSpace(TriggerInput.TriggerId))
+        {
+            existingTrigger = await _triggerBindingService.GetById(new GetTriggerBindingByIdQuery(TriggerInput.TriggerId), cancellationToken);
+            if (existingTrigger is null)
+            {
+                return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
+            }
+        }
+
+        ValidateInputModel(TriggerInput, nameof(TriggerInput));
+
         ValidateTriggerInput();
         if (!ModelState.IsValid)
         {
@@ -270,21 +323,15 @@ public sealed class DetailsModel : PageModel
         var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
         var description = TriggerInput.Description ?? string.Empty;
 
-        if (!string.IsNullOrWhiteSpace(TriggerInput.TriggerId))
+        if (existingTrigger is not null)
         {
-            var existing = await _triggerBindingService.GetById(new GetTriggerBindingByIdQuery(TriggerInput.TriggerId), cancellationToken);
-            if (existing is null)
-            {
-                return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
-            }
-
             await _triggerBindingService.Update(
                 new UpdateTriggerBindingCommand(
-                    existing.Id,
+                    existingTrigger.Id,
                     key,
                     triggerType,
                     triggerChannel,
-                    existing.IsEnabled,
+                    existingTrigger.IsEnabled,
                     description),
                 cancellationToken);
 
@@ -464,13 +511,7 @@ public sealed class DetailsModel : PageModel
             ModelState.AddModelError(nameof(TriggerInput.EventTopic), "Capture the event topic.");
         }
 
-        if (TriggerInput.HasEventSchemaValidation && string.IsNullOrWhiteSpace(TriggerInput.EventSchemaContractKey))
-        {
-            ModelState.AddModelError(nameof(TriggerInput.EventSchemaContractKey), "Capture the schema contract key.");
-        }
-
-        if ((TriggerInput.HasEventValidation || TriggerInput.HasEventSchemaValidation) &&
-            string.IsNullOrWhiteSpace(TriggerInput.EventValidationDsl))
+        if (TriggerInput.HasEventValidation && string.IsNullOrWhiteSpace(TriggerInput.EventValidationDsl))
         {
             ModelState.AddModelError(nameof(TriggerInput.EventValidationDsl), "Capture the event validation DSL.");
         }
@@ -479,6 +520,29 @@ public sealed class DetailsModel : PageModel
             !Ulid.TryParse(TriggerInput.EventSchemaRegistryProviderId, out _))
         {
             ModelState.AddModelError(nameof(TriggerInput.EventSchemaRegistryProviderId), "Capture a valid schema registry provider id.");
+        }
+    }
+
+    private void ValidateInputModel<TInput>(TInput input, string modelName)
+        where TInput : class
+    {
+        var validationResults = new List<ValidationResult>();
+        var validationContext = new ValidationContext(input);
+        Validator.TryValidateObject(input, validationContext, validationResults, validateAllProperties: true);
+
+        foreach (var validationResult in validationResults)
+        {
+            var memberNames = validationResult.MemberNames?.Where(memberName => !string.IsNullOrWhiteSpace(memberName)).ToArray();
+            if (memberNames is null || memberNames.Length == 0)
+            {
+                ModelState.AddModelError(modelName, validationResult.ErrorMessage ?? "The value is invalid.");
+                continue;
+            }
+
+            foreach (var memberName in memberNames)
+            {
+                ModelState.AddModelError($"{modelName}.{memberName}", validationResult.ErrorMessage ?? "The value is invalid.");
+            }
         }
     }
 
@@ -564,18 +628,20 @@ public sealed class DetailsModel : PageModel
         string orchestrationId,
         string defaultSchemaRegistryProviderKey)
     {
+        var hasSchemaBinding = !string.IsNullOrWhiteSpace(input.EventSchemaContractKey);
+
         return triggerType switch
         {
             TriggerType.Event => new EventTriggerChannel
             {
                 HasSchemaValidation = input.HasEventSchemaValidation,
                 HasValidation = input.HasEventValidation,
-                Validation = input.HasEventValidation || input.HasEventSchemaValidation
+                Validation = input.HasEventValidation
                     ? BuildValidation(input.EventValidationDsl, input.EventValidationErrorCode)
                     : null,
                 Topic = input.EventTopic.Trim(),
                 Version = ParseSemanticVersion(input.EventVersion, new SemanticVersion(1, 0, 0)),
-                SchemaBinding = input.HasEventSchemaValidation ? CreateSchemaBinding(
+                SchemaBinding = hasSchemaBinding ? CreateSchemaBinding(
                     input.EventSchemaContractKey,
                     input.EventSchemaContractVersion,
                     input.EventSchemaRegistryProviderId,

@@ -19,6 +19,7 @@
     <ProjectReference Include="..\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="ButterMorph.Web.Razor" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="[9.0.7,10.0.0)" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="[10.0.0,11.0.0)" Condition="'$(TargetFramework)' == 'net10.0'" />
   </ItemGroup>

@@ -51,6 +51,26 @@ public sealed class ControlPlaneTeamsPageModelTests
     }
 
     [Fact]
+    public async Task UpsertIgnoresMemberAndCreateIdValidationState()
+    {
+        var service = new FakeTeamApplicationService();
+        var page = new TeamsIndexModel(service);
+        page.Input.Key = " platform ";
+        page.Input.DisplayName = " Platform ";
+        page.Input.Description = " Platform owners ";
+        page.ModelState.AddModelError("TeamId", "Team id is required.");
+        page.ModelState.AddModelError("Input.TeamId", "Team id is required.");
+        page.ModelState.AddModelError("MemberInput.TeamId", "Team id is required.");
+        page.ModelState.AddModelError("MemberInput.ExternalUserId", "External user id is required.");
+
+        var result = await page.OnPostUpsertAsync();
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("platform", service.LastUpsert.Key);
+        Assert.Equal("Platform", service.LastUpsert.DisplayName);
+    }
+
+    [Fact]
     public async Task SetActiveAndRemoveMemberDelegateAndRedirect()
     {
         var service = new FakeTeamApplicationService();
@@ -89,6 +109,26 @@ public sealed class ControlPlaneTeamsPageModelTests
         Assert.IsType<PageResult>(invalid);
         Assert.Equal("team-1", page.TeamId);
         Assert.Single(page.TeamMembers);
+    }
+
+    [Fact]
+    public async Task AddMemberIgnoresTeamFormValidationState()
+    {
+        var service = new FakeTeamApplicationService();
+        var page = new TeamsIndexModel(service);
+        page.MemberInput.TeamId = "team-1";
+        page.MemberInput.ExternalUserId = " user-2 ";
+        page.MemberInput.DisplayName = " User Two ";
+        page.ModelState.AddModelError("TeamId", "Team id is required.");
+        page.ModelState.AddModelError("Input.TeamId", "Team id is required.");
+        page.ModelState.AddModelError("Input.Key", "Key is required.");
+        page.ModelState.AddModelError("Input.DisplayName", "Display name is required.");
+
+        var result = await page.OnPostAddMemberAsync();
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("team-1", redirect.RouteValues!["teamId"]);
+        Assert.Equal("user-2", service.LastAddMember.ExternalUserId);
     }
 
     [Fact]

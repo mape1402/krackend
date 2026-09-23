@@ -65,9 +65,8 @@ public sealed class IndexModel : PageModel
     /// <returns>Redirect result.</returns>
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
     {
-        ModelState.Remove("MemberInput.TeamId");
-        ModelState.Remove("MemberInput.ExternalUserId");
-        ModelState.Remove("MemberInput.DisplayName");
+        KeepOnlyModelStateEntries(nameof(Input));
+        RemoveModelStateEntries($"{nameof(Input)}.{nameof(TeamInput.TeamId)}");
 
         if (!ModelState.IsValid)
         {
@@ -105,10 +104,7 @@ public sealed class IndexModel : PageModel
     /// <returns>Redirect result.</returns>
     public async Task<IActionResult> OnPostAddMemberAsync(CancellationToken cancellationToken = default)
     {
-        ModelState.Remove("Input.TeamId");
-        ModelState.Remove("Input.Key");
-        ModelState.Remove("Input.DisplayName");
-        ModelState.Remove("Input.Description");
+        KeepOnlyModelStateEntries(nameof(MemberInput));
 
         if (!ModelState.IsValid)
         {
@@ -148,6 +144,32 @@ public sealed class IndexModel : PageModel
     {
         var rows = await _service.GetMembers(new GetTeamMembersQuery(teamId), cancellationToken);
         return new JsonResult(rows);
+    }
+
+    private void KeepOnlyModelStateEntries(params string[] keysOrPrefixes)
+    {
+        foreach (var key in ModelState.Keys.ToArray())
+        {
+            if (!keysOrPrefixes.Any(prefix =>
+                string.Equals(key, prefix, StringComparison.Ordinal) ||
+                key.StartsWith(prefix + ".", StringComparison.Ordinal)))
+            {
+                ModelState.Remove(key);
+            }
+        }
+    }
+
+    private void RemoveModelStateEntries(params string[] keysOrPrefixes)
+    {
+        foreach (var key in ModelState.Keys.ToArray())
+        {
+            if (keysOrPrefixes.Any(prefix =>
+                string.Equals(key, prefix, StringComparison.Ordinal) ||
+                key.StartsWith(prefix + ".", StringComparison.Ordinal)))
+            {
+                ModelState.Remove(key);
+            }
+        }
     }
 
     private async Task LoadAsync(CancellationToken cancellationToken)

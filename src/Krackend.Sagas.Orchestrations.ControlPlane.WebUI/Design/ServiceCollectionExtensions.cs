@@ -2,6 +2,12 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using global::ButterMorph.DependencyInjection;
+using global::ButterMorph.Design;
+using global::ButterMorph.Json.Schema;
+using global::ButterMorph.SchemaDesign;
+using global::ButterMorph.Web.Razor;
+using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Navigation;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 
@@ -24,8 +30,16 @@ public static class ServiceCollectionExtensions
         }
 
         services.Configure(configureOptions);
+        services.AddButterMorph();
+        services.AddButterMorphJsonSchema();
+        services.AddButterMorphSchemaDesign();
+        services.AddButterMorphDesign();
+        services.AddButterMorphRazorDesigner(options => options.ShowSchemaActions = false);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureDesignAreaRoutes>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, DesignNavigationContributor>());
+        services.TryAddSingleton<IOrchestrationButterMorphDesignerContextParser, OrchestrationButterMorphDesignerContextParser>();
+        services.TryAddScoped<IOrchestrationButterMorphSchemaImporter, OrchestrationButterMorphSchemaImporter>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphDesignerHost, OrchestrationButterMorphDesignerHost>());
         return services;
     }
 

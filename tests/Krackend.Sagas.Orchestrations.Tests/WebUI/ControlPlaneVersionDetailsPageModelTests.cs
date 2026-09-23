@@ -6,11 +6,13 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurat
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using System.Reflection;
+using System.Text.Json;
 using VersionDetailsModel = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationVersions.DetailsModel;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
@@ -103,6 +105,26 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var invalid = CreateContext();
         invalid.Page.ModelState.AddModelError("NewStage.Key", "required");
         Assert.IsType<PageResult>(await invalid.Page.OnPostUpsertStageAsync("orch-1", "version-1"));
+    }
+
+    [Fact]
+    public async Task UpsertStageIgnoresTriggerModelStateErrors()
+    {
+        var context = CreateContext();
+        context.Page.NewStage = new VersionDetailsModel.CreateStageInput
+        {
+            Key = "capture",
+            Name = "Capture"
+        };
+        context.Page.ModelState.AddModelError("TriggerInput.Key", "The Key field is required.");
+        context.Page.ModelState.AddModelError("TriggerInput.EventTopic", "The EventTopic field is required.");
+
+        var result = await context.Page.OnPostUpsertStageAsync("orch-1", "version-1");
+
+        Assert.IsType<RedirectToPageResult>(result);
+        await context.StageService.Received(1).Create(
+            Arg.Is<CreateStageDefinitionCommand>(command => command.Key == "capture"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -218,6 +240,50 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public async Task UpsertTriggerIgnoresStageModelStateErrors()
+    {
+        var context = CreateContext();
+        context.Page.TriggerInput = new VersionDetailsModel.UpsertTriggerInput
+        {
+            Key = "sales.sale.created",
+            TriggerType = TriggerType.Event.ToString(),
+            EventTopic = "events.sales.sale.created",
+            EventVersion = "1.0.0",
+            EventSchemaContractKey = "events.sales.sale.created",
+            EventSchemaContractVersion = "1.0.0"
+        };
+        context.Page.ModelState.AddModelError("NewStage.Key", "The Key field is required.");
+        context.Page.ModelState.AddModelError("NewStage.Name", "The Name field is required.");
+
+        var result = await context.Page.OnPostUpsertTriggerAsync("orch-1", "version-1");
+
+        Assert.IsType<RedirectToPageResult>(result);
+        await context.TriggerService.Received(1).Create(
+            Arg.Is<CreateTriggerBindingCommand>(command => command.Key == "sales.sale.created"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SchemaContractsEndpointReturnsCatalogMatchesForTriggerAutocomplete()
+    {
+        var context = CreateContext();
+
+        var result = await context.Page.OnGetSchemaContractsAsync("Event", "sale", cancellationToken: CancellationToken.None);
+
+        var document = SerializeJsonResult(result);
+        var item = document.RootElement.EnumerateArray().Single();
+        Assert.Equal("sales.sale.created", item.GetProperty("contractKey").GetString());
+        Assert.Equal("1.0.0", item.GetProperty("contractVersion").GetString());
+        Assert.Equal("Event", item.GetProperty("contractKind").GetString());
+        await context.SchemaContractCatalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request =>
+                request.ProviderKey == "knowl" &&
+                request.ContractKind == SchemaContractKind.Event &&
+                request.SearchText == "sale"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task TriggerHandlersUseFallbacksAndRedirectWhenEditedTriggerIsMissing()
     {
         var context = CreateContext();
@@ -240,6 +306,10 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             HasEventSchemaValidation = false,
             HasEventValidation = false
         };
+        context.TriggerService.GetById(
+                Arg.Is<GetTriggerBindingByIdQuery>(query => query.Id == "missing-trigger"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((TriggerBindingModel)null!));
 
         var result = await context.Page.OnPostUpsertTriggerAsync("orch-1", "version-1", CancellationToken.None);
 
@@ -294,6 +364,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var stageService = Substitute.For<IStageApplicationService>();
         var taskService = Substitute.For<ITaskApplicationService>();
         var triggerService = Substitute.For<ITriggerBindingApplicationService>();
+        var schemaContractCatalog = Substitute.For<ISchemaContractCatalog>();
         var stages = new[] { CreateStage("stage-1", 1), CreateStage("stage-0", 0) };
         var trigger = CreateTrigger();
 
@@ -339,6 +410,20 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             .Returns(Task.FromResult(true));
         triggerService.Disable(Arg.Any<DisableTriggerBindingCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
+        schemaContractCatalog.SearchAsync(Arg.Any<SchemaContractCatalogSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<SchemaContractCatalogItem>>(
+            [
+                new SchemaContractCatalogItem
+                {
+                    ProviderKey = "knowl",
+                    ContractId = "event-artifact",
+                    ContractKey = "sales.sale.created",
+                    ContractVersion = "1.0.0",
+                    ContractKind = SchemaContractKind.Event,
+                    ContentHash = "event-hash",
+                    DisplayName = "sales.sale.created v1.0.0"
+                }
+            ]));
 
         versionService.SetInReview(Arg.Any<SetOrchestrationVersionInReviewCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
@@ -361,9 +446,10 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             stageService,
             taskService,
             triggerService,
+            schemaContractCatalog,
             Options.Create(new OrchestratorDesignWebUIOptions { DefaultSchemaRegistryProviderKey = "knowl" }));
 
-        return new TestContext(page, versionService, stageService, triggerService);
+        return new TestContext(page, versionService, stageService, triggerService, schemaContractCatalog);
     }
 
     private static OrchestrationDefinitionModel CreateOrchestration()
@@ -465,5 +551,12 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         VersionDetailsModel Page,
         IOrchestrationVersionApplicationService VersionService,
         IStageApplicationService StageService,
-        ITriggerBindingApplicationService TriggerService);
+        ITriggerBindingApplicationService TriggerService,
+        ISchemaContractCatalog SchemaContractCatalog);
+
+    private static JsonDocument SerializeJsonResult(IActionResult result)
+    {
+        var json = Assert.IsType<JsonResult>(result);
+        return System.Text.Json.JsonSerializer.SerializeToDocument(json.Value);
+    }
 }

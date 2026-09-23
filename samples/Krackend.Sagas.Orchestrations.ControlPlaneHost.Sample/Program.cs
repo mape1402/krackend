@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection;
+using ButterMorph.Web.Razor;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.Data.SqlClient;
@@ -80,8 +81,11 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     await dbContext.Database.MigrateAsync();
 
-    var seedDataSeeder = scope.ServiceProvider.GetRequiredService<IDesignHostSeedDataSeeder>();
-    await seedDataSeeder.SeedAsync();
+    if (builder.Configuration.GetValue("SeedData:Enabled", true))
+    {
+        var seedDataSeeder = scope.ServiceProvider.GetRequiredService<IDesignHostSeedDataSeeder>();
+        await seedDataSeeder.SeedAsync();
+    }
 }
 
 app.UseRouting();
@@ -105,6 +109,7 @@ app.MapGet("/demo/health", () => Results.Ok(new
 }));
 
 app.MapOrchestratorArtifactDeliveryEndpoints();
+app.MapButterMorphDesigner("/buttermorph");
 app.MapRazorPages().WithStaticAssets();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
