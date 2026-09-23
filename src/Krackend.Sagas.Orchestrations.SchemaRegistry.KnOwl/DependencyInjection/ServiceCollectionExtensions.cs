@@ -36,6 +36,7 @@ public static class ServiceCollectionExtensions
             return new KnOwlControlPlaneContractCatalogHttpClient(httpClient);
         });
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISchemaContractResolver, KnOwlSchemaContractResolver>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISchemaContractCatalogProvider, KnOwlSchemaContractCatalogProvider>());
         return services;
     }
 

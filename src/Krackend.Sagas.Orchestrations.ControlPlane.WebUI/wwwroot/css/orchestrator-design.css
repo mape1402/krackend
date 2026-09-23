@@ -1386,10 +1386,15 @@ main.container {
     gap: 0.5rem;
 }
 
+.od-autocomplete-host {
+    position: relative;
+}
+
 .od-autocomplete-list {
     position: absolute;
-    z-index: 1080;
-    width: calc(100% - 1.5rem);
+    z-index: 2000;
+    left: 0;
+    right: 0;
     margin-top: 0.25rem;
     border: 1px solid var(--od-border);
     border-radius: 0.5rem;
@@ -1412,6 +1417,17 @@ main.container {
 
 .od-autocomplete-item:hover {
     background: #eef2ff;
+}
+
+.od-autocomplete-item:focus {
+    outline: none;
+    background: #eef2ff;
+}
+
+.od-autocomplete-status {
+    color: var(--od-muted);
+    font-size: 0.82rem;
+    padding: 0.55rem 0.65rem;
 }
 
 .od-autocomplete-title {

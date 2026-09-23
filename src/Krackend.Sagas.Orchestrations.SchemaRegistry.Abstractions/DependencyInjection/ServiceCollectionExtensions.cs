@@ -18,6 +18,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<ISchemaContractSnapshotStore, InMemorySchemaContractSnapshotStore>();
         services.TryAddSingleton<ISchemaContractResolverCatalog, DefaultSchemaContractResolverCatalog>();
+        services.TryAddSingleton<ISchemaContractCatalog, DefaultSchemaContractCatalog>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISchemaContractResolver, SnapshotSchemaContractResolver>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISchemaContractResolver, NoopSchemaContractResolver>());
         return services;

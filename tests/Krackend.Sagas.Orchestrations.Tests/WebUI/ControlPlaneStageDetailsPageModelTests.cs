@@ -231,6 +231,40 @@ public sealed class ControlPlaneStageDetailsPageModelTests
     }
 
     [Fact]
+    public async Task SchemaContractsEndpointReturnsCatalogMatchesForTaskAutocomplete()
+    {
+        var fixture = new Fixture();
+        var model = fixture.CreateModel();
+
+        var result = await model.OnGetSchemaContractsAsync("Command", "reserve", cancellationToken: CancellationToken.None);
+
+        var document = SerializeJsonResult(result);
+        var item = document.RootElement.EnumerateArray().Single();
+        Assert.Equal("inventories.reserve", item.GetProperty("contractKey").GetString());
+        Assert.Equal("1.0.0", item.GetProperty("contractVersion").GetString());
+        Assert.Equal("Command", item.GetProperty("contractKind").GetString());
+        await fixture.SchemaContractCatalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request =>
+                request.ProviderKey == "knowl-control" &&
+                request.ContractKind == SchemaContractKind.Command &&
+                request.SearchText == "reserve"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SchemaContractsEndpointDefaultsToCommandCatalog()
+    {
+        var fixture = new Fixture();
+        var model = fixture.CreateModel();
+
+        await model.OnGetSchemaContractsAsync(cancellationToken: CancellationToken.None);
+
+        await fixture.SchemaContractCatalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request => request.ContractKind == SchemaContractKind.Command),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task TaskEditPayloadIncludesHttpPluginAndCompensationConfiguration()
     {
         var fixture = new Fixture();
@@ -1238,6 +1272,26 @@ public sealed class ControlPlaneStageDetailsPageModelTests
 
         public IOrchestrationSchemaContextApplicationService SchemaContextService { get; } = Substitute.For<IOrchestrationSchemaContextApplicationService>();
 
+        public ISchemaContractCatalog SchemaContractCatalog { get; } = Substitute.For<ISchemaContractCatalog>();
+
+        public Fixture()
+        {
+            SchemaContractCatalog.SearchAsync(Arg.Any<SchemaContractCatalogSearchRequest>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyCollection<SchemaContractCatalogItem>>(
+                [
+                    new SchemaContractCatalogItem
+                    {
+                        ProviderKey = "knowl-control",
+                        ContractId = "command-artifact",
+                        ContractKey = "inventories.reserve",
+                        ContractVersion = "1.0.0",
+                        ContractKind = SchemaContractKind.Command,
+                        ContentHash = "command-hash",
+                        DisplayName = "inventories.reserve v1.0.0"
+                    }
+                ]));
+        }
+
         public DetailsModel CreateModel()
             => new(
                 StageService,
@@ -1245,6 +1299,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
                 ParallelGroupService,
                 VersionService,
                 SchemaContextService,
+                SchemaContractCatalog,
                 Options.Create(new OrchestratorDesignWebUIOptions
                 {
                     DefaultSchemaRegistryProviderKey = "knowl-control"

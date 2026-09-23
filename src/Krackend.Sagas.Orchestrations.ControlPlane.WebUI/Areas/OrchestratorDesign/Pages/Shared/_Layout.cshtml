@@ -135,6 +135,7 @@
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-shell.js" asp-append-version="true"></script>
     <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-messages.js" asp-append-version="true"></script>
+    <script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/schema-contract-autocomplete.js" asp-append-version="true"></script>
     @{
         var pageError = ViewContext.ViewData.Model?.GetType().GetProperty("ErrorMessage")?.GetValue(ViewContext.ViewData.Model)?.ToString() ?? string.Empty;
         var validationErrors = ViewContext.ModelState.Values

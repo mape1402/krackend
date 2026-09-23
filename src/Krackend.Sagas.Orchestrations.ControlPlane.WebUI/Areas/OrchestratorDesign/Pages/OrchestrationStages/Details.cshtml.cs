@@ -28,6 +28,7 @@ public sealed class DetailsModel : PageModel
     private readonly IParallelGroupApplicationService _parallelGroupService;
     private readonly IOrchestrationVersionApplicationService _versionService;
     private readonly IOrchestrationSchemaContextApplicationService _schemaContextService;
+    private readonly ISchemaContractCatalog _schemaContractCatalog;
     private readonly string _defaultSchemaRegistryProviderKey;
 
     public DetailsModel(
@@ -36,6 +37,7 @@ public sealed class DetailsModel : PageModel
         IParallelGroupApplicationService parallelGroupService,
         IOrchestrationVersionApplicationService versionService,
         IOrchestrationSchemaContextApplicationService schemaContextService,
+        ISchemaContractCatalog schemaContractCatalog,
         IOptions<OrchestratorDesignWebUIOptions> uiOptions)
     {
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
@@ -43,6 +45,7 @@ public sealed class DetailsModel : PageModel
         _parallelGroupService = parallelGroupService ?? throw new ArgumentNullException(nameof(parallelGroupService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
         _schemaContextService = schemaContextService ?? throw new ArgumentNullException(nameof(schemaContextService));
+        _schemaContractCatalog = schemaContractCatalog ?? throw new ArgumentNullException(nameof(schemaContractCatalog));
         _defaultSchemaRegistryProviderKey = NormalizeProviderKey(uiOptions?.Value?.DefaultSchemaRegistryProviderKey);
     }
 
@@ -356,6 +359,39 @@ public sealed class DetailsModel : PageModel
             cancellationToken);
 
         return new JsonResult(BuildTaskSchemaContextPayload(context));
+    }
+
+    /// <summary>
+    /// Searches schema contracts available to task configuration.
+    /// </summary>
+    public async Task<IActionResult> OnGetSchemaContractsAsync(
+        string contractKind = "",
+        string term = "",
+        int take = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var items = await _schemaContractCatalog.SearchAsync(
+            new SchemaContractCatalogSearchRequest
+            {
+                ProviderKey = _defaultSchemaRegistryProviderKey,
+                ContractKind = ParseEnum(contractKind, SchemaContractKind.Command),
+                SearchText = term ?? string.Empty,
+                Take = take
+            },
+            cancellationToken);
+
+        return new JsonResult(items.Select(item => new
+        {
+            providerKey = item.ProviderKey,
+            contractId = item.ContractId,
+            contractKey = item.ContractKey,
+            contractVersion = item.ContractVersion,
+            contractKind = item.ContractKind.ToString(),
+            contentHash = item.ContentHash,
+            displayName = string.IsNullOrWhiteSpace(item.DisplayName)
+                ? $"{item.ContractKey} v{item.ContractVersion}"
+                : item.DisplayName
+        }));
     }
 
     /// <summary>
@@ -744,7 +780,7 @@ public sealed class DetailsModel : PageModel
             AddRequired($"{prefix}MessagingSchemaContractKey", contractKey, "Capture the messaging schema contract key.");
         }
 
-        if (hasRequestValidation || hasSchemaValidation)
+        if (hasRequestValidation)
         {
             AddRequired($"{prefix}MessagingRequestValidationDsl", requestValidationDsl, "Capture the request validation DSL.");
         }
@@ -1287,21 +1323,21 @@ public sealed class DetailsModel : PageModel
                 Method = input.HttpMethod.Trim().ToUpperInvariant(),
                 ExpectedStatusCodes = ParseIntList(input.HttpExpectedStatusCodes, new[] { 200 }),
                 AllowSyncResponse = input.HttpAllowSyncResponse,
-                SchemaBinding = input.HasHttpSchemaValidation ? CreateSchemaBinding(
+                SchemaBinding = HasSchemaBinding(input.HttpSchemaContractKey) || input.HasHttpSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.HttpSchemaContractKey,
                     input.HttpSchemaContractVersion,
                     input.HttpSchemaRegistryProviderId,
                     SchemaContractKind.CommandRequest,
                     defaultSchemaRegistryProviderKey,
-                    input.HttpSchemaStrictMode,
+                    input.HttpSchemaStrictMode && input.HasHttpSchemaValidation,
                     input.HasHttpSchemaValidation) : null
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
                 HasSchemaValidation = input.HasMessagingSchemaValidation,
                 HasRequestValidation = input.HasMessagingRequestValidation,
-                RequestValidation = input.HasMessagingRequestValidation || input.HasMessagingSchemaValidation
+                RequestValidation = input.HasMessagingRequestValidation
                     ? BuildValidation(input.MessagingRequestValidationDsl, input.MessagingRequestValidationErrorCode)
                     : null,
                 HasResponseValidation = input.HasMessagingResponseValidation,
@@ -1310,14 +1346,14 @@ public sealed class DetailsModel : PageModel
                     : null,
                 Topic = input.MessagingTopic.Trim(),
                 Version = ParseSemanticVersion(input.MessagingVersion, new SemanticVersion(1, 0, 0)),
-                SchemaBinding = input.HasMessagingSchemaValidation ? CreateSchemaBinding(
+                SchemaBinding = HasSchemaBinding(input.MessagingSchemaContractKey) || input.HasMessagingSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.MessagingSchemaContractKey,
                     input.MessagingSchemaContractVersion,
                     input.MessagingSchemaRegistryProviderId,
                     SchemaContractKind.Command,
                     defaultSchemaRegistryProviderKey,
-                    input.MessagingSchemaStrictMode,
+                    input.MessagingSchemaStrictMode && input.HasMessagingSchemaValidation,
                     input.HasMessagingSchemaValidation) : null
             },
             TaskKind.Plugin => new PluginTaskConfiguration
@@ -1343,21 +1379,21 @@ public sealed class DetailsModel : PageModel
                 Method = input.CompensationHttpMethod.Trim().ToUpperInvariant(),
                 ExpectedStatusCodes = ParseIntList(input.CompensationHttpExpectedStatusCodes, new[] { 200 }),
                 AllowSyncResponse = input.CompensationHttpAllowSyncResponse,
-                SchemaBinding = input.HasCompensationHttpSchemaValidation ? CreateSchemaBinding(
+                SchemaBinding = HasSchemaBinding(input.CompensationHttpSchemaContractKey) || input.HasCompensationHttpSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.CompensationHttpSchemaContractKey,
                     input.CompensationHttpSchemaContractVersion,
                     input.CompensationHttpSchemaRegistryProviderId,
                     SchemaContractKind.CommandRequest,
                     defaultSchemaRegistryProviderKey,
-                    input.CompensationHttpSchemaStrictMode,
+                    input.CompensationHttpSchemaStrictMode && input.HasCompensationHttpSchemaValidation,
                     input.HasCompensationHttpSchemaValidation) : null
             },
             TaskKind.Messaging => new MessagingTaskConfiguration
             {
                 HasSchemaValidation = input.HasCompensationMessagingSchemaValidation,
                 HasRequestValidation = input.HasCompensationMessagingRequestValidation,
-                RequestValidation = input.HasCompensationMessagingRequestValidation || input.HasCompensationMessagingSchemaValidation
+                RequestValidation = input.HasCompensationMessagingRequestValidation
                     ? BuildValidation(input.CompensationMessagingRequestValidationDsl, input.CompensationMessagingRequestValidationErrorCode)
                     : null,
                 HasResponseValidation = input.HasCompensationMessagingResponseValidation,
@@ -1366,14 +1402,14 @@ public sealed class DetailsModel : PageModel
                     : null,
                 Topic = input.CompensationMessagingTopic.Trim(),
                 Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
-                SchemaBinding = input.HasCompensationMessagingSchemaValidation ? CreateSchemaBinding(
+                SchemaBinding = HasSchemaBinding(input.CompensationMessagingSchemaContractKey) || input.HasCompensationMessagingSchemaValidation ? CreateSchemaBinding(
                     ElementType.Task,
                     input.CompensationMessagingSchemaContractKey,
                     input.CompensationMessagingSchemaContractVersion,
                     input.CompensationMessagingSchemaRegistryProviderId,
                     SchemaContractKind.Command,
                     defaultSchemaRegistryProviderKey,
-                    input.CompensationMessagingSchemaStrictMode,
+                    input.CompensationMessagingSchemaStrictMode && input.HasCompensationMessagingSchemaValidation,
                     input.HasCompensationMessagingSchemaValidation) : null
             },
             TaskKind.Plugin => new PluginTaskConfiguration
@@ -1619,6 +1655,9 @@ public sealed class DetailsModel : PageModel
             IsValidationEnabled = isValidationEnabled
         };
     }
+
+    private static bool HasSchemaBinding(string contractKey)
+        => !string.IsNullOrWhiteSpace(contractKey);
 
     private static string NormalizeProviderKey(string providerKey)
         => string.IsNullOrWhiteSpace(providerKey) ? "knowl" : providerKey.Trim();

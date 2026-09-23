@@ -38,6 +38,7 @@ public sealed class KnOwlSchemaRegistryRegistrationTests
         var catalog = Assert.IsType<KnOwlControlPlaneContractCatalogHttpClient>(
             provider.GetRequiredService<IKnOwlControlPlaneContractCatalogClient>());
         var resolvers = provider.GetRequiredService<IEnumerable<ISchemaContractResolver>>().ToArray();
+        var catalogProviders = provider.GetRequiredService<IEnumerable<ISchemaContractCatalogProvider>>().ToArray();
         var httpClient = GetHttpClient(catalog);
 
         Assert.Equal("knowl-control", options.ProviderKey);
@@ -46,6 +47,7 @@ public sealed class KnOwlSchemaRegistryRegistrationTests
         Assert.Equal(new Uri("https://knowl.local/api/"), httpClient.BaseAddress);
         Assert.Equal(TimeSpan.FromSeconds(30), httpClient.Timeout);
         Assert.Contains(resolvers, resolver => resolver is KnOwlSchemaContractResolver);
+        Assert.Contains(catalogProviders, catalogProvider => catalogProvider is KnOwlSchemaContractCatalogProvider);
     }
 
     private static HttpClient GetHttpClient(KnOwlControlPlaneContractCatalogHttpClient catalog)

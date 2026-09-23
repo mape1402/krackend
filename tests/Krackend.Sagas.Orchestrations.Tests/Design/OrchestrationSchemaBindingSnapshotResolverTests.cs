@@ -365,6 +365,60 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         await builder.Received(1).BuildForTask(version, taskId, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SchemaContextApplicationServiceLoadsCompleteVersionGraphBeforeBuildingContext()
+    {
+        var completeVersion = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
+        var versionShell = new OrchestrationVersion
+        {
+            Id = completeVersion.Id,
+            OrchestrationDefinitionId = completeVersion.OrchestrationDefinitionId,
+            Version = completeVersion.Version,
+            Status = completeVersion.Status,
+            Checksum = completeVersion.Checksum,
+            CreatedBy = completeVersion.CreatedBy,
+            CreatedOnUtc = completeVersion.CreatedOnUtc
+        };
+        var stage = completeVersion.StageDefinitions.Single();
+        var task = stage.TaskDefinitions.Single();
+        var repository = Substitute.For<IOrchestrationVersionRepository>();
+        var stageRepository = Substitute.For<IStageRepository>();
+        var triggerBindingRepository = Substitute.For<ITriggerBindingRepository>();
+        var builder = Substitute.For<IOrchestrationSchemaContextBuilder>();
+        repository.GetById(completeVersion.Id, Arg.Any<CancellationToken>()).Returns(versionShell);
+        triggerBindingRepository.GetAll(completeVersion.Id, Arg.Any<CancellationToken>()).Returns(completeVersion.TriggerBindings);
+        stageRepository.GetAll(completeVersion.Id, Arg.Any<CancellationToken>()).Returns([stage]);
+        stageRepository.GetById(stage.Id, Arg.Any<CancellationToken>()).Returns(stage);
+        builder
+            .BuildForTask(
+                Arg.Is<OrchestrationVersion>(version =>
+                    version.TriggerBindings.Count == 1 &&
+                    version.StageDefinitions.Count == 1 &&
+                    version.StageDefinitions[0].TaskDefinitions.Count == 1),
+                task.Id,
+                Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationSchemaContext
+            {
+                OrchestrationVersionId = completeVersion.Id.ToString(),
+                OrchestrationVersion = completeVersion.Version.ToString(),
+                StageKey = stage.Key,
+                Signature = "signature-1",
+                TaskKey = task.Key
+            });
+        var service = new OrchestrationSchemaContextApplicationService(
+            repository,
+            builder,
+            stageRepository: stageRepository,
+            triggerBindingRepository: triggerBindingRepository);
+
+        var context = await service.GetForTask(new GetTaskSchemaContextQuery(completeVersion.Id.ToString(), task.Id.ToString()));
+
+        Assert.Equal(task.Key, context.TaskKey);
+        await triggerBindingRepository.Received(1).GetAll(completeVersion.Id, Arg.Any<CancellationToken>());
+        await stageRepository.Received(1).GetAll(completeVersion.Id, Arg.Any<CancellationToken>());
+        await stageRepository.Received(1).GetById(stage.Id, Arg.Any<CancellationToken>());
+    }
+
     private static OrchestrationVersion CreateVersion(SchemaBinding triggerBinding)
     {
         var versionId = Id.New();

@@ -283,63 +283,6 @@
     </div>
 </div>
 
-<div class="modal fade" id="taskTransformationModal" tabindex="-1" aria-labelledby="taskTransformationModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="taskTransformationModalLabel">Transformation</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="taskTransformationTaskId" />
-                <input type="hidden" id="taskTransformationSourceContextHashQuick" />
-                <input type="hidden" id="taskTransformationTargetSchemaHashQuick" />
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" id="taskHasTransformationQuick" />
-                    <label class="form-check-label" for="taskHasTransformationQuick">Enable transformation</label>
-                </div>
-
-                <div id="taskTransformationSectionQuick" class="row g-2">
-                    <div class="col-md-12">
-                        <label class="form-label" for="taskTransformationEngineQuick">Transformation engine</label>
-                        <select class="form-select" id="taskTransformationEngineQuick" asp-items="Model.EngineTypes"></select>
-                    </div>
-
-                    <div class="task-transformation-config-block col-12" data-engine="DSL">
-                        <label class="form-label" for="taskTransformationDslQuick">DSL</label>
-                        <textarea class="form-control" id="taskTransformationDslQuick" rows="8"></textarea>
-                    </div>
-                </div>
-
-                <div class="od-schema-context-panel mt-3" id="taskTransformationSchemaContext">
-                    <div class="d-flex justify-content-between gap-2 align-items-center mb-2">
-                        <strong>Schema context</strong>
-                        <span class="badge text-bg-light" id="taskTransformationSchemaSignature">-</span>
-                    </div>
-                    <div class="row g-2">
-                        <div class="col-md-7">
-                            <div class="small text-muted mb-1">Sources</div>
-                            <div class="od-schema-context-list" id="taskTransformationSchemaSources"></div>
-                        </div>
-                        <div class="col-md-5">
-                            <div class="small text-muted mb-1">Target</div>
-                            <div class="od-schema-context-list" id="taskTransformationSchemaTarget"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="taskTransformationUnsupportedEngineWarningQuick" class="alert alert-warning mt-3 d-none mb-0">
-                    Selected transformation engine does not define specific configuration fields yet.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="taskTransformationSaveButton">Save</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <div class="modal fade" id="editParallelGroupModal" tabindex="-1" aria-labelledby="editParallelGroupModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -441,26 +384,19 @@
                                     <div class="col-12">
                                         <h6 class="mb-2">Schema binding</h6>
                                     </div>
-                                    <div class="col-md-12 form-check form-switch ms-2">
-                                        <input asp-for="NewTask.HasHttpSchemaValidation" class="form-check-input" />
-                                        <label asp-for="NewTask.HasHttpSchemaValidation" class="form-check-label">Enable schema validation</label>
-                                    </div>
-                                    <div class="col-md-5">
+                                    <div class="col-md-8">
                                         <label asp-for="NewTask.HttpSchemaContractKey" class="form-label">Contract key</label>
-                                        <input asp-for="NewTask.HttpSchemaContractKey" class="form-control" />
+                                        <input asp-for="NewTask.HttpSchemaContractKey"
+                                               class="form-control"
+                                               data-schema-contract-key="true"
+                                               data-schema-contract-kind="CommandRequest"
+                                               data-schema-version-target="NewTask_HttpSchemaContractVersion" />
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label asp-for="NewTask.HttpSchemaContractVersion" class="form-label">Contract version</label>
                                         <input asp-for="NewTask.HttpSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                     </div>
-                                    <div class="col-md-4">
-                                        <label asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                        <input asp-for="NewTask.HttpSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
-                                    </div>
-                                    <div class="col-md-12 form-check mt-2 ms-2">
-                                        <input asp-for="NewTask.HttpSchemaStrictMode" class="form-check-input" />
-                                        <label asp-for="NewTask.HttpSchemaStrictMode" class="form-check-label">Strict mode</label>
-                                    </div>
+                                    <input asp-for="NewTask.HttpSchemaRegistryProviderId" type="hidden" />
                                 </div>
                             </div>
                             <div class="task-config-block mb-2" data-kind="Messaging">
@@ -477,54 +413,19 @@
                                     <div class="col-12">
                                         <h6 class="mb-2">Schema binding</h6>
                                     </div>
-                                    <div class="col-md-12 form-check form-switch ms-2">
-                                        <input asp-for="NewTask.HasMessagingSchemaValidation" class="form-check-input" />
-                                        <label asp-for="NewTask.HasMessagingSchemaValidation" class="form-check-label">Enable schema validation</label>
-                                    </div>
-                                    <div class="col-md-5">
+                                    <div class="col-md-8">
                                         <label asp-for="NewTask.MessagingSchemaContractKey" class="form-label">Command key</label>
-                                        <input asp-for="NewTask.MessagingSchemaContractKey" class="form-control" />
+                                        <input asp-for="NewTask.MessagingSchemaContractKey"
+                                               class="form-control"
+                                               data-schema-contract-key="true"
+                                               data-schema-contract-kind="Command"
+                                               data-schema-version-target="NewTask_MessagingSchemaContractVersion" />
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label asp-for="NewTask.MessagingSchemaContractVersion" class="form-label">Command version</label>
                                         <input asp-for="NewTask.MessagingSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                     </div>
-                                    <div class="col-md-4">
-                                        <label asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                        <input asp-for="NewTask.MessagingSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
-                                    </div>
-                                    <div class="col-md-12 form-check mt-2 ms-2">
-                                        <input asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-input" />
-                                        <label asp-for="NewTask.MessagingSchemaStrictMode" class="form-check-label">Strict mode</label>
-                                    </div>
-                                    <div class="col-12"><hr class="my-2" /></div>
-                                    <div class="col-12">
-                                        <h6 class="mb-2">Payload validation</h6>
-                                    </div>
-                                    <div class="col-md-6 form-check form-switch ms-2">
-                                        <input asp-for="NewTask.HasMessagingRequestValidation" class="form-check-input" />
-                                        <label asp-for="NewTask.HasMessagingRequestValidation" class="form-check-label">Validate request</label>
-                                    </div>
-                                    <div class="col-md-5">
-                                        <label asp-for="NewTask.MessagingRequestValidationErrorCode" class="form-label">Request error code</label>
-                                        <input asp-for="NewTask.MessagingRequestValidationErrorCode" class="form-control" />
-                                    </div>
-                                    <div class="col-12">
-                                        <label asp-for="NewTask.MessagingRequestValidationDsl" class="form-label">Request validation DSL</label>
-                                        <textarea asp-for="NewTask.MessagingRequestValidationDsl" class="form-control" rows="3"></textarea>
-                                    </div>
-                                    <div class="col-md-6 form-check form-switch ms-2">
-                                        <input asp-for="NewTask.HasMessagingResponseValidation" class="form-check-input" />
-                                        <label asp-for="NewTask.HasMessagingResponseValidation" class="form-check-label">Validate response</label>
-                                    </div>
-                                    <div class="col-md-5">
-                                        <label asp-for="NewTask.MessagingResponseValidationErrorCode" class="form-label">Response error code</label>
-                                        <input asp-for="NewTask.MessagingResponseValidationErrorCode" class="form-control" />
-                                    </div>
-                                    <div class="col-12">
-                                        <label asp-for="NewTask.MessagingResponseValidationDsl" class="form-label">Response validation DSL</label>
-                                        <textarea asp-for="NewTask.MessagingResponseValidationDsl" class="form-control" rows="3"></textarea>
-                                    </div>
+                                    <input asp-for="NewTask.MessagingSchemaRegistryProviderId" type="hidden" />
                                 </div>
                             </div>
                             <div class="task-config-block mb-2" data-kind="Plugin">
@@ -712,26 +613,19 @@
                                         <div class="col-12">
                                             <h6 class="mb-2">Schema binding</h6>
                                         </div>
-                                        <div class="col-md-12 form-check form-switch ms-2">
-                                            <input asp-for="NewTask.HasCompensationHttpSchemaValidation" class="form-check-input" />
-                                            <label asp-for="NewTask.HasCompensationHttpSchemaValidation" class="form-check-label">Enable schema validation</label>
-                                        </div>
-                                        <div class="col-md-5">
+                                        <div class="col-md-8">
                                             <label asp-for="NewTask.CompensationHttpSchemaContractKey" class="form-label">Contract key</label>
-                                            <input asp-for="NewTask.CompensationHttpSchemaContractKey" class="form-control" />
+                                            <input asp-for="NewTask.CompensationHttpSchemaContractKey"
+                                                   class="form-control"
+                                                   data-schema-contract-key="true"
+                                                   data-schema-contract-kind="CommandRequest"
+                                                   data-schema-version-target="NewTask_CompensationHttpSchemaContractVersion" />
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-4">
                                             <label asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-label">Contract version</label>
                                             <input asp-for="NewTask.CompensationHttpSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                         </div>
-                                        <div class="col-md-4">
-                                            <label asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                            <input asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
-                                        </div>
-                                        <div class="col-md-12 form-check mt-2 ms-2">
-                                            <input asp-for="NewTask.CompensationHttpSchemaStrictMode" class="form-check-input" />
-                                            <label asp-for="NewTask.CompensationHttpSchemaStrictMode" class="form-check-label">Strict mode</label>
-                                        </div>
+                                        <input asp-for="NewTask.CompensationHttpSchemaRegistryProviderId" type="hidden" />
                                     </div>
                                 </div>
                                 <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Messaging">
@@ -748,54 +642,19 @@
                                         <div class="col-12">
                                             <h6 class="mb-2">Schema binding</h6>
                                         </div>
-                                        <div class="col-md-12 form-check form-switch ms-2">
-                                            <input asp-for="NewTask.HasCompensationMessagingSchemaValidation" class="form-check-input" />
-                                            <label asp-for="NewTask.HasCompensationMessagingSchemaValidation" class="form-check-label">Enable schema validation</label>
-                                        </div>
-                                        <div class="col-md-5">
+                                        <div class="col-md-8">
                                             <label asp-for="NewTask.CompensationMessagingSchemaContractKey" class="form-label">Command key</label>
-                                            <input asp-for="NewTask.CompensationMessagingSchemaContractKey" class="form-control" />
+                                            <input asp-for="NewTask.CompensationMessagingSchemaContractKey"
+                                                   class="form-control"
+                                                   data-schema-contract-key="true"
+                                                   data-schema-contract-kind="Command"
+                                                   data-schema-version-target="NewTask_CompensationMessagingSchemaContractVersion" />
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-4">
                                             <label asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-label">Command version</label>
                                             <input asp-for="NewTask.CompensationMessagingSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
                                         </div>
-                                        <div class="col-md-4">
-                                            <label asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-label">Registry provider id</label>
-                                            <input asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" class="form-control" data-orchestrator-ulid="true" />
-                                        </div>
-                                        <div class="col-md-12 form-check mt-2 ms-2">
-                                            <input asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-input" />
-                                            <label asp-for="NewTask.CompensationMessagingSchemaStrictMode" class="form-check-label">Strict mode</label>
-                                        </div>
-                                        <div class="col-12"><hr class="my-2" /></div>
-                                        <div class="col-12">
-                                            <h6 class="mb-2">Payload validation</h6>
-                                        </div>
-                                        <div class="col-md-6 form-check form-switch ms-2">
-                                            <input asp-for="NewTask.HasCompensationMessagingRequestValidation" class="form-check-input" />
-                                            <label asp-for="NewTask.HasCompensationMessagingRequestValidation" class="form-check-label">Validate request</label>
-                                        </div>
-                                        <div class="col-md-5">
-                                            <label asp-for="NewTask.CompensationMessagingRequestValidationErrorCode" class="form-label">Request error code</label>
-                                            <input asp-for="NewTask.CompensationMessagingRequestValidationErrorCode" class="form-control" />
-                                        </div>
-                                        <div class="col-12">
-                                            <label asp-for="NewTask.CompensationMessagingRequestValidationDsl" class="form-label">Request validation DSL</label>
-                                            <textarea asp-for="NewTask.CompensationMessagingRequestValidationDsl" class="form-control" rows="3"></textarea>
-                                        </div>
-                                        <div class="col-md-6 form-check form-switch ms-2">
-                                            <input asp-for="NewTask.HasCompensationMessagingResponseValidation" class="form-check-input" />
-                                            <label asp-for="NewTask.HasCompensationMessagingResponseValidation" class="form-check-label">Validate response</label>
-                                        </div>
-                                        <div class="col-md-5">
-                                            <label asp-for="NewTask.CompensationMessagingResponseValidationErrorCode" class="form-label">Response error code</label>
-                                            <input asp-for="NewTask.CompensationMessagingResponseValidationErrorCode" class="form-control" />
-                                        </div>
-                                        <div class="col-12">
-                                            <label asp-for="NewTask.CompensationMessagingResponseValidationDsl" class="form-label">Response validation DSL</label>
-                                            <textarea asp-for="NewTask.CompensationMessagingResponseValidationDsl" class="form-control" rows="3"></textarea>
-                                        </div>
+                                        <input asp-for="NewTask.CompensationMessagingSchemaRegistryProviderId" type="hidden" />
                                     </div>
                                 </div>
                                 <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Plugin">
@@ -955,6 +814,7 @@
 }
 
 @section Scripts {
+<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js"></script>
 <script>
 const orchestrationStageCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
 const orchestrationStageVersionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.VersionId));
@@ -1023,21 +883,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const executionConditionSection = document.getElementById('taskExecutionConditionSectionQuick');
     const executionConditionWarning = document.getElementById('taskConditionUnsupportedEngineWarningQuick');
     const saveExecutionConditionButton = document.getElementById('taskExecutionConditionSaveButton');
-    const transformationModalElement = document.getElementById('taskTransformationModal');
-    const transformationTaskIdInput = document.getElementById('taskTransformationTaskId');
-    const transformationEnabledInput = document.getElementById('taskHasTransformationQuick');
-    const transformationEngineInput = document.getElementById('taskTransformationEngineQuick');
-    const transformationDslInput = document.getElementById('taskTransformationDslQuick');
-    const transformationSourceContextHashInput = document.getElementById('taskTransformationSourceContextHashQuick');
-    const transformationTargetSchemaHashInput = document.getElementById('taskTransformationTargetSchemaHashQuick');
-    const transformationSection = document.getElementById('taskTransformationSectionQuick');
-    const transformationWarning = document.getElementById('taskTransformationUnsupportedEngineWarningQuick');
-    const saveTransformationButton = document.getElementById('taskTransformationSaveButton');
-    const transformationSchemaSignature = document.getElementById('taskTransformationSchemaSignature');
-    const transformationSchemaSources = document.getElementById('taskTransformationSchemaSources');
-    const transformationSchemaTarget = document.getElementById('taskTransformationSchemaTarget');
     setStageModalReadOnly(executionConditionModalElement, !canEdit, saveExecutionConditionButton);
-    setStageModalReadOnly(transformationModalElement, !canEdit, saveTransformationButton);
     setStageModalReadOnly(editGroupModalElement, !canEdit, saveParallelGroupButton);
 
     let draggedTask = null;
@@ -1206,165 +1052,36 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         window.bootstrap.Modal.getOrCreateInstance(executionConditionModalElement).show();
     }
 
-    function refreshTransformationConfigByEngine() {
-        if (!transformationEngineInput || !transformationEnabledInput || !transformationWarning) {
-            return;
-        }
-
-        const selectedEngine = (transformationEngineInput.value || '').toLowerCase();
-        let hasVisibleConfig = false;
-        document.querySelectorAll('.task-transformation-config-block[data-engine]').forEach(element => {
-            const currentEngine = (element.getAttribute('data-engine') || '').toLowerCase();
-            const visible = currentEngine === selectedEngine;
-            element.classList.toggle('d-none', !visible);
-            hasVisibleConfig = hasVisibleConfig || visible;
-        });
-
-        transformationWarning.classList.toggle('d-none', hasVisibleConfig || !transformationEnabledInput.checked);
-    }
-
-    function refreshTransformationSectionVisibility() {
-        if (!transformationSection || !transformationEnabledInput || !transformationWarning) {
-            return;
-        }
-
-        transformationSection.classList.toggle('d-none', !transformationEnabledInput.checked);
-        if (!transformationEnabledInput.checked) {
-            transformationWarning.classList.add('d-none');
-            return;
-        }
-
-        refreshTransformationConfigByEngine();
-    }
-
-    function clearSchemaContext(container, emptyText) {
-        if (!container) {
-            return;
-        }
-
-        container.replaceChildren();
-        const empty = document.createElement('div');
-        empty.className = 'od-schema-context-item';
-        const label = document.createElement('span');
-        label.textContent = emptyText;
-        empty.appendChild(label);
-        container.appendChild(empty);
-    }
-
-    function createSchemaContextItem(title, detail, hash) {
-        const item = document.createElement('div');
-        item.className = 'od-schema-context-item';
-
-        const titleElement = document.createElement('strong');
-        titleElement.textContent = title || '-';
-        item.appendChild(titleElement);
-
-        const detailElement = document.createElement('span');
-        detailElement.textContent = detail || '-';
-        item.appendChild(detailElement);
-
-        if (hash) {
-            const hashElement = document.createElement('span');
-            hashElement.textContent = `snapshot ${hash}`;
-            item.appendChild(hashElement);
-        }
-
-        return item;
-    }
-
-    function schemaBindingDetail(schema) {
-        if (!schema) {
-            return 'No schema binding';
-        }
-
-        const contract = [schema.contractKind, schema.contractKey, schema.contractVersion]
-            .filter(value => value)
-            .join(' | ');
-        const provider = schema.registryProviderKey ? `provider ${schema.registryProviderKey}` : '';
-        return [contract, provider].filter(value => value).join(' | ') || 'Schema binding';
-    }
-
-    function renderTaskTransformationSchemaContext(context) {
-        if (transformationSchemaSignature) {
-            const signature = context?.signature || '-';
-            transformationSchemaSignature.textContent = signature === '-' ? signature : signature.substring(0, 12);
-            transformationSchemaSignature.title = signature;
-        }
-
-        if (transformationSourceContextHashInput) {
-            transformationSourceContextHashInput.value = context?.signature || '';
-        }
-
-        if (transformationTargetSchemaHashInput) {
-            transformationTargetSchemaHashInput.value = context?.target?.schema?.snapshotHash || '';
-        }
-
-        if (!context) {
-            clearSchemaContext(transformationSchemaSources, 'Schema context unavailable');
-            clearSchemaContext(transformationSchemaTarget, 'Target unavailable');
-            return;
-        }
-
-        if (transformationSchemaSources) {
-            transformationSchemaSources.replaceChildren();
-            const sources = Array.isArray(context.sources) ? context.sources : [];
-            if (sources.length === 0) {
-                clearSchemaContext(transformationSchemaSources, 'No source schemas');
-            } else {
-                sources.forEach(source => {
-                    transformationSchemaSources.appendChild(createSchemaContextItem(
-                        source.alias,
-                        schemaBindingDetail(source.schema),
-                        source.schema?.snapshotHash));
-                });
-            }
-        }
-
-        if (transformationSchemaTarget) {
-            transformationSchemaTarget.replaceChildren();
-            if (!context.target) {
-                clearSchemaContext(transformationSchemaTarget, 'Target unavailable');
-            } else {
-                transformationSchemaTarget.appendChild(createSchemaContextItem(
-                    context.target.alias,
-                    schemaBindingDetail(context.target.schema),
-                    context.target.schema?.snapshotHash));
-            }
-        }
-    }
-
     async function openTaskTransformationModal(taskId) {
-        if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationDslInput || !transformationModalElement || !window.bootstrap?.Modal) {
+        if (!taskId) {
             return;
         }
 
-        renderTaskTransformationSchemaContext(null);
-
-        const response = await fetch(`${window.location.pathname}?handler=TaskTransformationForEdit&taskId=${encodeURIComponent(taskId)}`);
-        if (!response.ok) {
+        if (!canEdit) {
+            window.OrchestratorMessages?.notify({
+                title: 'Read-only version',
+                message: 'This orchestration version can be viewed but cannot be edited.',
+                type: 'warning'
+            });
             return;
         }
 
-        const payload = await response.json();
-        const schemaResponse = await fetch(`${window.location.pathname}?handler=TaskSchemaContext&versionId=${encodeURIComponent(orchestrationStageVersionId)}&taskId=${encodeURIComponent(taskId)}`);
-        if (schemaResponse.ok) {
-            renderTaskTransformationSchemaContext(await schemaResponse.json());
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph designer could not be loaded.',
+                type: 'error'
+            });
+            return;
         }
 
-        transformationTaskIdInput.value = payload.taskId || taskId;
-        transformationEnabledInput.checked = !!payload.hasTransformation;
-        transformationEngineInput.value = payload.transformationEngine || 'DSL';
-        transformationDslInput.value = payload.transformationDsl || '';
-        if (transformationSourceContextHashInput && !transformationSourceContextHashInput.value) {
-            transformationSourceContextHashInput.value = payload.sourceContextHash || '';
-        }
-
-        if (transformationTargetSchemaHashInput && !transformationTargetSchemaHashInput.value) {
-            transformationTargetSchemaHashInput.value = payload.targetSchemaHash || '';
-        }
-
-        refreshTransformationSectionVisibility();
-        window.bootstrap.Modal.getOrCreateInstance(transformationModalElement).show();
+        const contextKey = `orchestration-task-transform:${orchestrationStageVersionId}:${taskId}`;
+        const designerUrl = `/buttermorph/designer?context=${encodeURIComponent(contextKey)}&mode=edit`;
+        window.ButterMorphHost.openFrame(designerUrl, {
+            title: 'ButterMorph transformation',
+            width: '96vw',
+            height: '92vh'
+        });
     }
 
     function getRootDropTarget(target) {
@@ -1683,50 +1400,15 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         });
     }
 
-    if (transformationEnabledInput) {
-        transformationEnabledInput.addEventListener('change', refreshTransformationSectionVisibility);
-    }
+    window.addEventListener('message', event => {
+        if (event.origin !== window.location.origin || !event.data) {
+            return;
+        }
 
-    if (transformationEngineInput) {
-        transformationEngineInput.addEventListener('change', refreshTransformationConfigByEngine);
-    }
-
-    if (saveTransformationButton) {
-        saveTransformationButton.addEventListener('click', async () => {
-            if (!canEdit) {
-                return;
-            }
-
-            if (!transformationTaskIdInput || !transformationEnabledInput || !transformationEngineInput || !transformationDslInput || !transformationModalElement || !window.bootstrap?.Modal) {
-                return;
-            }
-
-            const taskId = transformationTaskIdInput.value || '';
-            if (!taskId) {
-                return;
-            }
-
-            saveTransformationButton.disabled = true;
-            try {
-                const result = await postJson('SetTaskTransformation', {
-                    taskId: taskId,
-                    hasTransformation: !!transformationEnabledInput.checked,
-                    transformationEngine: transformationEngineInput.value || 'DSL',
-                    transformationDsl: transformationDslInput.value || '',
-                    sourceContextHash: transformationSourceContextHashInput?.value || '',
-                    targetSchemaHash: transformationTargetSchemaHashInput?.value || ''
-                });
-
-                if (!result?.success) {
-                    return;
-                }
-
-                window.location.reload();
-            } finally {
-                saveTransformationButton.disabled = false;
-            }
-        });
-    }
+        if (event.data.type === 'ButterMorphDesignerSaved') {
+            window.location.reload();
+        }
+    });
 
     if (saveParallelGroupButton) {
         saveParallelGroupButton.addEventListener('click', async () => {
@@ -2434,3 +2116,4 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
 })();
 </script>
 }
+
