@@ -101,32 +101,43 @@ public sealed class DetailsModel : PageModel
     {
         const string actor = "web-ui";
 
-        switch (action)
+        try
         {
-            case "SetInReview":
-                await _versionService.SetInReview(new SetOrchestrationVersionInReviewCommand(versionId), cancellationToken);
-                break;
-            case "ReturnToDraft":
-                await _versionService.ReturnToDraft(new ReturnOrchestrationVersionToDraftCommand(versionId), cancellationToken);
-                break;
-            case "ReopenReview":
-                await _versionService.ReopenReview(new ReopenOrchestrationVersionReviewCommand(versionId, actor), cancellationToken);
-                break;
-            case "Approve":
-                await _versionService.Approve(new ApproveOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-            case "Deploy":
-                await _versionService.Deploy(new DeployOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-            case "Deprecate":
-                await _versionService.Deprecate(new DeprecateOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-            case "Archive":
-                await _versionService.Archive(new ArchiveOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-        }
+            switch (action)
+            {
+                case "SetInReview":
+                    await _versionService.SetInReview(new SetOrchestrationVersionInReviewCommand(versionId), cancellationToken);
+                    break;
+                case "ReturnToDraft":
+                    await _versionService.ReturnToDraft(new ReturnOrchestrationVersionToDraftCommand(versionId), cancellationToken);
+                    break;
+                case "ReopenReview":
+                    await _versionService.ReopenReview(new ReopenOrchestrationVersionReviewCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Approve":
+                    await _versionService.Approve(new ApproveOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Deploy":
+                    await _versionService.Deploy(new DeployOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Deprecate":
+                    await _versionService.Deprecate(new DeprecateOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Archive":
+                    await _versionService.Archive(new ArchiveOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+            }
 
-        return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
+            return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
+        }
+        catch (Exception ex)
+        {
+            OrchestrationId = orchestrationId;
+            VersionId = versionId;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
     }
 
     public async Task<IActionResult> OnPostUpsertStageAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
@@ -473,9 +484,19 @@ public sealed class DetailsModel : PageModel
         }
         catch (Exception ex)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
         }
     }
+
+    private static string ToFriendlyErrorMessage(Exception exception)
+        => exception switch
+        {
+            OrchestrationArtifactDslValidationException dslException =>
+                $"The version cannot be published because the DSL configuration at '{dslException.Path}' is not valid. Review that transformation, validation, or condition and try again.",
+            InvalidOperationException invalidOperation when !string.IsNullOrWhiteSpace(invalidOperation.Message) =>
+                invalidOperation.Message,
+            _ => "The operation could not be completed. Review the captured data and try again."
+        };
 
     private async Task NormalizeStageOrderAsync(string versionId, CancellationToken cancellationToken)
     {

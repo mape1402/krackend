@@ -88,6 +88,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     }
 }
 
+app.UseExceptionHandler("/Error");
 app.UseRouting();
 app.UseAuthorization();
 app.MapStaticAssets();

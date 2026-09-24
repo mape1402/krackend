@@ -13,11 +13,14 @@ using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using Mule;
 using Mule.EntityFrameworkCore;
+using Pigeon.Messaging.Azure.ServiceBus;
 using Pigeon.Messaging.Topology;
 
 var builder = WebApplication.CreateBuilder(args);
 StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
-var rabbitConnectionString = builder.Configuration.GetConnectionString("RabbitMq");
+var serviceBusConnectionString =
+    builder.Configuration.GetConnectionString("AzureServiceBus") ??
+    builder.Configuration["Pigeon:MessageBrokers:AzureServiceBus:ConnectionString"];
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 var mongoConnectionString = builder.Configuration.GetConnectionString("Mongo");
 var mongoDatabaseName = builder.Configuration.GetValue("Mongo:DatabaseName", "krackend-runtime");
@@ -66,9 +69,12 @@ builder.Services
             TopologyProvisioningMode.OnStartup |
             TopologyProvisioningMode.OnPublish |
             TopologyProvisioningMode.OnConsume);
-        pigeon.UseRabbitMq(rabbit =>
+        pigeon.UseAzureServiceBus(serviceBus =>
         {
-            rabbit.Url = rabbitConnectionString;
+            if (!string.IsNullOrWhiteSpace(serviceBusConnectionString))
+            {
+                serviceBus.ConnectionString = serviceBusConnectionString;
+            }
         });
         pigeon.ConfigureConsumerExecution(execution =>
         {

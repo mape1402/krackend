@@ -5,6 +5,8 @@ using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using global::Pigeon.Messaging.Consuming.Dispatching;
+using global::Pigeon.Messaging.Producing;
 
 /// <summary>
 /// Registers Pigeon transport support for the Krackend orchestration client.
@@ -21,8 +23,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(builder));
         }
 
-        builder.Services.TryAddScoped<IMessagingReplyAddressSettingsSerializer, DefaultMessagingReplyAddressSettingsSerializer>();
-        builder.Services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
+        RegisterPigeonClientServices(builder.Services);
 
         return builder;
     }
@@ -50,12 +51,17 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configure));
         }
 
-        builder.Services.TryAddScoped<IMessagingReplyAddressSettingsSerializer, DefaultMessagingReplyAddressSettingsSerializer>();
-        builder.Services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
-        builder.Services.AddPigeon(configuration, configure)
-            .AddConsumeInterceptor<KrackendClientConsumeInterceptor>()
-            .AddPublishInterceptor<KrackendClientPublishInterceptor>();
+        RegisterPigeonClientServices(builder.Services);
+        builder.Services.AddPigeon(configuration, configure);
 
         return builder;
+    }
+
+    private static void RegisterPigeonClientServices(IServiceCollection services)
+    {
+        services.TryAddScoped<IMessagingReplyAddressSettingsSerializer, DefaultMessagingReplyAddressSettingsSerializer>();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeInterceptor, KrackendClientConsumeInterceptor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishInterceptor, KrackendClientPublishInterceptor>());
     }
 }

@@ -74,22 +74,32 @@ public sealed class DetailsModel : PageModel
     /// </summary>
     public async Task<IActionResult> OnPostToggleActiveAsync(string orchestrationId, CancellationToken cancellationToken = default)
     {
-        var orchestration = await _orchestrationService.GetById(new GetOrchestrationDefinitionByIdQuery(orchestrationId), cancellationToken);
-        if (orchestration is null)
+        try
         {
-            return RedirectToPage("/Orchestrations/Index", new { area = "OrchestratorDesign" });
-        }
+            var orchestration = await _orchestrationService.GetById(new GetOrchestrationDefinitionByIdQuery(orchestrationId), cancellationToken);
+            if (orchestration is null)
+            {
+                return RedirectToPage("/Orchestrations/Index", new { area = "OrchestratorDesign" });
+            }
 
-        if (orchestration.IsActive)
-        {
-            await _orchestrationService.Deactivate(new DeactivateOrchestrationDefinitionCommand(orchestrationId), cancellationToken);
-        }
-        else
-        {
-            await _orchestrationService.Activate(new ActivateOrchestrationDefinitionCommand(orchestrationId), cancellationToken);
-        }
+            if (orchestration.IsActive)
+            {
+                await _orchestrationService.Deactivate(new DeactivateOrchestrationDefinitionCommand(orchestrationId), cancellationToken);
+            }
+            else
+            {
+                await _orchestrationService.Activate(new ActivateOrchestrationDefinitionCommand(orchestrationId), cancellationToken);
+            }
 
-        return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });
+            return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });
+        }
+        catch (Exception ex)
+        {
+            OrchestrationId = orchestrationId;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
     }
 
     /// <summary>
@@ -97,49 +107,59 @@ public sealed class DetailsModel : PageModel
     /// </summary>
     public async Task<IActionResult> OnPostCreateVersionAsync(string orchestrationId, CancellationToken cancellationToken = default)
     {
-        if (!ModelState.IsValid)
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                OrchestrationId = orchestrationId;
+                await LoadDataAsync(cancellationToken);
+                return Page();
+            }
+
+            if (!string.IsNullOrWhiteSpace(NewVersion.VersionId))
+            {
+                var updatedBy = string.IsNullOrWhiteSpace(NewVersion.CreatedBy) ? "web-ui" : NewVersion.CreatedBy;
+                var checksum = string.IsNullOrWhiteSpace(NewVersion.Checksum) ? Guid.NewGuid().ToString("N") : NewVersion.Checksum;
+
+                await _versionService.Update(
+                    new UpdateOrchestrationVersionCommand(
+                        NewVersion.VersionId,
+                        NewVersion.VersionLabel ?? string.Empty,
+                        NewVersion.Description ?? string.Empty,
+                        checksum,
+                        NewVersion.Notes ?? string.Empty,
+                        updatedBy),
+                    cancellationToken);
+
+                return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });
+            }
+
+            if (string.IsNullOrWhiteSpace(NewVersion.CreatedBy))
+            {
+                NewVersion.CreatedBy = "web-ui";
+            }
+
+            var versionId = await _versionService.Create(
+                new CreateOrchestrationVersionCommand(
+                    orchestrationId,
+                    NewVersion.Version,
+                    OrchestrationVersionStatus.Draft,
+                    NewVersion.VersionLabel ?? string.Empty,
+                    NewVersion.Description ?? string.Empty,
+                    Guid.NewGuid().ToString("N"),
+                    NewVersion.Notes ?? string.Empty,
+                    NewVersion.CreatedBy),
+                cancellationToken);
+
+            return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
+        }
+        catch (Exception ex)
         {
             OrchestrationId = orchestrationId;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
             await LoadDataAsync(cancellationToken);
             return Page();
         }
-
-        if (!string.IsNullOrWhiteSpace(NewVersion.VersionId))
-        {
-            var updatedBy = string.IsNullOrWhiteSpace(NewVersion.CreatedBy) ? "web-ui" : NewVersion.CreatedBy;
-            var checksum = string.IsNullOrWhiteSpace(NewVersion.Checksum) ? Guid.NewGuid().ToString("N") : NewVersion.Checksum;
-
-            await _versionService.Update(
-                new UpdateOrchestrationVersionCommand(
-                    NewVersion.VersionId,
-                    NewVersion.VersionLabel ?? string.Empty,
-                    NewVersion.Description ?? string.Empty,
-                    checksum,
-                    NewVersion.Notes ?? string.Empty,
-                    updatedBy),
-                cancellationToken);
-
-            return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });
-        }
-
-        if (string.IsNullOrWhiteSpace(NewVersion.CreatedBy))
-        {
-            NewVersion.CreatedBy = "web-ui";
-        }
-
-        var versionId = await _versionService.Create(
-            new CreateOrchestrationVersionCommand(
-                orchestrationId,
-                NewVersion.Version,
-                OrchestrationVersionStatus.Draft,
-                NewVersion.VersionLabel ?? string.Empty,
-                NewVersion.Description ?? string.Empty,
-                Guid.NewGuid().ToString("N"),
-                NewVersion.Notes ?? string.Empty,
-                NewVersion.CreatedBy),
-            cancellationToken);
-
-        return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
     }
 
     /// <summary>
@@ -149,32 +169,42 @@ public sealed class DetailsModel : PageModel
     {
         const string actor = "web-ui";
 
-        switch (action)
+        try
         {
-            case "SetInReview":
-                await _versionService.SetInReview(new SetOrchestrationVersionInReviewCommand(versionId), cancellationToken);
-                break;
-            case "ReturnToDraft":
-                await _versionService.ReturnToDraft(new ReturnOrchestrationVersionToDraftCommand(versionId), cancellationToken);
-                break;
-            case "ReopenReview":
-                await _versionService.ReopenReview(new ReopenOrchestrationVersionReviewCommand(versionId, actor), cancellationToken);
-                break;
-            case "Approve":
-                await _versionService.Approve(new ApproveOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-            case "Deploy":
-                await _versionService.Deploy(new DeployOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-            case "Deprecate":
-                await _versionService.Deprecate(new DeprecateOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-            case "Archive":
-                await _versionService.Archive(new ArchiveOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                break;
-        }
+            switch (action)
+            {
+                case "SetInReview":
+                    await _versionService.SetInReview(new SetOrchestrationVersionInReviewCommand(versionId), cancellationToken);
+                    break;
+                case "ReturnToDraft":
+                    await _versionService.ReturnToDraft(new ReturnOrchestrationVersionToDraftCommand(versionId), cancellationToken);
+                    break;
+                case "ReopenReview":
+                    await _versionService.ReopenReview(new ReopenOrchestrationVersionReviewCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Approve":
+                    await _versionService.Approve(new ApproveOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Deploy":
+                    await _versionService.Deploy(new DeployOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Deprecate":
+                    await _versionService.Deprecate(new DeprecateOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+                case "Archive":
+                    await _versionService.Archive(new ArchiveOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                    break;
+            }
 
-        return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });
+            return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });
+        }
+        catch (Exception ex)
+        {
+            OrchestrationId = orchestrationId;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
     }
 
     /// <summary>
@@ -219,9 +249,19 @@ public sealed class DetailsModel : PageModel
         }
         catch (Exception ex)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
         }
     }
+
+    private static string ToFriendlyErrorMessage(Exception exception)
+        => exception switch
+        {
+            OrchestrationArtifactDslValidationException dslException =>
+                $"The version cannot be published because the DSL configuration at '{dslException.Path}' is not valid. Review that transformation, validation, or condition and try again.",
+            InvalidOperationException invalidOperation when !string.IsNullOrWhiteSpace(invalidOperation.Message) =>
+                invalidOperation.Message,
+            _ => "The operation could not be completed. Review the captured data and try again."
+        };
 
     /// <summary>
     /// Represents UI input for creating orchestration version.

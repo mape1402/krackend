@@ -224,6 +224,68 @@ public sealed class ButterMorphOrchestrationTransformationExecutorTests
         Assert.Equal("reservation-1", result.Payload!["ReservationId"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task TransformAsyncCanProjectTriggerArrayItemsForCommandPayload()
+    {
+        var executor = CreateExecutor();
+
+        var result = await executor.TransformAsync(new OrchestrationTransformationRequest
+        {
+            Task = CreateTask(
+                """
+                target {
+                  ReferenceId: $trigger.Id
+                  ReferenceSource: "Sale"
+                  Details: project $trigger.Details as item => { ProductKey: item.ProductKey, Quantity: item.Quantity }
+                }
+                """),
+            PayloadContext = new OrchestrationPayloadContext
+            {
+                ContextPayload = JsonNode.Parse(
+                    """
+                    {
+                      "trigger": {
+                        "payload": {
+                          "Id": "sale-100",
+                          "Details": [
+                            { "ProductKey": "sku-1", "Quantity": 2, "Price": 10.50 },
+                            { "ProductKey": "sku-2", "Quantity": 1, "Price": 5.25 }
+                          ]
+                        }
+                      },
+                      "stages": {},
+                      "variables": {}
+                    }
+                    """)!,
+                TriggerPayload = JsonNode.Parse(
+                    """
+                    {
+                      "Id": "sale-100",
+                      "Details": [
+                        { "ProductKey": "sku-1", "Quantity": 2, "Price": 10.50 },
+                        { "ProductKey": "sku-2", "Quantity": 1, "Price": 5.25 }
+                      ]
+                    }
+                    """)!,
+                StageKey = "inventories",
+                TaskKey = "discountstock"
+            }
+        });
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.Equal("sale-100", result.Payload!["ReferenceId"]?.GetValue<string>());
+        Assert.Equal("Sale", result.Payload!["ReferenceSource"]?.GetValue<string>());
+
+        var details = Assert.IsType<JsonArray>(result.Payload!["Details"]);
+        Assert.Equal(2, details.Count);
+        Assert.Equal("sku-1", details[0]!["ProductKey"]?.GetValue<string>());
+        Assert.Equal(2, details[0]!["Quantity"]?.GetValue<int>());
+        Assert.Equal("sku-2", details[1]!["ProductKey"]?.GetValue<string>());
+        Assert.Equal(1, details[1]!["Quantity"]?.GetValue<int>());
+        Assert.Null(details[0]!["Price"]);
+        AssertBusinessPayloadWasNotWrapped(result.Payload);
+    }
+
     private static IOrchestrationTransformationExecutor CreateExecutor()
     {
         var services = new ServiceCollection();
@@ -267,4 +329,11 @@ public sealed class ButterMorphOrchestrationTransformationExecutorTests
             StageKey = "inventory-reservation",
             TaskKey = "inventories.reserve"
         };
+
+    private static void AssertBusinessPayloadWasNotWrapped(JsonNode payload)
+    {
+        Assert.Null(payload!["Succeeded"]);
+        Assert.Null(payload!["Metadata"]);
+        Assert.Null(payload!["Error"]);
+    }
 }
