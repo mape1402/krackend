@@ -233,6 +233,23 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
     }
 
     [Fact]
+    public async Task DetailsVersionActionSurfacesFriendlyDslErrors()
+    {
+        var fixture = new Fixture();
+        fixture.VersionService.Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new OrchestrationArtifactDslValidationException(
+                "stage:inventories:task:discountstock:transformation",
+                "DSL has semantic errors."));
+        var page = fixture.CreateDetailsPage();
+
+        var result = await page.OnPostVersionActionAsync("orch-1", "version-1", "Deploy", CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Contains("cannot be published", page.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("stage:inventories:task:discountstock:transformation", page.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DetailsHandlesInvalidVersionModelAndExposesAllowedActions()
     {
         var fixture = new Fixture();

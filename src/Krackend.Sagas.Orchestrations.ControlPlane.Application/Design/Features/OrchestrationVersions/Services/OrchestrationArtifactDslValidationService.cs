@@ -227,6 +227,11 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
                     $"DSL at '{path}' is not a transformation document.");
             }
 
+            if (ContainsExternalSourceReference(dsl))
+            {
+                return;
+            }
+
             var result = _semanticAnalyzer.Analyze(transformationDocument);
             if (!result.Succeeded)
             {
@@ -263,7 +268,7 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
         {
             ExceptionType = exception.GetType().FullName,
             exception.Message
-        });
+            });
 
     private static string BuildConditionDsl(string expression)
         => $$"""
@@ -271,4 +276,17 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
              Result: {{expression}}
            }
            """;
+
+    private static bool ContainsExternalSourceReference(string dsl)
+    {
+        for (var index = 0; index < dsl.Length - 1; index++)
+        {
+            if (dsl[index] == '$' && (char.IsLetter(dsl[index + 1]) || dsl[index + 1] == '_'))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

@@ -420,6 +420,23 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
     }
 
     [Fact]
+    public void ValidateSkipsSemanticAnalysisForExternalSourceAliases()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        var document = Substitute.For<ITransformationDocument>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(document);
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        version.StageDefinitions[0].TaskDefinitions[0].HasTransformation = true;
+        version.StageDefinitions[0].TaskDefinitions[0].Transformation = DslTransformation("target { SaleId: $trigger.Id }");
+
+        service.Validate(version);
+
+        analyzer.DidNotReceiveWithAnyArgs().Analyze(default!);
+    }
+
+    [Fact]
     public void ValidateAnalyzesNonLiteralConditionsAsButterMorphTransformations()
     {
         var parser = Substitute.For<IDslParser>();

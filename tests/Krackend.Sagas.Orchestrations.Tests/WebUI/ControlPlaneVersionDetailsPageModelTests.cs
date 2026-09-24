@@ -78,6 +78,22 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public async Task TransitionVersionSurfacesFriendlyDslErrors()
+    {
+        var context = CreateContext();
+        context.VersionService.Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new OrchestrationArtifactDslValidationException(
+                "stage:inventories:task:discountstock:transformation",
+                "DSL has semantic errors."));
+
+        var result = await context.Page.OnPostTransitionVersionAsync("orch-1", "version-1", "Deploy", CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Contains("cannot be published", context.Page.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("stage:inventories:task:discountstock:transformation", context.Page.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UpsertStageCreatesUpdatesAndHandlesInvalidInput()
     {
         var context = CreateContext();

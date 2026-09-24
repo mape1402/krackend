@@ -79,6 +79,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await seedDataSeeder.SeedAsync();
 }
 
+app.UseExceptionHandler("/Error");
 app.UseRouting();
 app.UseAuthorization();
 app.MapStaticAssets();
