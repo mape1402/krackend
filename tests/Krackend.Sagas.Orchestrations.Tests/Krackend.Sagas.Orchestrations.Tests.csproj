@@ -12,8 +12,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
-    <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" Version="1.4.1" />
-    <PackageReference Include="Mule.DurableActions.FastLane.Redis" Version="1.4.1" />
+    <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" />
+    <PackageReference Include="Mule.DurableActions.FastLane.Redis" />
     <PackageReference Include="Pigeon.Messaging.Rabbit" />
     <PackageReference Include="Testcontainers" Version="4.9.0" />
   </ItemGroup>
