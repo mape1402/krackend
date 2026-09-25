@@ -23,6 +23,9 @@
     <PackageReference Update="ButterMorph.SchemaDesign" Version="1.1.3" />
     <PackageReference Update="ButterMorph.Web.Razor" Version="1.1.3" />
     <PackageReference Update="KnOwl.Contracts" Version="2.2.0" />
+    <PackageReference Update="Mule.DurableActions" Version="1.5.0" />
+    <PackageReference Update="Mule.DurableActions.EntityFrameworkCore" Version="1.5.0" />
+    <PackageReference Update="Mule.DurableActions.FastLane.Redis" Version="1.5.0" />
     <PackageReference Update="Pigeon.Messaging" Version="4.0.0" />
     <PackageReference Update="Pigeon.Messaging.Azure.ServiceBus" Version="4.0.0" />
     <PackageReference Update="Pigeon.Messaging.Rabbit" Version="4.0.0" />
