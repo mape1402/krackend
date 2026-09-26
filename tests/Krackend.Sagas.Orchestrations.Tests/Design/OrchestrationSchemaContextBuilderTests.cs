@@ -20,7 +20,7 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var source = Assert.Single(context.Sources);
         Assert.Equal("trigger", source.Alias);
         Assert.Equal(SchemaContractKind.Event, source.SchemaBinding.ContractKind);
-        Assert.Equal("intake_reserve_inventory_request", context.Target.Alias);
+        Assert.Equal("reserve_inventory", context.Target.Alias);
         Assert.Equal(SchemaContractKind.CommandRequest, context.Target.SchemaBinding.ContractKind);
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }
@@ -34,10 +34,10 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[1].Id);
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_authorize_payment_request");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_authorize_payment_response");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory_reply");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "authorize_payment");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "authorize_payment_reply");
     }
 
     [Fact]
@@ -49,14 +49,14 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[2].Id);
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_response");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_notify_customer_request");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_notify_customer_response");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_audit_sale_request");
-        Assert.DoesNotContain(context.Sources, x => x.Alias == "intake_audit_sale_response");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment_reply");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "notify_customer");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "notify_customer_reply");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "audit_sale");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "audit_sale_reply");
     }
 
     [Fact]
@@ -68,15 +68,15 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, version.StageDefinitions[1].TaskDefinitions[0].Id);
 
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_reserve_inventory_response");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_authorize_payment_response");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_notify_customer_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_notify_customer_response");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_sale_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_sale_response");
-        Assert.Equal("fulfillment_close_sale_request", context.Target.Alias);
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "notify_customer");
+        Assert.Contains(context.Sources, x => x.Alias == "notify_customer_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_sale");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_sale_reply");
+        Assert.Equal("close_sale", context.Target.Alias);
     }
 
     [Fact]
@@ -87,16 +87,37 @@ public sealed class OrchestrationSchemaContextBuilderTests
 
         var context = await builder.BuildForTask(version, version.StageDefinitions[2].TaskDefinitions[0].Id);
 
-        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_request");
-        Assert.Contains(context.Sources, x => x.Alias == "intake_audit_response");
-        Assert.Contains(context.Sources, x => x.Alias == "enrichment_audit_request");
-        Assert.Contains(context.Sources, x => x.Alias == "enrichment_audit_response");
-        Assert.Equal("fulfillment_close_sale_request", context.Target.Alias);
+        Assert.Contains(context.Sources, x => x.Alias == "audit");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "enrichment_audit");
+        Assert.Contains(context.Sources, x => x.Alias == "enrichment_audit_reply");
+        Assert.Equal("close_sale", context.Target.Alias);
         Assert.All(context.Sources.Append(new OrchestrationSchemaSource { Alias = context.Target.Alias }), source =>
         {
             Assert.DoesNotContain(".", source.Alias, StringComparison.Ordinal);
             Assert.DoesNotContain("-", source.Alias, StringComparison.Ordinal);
         });
+    }
+
+    [Fact]
+    public async Task BuildForStage_ExposesTriggerAndPreviousStageTaskRequestsAndResponses()
+    {
+        var version = CreateVersion();
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForStage(version, version.StageDefinitions[1].Id);
+
+        Assert.Null(context.Target);
+        Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "notify_customer");
+        Assert.Contains(context.Sources, x => x.Alias == "notify_customer_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_sale");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_sale_reply");
+        Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }
 
     [Fact]
@@ -129,6 +150,49 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.Empty(context.Sources);
         Assert.Null(context.Target.SchemaBinding);
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
+    }
+
+    [Fact]
+    public async Task BuildForTask_UsesSchemaBindingSnapshotWhenRequestBindingHasNoSnapshot()
+    {
+        var version = CreateVersion();
+        var target = version.StageDefinitions[0].TaskDefinitions[0];
+        var messaging = (MessagingTaskConfiguration)target.Configuration;
+        messaging.SchemaBinding = Binding("commands.reserve_inventory", SchemaContractKind.CommandRequest);
+        messaging.RequestSchemaBinding = BindingWithoutSnapshot("commands.reserve_inventory", SchemaContractKind.CommandRequest);
+
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, target.Id);
+
+        Assert.Equal("commands.reserve_inventory.hash", context.Target.SchemaBinding.Snapshot!.ContentHash);
+    }
+
+    [Fact]
+    public async Task BuildForTask_DoesNotExposeEmptyResponseBindingsAsSources()
+    {
+        var version = CreateVersion();
+        var firstTask = version.StageDefinitions[0].TaskDefinitions[0];
+        var firstTaskMessaging = (MessagingTaskConfiguration)firstTask.Configuration;
+        firstTaskMessaging.ResponseSchemaBinding = new SchemaBinding
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Task,
+            ElementId = firstTask.Id,
+            ContractId = Id.New(),
+            ContractKey = string.Empty,
+            ContractVersion = new SemanticVersion(0, 0, 0),
+            RegistryProviderId = Id.New(),
+            ContractKind = SchemaContractKind.CommandResponse
+        };
+
+        var target = version.StageDefinitions[0].TaskDefinitions[1];
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, target.Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "reserve_inventory_reply");
     }
 
     private static OrchestrationVersion CreateVersion()
@@ -315,5 +379,20 @@ public sealed class OrchestrationSchemaContextBuilderTests
                 SchemaJson = "{}",
                 ResolvedAtUtc = DateTimeOffset.UtcNow
             }
+        };
+
+    private static SchemaBinding BindingWithoutSnapshot(string key, SchemaContractKind kind)
+        => new()
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Task,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
+            ContractKey = key,
+            ContractVersion = new SemanticVersion(1, 0, 0),
+            ContractKind = kind,
+            RegistryProviderId = Id.New(),
+            RegistryProviderKey = "atlas",
+            IsValidationEnabled = false
         };
 }

@@ -250,6 +250,19 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
     }
 
     [Fact]
+    public async Task DetailsVersionActionIgnoresCreateVersionValidationState()
+    {
+        var fixture = new Fixture();
+        var page = fixture.CreateDetailsPage();
+        page.ModelState.AddModelError("NewVersion.Version", "required");
+
+        var result = await page.OnPostVersionActionAsync("orch-1", "version-1", "Archive", CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        await fixture.VersionService.Received(1).Archive(Arg.Any<ArchiveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task DetailsHandlesInvalidVersionModelAndExposesAllowedActions()
     {
         var fixture = new Fixture();
@@ -260,9 +273,13 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
 
         Assert.IsType<PageResult>(result);
         Assert.Contains("SetInReview", page.GetAllowedActions(OrchestrationVersionStatus.Draft));
+        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Draft));
         Assert.Contains("Approve", page.GetAllowedActions(OrchestrationVersionStatus.InReview));
+        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.InReview));
         Assert.Contains("Deploy", page.GetAllowedActions(OrchestrationVersionStatus.Approved));
+        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Approved));
         Assert.Contains("Deprecate", page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
+        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
         Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
         Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
     }

@@ -16,6 +16,7 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
     private readonly ITaskApplicationService _taskApplicationService;
     private readonly IOrchestrationButterMorphDesignerContextParser _contextParser;
     private readonly IOrchestrationButterMorphSchemaImporter _schemaImporter;
+    private readonly IOrchestrationButterMorphSourceMetadataFactory _sourceMetadataFactory;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrchestrationButterMorphDesignerHost"/> class.
@@ -24,16 +25,19 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
     /// <param name="taskApplicationService">Task application service.</param>
     /// <param name="contextParser">Designer context parser.</param>
     /// <param name="schemaImporter">Schema importer.</param>
+    /// <param name="sourceMetadataFactory">Source metadata factory.</param>
     public OrchestrationButterMorphDesignerHost(
         IOrchestrationSchemaContextApplicationService schemaContextService,
         ITaskApplicationService taskApplicationService,
         IOrchestrationButterMorphDesignerContextParser contextParser,
-        IOrchestrationButterMorphSchemaImporter schemaImporter)
+        IOrchestrationButterMorphSchemaImporter schemaImporter,
+        IOrchestrationButterMorphSourceMetadataFactory sourceMetadataFactory)
     {
         _schemaContextService = schemaContextService ?? throw new ArgumentNullException(nameof(schemaContextService));
         _taskApplicationService = taskApplicationService ?? throw new ArgumentNullException(nameof(taskApplicationService));
         _contextParser = contextParser ?? throw new ArgumentNullException(nameof(contextParser));
         _schemaImporter = schemaImporter ?? throw new ArgumentNullException(nameof(schemaImporter));
+        _sourceMetadataFactory = sourceMetadataFactory ?? throw new ArgumentNullException(nameof(sourceMetadataFactory));
     }
 
     /// <inheritdoc />
@@ -59,12 +63,12 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
             if (target is null)
             {
                 diagnostics.Add("The current task does not have a usable request schema target.");
-                return CreateLoadFailure(BuildLoadFailureMessage(diagnostics));
             }
 
             return new ButterMorphDesignerLoadResult
             {
                 SourceSchemas = sources,
+                SourceMetadata = _sourceMetadataFactory.Create(schemaContext),
                 TargetSchema = target,
                 InitialDslContent = (task?.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
                 ShowSchemaActions = false,
@@ -183,11 +187,7 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
         var contract = binding is null
             ? "unknown contract"
             : $"{binding.ContractKey} v{binding.ContractVersion}";
-        var provider = binding is null || string.IsNullOrWhiteSpace(binding.RegistryProviderKey)
-            ? "schema registry"
-            : $"schema registry '{binding.RegistryProviderKey}'";
-
-        return $"{role} '{alias}' could not resolve {contract} from {provider}. Verify the contract is deployed and the registry endpoint is available.";
+        return $"{role} '{alias}' does not have a stored schema snapshot for {contract}. Re-select the contract while the schema registry is available so Krackend can capture the snapshot.";
     }
 
     private static string BuildLoadFailureMessage(IReadOnlyCollection<string> diagnostics)

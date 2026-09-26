@@ -12,14 +12,13 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
     private readonly IStageRepository _stageRepository;
     private readonly ITriggerBindingRepository _triggerBindingRepository;
     private readonly IOrchestrationSchemaContextBuilder _contextBuilder;
-    private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrchestrationSchemaContextApplicationService"/> class.
     /// </summary>
     /// <param name="versionRepository">Orchestration version repository.</param>
     /// <param name="contextBuilder">Schema context builder.</param>
-    /// <param name="schemaBindingSnapshotResolver">Schema binding snapshot resolver.</param>
+    /// <param name="schemaBindingSnapshotResolver">Legacy parameter retained for callers that still pass the resolver. Schema context reads use only stored snapshots.</param>
     /// <param name="stageRepository">Stage repository used to load the complete orchestration graph.</param>
     /// <param name="triggerBindingRepository">Trigger binding repository used to load trigger schemas.</param>
     public OrchestrationSchemaContextApplicationService(
@@ -31,7 +30,7 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
     {
         _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
         _contextBuilder = contextBuilder ?? throw new ArgumentNullException(nameof(contextBuilder));
-        _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver;
+        _ = schemaBindingSnapshotResolver;
         _stageRepository = stageRepository;
         _triggerBindingRepository = triggerBindingRepository;
     }
@@ -48,14 +47,27 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
             cancellationToken);
         version = await LoadCompleteVersionGraph(version, cancellationToken);
 
-        if (_schemaBindingSnapshotResolver is not null)
-        {
-            await _schemaBindingSnapshotResolver.ResolveAsync(version, cancellationToken);
-        }
-
         return await _contextBuilder.BuildForTask(
             version,
             PrimitiveParser.ParseId(query.TaskDefinitionId),
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<OrchestrationSchemaContext> GetForStage(
+        GetStageSchemaContextQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var version = await _versionRepository.GetById(
+            PrimitiveParser.ParseId(query.OrchestrationVersionId),
+            cancellationToken);
+        version = await LoadCompleteVersionGraph(version, cancellationToken);
+
+        return await _contextBuilder.BuildForStage(
+            version,
+            PrimitiveParser.ParseId(query.StageDefinitionId),
             cancellationToken);
     }
 

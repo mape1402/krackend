@@ -132,6 +132,7 @@ internal static class DefinitionEntityMapper
             Order = definition.Order,
             Description = definition.Description,
             ExecutionCondition = ToOptionalJson(definition.ExecutionCondition, definition.HasExecutionCondition),
+            EntryValidation = ToOptionalJson(definition.EntryValidation, definition.HasEntryValidation, "StageEntryValidationFailed"),
         };
     }
 
@@ -184,6 +185,8 @@ internal static class DefinitionEntityMapper
             Order = entity.Order,
             ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
             HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
+            EntryValidation = ToOptionalModel(entity.EntryValidation),
+            HasEntryValidation = IsValidationEnabled(entity.EntryValidation),
         };
     }
 
@@ -207,6 +210,7 @@ internal static class DefinitionEntityMapper
             IsEnabled = definition.IsEnabled,
             Notes = definition.Notes,
             ExecutionCondition = ToOptionalJson(definition.ExecutionCondition, definition.HasExecutionCondition),
+            EntryValidation = ToOptionalJson(definition.EntryValidation, definition.HasEntryValidation, "TaskEntryValidationFailed"),
             Transformation = ToOptionalJson(definition.Transformation, definition.HasTransformation),
             Configuration = ToJson(definition.Configuration),
             RetryPolicy = ToOptionalJson(definition.RetryPolicy),
@@ -233,6 +237,8 @@ internal static class DefinitionEntityMapper
             ParallelGroupId = entity.ParallelGroupId,
             ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
             HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
+            EntryValidation = ToOptionalModel(entity.EntryValidation),
+            HasEntryValidation = IsValidationEnabled(entity.EntryValidation),
             Transformation = ToOptionalModel(entity.Transformation),
             HasTransformation = IsTransformationEnabled(entity.Transformation),
             Configuration = ToModel(entity.Configuration),
@@ -646,11 +652,12 @@ internal static class DefinitionEntityMapper
             {
                 Type = "dsl",
                 Dsl = new DslValidationConfigurationJsonModel
-                {
-                    Dsl = dsl.Dsl,
-                    SchemaHash = dsl.SchemaHash,
-                    SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
-                },
+                    {
+                        Dsl = dsl.Dsl,
+                        SchemaHash = dsl.SchemaHash,
+                        SourceContextHash = dsl.SourceContextHash,
+                        SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
+                    },
             },
             null => new ValidationConfigurationEnvelopeJsonModel
             {
@@ -707,6 +714,7 @@ internal static class DefinitionEntityMapper
         {
             Dsl = source?.Dsl ?? string.Empty,
             SchemaHash = source?.SchemaHash ?? string.Empty,
+            SourceContextHash = source?.SourceContextHash ?? string.Empty,
             SemanticDiagnosticsJson = string.IsNullOrWhiteSpace(source?.SemanticDiagnosticsJson)
                 ? "{}"
                 : source.SemanticDiagnosticsJson,

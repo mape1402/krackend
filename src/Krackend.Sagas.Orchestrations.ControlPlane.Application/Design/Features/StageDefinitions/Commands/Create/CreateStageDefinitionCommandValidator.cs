@@ -16,7 +16,7 @@ public sealed class CreateStageDefinitionCommandValidator : AbstractValidator<Cr
     public CreateStageDefinitionCommandValidator()
     {
         RuleFor(x => x.OrchestrationVersionId).NotEmpty().Must(ValidationRules.IsUlid);
-        RuleFor(x => x.Key).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Key).NotEmpty().MaximumLength(128).Must(ValidationRules.IsOrchestratorKey);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
         RuleFor(x => x.Order).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ExecutionCondition).Must(IsSupportedCondition);

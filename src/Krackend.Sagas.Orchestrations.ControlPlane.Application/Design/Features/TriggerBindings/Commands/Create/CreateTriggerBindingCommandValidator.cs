@@ -17,7 +17,7 @@ public sealed class CreateTriggerBindingCommandValidator : AbstractValidator<Cre
     public CreateTriggerBindingCommandValidator()
     {
         RuleFor(x => x.OrchestrationVersionId).NotEmpty().Must(ValidationRules.IsUlid);
-        RuleFor(x => x.Key).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Key).NotEmpty().MaximumLength(128).Must(ValidationRules.IsOrchestratorKey);
         RuleFor(x => x.TriggerType).Equal(TriggerType.Event);
         RuleFor(x => x.TriggerChannel).NotNull();
         RuleFor(x => x.TriggerChannel).Must(IsSupportedEventChannel);

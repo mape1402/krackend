@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -19,30 +20,34 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
+        private readonly IStageEntryValidator _stageEntryValidator;
 
         public StartStageDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
             IStageExecutionRepository stageRepository,
             IExecutionTransitionRepository transitionRepository,
             IOrchestrationConditionEvaluator conditionEvaluator,
-            IOrchestrationPayloadContextFactory payloadContextFactory)
+            IOrchestrationPayloadContextFactory payloadContextFactory,
+            IStageEntryValidator stageEntryValidator)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
+            _stageEntryValidator = stageEntryValidator ?? throw new ArgumentNullException(nameof(stageEntryValidator));
         }
 
         public async Task HandleAsync(StartStageDecision decision, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var payloadContext = _payloadContextFactory.Create(instance, decision.Stage.Key, string.Empty);
             var condition = await _conditionEvaluator.EvaluateAsync(
                 new OrchestrationConditionEvaluationRequest
                 {
                     Condition = decision.Stage.ExecutionCondition,
-                    PayloadContext = _payloadContextFactory.Create(instance, decision.Stage.Key, string.Empty),
+                    PayloadContext = payloadContext,
                     ElementKey = decision.Stage.Key,
                     Phase = "Stage"
                 },
@@ -57,6 +62,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             if (!condition.ShouldExecute)
             {
                 await SkipStageAsync(decision, instance, now, cancellationToken);
+                return;
+            }
+
+            var entryValidation = await _stageEntryValidator.ValidateAsync(
+                decision.Stage,
+                payloadContext,
+                cancellationToken);
+
+            if (!entryValidation.Succeeded)
+            {
+                await MarkEntryValidationFailedAsync(decision, instance, entryValidation, now, cancellationToken);
                 return;
             }
 
@@ -98,6 +114,65 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }, cancellationToken);
         }
 
+        private async Task MarkEntryValidationFailedAsync(
+            StartStageDecision decision,
+            OrchestrationInstance instance,
+            OrchestrationValidationResult validation,
+            DateTime now,
+            CancellationToken cancellationToken)
+        {
+            var message = string.IsNullOrWhiteSpace(validation.ErrorMessage)
+                ? $"Stage '{decision.Stage.Key}' entry validation failed."
+                : validation.ErrorMessage;
+            var errorCode = string.IsNullOrWhiteSpace(validation.ErrorCode)
+                ? "StageEntryValidationFailed"
+                : validation.ErrorCode;
+
+            var stageExecution = new StageExecution
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = decision.InstanceId,
+                StageKey = decision.Stage.Key,
+                Order = decision.Stage.Order,
+                Status = StageExecutionStatus.Failed,
+                WasSkipped = false,
+                SkipReason = string.Empty,
+                ExecutionConditionResult = true,
+                StartedOnUtc = now,
+                FailedOnUtc = now,
+                ErrorSummary = message,
+                ParallelGroupCount = decision.Stage.ParallelGroups?.Count ?? 0
+            };
+
+            stageExecution.Metadata["EntryValidationErrorCode"] = JsonValue.Create(errorCode);
+            stageExecution.Metadata["EntryValidationErrorMessage"] = JsonValue.Create(message);
+            CopyDiagnostics(stageExecution.Metadata, validation.Diagnostics, "EntryValidation");
+
+            instance.Status = OrchestrationInstanceStatus.Failed;
+            instance.CurrentStageKey = decision.Stage.Key;
+            instance.CurrentTaskKey = string.Empty;
+            instance.FailedOnUtc = now;
+            instance.ErrorSummary = message;
+            instance.LastUpdatedOnUtc = now;
+            instance.WaitingSinceUtc = null;
+            ClearBranchNavigation(instance, decision.Stage.Id.ToString());
+
+            await _stageRepository.Create(stageExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = stageExecution.Id,
+                TransitionType = "StageEntryValidationFailed",
+                FromStatus = StageExecutionStatus.Pending.ToString(),
+                ToStatus = StageExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = now,
+                Message = message,
+                ProducedBy = nameof(StartStageDecisionHandler)
+            }, cancellationToken);
+        }
+
         private async Task MarkConditionFailedAsync(
             StartStageDecision decision,
             OrchestrationInstance instance,
@@ -123,7 +198,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             stageExecution.Metadata["ConditionErrorCode"] = JsonValue.Create(condition.ErrorCode);
             stageExecution.Metadata["ConditionErrorMessage"] = JsonValue.Create(condition.ErrorMessage);
-            CopyDiagnostics(stageExecution.Metadata, condition.Diagnostics);
+            CopyDiagnostics(stageExecution.Metadata, condition.Diagnostics, "Condition");
 
             instance.Status = OrchestrationInstanceStatus.Failed;
             instance.CurrentStageKey = decision.Stage.Key;
@@ -197,7 +272,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         private static void CopyDiagnostics(
             IDictionary<string, JsonNode> metadata,
-            IReadOnlyDictionary<string, JsonNode> diagnostics)
+            IReadOnlyDictionary<string, JsonNode> diagnostics,
+            string prefix)
         {
             if (diagnostics is null)
             {
@@ -206,7 +282,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             foreach (var diagnostic in diagnostics)
             {
-                metadata[$"Condition.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
+                metadata[$"{prefix}.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
         }
 

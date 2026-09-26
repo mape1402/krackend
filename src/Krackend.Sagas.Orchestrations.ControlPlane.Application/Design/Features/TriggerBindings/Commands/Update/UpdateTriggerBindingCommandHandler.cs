@@ -9,14 +9,19 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 public sealed class UpdateTriggerBindingCommandHandler : IRequestHandler<UpdateTriggerBindingCommand, bool>
 {
     private readonly ITriggerBindingRepository _repository;
+    private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UpdateTriggerBindingCommandHandler"/> class.
     /// </summary>
     /// <param name="repository">Repository dependency.</param>
-    public UpdateTriggerBindingCommandHandler(ITriggerBindingRepository repository)
+    /// <param name="schemaBindingSnapshotResolver">Schema binding snapshot resolver.</param>
+    public UpdateTriggerBindingCommandHandler(
+        ITriggerBindingRepository repository,
+        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver;
     }
 
     /// <summary>
@@ -34,6 +39,11 @@ public sealed class UpdateTriggerBindingCommandHandler : IRequestHandler<UpdateT
         current.TriggerChannel = request.TriggerChannel;
         current.IsEnabled = request.IsEnabled;
         current.Description = request.Description;
+
+        if (_schemaBindingSnapshotResolver is not null)
+        {
+            await _schemaBindingSnapshotResolver.ResolveTriggerAsync(current, cancellationToken);
+        }
 
         await _repository.Update(current, cancellationToken);
         return true;

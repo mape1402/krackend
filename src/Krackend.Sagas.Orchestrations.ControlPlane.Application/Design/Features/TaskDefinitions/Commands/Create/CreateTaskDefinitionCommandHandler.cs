@@ -11,14 +11,19 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 public sealed class CreateTaskDefinitionCommandHandler : IRequestHandler<CreateTaskDefinitionCommand, string>
 {
     private readonly ITaskRepository _repository;
+    private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CreateTaskDefinitionCommandHandler"/> class.
     /// </summary>
     /// <param name="repository">Repository dependency.</param>
-    public CreateTaskDefinitionCommandHandler(ITaskRepository repository)
+    /// <param name="schemaBindingSnapshotResolver">Schema binding snapshot resolver.</param>
+    public CreateTaskDefinitionCommandHandler(
+        ITaskRepository repository,
+        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver;
     }
 
     /// <summary>
@@ -56,6 +61,12 @@ public sealed class CreateTaskDefinitionCommandHandler : IRequestHandler<CreateT
             DispatchType = request.DispatchType,
             IsEnabled = request.IsEnabled,
         };
+
+        if (_schemaBindingSnapshotResolver is not null)
+        {
+            await _schemaBindingSnapshotResolver.ResolveTaskAsync(model, cancellationToken);
+            await _schemaBindingSnapshotResolver.ResolveCompensationAsync(model.CompensationDefinition, cancellationToken);
+        }
 
         await _repository.Create(model, cancellationToken);
         return id.ToString();

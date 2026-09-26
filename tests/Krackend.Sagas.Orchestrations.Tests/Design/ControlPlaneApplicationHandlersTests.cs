@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Security.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Security.Storage;
 using NSubstitute;
+using SchemaContractKind = Krackend.Sagas.Orchestrations.SchemaRegistry.SchemaContractKind;
 using DesignPagedResult = Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage.PagedResult<Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.OrchestrationDefinition>;
 using SecurityPagedResult = Krackend.Sagas.Orchestrations.ControlPlane.Security.Storage.PagedResult<Krackend.Sagas.Orchestrations.ControlPlane.Security.Core.Team>;
 
@@ -154,6 +155,65 @@ public sealed class ControlPlaneApplicationHandlersTests
     }
 
     [Fact]
+    public async Task CreateTaskDefinitionHandlerResolvesSchemaSnapshotsBeforePersisting()
+    {
+        var repository = Substitute.For<ITaskRepository>();
+        var snapshotResolver = Substitute.For<IOrchestrationSchemaBindingSnapshotResolver>();
+        TaskDefinition? created = null;
+        repository.Create(Arg.Do<TaskDefinition>(model => created = model), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        snapshotResolver
+            .ResolveTaskAsync(Arg.Do<TaskDefinition>(task =>
+            {
+                var messaging = (MessagingTaskConfiguration)task.Configuration;
+                messaging.RequestSchemaBinding = CreateSchemaBinding(
+                    "commands.inventories.stock.discount",
+                    SchemaContractKind.CommandRequest,
+                    CreateSnapshot("commands.inventories.stock.discount", SchemaContractKind.CommandRequest));
+                messaging.ResponseSchemaBinding = CreateSchemaBinding(
+                    "commands.inventories.stock.discount",
+                    SchemaContractKind.CommandResponse,
+                    CreateSnapshot("commands.inventories.stock.discount", SchemaContractKind.CommandResponse));
+            }), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var handler = new CreateTaskDefinitionCommandHandler(repository, snapshotResolver);
+        var configuration = new MessagingTaskConfiguration
+        {
+            Topic = "commands.inventories.stock.discount",
+            Version = new SemanticVersion(1, 0, 0),
+            SchemaBinding = CreateSchemaBinding("commands.inventories.stock.discount", SchemaContractKind.Command)
+        };
+
+        await handler.Handle(
+            new CreateTaskDefinitionCommand(
+                Id.New().ToString(),
+                "discountstock",
+                "Discount stock",
+                1,
+                "",
+                TaskKind.Messaging,
+                TaskExecutionMode.Sequential,
+                "",
+                null!,
+                null!,
+                configuration,
+                null!,
+                null!,
+                OnErrorPolicy.Stop,
+                null!,
+                TaskDispatchType.FireAndWaitCallback,
+                true),
+            CancellationToken.None);
+
+        Assert.NotNull(created);
+        var createdMessaging = Assert.IsType<MessagingTaskConfiguration>(created.Configuration);
+        Assert.NotNull(createdMessaging.RequestSchemaBinding?.Snapshot);
+        Assert.NotNull(createdMessaging.ResponseSchemaBinding?.Snapshot);
+        await snapshotResolver.Received(1).ResolveTaskAsync(created, Arg.Any<CancellationToken>());
+        await repository.Received(1).Create(created, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task CreateTaskDefinitionHandlerCreatesTaskWithoutOptionalPipelineConfiguration()
     {
         var repository = Substitute.For<ITaskRepository>();
@@ -189,6 +249,46 @@ public sealed class ControlPlaneApplicationHandlersTests
         Assert.False(created.HasExecutionCondition);
         Assert.False(created.HasTransformation);
         Assert.False(created.IsEnabled);
+    }
+
+    [Fact]
+    public async Task CreateTriggerBindingHandlerResolvesSchemaSnapshotBeforePersisting()
+    {
+        var repository = Substitute.For<ITriggerBindingRepository>();
+        var snapshotResolver = Substitute.For<IOrchestrationSchemaBindingSnapshotResolver>();
+        TriggerBinding? created = null;
+        repository.Create(Arg.Do<TriggerBinding>(model => created = model), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        snapshotResolver
+            .ResolveTriggerAsync(Arg.Do<TriggerBinding>(trigger =>
+            {
+                var eventChannel = Assert.IsType<EventTriggerChannel>(trigger.TriggerChannel);
+                eventChannel.SchemaBinding!.Snapshot = CreateSnapshot("events.sales.sale.created", SchemaContractKind.Event);
+            }), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var triggerChannel = new EventTriggerChannel
+        {
+            Topic = "events.sales.sale.created",
+            Version = new SemanticVersion(1, 0, 0),
+            SchemaBinding = CreateSchemaBinding("events.sales.sale.created", SchemaContractKind.Event)
+        };
+        var handler = new CreateTriggerBindingCommandHandler(repository, snapshotResolver);
+
+        await handler.Handle(
+            new CreateTriggerBindingCommand(
+                Id.New().ToString(),
+                "sale_created",
+                TriggerType.Event,
+                triggerChannel,
+                true,
+                "Initial sale trigger"),
+            CancellationToken.None);
+
+        Assert.NotNull(created);
+        var createdChannel = Assert.IsType<EventTriggerChannel>(created.TriggerChannel);
+        Assert.NotNull(createdChannel.SchemaBinding?.Snapshot);
+        await snapshotResolver.Received(1).ResolveTriggerAsync(created, Arg.Any<CancellationToken>());
+        await repository.Received(1).Create(created, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1077,6 +1177,41 @@ public sealed class ControlPlaneApplicationHandlersTests
                 Engine = EngineType.DSL,
                 Configuration = new DslConditionConfiguration { Expression = new Expression("true") },
             },
+        };
+
+    private static SchemaBinding CreateSchemaBinding(
+        string contractKey,
+        SchemaContractKind contractKind,
+        SchemaContractSnapshot? snapshot = null)
+        => new()
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Task,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
+            ContractKey = contractKey,
+            ContractVersion = new SemanticVersion(1, 0, 0),
+            RegistryProviderId = Id.New(),
+            RegistryProviderKey = "knowl",
+            ContractKind = contractKind,
+            Snapshot = snapshot
+        };
+
+    private static SchemaContractSnapshot CreateSnapshot(string contractKey, SchemaContractKind contractKind)
+        => new()
+        {
+            ContractKind = contractKind,
+            RegistryProviderId = Id.New().ToString(),
+            RegistryProviderKey = "knowl",
+            ContractId = Id.New().ToString(),
+            ContractKey = contractKey,
+            ContractVersion = "1.0.0",
+            SchemaFormat = "ButterMorph",
+            SchemaJson = "{\"type\":\"object\",\"properties\":{\"SaleId\":{\"type\":\"string\"}}}",
+            ContentHash = $"{contractKind}-{contractKey}-hash",
+            SourceArtifactId = Id.New().ToString(),
+            ResolvedBy = "tests",
+            ResolvedAtUtc = DateTimeOffset.UtcNow
         };
 
     private sealed class SnapshotFixture

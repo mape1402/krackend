@@ -2,6 +2,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 
 /// <summary>
 /// Describes a payload validation request.
@@ -27,6 +28,16 @@ public sealed record OrchestrationValidationRequest
     /// Gets the business payload to validate.
     /// </summary>
     public JsonNode Payload { get; init; }
+
+    /// <summary>
+    /// Gets the accumulated orchestration payload context when validation uses multiple sources.
+    /// </summary>
+    public OrchestrationPayloadContext PayloadContext { get; init; }
+
+    /// <summary>
+    /// Gets the source alias to use as the primary payload when validating a multi-source context.
+    /// </summary>
+    public string PayloadAlias { get; init; } = "context";
 
     /// <summary>
     /// Gets the validation DSL to execute when explicit validation rules are configured.

@@ -28,7 +28,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
         Assert.Contains("must use ButterMorph DSL configuration", exception.Message, StringComparison.Ordinal);
     }
 
@@ -64,7 +64,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:request-validation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:request-validation", exception.Path);
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:request-validation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:request-validation", exception.Path);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:response-validation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:response-validation", exception.Path);
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:condition", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:condition", exception.Path);
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
         {
             Id = Id.New(),
             OrchestrationVersionId = version.Id,
-            Key = "sale-created",
+            Key = "sale_created",
             TriggerType = TriggerType.Event,
             IsEnabled = true,
             TriggerChannel = new EventTriggerChannel
@@ -200,7 +200,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("trigger:sale-created:event-validation", exception.Path);
+        Assert.Equal("trigger:sale_created:event-validation", exception.Path);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
         {
             Id = Id.New(),
             OrchestrationVersionId = version.Id,
-            Key = "sale-created",
+            Key = "sale_created",
             TriggerType = TriggerType.Event,
             IsEnabled = true,
             TriggerChannel = new EventTriggerChannel
@@ -230,7 +230,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("trigger:sale-created:event-validation", exception.Path);
+        Assert.Equal("trigger:sale_created:event-validation", exception.Path);
         Assert.Contains("must use ButterMorph DSL configuration", exception.Message, StringComparison.Ordinal);
     }
 
@@ -258,7 +258,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:compensation-transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:compensation-transformation", exception.Path);
     }
 
     [Fact]
@@ -285,7 +285,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:compensation-condition", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:compensation-condition", exception.Path);
     }
 
     [Fact]
@@ -322,7 +322,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:compensation-request-validation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:compensation-request-validation", exception.Path);
     }
 
     [Fact]
@@ -344,7 +344,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:compensation-response-validation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:compensation-response-validation", exception.Path);
     }
 
     [Fact]
@@ -360,7 +360,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
         Assert.Contains("not a transformation document", exception.Message, StringComparison.Ordinal);
     }
 
@@ -392,7 +392,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
         Assert.Contains("BM001", exception.DiagnosticsJson, StringComparison.Ordinal);
     }
 
@@ -415,7 +415,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
         Assert.Equal("[]", exception.DiagnosticsJson);
     }
 
@@ -478,7 +478,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
 
         var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
 
-        Assert.Equal("stage:fulfillment:task:reserve-inventory:transformation", exception.Path);
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
         Assert.Contains("broken dsl", exception.DiagnosticsJson, StringComparison.Ordinal);
     }
 
@@ -487,16 +487,23 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
     {
         var parser = Substitute.For<IDslParser>();
         var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
-        var document = Substitute.For<ITransformationDocument>();
-        parser.Parse(Arg.Any<IDslDefinition>()).Returns(document);
-        analyzer.Analyze(document).Returns(new SemanticAnalysisResult { Succeeded = true });
+        var transformationDocument = Substitute.For<ITransformationDocument>();
+        var validationDocument = Substitute.For<IValidationDocument>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(call =>
+        {
+            var definition = call.Arg<IDslDefinition>();
+            return definition.Content.StartsWith("validate", StringComparison.OrdinalIgnoreCase)
+                ? validationDocument
+                : transformationDocument;
+        });
+        analyzer.Analyze(transformationDocument).Returns(new SemanticAnalysisResult { Succeeded = true });
         var service = CreateService(parser, analyzer);
         var version = CreateVersion();
         version.TriggerBindings.Add(new TriggerBinding
         {
             Id = Id.New(),
             OrchestrationVersionId = version.Id,
-            Key = "sale-created",
+            Key = "sale_created",
             TriggerType = TriggerType.Event,
             IsEnabled = true,
             TriggerChannel = new EventTriggerChannel
@@ -504,7 +511,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
                 Topic = "events.sales.sale.created",
                 Version = new SemanticVersion(1, 0, 0),
                 HasValidation = true,
-                Validation = DslValidation("target { Result: source.saleId != null }")
+                Validation = DslValidation("validate { assert source.saleId != null }")
             }
         });
         var task = version.StageDefinitions[0].TaskDefinitions[0];
@@ -512,9 +519,9 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
         task.Transformation = DslTransformation("target { saleId: source.saleId }");
         var messaging = (MessagingTaskConfiguration)task.Configuration;
         messaging.HasRequestValidation = true;
-        messaging.RequestValidation = DslValidation("target { Result: source.saleId != null }");
+        messaging.RequestValidation = DslValidation("validate { assert source.saleId != null }");
         messaging.HasResponseValidation = true;
-        messaging.ResponseValidation = DslValidation("target { Result: source.reserved == true }");
+        messaging.ResponseValidation = DslValidation("validate { assert source.reserved == true }");
         task.CompensationDefinition = new CompensationDefinition
         {
             CompensationTaskKind = TaskKind.Messaging,
@@ -535,16 +542,16 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
                 Topic = "inventories.release",
                 Version = new SemanticVersion(1, 0, 0),
                 HasRequestValidation = true,
-                RequestValidation = DslValidation("target { Result: source.saleId != null }"),
+                RequestValidation = DslValidation("validate { assert source.saleId != null }"),
                 HasResponseValidation = true,
-                ResponseValidation = DslValidation("target { Result: source.released == true }")
+                ResponseValidation = DslValidation("validate { assert source.released == true }")
             }
         };
 
         service.Validate(version);
 
         Assert.True(parser.ReceivedCalls().Count() >= 7);
-        Assert.True(analyzer.ReceivedCalls().Count() >= 7);
+        Assert.True(analyzer.ReceivedCalls().Count() >= 3);
     }
 
     private static IOrchestrationArtifactDslValidationService CreateService()
@@ -616,7 +623,7 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
                         {
                             Id = taskId,
                             StageDefinitionId = stageId,
-                            Key = "reserve-inventory",
+                            Key = "reserve_inventory",
                             Name = "Reserve inventory",
                             Order = 1,
                             Kind = TaskKind.Messaging,

@@ -13,7 +13,7 @@ public sealed class UpdateVariableDefinitionCommandValidator : AbstractValidator
     public UpdateVariableDefinitionCommandValidator()
     {
         RuleFor(x => x.Id).NotEmpty().Must(ValidationRules.IsUlid);
-        RuleFor(x => x.Key).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Key).NotEmpty().MaximumLength(128).Must(ValidationRules.IsOrchestratorKey);
     }
 }
 

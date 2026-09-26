@@ -22,4 +22,10 @@ public sealed record TaskArtifact(
     OnErrorPolicy OnErrorPolicy,
     CompensationArtifact Compensation,
     TaskDispatchType DispatchType,
-    bool IsEnabled);
+    bool IsEnabled)
+{
+    /// <summary>
+    /// Gets the validation executed before the task is dispatched.
+    /// </summary>
+    public ValidationArtifact EntryValidation { get; init; }
+}

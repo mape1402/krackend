@@ -9,14 +9,19 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 public sealed class UpdateTaskDefinitionCommandHandler : IRequestHandler<UpdateTaskDefinitionCommand, bool>
 {
     private readonly ITaskRepository _repository;
+    private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UpdateTaskDefinitionCommandHandler"/> class.
     /// </summary>
     /// <param name="repository">Repository dependency.</param>
-    public UpdateTaskDefinitionCommandHandler(ITaskRepository repository)
+    /// <param name="schemaBindingSnapshotResolver">Schema binding snapshot resolver.</param>
+    public UpdateTaskDefinitionCommandHandler(
+        ITaskRepository repository,
+        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver;
     }
 
     /// <summary>
@@ -49,6 +54,12 @@ public sealed class UpdateTaskDefinitionCommandHandler : IRequestHandler<UpdateT
         current.CompensationDefinition = request.CompensationDefinition;
         current.DispatchType = request.DispatchType;
         current.IsEnabled = request.IsEnabled;
+
+        if (_schemaBindingSnapshotResolver is not null)
+        {
+            await _schemaBindingSnapshotResolver.ResolveTaskAsync(current, cancellationToken);
+            await _schemaBindingSnapshotResolver.ResolveCompensationAsync(current.CompensationDefinition, cancellationToken);
+        }
 
         await _repository.Update(current, cancellationToken);
         return true;

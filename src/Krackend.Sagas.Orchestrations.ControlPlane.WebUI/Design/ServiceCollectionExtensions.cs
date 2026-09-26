@@ -39,7 +39,9 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, DesignNavigationContributor>());
         services.TryAddSingleton<IOrchestrationButterMorphDesignerContextParser, OrchestrationButterMorphDesignerContextParser>();
         services.TryAddScoped<IOrchestrationButterMorphSchemaImporter, OrchestrationButterMorphSchemaImporter>();
+        services.TryAddScoped<IOrchestrationButterMorphSourceMetadataFactory, OrchestrationButterMorphSourceMetadataFactory>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphDesignerHost, OrchestrationButterMorphDesignerHost>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphValidationDesignerHost, OrchestrationButterMorphValidationDesignerHost>());
         return services;
     }
 

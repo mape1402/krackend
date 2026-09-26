@@ -13,5 +13,10 @@ public sealed record OrchestrationButterMorphDesignerContext
     /// <summary>
     /// Gets the task definition identifier.
     /// </summary>
-    public required string TaskDefinitionId { get; init; }
+    public string TaskDefinitionId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the stage definition identifier.
+    /// </summary>
+    public string StageDefinitionId { get; init; } = string.Empty;
 }

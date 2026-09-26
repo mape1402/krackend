@@ -16,7 +16,7 @@ public sealed class UpdateStageDefinitionCommandValidator : AbstractValidator<Up
     public UpdateStageDefinitionCommandValidator()
     {
         RuleFor(x => x.Id).NotEmpty().Must(ValidationRules.IsUlid);
-        RuleFor(x => x.Key).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Key).NotEmpty().MaximumLength(128).Must(ValidationRules.IsOrchestratorKey);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
         RuleFor(x => x.Order).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ExecutionCondition).Must(IsSupportedCondition);

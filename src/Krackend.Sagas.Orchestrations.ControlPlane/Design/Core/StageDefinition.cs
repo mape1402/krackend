@@ -48,6 +48,16 @@ public sealed class StageDefinition
     public bool HasExecutionCondition { get; set; }
 
     /// <summary>
+    /// Gets or sets the validation executed before the stage starts.
+    /// </summary>
+    public ValidationDefinition EntryValidation { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether entry validation is enabled.
+    /// </summary>
+    public bool HasEntryValidation { get; set; }
+
+    /// <summary>
     /// Gets or sets task definitions.
     /// </summary>
     public List<TaskDefinition> TaskDefinitions { get; set; } = new();

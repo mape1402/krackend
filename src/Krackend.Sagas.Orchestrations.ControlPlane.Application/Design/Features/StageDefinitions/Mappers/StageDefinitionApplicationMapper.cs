@@ -24,6 +24,8 @@ public sealed class StageDefinitionApplicationMapper : IStageDefinitionApplicati
             Order = source.Order,
             ExecutionCondition = source.ExecutionCondition,
             HasExecutionCondition = source.HasExecutionCondition,
+            EntryValidation = source.EntryValidation,
+            HasEntryValidation = source.HasEntryValidation,
         };
     }
 }

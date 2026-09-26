@@ -41,6 +41,7 @@ public sealed class WebUINavigationTests
         Assert.Collection(
             items,
             item => AssertNavigation(item, "Orchestrations", "OrchestratorDesign", "/Orchestrations/Index", 10),
+            item => AssertNavigation(item, "Environments", "OrchestratorDistribution", "/Environments/Index", 19),
             item => AssertNavigation(item, "Domains", "OrchestratorDesign", "/Domains/Index", 20),
             item => AssertNavigation(item, "Runtime Nodes", "OrchestratorDistribution", "/RuntimeNodes/Index", 20),
             item => AssertNavigation(item, "Artifacts", "OrchestratorDistribution", "/ArtifactReleases/Index", 22),
@@ -96,7 +97,7 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(13, options.Conventions.Count);
+        Assert.Equal(14, options.Conventions.Count);
     }
 
     [Fact]

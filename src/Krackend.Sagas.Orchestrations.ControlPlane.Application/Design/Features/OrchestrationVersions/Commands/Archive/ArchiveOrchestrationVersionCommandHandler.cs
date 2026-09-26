@@ -1,8 +1,10 @@
 using Krackend.Sagas.Orchestrations.Contracts.Events;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Pelican.Mediator;
+using System.Text.Json;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
@@ -43,8 +45,7 @@ public sealed class ArchiveOrchestrationVersionCommandHandler : IRequestHandler<
 
         await _repository.Update(current, cancellationToken);
         var definition = await _definitionRepository.GetById(current.OrchestrationDefinitionId, cancellationToken);
-        var versionSnapshot = await _artifactSnapshotBuilder.Build(current, cancellationToken);
-        var artifactPayloadJson = _artifactPayloadFactory.CreatePayloadJson(definition, versionSnapshot);
+        var artifactPayloadJson = await CreateArchivePayloadJson(definition, current, cancellationToken);
 
         await _artifactPublicationService.PublishArchive(new OrchestrationVersionArchivedEvent(
             current.Id.ToString(),
@@ -59,5 +60,28 @@ public sealed class ArchiveOrchestrationVersionCommandHandler : IRequestHandler<
             DateTime.UtcNow), cancellationToken);
 
         return true;
+    }
+
+    private async Task<string> CreateArchivePayloadJson(
+        OrchestrationDefinition definition,
+        OrchestrationVersion current,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var versionSnapshot = await _artifactSnapshotBuilder.Build(current, cancellationToken);
+            return _artifactPayloadFactory.CreatePayloadJson(definition, versionSnapshot);
+        }
+        catch
+        {
+            return JsonSerializer.Serialize(new
+            {
+                archived = true,
+                orchestrationVersionId = current.Id.ToString(),
+                orchestrationDefinitionId = current.OrchestrationDefinitionId.ToString(),
+                orchestrationKey = definition.Key,
+                version = current.Version.ToString()
+            });
+        }
     }
 }

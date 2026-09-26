@@ -49,6 +49,13 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
                     $"stage:{stage.Key}:condition");
             }
 
+            if (stage.HasEntryValidation)
+            {
+                ValidateValidation(
+                    stage.EntryValidation,
+                    $"stage:{stage.Key}:entry-validation");
+            }
+
             foreach (var task in stage.TaskDefinitions.Where(x => x.IsEnabled).OrderBy(x => x.Order))
             {
                 ValidateTask(stage, task);
@@ -88,6 +95,13 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
             ValidateCondition(
                 task.ExecutionCondition,
                 $"stage:{stage.Key}:task:{task.Key}:condition");
+        }
+
+        if (task.HasEntryValidation)
+        {
+            ValidateValidation(
+                task.EntryValidation,
+                $"stage:{stage.Key}:task:{task.Key}:entry-validation");
         }
 
         if (task.Configuration is MessagingTaskConfiguration messaging)
@@ -187,7 +201,32 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
                 $"Validation '{path}' is enabled but does not contain DSL.");
         }
 
-        Analyze(configuration.Dsl, path);
+        ParseValidation(configuration.Dsl, path);
+    }
+
+    private void ParseValidation(string dsl, string path)
+    {
+        try
+        {
+            var document = _dslParser.Parse(new DslDefinition { Content = dsl });
+            if (document is not IValidationDocument)
+            {
+                throw new OrchestrationArtifactDslValidationException(
+                    path,
+                    $"DSL at '{path}' is not a validation document.");
+            }
+        }
+        catch (OrchestrationArtifactDslValidationException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new OrchestrationArtifactDslValidationException(
+                path,
+                $"DSL at '{path}' could not be parsed or analyzed: {exception.Message}",
+                SerializeException(exception));
+        }
     }
 
     private void ValidateCondition(ExecutionCondition condition, string path)

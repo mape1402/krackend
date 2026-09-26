@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
@@ -29,6 +30,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
         private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly ITaskDispatchRequestPayloadPreparer _requestPayloadPreparer;
+        private readonly ITaskEntryValidator _taskEntryValidator;
 
         public DispatchTaskDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -42,7 +44,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IOrchestrationPayloadState payloadState,
             IOrchestrationPayloadContextFactory payloadContextFactory,
             IOrchestrationConditionEvaluator conditionEvaluator,
-            ITaskDispatchRequestPayloadPreparer requestPayloadPreparer)
+            ITaskDispatchRequestPayloadPreparer requestPayloadPreparer,
+            ITaskEntryValidator taskEntryValidator)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -56,17 +59,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
             _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
+            _taskEntryValidator = taskEntryValidator ?? throw new ArgumentNullException(nameof(taskEntryValidator));
         }
 
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            var payloadContext = _payloadContextFactory.Create(instance, decision.StageKey, decision.Task.Key);
             var condition = await _conditionEvaluator.EvaluateAsync(
                 new OrchestrationConditionEvaluationRequest
                 {
                     Condition = decision.Task.ExecutionCondition,
-                    PayloadContext = _payloadContextFactory.Create(instance, decision.StageKey, decision.Task.Key),
+                    PayloadContext = payloadContext,
                     ElementKey = decision.Task.Key,
                     Phase = "Task"
                 },
@@ -81,6 +86,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             if (!condition.ShouldExecute)
             {
                 await SkipTaskAsync(decision, instance, now, cancellationToken);
+                return;
+            }
+
+            var entryValidation = await _taskEntryValidator.ValidateAsync(
+                decision.Task,
+                payloadContext,
+                cancellationToken);
+
+            if (!entryValidation.Succeeded)
+            {
+                await MarkEntryValidationFailedAsync(decision, instance, entryValidation, now, cancellationToken);
                 return;
             }
 
@@ -382,6 +398,70 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }, cancellationToken);
         }
 
+        private async Task MarkEntryValidationFailedAsync(
+            DispatchTaskDecision decision,
+            OrchestrationInstance instance,
+            OrchestrationValidationResult validation,
+            DateTime now,
+            CancellationToken cancellationToken)
+        {
+            var message = string.IsNullOrWhiteSpace(validation.ErrorMessage)
+                ? $"Task '{decision.Task.Key}' entry validation failed."
+                : validation.ErrorMessage;
+            var errorCode = string.IsNullOrWhiteSpace(validation.ErrorCode)
+                ? "TaskEntryValidationFailed"
+                : validation.ErrorCode;
+            var taskExecution = new TaskExecution
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = decision.InstanceId,
+                StageExecutionId = decision.StageExecutionId,
+                TaskKey = decision.Task.Key,
+                TaskKind = decision.Task.Kind,
+                ExecutionMode = decision.Task.ExecutionMode,
+                ParallelGroupId = decision.Task.ParallelGroupId,
+                Status = TaskExecutionStatus.Failed,
+                WasSkipped = false,
+                SkipReason = string.Empty,
+                ExecutionConditionResult = true,
+                OnErrorPolicy = decision.Task.OnErrorPolicy,
+                AwaitResponse = false,
+                StartedOnUtc = now,
+                FailedOnUtc = now,
+                LastAttemptNumber = 0,
+                CorrelationId = string.IsNullOrWhiteSpace(instance.CorrelationId) ? Id.New().ToString() : instance.CorrelationId
+            };
+
+            taskExecution.Metadata["EntryValidationErrorCode"] = JsonValue.Create(errorCode);
+            taskExecution.Metadata["EntryValidationErrorMessage"] = JsonValue.Create(message);
+            taskExecution.Metadata["RetrySuppressed"] = JsonValue.Create(true);
+            CopyDiagnostics(taskExecution.Metadata, validation.Diagnostics, "EntryValidation");
+
+            instance.Status = OrchestrationInstanceStatus.Failed;
+            instance.CurrentStageKey = decision.StageKey;
+            instance.CurrentTaskKey = decision.Task.Key;
+            instance.FailedOnUtc = now;
+            instance.ErrorSummary = message;
+            instance.LastUpdatedOnUtc = now;
+            instance.WaitingSinceUtc = null;
+
+            await _taskRepository.Create(taskExecution, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = decision.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TransitionType = "TaskEntryValidationFailed",
+                FromStatus = TaskExecutionStatus.Pending.ToString(),
+                ToStatus = TaskExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = now,
+                Message = message,
+                ProducedBy = nameof(DispatchTaskDecisionHandler)
+            }, cancellationToken);
+        }
+
         private async Task MarkConditionFailedAsync(
             DispatchTaskDecision decision,
             OrchestrationInstance instance,
@@ -413,7 +493,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             taskExecution.Metadata["ConditionErrorCode"] = JsonValue.Create(condition.ErrorCode);
             taskExecution.Metadata["ConditionErrorMessage"] = JsonValue.Create(condition.ErrorMessage);
             taskExecution.Metadata["RetrySuppressed"] = JsonValue.Create(true);
-            CopyDiagnostics(taskExecution.Metadata, condition.Diagnostics);
+            CopyDiagnostics(taskExecution.Metadata, condition.Diagnostics, "Condition");
 
             instance.Status = OrchestrationInstanceStatus.Failed;
             instance.CurrentStageKey = decision.StageKey;
@@ -549,7 +629,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         private static void CopyDiagnostics(
             IDictionary<string, JsonNode> metadata,
-            IReadOnlyDictionary<string, JsonNode> diagnostics)
+            IReadOnlyDictionary<string, JsonNode> diagnostics,
+            string prefix)
         {
             if (diagnostics is null)
             {
@@ -558,7 +639,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             foreach (var diagnostic in diagnostics)
             {
-                metadata[$"Condition.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
+                metadata[$"{prefix}.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
         }
 

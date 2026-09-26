@@ -85,6 +85,17 @@ public sealed class TaskApplicationService : ITaskApplicationService
     }
 
     /// <summary>
+    /// Updates only entry validation of one task.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    public Task<bool> SetEntryValidation(SetTaskEntryValidationCommand command, CancellationToken cancellationToken = default)
+    {
+        return _mediator.Send(command, cancellationToken);
+    }
+
+    /// <summary>
     /// Updates only transformation of one task.
     /// </summary>
     /// <param name="command">Command to execute.</param>

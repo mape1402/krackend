@@ -52,12 +52,19 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
     public async Task<string> Handle(CreateOrchestrationVersionCommand request, CancellationToken cancellationToken)
     {
         Id id = Id.New();
+        var orchestrationDefinitionId = PrimitiveParser.ParseId(request.OrchestrationDefinitionId);
+        var version = PrimitiveParser.ParseSemanticVersion(request.Version);
+
+        if (await _repository.Exists(orchestrationDefinitionId, version, cancellationToken))
+        {
+            throw new InvalidOperationException($"Orchestration version '{version}' already exists for this orchestration.");
+        }
 
         OrchestrationVersion model = new()
         {
             Id = id,
-            OrchestrationDefinitionId = PrimitiveParser.ParseId(request.OrchestrationDefinitionId),
-            Version = PrimitiveParser.ParseSemanticVersion(request.Version),
+            OrchestrationDefinitionId = orchestrationDefinitionId,
+            Version = version,
             Status = request.Status,
             VersionLabel = request.VersionLabel,
             Description = request.Description,
@@ -160,6 +167,8 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
                 Order = stage.Order,
                 ExecutionCondition = stage.ExecutionCondition,
                 HasExecutionCondition = stage.HasExecutionCondition,
+                EntryValidation = stage.EntryValidation,
+                HasEntryValidation = stage.HasEntryValidation,
             }, cancellationToken);
 
             await CloneParallelGroups(stage, newStageId, groupIdMap, cancellationToken);
@@ -220,6 +229,8 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
                 HasExecutionCondition = task.HasExecutionCondition,
                 Transformation = task.Transformation,
                 HasTransformation = task.HasTransformation,
+                EntryValidation = task.EntryValidation,
+                HasEntryValidation = task.HasEntryValidation,
                 Configuration = task.Configuration,
                 RetryPolicy = task.RetryPolicy,
                 TimeoutPolicy = task.TimeoutPolicy,

@@ -54,6 +54,14 @@ public interface ITaskApplicationService
     Task<bool> SetExecutionCondition(SetTaskExecutionConditionCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only entry validation of one task.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> SetEntryValidation(SetTaskEntryValidationCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates only transformation of one task.
     /// </summary>
     /// <param name="command">Command to execute.</param>

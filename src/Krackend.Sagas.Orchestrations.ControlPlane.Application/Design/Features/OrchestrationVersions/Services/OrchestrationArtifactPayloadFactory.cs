@@ -89,7 +89,13 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             stage.TaskDefinitions.OrderBy(x => x.Order).Select(MapTask).ToArray(),
             stage.ParallelGroups.Select(MapParallelGroup).ToArray(),
             stage.BranchRules.Select(MapBranchRule).ToArray(),
-            stage.Description);
+            stage.Description)
+        {
+            EntryValidation = MapValidation(
+                stage.EntryValidation,
+                stage.HasEntryValidation,
+                "StageEntryValidationFailed")
+        };
 
     private static ParallelGroupArtifact MapParallelGroup(ParallelGroupDefinition group)
         => new(
@@ -124,7 +130,13 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             task.OnErrorPolicy,
             MapCompensation(task.CompensationDefinition),
             task.DispatchType,
-            task.IsEnabled);
+            task.IsEnabled)
+        {
+            EntryValidation = MapValidation(
+                task.EntryValidation,
+                task.HasEntryValidation,
+                "TaskEntryValidationFailed")
+        };
 
     private static CompensationArtifact MapCompensation(CompensationDefinition compensation)
         => compensation is null
@@ -218,6 +230,7 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             {
                 Dsl = dsl.Dsl,
                 SchemaHash = dsl.SchemaHash,
+                SourceContextHash = dsl.SourceContextHash,
                 SemanticDiagnosticsJson = dsl.SemanticDiagnosticsJson,
             },
             null => new DslValidationConfigurationArtifact(),
@@ -372,13 +385,55 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
         => configuration?.HasResponseValidation == true || configuration?.ResponseSchemaBinding?.IsValidationEnabled == true;
 
     private static SchemaBinding GetRequestSchemaBinding(MessagingTaskConfiguration configuration)
-        => configuration?.RequestSchemaBinding ??
-            CreateCommandSideBinding(configuration?.SchemaBinding, SchemaContractKind.CommandRequest) ??
-            configuration?.SchemaBinding;
+    {
+        if (configuration is null)
+        {
+            return null;
+        }
+
+        if (HasUsableSnapshot(configuration.RequestSchemaBinding))
+        {
+            return configuration.RequestSchemaBinding;
+        }
+
+        var commandRequestBinding = CreateCommandSideBinding(configuration.SchemaBinding, SchemaContractKind.CommandRequest);
+        if (HasUsableSnapshot(commandRequestBinding))
+        {
+            return commandRequestBinding;
+        }
+
+        if (HasUsableSnapshot(configuration.SchemaBinding))
+        {
+            return configuration.SchemaBinding;
+        }
+
+        return IsUsableBindingReference(configuration.RequestSchemaBinding)
+            ? configuration.RequestSchemaBinding
+            : commandRequestBinding ?? configuration.SchemaBinding;
+    }
 
     private static SchemaBinding GetResponseSchemaBinding(MessagingTaskConfiguration configuration)
-        => configuration?.ResponseSchemaBinding ??
-            CreateCommandSideBinding(configuration?.SchemaBinding, SchemaContractKind.CommandResponse);
+    {
+        if (configuration is null)
+        {
+            return null;
+        }
+
+        if (HasUsableSnapshot(configuration.ResponseSchemaBinding))
+        {
+            return configuration.ResponseSchemaBinding;
+        }
+
+        var commandResponseBinding = CreateCommandSideBinding(configuration.SchemaBinding, SchemaContractKind.CommandResponse);
+        if (HasUsableSnapshot(commandResponseBinding))
+        {
+            return commandResponseBinding;
+        }
+
+        return IsUsableBindingReference(configuration.ResponseSchemaBinding)
+            ? configuration.ResponseSchemaBinding
+            : commandResponseBinding;
+    }
 
     private static SchemaBinding CreateCommandSideBinding(SchemaBinding binding, SchemaContractKind contractKind)
     {
@@ -403,4 +458,12 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             Snapshot = binding.Snapshot?.ContractKind == contractKind ? binding.Snapshot : null
         };
     }
+
+    private static bool IsUsableBindingReference(SchemaBinding binding)
+        => binding is not null &&
+            (!string.IsNullOrWhiteSpace(binding.ContractKey) || HasUsableSnapshot(binding));
+
+    private static bool HasUsableSnapshot(SchemaBinding binding)
+        => !string.IsNullOrWhiteSpace(binding?.Snapshot?.SchemaJson) ||
+            !string.IsNullOrWhiteSpace(binding?.Snapshot?.ContentHash);
 }

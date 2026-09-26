@@ -106,11 +106,11 @@
                                     @foreach (var action in Model.GetAllowedActions(version.Status))
                                     {
                                         <li>
-                                            <form method="post" asp-page-handler="VersionAction" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected version transition.">
+                                            <form method="post" asp-page-handler="VersionAction" class="od-inline-form" data-orchestrator-validate="false" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected version transition.">
                                                 <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                 <input type="hidden" name="versionId" value="@version.Id" />
                                                 <input type="hidden" name="action" value="@action" />
-                                                <button type="submit" class="dropdown-item @(action == "Archive" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
+                                                <button type="submit" formnovalidate class="dropdown-item @(action == "Archive" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
                                             </form>
                                         </li>
                                     }
