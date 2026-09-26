@@ -195,6 +195,25 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.DoesNotContain(context.Sources, x => x.Alias == "reserve_inventory_reply");
     }
 
+    [Fact]
+    public async Task BuildForTask_DoesNotExposeResponseBindingReferencesWithoutSnapshotsAsSources()
+    {
+        var version = CreateVersion();
+        var firstTask = version.StageDefinitions[0].TaskDefinitions[0];
+        var firstTaskMessaging = (MessagingTaskConfiguration)firstTask.Configuration;
+        firstTaskMessaging.ResponseSchemaBinding = BindingWithoutSnapshot(
+            "commands.inventories.stock.discount",
+            SchemaContractKind.CommandResponse);
+
+        var target = version.StageDefinitions[0].TaskDefinitions[1];
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, target.Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "reserve_inventory_reply");
+    }
+
     private static OrchestrationVersion CreateVersion()
     {
         var versionId = Id.New();
