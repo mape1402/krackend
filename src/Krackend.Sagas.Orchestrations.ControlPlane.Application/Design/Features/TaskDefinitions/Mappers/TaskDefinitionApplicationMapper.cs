@@ -27,8 +27,6 @@ public sealed class TaskDefinitionApplicationMapper : ITaskDefinitionApplication
             ParallelGroupId = source.ParallelGroupId.HasValue ? source.ParallelGroupId.Value.ToString() : string.Empty,
             ExecutionCondition = source.ExecutionCondition,
             HasExecutionCondition = source.HasExecutionCondition,
-            EntryValidation = source.EntryValidation,
-            HasEntryValidation = source.HasEntryValidation,
             Transformation = source.Transformation,
             HasTransformation = source.HasTransformation,
             Configuration = source.Configuration,

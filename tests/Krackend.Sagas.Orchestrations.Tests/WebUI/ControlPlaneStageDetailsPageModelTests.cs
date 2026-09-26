@@ -213,12 +213,11 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         var model = fixture.CreateModel();
 
         var editResult = await model.OnGetTaskForEditAsync(task.Id, CancellationToken.None);
-        var conditionResult = await model.OnGetTaskExecutionConditionForEditAsync(task.Id, CancellationToken.None);
         var transformationResult = await model.OnGetTaskTransformationForEditAsync(task.Id, CancellationToken.None);
 
         AssertJsonString(editResult, "TaskId", task.Id);
         AssertJsonString(editResult, "MessagingTopic", "payments.capture");
-        AssertJsonString(conditionResult, "conditionDslExpression", "$trigger.total > 0");
+        AssertJsonString(editResult, "ConditionDslExpression", "$trigger.total > 0");
         AssertJsonString(transformationResult, "transformationDsl", "map payment request");
         AssertJsonString(transformationResult, "sourceContextHash", "ctx-hash");
         var editPayload = SerializeJsonResult(editResult);
@@ -226,7 +225,6 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Equal(9d, editPayload.RootElement.GetProperty("TimeoutReconcileDelaySeconds").GetDouble());
         Assert.Equal("PAYMENT_TIMEOUT", editPayload.RootElement.GetProperty("TimeoutReconcileRetryableErrorCodes").GetString());
         Assert.IsType<BadRequestResult>(await model.OnGetTaskForEditAsync(string.Empty, CancellationToken.None));
-        Assert.IsType<BadRequestResult>(await model.OnGetTaskExecutionConditionForEditAsync(string.Empty, CancellationToken.None));
         Assert.IsType<BadRequestResult>(await model.OnGetTaskTransformationForEditAsync(string.Empty, CancellationToken.None));
     }
 
@@ -574,15 +572,10 @@ public sealed class ControlPlaneStageDetailsPageModelTests
     }
 
     [Fact]
-    public async Task TaskConditionTransformationAndSchemaContextEndpointsUpdateAndSerializePayloads()
+    public async Task TaskTransformationAndSchemaContextEndpointsUpdateAndSerializePayloads()
     {
         var fixture = new Fixture();
-        SetTaskExecutionConditionCommand? conditionCommand = null;
         SetTaskTransformationCommand? transformationCommand = null;
-        fixture.TaskService.SetExecutionCondition(
-                Arg.Do<SetTaskExecutionConditionCommand>(command => conditionCommand = command),
-                Arg.Any<CancellationToken>())
-            .Returns(true);
         fixture.TaskService.SetTransformation(
                 Arg.Do<SetTaskTransformationCommand>(command => transformationCommand = command),
                 Arg.Any<CancellationToken>())
@@ -611,17 +604,9 @@ public sealed class ControlPlaneStageDetailsPageModelTests
                     TaskKey = "payments.capture",
                     SchemaBinding = SchemaBinding("payments.capture.request", SchemaContractKind.CommandRequest)
                 }
-            });
+        });
         var model = fixture.CreateModel();
 
-        var conditionResult = await model.OnPostSetTaskExecutionConditionAsync(
-            new DetailsModel.SetTaskExecutionConditionRequest
-            {
-                TaskId = "task-1",
-                HasExecutionCondition = true,
-                ConditionDslExpression = "$trigger.ok"
-            },
-            CancellationToken.None);
         var transformationResult = await model.OnPostSetTaskTransformationAsync(
             new DetailsModel.SetTaskTransformationRequest
             {
@@ -634,10 +619,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
             CancellationToken.None);
         var schemaContextResult = await model.OnGetTaskSchemaContextAsync("version-1", "task-1", CancellationToken.None);
 
-        AssertJsonBoolean(conditionResult, "success", true);
         AssertJsonBoolean(transformationResult, "success", true);
-        Assert.NotNull(conditionCommand);
-        Assert.Equal("$trigger.ok", ((DslConditionConfiguration)conditionCommand!.ExecutionCondition!.Configuration).Expression.ToString());
         Assert.NotNull(transformationCommand);
         var transformation = Assert.IsType<DslTransformationConfiguration>(transformationCommand!.Transformation!.Configuration);
         Assert.Equal("map request", transformation.Dsl);
@@ -648,7 +630,6 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Equal("ctx-signature", schemaJson.RootElement.GetProperty("signature").GetString());
         Assert.Equal("trigger", schemaJson.RootElement.GetProperty("sources")[0].GetProperty("alias").GetString());
         Assert.Equal("payments.capture.request", schemaJson.RootElement.GetProperty("target").GetProperty("schema").GetProperty("contractKey").GetString());
-        Assert.IsType<BadRequestResult>(await model.OnPostSetTaskExecutionConditionAsync(null!, CancellationToken.None));
         Assert.IsType<BadRequestResult>(await model.OnPostSetTaskTransformationAsync(null!, CancellationToken.None));
         Assert.IsType<BadRequestResult>(await model.OnGetTaskSchemaContextAsync(string.Empty, "task-1", CancellationToken.None));
     }
@@ -1018,7 +999,6 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         var model = fixture.CreateModel();
 
         Assert.IsType<NotFoundResult>(await model.OnGetTaskForEditAsync("missing-task", CancellationToken.None));
-        Assert.IsType<NotFoundResult>(await model.OnGetTaskExecutionConditionForEditAsync("missing-task", CancellationToken.None));
         Assert.IsType<NotFoundResult>(await model.OnGetTaskTransformationForEditAsync("missing-task", CancellationToken.None));
         Assert.IsType<NotFoundResult>(await model.OnGetParallelGroupForEditAsync("missing-group", CancellationToken.None));
         Assert.IsType<NotFoundResult>(await model.OnPostUpdateParallelGroupAsync(

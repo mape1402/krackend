@@ -6,8 +6,8 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrationButterMorphDesignerContextParser
 {
     private const string TaskTransformationPrefix = "orchestration-task-transform";
-    private const string TaskEntryValidationPrefix = "orchestration-task-entry-validation";
-    private const string StageEntryValidationPrefix = "orchestration-stage-entry-validation";
+    private const string TaskExecutionConditionPrefix = "orchestration-task-execution-condition";
+    private const string StageExecutionConditionPrefix = "orchestration-stage-execution-condition";
 
     /// <inheritdoc />
     public string FormatTaskTransformation(string orchestrationVersionId, string taskDefinitionId)
@@ -16,15 +16,15 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
     }
 
     /// <inheritdoc />
-    public string FormatTaskEntryValidation(string orchestrationVersionId, string taskDefinitionId)
+    public string FormatTaskExecutionCondition(string orchestrationVersionId, string taskDefinitionId)
     {
-        return Format(TaskEntryValidationPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
+        return Format(TaskExecutionConditionPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
     }
 
     /// <inheritdoc />
-    public string FormatStageEntryValidation(string orchestrationVersionId, string stageDefinitionId)
+    public string FormatStageExecutionCondition(string orchestrationVersionId, string stageDefinitionId)
     {
-        return Format(StageEntryValidationPrefix, orchestrationVersionId, stageDefinitionId, nameof(stageDefinitionId));
+        return Format(StageExecutionConditionPrefix, orchestrationVersionId, stageDefinitionId, nameof(stageDefinitionId));
     }
 
     /// <inheritdoc />
@@ -34,16 +34,16 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
     }
 
     /// <inheritdoc />
-    public bool TryParseTaskEntryValidation(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    public bool TryParseTaskExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context)
     {
-        return TryParseTaskContext(contextKey, TaskEntryValidationPrefix, out context);
+        return TryParseTaskContext(contextKey, TaskExecutionConditionPrefix, out context);
     }
 
     /// <inheritdoc />
-    public bool TryParseStageEntryValidation(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    public bool TryParseStageExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context)
     {
         context = null;
-        if (!TryParse(contextKey, StageEntryValidationPrefix, out var versionId, out var stageId))
+        if (!TryParse(contextKey, StageExecutionConditionPrefix, out var versionId, out var stageId))
         {
             return false;
         }

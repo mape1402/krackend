@@ -89,13 +89,7 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             stage.TaskDefinitions.OrderBy(x => x.Order).Select(MapTask).ToArray(),
             stage.ParallelGroups.Select(MapParallelGroup).ToArray(),
             stage.BranchRules.Select(MapBranchRule).ToArray(),
-            stage.Description)
-        {
-            EntryValidation = MapValidation(
-                stage.EntryValidation,
-                stage.HasEntryValidation,
-                "StageEntryValidationFailed")
-        };
+            stage.Description);
 
     private static ParallelGroupArtifact MapParallelGroup(ParallelGroupDefinition group)
         => new(
@@ -130,13 +124,7 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             task.OnErrorPolicy,
             MapCompensation(task.CompensationDefinition),
             task.DispatchType,
-            task.IsEnabled)
-        {
-            EntryValidation = MapValidation(
-                task.EntryValidation,
-                task.HasEntryValidation,
-                "TaskEntryValidationFailed")
-        };
+            task.IsEnabled);
 
     private static CompensationArtifact MapCompensation(CompensationDefinition compensation)
         => compensation is null

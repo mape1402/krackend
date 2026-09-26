@@ -36,8 +36,4 @@ public sealed class StageDefinitionEntity
     /// Gets or sets ExecutionCondition.
     /// </summary>
     public ExecutionConditionJsonModel ExecutionCondition { get; set; } = new();
-    /// <summary>
-    /// Gets or sets EntryValidation.
-    /// </summary>
-    public ValidationDefinitionJsonModel EntryValidation { get; set; }
 }

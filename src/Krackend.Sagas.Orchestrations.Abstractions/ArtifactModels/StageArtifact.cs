@@ -14,10 +14,4 @@ public sealed record StageArtifact(
     IReadOnlyList<TaskArtifact> TaskDefinitions,
     IReadOnlyList<ParallelGroupArtifact> ParallelGroups,
     IReadOnlyList<BranchRuleArtifact> BranchRules,
-    string Description = "")
-{
-    /// <summary>
-    /// Gets the validation executed before the stage starts.
-    /// </summary>
-    public ValidationArtifact EntryValidation { get; init; }
-}
+    string Description = "");

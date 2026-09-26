@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums;
+using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
@@ -35,6 +36,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private const string RuntimeInboundSecret = "KrackendLocalRuntimeInboundSecret_ChangeMe";
     private const string DesignInboundScopes = "release:read artifact:read artifact:ack connection:validate";
     private const string DesignOutboundScopes = "artifact:push connection:validate";
+    private const string OrchestrationVersionSnapshotArtifactType = "orchestration-version-snapshot";
     private const string SaleCompletionTransformationDsl =
         """
         target {
@@ -168,6 +170,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     private readonly IOrchestrationVersionArtifactSnapshotBuilder _artifactSnapshotBuilder;
     private readonly IOrchestrationArtifactPayloadFactory _artifactPayloadFactory;
     private readonly IArtifactPublicationApplicationService _artifactPublicationService;
+    private readonly IArtifactRepository _artifactRepository;
     private readonly IConnectionSecretHasher _secretHasher;
     private readonly IControlPlaneRuntimeNodeSecretProtector _secretProtector;
 
@@ -179,6 +182,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         IOrchestrationVersionArtifactSnapshotBuilder artifactSnapshotBuilder,
         IOrchestrationArtifactPayloadFactory artifactPayloadFactory,
         IArtifactPublicationApplicationService artifactPublicationService,
+        IArtifactRepository artifactRepository,
         IConnectionSecretHasher secretHasher,
         IControlPlaneRuntimeNodeSecretProtector secretProtector)
     {
@@ -189,6 +193,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         _artifactSnapshotBuilder = artifactSnapshotBuilder ?? throw new ArgumentNullException(nameof(artifactSnapshotBuilder));
         _artifactPayloadFactory = artifactPayloadFactory ?? throw new ArgumentNullException(nameof(artifactPayloadFactory));
         _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
+        _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _secretHasher = secretHasher ?? throw new ArgumentNullException(nameof(secretHasher));
         _secretProtector = secretProtector ?? throw new ArgumentNullException(nameof(secretProtector));
     }
@@ -197,27 +202,28 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
     {
         var now = DateTime.UtcNow;
 
-        await UpsertSecurityTeamAsync(now, cancellationToken);
-        await UpsertDomainAsync(now, cancellationToken);
+        var ownerTeamId = await UpsertSecurityTeamAsync(now, cancellationToken);
+        var domainId = await UpsertDomainAsync(now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        var definition = await UpsertOrchestrationDefinitionAsync(now, cancellationToken);
+        var definition = await UpsertOrchestrationDefinitionAsync(domainId, ownerTeamId, now, cancellationToken);
 
+        var seededVersionIds = new List<Id>(SeedDefinitions.Count);
         foreach (var seedDefinition in SeedDefinitions)
         {
-            await UpsertOrchestrationVersionAsync(definition.Id, seedDefinition, now, cancellationToken);
+            seededVersionIds.Add(await UpsertOrchestrationVersionAsync(definition.Id, seedDefinition, now, cancellationToken));
         }
 
-        await UpsertDistributionAsync(now, cancellationToken);
+        await UpsertDistributionAsync(definition.Id, now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        foreach (var seedDefinition in SeedDefinitions)
+        foreach (var versionId in seededVersionIds)
         {
-            await EnsureArtifactPublishedAsync(seedDefinition.VersionId, now, cancellationToken);
+            await EnsureArtifactPublishedAsync(versionId, now, cancellationToken);
         }
     }
 
-    private async Task UpsertSecurityTeamAsync(DateTime now, CancellationToken cancellationToken)
+    private async Task<Id> UpsertSecurityTeamAsync(DateTime now, CancellationToken cancellationToken)
     {
         var team = await _dbContext.Teams.FirstOrDefaultAsync(x => x.Key == OwnerTeamKey, cancellationToken);
 
@@ -233,16 +239,18 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 CreatedOnUtc = now
             });
 
-            return;
+            return OwnerTeamId;
         }
 
         team.DisplayName = OwnerTeamName;
         team.Description = "Owns the sales demo orchestrations.";
         team.IsActive = true;
         team.UpdatedOnUtc = now;
+
+        return team.Id;
     }
 
-    private async Task UpsertDomainAsync(DateTime now, CancellationToken cancellationToken)
+    private async Task<Id> UpsertDomainAsync(DateTime now, CancellationToken cancellationToken)
     {
         var domain = await _dbContext.Domains.FirstOrDefaultAsync(x => x.Key == DomainKey, cancellationToken);
 
@@ -258,16 +266,20 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 CreatedOnUtc = now
             });
 
-            return;
+            return DomainId;
         }
 
         domain.DisplayName = DomainName;
         domain.Description = "Sales demo bounded context.";
         domain.IsActive = true;
         domain.UpdatedOnUtc = now;
+
+        return domain.Id;
     }
 
     private async Task<OrchestrationDefinitionEntity> UpsertOrchestrationDefinitionAsync(
+        Id domainId,
+        Id ownerTeamId,
         DateTime now,
         CancellationToken cancellationToken)
     {
@@ -283,13 +295,13 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Key = OrchestrationKey,
                 Name = OrchestrationName,
                 Domain = DomainKey,
-                DomainId = DomainId,
+                DomainId = domainId,
                 IsActive = true,
                 CreatedOnUtc = now,
                 CreatedBy = CreatedBy,
                 Description = "Sample orchestration used to exercise the runtime happy path.",
                 OwnerTeam = OwnerTeamKey,
-                OwnerTeamId = OwnerTeamId,
+                OwnerTeamId = ownerTeamId,
                 Tags = ["demo", "sales", "happy-path"]
             };
 
@@ -299,19 +311,19 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
 
         definition.Name = OrchestrationName;
         definition.Domain = DomainKey;
-        definition.DomainId = DomainId;
+        definition.DomainId = domainId;
         definition.IsActive = true;
         definition.UpdatedOnUtc = now;
         definition.UpdatedBy = CreatedBy;
         definition.Description = "Sample orchestration used to exercise the runtime happy path.";
         definition.OwnerTeam = OwnerTeamKey;
-        definition.OwnerTeamId = OwnerTeamId;
+        definition.OwnerTeamId = ownerTeamId;
         definition.Tags = ["demo", "sales", "happy-path"];
 
         return definition;
     }
 
-    private async Task UpsertOrchestrationVersionAsync(
+    private async Task<Id> UpsertOrchestrationVersionAsync(
         Id definitionId,
         DesignHostSeedDefinition seedDefinition,
         DateTime now,
@@ -361,6 +373,8 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         {
             await UpsertStageAsync(versionEntity.Id, seedDefinition, stage, cancellationToken);
         }
+
+        return versionEntity.Id;
     }
 
     private async Task UpsertTriggerAsync(
@@ -647,12 +661,12 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
             DispatchType = TaskDispatchType.FireAndForget
         };
 
-    private async Task UpsertDistributionAsync(DateTime now, CancellationToken cancellationToken)
+    private async Task UpsertDistributionAsync(Id definitionId, DateTime now, CancellationToken cancellationToken)
     {
         var environment = await _dbContext.DistributionEnvironments.FirstOrDefaultAsync(x => x.Code == EnvironmentCode, cancellationToken);
         if (environment is null)
         {
-            _dbContext.DistributionEnvironments.Add(new DistributionEnvironmentEntity
+            environment = new DistributionEnvironmentEntity
             {
                 Id = EnvironmentId,
                 Name = "Dev",
@@ -660,7 +674,9 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Description = "Local development environment seeded for demos.",
                 IsEnabled = true,
                 CreatedAtUtc = now
-            });
+            };
+
+            _dbContext.DistributionEnvironments.Add(environment);
         }
         else
         {
@@ -673,12 +689,12 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         var runtimeNode = await _dbContext.RuntimeNodes.FirstOrDefaultAsync(x => x.Code == RuntimeNodeCode, cancellationToken);
         if (runtimeNode is null)
         {
-            _dbContext.RuntimeNodes.Add(new RuntimeNodeEntity
+            runtimeNode = new RuntimeNodeEntity
             {
                 Id = RuntimeNodeId,
                 Name = "Local Runtime",
                 Code = RuntimeNodeCode,
-                EnvironmentId = EnvironmentId,
+                EnvironmentId = environment.Id,
                 DistributionMode = DistributionMode.HybridSync,
                 EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227",
                 EndpointApiPath = "runtime/artifacts/deploy",
@@ -705,12 +721,14 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 OutboundCredentialStatus = ConnectionCredentialStatus.Active,
                 OutboundCredentialImportedAtUtc = now,
                 RegisteredAtUtc = now
-            });
+            };
+
+            _dbContext.RuntimeNodes.Add(runtimeNode);
         }
         else
         {
             runtimeNode.Name = "Local Runtime";
-            runtimeNode.EnvironmentId = EnvironmentId;
+            runtimeNode.EnvironmentId = environment.Id;
             runtimeNode.DistributionMode = DistributionMode.HybridSync;
             runtimeNode.EndpointBaseUri = _configuration["SeedData:RuntimeNode:EndpointBaseUri"] ?? "http://localhost:5227";
             runtimeNode.EndpointApiPath = "runtime/artifacts/deploy";
@@ -741,15 +759,15 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         }
 
         var policy = await _dbContext.OrchestrationAllowedRuntimeNodes.FirstOrDefaultAsync(
-            x => x.OrchestrationDefinitionId == DefinitionId.ToString() && x.RuntimeNodeId == RuntimeNodeId,
+            x => x.OrchestrationDefinitionId == definitionId.ToString() && x.RuntimeNodeId == runtimeNode.Id,
             cancellationToken);
         if (policy is null)
         {
             _dbContext.OrchestrationAllowedRuntimeNodes.Add(new OrchestrationAllowedRuntimeNodeEntity
             {
                 Id = RuntimeNodePolicyId,
-                OrchestrationDefinitionId = DefinitionId.ToString(),
-                RuntimeNodeId = RuntimeNodeId,
+                OrchestrationDefinitionId = definitionId.ToString(),
+                RuntimeNodeId = runtimeNode.Id,
                 CreatedAtUtc = now,
                 CreatedBy = CreatedBy
             });
@@ -762,6 +780,16 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         CancellationToken cancellationToken)
     {
         var version = await _versionRepository.GetById(versionId, cancellationToken);
+        var existing = await _artifactRepository.GetLatestForOrchestrationVersion(
+            version.Id,
+            OrchestrationVersionSnapshotArtifactType,
+            cancellationToken);
+
+        if (existing is not null)
+        {
+            return;
+        }
+
         var definition = await _definitionRepository.GetById(version.OrchestrationDefinitionId, cancellationToken);
         var snapshot = await _artifactSnapshotBuilder.Build(version, cancellationToken);
         var payloadJson = _artifactPayloadFactory.CreatePayloadJson(definition, snapshot);

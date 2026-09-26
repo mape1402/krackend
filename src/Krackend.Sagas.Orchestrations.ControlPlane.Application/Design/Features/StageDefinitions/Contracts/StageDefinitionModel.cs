@@ -39,13 +39,5 @@ public sealed class StageDefinitionModel
     /// Gets or sets whether execution condition is enabled.
     /// </summary>
     public bool HasExecutionCondition { get; set; }
-    /// <summary>
-    /// Gets or sets the entry validation.
-    /// </summary>
-    public ValidationDefinition EntryValidation { get; set; }
-    /// <summary>
-    /// Gets or sets whether entry validation is enabled.
-    /// </summary>
-    public bool HasEntryValidation { get; set; }
 }
 

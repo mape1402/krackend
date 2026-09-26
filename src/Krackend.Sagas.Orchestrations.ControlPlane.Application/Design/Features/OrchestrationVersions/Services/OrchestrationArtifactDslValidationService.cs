@@ -49,13 +49,6 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
                     $"stage:{stage.Key}:condition");
             }
 
-            if (stage.HasEntryValidation)
-            {
-                ValidateValidation(
-                    stage.EntryValidation,
-                    $"stage:{stage.Key}:entry-validation");
-            }
-
             foreach (var task in stage.TaskDefinitions.Where(x => x.IsEnabled).OrderBy(x => x.Order))
             {
                 ValidateTask(stage, task);
@@ -95,13 +88,6 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
             ValidateCondition(
                 task.ExecutionCondition,
                 $"stage:{stage.Key}:task:{task.Key}:condition");
-        }
-
-        if (task.HasEntryValidation)
-        {
-            ValidateValidation(
-                task.EntryValidation,
-                $"stage:{stage.Key}:task:{task.Key}:entry-validation");
         }
 
         if (task.Configuration is MessagingTaskConfiguration messaging)
@@ -251,7 +237,28 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
             return;
         }
 
+        if (IsValidationDsl(expression))
+        {
+            ParseValidationDsl(expression, path);
+            return;
+        }
+
         Analyze(BuildConditionDsl(expression), path);
+    }
+
+    private void ParseValidationDsl(string dsl, string path)
+    {
+        try
+        {
+            _dslParser.Parse(new DslDefinition { Content = dsl });
+        }
+        catch (Exception exception)
+        {
+            throw new OrchestrationArtifactDslValidationException(
+                path,
+                $"DSL at '{path}' could not be parsed: {exception.Message}",
+                SerializeException(exception));
+        }
     }
 
     private void Analyze(string dsl, string path)
@@ -315,6 +322,9 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
              Result: {{expression}}
            }
            """;
+
+    private static bool IsValidationDsl(string expression)
+        => expression.TrimStart().StartsWith("validate", StringComparison.OrdinalIgnoreCase);
 
     private static bool ContainsExternalSourceReference(string dsl)
     {

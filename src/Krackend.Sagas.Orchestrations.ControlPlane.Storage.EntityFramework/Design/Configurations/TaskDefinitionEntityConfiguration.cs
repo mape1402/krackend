@@ -36,11 +36,6 @@ internal sealed class TaskDefinitionEntityConfiguration : IEntityTypeConfigurati
             .HasConversion(
                 value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
                 value => JsonSerializer.Deserialize<ExecutionConditionJsonModel>(value, (JsonSerializerOptions)null));
-        builder.Property(x => x.EntryValidation)
-            .HasColumnName("EntryValidationJson")
-            .HasConversion(
-                value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
-                value => JsonSerializer.Deserialize<ValidationDefinitionJsonModel>(value, (JsonSerializerOptions)null));
         builder.Property(x => x.Transformation)
             .HasColumnName("TransformationJson")
             .HasConversion(

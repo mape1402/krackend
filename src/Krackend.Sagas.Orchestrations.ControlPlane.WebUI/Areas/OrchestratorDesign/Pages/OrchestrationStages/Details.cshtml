@@ -90,7 +90,6 @@
                         @foreach (var groupedTask in groupTasks)
                         {
                             var groupedTaskHasExecutionCondition = groupedTask.HasExecutionCondition;
-                            var groupedTaskHasEntryValidation = groupedTask.HasEntryValidation;
                             var groupedTaskHasTransformation = groupedTask.HasTransformation;
 
                             <article class="od-pipeline-item" data-task-id="@groupedTask.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
@@ -102,15 +101,6 @@
                                             data-task-id="@groupedTask.Id">
                                         <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                                             <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
-                                        </svg>
-                                    </button>
-                                    <button type="button"
-                                            class="od-task-side-btn od-task-entry-validation-btn js-task-entry-validation-btn @(groupedTaskHasEntryValidation ? "od-entry-validation-btn-active" : "od-entry-validation-btn-inactive")"
-                                            title="Entry validation"
-                                            aria-label="Entry validation"
-                                            data-task-id="@groupedTask.Id">
-                                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                                            <path d="M8 1.2 2.5 3.4v3.9c0 3.2 2.1 6.1 5.5 7.5 3.4-1.4 5.5-4.3 5.5-7.5V3.4L8 1.2Zm2.7 5.4-3.2 3.5a.6.6 0 0 1-.9 0L5.2 8.7a.6.6 0 1 1 .9-.8L7 8.8l2.8-3a.6.6 0 1 1 .9.8Z" />
                                         </svg>
                                     </button>
                                     <button type="button"
@@ -174,7 +164,6 @@
             }
 
             var taskHasExecutionCondition = task.HasExecutionCondition;
-            var taskHasEntryValidation = task.HasEntryValidation;
             var taskHasTransformation = task.HasTransformation;
 
             <article class="od-pipeline-item" data-task-id="@task.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
@@ -186,15 +175,6 @@
                             data-task-id="@task.Id">
                         <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                             <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
-                        </svg>
-                    </button>
-                    <button type="button"
-                            class="od-task-side-btn od-task-entry-validation-btn js-task-entry-validation-btn @(taskHasEntryValidation ? "od-entry-validation-btn-active" : "od-entry-validation-btn-inactive")"
-                            title="Entry validation"
-                            aria-label="Entry validation"
-                            data-task-id="@task.Id">
-                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                            <path d="M8 1.2 2.5 3.4v3.9c0 3.2 2.1 6.1 5.5 7.5 3.4-1.4 5.5-4.3 5.5-7.5V3.4L8 1.2Zm2.7 5.4-3.2 3.5a.6.6 0 0 1-.9 0L5.2 8.7a.6.6 0 1 1 .9-.8L7 8.8l2.8-3a.6.6 0 1 1 .9.8Z" />
                         </svg>
                     </button>
                     <button type="button"
@@ -264,44 +244,6 @@
         }
     </div>
 </section>
-
-<div class="modal fade" id="taskExecutionConditionModal" tabindex="-1" aria-labelledby="taskExecutionConditionModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="taskExecutionConditionModalLabel">Execution condition</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="taskExecutionConditionTaskId" />
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" id="taskHasExecutionConditionQuick" />
-                    <label class="form-check-label" for="taskHasExecutionConditionQuick">Enable execution condition</label>
-                </div>
-
-                <div id="taskExecutionConditionSectionQuick" class="row g-2">
-                    <div class="col-md-12">
-                        <label class="form-label" for="taskConditionEngineQuick">Condition engine</label>
-                        <select class="form-select" id="taskConditionEngineQuick" asp-items="Model.EngineTypes"></select>
-                    </div>
-
-                    <div class="task-condition-config-block col-12" data-engine="DSL">
-                        <label class="form-label" for="taskConditionDslExpressionQuick">DSL expression</label>
-                        <input class="form-control" id="taskConditionDslExpressionQuick" />
-                    </div>
-                </div>
-
-                <div id="taskConditionUnsupportedEngineWarningQuick" class="alert alert-warning mt-3 d-none mb-0">
-                    Selected condition engine does not define specific configuration fields yet.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="taskExecutionConditionSaveButton">Save</button>
-            </div>
-        </div>
-    </div>
-</div>
 
 <div class="modal fade" id="editParallelGroupModal" tabindex="-1" aria-labelledby="editParallelGroupModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -895,15 +837,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const editGroupJoinPolicyInput = document.getElementById('editParallelGroupJoinPolicy');
     const editGroupMaxParallelAgentsInput = document.getElementById('editParallelGroupMaxParallelAgents');
     const saveParallelGroupButton = document.getElementById('saveParallelGroupButton');
-    const executionConditionModalElement = document.getElementById('taskExecutionConditionModal');
-    const executionConditionTaskIdInput = document.getElementById('taskExecutionConditionTaskId');
-    const executionConditionEnabledInput = document.getElementById('taskHasExecutionConditionQuick');
-    const executionConditionEngineInput = document.getElementById('taskConditionEngineQuick');
-    const executionConditionDslExpressionInput = document.getElementById('taskConditionDslExpressionQuick');
-    const executionConditionSection = document.getElementById('taskExecutionConditionSectionQuick');
-    const executionConditionWarning = document.getElementById('taskConditionUnsupportedEngineWarningQuick');
-    const saveExecutionConditionButton = document.getElementById('taskExecutionConditionSaveButton');
-    setStageModalReadOnly(executionConditionModalElement, !canEdit, saveExecutionConditionButton);
     setStageModalReadOnly(editGroupModalElement, !canEdit, saveParallelGroupButton);
 
     let draggedTask = null;
@@ -1022,54 +955,28 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         return response.json();
     }
 
-    function refreshExecutionConditionConfigByEngine() {
-        if (!executionConditionEngineInput || !executionConditionEnabledInput || !executionConditionWarning) {
-            return;
-        }
-
-        const selectedEngine = (executionConditionEngineInput.value || '').toLowerCase();
-        let hasVisibleConfig = false;
-        document.querySelectorAll('.task-condition-config-block[data-engine]').forEach(element => {
-            const currentEngine = (element.getAttribute('data-engine') || '').toLowerCase();
-            const visible = currentEngine === selectedEngine;
-            element.classList.toggle('d-none', !visible);
-            hasVisibleConfig = hasVisibleConfig || visible;
-        });
-
-        executionConditionWarning.classList.toggle('d-none', hasVisibleConfig || !executionConditionEnabledInput.checked);
-    }
-
-    function refreshExecutionConditionSectionVisibility() {
-        if (!executionConditionSection || !executionConditionEnabledInput || !executionConditionWarning) {
-            return;
-        }
-
-        executionConditionSection.classList.toggle('d-none', !executionConditionEnabledInput.checked);
-        if (!executionConditionEnabledInput.checked) {
-            executionConditionWarning.classList.add('d-none');
-            return;
-        }
-
-        refreshExecutionConditionConfigByEngine();
-    }
-
     async function openTaskExecutionConditionModal(taskId) {
-        if (!executionConditionTaskIdInput || !executionConditionEnabledInput || !executionConditionEngineInput || !executionConditionDslExpressionInput || !executionConditionModalElement || !window.bootstrap?.Modal) {
+        if (!taskId) {
             return;
         }
 
-        const response = await fetch(`${window.location.pathname}?handler=TaskExecutionConditionForEdit&taskId=${encodeURIComponent(taskId)}`);
-        if (!response.ok) {
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph condition designer could not be loaded.',
+                type: 'error'
+            });
             return;
         }
 
-        const payload = await response.json();
-        executionConditionTaskIdInput.value = payload.taskId || taskId;
-        executionConditionEnabledInput.checked = !!payload.hasExecutionCondition;
-        executionConditionEngineInput.value = payload.conditionEngine || 'DSL';
-        executionConditionDslExpressionInput.value = payload.conditionDslExpression || 'true';
-        refreshExecutionConditionSectionVisibility();
-        window.bootstrap.Modal.getOrCreateInstance(executionConditionModalElement).show();
+        const mode = canEdit ? 'edit' : 'view';
+        const contextKey = `orchestration-task-execution-condition:${orchestrationStageVersionId}:${taskId}`;
+        const designerUrl = `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
+        window.ButterMorphHost.openFrame(designerUrl, {
+            title: 'ButterMorph execution condition',
+            width: '96vw',
+            height: '92vh'
+        });
     }
 
     async function openTaskTransformationModal(taskId) {
@@ -1091,30 +998,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         const designerUrl = `/buttermorph/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
         window.ButterMorphHost.openFrame(designerUrl, {
             title: 'ButterMorph transformation',
-            width: '96vw',
-            height: '92vh'
-        });
-    }
-
-    async function openTaskEntryValidationModal(taskId) {
-        if (!taskId) {
-            return;
-        }
-
-        if (!window.ButterMorphHost?.openFrame) {
-            window.OrchestratorMessages?.notify({
-                title: 'ButterMorph unavailable',
-                message: 'The ButterMorph validation designer could not be loaded.',
-                type: 'error'
-            });
-            return;
-        }
-
-        const mode = canEdit ? 'edit' : 'view';
-        const contextKey = `orchestration-task-entry-validation:${orchestrationStageVersionId}:${taskId}`;
-        const designerUrl = `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
-        window.ButterMorphHost.openFrame(designerUrl, {
-            title: 'ButterMorph entry validation',
             width: '96vw',
             height: '92vh'
         });
@@ -1273,18 +1156,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
             return;
         }
 
-        const entryValidationButton = event.target.closest('.js-task-entry-validation-btn');
-        if (entryValidationButton) {
-            event.preventDefault();
-            const taskId = entryValidationButton.getAttribute('data-task-id') || '';
-            if (!taskId) {
-                return;
-            }
-
-            await openTaskEntryValidationModal(taskId);
-            return;
-        }
-
         const transformationButton = event.target.closest('.js-task-transformation-btn');
         if (transformationButton) {
             event.preventDefault();
@@ -1404,49 +1275,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
 
         toggle.disabled = false;
     });
-
-    if (executionConditionEnabledInput) {
-        executionConditionEnabledInput.addEventListener('change', refreshExecutionConditionSectionVisibility);
-    }
-
-    if (executionConditionEngineInput) {
-        executionConditionEngineInput.addEventListener('change', refreshExecutionConditionConfigByEngine);
-    }
-
-    if (saveExecutionConditionButton) {
-        saveExecutionConditionButton.addEventListener('click', async () => {
-            if (!canEdit) {
-                return;
-            }
-
-            if (!executionConditionTaskIdInput || !executionConditionEnabledInput || !executionConditionEngineInput || !executionConditionDslExpressionInput || !executionConditionModalElement || !window.bootstrap?.Modal) {
-                return;
-            }
-
-            const taskId = executionConditionTaskIdInput.value || '';
-            if (!taskId) {
-                return;
-            }
-
-            saveExecutionConditionButton.disabled = true;
-            try {
-                const result = await postJson('SetTaskExecutionCondition', {
-                    taskId: taskId,
-                    hasExecutionCondition: !!executionConditionEnabledInput.checked,
-                    conditionEngine: executionConditionEngineInput.value || 'DSL',
-                    conditionDslExpression: executionConditionDslExpressionInput.value || 'true'
-                });
-
-                if (!result?.success) {
-                    return;
-                }
-
-                window.location.reload();
-            } finally {
-                saveExecutionConditionButton.disabled = false;
-            }
-        });
-    }
 
     window.addEventListener('message', event => {
         if (event.origin !== window.location.origin || !event.data) {

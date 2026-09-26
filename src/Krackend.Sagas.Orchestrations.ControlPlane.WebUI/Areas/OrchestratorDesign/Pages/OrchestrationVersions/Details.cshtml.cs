@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
-using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
@@ -72,9 +71,6 @@ public sealed class DetailsModel : PageModel
 
     public IEnumerable<SelectListItem> TriggerTypes =>
         new[] { TriggerType.Event }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
-
-    public IEnumerable<SelectListItem> EngineTypes =>
-        new[] { EngineType.DSL }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public string ErrorMessage { get; private set; } = string.Empty;
 
@@ -249,60 +245,6 @@ public sealed class DetailsModel : PageModel
     {
         await _stageService.Delete(new DeleteStageDefinitionCommand(stageId), cancellationToken);
         return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
-    }
-
-    /// <summary>
-    /// Loads execution condition payload for one stage.
-    /// </summary>
-    public async Task<IActionResult> OnGetStageExecutionConditionForEditAsync(string stageId, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(stageId))
-        {
-            return BadRequest();
-        }
-
-        var stage = await _stageService.GetById(new GetStageDefinitionByIdQuery(stageId), cancellationToken);
-        if (stage is null)
-        {
-            return NotFound();
-        }
-
-        return new JsonResult(BuildStageExecutionConditionEditPayload(stage));
-    }
-
-    /// <summary>
-    /// Updates execution condition of one stage.
-    /// </summary>
-    public async Task<IActionResult> OnPostSetStageExecutionConditionAsync([FromBody] SetStageExecutionConditionRequest request, CancellationToken cancellationToken = default)
-    {
-        if (request is null || string.IsNullOrWhiteSpace(request.StageId))
-        {
-            return BadRequest();
-        }
-
-        var executionCondition = request.HasExecutionCondition
-            ? BuildExecutionCondition(request.ConditionEngine, request.ConditionDslExpression)
-            : null;
-
-        var updated = await _stageService.SetExecutionCondition(
-            new SetStageExecutionConditionCommand(request.StageId, executionCondition),
-            cancellationToken);
-
-        var stage = await _stageService.GetById(new GetStageDefinitionByIdQuery(request.StageId), cancellationToken);
-        if (stage is null)
-        {
-            return new JsonResult(new { success = false });
-        }
-
-        var payload = BuildStageExecutionConditionEditPayload(stage);
-        return new JsonResult(new
-        {
-            success = updated,
-            stageId = payload.StageId,
-            hasExecutionCondition = payload.HasExecutionCondition,
-            conditionEngine = payload.ConditionEngine,
-            conditionDslExpression = payload.ConditionDslExpression,
-        });
     }
 
     public async Task<IActionResult> OnPostUpsertTriggerAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
@@ -592,58 +534,6 @@ public sealed class DetailsModel : PageModel
         };
     }
 
-    private static StageExecutionConditionPayload BuildStageExecutionConditionEditPayload(StageDefinitionModel stage)
-    {
-        var dsl = stage.ExecutionCondition?.Configuration as DslConditionConfiguration;
-        var expressionText = dsl?.Expression.ToString() ?? "true";
-        var hasExecutionCondition = stage.HasExecutionCondition;
-
-        return new StageExecutionConditionPayload
-        {
-            StageId = stage.Id,
-            HasExecutionCondition = hasExecutionCondition,
-            ConditionEngine = stage.ExecutionCondition?.Engine.ToString() ?? EngineType.DSL.ToString(),
-            ConditionDslExpression = expressionText,
-        };
-    }
-
-    private sealed class StageExecutionConditionPayload
-    {
-        public string StageId { get; set; } = string.Empty;
-
-        public bool HasExecutionCondition { get; set; }
-
-        public string ConditionEngine { get; set; } = EngineType.DSL.ToString();
-
-        public string ConditionDslExpression { get; set; } = "true";
-    }
-
-    private static ExecutionCondition BuildExecutionCondition(string engineText, string dslExpression)
-    {
-        var engine = ParseEnum(engineText, EngineType.DSL);
-
-        if (engine == EngineType.DSL)
-        {
-            return new ExecutionCondition
-            {
-                Engine = engine,
-                Configuration = new DslConditionConfiguration
-                {
-                    Expression = new Expression(string.IsNullOrWhiteSpace(dslExpression) ? "true" : dslExpression)
-                }
-            };
-        }
-
-        return new ExecutionCondition
-        {
-            Engine = EngineType.DSL,
-            Configuration = new DslConditionConfiguration
-            {
-                Expression = new Expression("true")
-            }
-        };
-    }
-
     private static ITriggerChannel BuildTriggerChannel(
         TriggerType triggerType,
         UpsertTriggerInput input,
@@ -842,29 +732,4 @@ public sealed class DetailsModel : PageModel
         public bool IsEnabled { get; set; }
     }
 
-    /// <summary>
-    /// Represents payload to set stage execution condition.
-    /// </summary>
-    public sealed class SetStageExecutionConditionRequest
-    {
-        /// <summary>
-        /// Gets or sets stage identifier.
-        /// </summary>
-        public string StageId { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Gets or sets a value indicating whether execution condition is active.
-        /// </summary>
-        public bool HasExecutionCondition { get; set; }
-
-        /// <summary>
-        /// Gets or sets execution engine.
-        /// </summary>
-        public string ConditionEngine { get; set; } = EngineType.DSL.ToString();
-
-        /// <summary>
-        /// Gets or sets DSL expression.
-        /// </summary>
-        public string ConditionDslExpression { get; set; } = "true";
-    }
 }

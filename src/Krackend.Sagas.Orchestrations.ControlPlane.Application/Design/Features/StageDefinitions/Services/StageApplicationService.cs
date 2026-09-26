@@ -52,17 +52,6 @@ public sealed class StageApplicationService : IStageApplicationService
     }
 
     /// <summary>
-    /// Updates only entry validation of one stage.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
-    public Task<bool> SetEntryValidation(SetStageEntryValidationCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
-
-    /// <summary>
     /// Deletes a resource.
     /// </summary>
     /// <param name="command">Command to execute.</param>
