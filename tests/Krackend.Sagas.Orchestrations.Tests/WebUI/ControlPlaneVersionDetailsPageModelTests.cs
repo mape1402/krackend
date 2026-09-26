@@ -150,16 +150,6 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
 
         Assert.IsType<BadRequestResult>(await context.Page.OnGetStageForEditAsync(""));
         Assert.IsType<JsonResult>(await context.Page.OnGetStageForEditAsync("stage-0"));
-        Assert.IsType<BadRequestResult>(await context.Page.OnGetStageExecutionConditionForEditAsync(""));
-        Assert.IsType<JsonResult>(await context.Page.OnGetStageExecutionConditionForEditAsync("stage-0"));
-        Assert.IsType<BadRequestResult>(await context.Page.OnPostSetStageExecutionConditionAsync(null!));
-        Assert.IsType<JsonResult>(await context.Page.OnPostSetStageExecutionConditionAsync(new VersionDetailsModel.SetStageExecutionConditionRequest
-        {
-            StageId = "stage-0",
-            HasExecutionCondition = true,
-            ConditionEngine = EngineType.DSL.ToString(),
-            ConditionDslExpression = "$trigger.Valid"
-        }));
         Assert.IsType<RedirectToPageResult>(await context.Page.OnPostDeleteStageAsync("orch-1", "version-1", "stage-1"));
         Assert.IsType<BadRequestResult>(await context.Page.OnPostReorderStagesAsync(null!));
         Assert.IsType<JsonResult>(await context.Page.OnPostReorderStagesAsync(new VersionDetailsModel.ReorderStagesRequest
@@ -168,7 +158,6 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             StageIds = ["stage-1", "stage-0", "missing"]
         }));
 
-        await context.StageService.Received().SetExecutionCondition(Arg.Any<SetStageExecutionConditionCommand>(), Arg.Any<CancellationToken>());
         await context.StageService.Received(1).Delete(Arg.Any<DeleteStageDefinitionCommand>(), Arg.Any<CancellationToken>());
         await context.StageService.Received().Update(Arg.Is<UpdateStageDefinitionCommand>(x => x.Id == "stage-1" && x.Order == 0), Arg.Any<CancellationToken>());
     }
@@ -304,10 +293,8 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     {
         var context = CreateContext();
         var triggerTypes = context.Page.TriggerTypes.ToArray();
-        var engineTypes = context.Page.EngineTypes.ToArray();
 
         Assert.Equal(TriggerType.Event.ToString(), triggerTypes.Single().Value);
-        Assert.Equal(EngineType.DSL.ToString(), engineTypes.Single().Value);
 
         context.Page.TriggerInput = new VersionDetailsModel.UpsertTriggerInput
         {
@@ -331,10 +318,6 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
 
         Assert.IsType<RedirectToPageResult>(result);
 
-        var fallbackCondition = InvokePrivateStatic<ExecutionCondition>(
-            "BuildExecutionCondition",
-            EngineType.Plugin.ToString(),
-            string.Empty);
         var fallbackChannel = InvokePrivateStatic<ITriggerChannel>(
             "BuildTriggerChannel",
             (TriggerType)999,
@@ -351,7 +334,6 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             "not-a-ulid",
             " provider ");
 
-        Assert.Equal("true", ((DslConditionConfiguration)fallbackCondition.Configuration).Expression.ToString());
         var eventChannel = Assert.IsType<EventTriggerChannel>(fallbackChannel);
         Assert.Equal("events.sales.sale.created", eventChannel.Topic);
         Assert.Equal("1.0.0", eventChannel.Version.ToString());
@@ -365,10 +347,10 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     {
         var page = CreateContext().Page;
 
-        Assert.Equal(["SetInReview"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
-        Assert.Equal(["Approve", "ReturnToDraft"], page.GetAllowedActions(OrchestrationVersionStatus.InReview));
-        Assert.Equal(["Deploy", "ReopenReview"], page.GetAllowedActions(OrchestrationVersionStatus.Approved));
-        Assert.Equal(["Deprecate"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
+        Assert.Equal(["SetInReview", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
+        Assert.Equal(["Approve", "ReturnToDraft", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.InReview));
+        Assert.Equal(["Deploy", "ReopenReview", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Approved));
+        Assert.Equal(["Deprecate", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
         Assert.Equal(["Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
         Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
     }

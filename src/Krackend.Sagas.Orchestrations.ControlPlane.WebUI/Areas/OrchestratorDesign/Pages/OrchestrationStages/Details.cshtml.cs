@@ -283,46 +283,6 @@ public sealed class DetailsModel : PageModel
     }
 
     /// <summary>
-    /// Loads execution condition payload for one task.
-    /// </summary>
-    public async Task<IActionResult> OnGetTaskExecutionConditionForEditAsync(string taskId, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(taskId))
-        {
-            return BadRequest();
-        }
-
-        var task = await _taskService.GetById(new GetTaskDefinitionByIdQuery(taskId), cancellationToken);
-        if (task is null)
-        {
-            return NotFound();
-        }
-
-        return new JsonResult(BuildTaskExecutionConditionEditPayload(task));
-    }
-
-    /// <summary>
-    /// Updates execution condition of one task.
-    /// </summary>
-    public async Task<IActionResult> OnPostSetTaskExecutionConditionAsync([FromBody] SetTaskExecutionConditionRequest request, CancellationToken cancellationToken = default)
-    {
-        if (request is null || string.IsNullOrWhiteSpace(request.TaskId))
-        {
-            return BadRequest();
-        }
-
-        var executionCondition = request.HasExecutionCondition
-            ? BuildExecutionCondition(request.ConditionEngine, request.ConditionDslExpression)
-            : null;
-
-        var updated = await _taskService.SetExecutionCondition(
-            new SetTaskExecutionConditionCommand(request.TaskId, executionCondition),
-            cancellationToken);
-
-        return new JsonResult(new { success = updated });
-    }
-
-    /// <summary>
     /// Loads transformation payload for one task.
     /// </summary>
     public async Task<IActionResult> OnGetTaskTransformationForEditAsync(string taskId, CancellationToken cancellationToken = default)
@@ -1039,21 +999,6 @@ public sealed class DetailsModel : PageModel
         }
 
         return payload;
-    }
-
-    private static object BuildTaskExecutionConditionEditPayload(TaskDefinitionModel task)
-    {
-        var dsl = task.ExecutionCondition?.Configuration as DslConditionConfiguration;
-        var expressionText = dsl?.Expression.ToString() ?? "true";
-        var hasExecutionCondition = task.HasExecutionCondition;
-
-        return new
-        {
-            taskId = task.Id,
-            hasExecutionCondition,
-            conditionEngine = task.ExecutionCondition?.Engine.ToString() ?? EngineType.DSL.ToString(),
-            conditionDslExpression = expressionText,
-        };
     }
 
     private static object BuildTaskTransformationEditPayload(TaskDefinitionModel task)
@@ -2022,32 +1967,6 @@ public sealed class DetailsModel : PageModel
         /// Gets or sets enabled state.
         /// </summary>
         public bool IsEnabled { get; set; }
-    }
-
-    /// <summary>
-    /// Represents payload to set task execution condition.
-    /// </summary>
-    public sealed class SetTaskExecutionConditionRequest
-    {
-        /// <summary>
-        /// Gets or sets task identifier.
-        /// </summary>
-        public string TaskId { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Gets or sets a value indicating whether execution condition is active.
-        /// </summary>
-        public bool HasExecutionCondition { get; set; }
-
-        /// <summary>
-        /// Gets or sets condition engine.
-        /// </summary>
-        public string ConditionEngine { get; set; } = EngineType.DSL.ToString();
-
-        /// <summary>
-        /// Gets or sets DSL expression.
-        /// </summary>
-        public string ConditionDslExpression { get; set; } = "true";
     }
 
     /// <summary>

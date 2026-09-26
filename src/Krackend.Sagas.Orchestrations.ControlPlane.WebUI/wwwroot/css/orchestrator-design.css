@@ -1117,38 +1117,7 @@ main.container {
 }
 
 .od-stage-card .od-stage-exec-btn {
-    top: 34%;
-}
-
-.od-stage-entry-validation-btn {
-    width: 34px;
-    height: 34px;
-    border: 1px solid #c8d2ef;
-    border-radius: 999px;
-    background: #f4f7ff;
-    color: #33406f;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    position: absolute;
-    left: -17px;
-    top: 70%;
-    transform: translateY(-50%);
-    z-index: 1;
-    box-shadow: 0 4px 10px rgba(18, 28, 58, 0.12);
-}
-
-.od-stage-entry-validation-btn svg {
-    width: 14px;
-    height: 14px;
-    fill: currentColor;
-}
-
-.od-stage-entry-validation-btn:hover,
-.od-stage-entry-validation-btn:focus {
-    border-color: #b8c5e8;
-    background: #ebf1ff;
+    top: 50%;
 }
 
 .od-task-card {
@@ -1188,7 +1157,7 @@ main.container {
 }
 
 .od-task-exec-btn {
-    top: 18%;
+    top: 28%;
     transform: translateY(-50%);
 }
 
@@ -1227,12 +1196,7 @@ main.container {
 }
 
 .od-task-transform-btn {
-    top: 82%;
-    transform: translateY(-50%);
-}
-
-.od-task-entry-validation-btn {
-    top: 50%;
+    top: 72%;
     transform: translateY(-50%);
 }
 
@@ -1260,40 +1224,6 @@ main.container {
 }
 
 .od-task-transform-btn-inactive::after {
-    content: "";
-    position: absolute;
-    right: 3px;
-    bottom: 3px;
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: #aab4d3;
-}
-
-.od-entry-validation-btn-active {
-    border-color: #c1a15d;
-    background: #fff7df;
-    color: #7a520e;
-}
-
-.od-entry-validation-btn-active::after {
-    content: "";
-    position: absolute;
-    right: 3px;
-    bottom: 3px;
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: #c47c12;
-}
-
-.od-entry-validation-btn-inactive {
-    border-color: #d3dbf0;
-    background: #f5f7ff;
-    color: #7180aa;
-}
-
-.od-entry-validation-btn-inactive::after {
     content: "";
     position: absolute;
     right: 3px;

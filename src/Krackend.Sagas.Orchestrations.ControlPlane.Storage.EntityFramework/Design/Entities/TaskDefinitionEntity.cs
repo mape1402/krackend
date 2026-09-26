@@ -61,10 +61,6 @@ public sealed class TaskDefinitionEntity
     /// </summary>
     public ExecutionConditionJsonModel ExecutionCondition { get; set; }
     /// <summary>
-    /// Gets or sets EntryValidation.
-    /// </summary>
-    public ValidationDefinitionJsonModel EntryValidation { get; set; }
-    /// <summary>
     /// Gets or sets Transformation.
     /// </summary>
     public TransformationDefinitionJsonModel Transformation { get; set; }

@@ -4,7 +4,6 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
-using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using NSubstitute;
 
@@ -79,8 +78,7 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
         Assert.NotEqual(source.StageDefinitions[0].Id, inventoryStage.Id);
         Assert.NotEqual(source.StageDefinitions[1].Id, paymentStage.Id);
         Assert.Same(source.StageDefinitions[0].ExecutionCondition, inventoryStage.ExecutionCondition);
-        Assert.True(inventoryStage.HasEntryValidation);
-        Assert.Same(source.StageDefinitions[0].EntryValidation, inventoryStage.EntryValidation);
+        Assert.True(inventoryStage.HasExecutionCondition);
 
         var clonedGroup = fixture.CreatedParallelGroups.Single();
         Assert.Equal(inventoryStage.Id, clonedGroup.StageDefinitionId);
@@ -94,8 +92,8 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
         Assert.NotEqual(source.StageDefinitions[0].TaskDefinitions[0].Id, reserveTask.Id);
         Assert.Same(source.StageDefinitions[0].TaskDefinitions[0].Configuration, reserveTask.Configuration);
         Assert.Same(source.StageDefinitions[0].TaskDefinitions[0].Transformation, reserveTask.Transformation);
-        Assert.True(reserveTask.HasEntryValidation);
-        Assert.Same(source.StageDefinitions[0].TaskDefinitions[0].EntryValidation, reserveTask.EntryValidation);
+        Assert.True(reserveTask.HasExecutionCondition);
+        Assert.Same(source.StageDefinitions[0].TaskDefinitions[0].ExecutionCondition, reserveTask.ExecutionCondition);
 
         var taskBranch = fixture.CreatedBranchRules.Single(x => x.FromType == ElementType.Task);
         Assert.Equal(reserveTask.Id, taskBranch.FromId);
@@ -165,7 +163,6 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
             Engine = EngineType.DSL,
             Configuration = new DslTransformationConfiguration { Dsl = "map request" }
         };
-        var validation = Validation("$payload != null");
 
         source.TriggerBindings =
         [
@@ -213,8 +210,6 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
                 Order = 1,
                 HasExecutionCondition = true,
                 ExecutionCondition = condition,
-                HasEntryValidation = true,
-                EntryValidation = validation,
                 ParallelGroups =
                 [
                     new ParallelGroupDefinition
@@ -241,8 +236,6 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
                         ParallelGroupId = groupId,
                         HasExecutionCondition = true,
                         ExecutionCondition = condition,
-                        HasEntryValidation = true,
-                        EntryValidation = validation,
                         HasTransformation = true,
                         Transformation = transformation,
                         Configuration = MessagingConfiguration("commands.inventories.reserve"),
@@ -315,19 +308,6 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
         {
             Engine = EngineType.DSL,
             Configuration = new DslConditionConfiguration { Expression = new Expression(expression) }
-        };
-
-    private static ValidationDefinition Validation(string dsl)
-        => new()
-        {
-            Engine = EngineType.DSL,
-            ErrorCode = "EntryValidationFailed",
-            Configuration = new DslValidationConfiguration
-            {
-                Dsl = dsl,
-                SchemaHash = "schema",
-                SemanticDiagnosticsJson = """{"valid":true}""",
-            },
         };
 
     private sealed class Fixture

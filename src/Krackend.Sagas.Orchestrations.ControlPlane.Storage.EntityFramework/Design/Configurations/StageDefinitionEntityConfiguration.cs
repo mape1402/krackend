@@ -31,11 +31,6 @@ internal sealed class StageDefinitionEntityConfiguration : IEntityTypeConfigurat
             .HasConversion(
                 value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
                 value => JsonSerializer.Deserialize<ExecutionConditionJsonModel>(value, (JsonSerializerOptions)null));
-        builder.Property(x => x.EntryValidation)
-            .HasColumnName("EntryValidationJson")
-            .HasConversion(
-                value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
-                value => JsonSerializer.Deserialize<ValidationDefinitionJsonModel>(value, (JsonSerializerOptions)null));
         builder.HasIndex(x => x.OrchestrationVersionId);
         builder.HasIndex(x => new { x.OrchestrationVersionId, x.Order });
     }

@@ -74,6 +74,11 @@ public sealed class ButterMorphOrchestrationConditionEvaluator : IOrchestrationC
 
         try
         {
+            if (IsValidationDsl(expression))
+            {
+                return Task.FromResult(EvaluateValidationDsl(request, expression));
+            }
+
             var document = _dslParser.Parse(new DslDefinition { Content = BuildConditionDsl(expression) });
             var result = _engine.Transform(new TransformationRequest
             {
@@ -112,12 +117,32 @@ public sealed class ButterMorphOrchestrationConditionEvaluator : IOrchestrationC
         }
     }
 
+    private OrchestrationConditionEvaluationResult EvaluateValidationDsl(
+        OrchestrationConditionEvaluationRequest request,
+        string dsl)
+    {
+        var document = _dslParser.Parse(new DslDefinition { Content = dsl });
+        var sources = _sourceGraphBuilder.Build(request.PayloadContext);
+        var validation = _engine.Validate(new ValidationRequest
+        {
+            Sources = sources,
+            SourceGraph = sources.TryGetValue("context", out var context) ? context : null,
+            PayloadAlias = "context",
+            Definition = document
+        });
+
+        return OrchestrationConditionEvaluationResult.Success(validation.IsValid);
+    }
+
     private static string BuildConditionDsl(string expression)
         => $$"""
            target {
              {{ResultPropertyName}}: {{expression}}
            }
            """;
+
+    private static bool IsValidationDsl(string expression)
+        => expression.TrimStart().StartsWith("validate", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryReadBoolean(JsonNode value, out bool result)
     {

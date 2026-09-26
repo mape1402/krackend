@@ -167,8 +167,6 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
                 Order = stage.Order,
                 ExecutionCondition = stage.ExecutionCondition,
                 HasExecutionCondition = stage.HasExecutionCondition,
-                EntryValidation = stage.EntryValidation,
-                HasEntryValidation = stage.HasEntryValidation,
             }, cancellationToken);
 
             await CloneParallelGroups(stage, newStageId, groupIdMap, cancellationToken);
@@ -229,8 +227,6 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
                 HasExecutionCondition = task.HasExecutionCondition,
                 Transformation = task.Transformation,
                 HasTransformation = task.HasTransformation,
-                EntryValidation = task.EntryValidation,
-                HasEntryValidation = task.HasEntryValidation,
                 Configuration = task.Configuration,
                 RetryPolicy = task.RetryPolicy,
                 TimeoutPolicy = task.TimeoutPolicy,

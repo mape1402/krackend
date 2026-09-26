@@ -2,6 +2,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using System.Text.Json.Nodes;
 using global::ButterMorph.Abstractions;
+using global::ButterMorph.Core;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.ButterMorph;
@@ -106,6 +107,72 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
 
         Assert.True(result.Succeeded, result.ErrorMessage);
         Assert.True(result.ShouldExecute);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_WhenConditionIsButterMorphValidationDslAndIsValid_ReturnsTrue()
+    {
+        var engine = Substitute.For<IButterMorphEngine>();
+        var parser = Substitute.For<IDslParser>();
+        var sourceGraphBuilder = Substitute.For<IButterMorphSourceGraphBuilder>();
+        var contextGraph = Substitute.For<IStructureGraph>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(new DslDocument());
+        sourceGraphBuilder.Build(Arg.Any<OrchestrationPayloadContext>())
+            .Returns(new Dictionary<string, IStructureGraph>(StringComparer.Ordinal)
+            {
+                ["context"] = contextGraph
+            });
+        engine.Validate(Arg.Any<ValidationRequest>())
+            .Returns(new ValidationResult { IsValid = true });
+        var evaluator = new ButterMorphOrchestrationConditionEvaluator(
+            engine,
+            parser,
+            new ButterMorphDiagnosticMetadataMapper(),
+            sourceGraphBuilder);
+
+        var result = await evaluator.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Condition = EnabledCondition("validate { assert context.trigger.payload.CanReserve == true }"),
+            PayloadContext = EmptyPayloadContext(),
+            ElementKey = "reserve-inventory",
+            Phase = "Task"
+        });
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.True(result.ShouldExecute);
+        engine.Received(1).Validate(Arg.Is<ValidationRequest>(request =>
+            ReferenceEquals(request.SourceGraph, contextGraph) &&
+            request.PayloadAlias == "context"));
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_WhenConditionIsButterMorphValidationDslAndIsInvalid_ReturnsFalse()
+    {
+        var engine = Substitute.For<IButterMorphEngine>();
+        var parser = Substitute.For<IDslParser>();
+        var sourceGraphBuilder = Substitute.For<IButterMorphSourceGraphBuilder>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(new DslDocument());
+        sourceGraphBuilder.Build(Arg.Any<OrchestrationPayloadContext>())
+            .Returns(new Dictionary<string, IStructureGraph>(StringComparer.Ordinal));
+        engine.Validate(Arg.Any<ValidationRequest>())
+            .Returns(new ValidationResult { IsValid = false });
+        var evaluator = new ButterMorphOrchestrationConditionEvaluator(
+            engine,
+            parser,
+            new ButterMorphDiagnosticMetadataMapper(),
+            sourceGraphBuilder);
+
+        var result = await evaluator.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Condition = EnabledCondition("validate { assert context.trigger.payload.CanReserve == true }"),
+            PayloadContext = EmptyPayloadContext(),
+            ElementKey = "reserve-inventory",
+            Phase = "Task"
+        });
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        Assert.False(result.ShouldExecute);
+        engine.Received(1).Validate(Arg.Any<ValidationRequest>());
     }
 
     [Theory]

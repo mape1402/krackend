@@ -5,10 +5,10 @@ using global::ButterMorph.Web.Razor;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
-using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 
 /// <summary>
-/// Provides ButterMorph validation designer integration for orchestration entry validations.
+/// Provides ButterMorph validation designer integration for orchestration execution conditions.
 /// </summary>
 public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorphValidationDesignerHost
 {
@@ -49,17 +49,17 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
     {
         try
         {
-            if (_contextParser.TryParseStageEntryValidation(request.ContextKey, out var stageContext))
+            if (_contextParser.TryParseStageExecutionCondition(request.ContextKey, out var stageContext))
             {
-                return await LoadStageValidation(stageContext);
+                return await LoadStageCondition(stageContext);
             }
 
-            if (_contextParser.TryParseTaskEntryValidation(request.ContextKey, out var taskContext))
+            if (_contextParser.TryParseTaskExecutionCondition(request.ContextKey, out var taskContext))
             {
-                return await LoadTaskValidation(taskContext);
+                return await LoadTaskCondition(taskContext);
             }
 
-            return CreateLoadFailure("Invalid orchestration validation context.");
+            return CreateLoadFailure("Invalid orchestration execution condition context.");
         }
         catch (Exception exception)
         {
@@ -72,17 +72,17 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
     {
         try
         {
-            if (_contextParser.TryParseStageEntryValidation(request.ContextKey, out var stageContext))
+            if (_contextParser.TryParseStageExecutionCondition(request.ContextKey, out var stageContext))
             {
-                return await SaveStageValidation(request, stageContext);
+                return await SaveStageCondition(request, stageContext);
             }
 
-            if (_contextParser.TryParseTaskEntryValidation(request.ContextKey, out var taskContext))
+            if (_contextParser.TryParseTaskExecutionCondition(request.ContextKey, out var taskContext))
             {
-                return await SaveTaskValidation(request, taskContext);
+                return await SaveTaskCondition(request, taskContext);
             }
 
-            return CreateSaveFailure("Invalid orchestration validation context.");
+            return CreateSaveFailure("Invalid orchestration execution condition context.");
         }
         catch (Exception exception)
         {
@@ -90,7 +90,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         }
     }
 
-    private async Task<ButterMorphValidationDesignerLoadResult> LoadStageValidation(
+    private async Task<ButterMorphValidationDesignerLoadResult> LoadStageCondition(
         OrchestrationButterMorphDesignerContext designerContext)
     {
         var schemaContext = await _schemaContextService.GetForStage(new GetStageSchemaContextQuery(
@@ -98,12 +98,14 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
             designerContext.StageDefinitionId));
         var stage = await _stageApplicationService.GetById(new GetStageDefinitionByIdQuery(designerContext.StageDefinitionId));
 
-        return LoadValidation(
+        return LoadCondition(
             schemaContext,
-            (stage?.EntryValidation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty);
+            stage?.HasExecutionCondition == true
+                ? (stage.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
+                : string.Empty);
     }
 
-    private async Task<ButterMorphValidationDesignerLoadResult> LoadTaskValidation(
+    private async Task<ButterMorphValidationDesignerLoadResult> LoadTaskCondition(
         OrchestrationButterMorphDesignerContext designerContext)
     {
         var schemaContext = await _schemaContextService.GetForTask(new GetTaskSchemaContextQuery(
@@ -111,12 +113,14 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
             designerContext.TaskDefinitionId));
         var task = await _taskApplicationService.GetById(new GetTaskDefinitionByIdQuery(designerContext.TaskDefinitionId));
 
-        return LoadValidation(
+        return LoadCondition(
             schemaContext,
-            (task?.EntryValidation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty);
+            task?.HasExecutionCondition == true
+                ? (task.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
+                : string.Empty);
     }
 
-    private ButterMorphValidationDesignerLoadResult LoadValidation(
+    private ButterMorphValidationDesignerLoadResult LoadCondition(
         OrchestrationSchemaContext schemaContext,
         string initialDsl)
     {
@@ -133,41 +137,35 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         };
     }
 
-    private async Task<ButterMorphValidationDesignerSaveResult> SaveStageValidation(
+    private async Task<ButterMorphValidationDesignerSaveResult> SaveStageCondition(
         ButterMorphValidationDesignerSaveRequest request,
         OrchestrationButterMorphDesignerContext designerContext)
     {
-        var schemaContext = await _schemaContextService.GetForStage(new GetStageSchemaContextQuery(
-            designerContext.OrchestrationVersionId,
-            designerContext.StageDefinitionId));
-        var updated = await _stageApplicationService.SetEntryValidation(
-            new SetStageEntryValidationCommand(
+        var updated = await _stageApplicationService.SetExecutionCondition(
+            new SetStageExecutionConditionCommand(
                 designerContext.StageDefinitionId,
-                CreateValidation(request.DslContent, schemaContext.Signature, "StageEntryValidationFailed")));
+                CreateCondition(request.DslContent)));
 
         return new ButterMorphValidationDesignerSaveResult
         {
             Succeeded = updated,
-            Message = updated ? "Stage entry validation saved." : "Stage entry validation could not be saved."
+            Message = updated ? "Stage execution condition saved." : "Stage execution condition could not be saved."
         };
     }
 
-    private async Task<ButterMorphValidationDesignerSaveResult> SaveTaskValidation(
+    private async Task<ButterMorphValidationDesignerSaveResult> SaveTaskCondition(
         ButterMorphValidationDesignerSaveRequest request,
         OrchestrationButterMorphDesignerContext designerContext)
     {
-        var schemaContext = await _schemaContextService.GetForTask(new GetTaskSchemaContextQuery(
-            designerContext.OrchestrationVersionId,
-            designerContext.TaskDefinitionId));
-        var updated = await _taskApplicationService.SetEntryValidation(
-            new SetTaskEntryValidationCommand(
+        var updated = await _taskApplicationService.SetExecutionCondition(
+            new SetTaskExecutionConditionCommand(
                 designerContext.TaskDefinitionId,
-                CreateValidation(request.DslContent, schemaContext.Signature, "TaskEntryValidationFailed")));
+                CreateCondition(request.DslContent)));
 
         return new ButterMorphValidationDesignerSaveResult
         {
             Succeeded = updated,
-            Message = updated ? "Task entry validation saved." : "Task entry validation could not be saved."
+            Message = updated ? "Task execution condition saved." : "Task execution condition could not be saved."
         };
     }
 
@@ -209,25 +207,19 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         }
     }
 
-    private static ValidationDefinition CreateValidation(
-        string dsl,
-        string sourceContextHash,
-        string fallbackErrorCode)
+    private static ExecutionCondition CreateCondition(string dsl)
     {
         if (string.IsNullOrWhiteSpace(dsl))
         {
             return null;
         }
 
-        return new ValidationDefinition
+        return new ExecutionCondition
         {
             Engine = EngineType.DSL,
-            ErrorCode = fallbackErrorCode,
-            Configuration = new DslValidationConfiguration
+            Configuration = new DslConditionConfiguration
             {
-                Dsl = dsl,
-                SourceContextHash = sourceContextHash ?? string.Empty,
-                SemanticDiagnosticsJson = "{}"
+                Expression = new Expression(dsl)
             }
         };
     }

@@ -273,10 +273,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
-                    b.Property<string>("EntryValidation")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("EntryValidationJson");
-
                     b.Property<string>("ExecutionCondition")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("ExecutionConditionJson");
@@ -324,10 +320,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("EntryValidation")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("EntryValidationJson");
 
                     b.Property<string>("ExecutionCondition")
                         .HasColumnType("nvarchar(max)")

@@ -14,20 +14,20 @@ public interface IOrchestrationButterMorphDesignerContextParser
     string FormatTaskTransformation(string orchestrationVersionId, string taskDefinitionId);
 
     /// <summary>
-    /// Builds a designer context key for one orchestration task entry validation.
+    /// Builds a designer context key for one orchestration task execution condition.
     /// </summary>
     /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
     /// <param name="taskDefinitionId">Task definition identifier.</param>
     /// <returns>Designer context key.</returns>
-    string FormatTaskEntryValidation(string orchestrationVersionId, string taskDefinitionId);
+    string FormatTaskExecutionCondition(string orchestrationVersionId, string taskDefinitionId);
 
     /// <summary>
-    /// Builds a designer context key for one orchestration stage entry validation.
+    /// Builds a designer context key for one orchestration stage execution condition.
     /// </summary>
     /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
     /// <param name="stageDefinitionId">Stage definition identifier.</param>
     /// <returns>Designer context key.</returns>
-    string FormatStageEntryValidation(string orchestrationVersionId, string stageDefinitionId);
+    string FormatStageExecutionCondition(string orchestrationVersionId, string stageDefinitionId);
 
     /// <summary>
     /// Parses a designer context key into its orchestration scope.
@@ -38,18 +38,18 @@ public interface IOrchestrationButterMorphDesignerContextParser
     bool TryParseTaskTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context);
 
     /// <summary>
-    /// Parses a task entry validation context key into its orchestration scope.
+    /// Parses a task execution condition context key into its orchestration scope.
     /// </summary>
     /// <param name="contextKey">Designer context key.</param>
     /// <param name="context">Parsed context when the operation succeeds.</param>
-    /// <returns>True when the context key belongs to an orchestration task entry validation.</returns>
-    bool TryParseTaskEntryValidation(string contextKey, out OrchestrationButterMorphDesignerContext context);
+    /// <returns>True when the context key belongs to an orchestration task execution condition.</returns>
+    bool TryParseTaskExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context);
 
     /// <summary>
-    /// Parses a stage entry validation context key into its orchestration scope.
+    /// Parses a stage execution condition context key into its orchestration scope.
     /// </summary>
     /// <param name="contextKey">Designer context key.</param>
     /// <param name="context">Parsed context when the operation succeeds.</param>
-    /// <returns>True when the context key belongs to an orchestration stage entry validation.</returns>
-    bool TryParseStageEntryValidation(string contextKey, out OrchestrationButterMorphDesignerContext context);
+    /// <returns>True when the context key belongs to an orchestration stage execution condition.</returns>
+    bool TryParseStageExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context);
 }

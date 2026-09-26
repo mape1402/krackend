@@ -63,16 +63,6 @@ public sealed class TaskDefinition
     public bool HasExecutionCondition { get; set; }
 
     /// <summary>
-    /// Gets or sets the validation executed before the task is dispatched.
-    /// </summary>
-    public ValidationDefinition EntryValidation { get; set; }
-
-    /// <summary>
-    /// Gets or sets whether entry validation is enabled.
-    /// </summary>
-    public bool HasEntryValidation { get; set; }
-
-    /// <summary>
     /// Gets or sets transformation.
     /// </summary>
     public TransformationDefinition Transformation { get; set; }
