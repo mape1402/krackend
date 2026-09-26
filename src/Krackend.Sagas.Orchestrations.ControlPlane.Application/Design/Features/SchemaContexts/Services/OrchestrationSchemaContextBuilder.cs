@@ -194,7 +194,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         ICollection<OrchestrationSchemaSource> sources)
     {
         var responseBinding = GetResponseSchemaBinding(task);
-        if (!IsUsableBindingReference(responseBinding))
+        if (!HasUsableSnapshot(responseBinding))
         {
             return;
         }
