@@ -176,6 +176,9 @@ public sealed class AdaptersAndContractsTests
             descriptor.ServiceType.Name == "IConsumeInterceptor" &&
             descriptor.ImplementationType?.Name == "KrackendClientConsumeInterceptor");
         Assert.Contains(services, descriptor =>
+            descriptor.ServiceType.Name == "IConsumeExecutionInterceptor" &&
+            descriptor.ImplementationType?.Name == "KrackendClientConsumeInterceptor");
+        Assert.Contains(services, descriptor =>
             descriptor.ServiceType.Name == "IPublishInterceptor" &&
             descriptor.ImplementationType?.Name == "KrackendClientPublishInterceptor");
     }

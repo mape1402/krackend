@@ -3,7 +3,7 @@ namespace Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using global::Pigeon.Messaging.Consuming.Dispatching;
 
-internal sealed class KrackendClientConsumeInterceptor : IConsumeInterceptor
+internal sealed class KrackendClientConsumeInterceptor : IConsumeInterceptor, IConsumeExecutionInterceptor
 {
     private readonly IOrchestrationMessageMetadataSetter _metadataSetter;
     private readonly IOrchestrationExecutionResultMetadataSetter _resultMetadataSetter;
@@ -18,6 +18,26 @@ internal sealed class KrackendClientConsumeInterceptor : IConsumeInterceptor
 
     public ValueTask Intercept(ConsumeContext context, CancellationToken cancellationToken = default)
     {
+        CaptureMetadata(context);
+        return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask InvokeAsync(
+        ConsumeContext context,
+        ConsumeExecutionDelegate next,
+        CancellationToken cancellationToken = default)
+    {
+        if (next is null)
+        {
+            throw new ArgumentNullException(nameof(next));
+        }
+
+        CaptureMetadata(context);
+        await next(context, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void CaptureMetadata(ConsumeContext context)
+    {
         _resultMetadataSetter.Clear();
 
         try
@@ -29,7 +49,5 @@ internal sealed class KrackendClientConsumeInterceptor : IConsumeInterceptor
         {
             _metadataSetter.Set(new OrchestrationMessageMetadata());
         }
-
-        return ValueTask.CompletedTask;
     }
 }

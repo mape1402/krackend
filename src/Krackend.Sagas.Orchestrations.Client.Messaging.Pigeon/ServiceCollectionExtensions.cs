@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IMessagingReplyAddressSettingsSerializer, DefaultMessagingReplyAddressSettingsSerializer>();
         services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeInterceptor, KrackendClientConsumeInterceptor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeExecutionInterceptor, KrackendClientConsumeInterceptor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishInterceptor, KrackendClientPublishInterceptor>());
     }
 }

@@ -139,6 +139,47 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         resultSetter.Received(1).Clear();
     }
 
+    [Fact]
+    public async Task ClientConsumeExecutionInterceptorRestoresMetadataBeforeHandlerExecution()
+    {
+        var messageMetadata = new OrchestrationMessageMetadata
+        {
+            OrchestrationInstanceId = "instance-1",
+            TaskExecutionId = "task-1",
+            CorrelationId = "correlation-1",
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = """{"topic":"orchestrations.sales.sale.created","version":"1.0.2"}"""
+            }
+        };
+        var resultMetadata = new OrchestrationExecutionResultMetadata
+        {
+            Succeeded = true,
+            Status = "Succeeded"
+        };
+        var messageSetter = Substitute.For<IOrchestrationMessageMetadataSetter>();
+        var resultSetter = Substitute.For<IOrchestrationExecutionResultMetadataSetter>();
+        var interceptor = CreateClientConsumeExecutionInterceptor(messageSetter, resultSetter);
+        var context = new ConsumeContext();
+        SetConsumeMetadata(context, messageMetadata, resultMetadata);
+        var nextInvoked = false;
+
+        await interceptor.InvokeAsync(
+            context,
+            (nextContext, _) =>
+            {
+                nextInvoked = ReferenceEquals(context, nextContext);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.True(nextInvoked);
+        messageSetter.Received(1).Set(messageMetadata);
+        resultSetter.Received(1).Clear();
+        resultSetter.DidNotReceive().Set(Arg.Any<OrchestrationExecutionResultMetadata>());
+    }
+
     private static Pigeon.Messaging.Producing.IPublishInterceptor CreatePublishInterceptor(
         string assemblyName,
         string typeName,
@@ -180,6 +221,22 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
             "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientConsumeInterceptor",
             throwOnError: true)!;
         return (Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor)Activator.CreateInstance(
+            type,
+            InstanceFlags,
+            binder: null,
+            args: [messageSetter, resultSetter],
+            culture: null)!;
+    }
+
+    private static Pigeon.Messaging.Consuming.Dispatching.IConsumeExecutionInterceptor CreateClientConsumeExecutionInterceptor(
+        IOrchestrationMessageMetadataSetter messageSetter,
+        IOrchestrationExecutionResultMetadataSetter resultSetter)
+    {
+        var assembly = Assembly.Load("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon");
+        var type = assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientConsumeInterceptor",
+            throwOnError: true)!;
+        return (Pigeon.Messaging.Consuming.Dispatching.IConsumeExecutionInterceptor)Activator.CreateInstance(
             type,
             InstanceFlags,
             binder: null,
