@@ -31,6 +31,14 @@ public interface IStageRepository
     Task SetExecutionCondition(Id stageDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only entry validation of one stage definition.
+    /// </summary>
+    /// <param name="stageDefinitionId">Identifier of the stage definition.</param>
+    /// <param name="entryValidation">Entry validation to persist.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetEntryValidation(Id stageDefinitionId, ValidationDefinition entryValidation, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes a stage definition by its identifier.
     /// </summary>
     /// <param name="stageDefinitionId">Identifier of the stage definition to delete.</param>

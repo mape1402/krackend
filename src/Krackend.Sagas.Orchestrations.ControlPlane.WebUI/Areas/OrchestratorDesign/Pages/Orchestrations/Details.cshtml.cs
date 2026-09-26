@@ -168,6 +168,7 @@ public sealed class DetailsModel : PageModel
     public async Task<IActionResult> OnPostVersionActionAsync(string orchestrationId, string versionId, string action, CancellationToken cancellationToken = default)
     {
         const string actor = "web-ui";
+        ModelState.Clear();
 
         try
         {

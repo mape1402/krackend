@@ -16,12 +16,12 @@
     <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Update="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" Condition="'$(MSBuildProjectName)' == 'Krackend.Sagas.Orchestrations.Client'" />
     <PackageReference Update="MinVer" Version="6.0.0" />
-    <PackageReference Update="ButterMorph" Version="1.1.3" />
-    <PackageReference Update="ButterMorph.Design" Version="1.1.3" />
-    <PackageReference Update="ButterMorph.Json" Version="1.1.3" />
-    <PackageReference Update="ButterMorph.Json.Schema" Version="1.1.3" />
-    <PackageReference Update="ButterMorph.SchemaDesign" Version="1.1.3" />
-    <PackageReference Update="ButterMorph.Web.Razor" Version="1.1.3" />
+    <PackageReference Update="ButterMorph" Version="2.0.0" />
+    <PackageReference Update="ButterMorph.Design" Version="2.0.0" />
+    <PackageReference Update="ButterMorph.Json" Version="2.0.0" />
+    <PackageReference Update="ButterMorph.Json.Schema" Version="2.0.0" />
+    <PackageReference Update="ButterMorph.SchemaDesign" Version="2.0.0" />
+    <PackageReference Update="ButterMorph.Web.Razor" Version="2.0.0" />
     <PackageReference Update="KnOwl.Contracts" Version="2.2.0" />
     <PackageReference Update="Mule.DurableActions" Version="1.5.0" />
     <PackageReference Update="Mule.DurableActions.EntityFrameworkCore" Version="1.5.0" />

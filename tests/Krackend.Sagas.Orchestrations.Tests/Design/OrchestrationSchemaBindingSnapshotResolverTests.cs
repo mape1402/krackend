@@ -338,7 +338,7 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
     }
 
     [Fact]
-    public async Task SchemaContextApplicationServiceResolvesSnapshotsBeforeBuildingContext()
+    public async Task SchemaContextApplicationServiceDoesNotResolveSnapshotsWhenBuildingContext()
     {
         var taskId = Id.New();
         var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
@@ -361,7 +361,9 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         var context = await service.GetForTask(new GetTaskSchemaContextQuery(version.Id.ToString(), taskId.ToString()));
 
         Assert.Equal("inventories.reserve", context.TaskKey);
-        await snapshotResolver.Received(1).ResolveAsync(version, Arg.Any<CancellationToken>());
+        await snapshotResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        await snapshotResolver.DidNotReceiveWithAnyArgs().ResolveTaskAsync(default!, default);
+        await snapshotResolver.DidNotReceiveWithAnyArgs().ResolveTriggerAsync(default!, default);
         await builder.Received(1).BuildForTask(version, taskId, Arg.Any<CancellationToken>());
     }
 

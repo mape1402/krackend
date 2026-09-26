@@ -96,6 +96,20 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
     }
 
     /// <summary>
+    /// Executes Exists.
+    /// </summary>
+    public Task<bool> Exists(Id orchestrationDefinitionId, SemanticVersion version, CancellationToken cancellationToken = default)
+    {
+        var versionText = version.ToString();
+
+        return _dbContext.OrchestrationVersions
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.OrchestrationDefinitionId == orchestrationDefinitionId && x.Version == versionText,
+                cancellationToken);
+    }
+
+    /// <summary>
     /// Executes GetById.
     /// </summary>
     public async Task<OrchestrationVersion> GetById(Id orchestrationVersionId, CancellationToken cancellationToken = default)

@@ -19,4 +19,16 @@ public interface IOrchestrationSchemaContextBuilder
         OrchestrationVersion version,
         Id taskDefinitionId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the schema context available before the specified stage starts.
+    /// </summary>
+    /// <param name="version">Complete orchestration version snapshot.</param>
+    /// <param name="stageDefinitionId">Stage identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The source schema context for the stage.</returns>
+    Task<OrchestrationSchemaContext> BuildForStage(
+        OrchestrationVersion version,
+        Id stageDefinitionId,
+        CancellationToken cancellationToken = default);
 }

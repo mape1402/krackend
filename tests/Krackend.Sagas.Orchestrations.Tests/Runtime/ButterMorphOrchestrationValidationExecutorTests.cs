@@ -6,6 +6,7 @@ using global::ButterMorph.Core;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.ButterMorph;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using Microsoft.Extensions.DependencyInjection;
@@ -91,7 +92,8 @@ public sealed class ButterMorphOrchestrationValidationExecutorTests
         var executor = new ButterMorphOrchestrationValidationExecutor(
             engine,
             parser,
-            new ButterMorphDiagnosticMetadataMapper());
+            new ButterMorphDiagnosticMetadataMapper(),
+            Substitute.For<IButterMorphSourceGraphBuilder>());
 
         var result = await executor.ValidateAsync(new OrchestrationValidationRequest
         {
@@ -114,7 +116,8 @@ public sealed class ButterMorphOrchestrationValidationExecutorTests
         var executor = new ButterMorphOrchestrationValidationExecutor(
             engine,
             parser,
-            new ButterMorphDiagnosticMetadataMapper());
+            new ButterMorphDiagnosticMetadataMapper(),
+            Substitute.For<IButterMorphSourceGraphBuilder>());
 
         var result = await executor.ValidateAsync(new OrchestrationValidationRequest
         {
@@ -126,6 +129,50 @@ public sealed class ButterMorphOrchestrationValidationExecutorTests
         Assert.False(result.Succeeded);
         Assert.Equal("ResponseValidationExecutionFailed", result.ErrorCode);
         Assert.True(result.Diagnostics.ContainsKey("exceptionType"));
+    }
+
+    [Fact]
+    public async Task ValidateAsyncUsesAccumulatedSourcesWhenPayloadContextIsProvided()
+    {
+        var engine = Substitute.For<IButterMorphEngine>();
+        var parser = Substitute.For<IDslParser>();
+        var sourceGraphBuilder = Substitute.For<IButterMorphSourceGraphBuilder>();
+        var contextGraph = Substitute.For<IStructureGraph>();
+        var triggerGraph = Substitute.For<IStructureGraph>();
+        var sources = new Dictionary<string, IStructureGraph>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["context"] = contextGraph,
+            ["trigger"] = triggerGraph
+        };
+
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(new DslDocument());
+        sourceGraphBuilder.Build(Arg.Any<OrchestrationPayloadContext>()).Returns(sources);
+        engine.Validate(Arg.Any<ValidationRequest>()).Returns(new ValidationResult { IsValid = true });
+        var executor = new ButterMorphOrchestrationValidationExecutor(
+            engine,
+            parser,
+            new ButterMorphDiagnosticMetadataMapper(),
+            sourceGraphBuilder);
+
+        var result = await executor.ValidateAsync(new OrchestrationValidationRequest
+        {
+            Phase = "TaskEntry",
+            PayloadContext = new OrchestrationPayloadContext
+            {
+                ContextPayload = JsonNode.Parse("""{"trigger":{"payload":{"saleId":"sale-1"}}}"""),
+                TriggerPayload = JsonNode.Parse("""{"saleId":"sale-1"}"""),
+                StageKey = "fulfillment",
+                TaskKey = "inventory_reservation"
+            },
+            PayloadAlias = "context",
+            ValidationDsl = "validate task"
+        });
+
+        Assert.True(result.Succeeded);
+        engine.Received(1).Validate(Arg.Is<ValidationRequest>(request =>
+            ReferenceEquals(request.Sources, sources) &&
+            ReferenceEquals(request.SourceGraph, contextGraph) &&
+            request.PayloadAlias == "context"));
     }
 
     private static ButterMorphOrchestrationValidationExecutor CreateExecutor()

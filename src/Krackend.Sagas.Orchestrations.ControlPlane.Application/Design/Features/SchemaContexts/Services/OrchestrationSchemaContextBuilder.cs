@@ -57,6 +57,45 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         return Task.FromResult(context);
     }
 
+    /// <inheritdoc />
+    public Task<OrchestrationSchemaContext> BuildForStage(
+        OrchestrationVersion version,
+        Id stageDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var stages = (version.StageDefinitions ?? [])
+            .OrderBy(x => x.Order)
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .ToArray();
+
+        var targetStage = stages.FirstOrDefault(stage => stage.Id.Equals(stageDefinitionId));
+        if (targetStage is null)
+        {
+            throw new InvalidOperationException($"Stage '{stageDefinitionId}' was not found in orchestration version '{version.Id}'.");
+        }
+
+        var sources = new List<OrchestrationSchemaSource>();
+        AddTriggerSources(version, sources);
+        AddPreviousStageTaskSources(stages, targetStage, sources);
+
+        var context = new OrchestrationSchemaContext
+        {
+            OrchestrationVersionId = version.Id.ToString(),
+            OrchestrationVersion = version.Version.ToString(),
+            StageKey = targetStage.Key,
+            TaskKey = string.Empty,
+            Sources = sources,
+            Target = null,
+            Signature = BuildSignature(sources, null)
+        };
+
+        return Task.FromResult(context);
+    }
+
     private static void AddTriggerSources(OrchestrationVersion version, ICollection<OrchestrationSchemaSource> sources)
     {
         var trigger = (version.TriggerBindings ?? [])
@@ -64,12 +103,13 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .FirstOrDefault(x => x.TriggerChannel is EventTriggerChannel);
 
-        if (trigger?.TriggerChannel is not EventTriggerChannel eventChannel || eventChannel.SchemaBinding is null)
+        if (trigger?.TriggerChannel is not EventTriggerChannel eventChannel ||
+            !IsUsableBindingReference(eventChannel.SchemaBinding))
         {
             return;
         }
 
-        sources.Add(new OrchestrationSchemaSource
+        AddSource(sources, new OrchestrationSchemaSource
         {
             Alias = "trigger",
             SourceKind = OrchestrationSchemaContextSourceKind.Trigger,
@@ -133,14 +173,14 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         ICollection<OrchestrationSchemaSource> sources)
     {
         var requestBinding = GetRequestSchemaBinding(task);
-        if (requestBinding is null)
+        if (!IsUsableBindingReference(requestBinding))
         {
             return;
         }
 
-        sources.Add(new OrchestrationSchemaSource
+        AddSource(sources, new OrchestrationSchemaSource
         {
-            Alias = BuildPayloadAlias(stage.Key, task.Key, "request"),
+            Alias = BuildTaskRequestAlias(task.Key),
             SourceKind = OrchestrationSchemaContextSourceKind.TaskRequest,
             StageKey = stage.Key,
             TaskKey = task.Key,
@@ -154,14 +194,14 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         ICollection<OrchestrationSchemaSource> sources)
     {
         var responseBinding = GetResponseSchemaBinding(task);
-        if (responseBinding is null)
+        if (!IsUsableBindingReference(responseBinding))
         {
             return;
         }
 
-        sources.Add(new OrchestrationSchemaSource
+        AddSource(sources, new OrchestrationSchemaSource
         {
-            Alias = BuildPayloadAlias(stage.Key, task.Key, "response"),
+            Alias = BuildTaskReplyAlias(task.Key),
             SourceKind = OrchestrationSchemaContextSourceKind.TaskResponse,
             StageKey = stage.Key,
             TaskKey = task.Key,
@@ -172,7 +212,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
     private static OrchestrationSchemaTarget CreateTarget(StageDefinition stage, TaskDefinition task)
         => new()
         {
-            Alias = BuildPayloadAlias(stage.Key, task.Key, "request"),
+            Alias = BuildTaskRequestAlias(task.Key),
             StageKey = stage.Key,
             TaskKey = task.Key,
             SchemaBinding = GetRequestSchemaBinding(task)
@@ -181,7 +221,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
     private static SchemaBinding GetRequestSchemaBinding(TaskDefinition task)
         => task.Configuration switch
         {
-            MessagingTaskConfiguration messaging => messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+            MessagingTaskConfiguration messaging => SelectRequestBinding(messaging),
             _ => null
         };
 
@@ -192,8 +232,67 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             _ => null
         };
 
-    private static string BuildPayloadAlias(string stageKey, string taskKey, string payloadName)
-        => SanitizeAlias($"{stageKey}_{taskKey}_{payloadName}");
+    private static SchemaBinding SelectRequestBinding(MessagingTaskConfiguration messaging)
+    {
+        if (HasUsableSnapshot(messaging.RequestSchemaBinding))
+        {
+            return messaging.RequestSchemaBinding;
+        }
+
+        if (HasUsableSnapshot(messaging.SchemaBinding))
+        {
+            return messaging.SchemaBinding;
+        }
+
+        return IsUsableBindingReference(messaging.RequestSchemaBinding)
+            ? messaging.RequestSchemaBinding
+            : messaging.SchemaBinding;
+    }
+
+    private static bool IsUsableBindingReference(SchemaBinding binding)
+        => binding is not null &&
+            (!string.IsNullOrWhiteSpace(binding.ContractKey) || HasUsableSnapshot(binding));
+
+    private static bool HasUsableSnapshot(SchemaBinding binding)
+        => !string.IsNullOrWhiteSpace(binding?.Snapshot?.SchemaJson) ||
+            !string.IsNullOrWhiteSpace(binding?.Snapshot?.ContentHash);
+
+    private static string BuildTaskRequestAlias(string taskKey)
+        => SanitizeAlias(taskKey);
+
+    private static string BuildTaskReplyAlias(string taskKey)
+        => SanitizeAlias($"{taskKey}_reply");
+
+    private static void AddSource(
+        ICollection<OrchestrationSchemaSource> sources,
+        OrchestrationSchemaSource source)
+    {
+        var alias = EnsureUniqueAlias(sources, source);
+        sources.Add(source with { Alias = alias });
+    }
+
+    private static string EnsureUniqueAlias(
+        IEnumerable<OrchestrationSchemaSource> sources,
+        OrchestrationSchemaSource source)
+    {
+        var alias = source.Alias;
+        if (!sources.Any(existing => string.Equals(existing.Alias, alias, StringComparison.Ordinal)))
+        {
+            return alias;
+        }
+
+        alias = SanitizeAlias($"{source.StageKey}_{source.Alias}");
+        var candidate = alias;
+        var index = 2;
+
+        while (sources.Any(existing => string.Equals(existing.Alias, candidate, StringComparison.Ordinal)))
+        {
+            candidate = $"{alias}_{index}";
+            index++;
+        }
+
+        return candidate;
+    }
 
     private static string SanitizeAlias(string value)
     {

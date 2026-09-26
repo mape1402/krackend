@@ -13,6 +13,7 @@ public sealed class ButterMorphOrchestrationValidationExecutor : IOrchestrationV
     private readonly IButterMorphEngine _engine;
     private readonly IDslParser _dslParser;
     private readonly IButterMorphDiagnosticMetadataMapper _diagnosticMapper;
+    private readonly IButterMorphSourceGraphBuilder _sourceGraphBuilder;
     private readonly JsonReader _jsonReader = new();
 
     /// <summary>
@@ -21,14 +22,17 @@ public sealed class ButterMorphOrchestrationValidationExecutor : IOrchestrationV
     /// <param name="engine">ButterMorph execution engine.</param>
     /// <param name="dslParser">ButterMorph DSL parser.</param>
     /// <param name="diagnosticMapper">Maps ButterMorph diagnostics into orchestration metadata.</param>
+    /// <param name="sourceGraphBuilder">Builds ButterMorph source graphs from accumulated orchestration payloads.</param>
     public ButterMorphOrchestrationValidationExecutor(
         IButterMorphEngine engine,
         IDslParser dslParser,
-        IButterMorphDiagnosticMetadataMapper diagnosticMapper)
+        IButterMorphDiagnosticMetadataMapper diagnosticMapper,
+        IButterMorphSourceGraphBuilder sourceGraphBuilder)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dslParser = dslParser ?? throw new ArgumentNullException(nameof(dslParser));
         _diagnosticMapper = diagnosticMapper ?? throw new ArgumentNullException(nameof(diagnosticMapper));
+        _sourceGraphBuilder = sourceGraphBuilder ?? throw new ArgumentNullException(nameof(sourceGraphBuilder));
     }
 
     /// <inheritdoc />
@@ -55,16 +59,8 @@ public sealed class ButterMorphOrchestrationValidationExecutor : IOrchestrationV
         try
         {
             var document = _dslParser.Parse(new DslDefinition { Content = request.ValidationDsl });
-            var source = _jsonReader.Read(new StructureInput
-            {
-                Format = "json",
-                Content = request.Payload?.ToJsonString() ?? "{}"
-            });
-            var result = _engine.Validate(new ValidationRequest
-            {
-                SourceGraph = source,
-                Definition = document
-            });
+            var validationRequest = BuildValidationRequest(request, document);
+            var result = _engine.Validate(validationRequest);
 
             return Task.FromResult(result.IsValid
                 ? OrchestrationValidationResult.Success()
@@ -80,5 +76,36 @@ public sealed class ButterMorphOrchestrationValidationExecutor : IOrchestrationV
                 exception.Message,
                 _diagnosticMapper.Map(exception)));
         }
+    }
+
+    private ValidationRequest BuildValidationRequest(
+        OrchestrationValidationRequest request,
+        IDslDocument document)
+    {
+        if (request.PayloadContext is not null)
+        {
+            var sources = _sourceGraphBuilder.Build(request.PayloadContext);
+            var payloadAlias = string.IsNullOrWhiteSpace(request.PayloadAlias) ? "context" : request.PayloadAlias;
+
+            return new ValidationRequest
+            {
+                Sources = sources,
+                SourceGraph = sources.TryGetValue(payloadAlias, out var source) ? source : null,
+                PayloadAlias = payloadAlias,
+                Definition = document
+            };
+        }
+
+        var singleSource = _jsonReader.Read(new StructureInput
+        {
+            Format = "json",
+            Content = request.Payload?.ToJsonString() ?? "{}"
+        });
+
+        return new ValidationRequest
+        {
+            SourceGraph = singleSource,
+            Definition = document
+        };
     }
 }

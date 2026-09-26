@@ -23,6 +23,11 @@ public sealed class DslValidationConfiguration : IValidationConfiguration
     public string SchemaHash { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the accumulated source context hash used when the validation was authored.
+    /// </summary>
+    public string SourceContextHash { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the last semantic validation diagnostics captured by Design.
     /// </summary>
     public string SemanticDiagnosticsJson { get; set; } = "{}";

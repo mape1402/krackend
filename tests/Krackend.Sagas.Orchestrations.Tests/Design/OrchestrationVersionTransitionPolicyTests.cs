@@ -7,11 +7,15 @@ public sealed class OrchestrationVersionTransitionPolicyTests
 {
     [Theory]
     [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.InReview)]
+    [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.Archived)]
     [InlineData(OrchestrationVersionStatus.InReview, OrchestrationVersionStatus.Draft)]
     [InlineData(OrchestrationVersionStatus.InReview, OrchestrationVersionStatus.Approved)]
+    [InlineData(OrchestrationVersionStatus.InReview, OrchestrationVersionStatus.Archived)]
     [InlineData(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.InReview)]
     [InlineData(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.Deployed)]
+    [InlineData(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.Archived)]
     [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.Deprecated)]
+    [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.Archived)]
     [InlineData(OrchestrationVersionStatus.Deprecated, OrchestrationVersionStatus.Archived)]
     public void CanTransitionAllowsOnlySupportedLifecycleMoves(
         OrchestrationVersionStatus from,

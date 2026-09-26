@@ -30,6 +30,14 @@ public interface IStageApplicationService
     Task<bool> SetExecutionCondition(SetStageExecutionConditionCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only entry validation of one stage.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> SetEntryValidation(SetStageEntryValidationCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes a resource.
     /// </summary>
     /// <param name="command">Command to execute.</param>

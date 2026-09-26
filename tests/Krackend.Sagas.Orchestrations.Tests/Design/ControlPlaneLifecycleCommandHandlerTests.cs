@@ -90,6 +90,33 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
     }
 
     [Fact]
+    public async Task ArchiveVersionPublishesMinimalPayloadWhenSnapshotCannotBeBuilt()
+    {
+        var fixture = new LifecycleFixture(OrchestrationVersionStatus.Draft);
+        OrchestrationVersionArchivedEvent? archived = null;
+        fixture.SnapshotBuilder
+            .Build(fixture.Version, Arg.Any<CancellationToken>())
+            .Returns<OrchestrationVersion>(_ => throw new InvalidOperationException("Version is incomplete."));
+        fixture.PublicationService
+            .PublishArchive(Arg.Do<OrchestrationVersionArchivedEvent>(evt => archived = evt), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var handler = new ArchiveOrchestrationVersionCommandHandler(
+            fixture.VersionRepository,
+            fixture.DefinitionRepository,
+            fixture.TransitionPolicy,
+            fixture.SnapshotBuilder,
+            fixture.PayloadFactory,
+            fixture.PublicationService);
+
+        Assert.True(await handler.Handle(new ArchiveOrchestrationVersionCommand(fixture.Version.Id.ToString(), "archiver"), CancellationToken.None));
+
+        Assert.Equal(OrchestrationVersionStatus.Archived, fixture.Version.Status);
+        Assert.NotNull(archived);
+        Assert.Contains("\"archived\":true", archived!.ArtifactPayloadJson, StringComparison.Ordinal);
+        fixture.PayloadFactory.DidNotReceiveWithAnyArgs().CreatePayloadJson(default!, default!);
+    }
+
+    [Fact]
     public async Task UpsertDomainHandlerCreatesUpdatesTrimsAndRejectsDuplicateKeys()
     {
         var repository = Substitute.For<IDomainRepository>();

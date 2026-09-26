@@ -47,6 +47,7 @@ public sealed class StageRepository : IStageRepository
         current.Order = next.Order;
         current.Description = next.Description;
         current.ExecutionCondition = next.ExecutionCondition;
+        current.EntryValidation = next.EntryValidation;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -77,6 +78,35 @@ public sealed class StageRepository : IStageRepository
             }.ToEntity().ExecutionCondition;
 
         // Ensure EF marks the JSON/complex property as modified for persistence.
+        _dbContext.StageDefinitions.Update(current);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes SetEntryValidation.
+    /// </summary>
+    public async Task SetEntryValidation(Id stageDefinitionId, ValidationDefinition entryValidation, CancellationToken cancellationToken = default)
+    {
+        var current = await _dbContext.StageDefinitions.FirstOrDefaultAsync(x => x.Id == stageDefinitionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"StageDefinition '{stageDefinitionId}' was not found.");
+
+        current.EntryValidation = entryValidation is null
+            ? null
+            : new StageDefinition
+            {
+                Id = current.Id,
+                OrchestrationVersionId = current.OrchestrationVersionId,
+                Key = current.Key,
+                Name = current.Name,
+                Order = current.Order,
+                Description = current.Description,
+                EntryValidation = entryValidation,
+                HasEntryValidation = true,
+                TaskDefinitions = new List<TaskDefinition>(),
+                ParallelGroups = new List<ParallelGroupDefinition>(),
+                BranchRules = new List<BranchRuleDefinition>()
+            }.ToEntity().EntryValidation;
+
         _dbContext.StageDefinitions.Update(current);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }

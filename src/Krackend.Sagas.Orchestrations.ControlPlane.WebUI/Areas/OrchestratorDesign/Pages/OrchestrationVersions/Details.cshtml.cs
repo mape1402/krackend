@@ -100,6 +100,7 @@ public sealed class DetailsModel : PageModel
     public async Task<IActionResult> OnPostTransitionVersionAsync(string orchestrationId, string versionId, string action, CancellationToken cancellationToken = default)
     {
         const string actor = "web-ui";
+        ModelState.Clear();
 
         try
         {
@@ -441,10 +442,10 @@ public sealed class DetailsModel : PageModel
     {
         return status switch
         {
-            OrchestrationVersionStatus.Draft => new[] { "SetInReview" },
-            OrchestrationVersionStatus.InReview => new[] { "Approve", "ReturnToDraft" },
-            OrchestrationVersionStatus.Approved => new[] { "Deploy", "ReopenReview" },
-            OrchestrationVersionStatus.Deployed => new[] { "Deprecate" },
+            OrchestrationVersionStatus.Draft => new[] { "SetInReview", "Archive" },
+            OrchestrationVersionStatus.InReview => new[] { "Approve", "ReturnToDraft", "Archive" },
+            OrchestrationVersionStatus.Approved => new[] { "Deploy", "ReopenReview", "Archive" },
+            OrchestrationVersionStatus.Deployed => new[] { "Deprecate", "Archive" },
             OrchestrationVersionStatus.Deprecated => new[] { "Archive" },
             _ => Array.Empty<string>()
         };
@@ -762,7 +763,7 @@ public sealed class DetailsModel : PageModel
         public string StageId { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or underscore, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]
@@ -776,7 +777,7 @@ public sealed class DetailsModel : PageModel
         public string TriggerId { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or underscore, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]

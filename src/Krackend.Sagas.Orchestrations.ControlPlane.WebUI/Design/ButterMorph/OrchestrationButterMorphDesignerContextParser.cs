@@ -6,34 +6,91 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrationButterMorphDesignerContextParser
 {
     private const string TaskTransformationPrefix = "orchestration-task-transform";
+    private const string TaskEntryValidationPrefix = "orchestration-task-entry-validation";
+    private const string StageEntryValidationPrefix = "orchestration-stage-entry-validation";
 
     /// <inheritdoc />
     public string FormatTaskTransformation(string orchestrationVersionId, string taskDefinitionId)
     {
-        if (string.IsNullOrWhiteSpace(orchestrationVersionId))
-        {
-            throw new ArgumentException("Orchestration version id is required.", nameof(orchestrationVersionId));
-        }
+        return Format(TaskTransformationPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
+    }
 
-        if (string.IsNullOrWhiteSpace(taskDefinitionId))
-        {
-            throw new ArgumentException("Task definition id is required.", nameof(taskDefinitionId));
-        }
+    /// <inheritdoc />
+    public string FormatTaskEntryValidation(string orchestrationVersionId, string taskDefinitionId)
+    {
+        return Format(TaskEntryValidationPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
+    }
 
-        return $"{TaskTransformationPrefix}:{orchestrationVersionId.Trim()}:{taskDefinitionId.Trim()}";
+    /// <inheritdoc />
+    public string FormatStageEntryValidation(string orchestrationVersionId, string stageDefinitionId)
+    {
+        return Format(StageEntryValidationPrefix, orchestrationVersionId, stageDefinitionId, nameof(stageDefinitionId));
     }
 
     /// <inheritdoc />
     public bool TryParseTaskTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context)
     {
+        return TryParseTaskContext(contextKey, TaskTransformationPrefix, out context);
+    }
+
+    /// <inheritdoc />
+    public bool TryParseTaskEntryValidation(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    {
+        return TryParseTaskContext(contextKey, TaskEntryValidationPrefix, out context);
+    }
+
+    /// <inheritdoc />
+    public bool TryParseStageEntryValidation(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    {
         context = null;
+        if (!TryParse(contextKey, StageEntryValidationPrefix, out var versionId, out var stageId))
+        {
+            return false;
+        }
+
+        context = new OrchestrationButterMorphDesignerContext
+        {
+            OrchestrationVersionId = versionId,
+            StageDefinitionId = stageId
+        };
+        return true;
+    }
+
+    private static bool TryParseTaskContext(
+        string contextKey,
+        string prefix,
+        out OrchestrationButterMorphDesignerContext context)
+    {
+        context = null;
+        if (!TryParse(contextKey, prefix, out var versionId, out var taskId))
+        {
+            return false;
+        }
+
+        context = new OrchestrationButterMorphDesignerContext
+        {
+            OrchestrationVersionId = versionId,
+            TaskDefinitionId = taskId
+        };
+        return true;
+    }
+
+    private static bool TryParse(
+        string contextKey,
+        string prefix,
+        out string orchestrationVersionId,
+        out string elementId)
+    {
+        orchestrationVersionId = string.Empty;
+        elementId = string.Empty;
+
         if (string.IsNullOrWhiteSpace(contextKey))
         {
             return false;
         }
 
         var parts = contextKey.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 3 || !string.Equals(parts[0], TaskTransformationPrefix, StringComparison.Ordinal))
+        if (parts.Length != 3 || !string.Equals(parts[0], prefix, StringComparison.Ordinal))
         {
             return false;
         }
@@ -43,11 +100,27 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
             return false;
         }
 
-        context = new OrchestrationButterMorphDesignerContext
-        {
-            OrchestrationVersionId = parts[1],
-            TaskDefinitionId = parts[2]
-        };
+        orchestrationVersionId = parts[1];
+        elementId = parts[2];
         return true;
+    }
+
+    private static string Format(
+        string prefix,
+        string orchestrationVersionId,
+        string elementId,
+        string elementParameterName)
+    {
+        if (string.IsNullOrWhiteSpace(orchestrationVersionId))
+        {
+            throw new ArgumentException("Orchestration version id is required.", nameof(orchestrationVersionId));
+        }
+
+        if (string.IsNullOrWhiteSpace(elementId))
+        {
+            throw new ArgumentException("Element id is required.", elementParameterName);
+        }
+
+        return $"{prefix}:{orchestrationVersionId.Trim()}:{elementId.Trim()}";
     }
 }

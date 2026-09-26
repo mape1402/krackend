@@ -1670,7 +1670,7 @@ public sealed class DetailsModel : PageModel
         public string StageId { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        [RegularExpression(@"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or underscore, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]

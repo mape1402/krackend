@@ -1,10 +1,16 @@
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
+using System.Text.RegularExpressions;
+
 /// <summary>
 /// Provides reusable validation helpers for interaction requests.
 /// </summary>
 internal static class ValidationRules
 {
+    private static readonly Regex OrchestratorKeyExpression = new(
+        "^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     /// <summary>
     /// Determines whether the value is a valid ULID.
     /// </summary>
@@ -36,6 +42,17 @@ internal static class ValidationRules
         return int.TryParse(parts[0], out _)
             && int.TryParse(parts[1], out _)
             && int.TryParse(parts[2], out _);
+    }
+
+    /// <summary>
+    /// Determines whether the value is a valid orchestrator component key.
+    /// </summary>
+    /// <param name="value">Input value.</param>
+    /// <returns>True when the key uses lowercase alphanumeric segments separated only by dot or underscore.</returns>
+    public static bool IsOrchestratorKey(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            OrchestratorKeyExpression.IsMatch(value);
     }
 }
 

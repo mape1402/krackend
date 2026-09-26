@@ -105,6 +105,7 @@
             @foreach (var stage in Model.Stages.OrderBy(s => s.Order))
             {
                 var hasStageExecutionCondition = stage.HasExecutionCondition;
+                var hasStageEntryValidation = stage.HasEntryValidation;
 
                 <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                     <div class="od-pipeline-card od-stage-card">
@@ -115,6 +116,15 @@
                                 data-stage-id="@stage.Id">
                             <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                                 <path d="M8.5 1.5a.5.5 0 0 0-.9-.3l-4 6a.5.5 0 0 0 .4.8H7l-1 6a.5.5 0 0 0 .9.3l4-6a.5.5 0 0 0-.4-.8H7.5l1-6z" />
+                            </svg>
+                        </button>
+                        <button type="button"
+                                class="od-stage-entry-validation-btn js-stage-entry-validation-btn @(hasStageEntryValidation ? "od-entry-validation-btn-active" : "od-entry-validation-btn-inactive")"
+                                title="Entry validation"
+                                aria-label="Entry validation"
+                                data-stage-id="@stage.Id">
+                            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                <path d="M8 1.2 2.5 3.4v3.9c0 3.2 2.1 6.1 5.5 7.5 3.4-1.4 5.5-4.3 5.5-7.5V3.4L8 1.2Zm2.7 5.4-3.2 3.5a.6.6 0 0 1-.9 0L5.2 8.7a.6.6 0 1 1 .9-.8L7 8.8l2.8-3a.6.6 0 1 1 .9.8Z" />
                             </svg>
                         </button>
                         <div class="od-item-top">
@@ -324,8 +334,10 @@
 <meta name="request-verification-token" content="@Antiforgery.GetAndStoreTokens(HttpContext).RequestToken" />
 
 @section Scripts {
+<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.0.0"></script>
 <script>
 const orchestrationVersionCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+const orchestrationVersionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SelectedVersion?.Id ?? Model.VersionId));
 
 function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
     if (!modalElement) {
@@ -671,6 +683,46 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
     hasExecutionConditionInput.addEventListener('change', refreshConditionSectionVisibility);
     conditionEngineInput.addEventListener('change', refreshConditionConfigByEngine);
     saveButton.addEventListener('click', saveExecutionCondition);
+})();
+
+(() => {
+    function openStageEntryValidationDesigner(stageId) {
+        if (!stageId) {
+            return;
+        }
+
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph validation designer could not be loaded.',
+                type: 'error'
+            });
+            return;
+        }
+
+        const mode = orchestrationVersionCanEdit ? 'edit' : 'view';
+        const contextKey = `orchestration-stage-entry-validation:${orchestrationVersionId}:${stageId}`;
+        const designerUrl = `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
+        window.ButterMorphHost.openFrame(designerUrl, {
+            title: 'ButterMorph entry validation',
+            width: '96vw',
+            height: '92vh'
+        });
+    }
+
+    document.querySelectorAll('.js-stage-entry-validation-btn').forEach(button => {
+        button.addEventListener('click', () => openStageEntryValidationDesigner(button.getAttribute('data-stage-id') || ''));
+    });
+
+    window.addEventListener('message', event => {
+        if (event.origin !== window.location.origin || !event.data) {
+            return;
+        }
+
+        if (event.data.type === 'ButterMorphValidationDesignerSaved') {
+            window.location.reload();
+        }
+    });
 })();
 
 (() => {

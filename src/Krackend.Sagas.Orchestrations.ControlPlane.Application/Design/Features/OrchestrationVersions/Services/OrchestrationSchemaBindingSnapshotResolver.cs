@@ -44,9 +44,10 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
         }
     }
 
-    private async Task ResolveTriggerAsync(
+    /// <inheritdoc />
+    public async Task ResolveTriggerAsync(
         TriggerBinding trigger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (trigger.TriggerChannel is EventTriggerChannel eventChannel)
         {
@@ -57,9 +58,10 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
         }
     }
 
-    private async Task ResolveTaskAsync(
+    /// <inheritdoc />
+    public async Task ResolveTaskAsync(
         TaskDefinition task,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (task.Configuration is not MessagingTaskConfiguration messaging)
         {
@@ -82,9 +84,10 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
             cancellationToken);
     }
 
-    private async Task ResolveCompensationAsync(
+    /// <inheritdoc />
+    public async Task ResolveCompensationAsync(
         CompensationDefinition compensation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (compensation?.Configuration is not MessagingTaskConfiguration messaging)
         {

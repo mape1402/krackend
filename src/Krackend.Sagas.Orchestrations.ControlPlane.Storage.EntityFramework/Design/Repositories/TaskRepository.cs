@@ -53,6 +53,7 @@ public sealed class TaskRepository : ITaskRepository
         current.IsEnabled = next.IsEnabled;
         current.Notes = next.Notes;
         current.ExecutionCondition = next.ExecutionCondition;
+        current.EntryValidation = next.EntryValidation;
         current.Transformation = next.Transformation;
         current.Configuration = next.Configuration;
         current.RetryPolicy = next.RetryPolicy;
@@ -118,6 +119,38 @@ public sealed class TaskRepository : ITaskRepository
             TimeoutPolicy = null,
             CompensationDefinition = null
         }.ToEntity().ExecutionCondition;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes SetEntryValidation.
+    /// </summary>
+    public async Task SetEntryValidation(Id taskDefinitionId, ValidationDefinition entryValidation, CancellationToken cancellationToken = default)
+    {
+        var current = await _dbContext.TaskDefinitions.FirstOrDefaultAsync(x => x.Id == taskDefinitionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"TaskDefinition '{taskDefinitionId}' was not found.");
+
+        current.EntryValidation = entryValidation is null
+            ? null
+            : new TaskDefinition
+            {
+                Id = current.Id,
+                StageDefinitionId = current.StageDefinitionId,
+                Key = current.Key,
+                Name = current.Name,
+                Order = current.Order,
+                Notes = current.Notes,
+                Kind = current.Kind,
+                ExecutionMode = current.ExecutionMode,
+                ParallelGroupId = current.ParallelGroupId,
+                OnErrorPolicy = current.OnErrorPolicy,
+                DispatchType = current.DispatchType,
+                IsEnabled = current.IsEnabled,
+                EntryValidation = entryValidation,
+                HasEntryValidation = true,
+                Configuration = new HumanApprovalTaskConfiguration(),
+            }.ToEntity().EntryValidation;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }

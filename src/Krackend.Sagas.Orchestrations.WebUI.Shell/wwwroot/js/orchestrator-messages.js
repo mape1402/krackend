@@ -160,7 +160,9 @@
             return;
         }
 
-        const errors = collectValidationErrors(form);
+        const errors = shouldValidateForm(form)
+            ? collectValidationErrors(form)
+            : [];
         if (errors.length > 0) {
             event.preventDefault();
             focusFirstInvalid(form);
@@ -194,6 +196,8 @@
             message: form.dataset.busyMessage || 'Please wait while the operation finishes.'
         });
     };
+
+    const shouldValidateForm = form => form.dataset.orchestratorValidate === 'true';
 
     const collectValidationErrors = form => {
         clearFormValidation(form);
@@ -233,8 +237,8 @@
             errors.push(`${label} must be ${maxLength} characters or fewer.`);
         }
 
-        if (field.dataset.orchestratorKey === 'true' && !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(value)) {
-            errors.push(`${label} must use lowercase segments separated by dot or dash.`);
+        if (field.dataset.orchestratorKey === 'true' && !/^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$/.test(value)) {
+            errors.push(`${label} must use lowercase segments separated by dot or underscore.`);
         }
 
         if (field.dataset.orchestratorVersion === 'true' && !/^\d+\.\d+\.\d+$/.test(value)) {

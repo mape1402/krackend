@@ -53,6 +53,14 @@ public sealed class TaskDefinitionModel
     /// </summary>
     public bool HasExecutionCondition { get; set; }
     /// <summary>
+    /// Gets or sets the entry validation.
+    /// </summary>
+    public ValidationDefinition EntryValidation { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets whether entry validation is enabled.
+    /// </summary>
+    public bool HasEntryValidation { get; set; }
+    /// <summary>
     /// Gets or sets the transformation.
     /// </summary>
     public TransformationDefinition Transformation { get; set; } = null!;

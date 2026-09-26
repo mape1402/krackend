@@ -13,20 +13,24 @@ public sealed class OrchestrationVersionTransitionPolicy : IOrchestrationVersion
             [OrchestrationVersionStatus.Draft] = new HashSet<OrchestrationVersionStatus>
             {
                 OrchestrationVersionStatus.InReview,
+                OrchestrationVersionStatus.Archived,
             },
             [OrchestrationVersionStatus.InReview] = new HashSet<OrchestrationVersionStatus>
             {
                 OrchestrationVersionStatus.Draft,
                 OrchestrationVersionStatus.Approved,
+                OrchestrationVersionStatus.Archived,
             },
             [OrchestrationVersionStatus.Approved] = new HashSet<OrchestrationVersionStatus>
             {
                 OrchestrationVersionStatus.InReview,
                 OrchestrationVersionStatus.Deployed,
+                OrchestrationVersionStatus.Archived,
             },
             [OrchestrationVersionStatus.Deployed] = new HashSet<OrchestrationVersionStatus>
             {
                 OrchestrationVersionStatus.Deprecated,
+                OrchestrationVersionStatus.Archived,
             },
             [OrchestrationVersionStatus.Deprecated] = new HashSet<OrchestrationVersionStatus>
             {

@@ -46,6 +46,14 @@ public interface ITaskRepository
     Task SetExecutionCondition(Id taskDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only entry validation of one task definition.
+    /// </summary>
+    /// <param name="taskDefinitionId">Identifier of the task definition.</param>
+    /// <param name="entryValidation">Entry validation to persist.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetEntryValidation(Id taskDefinitionId, ValidationDefinition entryValidation, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates only transformation of one task definition.
     /// </summary>
     /// <param name="taskDefinitionId">Identifier of the task definition.</param>
