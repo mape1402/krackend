@@ -29,7 +29,7 @@
     <PackageReference Update="Pigeon.Messaging" Version="4.0.0" />
     <PackageReference Update="Pigeon.Messaging.Azure.ServiceBus" Version="4.0.0" />
     <PackageReference Update="Pigeon.Messaging.Rabbit" Version="4.0.0" />
-    <PackageReference Update="Spider.Pipelines" Version="1.0.0" />
+    <PackageReference Update="Spider.Pipelines" Version="2.1.0" />
     <PackageReference Update="Ulid" Version="1.4.1" />
   </ItemGroup>
 </Project>
