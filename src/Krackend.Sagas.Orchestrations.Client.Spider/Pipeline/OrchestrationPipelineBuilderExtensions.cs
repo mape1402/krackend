@@ -4,6 +4,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Microsoft.Extensions.DependencyInjection;
+using SquirrelBox;
+using Spider.Pipelines.Extensions;
 using System.Text.Json;
 
 /// <summary>
@@ -61,6 +63,7 @@ public static class OrchestrationPipelineBuilderExtensions
         builder.OnPreProcess(preProcess =>
             preProcess.OnPreProcess((context, arguments) =>
             {
+                RestoreDeferredMessageMetadata(context.Services);
                 context.Services.GetRequiredService<IOrchestrationOperationClient>().Begin(typeof(TRequest));
                 return Task.CompletedTask;
             }));
@@ -69,6 +72,7 @@ public static class OrchestrationPipelineBuilderExtensions
         {
             postProcess.OnSuccess(async (context, _) =>
             {
+                RestoreDeferredMessageMetadata(context.Services);
                 var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
                 try
                 {
@@ -86,6 +90,10 @@ public static class OrchestrationPipelineBuilderExtensions
             });
             postProcess.OnFailure(async (context, _) =>
             {
+                RestoreDeferredMessageMetadata(context.Services);
+                var hasBackchannel = HasReplyAddress(context.Services
+                    .GetRequiredService<IOrchestrationMessageMetadataAccessor>()
+                    .Get());
                 var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
                 try
                 {
@@ -98,6 +106,11 @@ public static class OrchestrationPipelineBuilderExtensions
                 finally
                 {
                     client.Close();
+                }
+
+                if (hasBackchannel)
+                {
+                    context.AsSettable().Success();
                 }
             });
         });
@@ -188,6 +201,7 @@ public static class OrchestrationPipelineBuilderExtensions
         builder.OnPreProcess(preProcess =>
             preProcess.OnPreProcess((context, arguments) =>
             {
+                RestoreDeferredMessageMetadata(context.Services);
                 context.Services.GetRequiredService<IOrchestrationOperationClient>().Begin(typeof(TRequest));
                 return Task.CompletedTask;
             }));
@@ -196,6 +210,7 @@ public static class OrchestrationPipelineBuilderExtensions
         {
             postProcess.OnSuccess(async (context, _) =>
             {
+                RestoreDeferredMessageMetadata(context.Services);
                 var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
                 try
                 {
@@ -213,6 +228,10 @@ public static class OrchestrationPipelineBuilderExtensions
             });
             postProcess.OnFailure(async (context, _) =>
             {
+                RestoreDeferredMessageMetadata(context.Services);
+                var hasBackchannel = HasReplyAddress(context.Services
+                    .GetRequiredService<IOrchestrationMessageMetadataAccessor>()
+                    .Get());
                 var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
                 try
                 {
@@ -225,6 +244,11 @@ public static class OrchestrationPipelineBuilderExtensions
                 finally
                 {
                     client.Close();
+                }
+
+                if (hasBackchannel)
+                {
+                    context.AsSettable().Success();
                 }
             });
         });
@@ -257,4 +281,34 @@ public static class OrchestrationPipelineBuilderExtensions
 
     private static string NormalizeVersion(string version)
         => string.IsNullOrWhiteSpace(version) ? "1.0.0" : version;
+
+    private static void RestoreDeferredMessageMetadata(IServiceProvider services)
+    {
+        var accessor = services.GetService<IOrchestrationMessageMetadataAccessor>();
+        if (HasReplyAddress(accessor?.Get()))
+        {
+            return;
+        }
+
+        var inbox = services.GetService<IInboxContextAccessor>()?.Current;
+        if (inbox?.Entry?.Metadata is null
+            || !inbox.Entry.Metadata.TryGetValue(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey, out var payload)
+            || string.IsNullOrWhiteSpace(payload))
+        {
+            return;
+        }
+
+        var metadata = JsonSerializer.Deserialize<OrchestrationMessageMetadata>(payload, SerializerOptions);
+        if (!HasReplyAddress(metadata))
+        {
+            return;
+        }
+
+        services.GetRequiredService<IOrchestrationMessageMetadataSetter>().Set(metadata);
+    }
+
+    private static bool HasReplyAddress(OrchestrationMessageMetadata metadata)
+        => metadata?.ReplyAddress is not null
+           && !string.IsNullOrWhiteSpace(metadata.ReplyAddress.Transport)
+           && !string.IsNullOrWhiteSpace(metadata.ReplyAddress.SettingsPayload);
 }
