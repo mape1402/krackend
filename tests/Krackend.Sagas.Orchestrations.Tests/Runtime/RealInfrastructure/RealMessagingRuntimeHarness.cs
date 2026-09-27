@@ -395,6 +395,15 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
             .OrderBy(dispatch => dispatch.ScheduledOnUtc)
             .ThenBy(dispatch => dispatch.SentOnUtc)
             .ToArrayAsync();
+        var muleDeduplicationKeys = dispatches
+            .Select(dispatch => dispatch.Id.ToString())
+            .Concat(attempts.Select(attempt => $"backchannel:{attempt.DispatchId}:{attempt.AttemptNumber}"))
+            .ToArray();
+        var muleActions = await dbContext.Set<DurableAction>()
+            .AsNoTracking()
+            .Where(action => muleDeduplicationKeys.Contains(action.DeduplicationKey))
+            .OrderBy(action => action.CreatedOnUtc)
+            .ToArrayAsync();
         var transitions = await dbContext.ExecutionTransitions
             .AsNoTracking()
             .Where(transition => transition.OrchestrationInstanceId == instanceId)
@@ -422,13 +431,17 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
                 var taskKey = taskId == default ? dispatch.TaskExecutionAttemptId.ToString() : taskKeys.GetValueOrDefault(taskId, taskId.ToString());
                 return $"{taskKey}:{dispatch.DispatchStatus}:dest={dispatch.Destination}:scheduled={dispatch.ScheduledOnUtc:o}:sent={dispatch.SentOnUtc:o}:failed={dispatch.FailedOnUtc:o}:reason={dispatch.FailureReason}";
             }));
+        var muleSummary = string.Join(
+            " | ",
+            muleActions.Select(action =>
+                $"{action.Key}:{action.Status}:dedupe={action.DeduplicationKey}:attempts={action.Attempts}:created={action.CreatedOnUtc:o}:started={action.StartedOnUtc:o}:completed={action.CompletedOnUtc:o}:terminal={action.TerminalOnUtc:o}:error={action.LastError}"));
         var transitionSummary = string.Join(
             " | ",
             transitions
                 .OrderBy(transition => transition.OccurredOnUtc)
                 .Select(transition => $"{transition.OccurredOnUtc:o}:{transition.TransitionType}:{transition.FromStatus}->{transition.ToStatus}:{transition.Message}"));
 
-        return $"Stages=[{stageSummary}]; Tasks=[{taskSummary}]; Attempts=[{attemptSummary}]; Dispatches=[{dispatchSummary}]; Transitions=[{transitionSummary}]";
+        return $"Stages=[{stageSummary}]; Tasks=[{taskSummary}]; Attempts=[{attemptSummary}]; Dispatches=[{dispatchSummary}]; Mule=[{muleSummary}]; Transitions=[{transitionSummary}]";
     }
 
     private static Id ParseId(string value)

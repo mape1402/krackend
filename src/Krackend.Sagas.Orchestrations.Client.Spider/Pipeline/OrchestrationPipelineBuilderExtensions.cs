@@ -92,8 +92,8 @@ public static class OrchestrationPipelineBuilderExtensions
             {
                 RestoreDeferredMessageMetadata(context.Services);
                 var hasBackchannel = HasReplyAddress(context.Services
-                    .GetRequiredService<IOrchestrationMessageMetadataAccessor>()
-                    .Get());
+                    .GetService<IOrchestrationMessageMetadataAccessor>()
+                    ?.Get());
                 var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
                 try
                 {
@@ -230,8 +230,8 @@ public static class OrchestrationPipelineBuilderExtensions
             {
                 RestoreDeferredMessageMetadata(context.Services);
                 var hasBackchannel = HasReplyAddress(context.Services
-                    .GetRequiredService<IOrchestrationMessageMetadataAccessor>()
-                    .Get());
+                    .GetService<IOrchestrationMessageMetadataAccessor>()
+                    ?.Get());
                 var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
                 try
                 {
