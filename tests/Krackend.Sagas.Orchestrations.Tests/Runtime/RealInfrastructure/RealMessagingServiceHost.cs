@@ -144,18 +144,27 @@ internal sealed class RealMessagingServiceHost : IAsyncDisposable
         {
             if (outcome.Kind == RealMessagingServiceOutcomeKind.Success)
             {
+                scenario.RecordReply(topic, "success", completed: false, error: null, metadataAccessor.Get());
                 await client.ReportSuccessAsync<JsonNode, JsonNode>(
                     outcome.Payload ?? new JsonObject(),
                     options);
+                scenario.RecordReply(topic, "success", completed: true, error: null, metadataAccessor.Get());
                 return;
             }
 
+            scenario.RecordReply(topic, "failure", completed: false, error: outcome.ErrorCode, metadataAccessor.Get());
             await client.ReportFailureAsync<JsonNode>(
                 new RealMessagingServiceException(
                     outcome.ErrorCode ?? "UnhandledServiceFailure",
                     outcome.ErrorMessage ?? "Service failed.",
                     outcome.IsRetryableCandidate),
                 options);
+            scenario.RecordReply(topic, "failure", completed: true, error: outcome.ErrorCode, metadataAccessor.Get());
+        }
+        catch (Exception exception)
+        {
+            scenario.RecordReply(topic, outcome.Kind.ToString(), completed: false, error: exception.Message, metadataAccessor.Get());
+            throw;
         }
         finally
         {

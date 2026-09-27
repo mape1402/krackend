@@ -670,9 +670,13 @@ public sealed class RuntimeRealInfrastructureE2ETests
                 " | ",
                 services.Scenario.Invocations.Select(invocation =>
                     $"{invocation.Topic}:task={invocation.MessageMetadata.TaskExecutionId}:attempt={invocation.MessageMetadata.Attempt}:dispatch={invocation.MessageMetadata.DispatchId}:reply={invocation.MessageMetadata.ReplyAddress?.Transport}"));
+            var replySummary = string.Join(
+                " | ",
+                services.Scenario.Replies.Select(reply =>
+                    $"{reply.Topic}:{reply.Outcome}:completed={reply.Completed}:task={reply.MessageMetadata.TaskExecutionId}:attempt={reply.MessageMetadata.Attempt}:dispatch={reply.MessageMetadata.DispatchId}:reply={reply.MessageMetadata.ReplyAddress?.Transport}:error={reply.Error}"));
 
             throw new TimeoutException(
-                $"{exception.Message}. Service invocations=[{invocationSummary}]",
+                $"{exception.Message}. Service invocations=[{invocationSummary}]. Service replies=[{replySummary}]",
                 exception);
         }
 

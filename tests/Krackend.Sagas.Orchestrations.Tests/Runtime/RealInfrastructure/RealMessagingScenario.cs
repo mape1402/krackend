@@ -8,8 +8,11 @@ internal sealed class RealMessagingScenario
 {
     private readonly ConcurrentDictionary<string, ConcurrentQueue<RealMessagingServiceOutcome>> _outcomes = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentQueue<RealMessagingServiceInvocation> _invocations = new();
+    private readonly ConcurrentQueue<RealMessagingServiceReply> _replies = new();
 
     public IReadOnlyCollection<RealMessagingServiceInvocation> Invocations => _invocations.ToArray();
+
+    public IReadOnlyCollection<RealMessagingServiceReply> Replies => _replies.ToArray();
 
     public void Enqueue(string topic, RealMessagingServiceOutcome outcome)
     {
@@ -24,6 +27,21 @@ internal sealed class RealMessagingScenario
         _invocations.Enqueue(new RealMessagingServiceInvocation(
             topic,
             payload?.DeepClone(),
+            CloneMetadata(metadata)));
+    }
+
+    public void RecordReply(
+        string topic,
+        string outcome,
+        bool completed,
+        string? error,
+        OrchestrationMessageMetadata metadata)
+    {
+        _replies.Enqueue(new RealMessagingServiceReply(
+            topic,
+            outcome,
+            completed,
+            error,
             CloneMetadata(metadata)));
     }
 

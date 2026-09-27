@@ -36,6 +36,15 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         await SaveChanges(cancellationToken);
     }
 
+    public async Task RecordSent(Id dispatchId, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
+    {
+        var dispatch = await DbContext.TaskDispatches.FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Task dispatch '{dispatchId}' was not found.");
+
+        dispatch.SentOnUtc = sentOnUtc;
+        await SaveChanges(cancellationToken);
+    }
+
     public async Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default)
     {
         var dispatch = await DbContext.TaskDispatches.FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken)
