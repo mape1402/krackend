@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.3.3] - 2026-09-27
 
+- ### Changed
+
+  - Updated Pigeon messaging packages to `4.0.1`.
+
 - ### Fixed
 
   - Fixed Spider orchestration callbacks for deferred SquirrelBox consumers by restoring orchestration metadata from the inbox entry before reporting success or failure.

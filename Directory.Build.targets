@@ -26,9 +26,9 @@
     <PackageReference Update="Mule.DurableActions" Version="1.5.0" />
     <PackageReference Update="Mule.DurableActions.EntityFrameworkCore" Version="1.5.0" />
     <PackageReference Update="Mule.DurableActions.FastLane.Redis" Version="1.5.0" />
-    <PackageReference Update="Pigeon.Messaging" Version="4.0.0" />
-    <PackageReference Update="Pigeon.Messaging.Azure.ServiceBus" Version="4.0.0" />
-    <PackageReference Update="Pigeon.Messaging.Rabbit" Version="4.0.0" />
+    <PackageReference Update="Pigeon.Messaging" Version="4.0.1" />
+    <PackageReference Update="Pigeon.Messaging.Azure.ServiceBus" Version="4.0.1" />
+    <PackageReference Update="Pigeon.Messaging.Rabbit" Version="4.0.1" />
     <PackageReference Update="Spider.Pipelines" Version="2.1.0" />
     <PackageReference Update="SquirrelBox" Version="2.2.0" />
     <PackageReference Update="Ulid" Version="1.4.1" />
