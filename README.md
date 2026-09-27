@@ -144,6 +144,7 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.ControlPlane*` captures orchestration definitions, versions, releases, runtime nodes, credentials, and artifact delivery.
 - `Krackend.Sagas.Orchestrations.Runtime*` consumes immutable artifacts, projects ingress configuration, runs durable Mule-backed work, dispatches transport-agnostic commands, tracks instances, and exposes runtime diagnostics.
 - `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
+- The Spider client extension supports inline and deferred consumer execution. For deferred SquirrelBox consumers, orchestration metadata is restored from the inbox entry so success and failure callbacks still reach the runtime backchannel without wrapping or mutating the business payload.
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
