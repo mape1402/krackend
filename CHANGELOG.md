@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v2.3.3] - 2026-09-27
+
+- ### Fixed
+
+  - Fixed Spider orchestration callbacks for deferred SquirrelBox consumers by restoring orchestration metadata from the inbox entry before reporting success or failure.
+  - Fixed orchestration failure reporting so consumers with a valid backchannel report the failure to the runtime without triggering duplicate local deferred retries, while non-orchestrated consumers continue to surface business exceptions normally.
+  - Added integration coverage for deferred metadata restoration and failure callback behavior across `net9.0` and `net10.0`.
+
+------
+
 ## [v2.3.2] - 2026-09-18
 
 - ### Added
