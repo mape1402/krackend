@@ -33,13 +33,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             return Task.CompletedTask;
         }
 
-        public Task RecordSent(Id dispatchId, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
-        {
-            var dispatch = _store.Dispatches[dispatchId];
-            dispatch.SentOnUtc = sentOnUtc;
-            return Task.CompletedTask;
-        }
-
         public Task MarkFailed(Id dispatchId, string failureReason, string externalReference = null, CancellationToken cancellationToken = default)
         {
             var dispatch = _store.Dispatches[dispatchId];

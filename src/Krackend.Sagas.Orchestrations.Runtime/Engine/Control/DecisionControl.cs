@@ -366,36 +366,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
-            if (IsInstanceTerminalForCallback(instance.Status))
-            {
-                return null;
-            }
-
-            if (task.OrchestrationInstanceId != instanceId ||
+            if (IsInstanceTerminalForCallback(instance.Status) ||
+                task.Status != TaskExecutionStatus.WaitingResponse ||
+                task.OrchestrationInstanceId != instanceId ||
+                attempt.Status != TaskExecutionStatus.WaitingResponse ||
+                !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) ||
                 attempt.TaskExecutionId != task.Id ||
                 dispatch.TaskExecutionAttemptId != attempt.Id ||
                 (request.MessageMetadata.Attempt > 0 && request.MessageMetadata.Attempt != attempt.AttemptNumber))
             {
                 return null;
-            }
-
-            if (instance.Status == OrchestrationInstanceStatus.Failed &&
-                !await CanAcceptCallbackWhileFailedAsync(instance, request, cancellationToken))
-            {
-                return null;
-            }
-
-            if (task.Status != TaskExecutionStatus.WaitingResponse ||
-                attempt.Status != TaskExecutionStatus.WaitingResponse ||
-                !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
-            {
-                if (IsCallbackTerminalState(task, attempt, dispatch))
-                {
-                    return null;
-                }
-
-                throw new OrchestrationCallbackNotReadyException(
-                    $"Callback for dispatch '{dispatchId}' arrived before task '{taskExecutionId}' was ready to accept the response.");
             }
 
             var payload = request.Payload?.ToJsonString();
@@ -424,65 +404,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             => !string.IsNullOrWhiteSpace(metadata?.TaskExecutionId) ||
                 !string.IsNullOrWhiteSpace(metadata?.DispatchId);
 
-        private static bool IsCallbackTerminalState(
-            TaskExecution task,
-            TaskExecutionAttempt attempt,
-            TaskDispatch dispatch)
-            => IsTerminalTaskStatus(task.Status) ||
-                IsTerminalTaskStatus(attempt.Status) ||
-                IsTerminalDispatchStatus(dispatch.DispatchStatus);
-
-        private static bool IsTerminalTaskStatus(TaskExecutionStatus status)
-            => status is TaskExecutionStatus.Completed
-                or TaskExecutionStatus.CompletedWithErrors
-                or TaskExecutionStatus.Failed
-                or TaskExecutionStatus.TimedOut
-                or TaskExecutionStatus.Cancelled
-                or TaskExecutionStatus.Compensated
-                or TaskExecutionStatus.Skipped;
-
-        private static bool IsTerminalDispatchStatus(string status)
-            => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
-
         private static bool IsRuntimeTimeoutSignal(DecisionRequest request)
             => string.Equals(request.ExecutionResultMetadata?.ErrorType, "Timeout", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(request.ExecutionResultMetadata?.Status, "TimedOut", StringComparison.OrdinalIgnoreCase);
-
-        private async Task<bool> CanAcceptCallbackWhileFailedAsync(
-            OrchestrationInstance instance,
-            DecisionRequest request,
-            CancellationToken cancellationToken)
-        {
-            var taskExecutions = await _taskRepository.GetByInstanceId(instance.Id, cancellationToken);
-            var failedTask = taskExecutions.FirstOrDefault(task =>
-                task.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut);
-            if (failedTask is null)
-            {
-                return true;
-            }
-
-            if (HasCompensationTerminalFailure(instance))
-            {
-                return false;
-            }
-
-            var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
-            var failedArtifact = resolvedArtifact.Artifact.StageDefinitions
-                .SelectMany(stage => stage.TaskDefinitions)
-                .FirstOrDefault(task => task.Key == failedTask.TaskKey);
-            var persistedFailureRequest = new DecisionRequest
-            {
-                ArtifactId = request.ArtifactId,
-                MessageMetadata = request.MessageMetadata,
-                Payload = request.Payload
-            };
-
-            return await ShouldRetryAsync(failedTask, failedArtifact, persistedFailureRequest, cancellationToken);
-        }
 
         private static bool IsStageFinished(StageExecutionStatus status)
             => status is StageExecutionStatus.Completed or StageExecutionStatus.Skipped;
@@ -492,7 +416,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 or OrchestrationInstanceStatus.CompletedWithErrors
                 or OrchestrationInstanceStatus.Stopped
                 or OrchestrationInstanceStatus.Compensating
-                or OrchestrationInstanceStatus.Compensated;
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Failed;
 
         private static bool TryGetBoolean(
             IReadOnlyDictionary<string, JsonNode> metadata,
