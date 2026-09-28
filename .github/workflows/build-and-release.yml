@@ -78,7 +78,13 @@ jobs:
         run: dotnet build "$DOTNET_TARGET" --no-restore --configuration "$CONFIGURATION"
 
       - name: Test
-        run: dotnet test "$DOTNET_TARGET" --no-build --configuration "$CONFIGURATION" --verbosity normal
+        run: >
+          dotnet test "$DOTNET_TARGET"
+          --no-build
+          --configuration "$CONFIGURATION"
+          --verbosity minimal
+          --logger "console;verbosity=minimal"
+          -m:1
 
       - name: Resolve release marker
         id: release
