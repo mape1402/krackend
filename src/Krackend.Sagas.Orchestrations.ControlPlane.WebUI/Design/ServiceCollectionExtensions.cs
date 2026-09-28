@@ -58,11 +58,13 @@ public static class ServiceCollectionExtensions
         {
             var prefix = NormalizePrefix(_options.RoutePrefix);
 
-            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Orchestrations/Index", prefix);
+            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Index", prefix);
+            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Orchestrations/Index", $"{prefix}/orchestrations");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Orchestrations/Create", $"{prefix}/orchestrations/create");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Orchestrations/Details", $"{prefix}/orchestrations/{{orchestrationId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/OrchestrationVersions/Details", $"{prefix}/orchestrations/{{orchestrationId}}/versions/{{versionId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/OrchestrationStages/Details", $"{prefix}/orchestrations/{{orchestrationId}}/versions/{{versionId}}/stages/{{stageId}}");
+            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Domains/Index", $"{prefix}/domains");
         }
 
         private static string NormalizePrefix(string routePrefix)

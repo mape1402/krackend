@@ -10,6 +10,13 @@ public sealed class DesignNavigationContributor : IOrchestratorNavigationContrib
         [
             new OrchestratorNavigationItem
             {
+                Label = "Overview",
+                Area = "OrchestratorDesign",
+                Page = "/Index",
+                Order = 0
+            },
+            new OrchestratorNavigationItem
+            {
                 Label = "Orchestrations",
                 Area = "OrchestratorDesign",
                 Page = "/Orchestrations/Index",
