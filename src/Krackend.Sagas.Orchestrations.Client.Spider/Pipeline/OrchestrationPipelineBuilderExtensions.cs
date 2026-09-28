@@ -3,6 +3,7 @@ namespace Spider.Pipelines.Core;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
+using Krackend.Sagas.Orchestrations.Client.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using SquirrelBox;
 using Spider.Pipelines.Extensions;
@@ -102,6 +103,97 @@ public static class OrchestrationPipelineBuilderExtensions
                         typeof(TRequest),
                         context.Exception,
                         options,
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+
+                if (hasBackchannel)
+                {
+                    context.AsSettable().Success();
+                }
+            });
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Publishes a trigger event selected by routing when metadata is not present.
+    /// </summary>
+    public static IPipelineBuilder<TRequest> UseOrchestration<TRequest>(
+        this IPipelineBuilder<TRequest> builder,
+        Action<OrchestrationTriggerRouteBuilder<TRequest>> routing)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (routing is null)
+        {
+            throw new ArgumentNullException(nameof(routing));
+        }
+
+        var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest>();
+        routing(routeBuilder);
+        return builder.UseOrchestration(routeBuilder);
+    }
+
+    private static IPipelineBuilder<TRequest> UseOrchestration<TRequest>(
+        this IPipelineBuilder<TRequest> builder,
+        OrchestrationTriggerRouteBuilder<TRequest> routing)
+    {
+        builder.OnPreProcess(preProcess =>
+            preProcess.OnPreProcess((context, arguments) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                context.Services.GetRequiredService<IOrchestrationOperationClient>().Begin(typeof(TRequest));
+                return Task.CompletedTask;
+            }));
+
+        builder.OnPostProcess(postProcess =>
+        {
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    var hasBackchannel = HasReplyAddress(context.Services
+                        .GetService<IOrchestrationMessageMetadataAccessor>()
+                        ?.Get());
+                    var result = hasBackchannel
+                        ? new OrchestrationTriggerRoutingResult(false, context.Request, new OrchestrationOperationOptions())
+                        : routing.Resolve(context.Request);
+
+                    await client.ReportSuccessAsync(
+                        typeof(TRequest),
+                        null,
+                        result.Payload,
+                        result.Options,
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+            });
+            postProcess.OnFailure(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                var hasBackchannel = HasReplyAddress(context.Services
+                    .GetService<IOrchestrationMessageMetadataAccessor>()
+                    ?.Get());
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    await client.ReportFailureAsync(
+                        typeof(TRequest),
+                        context.Exception,
+                        new OrchestrationOperationOptions(),
                         context.CancellationToken);
                 }
                 finally
@@ -240,6 +332,97 @@ public static class OrchestrationPipelineBuilderExtensions
                         typeof(TRequest),
                         context.Exception,
                         options,
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+
+                if (hasBackchannel)
+                {
+                    context.AsSettable().Success();
+                }
+            });
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Publishes a trigger event selected by routing when metadata is not present.
+    /// </summary>
+    public static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
+        this IPipelineBuilder<TRequest, TResponse> builder,
+        Action<OrchestrationTriggerRouteBuilder<TRequest, TResponse>> routing)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (routing is null)
+        {
+            throw new ArgumentNullException(nameof(routing));
+        }
+
+        var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest, TResponse>();
+        routing(routeBuilder);
+        return builder.UseOrchestration(routeBuilder);
+    }
+
+    private static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
+        this IPipelineBuilder<TRequest, TResponse> builder,
+        OrchestrationTriggerRouteBuilder<TRequest, TResponse> routing)
+    {
+        builder.OnPreProcess(preProcess =>
+            preProcess.OnPreProcess((context, arguments) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                context.Services.GetRequiredService<IOrchestrationOperationClient>().Begin(typeof(TRequest));
+                return Task.CompletedTask;
+            }));
+
+        builder.OnPostProcess(postProcess =>
+        {
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    var hasBackchannel = HasReplyAddress(context.Services
+                        .GetService<IOrchestrationMessageMetadataAccessor>()
+                        ?.Get());
+                    var result = hasBackchannel
+                        ? new OrchestrationTriggerRoutingResult(false, context.Response, new OrchestrationOperationOptions())
+                        : routing.Resolve(context.Request, context.Response);
+
+                    await client.ReportSuccessAsync(
+                        typeof(TRequest),
+                        typeof(TResponse),
+                        result.Payload,
+                        result.Options,
+                        context.CancellationToken);
+                }
+                finally
+                {
+                    client.Close();
+                }
+            });
+            postProcess.OnFailure(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                var hasBackchannel = HasReplyAddress(context.Services
+                    .GetService<IOrchestrationMessageMetadataAccessor>()
+                    ?.Get());
+                var client = context.Services.GetRequiredService<IOrchestrationOperationClient>();
+                try
+                {
+                    await client.ReportFailureAsync(
+                        typeof(TRequest),
+                        context.Exception,
+                        new OrchestrationOperationOptions(),
                         context.CancellationToken);
                 }
                 finally
