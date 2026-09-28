@@ -2,6 +2,7 @@ using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
+using Krackend.Sagas.Orchestrations.Client.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Pelican.Mediator;
@@ -24,6 +25,7 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(builder, builder.UseOrchestration());
         Assert.Same(builder, builder.UseOrchestration("events.sales.created", " "));
         Assert.Same(builder, builder.UseOrchestration(static request => new { request.Id }));
+        Assert.Same(builder, builder.UseOrchestration(routes => routes.When(static _ => true, "events.sales.created")));
     }
 
     [Fact]
@@ -37,6 +39,7 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(builder, builder.UseOrchestration("events.sales.completed", " "));
         Assert.Same(builder, builder.UseOrchestration(static response => new { response.Ok }));
         Assert.Same(builder, builder.UseOrchestration(static response => new { response.Ok }, "events.sales.completed"));
+        Assert.Same(builder, builder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.completed")));
     }
 
     [Fact]
@@ -52,12 +55,14 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>("events.sales.created"));
         Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>(static request => new { request.Id }));
         Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>(static request => new { request.Id }, "events.sales.created"));
+        Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>(routes => routes.When(static _ => true, "events.sales.created")));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>());
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>("events.sales.completed"));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static response => new { response.Ok }));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static response => new { response.Ok }, "events.sales.completed"));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static (request, response) => new { request.Id, response.Ok }));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static (request, response) => new { request.Id, response.Ok }, "events.sales.completed"));
+        Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(routes => routes.When(static (_, _) => true, "events.sales.completed")));
     }
 
     [Fact]
@@ -237,6 +242,263 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     }
 
     [Fact]
+    public async Task RequestPipelineRoutingPublishesFirstMatchingRouteWithDefaultPayload()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportSuccessAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Type>(),
+                Arg.Any<object>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest>>();
+        Action<IPreProcessConfiguration<PipelineRequest>> configurePre = null!;
+        Action<IPostProcessConfiguration<PipelineRequest>> configurePost = null!;
+        builder.OnPreProcess(Arg.Do<Action<IPreProcessConfiguration<PipelineRequest>>>(action => configurePre = action))
+            .Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest>>>(action => configurePost = action))
+            .Returns(builder);
+        var context = new Context<PipelineRequest>(new PipelineRequest("sale-route-1"), provider, CancellationToken.None);
+
+        builder.UseOrchestration(routes => routes
+            .When(static _ => false, "events.sales.ignored")
+            .When(static _ => true, "events.sales.routed"));
+        PreProcessDelegate<PipelineRequest> preDelegate = null!;
+        SuccessPostProcessDelegate<PipelineRequest> successDelegate = null!;
+        var pre = Substitute.For<IPreProcessConfiguration<PipelineRequest>>();
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest>>();
+        pre.OnPreProcess(Arg.Do<PreProcessDelegate<PipelineRequest>>(handler => preDelegate = handler))
+            .Returns(pre);
+        post.OnSuccess(Arg.Do<SuccessPostProcessDelegate<PipelineRequest>>(handler => successDelegate = handler))
+            .Returns(post);
+        configurePre(pre);
+        configurePost(post);
+        await preDelegate(context, new PreProcessArguments());
+        await successDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportSuccessAsync(
+            typeof(PipelineRequest),
+            null,
+            Arg.Is<object>(payload => IsPipelineRequestPayload(payload, "sale-route-1")),
+            Arg.Is<OrchestrationOperationOptions>(options => MatchesTrigger(options, "events.sales.routed", "1.0.0")),
+            Arg.Any<CancellationToken>());
+        client.Received(1).Close();
+    }
+
+    [Fact]
+    public async Task ResponsePipelineRoutingPublishesTransformedFirstMatchingRoute()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportSuccessAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Type>(),
+                Arg.Any<object>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPreProcessConfiguration<PipelineRequest>> configurePre = null!;
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Do<Action<IPreProcessConfiguration<PipelineRequest>>>(action => configurePre = action))
+            .Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-route-2"), provider, CancellationToken.None);
+        context.SetResponse(new PipelineResponse(true));
+
+        builder.UseOrchestration(routes => routes
+            .When(static (_, response) => !response.Ok, "events.sales.rejected")
+            .When(
+                static (_, response) => response.Ok,
+                static (request, response) => new { request.Id, response.Ok, Routed = true },
+                "events.sales.approved",
+                "2.0.0"));
+        PreProcessDelegate<PipelineRequest> preDelegate = null!;
+        SuccessPostProcessDelegate<PipelineRequest, PipelineResponse> successDelegate = null!;
+        var pre = Substitute.For<IPreProcessConfiguration<PipelineRequest>>();
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        pre.OnPreProcess(Arg.Do<PreProcessDelegate<PipelineRequest>>(handler => preDelegate = handler))
+            .Returns(pre);
+        post.OnSuccess(Arg.Do<SuccessPostProcessDelegate<PipelineRequest, PipelineResponse>>(handler => successDelegate = handler))
+            .Returns(post);
+        configurePre(pre);
+        configurePost(post);
+        await preDelegate(context, new PreProcessArguments());
+        await successDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportSuccessAsync(
+            typeof(PipelineRequest),
+            typeof(PipelineResponse),
+            Arg.Is<object>(payload => JsonSerializer.Serialize(payload).Contains("\"Routed\":true", StringComparison.OrdinalIgnoreCase)),
+            Arg.Is<OrchestrationOperationOptions>(options => MatchesTrigger(options, "events.sales.approved", "2.0.0")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResponsePipelineRoutingUsesOtherwiseWhenNoRouteMatches()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportSuccessAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Type>(),
+                Arg.Any<object>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-route-3"), provider, CancellationToken.None);
+        context.SetResponse(new PipelineResponse(false));
+
+        builder.UseOrchestration(routes => routes
+            .When(static (_, response) => response.Ok, "events.sales.approved")
+            .Otherwise(static (request, response) => new { request.Id, response.Ok }, "events.sales.fallback"));
+        SuccessPostProcessDelegate<PipelineRequest, PipelineResponse> successDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        post.OnSuccess(Arg.Do<SuccessPostProcessDelegate<PipelineRequest, PipelineResponse>>(handler => successDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+        await successDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportSuccessAsync(
+            typeof(PipelineRequest),
+            typeof(PipelineResponse),
+            Arg.Is<object>(payload => JsonSerializer.Serialize(payload).Contains("sale-route-3", StringComparison.Ordinal)),
+            Arg.Is<OrchestrationOperationOptions>(options => MatchesTrigger(options, "events.sales.fallback", "1.0.0")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResponsePipelineRoutingDoesNotPublishTriggerWhenNoRouteMatches()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportSuccessAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Type>(),
+                Arg.Any<object>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-route-4"), provider, CancellationToken.None);
+        context.SetResponse(new PipelineResponse(false));
+
+        builder.UseOrchestration(routes => routes.When(static (_, response) => response.Ok, "events.sales.approved"));
+        SuccessPostProcessDelegate<PipelineRequest, PipelineResponse> successDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        post.OnSuccess(Arg.Do<SuccessPostProcessDelegate<PipelineRequest, PipelineResponse>>(handler => successDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+        await successDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportSuccessAsync(
+            typeof(PipelineRequest),
+            typeof(PipelineResponse),
+            Arg.Is<object>(payload => payload == null),
+            Arg.Is<OrchestrationOperationOptions>(options => HasNoTrigger(options)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResponsePipelineRoutingRequireMatchThrowsAndCloses()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-route-5"), provider, CancellationToken.None);
+        context.SetResponse(new PipelineResponse(false));
+
+        builder.UseOrchestration(routes => routes
+            .When(static (_, response) => response.Ok, "events.sales.approved")
+            .RequireMatch());
+        SuccessPostProcessDelegate<PipelineRequest, PipelineResponse> successDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        post.OnSuccess(Arg.Do<SuccessPostProcessDelegate<PipelineRequest, PipelineResponse>>(handler => successDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+
+        await Assert.ThrowsAsync<OrchestrationTriggerRouteMatchException>(() => successDelegate(context, new PostProcessArguments()));
+        client.Received(1).Close();
+    }
+
+    [Fact]
+    public async Task ResponsePipelineRoutingIgnoresRoutesWhenBackchannelMetadataExists()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportSuccessAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Type>(),
+                Arg.Any<object>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var metadataAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        metadataAccessor.Get().Returns(new OrchestrationMessageMetadata
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        });
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .AddSingleton(metadataAccessor)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var response = new PipelineResponse(true);
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-route-6"), provider, CancellationToken.None);
+        context.SetResponse(response);
+
+        builder.UseOrchestration(routes => routes
+            .When(static (_, _) => false, "events.sales.unreachable")
+            .RequireMatch());
+        SuccessPostProcessDelegate<PipelineRequest, PipelineResponse> successDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        post.OnSuccess(Arg.Do<SuccessPostProcessDelegate<PipelineRequest, PipelineResponse>>(handler => successDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+        await successDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportSuccessAsync(
+            typeof(PipelineRequest),
+            typeof(PipelineResponse),
+            response,
+            Arg.Is<OrchestrationOperationOptions>(options => HasNoTrigger(options)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void ResponsePipelineRejectsNullRequestResponseTransformer()
     {
         var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
@@ -281,6 +543,12 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
             return settings?.Topic == topic &&
                 settings.Version == version;
         }
+
+    private static bool HasNoTrigger(OrchestrationOperationOptions options)
+        => options is not null && options.TriggerAddress is null;
+
+    private static bool IsPipelineRequestPayload(object payload, string id)
+        => payload is PipelineRequest request && request.Id == id;
 
     public sealed record PipelineRequest(string Id);
 

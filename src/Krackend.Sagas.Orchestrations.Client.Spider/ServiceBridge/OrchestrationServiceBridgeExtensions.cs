@@ -1,5 +1,6 @@
 namespace Spider.Pipelines.Core;
 
+using Krackend.Sagas.Orchestrations.Client.Routing;
 using Pelican.Mediator;
 
 /// <summary>
@@ -40,6 +41,14 @@ public static class OrchestrationServiceBridgeExtensions
         string topic,
         string version = "1.0.0")
         => bridge.Attach<TRequest>(pipeline => pipeline.UseOrchestration(transform, topic, version));
+
+    /// <summary>
+    /// Publishes a trigger event selected by routing when metadata is not present.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest> UseOrchestration<TRequest>(
+        this IServiceBridge<IMediator> bridge,
+        Action<OrchestrationTriggerRouteBuilder<TRequest>> routing)
+        => bridge.Attach<TRequest>(pipeline => pipeline.UseOrchestration(routing));
 
     /// <summary>
     /// Responds to the orchestration backchannel when metadata is present.
@@ -92,4 +101,12 @@ public static class OrchestrationServiceBridgeExtensions
         string topic,
         string version = "1.0.0")
         => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.UseOrchestration(transform, topic, version));
+
+    /// <summary>
+    /// Publishes a trigger event selected by routing when metadata is not present.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
+        this IServiceBridge<IMediator> bridge,
+        Action<OrchestrationTriggerRouteBuilder<TRequest, TResponse>> routing)
+        => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.UseOrchestration(routing));
 }
