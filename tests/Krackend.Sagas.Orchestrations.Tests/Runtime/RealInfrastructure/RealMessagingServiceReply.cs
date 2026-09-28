@@ -7,4 +7,5 @@ internal sealed record RealMessagingServiceReply(
     string Outcome,
     bool Completed,
     string? Error,
-    OrchestrationMessageMetadata MessageMetadata);
+    OrchestrationMessageMetadata MessageMetadata,
+    OrchestrationPropagationMetadata PropagationMetadata);

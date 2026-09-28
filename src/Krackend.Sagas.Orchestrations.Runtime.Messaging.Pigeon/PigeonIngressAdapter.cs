@@ -78,6 +78,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 {
                     var intake = context.Services.GetRequiredService<IIntakeBuffer>();
                     var messageMetadataAccessor = context.Services.GetRequiredService<IOrchestrationMessageMetadataAccessor>();
+                    var propagationMetadataAccessor = context.Services.GetRequiredService<IOrchestrationPropagationMetadataAccessor>();
                     var resultMetadataAccessor = context.Services.GetRequiredService<IOrchestrationExecutionResultMetadataAccessor>();
                     using var reader = context.Services.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
                     var configurations = new List<IngressConfiguration>();
@@ -99,6 +100,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                             IngressTransport = ingress.IngressTransport,
                             Payload = message?.DeepClone(),
                             MessageMetadata = messageMetadataAccessor.Get(),
+                            PropagationMetadata = propagationMetadataAccessor.Get(),
                             ExecutionResultMetadata = resultMetadataAccessor.Get()
                         }, cancellationToken);
                     }

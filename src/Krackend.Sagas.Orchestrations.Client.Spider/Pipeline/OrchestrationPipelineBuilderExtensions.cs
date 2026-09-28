@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SquirrelBox;
 using Spider.Pipelines.Extensions;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 /// <summary>
 /// Adds Krackend orchestration behavior to Spider pipelines.
@@ -284,6 +285,8 @@ public static class OrchestrationPipelineBuilderExtensions
 
     private static void RestoreDeferredMessageMetadata(IServiceProvider services)
     {
+        RestoreDeferredPropagationMetadata(services);
+
         var accessor = services.GetService<IOrchestrationMessageMetadataAccessor>();
         if (HasReplyAddress(accessor?.Get()))
         {
@@ -305,6 +308,75 @@ public static class OrchestrationPipelineBuilderExtensions
         }
 
         services.GetRequiredService<IOrchestrationMessageMetadataSetter>().Set(metadata);
+    }
+
+    private static void RestoreDeferredPropagationMetadata(IServiceProvider services)
+    {
+        var accessor = services.GetService<IOrchestrationPropagationMetadataAccessor>();
+        if (accessor?.Get() is { HasItems: true })
+        {
+            return;
+        }
+
+        var inbox = services.GetService<IInboxContextAccessor>()?.Current;
+        if (inbox?.Entry?.Metadata is null || inbox.Entry.Metadata.Count == 0)
+        {
+            return;
+        }
+
+        var metadata = new OrchestrationPropagationMetadata();
+        if (inbox.Entry.Metadata.TryGetValue(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey, out var envelope) &&
+            !string.IsNullOrWhiteSpace(envelope))
+        {
+            try
+            {
+                var restored = JsonSerializer.Deserialize<OrchestrationPropagationMetadata>(envelope, SerializerOptions);
+                if (restored?.Items is not null)
+                {
+                    foreach (var item in restored.Items)
+                    {
+                        metadata.Items[item.Key] = item.Value?.DeepClone();
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        foreach (var item in inbox.Entry.Metadata)
+        {
+            if (string.IsNullOrWhiteSpace(item.Key) ||
+                item.Key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal) ||
+                metadata.Items.ContainsKey(item.Key))
+            {
+                continue;
+            }
+
+            metadata.Items[item.Key] = TryParseJson(item.Value) ?? JsonValue.Create(item.Value);
+        }
+
+        if (metadata.HasItems)
+        {
+            services.GetRequiredService<IOrchestrationPropagationMetadataSetter>().Set(metadata);
+        }
+    }
+
+    private static JsonNode TryParseJson(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonNode.Parse(value);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static bool HasReplyAddress(OrchestrationMessageMetadata metadata)

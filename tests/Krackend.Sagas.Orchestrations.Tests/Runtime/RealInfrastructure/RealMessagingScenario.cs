@@ -22,12 +22,17 @@ internal sealed class RealMessagingScenario
         _outcomes.GetOrAdd(topic, _ => new ConcurrentQueue<RealMessagingServiceOutcome>()).Enqueue(outcome);
     }
 
-    public void Record(string topic, JsonNode? payload, OrchestrationMessageMetadata metadata)
+    public void Record(
+        string topic,
+        JsonNode? payload,
+        OrchestrationMessageMetadata metadata,
+        OrchestrationPropagationMetadata propagationMetadata)
     {
         _invocations.Enqueue(new RealMessagingServiceInvocation(
             topic,
             payload?.DeepClone(),
-            CloneMetadata(metadata)));
+            CloneMetadata(metadata),
+            propagationMetadata?.Clone() ?? new OrchestrationPropagationMetadata()));
     }
 
     public void RecordReply(
@@ -35,14 +40,16 @@ internal sealed class RealMessagingScenario
         string outcome,
         bool completed,
         string? error,
-        OrchestrationMessageMetadata metadata)
+        OrchestrationMessageMetadata metadata,
+        OrchestrationPropagationMetadata propagationMetadata)
     {
         _replies.Enqueue(new RealMessagingServiceReply(
             topic,
             outcome,
             completed,
             error,
-            CloneMetadata(metadata)));
+            CloneMetadata(metadata),
+            propagationMetadata?.Clone() ?? new OrchestrationPropagationMetadata()));
     }
 
     public RealMessagingServiceOutcome NextOutcome(string topic)

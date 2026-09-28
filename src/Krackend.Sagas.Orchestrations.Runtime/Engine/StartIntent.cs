@@ -28,5 +28,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
         /// Gets the orchestration message metadata received with the trigger payload.
         /// </summary>
         public OrchestrationMessageMetadata MessageMetadata { get; init; }
+
+        /// <summary>
+        /// Gets the propagation metadata received with the trigger payload.
+        /// </summary>
+        public OrchestrationPropagationMetadata PropagationMetadata { get; init; }
     }
 }

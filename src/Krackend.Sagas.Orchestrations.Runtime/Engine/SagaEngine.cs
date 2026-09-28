@@ -32,6 +32,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
             {
                 ArtifactId = intent.ArtifactId,
                 MessageMetadata = intent.MessageMetadata,
+                PropagationMetadata = intent.PropagationMetadata,
                 Payload = intent.Payload
             };
             var promotionResult = await _promoter.PromoteToInstanceAsync(promotionRequest, cancellationToken);
@@ -54,6 +55,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 ArtifactId = intent.ArtifactId,
                 IngressTransport = intent.IngressTransport,
                 MessageMetadata = metadata,
+                PropagationMetadata = intent.PropagationMetadata,
                 Payload = intent.Payload
             };
 
@@ -66,6 +68,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
         private async Task InternalOrchestrateAsync(ForwardIntent intent, CancellationToken cancellationToken = default)
         {
             var messageMetadata = intent.MessageMetadata;
+            var propagationMetadata = intent.PropagationMetadata;
             var executionResultMetadata = intent.ExecutionResultMetadata;
 
             for (var cycle = 0; cycle < MaxDecisionCycles; cycle++)
@@ -74,6 +77,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 {
                     ArtifactId = intent.ArtifactId,
                     MessageMetadata = messageMetadata,
+                    PropagationMetadata = propagationMetadata,
                     ExecutionResultMetadata = executionResultMetadata,
                     Payload = intent.Payload
                 };

@@ -35,6 +35,13 @@ public sealed class PigeonIngressAdapterTests
             Status = "Succeeded",
             ServiceName = "inventories"
         };
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit.context"] = JsonNode.Parse("""{"requestedBy":"sales-api"}""")
+            }
+        };
         var ingressA = Ingress("artifact-a", IngressKind.Trigger);
         var ingressB = Ingress("artifact-b", IngressKind.Backchannel);
         selector.SelectMatching(Arg.Any<IReadOnlyCollection<IngressConfiguration>>(), "events.sales.sale.created", "1.0.0")
@@ -42,6 +49,7 @@ public sealed class PigeonIngressAdapterTests
         await using var provider = CreateProvider(
             intake,
             new StaticMessageMetadataAccessor(messageMetadata),
+            new StaticPropagationMetadataAccessor(propagationMetadata),
             new StaticExecutionResultMetadataAccessor(executionMetadata),
             new PagedIngressAccessor([
                 new IngressConfigurationReadingResult { HasMoreItems = true, Configurations = [ingressA] },
@@ -73,6 +81,7 @@ public sealed class PigeonIngressAdapterTests
         Assert.Equal(["artifact-a", "artifact-b"], intake.Items.Select(x => x.ArtifactId));
         Assert.Equal("S-1", intake.Items[0].Payload!["saleId"]!.GetValue<string>());
         Assert.Same(messageMetadata, intake.Items[0].MessageMetadata);
+        Assert.Equal("sales-api", intake.Items[0].PropagationMetadata.Items["audit.context"]!["requestedBy"]!.GetValue<string>());
         Assert.Same(executionMetadata, intake.Items[1].ExecutionResultMetadata);
         selector.Received(1).SelectMatching(Arg.Any<IReadOnlyCollection<IngressConfiguration>>(), "events.sales.sale.created", "1.0.0");
     }
@@ -174,12 +183,14 @@ public sealed class PigeonIngressAdapterTests
     private static ServiceProvider CreateProvider(
         IIntakeBuffer intake,
         IOrchestrationMessageMetadataAccessor messageMetadata,
+        IOrchestrationPropagationMetadataAccessor propagationMetadata,
         IOrchestrationExecutionResultMetadataAccessor executionResultMetadata,
         IGetAllIngressConfigurationsAccessor ingressAccessor)
     {
         var services = new ServiceCollection();
         services.AddSingleton(intake);
         services.AddSingleton(messageMetadata);
+        services.AddSingleton(propagationMetadata);
         services.AddSingleton(executionResultMetadata);
         services.AddSingleton(ingressAccessor);
         return services.BuildServiceProvider();
@@ -300,6 +311,15 @@ public sealed class PigeonIngressAdapterTests
         public StaticExecutionResultMetadataAccessor(OrchestrationExecutionResultMetadata metadata) => _metadata = metadata;
 
         public OrchestrationExecutionResultMetadata Get() => _metadata;
+    }
+
+    private sealed class StaticPropagationMetadataAccessor : IOrchestrationPropagationMetadataAccessor
+    {
+        private readonly OrchestrationPropagationMetadata _metadata;
+
+        public StaticPropagationMetadataAccessor(OrchestrationPropagationMetadata metadata) => _metadata = metadata;
+
+        public OrchestrationPropagationMetadata Get() => _metadata;
     }
 
     private sealed class PagedIngressAccessor : IGetAllIngressConfigurationsAccessor

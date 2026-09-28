@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Nodes;
 using static Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure.RealMessagingArtifactFactory;
 
 [Collection(RuntimeRealInfrastructureCollection.Name)]
@@ -159,11 +160,20 @@ public sealed class RuntimeRealInfrastructureE2ETests
 
         await runtime.DeployAndWaitReadyAsync(CreatePackage(artifact));
         var correlationId = $"corr-{suffix}-deep";
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit.context"] = JsonNode.Parse($$"""{"requestId":"{{Guid.NewGuid():N}}","source":"sales-api"}"""),
+                ["security.context"] = JsonNode.Parse("""{"tenant":"north","roles":["sales"]}""")
+            }
+        };
         await runtime.PublishTriggerAsync(
             triggerTopic,
             version.ToString(),
             BusinessPayload(("saleId", $"S-{suffix}"), ("amount", 1550)),
-            correlationId);
+            correlationId,
+            propagationMetadata);
 
         var instance = await runtime.WaitForInstanceStatusAsync(
             correlationId,
@@ -185,6 +195,9 @@ public sealed class RuntimeRealInfrastructureE2ETests
         Assert.All(stages, stage => Assert.Equal(StageExecutionStatus.Completed, stage.Status));
         Assert.All(taskExecutions, task => Assert.Equal(TaskExecutionStatus.Completed, task.Status));
         Assert.All(invocations, invocation => AssertBusinessPayloadWasNotWrapped(invocation.Payload));
+        var notificationInvocation = invocations.Single(invocation => invocation.Topic == notificationTopic);
+        Assert.Equal("sales-api", notificationInvocation.PropagationMetadata.Items["audit.context"]!["source"]!.GetValue<string>());
+        Assert.Equal("north", notificationInvocation.PropagationMetadata.Items["security.context"]!["tenant"]!.GetValue<string>());
     }
 
     [Fact(Timeout = 180_000)]

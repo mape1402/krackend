@@ -30,6 +30,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
         public OrchestrationMessageMetadata MessageMetadata { get; init; }
 
         /// <summary>
+        /// Gets the propagation metadata available for this orchestration signal.
+        /// </summary>
+        public OrchestrationPropagationMetadata PropagationMetadata { get; init; }
+
+        /// <summary>
         /// Gets the execution result metadata received with the callback.
         /// </summary>
         public OrchestrationExecutionResultMetadata ExecutionResultMetadata { get; init; }

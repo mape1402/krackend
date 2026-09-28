@@ -13,9 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.3.3] - 2026-09-27
 
+- ### Added
+
+  - Added transport-agnostic orchestration propagation metadata so trigger metadata can be captured, persisted on orchestration instances, and propagated through command dispatches without changing business payloads.
+  - Added runtime and client metadata accessors plus real messaging test coverage to verify propagation metadata reaches downstream services across `net9.0` and `net10.0`.
+
 - ### Changed
 
   - Updated Pigeon messaging packages to `4.0.1`.
+  - Updated Pigeon runtime and client interceptors to read and publish orchestration propagation metadata through transport metadata, including object-valued metadata and the reserved Krackend propagation envelope.
+  - Updated Spider deferred orchestration flow to restore propagation metadata from SquirrelBox inbox entries before reporting orchestration results.
 
 - ### Fixed
 

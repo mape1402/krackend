@@ -60,7 +60,8 @@ internal sealed class RuntimeAcceptanceHarness : IDisposable
         string topic,
         string version,
         JsonNode payload,
-        string correlationId)
+        string correlationId,
+        OrchestrationPropagationMetadata? propagationMetadata = null)
     {
         using var ingressScope = Provider.CreateScope();
         using var reader = ingressScope.ServiceProvider.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
@@ -77,6 +78,7 @@ internal sealed class RuntimeAcceptanceHarness : IDisposable
             {
                 CorrelationId = correlationId
             },
+            PropagationMetadata = propagationMetadata,
             Payload = payload
         });
     }
@@ -102,6 +104,7 @@ internal sealed class RuntimeAcceptanceHarness : IDisposable
             ArtifactId = instance.RuntimeOrchestrationArtifactId.ToString(),
             IngressTransport = IngressTransport.Messaging,
             MessageMetadata = command.MessageMetadata,
+            PropagationMetadata = command.PropagationMetadata,
             ExecutionResultMetadata = resultMetadata,
             Payload = payload
         });

@@ -122,7 +122,8 @@ internal sealed class RecordingRemoteCommandDispatcher : IRemoteCommandDispatche
             TaskKey = command.TaskKey,
             AwaitResponse = command.AwaitResponse,
             ScheduledOnUtc = command.ScheduledOnUtc,
-            MessageMetadata = Clone(command.MessageMetadata)!
+            MessageMetadata = Clone(command.MessageMetadata)!,
+            PropagationMetadata = command.PropagationMetadata?.Clone()
         };
 
     private static OrchestrationMessageMetadata? Clone(OrchestrationMessageMetadata? metadata)

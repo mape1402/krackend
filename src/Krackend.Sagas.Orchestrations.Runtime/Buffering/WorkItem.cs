@@ -35,6 +35,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering
         public OrchestrationMessageMetadata MessageMetadata { get; init; }
 
         /// <summary>
+        /// Gets the transport-agnostic propagation metadata received from the transport.
+        /// </summary>
+        public OrchestrationPropagationMetadata PropagationMetadata { get; init; }
+
+        /// <summary>
         /// Gets the execution result metadata received from the transport, when the item is a backchannel callback.
         /// </summary>
         public OrchestrationExecutionResultMetadata ExecutionResultMetadata { get; init; }

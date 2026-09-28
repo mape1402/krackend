@@ -133,6 +133,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
                 provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
             services.TryAddScoped<IOrchestrationExecutionResultMetadataSetter>(provider =>
                 provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
+            services.TryAddScoped<DefaultOrchestrationPropagationMetadataAccessor>();
+            services.TryAddScoped<IOrchestrationPropagationMetadataAccessor>(provider =>
+                provider.GetRequiredService<DefaultOrchestrationPropagationMetadataAccessor>());
+            services.TryAddScoped<IOrchestrationPropagationMetadataSetter>(provider =>
+                provider.GetRequiredService<DefaultOrchestrationPropagationMetadataAccessor>());
+            services.TryAddScoped<IOrchestrationPropagationMetadataStore, DefaultOrchestrationPropagationMetadataStore>();
             services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressTransport.Messaging);
             services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressTransport.Http);
             services.AddKeyedScoped<IRemoteCommandExecutor, MessagingRemoteCommandExecutor>(RemoteCommandTransport.Messaging);

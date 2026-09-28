@@ -278,6 +278,7 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
         string version,
         JsonNode payload,
         string correlationId,
+        OrchestrationPropagationMetadata? propagationMetadata = null,
         CancellationToken cancellationToken = default)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -286,6 +287,9 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
         {
             CorrelationId = correlationId
         });
+        scope.ServiceProvider
+            .GetRequiredService<IOrchestrationPropagationMetadataSetter>()
+            .Set(propagationMetadata ?? new OrchestrationPropagationMetadata());
 
         var producer = scope.ServiceProvider.GetRequiredService<IProducer>();
         await producer.PublishAsync(payload, topic, PigeonVersion.Parse(version), cancellationToken);

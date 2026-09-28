@@ -18,6 +18,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly IOrchestrationMessageMetadataSetter _messageMetadataSetter;
+        private readonly IOrchestrationPropagationMetadataSetter? _propagationMetadataSetter;
         private readonly IOrchestrationInstanceRepository _instanceRepository;
         private readonly ITaskExecutionRepository _taskRepository;
         private readonly ITaskExecutionAttemptRepository _attemptRepository;
@@ -36,10 +37,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
             IExecutionTransitionRepository transitionRepository,
-            IMuleTerminalFailureMarker terminalFailureMarker)
+            IMuleTerminalFailureMarker terminalFailureMarker,
+            IOrchestrationPropagationMetadataSetter? propagationMetadataSetter = null)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _messageMetadataSetter = messageMetadataSetter ?? throw new ArgumentNullException(nameof(messageMetadataSetter));
+            _propagationMetadataSetter = propagationMetadataSetter;
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
             _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
@@ -67,6 +70,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 }
 
                 _messageMetadataSetter.Set(command.MessageMetadata ?? new OrchestrationMessageMetadata());
+                _propagationMetadataSetter?.Set(command.PropagationMetadata ?? new OrchestrationPropagationMetadata());
                 await executor.ExecuteAsync(command, cancellationToken);
                 if (HasRuntimeDispatchState(command))
                 {
@@ -270,6 +274,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                         : [command.TaskKey],
                     CorrelationId = instance.CorrelationId
                 },
+                PropagationMetadata = command.PropagationMetadata,
                 Payload = instance.SnapshotPayload?.DeepClone()
             }, cancellationToken);
         }
