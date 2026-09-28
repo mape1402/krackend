@@ -144,65 +144,42 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
+            if (command.AwaitResponse)
+            {
+                await MarkAwaitedDispatchPublishedAsync(command, now, dispatchedOnUtc, cancellationToken);
+                return;
+            }
+
             var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId), cancellationToken);
             var task = await _taskRepository.GetById(ParseId(command.TaskExecutionId), cancellationToken);
             var attempt = await _attemptRepository.GetById(ParseId(command.TaskExecutionAttemptId), cancellationToken);
             var dispatch = await _dispatchRepository.GetById(ParseId(command.DispatchId), cancellationToken);
 
             dispatch.SentOnUtc = now;
-            var callbackAlreadyApplied = IsFinished(dispatch.DispatchStatus);
             if (!string.Equals(dispatch.DispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase))
             {
                 dispatch.FailedOnUtc = null;
                 dispatch.FailureReason = null;
             }
 
-            if (command.AwaitResponse)
+            dispatch.DispatchStatus = "Completed";
+
+            if (!IsTerminal(task.Status))
             {
-                if (!callbackAlreadyApplied)
-                {
-                    dispatch.DispatchStatus = "WaitingResponse";
-
-                    if (!IsTerminal(task.Status))
-                    {
-                        task.Status = TaskExecutionStatus.WaitingResponse;
-                        task.WaitingSinceUtc = dispatchedOnUtc;
-                    }
-
-                    if (!IsTerminal(attempt.Status))
-                    {
-                        attempt.Status = TaskExecutionStatus.WaitingResponse;
-                        attempt.WaitingSinceUtc = dispatchedOnUtc;
-                    }
-
-                    if (!IsTerminal(instance.Status))
-                    {
-                        instance.Status = OrchestrationInstanceStatus.Waiting;
-                        instance.WaitingSinceUtc = dispatchedOnUtc;
-                    }
-                }
+                task.Status = TaskExecutionStatus.Completed;
+                task.CompletedOnUtc = now;
             }
-            else
+
+            if (!IsTerminal(attempt.Status))
             {
-                dispatch.DispatchStatus = "Completed";
+                attempt.Status = TaskExecutionStatus.Completed;
+                attempt.CompletedOnUtc = now;
+            }
 
-                if (!IsTerminal(task.Status))
-                {
-                    task.Status = TaskExecutionStatus.Completed;
-                    task.CompletedOnUtc = now;
-                }
-
-                if (!IsTerminal(attempt.Status))
-                {
-                    attempt.Status = TaskExecutionStatus.Completed;
-                    attempt.CompletedOnUtc = now;
-                }
-
-                if (!IsTerminal(instance.Status))
-                {
-                    instance.Status = OrchestrationInstanceStatus.Running;
-                    instance.WaitingSinceUtc = null;
-                }
+            if (!IsTerminal(instance.Status))
+            {
+                instance.Status = OrchestrationInstanceStatus.Running;
+                instance.WaitingSinceUtc = null;
             }
 
             if (!IsTerminal(instance.Status))
@@ -223,9 +200,36 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 TaskExecutionAttemptId = attempt.Id,
                 TransitionType = "TaskDispatched",
                 FromStatus = "Enqueued",
-                ToStatus = command.AwaitResponse
-                    ? TaskExecutionStatus.WaitingResponse.ToString()
-                    : task.Status.ToString(),
+                ToStatus = task.Status.ToString(),
+                OccurredOnUtc = dispatchedOnUtc,
+                Message = $"Task '{task.TaskKey}' command published with transport '{command.RemoteCommandTransport}'.",
+                Payload = string.IsNullOrWhiteSpace(command.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(command.Payload),
+                ProducedBy = nameof(RemoteCommandDispatchAction)
+            }, cancellationToken);
+        }
+
+        private async Task MarkAwaitedDispatchPublishedAsync(
+            RemoteCommand command,
+            DateTime sentOnUtc,
+            DateTime dispatchedOnUtc,
+            CancellationToken cancellationToken)
+        {
+            var dispatchId = ParseId(command.DispatchId);
+            await _dispatchRepository.MarkSent(dispatchId, "WaitingResponse", sentOnUtc, cancellationToken: cancellationToken);
+
+            var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId), cancellationToken);
+            var task = await _taskRepository.GetById(ParseId(command.TaskExecutionId), cancellationToken);
+            var attempt = await _attemptRepository.GetById(ParseId(command.TaskExecutionAttemptId), cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = task.StageExecutionId,
+                TaskExecutionId = task.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskDispatched",
+                FromStatus = "Enqueued",
+                ToStatus = TaskExecutionStatus.WaitingResponse.ToString(),
                 OccurredOnUtc = dispatchedOnUtc,
                 Message = $"Task '{task.TaskKey}' command published with transport '{command.RemoteCommandTransport}'.",
                 Payload = string.IsNullOrWhiteSpace(command.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(command.Payload),

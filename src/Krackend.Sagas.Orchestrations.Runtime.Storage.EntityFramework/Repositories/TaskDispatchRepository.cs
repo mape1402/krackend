@@ -31,8 +31,12 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         var dispatch = await DbContext.TaskDispatches.FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken)
             ?? throw new KeyNotFoundException($"Task dispatch '{dispatchId}' was not found.");
 
-        dispatch.DispatchStatus = status;
         dispatch.SentOnUtc = sentOnUtc;
+        if (!IsFinished(dispatch.DispatchStatus))
+        {
+            dispatch.DispatchStatus = status;
+        }
+
         await SaveChanges(cancellationToken);
     }
 
@@ -66,4 +70,10 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         => await DbContext.TaskDispatches.AsNoTracking()
             .Where(x => x.ScheduledOnUtc <= dueBeforeUtc)
             .ToArrayAsync(cancellationToken);
+
+    private static bool IsFinished(string status)
+        => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
 }

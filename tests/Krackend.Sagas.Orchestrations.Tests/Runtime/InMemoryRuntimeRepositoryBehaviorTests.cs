@@ -89,6 +89,7 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
 
         await repository.MarkSent(due.Id, "Sent", DateTime.UtcNow, "external-1");
         await repository.MarkFailed(future.Id, "broker down", "external-2");
+        await repository.MarkSent(future.Id, "Sent", DateTime.UtcNow, "external-2");
         var byId = await repository.GetById(due.Id);
         var byCommand = await repository.GetByCommandId("cmd-due");
         var byAttempt = await repository.GetByAttemptId(due.TaskExecutionAttemptId);
@@ -101,6 +102,7 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         Assert.Equal(due.Id, byAttempt.Id);
         Assert.Null(missing);
         Assert.Equal("Failed", future.DispatchStatus);
+        Assert.NotNull(future.SentOnUtc);
         Assert.Equal("broker down", future.FailureReason);
         Assert.Single(scheduled);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetByCommandId("missing-command"));

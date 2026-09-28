@@ -188,6 +188,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         await dispatchRepository.Create(oldDispatch);
         await dispatchRepository.MarkSent(dispatch.Id, "Sent", now.AddMinutes(-8), "external-1");
         await dispatchRepository.MarkFailed(oldDispatch.Id, "broker down", "external-2");
+        await dispatchRepository.MarkSent(oldDispatch.Id, "Sent", now.AddMinutes(-7), "external-2");
         await dispatchRepository.Update(new TaskDispatch
         {
             Id = dispatch.Id,
@@ -299,6 +300,9 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Equal(dispatch.Id, (await dispatchRepository.GetByCommandId("cmd-1")).Id);
         Assert.Equal(dispatch.Id, (await dispatchRepository.GetByAttemptId(attempt.Id)).Id);
         Assert.Equal(2, (await dispatchRepository.GetScheduledOlderThan(now)).Count);
+        var failedDispatch = await dispatchRepository.GetById(oldDispatch.Id);
+        Assert.Equal("Failed", failedDispatch.DispatchStatus);
+        Assert.NotNull(failedDispatch.SentOnUtc);
         Assert.Equal(compensation.Id, (await compensationRepository.TryGetById(compensation.Id)).Id);
         Assert.Single(await instanceVariableRepository.GetByInstanceId(instance.Id));
         Assert.Equal("00:10:00", (await environmentVariableRepository.GetAll()).Single().Value!.ToString());
