@@ -1,5 +1,71 @@
 @page
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.IndexModel
 @{
-    Response.Redirect(Url.Page("/Orchestrations/Index", new { area = "OrchestratorDesign" })!);
+    ViewData["Title"] = "Control Plane";
 }
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Control Plane</h1>
+        <p class="od-page-subtitle">Design, release, and secure orchestrations from one administration surface.</p>
+    </div>
+</div>
+
+<section class="od-list-shell">
+    <div class="od-grid">
+        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index">
+            <div class="od-item-top">
+                <div>
+                    <h2 class="od-item-title">Orchestrations</h2>
+                    <p class="od-item-meta">Design</p>
+                </div>
+                <span class="od-meta-chip">Roadmaps</span>
+            </div>
+            <p class="od-item-description">Create orchestration definitions, manage versions, stages, triggers, and tasks.</p>
+        </a>
+
+        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDesign" asp-page="/Domains/Index">
+            <div class="od-item-top">
+                <div>
+                    <h2 class="od-item-title">Domains</h2>
+                    <p class="od-item-meta">Design</p>
+                </div>
+                <span class="od-meta-chip">Ownership</span>
+            </div>
+            <p class="od-item-description">Organize orchestration ownership and domain boundaries used by design workflows.</p>
+        </a>
+
+        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDistribution" asp-page="/Environments/Index">
+            <div class="od-item-top">
+                <div>
+                    <h2 class="od-item-title">Environments</h2>
+                    <p class="od-item-meta">Distribution</p>
+                </div>
+                <span class="od-meta-chip">Targets</span>
+            </div>
+            <p class="od-item-description">Manage the environments and runtime nodes that receive released artifacts.</p>
+        </a>
+
+        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDistribution" asp-page="/Promotions/Index">
+            <div class="od-item-top">
+                <div>
+                    <h2 class="od-item-title">Releases</h2>
+                    <p class="od-item-meta">Distribution</p>
+                </div>
+                <span class="od-meta-chip">Delivery</span>
+            </div>
+            <p class="od-item-description">Review prepared releases and distribute artifacts to configured runtime nodes.</p>
+        </a>
+
+        <a class="od-item-card text-decoration-none" asp-area="OrchestratorSecurity" asp-page="/Teams/Index">
+            <div class="od-item-top">
+                <div>
+                    <h2 class="od-item-title">Teams</h2>
+                    <p class="od-item-meta">Security</p>
+                </div>
+                <span class="od-meta-chip">Access</span>
+            </div>
+            <p class="od-item-description">Configure teams and assignments used by control-plane authorization.</p>
+        </a>
+    </div>
+</section>

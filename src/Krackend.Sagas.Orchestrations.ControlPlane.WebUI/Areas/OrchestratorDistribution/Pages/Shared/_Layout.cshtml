@@ -6,18 +6,22 @@
     var currentPage = ViewContext.RouteData.Values["page"]?.ToString() ?? string.Empty;
 
     var allItems = Navigation.GetItems();
-    var designItems = allItems.Where(x => string.Equals(x.Area, "OrchestratorDesign", StringComparison.OrdinalIgnoreCase)).ToArray();
+    var overviewItem = allItems.FirstOrDefault(x =>
+        string.Equals(x.Area, "OrchestratorDesign", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(x.Page, "/Index", StringComparison.OrdinalIgnoreCase));
+    var designItems = allItems.Where(x =>
+        string.Equals(x.Area, "OrchestratorDesign", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(x.Page, "/Index", StringComparison.OrdinalIgnoreCase)).ToArray();
     var distributionItems = allItems.Where(x => string.Equals(x.Area, "OrchestratorDistribution", StringComparison.OrdinalIgnoreCase)).ToArray();
-    var runtimeItems = allItems.Where(x => string.Equals(x.Area, "OrchestratorRuntime", StringComparison.OrdinalIgnoreCase)).ToArray();
     var securityItems = allItems.Where(x => string.Equals(x.Area, "OrchestratorSecurity", StringComparison.OrdinalIgnoreCase)).ToArray();
 
     bool IsActive(OrchestratorNavigationItem item) =>
         string.Equals(currentArea, item.Area, StringComparison.OrdinalIgnoreCase)
         && string.Equals(currentPage, item.Page, StringComparison.OrdinalIgnoreCase);
 
+    var overviewActive = overviewItem is not null && IsActive(overviewItem);
     var designExpanded = designItems.Any(IsActive);
     var distributionExpanded = distributionItems.Any(IsActive);
-    var runtimeExpanded = runtimeItems.Any(IsActive);
     var securityExpanded = securityItems.Any(IsActive);
 }
 <!DOCTYPE html>
@@ -36,12 +40,23 @@
     <div class="app-shell" id="orchestratorAppShell">
         <nav class="sidebar" id="orchestratorSidebar">
             <div class="sidebar-brand">
-                <a class="brand-link" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index">
+                <a class="brand-link" asp-area="OrchestratorDesign" asp-page="/Index">
                     <span class="brand-icon"><i class="bi bi-diagram-3-fill"></i></span>
                     <span class="brand-name">Orchestrator</span>
                 </a>
             </div>
             <div class="sidebar-nav">
+                @if (overviewItem is not null)
+                {
+                    <a class="nav-item-link @(overviewActive ? "active" : string.Empty)"
+                       asp-area="@overviewItem.Area"
+                       asp-page="@overviewItem.Page"
+                       aria-current="@(overviewActive ? "page" : null)">
+                        <i class="bi bi-speedometer2 nav-icon"></i>
+                        <span class="nav-label">@overviewItem.Label</span>
+                    </a>
+                }
+
                 <div class="nav-group">
                     <button class="nav-group-toggle @(designExpanded ? string.Empty : "collapsed")"
                             type="button"
@@ -113,30 +128,6 @@
                         }
                     </div>
                 </div>
-
-                <div class="nav-group">
-                    <button class="nav-group-toggle @(runtimeExpanded ? string.Empty : "collapsed")"
-                            type="button"
-                            data-bs-toggle="collapse"
-                            data-bs-target="#orchestrator-nav-runtime"
-                            aria-expanded="@(runtimeExpanded ? "true" : "false")">
-                        <i class="bi bi-cpu nav-icon"></i>
-                        <span class="nav-label">Runtime</span>
-                        <i class="bi bi-chevron-down nav-caret"></i>
-                    </button>
-                    <div id="orchestrator-nav-runtime" class="collapse nav-group-items @(runtimeExpanded ? "show" : string.Empty)">
-                        @foreach (var item in runtimeItems)
-                        {
-                            var active = IsActive(item);
-                            <a class="nav-item-link nav-child @(active ? "active" : string.Empty)"
-                               asp-area="@item.Area"
-                               asp-page="@item.Page"
-                               aria-current="@(active ? "page" : null)">
-                                <span>@item.Label</span>
-                            </a>
-                        }
-                    </div>
-                </div>
             </div>
         </nav>
 
@@ -147,9 +138,6 @@
                         <i class="bi bi-list"></i>
                     </button>
                     <span class="topbar-title">@pageTitle</span>
-                </div>
-                <div class="topbar-actions">
-                    <span class="topbar-badge">Development</span>
                 </div>
             </header>
             <main class="content-body">
