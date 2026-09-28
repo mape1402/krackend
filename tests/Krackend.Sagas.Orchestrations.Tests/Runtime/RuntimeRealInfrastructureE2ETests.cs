@@ -620,12 +620,20 @@ public sealed class RuntimeRealInfrastructureE2ETests
             Endpoints(version, inventoryTopic, paymentTopic, riskTopic, notificationTopic));
         await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
 
-        services.Scenario.Enqueue(inventoryTopic, RealMessagingServiceOutcome.Success(BusinessPayload(("reserved", true))));
+        services.Scenario.Enqueue(
+            inventoryTopic,
+            RealMessagingServiceOutcome.DelayedSuccess(
+                BusinessPayload(("reserved", true)),
+                TimeSpan.FromMilliseconds(100)));
         services.Scenario.Enqueue(
             paymentTopic,
             RealMessagingServiceOutcome.Failure("PaymentTemporaryFailure", "Payment provider throttled.", isRetryableCandidate: true));
         services.Scenario.Enqueue(paymentTopic, RealMessagingServiceOutcome.Success(BusinessPayload(("captured", true))));
-        services.Scenario.Enqueue(riskTopic, RealMessagingServiceOutcome.Success(BusinessPayload(("approved", true))));
+        services.Scenario.Enqueue(
+            riskTopic,
+            RealMessagingServiceOutcome.DelayedSuccess(
+                BusinessPayload(("approved", true)),
+                TimeSpan.FromMilliseconds(300)));
         services.Scenario.Enqueue(notificationTopic, RealMessagingServiceOutcome.Success(BusinessPayload(("notified", true))));
 
         var artifact = Artifact(
