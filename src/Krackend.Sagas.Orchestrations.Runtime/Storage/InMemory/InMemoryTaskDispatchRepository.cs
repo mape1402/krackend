@@ -28,8 +28,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         public Task MarkSent(Id dispatchId, string status, DateTime sentOnUtc, string externalReference = null, CancellationToken cancellationToken = default)
         {
             var dispatch = _store.Dispatches[dispatchId];
-            dispatch.DispatchStatus = status;
             dispatch.SentOnUtc = sentOnUtc;
+            if (!IsFinished(dispatch.DispatchStatus))
+            {
+                dispatch.DispatchStatus = status;
+            }
+
             return Task.CompletedTask;
         }
 
@@ -62,5 +66,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(_store.Dispatches.Values
                 .Where(x => x.ScheduledOnUtc <= dueBeforeUtc)
                 .ToArray());
+
+        private static bool IsFinished(string status)
+            => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
     }
 }

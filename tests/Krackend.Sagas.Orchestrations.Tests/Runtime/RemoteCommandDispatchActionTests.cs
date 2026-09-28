@@ -89,6 +89,13 @@ public sealed class RemoteCommandDispatchActionTests
         taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
         attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
         dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        dispatchRepository
+            .MarkSent(dispatch.Id, "WaitingResponse", Arg.Any<DateTime>(), null, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                dispatch.SentOnUtc = call.ArgAt<DateTime>(2);
+                return Task.CompletedTask;
+            });
         var action = new RemoteCommandDispatchAction(
             provider,
             Substitute.For<Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata.IOrchestrationMessageMetadataSetter>(),
@@ -667,6 +674,18 @@ public sealed class RemoteCommandDispatchActionTests
         taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
         attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
         dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        dispatchRepository
+            .MarkSent(dispatch.Id, "WaitingResponse", Arg.Any<DateTime>(), null, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                dispatch.SentOnUtc = call.ArgAt<DateTime>(2);
+                if (!string.Equals(dispatch.DispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase))
+                {
+                    dispatch.DispatchStatus = "WaitingResponse";
+                }
+
+                return Task.CompletedTask;
+            });
         var action = new RemoteCommandDispatchAction(
             provider,
             Substitute.For<IOrchestrationMessageMetadataSetter>(),
@@ -808,6 +827,14 @@ public sealed class RemoteCommandDispatchActionTests
         taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
         attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
         dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        dispatchRepository
+            .MarkSent(Arg.Any<Id>(), Arg.Any<string>(), Arg.Any<DateTime>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                dispatch.SentOnUtc = call.ArgAt<DateTime>(2);
+                dispatch.DispatchStatus = call.ArgAt<string>(1);
+                return Task.CompletedTask;
+            });
         var action = new RemoteCommandDispatchAction(
             provider,
             Substitute.For<IOrchestrationMessageMetadataSetter>(),
