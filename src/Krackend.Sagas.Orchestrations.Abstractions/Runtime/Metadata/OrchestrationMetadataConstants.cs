@@ -16,6 +16,11 @@ public static class OrchestrationMetadataConstants
     public const string OrchestrationExecutionResultMetadataKey = "Krackend.Sagas.Orchestrations.Execution.Result.Metadata";
 
     /// <summary>
+    /// Gets the metadata key used to carry transport-agnostic propagation metadata.
+    /// </summary>
+    public const string OrchestrationPropagationMetadataKey = "Krackend.Sagas.Orchestrations.Propagation.Metadata";
+
+    /// <summary>
     /// Gets the execution metadata key used to indicate that the original business payload was null.
     /// </summary>
     public const string OrchestrationPayloadWasNullMetadataKey = "Krackend.Sagas.Orchestrations.Payload.WasNull";

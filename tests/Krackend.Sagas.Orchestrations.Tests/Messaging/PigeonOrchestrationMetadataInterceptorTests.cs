@@ -6,6 +6,7 @@ using Pigeon.Messaging.Consuming.Dispatching;
 using Pigeon.Messaging.Producing;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text.Json.Nodes;
 
 public sealed class PigeonOrchestrationMetadataInterceptorTests
 {
@@ -67,6 +68,37 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         Assert.Same(resultMetadata, metadata[OrchestrationMetadataConstants.OrchestrationExecutionResultMetadataKey]);
     }
 
+    [Theory]
+    [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor")]
+    [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor")]
+    public async Task PublishInterceptorsAttachPropagationMetadataAsEnvelopeAndIndividualItems(string assemblyName, string typeName)
+    {
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1","attempt":2}"""),
+                ["security.context"] = JsonNode.Parse("""{"tenant":"north"}""")
+            }
+        };
+        var messageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        var resultAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
+        var propagationAccessor = Substitute.For<IOrchestrationPropagationMetadataAccessor>();
+        messageAccessor.Get().Returns(new OrchestrationMessageMetadata());
+        resultAccessor.Get().Returns(_ => null!);
+        propagationAccessor.Get().Returns(propagationMetadata);
+        var interceptor = CreatePublishInterceptor(assemblyName, typeName, messageAccessor, resultAccessor, propagationAccessor);
+        var context = new PublishContext();
+
+        await interceptor.Intercept(context, CancellationToken.None);
+
+        var metadata = GetPublishMetadata(context);
+        var envelope = Assert.IsType<OrchestrationPropagationMetadata>(
+            metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey]);
+        Assert.Equal("req-1", envelope.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Equal("north", ((JsonNode)metadata["security.context"])!["tenant"]!.GetValue<string>());
+    }
+
     [Fact]
     public async Task RuntimeConsumeInterceptorReadsMetadataAndClearsMissingExecutionResult()
     {
@@ -104,6 +136,34 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     }
 
     [Fact]
+    public async Task RuntimeConsumeInterceptorReadsPropagationMetadataFromEnvelopeAndObjectMetadata()
+    {
+        var messageSetter = Substitute.For<IOrchestrationMessageMetadataSetter>();
+        var resultSetter = Substitute.For<IOrchestrationExecutionResultMetadataSetter>();
+        var propagationSetter = Substitute.For<IOrchestrationPropagationMetadataSetter>();
+        var interceptor = CreateConsumeInterceptor(messageSetter, resultSetter, propagationSetter);
+        var context = new ConsumeContext();
+        SetConsumeMetadata(
+            context,
+            new OrchestrationMessageMetadata(),
+            new OrchestrationExecutionResultMetadata(),
+            new OrchestrationPropagationMetadata
+            {
+                Items =
+                {
+                    ["audit.context"] = JsonNode.Parse("""{"requestId":"req-2"}""")
+                }
+            });
+        SetConsumeMetadataItem(context, "security.context", new { tenant = "north" });
+
+        await interceptor.Intercept(context, CancellationToken.None);
+
+        propagationSetter.Received(1).Set(Arg.Is<OrchestrationPropagationMetadata>(metadata =>
+            metadata.Items["audit.context"]!["requestId"]!.GetValue<string>() == "req-2" &&
+            metadata.Items["security.context"]!["tenant"]!.GetValue<string>() == "north"));
+    }
+
+    [Fact]
     public async Task ClientConsumeInterceptorReadsMessageMetadataAndClearsExecutionResult()
     {
         var messageMetadata = new OrchestrationMessageMetadata
@@ -137,6 +197,32 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
             string.IsNullOrWhiteSpace(metadata.OrchestrationInstanceId) &&
             string.IsNullOrWhiteSpace(metadata.TaskExecutionId)));
         resultSetter.Received(1).Clear();
+    }
+
+    [Fact]
+    public async Task ClientConsumeInterceptorReadsPropagationMetadata()
+    {
+        var messageSetter = Substitute.For<IOrchestrationMessageMetadataSetter>();
+        var resultSetter = Substitute.For<IOrchestrationExecutionResultMetadataSetter>();
+        var propagationSetter = Substitute.For<IOrchestrationPropagationMetadataSetter>();
+        var interceptor = CreateClientConsumeInterceptor(messageSetter, resultSetter, propagationSetter);
+        var context = new ConsumeContext();
+        SetConsumeMetadata(
+            context,
+            new OrchestrationMessageMetadata(),
+            new OrchestrationExecutionResultMetadata(),
+            new OrchestrationPropagationMetadata
+            {
+                Items =
+                {
+                    ["audit.context"] = JsonNode.Parse("""{"requestId":"req-3"}""")
+                }
+            });
+
+        await interceptor.Intercept(context, CancellationToken.None);
+
+        propagationSetter.Received(1).Set(Arg.Is<OrchestrationPropagationMetadata>(metadata =>
+            metadata.Items["audit.context"]!["requestId"]!.GetValue<string>() == "req-3"));
     }
 
     [Fact]
@@ -184,47 +270,62 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         string assemblyName,
         string typeName,
         IOrchestrationMessageMetadataAccessor messageAccessor,
-        IOrchestrationExecutionResultMetadataAccessor resultAccessor)
+        IOrchestrationExecutionResultMetadataAccessor resultAccessor,
+        IOrchestrationPropagationMetadataAccessor? propagationAccessor = null)
     {
         var assembly = Assembly.Load(assemblyName);
         var type = assembly.GetType(typeName, throwOnError: true)!;
+        var args = propagationAccessor is null
+            ? new object[] { messageAccessor, resultAccessor }
+            : [messageAccessor, resultAccessor, propagationAccessor];
+
         return (Pigeon.Messaging.Producing.IPublishInterceptor)Activator.CreateInstance(
             type,
             InstanceFlags,
             binder: null,
-            args: [messageAccessor, resultAccessor],
+            args: args,
             culture: null)!;
     }
 
     private static Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor CreateConsumeInterceptor(
         IOrchestrationMessageMetadataSetter messageSetter,
-        IOrchestrationExecutionResultMetadataSetter resultSetter)
+        IOrchestrationExecutionResultMetadataSetter resultSetter,
+        IOrchestrationPropagationMetadataSetter? propagationSetter = null)
     {
         var assembly = Assembly.Load("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon");
         var type = assembly.GetType(
             "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendConsumeInterceptor",
             throwOnError: true)!;
+        var args = propagationSetter is null
+            ? new object[] { messageSetter, resultSetter }
+            : [messageSetter, resultSetter, propagationSetter];
+
         return (Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor)Activator.CreateInstance(
             type,
             InstanceFlags,
             binder: null,
-            args: [messageSetter, resultSetter],
+            args: args,
             culture: null)!;
     }
 
     private static Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor CreateClientConsumeInterceptor(
         IOrchestrationMessageMetadataSetter messageSetter,
-        IOrchestrationExecutionResultMetadataSetter resultSetter)
+        IOrchestrationExecutionResultMetadataSetter resultSetter,
+        IOrchestrationPropagationMetadataSetter? propagationSetter = null)
     {
         var assembly = Assembly.Load("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon");
         var type = assembly.GetType(
             "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientConsumeInterceptor",
             throwOnError: true)!;
+        var args = propagationSetter is null
+            ? new object[] { messageSetter, resultSetter }
+            : [messageSetter, resultSetter, propagationSetter];
+
         return (Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor)Activator.CreateInstance(
             type,
             InstanceFlags,
             binder: null,
-            args: [messageSetter, resultSetter],
+            args: args,
             culture: null)!;
     }
 
@@ -253,11 +354,26 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     private static void SetConsumeMetadata(
         ConsumeContext context,
         OrchestrationMessageMetadata messageMetadata,
-        OrchestrationExecutionResultMetadata resultMetadata)
+        OrchestrationExecutionResultMetadata resultMetadata,
+        OrchestrationPropagationMetadata? propagationMetadata = null)
     {
         var field = typeof(ConsumeContext).GetField("_metadata", InstanceFlags)!;
         var metadata = (ConcurrentDictionary<string, object>)field.GetValue(context)!;
         metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey] = messageMetadata;
         metadata[OrchestrationMetadataConstants.OrchestrationExecutionResultMetadataKey] = resultMetadata;
+        if (propagationMetadata is not null)
+        {
+            metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] = propagationMetadata;
+        }
+    }
+
+    private static void SetConsumeMetadataItem(
+        ConsumeContext context,
+        string key,
+        object value)
+    {
+        var field = typeof(ConsumeContext).GetField("_metadata", InstanceFlags)!;
+        var metadata = (ConcurrentDictionary<string, object>)field.GetValue(context)!;
+        metadata[key] = value;
     }
 }

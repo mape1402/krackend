@@ -7,13 +7,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
     {
         private readonly IOrchestrationMessageMetadataAccessor _messageMetadataAccessor;
         private readonly IOrchestrationExecutionResultMetadataAccessor _resultMetadataAccessor;
+        private readonly IOrchestrationPropagationMetadataAccessor _propagationMetadataAccessor;
+        private readonly PigeonPropagationMetadataMapper _propagationMetadataMapper = new();
 
         public KrackendPublishInterceptor(
             IOrchestrationMessageMetadataAccessor messageMetadataAccessor,
             IOrchestrationExecutionResultMetadataAccessor resultMetadataAccessor)
+            : this(messageMetadataAccessor, resultMetadataAccessor, null)
+        {
+        }
+
+        public KrackendPublishInterceptor(
+            IOrchestrationMessageMetadataAccessor messageMetadataAccessor,
+            IOrchestrationExecutionResultMetadataAccessor resultMetadataAccessor,
+            IOrchestrationPropagationMetadataAccessor propagationMetadataAccessor)
         {
             _messageMetadataAccessor = messageMetadataAccessor ?? throw new ArgumentNullException(nameof(messageMetadataAccessor));
             _resultMetadataAccessor = resultMetadataAccessor ?? throw new ArgumentNullException(nameof(resultMetadataAccessor));
+            _propagationMetadataAccessor = propagationMetadataAccessor;
         }
 
         public ValueTask Intercept(PublishContext publishContext, CancellationToken cancellationToken = default)
@@ -29,6 +40,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
             {
                 publishContext.AddMetadata(OrchestrationMetadataConstants.OrchestrationExecutionResultMetadataKey, resultMetadata);
             }
+
+            var propagationMetadata = _propagationMetadataAccessor?.Get();
+            _propagationMetadataMapper.Attach(publishContext, propagationMetadata);
 
             return ValueTask.CompletedTask;
         }

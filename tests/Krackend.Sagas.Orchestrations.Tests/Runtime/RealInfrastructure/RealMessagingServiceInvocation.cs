@@ -6,4 +6,5 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 internal sealed record RealMessagingServiceInvocation(
     string Topic,
     JsonNode? Payload,
-    OrchestrationMessageMetadata MessageMetadata);
+    OrchestrationMessageMetadata MessageMetadata,
+    OrchestrationPropagationMetadata PropagationMetadata);

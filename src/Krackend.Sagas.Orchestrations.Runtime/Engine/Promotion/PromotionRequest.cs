@@ -22,5 +22,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         /// Gets or sets the orchestration message metadata received with the trigger.
         /// </summary>
         public OrchestrationMessageMetadata MessageMetadata { get; set; }
+
+        /// <summary>
+        /// Gets or sets the propagation metadata received with the trigger.
+        /// </summary>
+        public OrchestrationPropagationMetadata PropagationMetadata { get; set; }
     }
 }

@@ -62,6 +62,38 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EnginePropagatesTriggerMetadataAcrossAllMessagingCommands()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.one", 1)),
+            Stage("stage-two", 2, MessagingTask("task.two", 1))));
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-runtime-1","source":"sales-api"}"""),
+                ["security.context"] = JsonNode.Parse("""{"tenant":"north"}""")
+            }
+        };
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-propagation", propagationMetadata);
+
+        var firstCommand = harness.Dispatcher.Commands.Single();
+        Assert.Equal("req-runtime-1", firstCommand.PropagationMetadata!.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Equal("north", firstCommand.PropagationMetadata.Items["security.context"]!["tenant"]!.GetValue<string>());
+
+        await harness.ForwardAsync(firstCommand, BusinessPayload("response-one"), Success("service-a", "operation-a"));
+
+        var secondCommand = harness.Dispatcher.Commands[1];
+        Assert.Equal("req-runtime-1", secondCommand.PropagationMetadata!.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Equal("north", secondCommand.PropagationMetadata.Items["security.context"]!["tenant"]!.GetValue<string>());
+
+        var instance = await harness.GetInstanceAsync(firstCommand);
+        var storedPropagation = instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey];
+        Assert.Equal("req-runtime-1", storedPropagation!["items"]!["audit.context"]!["requestId"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task EnginePromotesWhenTriggerValidationSucceedsAndPassesValidationContext()
     {
         OrchestrationValidationRequest? capturedRequest = null;

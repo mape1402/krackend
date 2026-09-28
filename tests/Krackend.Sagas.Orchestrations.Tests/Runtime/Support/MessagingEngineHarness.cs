@@ -65,7 +65,10 @@ internal sealed class MessagingEngineHarness : IDisposable
         return new MessagingEngineHarness(provider, scope, artifactId, artifact);
     }
 
-    public Task StartAsync(JsonNode payload, string? correlationId = null)
+    public Task StartAsync(
+        JsonNode payload,
+        string? correlationId = null,
+        OrchestrationPropagationMetadata? propagationMetadata = null)
         => Engine.StartOrchestrationAsync(new StartIntent
         {
             ArtifactId = ArtifactId.ToString(),
@@ -74,6 +77,7 @@ internal sealed class MessagingEngineHarness : IDisposable
             {
                 CorrelationId = correlationId
             },
+            PropagationMetadata = propagationMetadata,
             Payload = payload
         });
 
@@ -86,6 +90,7 @@ internal sealed class MessagingEngineHarness : IDisposable
             ArtifactId = ArtifactId.ToString(),
             IngressTransport = IngressTransport.Messaging,
             MessageMetadata = command.MessageMetadata,
+            PropagationMetadata = command.PropagationMetadata,
             ExecutionResultMetadata = resultMetadata,
             Payload = payload
         });

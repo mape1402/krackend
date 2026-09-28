@@ -118,8 +118,10 @@ internal sealed class RealMessagingServiceHost : IAsyncDisposable
     {
         var scenario = services.GetRequiredService<RealMessagingScenario>();
         var metadataAccessor = services.GetRequiredService<IOrchestrationMessageMetadataAccessor>();
+        var propagationMetadataAccessor = services.GetRequiredService<IOrchestrationPropagationMetadataAccessor>();
         var metadata = metadataAccessor.Get() ?? new OrchestrationMessageMetadata();
-        scenario.Record(topic, message, metadata);
+        var propagationMetadata = propagationMetadataAccessor.Get() ?? new OrchestrationPropagationMetadata();
+        scenario.Record(topic, message, metadata, propagationMetadata);
 
         var outcome = scenario.NextOutcome(topic);
         if (outcome.Delay > TimeSpan.Zero)
@@ -144,26 +146,26 @@ internal sealed class RealMessagingServiceHost : IAsyncDisposable
         {
             if (outcome.Kind == RealMessagingServiceOutcomeKind.Success)
             {
-                scenario.RecordReply(topic, "success", completed: false, error: null, metadataAccessor.Get());
+                scenario.RecordReply(topic, "success", completed: false, error: null, metadataAccessor.Get(), propagationMetadataAccessor.Get());
                 await client.ReportSuccessAsync<JsonNode, JsonNode>(
                     outcome.Payload ?? new JsonObject(),
                     options);
-                scenario.RecordReply(topic, "success", completed: true, error: null, metadataAccessor.Get());
+                scenario.RecordReply(topic, "success", completed: true, error: null, metadataAccessor.Get(), propagationMetadataAccessor.Get());
                 return;
             }
 
-            scenario.RecordReply(topic, "failure", completed: false, error: outcome.ErrorCode, metadataAccessor.Get());
+            scenario.RecordReply(topic, "failure", completed: false, error: outcome.ErrorCode, metadataAccessor.Get(), propagationMetadataAccessor.Get());
             await client.ReportFailureAsync<JsonNode>(
                 new RealMessagingServiceException(
                     outcome.ErrorCode ?? "UnhandledServiceFailure",
                     outcome.ErrorMessage ?? "Service failed.",
                     outcome.IsRetryableCandidate),
                 options);
-            scenario.RecordReply(topic, "failure", completed: true, error: outcome.ErrorCode, metadataAccessor.Get());
+            scenario.RecordReply(topic, "failure", completed: true, error: outcome.ErrorCode, metadataAccessor.Get(), propagationMetadataAccessor.Get());
         }
         catch (Exception exception)
         {
-            scenario.RecordReply(topic, outcome.Kind.ToString(), completed: false, error: exception.Message, metadataAccessor.Get());
+            scenario.RecordReply(topic, outcome.Kind.ToString(), completed: false, error: exception.Message, metadataAccessor.Get(), propagationMetadataAccessor.Get());
             throw;
         }
         finally

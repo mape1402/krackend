@@ -69,5 +69,10 @@
         /// Gets or sets the orchestration message metadata that must be attached by the transport adapter.
         /// </summary>
         public Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata.OrchestrationMessageMetadata MessageMetadata { get; set; }
+
+        /// <summary>
+        /// Gets or sets the propagation metadata that must be attached by the transport adapter.
+        /// </summary>
+        public Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata.OrchestrationPropagationMetadata PropagationMetadata { get; set; }
     }
 }

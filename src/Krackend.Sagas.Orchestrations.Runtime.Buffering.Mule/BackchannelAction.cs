@@ -30,6 +30,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 ArtifactId = workItem.ArtifactId,
                 IngressTransport = workItem.IngressTransport,
                 MessageMetadata = workItem.MessageMetadata,
+                PropagationMetadata = workItem.PropagationMetadata,
                 ExecutionResultMetadata = workItem.ExecutionResultMetadata,
                 Payload = workItem.Payload
             };

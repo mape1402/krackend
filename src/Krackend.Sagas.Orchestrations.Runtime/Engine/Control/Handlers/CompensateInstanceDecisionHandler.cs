@@ -11,6 +11,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -30,6 +31,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
         private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
+        private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
 
         public CompensateInstanceDecisionHandler(
             IRuntimeArtifactResolver artifactResolver,
@@ -42,7 +44,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IMessagingCommandSerializer messagingCommandSerializer,
             IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
             IOrchestrationConditionEvaluator conditionEvaluator,
-            IOrchestrationPayloadContextFactory payloadContextFactory)
+            IOrchestrationPayloadContextFactory payloadContextFactory,
+            IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -55,6 +58,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
             _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
+            _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
         }
 
         public async Task HandleAsync(CompensateInstanceDecision decision, CancellationToken cancellationToken = default)
@@ -156,6 +160,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                         TaskExecutionId = task.Id.ToString(),
                         TaskKey = task.TaskKey,
                         AwaitResponse = false,
+                        PropagationMetadata = _propagationMetadataStore.Load(instance),
                         MessageMetadata = new OrchestrationMessageMetadata
                         {
                             SagaId = GetSagaId(instance),

@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {
@@ -14,6 +15,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         private readonly IResolvedOrchestrationArtifactAccessor _artifactAccessor;
         private readonly IOrchestrationPayloadState _payloadState;
         private readonly ITriggerPayloadValidator _triggerPayloadValidator;
+        private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
 
         public Promoter(
             IRuntimeArtifactResolver artifactResolver,
@@ -21,7 +23,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             IExecutionTransitionRepository transitionRepository,
             IResolvedOrchestrationArtifactAccessor artifactAccessor,
             IOrchestrationPayloadState payloadState,
-            ITriggerPayloadValidator triggerPayloadValidator)
+            ITriggerPayloadValidator triggerPayloadValidator,
+            IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -29,6 +32,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             _artifactAccessor = artifactAccessor ?? throw new ArgumentNullException(nameof(artifactAccessor));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
             _triggerPayloadValidator = triggerPayloadValidator ?? throw new ArgumentNullException(nameof(triggerPayloadValidator));
+            _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
         }
 
         public async Task<PromotionResult> PromoteToInstanceAsync(PromotionRequest request, CancellationToken cancellationToken = default)
@@ -78,6 +82,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 ErrorSummary = string.Empty,
                 SnapshotPayload = _payloadState.CreateInitialPayload(request.Payload)
             };
+            _propagationMetadataStore.Save(instance, request.PropagationMetadata);
 
             await _instanceRepository.Create(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition

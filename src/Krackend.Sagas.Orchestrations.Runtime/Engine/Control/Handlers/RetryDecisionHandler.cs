@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -25,6 +26,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
         private readonly IOrchestrationPayloadState _payloadState;
         private readonly ITaskDispatchRequestPayloadPreparer _requestPayloadPreparer;
+        private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
 
         public RetryDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -36,7 +38,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IMessagingCommandSerializer messagingCommandSerializer,
             IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
             IOrchestrationPayloadState payloadState,
-            ITaskDispatchRequestPayloadPreparer requestPayloadPreparer)
+            ITaskDispatchRequestPayloadPreparer requestPayloadPreparer,
+            IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -48,6 +51,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
             _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
+            _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
         }
 
         public async Task HandleAsync(RetryDecision decision, CancellationToken cancellationToken = default)
@@ -242,6 +246,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     TaskKey = decision.Task.Key,
                     AwaitResponse = decision.Task.DispatchType != TaskDispatchType.FireAndForget,
                     ScheduledOnUtc = scheduledOnUtc,
+                    PropagationMetadata = _propagationMetadataStore.Load(instance),
                     MessageMetadata = new OrchestrationMessageMetadata
                     {
                         SagaId = GetSagaId(instance),

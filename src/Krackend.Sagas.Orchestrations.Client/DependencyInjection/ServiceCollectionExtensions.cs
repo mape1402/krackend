@@ -35,6 +35,11 @@ public static class ServiceCollectionExtensions
             provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
         services.TryAddScoped<IOrchestrationExecutionResultMetadataSetter>(provider =>
             provider.GetRequiredService<DefaultOrchestrationExecutionResultMetadataAccessor>());
+        services.TryAddScoped<DefaultOrchestrationPropagationMetadataAccessor>();
+        services.TryAddScoped<IOrchestrationPropagationMetadataAccessor>(provider =>
+            provider.GetRequiredService<DefaultOrchestrationPropagationMetadataAccessor>());
+        services.TryAddScoped<IOrchestrationPropagationMetadataSetter>(provider =>
+            provider.GetRequiredService<DefaultOrchestrationPropagationMetadataAccessor>());
         services.TryAddScoped<IOrchestrationClientPublisher, DefaultOrchestrationClientPublisher>();
         services.TryAddScoped<IOrchestrationOperationClient, DefaultOrchestrationOperationClient>();
         services.TryAddScoped<IOrchestrationOperationExecutionContext, DefaultOrchestrationOperationExecutionContext>();

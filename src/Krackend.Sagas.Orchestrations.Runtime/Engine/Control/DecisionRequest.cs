@@ -24,6 +24,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         public OrchestrationMessageMetadata MessageMetadata { get; init; }
 
         /// <summary>
+        /// Gets the propagation metadata available to the current decision cycle.
+        /// </summary>
+        public OrchestrationPropagationMetadata PropagationMetadata { get; init; }
+
+        /// <summary>
         /// Gets the execution result metadata associated with a backchannel callback.
         /// </summary>
         public OrchestrationExecutionResultMetadata ExecutionResultMetadata { get; init; }

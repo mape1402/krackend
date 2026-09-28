@@ -7,13 +7,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
     {
         private readonly IOrchestrationMessageMetadataSetter _metadataSetter;
         private readonly IOrchestrationExecutionResultMetadataSetter _resultMetadataSetter;
+        private readonly IOrchestrationPropagationMetadataSetter _propagationMetadataSetter;
+        private readonly PigeonPropagationMetadataMapper _propagationMetadataMapper = new();
 
         public KrackendConsumeInterceptor(
             IOrchestrationMessageMetadataSetter metadataSetter,
             IOrchestrationExecutionResultMetadataSetter resultMetadataSetter)
+            : this(metadataSetter, resultMetadataSetter, null)
+        {
+        }
+
+        public KrackendConsumeInterceptor(
+            IOrchestrationMessageMetadataSetter metadataSetter,
+            IOrchestrationExecutionResultMetadataSetter resultMetadataSetter,
+            IOrchestrationPropagationMetadataSetter propagationMetadataSetter)
         {
             _metadataSetter = metadataSetter ?? throw new ArgumentNullException(nameof(metadataSetter));
             _resultMetadataSetter = resultMetadataSetter ?? throw new ArgumentNullException(nameof(resultMetadataSetter));
+            _propagationMetadataSetter = propagationMetadataSetter;
         }
 
         public ValueTask Intercept(ConsumeContext context, CancellationToken cancellationToken = default)
@@ -39,6 +50,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors
             {
                 _resultMetadataSetter.Clear();
             }
+
+            _propagationMetadataSetter?.Set(_propagationMetadataMapper.Capture(context));
 
             return ValueTask.CompletedTask;
         }
