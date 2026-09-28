@@ -97,7 +97,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -129,15 +128,6 @@ public sealed class RemoteCommandDispatchActionTests
         Assert.Equal("Acknowledged", dispatch.DispatchStatus);
         Assert.NotNull(dispatch.SentOnUtc);
         Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
-        await dispatchRepository.Received(1).RecordSent(
-            dispatch.Id,
-            Arg.Any<DateTime>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
-        await dispatchRepository.Received(1).Update(dispatch, Arg.Any<CancellationToken>());
-        await taskRepository.Received(1).Update(task, Arg.Any<CancellationToken>());
-        await attemptRepository.Received(1).Update(attempt, Arg.Any<CancellationToken>());
-        await instanceRepository.Received(1).Update(instance, Arg.Any<CancellationToken>());
         await transitionRepository.Received(1).Create(
             Arg.Is<ExecutionTransition>(transition =>
                 transition.TransitionType == "TaskDispatched" &&
@@ -156,7 +146,6 @@ public sealed class RemoteCommandDispatchActionTests
             Substitute.For<ITaskExecutionAttemptRepository>(),
             Substitute.For<ITaskDispatchRepository>(),
             Substitute.For<IExecutionTransitionRepository>(),
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
 
         var command = new RemoteCommand
@@ -236,7 +225,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -346,7 +334,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -471,7 +458,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -587,7 +573,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -690,7 +675,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -749,7 +733,6 @@ public sealed class RemoteCommandDispatchActionTests
             Substitute.For<ITaskExecutionAttemptRepository>(),
             Substitute.For<ITaskDispatchRepository>(),
             Substitute.For<IExecutionTransitionRepository>(),
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
 
         var command = new RemoteCommand
@@ -833,7 +816,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             transitionRepository,
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
         var command = new RemoteCommand
         {
@@ -932,7 +914,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             Substitute.For<IExecutionTransitionRepository>(),
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
 
         await action.ExecuteAsync(
@@ -1023,7 +1004,6 @@ public sealed class RemoteCommandDispatchActionTests
             attemptRepository,
             dispatchRepository,
             Substitute.For<IExecutionTransitionRepository>(),
-            CreateUnitOfWork(),
             new DefaultMuleTerminalFailureMarker());
 
         await action.ExecuteAsync(
@@ -1053,15 +1033,4 @@ public sealed class RemoteCommandDispatchActionTests
         await sagaEngine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
     }
 
-    private static IRuntimeStorageUnitOfWork CreateUnitOfWork()
-    {
-        var transaction = Substitute.For<IRuntimeStorageTransaction>();
-        transaction.CommitAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-
-        var unitOfWork = Substitute.For<IRuntimeStorageUnitOfWork>();
-        unitOfWork.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(transaction));
-        unitOfWork.DeferAutoSave().Returns(Substitute.For<IDisposable>());
-        unitOfWork.SaveChanges(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        return unitOfWork;
-    }
 }

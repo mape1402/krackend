@@ -23,7 +23,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly ITaskExecutionAttemptRepository _attemptRepository;
         private readonly ITaskDispatchRepository _dispatchRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
-        private readonly IRuntimeStorageUnitOfWork _unitOfWork;
         private readonly IMuleTerminalFailureMarker _terminalFailureMarker;
 
         /// <summary>
@@ -37,7 +36,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             ITaskExecutionAttemptRepository attemptRepository,
             ITaskDispatchRepository dispatchRepository,
             IExecutionTransitionRepository transitionRepository,
-            IRuntimeStorageUnitOfWork unitOfWork,
             IMuleTerminalFailureMarker terminalFailureMarker)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -47,7 +45,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _attemptRepository = attemptRepository ?? throw new ArgumentNullException(nameof(attemptRepository));
             _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
-            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _terminalFailureMarker = terminalFailureMarker ?? throw new ArgumentNullException(nameof(terminalFailureMarker));
         }
 
@@ -135,17 +132,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 instance.LastUpdatedOnUtc = waitingSinceUtc;
             }
 
-            await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
-            using (_unitOfWork.DeferAutoSave())
-            {
-                await _dispatchRepository.Update(dispatch, cancellationToken);
-                await _attemptRepository.Update(attempt, cancellationToken);
-                await _taskRepository.Update(task, cancellationToken);
-                await _instanceRepository.Update(instance, cancellationToken);
-                await _unitOfWork.SaveChanges(cancellationToken);
-            }
-
-            await transaction.CommitAsync(cancellationToken);
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _taskRepository.Update(task, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
         }
 
         private async Task MarkDispatchPublishedAsync(
@@ -160,6 +150,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             var dispatch = await _dispatchRepository.GetById(ParseId(command.DispatchId), cancellationToken);
 
             dispatch.SentOnUtc = now;
+            var callbackAlreadyApplied = IsFinished(dispatch.DispatchStatus);
             if (!string.Equals(dispatch.DispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase))
             {
                 dispatch.FailedOnUtc = null;
@@ -168,7 +159,28 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             if (command.AwaitResponse)
             {
-                await _dispatchRepository.RecordSent(dispatch.Id, now, cancellationToken: cancellationToken);
+                if (!callbackAlreadyApplied)
+                {
+                    dispatch.DispatchStatus = "WaitingResponse";
+
+                    if (!IsTerminal(task.Status))
+                    {
+                        task.Status = TaskExecutionStatus.WaitingResponse;
+                        task.WaitingSinceUtc = dispatchedOnUtc;
+                    }
+
+                    if (!IsTerminal(attempt.Status))
+                    {
+                        attempt.Status = TaskExecutionStatus.WaitingResponse;
+                        attempt.WaitingSinceUtc = dispatchedOnUtc;
+                    }
+
+                    if (!IsTerminal(instance.Status))
+                    {
+                        instance.Status = OrchestrationInstanceStatus.Waiting;
+                        instance.WaitingSinceUtc = dispatchedOnUtc;
+                    }
+                }
             }
             else
             {
@@ -193,19 +205,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 }
             }
 
-            if (!command.AwaitResponse && !IsTerminal(instance.Status))
+            if (!IsTerminal(instance.Status))
             {
                 instance.LastUpdatedOnUtc = now;
             }
 
-            if (!command.AwaitResponse)
-            {
-                await _dispatchRepository.Update(dispatch, cancellationToken);
-                await _attemptRepository.Update(attempt, cancellationToken);
-                await _taskRepository.Update(task, cancellationToken);
-                await _instanceRepository.Update(instance, cancellationToken);
-            }
-
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _taskRepository.Update(task, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),

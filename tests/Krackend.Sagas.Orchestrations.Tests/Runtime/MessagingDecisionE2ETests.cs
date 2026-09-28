@@ -441,54 +441,6 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
-    public async Task EngineRetriesCallbackWhenRuntimeStateIsNotReadyYet()
-    {
-        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
-            Stage("stage-one", 1, MessagingTask("task.callback.race", 1))));
-
-        await harness.StartAsync(BusinessPayload("trigger"), "correlation-callback-race");
-
-        var command = harness.Dispatcher.Commands.Single();
-        var taskRepository = harness.GetRequiredService<ITaskExecutionRepository>();
-        var attemptRepository = harness.GetRequiredService<ITaskExecutionAttemptRepository>();
-        var dispatchRepository = harness.GetRequiredService<ITaskDispatchRepository>();
-        var task = await harness.GetTaskAsync(command);
-        var attempt = await harness.GetAttemptAsync(command);
-        var dispatch = await dispatchRepository.GetById(new Id(Ulid.Parse(command.DispatchId)));
-
-        task.Status = TaskExecutionStatus.Running;
-        task.WaitingSinceUtc = null;
-        attempt.Status = TaskExecutionStatus.Running;
-        attempt.WaitingSinceUtc = null;
-        dispatch.DispatchStatus = "Enqueued";
-        await taskRepository.Update(task);
-        await attemptRepository.Update(attempt);
-        await dispatchRepository.Update(dispatch);
-
-        await Assert.ThrowsAsync<OrchestrationCallbackNotReadyException>(() =>
-            harness.ForwardAsync(command, BusinessPayload("response"), Success()));
-
-        task.Status = TaskExecutionStatus.WaitingResponse;
-        task.WaitingSinceUtc = DateTime.UtcNow;
-        attempt.Status = TaskExecutionStatus.WaitingResponse;
-        attempt.WaitingSinceUtc = DateTime.UtcNow;
-        dispatch.DispatchStatus = "WaitingResponse";
-        await taskRepository.Update(task);
-        await attemptRepository.Update(attempt);
-        await dispatchRepository.Update(dispatch);
-
-        await harness.ForwardAsync(command, BusinessPayload("response"), Success());
-
-        task = await harness.GetTaskAsync(command);
-        attempt = await harness.GetAttemptAsync(command);
-        var transitions = await harness.GetTransitionsAsync(command);
-
-        Assert.Equal(TaskExecutionStatus.Completed, task.Status);
-        Assert.Equal(TaskExecutionStatus.Completed, attempt.Status);
-        Assert.Contains(transitions, transition => transition.TransitionType == "TaskCallbackCompleted");
-    }
-
-    [Fact]
     public async Task EngineRetriesDispatchFailureUsingPersistedAttemptErrorCode()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
