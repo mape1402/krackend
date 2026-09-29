@@ -10,5 +10,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         IReadOnlyCollection<StageArtifact> Stages) : IDecision
     {
         public string Kind => "complete-stage";
+
+        public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
     }
 }

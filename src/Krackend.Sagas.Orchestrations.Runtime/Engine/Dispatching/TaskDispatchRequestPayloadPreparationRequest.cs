@@ -29,6 +29,11 @@ public sealed record TaskDispatchRequestPayloadPreparationRequest
     public required MessagingTaskConfigurationArtifact MessagingConfiguration { get; init; }
 
     /// <summary>
+    /// Gets published metadata descriptors used to project incoming metadata into stable aliases.
+    /// </summary>
+    public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
+
+    /// <summary>
     /// Gets the optional payload explicitly carried by the decision.
     /// </summary>
     public string Payload { get; init; }

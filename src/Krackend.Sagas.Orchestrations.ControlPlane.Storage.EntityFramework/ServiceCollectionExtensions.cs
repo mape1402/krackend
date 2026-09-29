@@ -50,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ISieveProcessor, SieveProcessor>();
 
         services.AddScoped<IDomainRepository, DomainRepository>();
+        services.AddScoped<IMetadataDescriptorRepository, MetadataDescriptorRepository>();
         services.AddScoped<IOrchestrationDefinitionRepository, OrchestrationDefinitionRepository>();
         services.AddScoped<IOrchestrationVersionRepository, OrchestrationVersionRepository>();
         services.AddScoped<IStageRepository, StageRepository>();

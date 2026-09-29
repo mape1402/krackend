@@ -2,17 +2,39 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
+using Krackend.Sagas.Orchestrations.SchemaRegistry;
+using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 
 /// <summary>
 /// Builds deterministic schema contexts from orchestration stage and task ordering.
 /// </summary>
 public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaContextBuilder
 {
+    private readonly IMetadataDescriptorRepository _metadataDescriptorRepository;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OrchestrationSchemaContextBuilder"/> class.
+    /// </summary>
+    public OrchestrationSchemaContextBuilder()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OrchestrationSchemaContextBuilder"/> class.
+    /// </summary>
+    /// <param name="metadataDescriptorRepository">Metadata descriptor repository dependency.</param>
+    public OrchestrationSchemaContextBuilder(IMetadataDescriptorRepository metadataDescriptorRepository)
+    {
+        _metadataDescriptorRepository = metadataDescriptorRepository;
+    }
+
     /// <inheritdoc />
-    public Task<OrchestrationSchemaContext> BuildForTask(
+    public async Task<OrchestrationSchemaContext> BuildForTask(
         OrchestrationVersion version,
         Id taskDefinitionId,
         CancellationToken cancellationToken = default)
@@ -39,6 +61,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
+        await AddMetadataSource(sources, cancellationToken);
         AddPreviousStageTaskSources(stages, targetStage, sources);
         AddCurrentStageTaskSources(targetStage, targetTask, sources);
 
@@ -54,11 +77,11 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             Signature = BuildSignature(sources, target)
         };
 
-        return Task.FromResult(context);
+        return context;
     }
 
     /// <inheritdoc />
-    public Task<OrchestrationSchemaContext> BuildForStage(
+    public async Task<OrchestrationSchemaContext> BuildForStage(
         OrchestrationVersion version,
         Id stageDefinitionId,
         CancellationToken cancellationToken = default)
@@ -80,6 +103,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
+        await AddMetadataSource(sources, cancellationToken);
         AddPreviousStageTaskSources(stages, targetStage, sources);
 
         var context = new OrchestrationSchemaContext
@@ -93,7 +117,30 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             Signature = BuildSignature(sources, null)
         };
 
-        return Task.FromResult(context);
+        return context;
+    }
+
+    private async Task AddMetadataSource(ICollection<OrchestrationSchemaSource> sources, CancellationToken cancellationToken)
+    {
+        if (_metadataDescriptorRepository is null)
+        {
+            return;
+        }
+
+        var descriptors = (await _metadataDescriptorRepository.GetAllDescriptors(cancellationToken))
+            .OrderBy(x => x.Key, StringComparer.Ordinal)
+            .ToArray();
+        if (descriptors.Length == 0)
+        {
+            return;
+        }
+
+        AddSource(sources, new OrchestrationSchemaSource
+        {
+            Alias = "metadata",
+            SourceKind = OrchestrationSchemaContextSourceKind.Metadata,
+            SchemaBinding = CreateMetadataSchemaBinding(descriptors)
+        });
     }
 
     private static void AddTriggerSources(OrchestrationVersion version, ICollection<OrchestrationSchemaSource> sources)
@@ -217,6 +264,69 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             TaskKey = task.Key,
             SchemaBinding = GetRequestSchemaBinding(task)
         };
+
+    private static SchemaBinding CreateMetadataSchemaBinding(IReadOnlyCollection<MetadataDescriptor> descriptors)
+    {
+        var properties = new JsonObject();
+        foreach (var descriptor in descriptors)
+        {
+            properties[descriptor.Key] = JsonNode.Parse(descriptor.SchemaJson)
+                ?? throw new InvalidOperationException($"Metadata descriptor '{descriptor.Key}' does not contain a valid schema snapshot.");
+        }
+
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["additionalProperties"] = true,
+            ["properties"] = properties
+        };
+        var schemaJson = schema.ToJsonString();
+        var contentHash = BuildMetadataContentHash(descriptors);
+
+        return new SchemaBinding
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Orchestration,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
+            ContractKey = "metadata",
+            ContractVersion = new SemanticVersion(0, 0, 0),
+            RegistryProviderId = Id.New(),
+            RegistryProviderKey = "control-plane",
+            ContractKind = SchemaContractKind.Unspecified,
+            StrictMode = false,
+            IsValidationEnabled = false,
+            Snapshot = new DesignSchemaContractSnapshot
+            {
+                ContractKind = SchemaContractKind.Unspecified,
+                RegistryProviderId = "control-plane",
+                RegistryProviderKey = "control-plane",
+                ContractId = "metadata",
+                ContractKey = "metadata",
+                ContractVersion = "0.0.0",
+                SchemaFormat = "JsonSchema",
+                SchemaJson = schemaJson,
+                ContentHash = contentHash,
+                SourceArtifactId = string.Empty,
+                ResolvedBy = "ControlPlane.MetadataDescriptors",
+                ResolvedAtUtc = DateTimeOffset.UtcNow
+            }
+        };
+    }
+
+    private static string BuildMetadataContentHash(IEnumerable<MetadataDescriptor> descriptors)
+    {
+        var builder = new StringBuilder();
+        foreach (var descriptor in descriptors.OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            builder.Append(descriptor.Key).Append('|');
+            builder.Append(descriptor.ContentHash).Append('|');
+            builder.Append(descriptor.SchemaJson).AppendLine();
+        }
+
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
 
     private static SchemaBinding GetRequestSchemaBinding(TaskDefinition task)
         => task.Configuration switch

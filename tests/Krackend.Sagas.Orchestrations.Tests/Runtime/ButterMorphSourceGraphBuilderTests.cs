@@ -39,6 +39,7 @@ public sealed class ButterMorphSourceGraphBuilderTests
         Assert.Contains("responses", sources.Keys);
         Assert.Contains("stages", sources.Keys);
         Assert.Contains("variables", sources.Keys);
+        Assert.Contains("metadata", sources.Keys);
         Assert.DoesNotContain("trigger", sources.Keys);
     }
 
@@ -67,6 +68,7 @@ public sealed class ButterMorphSourceGraphBuilderTests
                 }
                 """)!,
             TriggerPayload = JsonNode.Parse("""{"saleId":"sale-1"}""")!,
+            MetadataPayload = JsonNode.Parse("""{"audit":{"userId":"mario"},"security":{"tenantId":"demo"}}""")!,
             StageKey = "inventory-reservation",
             TaskKey = "inventories.reserve"
         };
@@ -78,5 +80,6 @@ public sealed class ButterMorphSourceGraphBuilderTests
         Assert.Contains("responses", sources.Keys);
         Assert.Contains("stages", sources.Keys);
         Assert.Contains("variables", sources.Keys);
+        Assert.Contains("metadata", sources.Keys);
     }
 }

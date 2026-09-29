@@ -38,7 +38,13 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             version.StageDefinitions.OrderBy(x => x.Order).Select(MapStage).ToArray(),
             definition.Description,
             version.VersionLabel,
-            version.Notes);
+            version.Notes)
+        {
+            MetadataDescriptors = (version.MetadataDescriptors ?? [])
+                .OrderBy(x => x.Key, StringComparer.Ordinal)
+                .Select(MapMetadataDescriptor)
+                .ToArray()
+        };
 
         return JsonSerializer.Serialize(artifact);
     }
@@ -78,6 +84,17 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             variable.DefaultValue,
             variable.IsRequired,
             variable.IsSensitive);
+
+    private static MetadataDescriptorArtifact MapMetadataDescriptor(MetadataDescriptor descriptor)
+        => new(
+            descriptor.Id,
+            descriptor.Key,
+            string.IsNullOrWhiteSpace(descriptor.SourceKey) ? descriptor.Key : descriptor.SourceKey,
+            descriptor.DisplayName,
+            descriptor.Description,
+            "JsonSchema",
+            descriptor.SchemaJson,
+            descriptor.ContentHash);
 
     private static StageArtifact MapStage(StageDefinition stage)
         => new(

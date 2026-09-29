@@ -67,7 +67,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
-            var payloadContext = _payloadContextFactory.Create(instance, decision.StageKey, decision.Task.Key);
+            var payloadContext = _payloadContextFactory.Create(
+                instance,
+                decision.StageKey,
+                decision.Task.Key,
+                decision.MetadataDescriptors);
             var condition = await _conditionEvaluator.EvaluateAsync(
                 new OrchestrationConditionEvaluationRequest
                 {
@@ -169,6 +173,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                         StageKey = decision.StageKey,
                         Task = decision.Task,
                         MessagingConfiguration = messagingConfiguration,
+                        MetadataDescriptors = decision.MetadataDescriptors,
                         Payload = decision.Payload
                     },
                     cancellationToken);

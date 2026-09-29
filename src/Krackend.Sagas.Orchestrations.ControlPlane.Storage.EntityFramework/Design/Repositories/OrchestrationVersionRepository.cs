@@ -105,7 +105,9 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
         return _dbContext.OrchestrationVersions
             .AsNoTracking()
             .AnyAsync(
-                x => x.OrchestrationDefinitionId == orchestrationDefinitionId && x.Version == versionText,
+                x => x.OrchestrationDefinitionId == orchestrationDefinitionId
+                    && x.Version == versionText
+                    && x.Status != OrchestrationVersionStatus.Archived,
                 cancellationToken);
     }
 
@@ -130,7 +132,8 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
     {
         var query = _dbContext.OrchestrationVersions
             .AsNoTracking()
-            .Where(x => x.OrchestrationDefinitionId == orchestrationDefinitionId);
+            .Where(x => x.OrchestrationDefinitionId == orchestrationDefinitionId
+                && x.Status != OrchestrationVersionStatus.Archived);
 
         if (excludeOrchestrationVersionId.HasValue)
         {

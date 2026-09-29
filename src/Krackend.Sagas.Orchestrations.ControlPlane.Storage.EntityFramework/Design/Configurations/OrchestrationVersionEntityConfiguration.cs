@@ -30,7 +30,7 @@ internal sealed class OrchestrationVersionEntityConfiguration : IEntityTypeConfi
         builder.Property(x => x.ApprovedBy).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired(false);
 
-        builder.HasIndex(x => new { x.OrchestrationDefinitionId, x.Version }).IsUnique();
+        builder.HasIndex(x => new { x.OrchestrationDefinitionId, x.Version });
         builder.HasIndex(x => x.OrchestrationDefinitionId);
     }
 }

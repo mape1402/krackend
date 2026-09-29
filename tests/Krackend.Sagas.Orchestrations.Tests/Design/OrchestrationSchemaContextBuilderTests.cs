@@ -2,7 +2,9 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
+using NSubstitute;
 using ControlPlaneSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Design;
@@ -22,6 +24,27 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.Equal(SchemaContractKind.Event, source.SchemaBinding.ContractKind);
         Assert.Equal("reserve_inventory", context.Target.Alias);
         Assert.Equal(SchemaContractKind.CommandRequest, context.Target.SchemaBinding.ContractKind);
+        Assert.False(string.IsNullOrWhiteSpace(context.Signature));
+    }
+
+    [Fact]
+    public async Task BuildForTask_ExposesMetadataDescriptorsAsSingleMetadataSource()
+    {
+        var version = CreateVersion();
+        var repository = Substitute.For<IMetadataDescriptorRepository>();
+        repository.GetAllDescriptors(Arg.Any<CancellationToken>())
+            .Returns([MetadataDescriptor("audit"), MetadataDescriptor("security")]);
+        var builder = new OrchestrationSchemaContextBuilder(repository);
+
+        var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[0].Id);
+
+        var metadata = Assert.Single(context.Sources, x => x.Alias == "metadata");
+        Assert.Equal(OrchestrationSchemaContextSourceKind.Metadata, metadata.SourceKind);
+        Assert.Equal("metadata", metadata.SchemaBinding.ContractKey);
+        Assert.Equal("JsonSchema", metadata.SchemaBinding.Snapshot!.SchemaFormat);
+        Assert.Contains("\"audit\"", metadata.SchemaBinding.Snapshot.SchemaJson, StringComparison.Ordinal);
+        Assert.Contains("\"security\"", metadata.SchemaBinding.Snapshot.SchemaJson, StringComparison.Ordinal);
+        Assert.Contains(context.Sources, x => x.Alias == "trigger");
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }
 
@@ -413,5 +436,17 @@ public sealed class OrchestrationSchemaContextBuilderTests
             RegistryProviderId = Id.New(),
             RegistryProviderKey = "atlas",
             IsValidationEnabled = false
+        };
+
+    private static MetadataDescriptor MetadataDescriptor(string key)
+        => new()
+        {
+            Id = Id.New(),
+            Key = key,
+            SourceKey = key,
+            DisplayName = key,
+            SchemaJson = $"{{\"type\":\"object\",\"properties\":{{\"{key}Id\":{{\"type\":\"string\"}}}}}}",
+            ContentHash = $"{key}-hash",
+            CreatedOnUtc = DateTime.UtcNow
         };
 }

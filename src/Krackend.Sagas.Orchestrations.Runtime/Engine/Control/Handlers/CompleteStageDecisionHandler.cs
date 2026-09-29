@@ -43,7 +43,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     Stage = decision.Stage,
                     SourceType = ElementType.Stage,
                     SourceId = decision.Stage.Id,
-                    SourceKey = decision.Stage.Key
+                    SourceKey = decision.Stage.Key,
+                    MetadataDescriptors = decision.MetadataDescriptors
                 },
                 cancellationToken);
 

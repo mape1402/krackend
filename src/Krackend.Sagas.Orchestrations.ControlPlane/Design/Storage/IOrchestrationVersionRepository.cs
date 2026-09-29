@@ -40,7 +40,7 @@ public interface IOrchestrationVersionRepository
     Task<PagedResult<OrchestrationVersion>> GetAll(Id orchestrationDefinitionId, PagedSettings pagedSettings, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Determines whether an orchestration definition already has the requested semantic version.
+    /// Determines whether an orchestration definition already has the requested semantic version in a non-archived lifecycle state.
     /// </summary>
     /// <param name="orchestrationDefinitionId">Parent orchestration definition identifier.</param>
     /// <param name="version">Semantic version to look for.</param>
@@ -57,7 +57,7 @@ public interface IOrchestrationVersionRepository
     Task<OrchestrationVersion> GetById(Id orchestrationVersionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the latest orchestration version for one orchestration definition.
+    /// Returns the latest non-archived orchestration version for one orchestration definition.
     /// </summary>
     /// <param name="orchestrationDefinitionId">Parent orchestration definition identifier.</param>
     /// <param name="excludeOrchestrationVersionId">Optional version identifier to exclude from the lookup.</param>

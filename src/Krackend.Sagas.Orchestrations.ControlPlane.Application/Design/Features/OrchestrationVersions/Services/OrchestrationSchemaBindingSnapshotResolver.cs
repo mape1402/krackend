@@ -117,11 +117,13 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
         var commandBinding = messaging.SchemaBinding;
         messaging.RequestSchemaBinding = CreateCommandSideBinding(
             commandBinding,
+            messaging.RequestSchemaBinding,
             SchemaContractKind.CommandRequest,
             commandBinding.IsValidationEnabled || messaging.HasRequestValidation || messaging.HasSchemaValidation,
             commandBinding.StrictMode);
         messaging.ResponseSchemaBinding = CreateCommandSideBinding(
             commandBinding,
+            messaging.ResponseSchemaBinding,
             SchemaContractKind.CommandResponse,
             messaging.HasResponseValidation,
             messaging.HasResponseValidation && commandBinding.StrictMode);
@@ -213,26 +215,51 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
 
     private static SchemaBinding CreateCommandSideBinding(
         SchemaBinding commandBinding,
+        SchemaBinding existingSideBinding,
         SchemaContractKind contractKind,
         bool isValidationEnabled,
         bool strictMode)
-        => new()
+    {
+        var source = IsMatchingCommandSideBinding(commandBinding, existingSideBinding, contractKind)
+            ? existingSideBinding
+            : commandBinding;
+
+        return new()
         {
-            Id = commandBinding.Id,
-            ElementType = commandBinding.ElementType,
-            ElementId = commandBinding.ElementId,
-            ContractId = commandBinding.ContractId,
-            ContractKey = commandBinding.ContractKey,
-            ContractVersion = commandBinding.ContractVersion,
-            RegistryProviderId = commandBinding.RegistryProviderId,
-            RegistryProviderKey = commandBinding.RegistryProviderKey,
+            Id = source.Id,
+            ElementType = source.ElementType,
+            ElementId = source.ElementId,
+            ContractId = source.ContractId,
+            ContractKey = source.ContractKey,
+            ContractVersion = source.ContractVersion,
+            RegistryProviderId = source.RegistryProviderId,
+            RegistryProviderKey = source.RegistryProviderKey,
             ContractKind = contractKind,
             StrictMode = strictMode,
             IsValidationEnabled = isValidationEnabled,
-            Snapshot = commandBinding.Snapshot?.ContractKind == contractKind
-                ? commandBinding.Snapshot
-                : null
+            Snapshot = source.Snapshot?.ContractKind == contractKind
+                ? source.Snapshot
+                : commandBinding.Snapshot?.ContractKind == contractKind
+                    ? commandBinding.Snapshot
+                    : null
         };
+    }
+
+    private static bool IsMatchingCommandSideBinding(
+        SchemaBinding commandBinding,
+        SchemaBinding existingSideBinding,
+        SchemaContractKind contractKind)
+    {
+        if (existingSideBinding is null ||
+            existingSideBinding.ContractKind != contractKind)
+        {
+            return false;
+        }
+
+        return string.Equals(existingSideBinding.ContractKey, commandBinding.ContractKey, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(existingSideBinding.ContractVersion.ToString(), commandBinding.ContractVersion.ToString(), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(existingSideBinding.RegistryProviderKey, commandBinding.RegistryProviderKey, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool HasCurrentSnapshot(SchemaBinding binding, SchemaContractKind contractKind)
     {

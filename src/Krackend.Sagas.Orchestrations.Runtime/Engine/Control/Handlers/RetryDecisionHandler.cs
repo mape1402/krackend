@@ -141,6 +141,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                         StageKey = decision.StageKey,
                         Task = decision.Task,
                         MessagingConfiguration = messagingConfiguration,
+                        MetadataDescriptors = decision.MetadataDescriptors,
                         Payload = decision.Payload
                     },
                     cancellationToken);

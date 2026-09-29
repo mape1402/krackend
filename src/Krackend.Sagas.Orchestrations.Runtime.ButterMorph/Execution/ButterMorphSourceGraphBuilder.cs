@@ -13,6 +13,7 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
 {
     private const string ContextAlias = "context";
     private const string TriggerAlias = "trigger";
+    private const string MetadataAlias = "metadata";
     private const string RequestsAlias = "requests";
     private const string ResponsesAlias = "responses";
     private const string StagesAlias = "stages";
@@ -43,6 +44,7 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
         var sources = new Dictionary<string, IStructureGraph>(StringComparer.OrdinalIgnoreCase);
         AddSource(sources, ContextAlias, payloadContext.ContextPayload);
         AddSource(sources, TriggerAlias, payloadContext.TriggerPayload);
+        AddSource(sources, MetadataAlias, payloadContext.MetadataPayload);
         AddSource(sources, RequestsAlias, BuildTaskPayloadCollection(payloadContext.ContextPayload, RequestPropertyName));
         AddSource(sources, ResponsesAlias, BuildTaskPayloadCollection(payloadContext.ContextPayload, ResponsePropertyName));
         AddSource(sources, StagesAlias, BuildSanitizedStagesPayload(payloadContext.ContextPayload));

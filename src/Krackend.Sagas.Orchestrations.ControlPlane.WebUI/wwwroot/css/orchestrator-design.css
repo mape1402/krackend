@@ -332,6 +332,63 @@ main.container {
     white-space: nowrap;
 }
 
+.od-metadata-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 240px));
+    align-items: start;
+    gap: 0.5rem;
+}
+
+.od-metadata-card {
+    min-height: 0;
+    gap: 0.32rem;
+    border-top-width: 1px;
+    padding: 0.55rem 0.6rem;
+}
+
+.od-metadata-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.45rem;
+}
+
+.od-metadata-title-block {
+    min-width: 0;
+    display: grid;
+    gap: 0.18rem;
+}
+
+.od-metadata-card .od-item-title {
+    font-size: 0.9rem;
+    line-height: 1.15;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.od-metadata-key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.72rem;
+    color: color-mix(in srgb, var(--od-primary) 48%, var(--od-muted));
+}
+
+.od-metadata-description {
+    font-size: 0.76rem;
+    line-height: 1.25;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.od-metadata-card .od-kebab {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    font-size: 0.95rem;
+}
+
 .od-chip-row {
     display: flex;
     flex-wrap: wrap;

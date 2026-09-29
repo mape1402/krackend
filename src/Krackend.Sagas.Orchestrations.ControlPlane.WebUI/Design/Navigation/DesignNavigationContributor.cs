@@ -28,6 +28,13 @@ public sealed class DesignNavigationContributor : IOrchestratorNavigationContrib
                 Area = "OrchestratorDesign",
                 Page = "/Domains/Index",
                 Order = 20
+            },
+            new OrchestratorNavigationItem
+            {
+                Label = "Metadata",
+                Area = "OrchestratorDesign",
+                Page = "/Metadata/Index",
+                Order = 30
             }
         ];
     }

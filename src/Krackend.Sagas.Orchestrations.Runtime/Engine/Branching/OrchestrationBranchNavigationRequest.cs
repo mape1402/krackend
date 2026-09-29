@@ -38,4 +38,9 @@ public sealed record OrchestrationBranchNavigationRequest
     /// Gets the source element key used for diagnostics.
     /// </summary>
     public required string SourceKey { get; init; }
+
+    /// <summary>
+    /// Gets published metadata descriptors used to project incoming metadata into stable aliases.
+    /// </summary>
+    public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
 }

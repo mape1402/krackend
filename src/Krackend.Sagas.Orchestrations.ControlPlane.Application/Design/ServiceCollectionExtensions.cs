@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationPipelineBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(OrchestrationDraftMutationPipelineBehavior<,>));
         services.AddTransient<IDomainApplicationMapper, DomainApplicationMapper>();
+        services.AddTransient<IMetadataDescriptorApplicationMapper, MetadataDescriptorApplicationMapper>();
         services.AddTransient<IOrchestrationDefinitionApplicationMapper, OrchestrationDefinitionApplicationMapper>();
         services.AddTransient<IOrchestrationVersionApplicationMapper, OrchestrationVersionApplicationMapper>();
         services.AddTransient<IStageDefinitionApplicationMapper, StageDefinitionApplicationMapper>();
@@ -34,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IParallelGroupDefinitionApplicationMapper, ParallelGroupDefinitionApplicationMapper>();
         services.AddTransient<IBranchRuleDefinitionApplicationMapper, BranchRuleDefinitionApplicationMapper>();
         services.AddScoped<IDomainApplicationService, DomainApplicationService>();
+        services.AddScoped<IMetadataDescriptorApplicationService, MetadataDescriptorApplicationService>();
         services.AddScoped<IOrchestrationApplicationService, OrchestrationApplicationService>();
         services.AddScoped<IOrchestrationVersionApplicationService, OrchestrationVersionApplicationService>();
         services.AddScoped<IStageApplicationService, StageApplicationService>();

@@ -293,7 +293,11 @@ public sealed class RuntimeCoreDefaultsAndBranchNavigationTests
     private static IOrchestrationPayloadContextFactory PayloadContextFactory()
     {
         var factory = Substitute.For<IOrchestrationPayloadContextFactory>();
-        factory.Create(Arg.Any<OrchestrationInstance>(), Arg.Any<string>(), Arg.Any<string>())
+        factory.Create(
+                Arg.Any<OrchestrationInstance>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyCollection<MetadataDescriptorArtifact>>())
             .Returns(call => new OrchestrationPayloadContext
             {
                 ContextPayload = JsonNode.Parse("""{"context":true}"""),

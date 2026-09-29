@@ -1,0 +1,392 @@
+@page
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Metadata.IndexModel
+@{
+    ViewData["Title"] = "Metadata";
+}
+
+<div class="od-page-head">
+    <div>
+        <h1 class="od-page-title">Metadata</h1>
+        <p class="od-page-subtitle">Transversal schemas available to orchestration mappings and execution conditions.</p>
+    </div>
+    <button type="button" class="btn btn-primary js-open-payload-schema-designer" data-id="new">Create metadata</button>
+</div>
+
+@if (!Model.Rows.Any())
+{
+    <section class="od-panel">
+        <p class="od-empty">No metadata descriptors found.</p>
+    </section>
+}
+else
+{
+    <section class="od-list-shell">
+        <div class="od-grid od-metadata-grid">
+            @foreach (var item in Model.Rows.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                <article class="od-item-card od-metadata-card">
+                    <div class="od-metadata-card-header">
+                        <div class="od-metadata-title-block">
+                            <h2 class="od-item-title" title="@item.DisplayName">@item.DisplayName</h2>
+                            <p class="od-item-meta od-metadata-key" title="@item.Key">@item.Key</p>
+                        </div>
+                        <div class="dropdown">
+                            <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li>
+                                    <button type="button"
+                                            class="dropdown-item js-open-payload-schema-designer"
+                                            data-id="@item.Id">
+                                        Design schema
+                                    </button>
+                                </li>
+                                <li><hr class="dropdown-divider" /></li>
+                                <li>
+                                    <form method="post"
+                                          asp-page-handler="Delete"
+                                          class="od-inline-form"
+                                          data-confirm="true"
+                                          data-confirm-title="Delete metadata"
+                                          data-confirm-message="Delete this metadata descriptor? Existing orchestration snapshots keep their copied schema."
+                                          data-confirm-accept="Delete"
+                                          data-confirm-type="warning"
+                                          data-orchestrator-busy="true"
+                                          data-busy-title="Deleting metadata"
+                                          data-busy-message="Design is removing the metadata descriptor.">
+                                        <input type="hidden" name="metadataDescriptorId" value="@item.Id" />
+                                        <button type="submit" class="dropdown-item text-danger">Delete metadata</button>
+                                    </form>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <p class="od-item-description od-metadata-description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@section Scripts {
+<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.0.0"></script>
+<script>
+(() => {
+    const openPayloadSchemaDesigner = (descriptorId) => {
+        if (!descriptorId) return;
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph schema designer could not be loaded.',
+                type: 'error'
+            });
+            return;
+        }
+
+        const contextKey = `metadata:${descriptorId}`;
+        const designerUrl = `/buttermorph/payload-schema/designer?context=${encodeURIComponent(contextKey)}&mode=edit`;
+        const frame = window.ButterMorphHost.openFrame(designerUrl, {
+            title: 'ButterMorph metadata schema',
+            width: '96vw',
+            height: '92vh'
+        });
+        prepareMetadataSchemaFrame(frame);
+    };
+
+    const prepareMetadataSchemaFrame = (frame) => {
+        if (!frame) return;
+
+        const applyPatch = () => {
+            const frameWindow = frame.contentWindow;
+            const frameDocument = frame.contentDocument;
+            if (!frameWindow || !frameDocument || frameWindow.__krackendMetadataSchemaFrameReady === true) {
+                return;
+            }
+
+            const originalSync = frameWindow.ButterMorphPayloadSchemaSync;
+            if (typeof originalSync !== 'function') {
+                window.setTimeout(applyPatch, 50);
+                return;
+            }
+
+            frameWindow.__krackendMetadataSchemaFrameReady = true;
+            frameWindow.ButterMorphPayloadSchemaSync = () => {
+                normalizeMetadataSchemaRows(frameDocument);
+                const hiddenSchema = frameDocument.getElementById('payload-schema-json');
+                const rootFields = frameDocument.querySelectorAll('#schema-root-fields > .schema-field');
+                if (hiddenSchema && rootFields.length === 0) {
+                    hiddenSchema.value = JSON.stringify({
+                        type: 'object',
+                        additionalProperties: true,
+                        properties: {}
+                    });
+                    return true;
+                }
+
+                const result = originalSync.call(frameWindow);
+                revealSchemaMessage(frame);
+                return result;
+            };
+
+            observeSchemaMessages(frame);
+            interceptMetadataSchemaSave(frame);
+        };
+
+        frame.addEventListener('load', applyPatch);
+        window.setTimeout(applyPatch, 50);
+    };
+
+    const interceptMetadataSchemaSave = (frame) => {
+        const frameWindow = frame.contentWindow;
+        if (!frameWindow || frameWindow.__krackendMetadataSchemaSaveIntercepted === true) {
+            return;
+        }
+
+        frameWindow.__krackendMetadataSchemaSaveIntercepted = true;
+        frameWindow.addEventListener('click', event => {
+            const button = event.target?.closest?.("button[type='submit'],input[type='submit']");
+            const form = resolveMetadataSchemaForm(button?.form);
+            if (!form) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            saveMetadataSchemaFrame(frame, form);
+        }, true);
+        frameWindow.addEventListener('submit', event => {
+            const form = resolveMetadataSchemaForm(event.target);
+            if (!form) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            saveMetadataSchemaFrame(frame, form);
+        }, true);
+    };
+
+    const resolveMetadataSchemaForm = (candidate) => {
+        if (!candidate) return null;
+        if (candidate.matches?.("[data-schema-host-form='true']")) return candidate;
+        return candidate.closest?.("[data-schema-host-form='true']") || null;
+    };
+
+    const saveMetadataSchemaFrame = async (frame, form) => {
+        if (!frame?.contentWindow || !frame.contentDocument || form.dataset.krackendSaving === 'true') {
+            return;
+        }
+
+        const frameDocument = frame.contentDocument;
+        const validationErrors = validateMetadataSchemaHeader(form);
+        if (validationErrors.length > 0) {
+            showMetadataSchemaMessage(frameDocument, 'Review the metadata descriptor.', validationErrors);
+            focusFirstInvalidMetadataHeader(form);
+            return;
+        }
+
+        form.removeAttribute('data-schema-host-submitting');
+        normalizeMetadataSchemaRows(frameDocument);
+        const syncResult = frame.contentWindow.ButterMorphPayloadSchemaSync?.();
+        if (syncResult === false) {
+            revealSchemaMessage(frame);
+            return;
+        }
+
+        setMetadataSchemaSaving(form, true);
+        try {
+            const response = await frame.contentWindow.fetch(form.action, {
+                method: 'POST',
+                body: new frame.contentWindow.FormData(form),
+                credentials: 'same-origin',
+                headers: {
+                    'X-ButterMorph-Host-Flow': 'true'
+                }
+            });
+
+            const contentType = response.headers.get('content-type') || '';
+            if (!response.ok || !contentType.includes('application/json')) {
+                showMetadataSchemaMessage(frameDocument, 'The metadata schema could not be saved.', ['The server did not return a valid save response.']);
+                return;
+            }
+
+            const result = await response.json();
+            if (result?.hostSaveCompleted === true || result?.HostSaveCompleted === true) {
+                window.ButterMorphHost?.closeFrame?.();
+                window.location.href = window.location.pathname;
+                return;
+            }
+
+            showMetadataSchemaMessage(
+                frameDocument,
+                result?.message || result?.Message || 'The metadata schema could not be saved.',
+                result?.details || result?.Details || []);
+        } catch (error) {
+            showMetadataSchemaMessage(frameDocument, 'The metadata schema could not be saved.', [error?.message || 'Unexpected browser error while saving.']);
+        } finally {
+            setMetadataSchemaSaving(form, false);
+        }
+    };
+
+    const validateMetadataSchemaHeader = (form) => {
+        const errors = [];
+        const key = form.querySelector('#SchemaKey')?.value?.trim() || '';
+        const name = form.querySelector('#SchemaName')?.value?.trim() || '';
+        const version = form.querySelector('#SchemaVersion')?.value?.trim() || '';
+
+        if (!key) {
+            errors.push('Key is required.');
+        } else if (!/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(key)) {
+            errors.push('Key must use lowercase segments separated only by underscores, starting with a letter.');
+        }
+
+        if (!name) {
+            errors.push('Name is required.');
+        }
+
+        if (!version) {
+            errors.push('Version is required.');
+        }
+
+        return errors;
+    };
+
+    const focusFirstInvalidMetadataHeader = (form) => {
+        const firstInvalid = ['#SchemaKey', '#SchemaName', '#SchemaVersion']
+            .map(selector => form.querySelector(selector))
+            .find(input => input && !input.value?.trim());
+        firstInvalid?.focus?.();
+    };
+
+    const setMetadataSchemaSaving = (form, isSaving) => {
+        form.dataset.krackendSaving = isSaving ? 'true' : 'false';
+        form.removeAttribute('data-schema-host-submitting');
+        form.querySelectorAll("button[type='submit'],input[type='submit']").forEach(button => {
+            if (isSaving) {
+                button.dataset.originalText = button.textContent || button.value || '';
+                button.disabled = true;
+                if (button.tagName === 'BUTTON') {
+                    button.textContent = 'Saving...';
+                } else {
+                    button.value = 'Saving...';
+                }
+                return;
+            }
+
+            button.disabled = false;
+            if (button.dataset.originalText) {
+                if (button.tagName === 'BUTTON') {
+                    button.textContent = button.dataset.originalText;
+                } else {
+                    button.value = button.dataset.originalText;
+                }
+            }
+        });
+    };
+
+    const showMetadataSchemaMessage = (frameDocument, message, details) => {
+        let alert = frameDocument.querySelector('.bm-schema-alert');
+        if (!alert) {
+            alert = frameDocument.createElement('div');
+            alert.className = 'bm-schema-alert';
+            alert.innerHTML = "<div class='bm-schema-alert-dialog' role='alertdialog' aria-modal='true' aria-labelledby='bm-schema-alert-title'>" +
+                "<div id='bm-schema-alert-title' class='bm-schema-alert-title'>Message</div>" +
+                "<div class='bm-schema-alert-message'></div>" +
+                "<details class='bm-schema-alert-details'><summary>Details</summary><div class='bm-schema-alert-detail-list'></div></details>" +
+                "<div class='bm-schema-alert-actions'><button type='button' class='btn btn-primary bm-schema-alert-close'>OK</button></div>" +
+                "</div>";
+            alert.querySelector('.bm-schema-alert-close')?.addEventListener('click', () => alert.remove());
+
+            const form = frameDocument.querySelector("[data-schema-host-form='true']");
+            form?.parentElement?.insertBefore(alert, form);
+        }
+
+        const messageNode = alert.querySelector('.bm-schema-alert-message');
+        if (messageNode) {
+            messageNode.textContent = message || 'The metadata schema could not be saved.';
+        }
+
+        const values = Array.isArray(details) ? details.filter(Boolean) : [];
+        const detailsNode = alert.querySelector('.bm-schema-alert-details');
+        const listNode = alert.querySelector('.bm-schema-alert-detail-list');
+        if (detailsNode && listNode) {
+            listNode.replaceChildren();
+            values.forEach(value => {
+                const item = frameDocument.createElement('div');
+                item.className = 'bm-schema-alert-detail-item';
+                item.textContent = String(value);
+                listNode.appendChild(item);
+            });
+            detailsNode.classList.toggle('d-none', values.length === 0);
+        }
+
+        alert.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const normalizeMetadataSchemaRows = (frameDocument) => {
+        const root = frameDocument.getElementById('schema-root-fields');
+        if (!root) return;
+
+        const fields = Array.from(root.children)
+            .filter(field => field.classList?.contains('schema-field'));
+        const blankFields = fields.filter(isBlankSchemaField);
+        if (blankFields.length === 0) return;
+
+        if (blankFields.length === fields.length) {
+            blankFields.forEach(field => field.remove());
+            return;
+        }
+
+        blankFields.forEach(field => field.remove());
+    };
+
+    const isBlankSchemaField = (field) => {
+        const name = field.querySelector('.field-name-input')?.value?.trim() || '';
+        const description = field.querySelector('.field-description-input')?.value?.trim() || '';
+        const required = field.querySelector('.field-required-input')?.checked === true;
+        const hasValidation = Object.keys(safeJson(field.dataset.validation || '{}')).length > 0;
+        const hasMetadata = Object.keys(safeJson(field.dataset.metadata || '{}')).length > 0;
+        const hasChildren = field.querySelector('.child-fields-list .schema-field, .array-object-fields-list .schema-field, .nested-array-item-list .schema-field') !== null;
+        return !name && !description && !required && !hasValidation && !hasMetadata && !hasChildren;
+    };
+
+    const observeSchemaMessages = (frame) => {
+        const frameDocument = frame.contentDocument;
+        if (!frameDocument?.body || frameDocument.body.__krackendMetadataSchemaObserverReady === true) {
+            return;
+        }
+
+        frameDocument.body.__krackendMetadataSchemaObserverReady = true;
+        new MutationObserver(() => revealSchemaMessage(frame))
+            .observe(frameDocument.body, { childList: true, subtree: true });
+    };
+
+    const revealSchemaMessage = (frame) => {
+        window.setTimeout(() => {
+            const alert = frame.contentDocument?.querySelector('.bm-schema-alert');
+            if (alert) {
+                alert.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 0);
+    };
+
+    const safeJson = (value) => {
+        try {
+            return JSON.parse(value || '{}') || {};
+        } catch {
+            return {};
+        }
+    };
+
+    document.querySelectorAll('.js-open-payload-schema-designer').forEach(button => {
+        button.addEventListener('click', () => openPayloadSchemaDesigner(button.getAttribute('data-id')));
+    });
+
+    window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin || !event.data) return;
+        const messageType = event.data.type || '';
+        const contextKey = event.data.contextKey || '';
+        if (messageType === 'ButterMorphPayloadSchemaDesignerSaved' ||
+            (messageType === 'ButterMorphDesignerSaved' && contextKey.startsWith('metadata:'))) {
+            window.ButterMorphHost?.closeFrame?.();
+            window.location.href = window.location.pathname;
+        }
+    });
+})();
+</script>
+}
