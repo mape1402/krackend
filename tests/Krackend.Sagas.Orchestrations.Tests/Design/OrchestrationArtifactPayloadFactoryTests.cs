@@ -94,6 +94,34 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
     }
 
     [Fact]
+    public void CreatePayloadJson_IncludesMetadataDescriptorSnapshots()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+        version.MetadataDescriptors.Add(new MetadataDescriptor
+        {
+            Id = Id.New(),
+            Key = "audit",
+            SourceKey = "AuditMetadata",
+            DisplayName = "Audit",
+            Description = "Audit metadata.",
+            SchemaJson = """{"type":"object","properties":{"userId":{"type":"string"}}}""",
+            ContentHash = "audit-hash",
+            CreatedOnUtc = DateTime.UtcNow
+        });
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var metadata = JsonNode.Parse(payloadJson)!["MetadataDescriptors"]!.AsArray();
+
+        var descriptor = Assert.Single(metadata)!.AsObject();
+        Assert.Equal("audit", descriptor["Key"]!.GetValue<string>());
+        Assert.Equal("AuditMetadata", descriptor["SourceKey"]!.GetValue<string>());
+        Assert.Equal("JsonSchema", descriptor["SchemaFormat"]!.GetValue<string>());
+        Assert.Equal("audit-hash", descriptor["ContentHash"]!.GetValue<string>());
+        Assert.Contains("userId", descriptor["SchemaJson"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreatePayloadJson_WhenMessagingUsesCommandBinding_NormalizesRuntimeRequestAndResponseBindings()
     {
         var definition = CreateDefinition();

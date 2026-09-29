@@ -23,5 +23,10 @@ public enum OrchestrationSchemaContextSourceKind
     /// <summary>
     /// Source comes from a previously dispatched task request.
     /// </summary>
-    TaskRequest = 4
+    TaskRequest = 4,
+
+    /// <summary>
+    /// Source comes from transversal orchestration metadata descriptors.
+    /// </summary>
+    Metadata = 5
 }

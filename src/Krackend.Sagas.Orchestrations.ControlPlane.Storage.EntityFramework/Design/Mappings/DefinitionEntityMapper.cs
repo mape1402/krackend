@@ -170,6 +170,44 @@ internal static class DefinitionEntityMapper
     }
 
     /// <summary>
+    /// Executes ToEntity.
+    /// </summary>
+    public static MetadataDescriptorEntity ToEntity(this MetadataDescriptor descriptor)
+    {
+        return new MetadataDescriptorEntity
+        {
+            Id = descriptor.Id,
+            Key = descriptor.Key,
+            SourceKey = descriptor.SourceKey,
+            DisplayName = descriptor.DisplayName,
+            Description = descriptor.Description,
+            SchemaJson = descriptor.SchemaJson,
+            ContentHash = descriptor.ContentHash,
+            CreatedOnUtc = descriptor.CreatedOnUtc,
+            UpdatedOnUtc = descriptor.UpdatedOnUtc,
+        };
+    }
+
+    /// <summary>
+    /// Executes ToDefinition.
+    /// </summary>
+    public static MetadataDescriptor ToDefinition(this MetadataDescriptorEntity entity)
+    {
+        return new MetadataDescriptor
+        {
+            Id = entity.Id,
+            Key = entity.Key,
+            SourceKey = string.IsNullOrWhiteSpace(entity.SourceKey) ? entity.Key : entity.SourceKey,
+            DisplayName = entity.DisplayName,
+            Description = entity.Description,
+            SchemaJson = entity.SchemaJson,
+            ContentHash = entity.ContentHash,
+            CreatedOnUtc = entity.CreatedOnUtc,
+            UpdatedOnUtc = entity.UpdatedOnUtc,
+        };
+    }
+
+    /// <summary>
     /// Executes ToDefinition.
     /// </summary>
     public static StageDefinition ToDefinition(this StageDefinitionEntity entity)

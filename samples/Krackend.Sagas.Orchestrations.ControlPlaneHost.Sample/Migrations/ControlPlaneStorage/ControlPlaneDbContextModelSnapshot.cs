@@ -100,6 +100,59 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                     b.ToTable("Domains", "Design");
                 });
 
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities.MetadataDescriptorEntity", b =>
+                {
+                    b.Property<byte[]>("Id")
+                        .HasColumnType("binary(16)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SchemaJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime?>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentHash");
+
+                    b.HasIndex("DisplayName");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.HasIndex("SourceKey");
+
+                    b.ToTable("MetadataDescriptors", "Design");
+                });
+
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities.OrchestrationDefinitionEntity", b =>
                 {
                     b.Property<byte[]>("Id")
@@ -229,8 +282,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
 
                     b.HasIndex("OrchestrationDefinitionId");
 
-                    b.HasIndex("OrchestrationDefinitionId", "Version")
-                        .IsUnique();
+                    b.HasIndex("OrchestrationDefinitionId", "Version");
 
                     b.ToTable("OrchestrationVersions", "Design");
                 });

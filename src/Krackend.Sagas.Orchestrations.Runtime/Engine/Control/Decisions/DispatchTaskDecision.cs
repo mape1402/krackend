@@ -11,5 +11,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         string Payload) : IDecision
     {
         public string Kind => "dispatch-task";
+
+        public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
     }
 }

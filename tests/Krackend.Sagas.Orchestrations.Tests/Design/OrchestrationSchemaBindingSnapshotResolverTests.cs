@@ -240,6 +240,64 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenCommandRequestSnapshotAlreadyExists_PreservesStoredSideBindingSnapshot()
+    {
+        var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
+        version.TriggerBindings.Clear();
+        var task = version.StageDefinitions[0].TaskDefinitions[0];
+        var commandBinding = CreateBinding("inventories.reserve", SchemaContractKind.Command);
+        var requestBinding = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        requestBinding.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandRequest,
+            RegistryProviderId = requestBinding.RegistryProviderId.ToString(),
+            RegistryProviderKey = requestBinding.RegistryProviderKey,
+            ContractId = requestBinding.ContractId.ToString(),
+            ContractKey = requestBinding.ContractKey,
+            ContractVersion = requestBinding.ContractVersion.ToString(),
+            SchemaFormat = "ButterMorph",
+            SchemaJson = """{"type":"object","properties":{"sku":{"type":"string"}}}""",
+            ContentHash = "stored.request.hash",
+            SourceArtifactId = "stored-request-artifact",
+            ResolvedBy = "knowl",
+            ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
+        };
+        task.Configuration = new MessagingTaskConfiguration
+        {
+            Topic = "commands.inventories.reserve",
+            Version = new SemanticVersion(1, 0, 0),
+            SchemaBinding = commandBinding,
+            RequestSchemaBinding = requestBinding,
+            HasSchemaValidation = false,
+            HasResponseValidation = false
+        };
+        var resolver = Substitute.For<ISchemaContractResolver>();
+        resolver
+            .ResolveAsync(Arg.Any<SchemaContractResolutionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var reference = call.Arg<SchemaContractResolutionRequest>().Reference;
+                return SchemaContractResolutionResult.Failed(
+                    SchemaContractResolutionStatus.NotFound,
+                    $"{reference.Kind} was not found.");
+            });
+        var catalog = Substitute.For<ISchemaContractResolverCatalog>();
+        catalog.GetResolver(Arg.Any<SchemaContractReference>()).Returns(resolver);
+        var snapshotResolver = new OrchestrationSchemaBindingSnapshotResolver(catalog);
+
+        await snapshotResolver.ResolveAsync(version);
+
+        var messaging = Assert.IsType<MessagingTaskConfiguration>(task.Configuration);
+        Assert.Equal("stored.request.hash", messaging.RequestSchemaBinding.Snapshot!.ContentHash);
+        Assert.Equal(SchemaContractKind.CommandRequest, messaging.RequestSchemaBinding.ContractKind);
+        await resolver.DidNotReceive().ResolveAsync(
+            Arg.Is<SchemaContractResolutionRequest>(request =>
+                request.Reference.ContractKey == "inventories.reserve" &&
+                request.Reference.Kind == SchemaContractKind.CommandRequest),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenCommandReplyIsMissingAndResponseValidationIsDisabled_KeepsRequestSnapshot()
     {
         var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));

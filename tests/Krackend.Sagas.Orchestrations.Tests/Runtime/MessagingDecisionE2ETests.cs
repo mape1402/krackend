@@ -473,6 +473,59 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineRejectsCallbackAsRetryableWhenDispatchStateIsNotReadyYet()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.callback.race", 1))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-callback-race");
+
+        var command = harness.Dispatcher.Commands.Single();
+        var taskRepository = harness.Services.GetRequiredService<ITaskExecutionRepository>();
+        var attemptRepository = harness.Services.GetRequiredService<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = harness.Services.GetRequiredService<ITaskDispatchRepository>();
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+        var dispatch = await dispatchRepository.GetById(IdFrom(command.DispatchId));
+
+        task.Status = TaskExecutionStatus.Running;
+        task.WaitingSinceUtc = null;
+        attempt.Status = TaskExecutionStatus.Running;
+        attempt.WaitingSinceUtc = null;
+        dispatch.DispatchStatus = "Enqueued";
+        dispatch.SentOnUtc = null;
+        await taskRepository.Update(task);
+        await attemptRepository.Update(attempt);
+        await dispatchRepository.Update(dispatch);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.ForwardAsync(command, BusinessPayload("early-response"), Success()));
+
+        Assert.Contains("before runtime state was ready", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        var now = DateTime.UtcNow;
+        task.Status = TaskExecutionStatus.WaitingResponse;
+        task.WaitingSinceUtc = now;
+        attempt.Status = TaskExecutionStatus.WaitingResponse;
+        attempt.WaitingSinceUtc = now;
+        dispatch.DispatchStatus = "WaitingResponse";
+        dispatch.SentOnUtc = now;
+        await taskRepository.Update(task);
+        await attemptRepository.Update(attempt);
+        await dispatchRepository.Update(dispatch);
+
+        await harness.ForwardAsync(command, BusinessPayload("retry-response"), Success());
+
+        var completedTask = await harness.GetTaskAsync(command);
+        var completedAttempt = await harness.GetAttemptAsync(command);
+        var transitions = await harness.GetTransitionsAsync(command);
+
+        Assert.Equal(TaskExecutionStatus.Completed, completedTask.Status);
+        Assert.Equal(TaskExecutionStatus.Completed, completedAttempt.Status);
+        Assert.Contains(transitions, transition => transition.TransitionType == "TaskCallbackCompleted");
+    }
+
+    [Fact]
     public async Task EngineRetriesDispatchFailureUsingPersistedAttemptErrorCode()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
@@ -1751,6 +1804,9 @@ public sealed class MessagingDecisionE2ETests
 
     private static JsonNode BusinessPayload(string value)
         => JsonNode.Parse($$"""{"value":"{{value}}"}""")!;
+
+    private static Id IdFrom(string value)
+        => new(Ulid.Parse(value));
 
     private static async Task<ClientFailureReport> CreateClientFailureReportAsync<TRequest>(
         OrchestrationMessageMetadata messageMetadata,

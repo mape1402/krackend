@@ -15,6 +15,7 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
     private readonly IParallelGroupRepository _parallelGroupRepository;
     private readonly IBranchRuleRepository _branchRuleRepository;
     private readonly IOrchestrationSchemaBindingSnapshotResolver _schemaBindingSnapshotResolver;
+    private readonly IMetadataDescriptorRepository _metadataDescriptorRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrchestrationVersionArtifactSnapshotBuilder"/> class.
@@ -26,7 +27,8 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
         ITaskRepository taskRepository,
         IParallelGroupRepository parallelGroupRepository,
         IBranchRuleRepository branchRuleRepository,
-        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver)
+        IOrchestrationSchemaBindingSnapshotResolver schemaBindingSnapshotResolver,
+        IMetadataDescriptorRepository metadataDescriptorRepository = null)
     {
         _triggerBindingRepository = triggerBindingRepository ?? throw new ArgumentNullException(nameof(triggerBindingRepository));
         _variableDefinitionRepository = variableDefinitionRepository ?? throw new ArgumentNullException(nameof(variableDefinitionRepository));
@@ -35,6 +37,7 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
         _parallelGroupRepository = parallelGroupRepository ?? throw new ArgumentNullException(nameof(parallelGroupRepository));
         _branchRuleRepository = branchRuleRepository ?? throw new ArgumentNullException(nameof(branchRuleRepository));
         _schemaBindingSnapshotResolver = schemaBindingSnapshotResolver ?? throw new ArgumentNullException(nameof(schemaBindingSnapshotResolver));
+        _metadataDescriptorRepository = metadataDescriptorRepository;
     }
 
     /// <summary>
@@ -55,6 +58,11 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
         version.VariableDefinitions = (await _variableDefinitionRepository.GetAll(version.Id, cancellationToken))
             .OrderBy(x => x.Key)
             .ToList();
+        version.MetadataDescriptors = _metadataDescriptorRepository is null
+            ? new List<MetadataDescriptor>()
+            : (await _metadataDescriptorRepository.GetAllDescriptors(cancellationToken))
+                .OrderBy(x => x.Key)
+                .ToList();
         version.StageDefinitions = (await _stageRepository.GetAll(version.Id, cancellationToken))
             .OrderBy(x => x.Order)
             .ToList();

@@ -645,6 +645,125 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
     }
 
     [Fact]
+    public async Task MetadataDescriptorRepositoryUpsertsSearchesAndPagesDescriptors()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IMetadataDescriptorRepository>();
+
+        var descriptor = new MetadataDescriptor
+        {
+            Id = Id.New(),
+            Key = "audit",
+            SourceKey = "AuditMetadata",
+            DisplayName = "Audit metadata",
+            Description = "Original audit schema",
+            SchemaJson = """{"type":"object","properties":{"userId":{"type":"string"}}}""",
+            ContentHash = "audit-hash",
+            CreatedOnUtc = DateTime.UtcNow
+        };
+
+        await repository.Upsert(descriptor);
+
+        descriptor.DisplayName = "Audit context";
+        descriptor.Description = "Cross-cutting audit schema";
+        descriptor.SchemaJson = """{"type":"object","properties":{"userId":{"type":"string"},"traceId":{"type":"string"}}}""";
+        descriptor.ContentHash = "audit-hash-v2";
+        await repository.Upsert(descriptor);
+
+        await repository.Upsert(new MetadataDescriptor
+        {
+            Id = Id.New(),
+            Key = "security",
+            SourceKey = "SecurityMetadata",
+            DisplayName = "Security metadata",
+            Description = "Security schema",
+            SchemaJson = """{"type":"object","properties":{"tenantId":{"type":"string"}}}""",
+            ContentHash = "security-hash",
+            CreatedOnUtc = DateTime.UtcNow
+        });
+
+        var byId = await repository.GetById(descriptor.Id);
+        var byKey = await repository.GetByKey("audit");
+        var descriptors = await repository.GetAllDescriptors();
+        var search = await repository.GetAll(new PagedSettings(1, 10, [], []), "cross-cutting");
+        var searchBySource = await repository.GetAll(new PagedSettings(1, 10, [], []), "AuditMetadata");
+        var secondPage = await repository.GetAll(new PagedSettings(2, 1, [], [new QuerySort("DisplayName", false)]));
+
+        Assert.Equal("Audit context", byId.DisplayName);
+        Assert.Equal("AuditMetadata", byId.SourceKey);
+        Assert.Equal("audit", byKey.Key);
+        Assert.Equal(2, descriptors.Count);
+        Assert.Contains(descriptors, x => x.Key == "audit");
+        Assert.Contains(descriptors, x => x.Key == "security");
+        Assert.Single(search.Rows);
+        Assert.Single(searchBySource.Rows);
+        Assert.Equal("audit-hash-v2", search.Rows.Single().ContentHash);
+        Assert.Equal(2, secondPage.TotalRows);
+        Assert.Equal(2, secondPage.TotalPages);
+        Assert.Equal(2, secondPage.PageNumber);
+        Assert.Null(await repository.GetByKey(" "));
+
+        await repository.Delete(descriptor.Id);
+        Assert.Null(await repository.GetByKey("audit"));
+        Assert.Single((await repository.GetAll(new PagedSettings(1, 10, [], []))).Rows);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetById(Id.New()));
+    }
+
+    [Fact]
+    public async Task VersionRepositoryLatestIgnoresArchivedVersions()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var definitionRepository = services.GetRequiredService<IOrchestrationDefinitionRepository>();
+        var versionRepository = services.GetRequiredService<IOrchestrationVersionRepository>();
+
+        var definition = new OrchestrationDefinition
+        {
+            Id = Id.New(),
+            Key = "sales.sale.created",
+            Name = "Sale Created",
+            Domain = "sales",
+            IsActive = true,
+            CreatedOnUtc = DateTime.UtcNow,
+            CreatedBy = "tests"
+        };
+        await definitionRepository.Create(definition);
+
+        var usable = Version(definition.Id, 1);
+        usable.Version = new SemanticVersion(1, 0, 2);
+        usable.Status = OrchestrationVersionStatus.Deployed;
+        usable.CreatedOnUtc = new DateTime(2026, 9, 29, 10, 0, 0, DateTimeKind.Utc);
+
+        var archived = Version(definition.Id, 2);
+        archived.Version = new SemanticVersion(1, 0, 3);
+        archived.Status = OrchestrationVersionStatus.Archived;
+        archived.CreatedOnUtc = new DateTime(2026, 9, 29, 11, 0, 0, DateTimeKind.Utc);
+
+        await versionRepository.Create(usable);
+        await versionRepository.Create(archived);
+
+        Assert.False(await versionRepository.Exists(definition.Id, new SemanticVersion(1, 0, 3)));
+
+        var replacement = Version(definition.Id, 3);
+        replacement.Version = new SemanticVersion(1, 0, 3);
+        replacement.Status = OrchestrationVersionStatus.Draft;
+        replacement.CreatedOnUtc = new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Utc);
+
+        await versionRepository.Create(replacement);
+
+        Assert.True(await versionRepository.Exists(definition.Id, new SemanticVersion(1, 0, 3)));
+
+        var latest = await versionRepository.GetLatestByOrchestrationDefinitionId(definition.Id);
+        var latestBeforeReplacement = await versionRepository.GetLatestByOrchestrationDefinitionId(definition.Id, replacement.Id);
+
+        Assert.Equal(replacement.Id, latest.Id);
+        Assert.Equal(usable.Id, latestBeforeReplacement.Id);
+        Assert.Equal("1.0.2", latestBeforeReplacement.Version.ToString());
+    }
+
+    [Fact]
     public async Task DomainRepositoryUpdatesSearchesAndPagesDomains()
     {
         await using var provider = CreateProvider();

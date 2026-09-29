@@ -18,6 +18,11 @@ public sealed record OrchestrationPayloadContext
     public JsonNode TriggerPayload { get; init; }
 
     /// <summary>
+    /// Gets the propagated orchestration metadata payload grouped by metadata key.
+    /// </summary>
+    public JsonNode MetadataPayload { get; init; } = new JsonObject();
+
+    /// <summary>
     /// Gets the stage key of the task being dispatched.
     /// </summary>
     public required string StageKey { get; init; }

@@ -58,6 +58,11 @@ public sealed class OrchestrationVersion
     public List<VariableDefinition> VariableDefinitions { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets transversal metadata descriptors captured for artifact generation.
+    /// </summary>
+    public List<MetadataDescriptor> MetadataDescriptors { get; set; } = new();
+
+    /// <summary>
     /// Gets or sets notes.
     /// </summary>
     public string Notes { get; set; }

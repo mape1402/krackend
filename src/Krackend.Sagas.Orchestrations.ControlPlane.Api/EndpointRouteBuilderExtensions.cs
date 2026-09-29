@@ -155,6 +155,45 @@ public static class EndpointRouteBuilderExtensions
                 new CPDesign.SetDomainIsActiveCommand(domainId, request.IsActive),
                 cancellationToken)));
 
+        readGroup.MapGet("/design/metadata", async (
+            [FromServices] CPDesign.IMetadataDescriptorApplicationService service,
+            int pageNumber,
+            int pageSize,
+            string searchText,
+            CancellationToken cancellationToken)
+            => Results.Ok(await service.GetAll(
+                new CPDesign.GetMetadataDescriptorsQuery(DesignPaged(options, pageNumber, pageSize), searchText ?? string.Empty),
+                cancellationToken)));
+
+        readGroup.MapGet("/design/metadata/{metadataDescriptorId}", async (
+            string metadataDescriptorId,
+            [FromServices] CPDesign.IMetadataDescriptorApplicationService service,
+            CancellationToken cancellationToken)
+            => Results.Ok(await service.GetById(new CPDesign.GetMetadataDescriptorByIdQuery(metadataDescriptorId), cancellationToken)));
+
+        writeGroup.MapPost("/design/metadata", async (
+            CPDesign.UpsertMetadataDescriptorCommand command,
+            [FromServices] CPDesign.IMetadataDescriptorApplicationService service,
+            CancellationToken cancellationToken)
+            => ApiEndpointResults.Created(await service.Upsert(command, cancellationToken)));
+
+        writeGroup.MapPut("/design/metadata/{metadataDescriptorId}", async (
+            string metadataDescriptorId,
+            CPDesign.UpsertMetadataDescriptorCommand command,
+            [FromServices] CPDesign.IMetadataDescriptorApplicationService service,
+            CancellationToken cancellationToken)
+            => ApiEndpointResults.Created(await service.Upsert(
+                command with { Id = string.IsNullOrWhiteSpace(command.Id) ? metadataDescriptorId : command.Id },
+                cancellationToken)));
+
+        writeGroup.MapDelete("/design/metadata/{metadataDescriptorId}", async (
+            string metadataDescriptorId,
+            [FromServices] CPDesign.IMetadataDescriptorApplicationService service,
+            CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Delete(
+                new CPDesign.DeleteMetadataDescriptorCommand(metadataDescriptorId),
+                cancellationToken)));
+
         readGroup.MapGet("/design/orchestrations", async (
             [FromServices] CPDesign.IOrchestrationApplicationService service,
             int pageNumber,

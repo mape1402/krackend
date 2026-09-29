@@ -97,7 +97,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     new OrchestrationConditionEvaluationRequest
                     {
                         Condition = taskArtifact.Compensation.ExecutionCondition,
-                        PayloadContext = _payloadContextFactory.Create(instance, stage.StageKey, task.TaskKey),
+                        PayloadContext = _payloadContextFactory.Create(
+                            instance,
+                            stage.StageKey,
+                            task.TaskKey,
+                            resolvedArtifact.Artifact.MetadataDescriptors),
                         ElementKey = task.TaskKey,
                         Phase = "Compensation"
                     },

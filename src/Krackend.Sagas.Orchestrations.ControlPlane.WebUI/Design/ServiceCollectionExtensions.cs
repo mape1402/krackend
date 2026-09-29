@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IOrchestrationButterMorphDesignerContextParser, OrchestrationButterMorphDesignerContextParser>();
         services.TryAddScoped<IOrchestrationButterMorphSchemaImporter, OrchestrationButterMorphSchemaImporter>();
         services.TryAddScoped<IOrchestrationButterMorphSourceMetadataFactory, OrchestrationButterMorphSourceMetadataFactory>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphPayloadSchemaDesignerHost, MetadataDescriptorButterMorphSchemaDesignerHost>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphDesignerHost, OrchestrationButterMorphDesignerHost>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphValidationDesignerHost, OrchestrationButterMorphValidationDesignerHost>());
         return services;
@@ -75,6 +76,7 @@ public static class ServiceCollectionExtensions
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/OrchestrationVersions/Details", $"{prefix}/orchestrations/{{orchestrationId}}/versions/{{versionId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/OrchestrationStages/Details", $"{prefix}/orchestrations/{{orchestrationId}}/versions/{{versionId}}/stages/{{stageId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Domains/Index", $"{prefix}/domains");
+            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Metadata/Index", $"{prefix}/metadata");
         }
 
         private static string NormalizePrefix(string routePrefix)

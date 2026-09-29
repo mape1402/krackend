@@ -1,8 +1,10 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
+using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
@@ -48,6 +50,104 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
         });
 
         Assert.Equal("reservation-1", result.Payload["inventoryReservationId"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task PrepareAsyncPassesPropagatedMetadataToTransformationContext()
+    {
+        OrchestrationTransformationRequest? capturedRequest = null;
+        var transformationExecutor = Substitute.For<IOrchestrationTransformationExecutor>();
+        transformationExecutor.TransformAsync(
+                Arg.Do<OrchestrationTransformationRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationTransformationResult.Success(JsonNode.Parse("""{"inventoryReservationId":"reservation-1"}""")));
+        var instance = CreateInstance();
+        instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonSerializer.SerializeToNode(new OrchestrationPropagationMetadata
+            {
+                Items =
+                {
+                    ["audit"] = JsonNode.Parse("""{"userId":"user-1"}"""),
+                    ["security"] = JsonNode.Parse("""{"tenantId":"tenant-1"}""")
+                }
+            })!;
+        var preparer = CreatePreparer(transformationExecutor: transformationExecutor);
+
+        await preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+        {
+            Instance = instance,
+            StageKey = "inventory-reservation",
+            Task = CreateTask(transformEnabled: true),
+            MessagingConfiguration = CreateMessagingConfiguration()
+        });
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("user-1", capturedRequest.PayloadContext.MetadataPayload!["audit"]!["userId"]!.GetValue<string>());
+        Assert.Equal("tenant-1", capturedRequest.PayloadContext.MetadataPayload!["security"]!["tenantId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task PrepareAsyncProjectsMetadataDescriptorAliasesUsingExactSourceKey()
+    {
+        OrchestrationTransformationRequest? capturedRequest = null;
+        var transformationExecutor = Substitute.For<IOrchestrationTransformationExecutor>();
+        transformationExecutor.TransformAsync(
+                Arg.Do<OrchestrationTransformationRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationTransformationResult.Success(JsonNode.Parse("""{"inventoryReservationId":"reservation-1"}""")));
+        var instance = CreateInstanceWithMetadata(("AuditMetadata", """{"userId":"user-1"}"""));
+        var preparer = CreatePreparer(transformationExecutor: transformationExecutor);
+
+        await preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+        {
+            Instance = instance,
+            StageKey = "inventory-reservation",
+            Task = CreateTask(transformEnabled: true),
+            MessagingConfiguration = CreateMessagingConfiguration(),
+            MetadataDescriptors =
+            [
+                CreateMetadataDescriptor("audit_metadata", "AuditMetadata")
+            ]
+        });
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("user-1", capturedRequest.PayloadContext.MetadataPayload!["AuditMetadata"]!["userId"]!.GetValue<string>());
+        Assert.Equal("user-1", capturedRequest.PayloadContext.MetadataPayload!["audit_metadata"]!["userId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void PayloadContextFactoryProjectsMetadataDescriptorAliasesCaseInsensitive()
+    {
+        var instance = CreateInstanceWithMetadata(("auditmetadata", """{"userId":"user-1"}"""));
+        var factory = new DefaultOrchestrationPayloadContextFactory();
+
+        var context = factory.Create(
+            instance,
+            "inventory-reservation",
+            "inventories.reserve",
+            [CreateMetadataDescriptor("audit_metadata", "AuditMetadata")]);
+
+        Assert.Equal("user-1", context.MetadataPayload!["audit_metadata"]!["userId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void PayloadContextFactoryThrowsWhenMetadataSourceKeyIsAmbiguous()
+    {
+        var instance = CreateInstanceWithMetadata(
+            ("auditmetadata", """{"userId":"user-1"}"""),
+            ("AUDITMETADATA", """{"userId":"user-2"}"""));
+        var factory = new DefaultOrchestrationPayloadContextFactory();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            factory.Create(
+                instance,
+                "inventory-reservation",
+                "inventories.reserve",
+                [CreateMetadataDescriptor("audit_metadata", "AuditMetadata")]));
+
+        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("auditmetadata", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("AUDITMETADATA", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -170,6 +270,20 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
                 """)
         };
 
+    private static OrchestrationInstance CreateInstanceWithMetadata(params (string Key, string Payload)[] items)
+    {
+        var instance = CreateInstance();
+        var propagation = new OrchestrationPropagationMetadata();
+        foreach (var item in items)
+        {
+            propagation.Items[item.Key] = JsonNode.Parse(item.Payload)!;
+        }
+
+        instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonSerializer.SerializeToNode(propagation)!;
+        return instance;
+    }
+
     private static TaskArtifact CreateTask(bool transformEnabled = false)
         => new(
             Id.New(),
@@ -219,4 +333,15 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
                 ErrorCode = "RequestValidationFailed"
             },
         };
+
+    private static MetadataDescriptorArtifact CreateMetadataDescriptor(string key, string sourceKey)
+        => new(
+            Id.New(),
+            key,
+            sourceKey,
+            key,
+            string.Empty,
+            "JsonSchema",
+            """{"type":"object"}""",
+            $"{key}-hash");
 }

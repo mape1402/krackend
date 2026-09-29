@@ -72,6 +72,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             }
 
             var stages = resolvedArtifact.Artifact.StageDefinitions.OrderBy(x => x.Order).ToArray();
+            var metadataDescriptors = resolvedArtifact.Artifact.MetadataDescriptors ?? Array.Empty<MetadataDescriptorArtifact>();
             var stageExecutions = await _stageRepository.GetByInstanceId(instance.Id, cancellationToken);
             var currentStage = ResolveCurrentStage(stages, stageExecutions, instance);
             if (currentStage is null)
@@ -82,7 +83,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             var currentStageExecution = stageExecutions.FirstOrDefault(x => x.StageKey == currentStage.Key);
             if (currentStageExecution is null)
             {
-                return [new StartStageDecision(instance.Id, currentStage, request.Payload?.ToJsonString())];
+                return [new StartStageDecision(instance.Id, currentStage, request.Payload?.ToJsonString())
+                {
+                    MetadataDescriptors = metadataDescriptors
+                }];
             }
 
             var tasks = currentStage.TaskDefinitions
@@ -117,7 +121,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                         failedTask.Id,
                         currentStage.Key,
                         failedArtifact,
-                        dispatchPayload?.ToJsonString())];
+                        dispatchPayload?.ToJsonString())
+                    {
+                        MetadataDescriptors = metadataDescriptors
+                    }];
                 }
 
                 if (failedArtifact?.OnErrorPolicy == OnErrorPolicy.StopAndCompensate)
@@ -127,7 +134,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
                 if (ShouldContinueAfterFailure(failedTask, failedArtifact))
                 {
-                    return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload);
+                    return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload, metadataDescriptors);
                 }
 
                 return [];
@@ -138,7 +145,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return [];
             }
 
-            return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload);
+            return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload, metadataDescriptors);
         }
 
         private static IReadOnlyCollection<IDecision> BuildNextTaskDecisions(
@@ -148,13 +155,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             StageExecution currentStageExecution,
             IReadOnlyCollection<TaskArtifact> tasks,
             IReadOnlyCollection<TaskExecution> taskExecutions,
-            JsonNode dispatchPayload)
+            JsonNode dispatchPayload,
+            IReadOnlyCollection<MetadataDescriptorArtifact> metadataDescriptors)
         {
             var nextTask = tasks.FirstOrDefault(task =>
                 taskExecutions.All(execution => execution.TaskKey != task.Key));
             if (nextTask is null)
             {
-                return [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)];
+                return [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
+                {
+                    MetadataDescriptors = metadataDescriptors
+                }];
             }
 
             if (nextTask.ParallelGroupId is null)
@@ -164,7 +175,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     currentStageExecution.Id,
                     currentStage.Key,
                     nextTask,
-                    dispatchPayload?.ToJsonString())];
+                    dispatchPayload?.ToJsonString())
+                {
+                    MetadataDescriptors = metadataDescriptors
+                }];
             }
 
             var group = currentStage.ParallelGroups.FirstOrDefault(x => x.Id == nextTask.ParallelGroupId.Value);
@@ -178,11 +192,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     currentStageExecution.Id,
                     currentStage.Key,
                     task,
-                    dispatchPayload?.ToJsonString()))
+                    dispatchPayload?.ToJsonString())
+                {
+                    MetadataDescriptors = metadataDescriptors
+                })
                 .Cast<IDecision>()
                 .ToArray();
 
-            return groupTasks.Length == 0 ? [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)] : groupTasks;
+            return groupTasks.Length == 0
+                ? [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
+                {
+                    MetadataDescriptors = metadataDescriptors
+                }]
+                : groupTasks;
         }
 
         private static StageArtifact ResolveCurrentStage(
@@ -366,16 +388,29 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
-            if (IsInstanceTerminalForCallback(instance.Status) ||
-                task.Status != TaskExecutionStatus.WaitingResponse ||
-                task.OrchestrationInstanceId != instanceId ||
-                attempt.Status != TaskExecutionStatus.WaitingResponse ||
-                !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) ||
+            if (IsInstanceTerminalForCallback(instance.Status))
+            {
+                return null;
+            }
+
+            if (task.OrchestrationInstanceId != instanceId ||
                 attempt.TaskExecutionId != task.Id ||
                 dispatch.TaskExecutionAttemptId != attempt.Id ||
                 (request.MessageMetadata.Attempt > 0 && request.MessageMetadata.Attempt != attempt.AttemptNumber))
             {
                 return null;
+            }
+
+            if (IsCallbackResolved(task, attempt, dispatch))
+            {
+                return null;
+            }
+
+            if (!IsCallbackReady(task, attempt, dispatch))
+            {
+                throw new InvalidOperationException(
+                    $"Backchannel callback for dispatch '{dispatchId}' arrived before runtime state was ready. " +
+                    $"Task='{task.Status}', Attempt='{attempt.Status}', Dispatch='{dispatch.DispatchStatus}'.");
             }
 
             var payload = request.Payload?.ToJsonString();
@@ -407,6 +442,37 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         private static bool IsRuntimeTimeoutSignal(DecisionRequest request)
             => string.Equals(request.ExecutionResultMetadata?.ErrorType, "Timeout", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(request.ExecutionResultMetadata?.Status, "TimedOut", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsCallbackReady(
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch)
+            => task.Status == TaskExecutionStatus.WaitingResponse &&
+                attempt.Status == TaskExecutionStatus.WaitingResponse &&
+                string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsCallbackResolved(
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch)
+            => IsTerminalTaskStatus(task.Status) ||
+                IsTerminalTaskStatus(attempt.Status) ||
+                IsFinishedDispatchStatus(dispatch.DispatchStatus);
+
+        private static bool IsTerminalTaskStatus(TaskExecutionStatus status)
+            => status is TaskExecutionStatus.Skipped
+                or TaskExecutionStatus.Completed
+                or TaskExecutionStatus.CompletedWithErrors
+                or TaskExecutionStatus.Failed
+                or TaskExecutionStatus.TimedOut
+                or TaskExecutionStatus.Cancelled
+                or TaskExecutionStatus.Compensated;
+
+        private static bool IsFinishedDispatchStatus(string status)
+            => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
 
         private static bool IsStageFinished(StageExecutionStatus status)
             => status is StageExecutionStatus.Completed or StageExecutionStatus.Skipped;

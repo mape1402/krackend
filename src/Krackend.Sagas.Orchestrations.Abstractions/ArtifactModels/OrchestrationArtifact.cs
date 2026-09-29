@@ -18,4 +18,10 @@ public sealed record OrchestrationArtifact(
     IReadOnlyList<StageArtifact> StageDefinitions,
     string Description = "",
     string VersionLabel = "",
-    string Notes = "");
+    string Notes = "")
+{
+    /// <summary>
+    /// Gets transversal metadata descriptor snapshots available to orchestration mappings and execution conditions.
+    /// </summary>
+    public IReadOnlyList<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
+}

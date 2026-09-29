@@ -30,6 +30,7 @@ public sealed class RestApiEndpointRouteBuilderTests
     public async Task ControlPlaneApiMapsHealthAndDesignQueries()
     {
         var orchestrationService = Substitute.For<CPDesign.IOrchestrationApplicationService>();
+        var metadataService = Substitute.For<CPDesign.IMetadataDescriptorApplicationService>();
         orchestrationService.GetAll(Arg.Any<CPDesign.GetOrchestrationDefinitionsQuery>(), Arg.Any<CancellationToken>())
             .Returns(new CPDesign.ApplicationPagedResult<CPDesign.OrchestrationDefinitionModel>(
                 2,
@@ -37,9 +38,20 @@ public sealed class RestApiEndpointRouteBuilderTests
                 7,
                 3,
                 [new CPDesign.OrchestrationDefinitionModel { Id = "orch-1", Key = "sales.sale.created", Name = "Sale Created" }]));
+        metadataService.GetAll(Arg.Any<CPDesign.GetMetadataDescriptorsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new CPDesign.ApplicationPagedResult<CPDesign.MetadataDescriptorModel>(
+                1,
+                1,
+                1,
+                10,
+                [new CPDesign.MetadataDescriptorModel { Id = "meta-1", Key = "audit", DisplayName = "Audit" }]));
 
         await using var app = BuildApp(
-            services => services.AddSingleton(orchestrationService),
+            services =>
+            {
+                services.AddSingleton(orchestrationService);
+                services.AddSingleton(metadataService);
+            },
             endpoints => endpoints.MapKrackendOrchestrationsControlPlaneApi(options =>
             {
                 options.DefaultPageSize = 10;
@@ -48,15 +60,33 @@ public sealed class RestApiEndpointRouteBuilderTests
 
         var health = await Invoke(app, "GET", "/api/v1/control-plane/health");
         var orchestrations = await Invoke(app, "GET", "/api/v1/control-plane/design/orchestrations", queryString: "?pageNumber=2&pageSize=3");
+        var metadata = await Invoke(app, "GET", "/api/v1/control-plane/design/metadata", queryString: "?pageNumber=1&pageSize=10&searchText=aud");
+        var deleteMetadata = await Invoke(
+            app,
+            "DELETE",
+            "/api/v1/control-plane/design/metadata/{metadataDescriptorId}",
+            routeValues: new Dictionary<string, object?> { ["metadataDescriptorId"] = "01K6AW24N95NS6G3W7CNZQK4S2" });
 
         Assert.Equal(StatusCodes.Status200OK, health.StatusCode);
         Assert.Equal(StatusCodes.Status200OK, orchestrations.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, metadata.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, deleteMetadata.StatusCode);
         Assert.Contains("sales.sale.created", orchestrations.Body, StringComparison.Ordinal);
+        Assert.Contains("audit", metadata.Body, StringComparison.Ordinal);
 
         await orchestrationService.Received(1).GetAll(
             Arg.Is<CPDesign.GetOrchestrationDefinitionsQuery>(x =>
                 x.Settings.PageNumber == 2 &&
                 x.Settings.PageSize == 3),
+            Arg.Any<CancellationToken>());
+        await metadataService.Received(1).GetAll(
+            Arg.Is<CPDesign.GetMetadataDescriptorsQuery>(x =>
+                x.PagedSettings.PageNumber == 1 &&
+                x.PagedSettings.PageSize == 10 &&
+                x.SearchText == "aud"),
+            Arg.Any<CancellationToken>());
+        await metadataService.Received(1).Delete(
+            Arg.Is<CPDesign.DeleteMetadataDescriptorCommand>(x => x.MetadataDescriptorId == "01K6AW24N95NS6G3W7CNZQK4S2"),
             Arg.Any<CancellationToken>());
     }
 

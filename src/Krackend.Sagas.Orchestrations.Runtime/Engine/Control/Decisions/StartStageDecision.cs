@@ -9,5 +9,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         string Payload) : IDecision
     {
         public string Kind => "start-stage";
+
+        public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
     }
 }

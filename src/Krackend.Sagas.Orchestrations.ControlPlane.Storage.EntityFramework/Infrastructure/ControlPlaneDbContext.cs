@@ -55,6 +55,11 @@ public sealed class ControlPlaneDbContext : DbContext
     public DbSet<DomainEntity> Domains => Set<DomainEntity>();
 
     /// <summary>
+    /// Gets orchestration metadata descriptors.
+    /// </summary>
+    public DbSet<MetadataDescriptorEntity> MetadataDescriptors => Set<MetadataDescriptorEntity>();
+
+    /// <summary>
     /// Gets orchestration versions.
     /// </summary>
     public DbSet<OrchestrationVersionEntity> OrchestrationVersions => Set<OrchestrationVersionEntity>();
@@ -173,6 +178,7 @@ public sealed class ControlPlaneDbContext : DbContext
     {
         modelBuilder.ApplyConfiguration(new BranchRuleDefinitionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new DomainEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new MetadataDescriptorEntityConfiguration());
         modelBuilder.ApplyConfiguration(new OrchestrationDefinitionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new OrchestrationVersionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ParallelGroupDefinitionEntityConfiguration());

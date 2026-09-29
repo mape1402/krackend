@@ -36,6 +36,7 @@ public sealed class OrchestrationButterMorphSourceMetadataFactory : IOrchestrati
         => source.SourceKind switch
         {
             OrchestrationSchemaContextSourceKind.Trigger => "Trigger event",
+            OrchestrationSchemaContextSourceKind.Metadata => "Metadata",
             OrchestrationSchemaContextSourceKind.TaskRequest => $"{source.TaskKey} request",
             OrchestrationSchemaContextSourceKind.TaskResponse => $"{source.TaskKey} reply",
             _ => source.Alias
@@ -45,6 +46,7 @@ public sealed class OrchestrationButterMorphSourceMetadataFactory : IOrchestrati
         => source.SourceKind switch
         {
             OrchestrationSchemaContextSourceKind.Trigger => "Initial orchestration event payload.",
+            OrchestrationSchemaContextSourceKind.Metadata => "Transversal metadata propagated with the orchestration message.",
             OrchestrationSchemaContextSourceKind.TaskRequest => $"Request payload sent to task '{source.TaskKey}' in stage '{source.StageKey}'.",
             OrchestrationSchemaContextSourceKind.TaskResponse => $"Reply payload received from task '{source.TaskKey}' in stage '{source.StageKey}'.",
             _ => string.Empty

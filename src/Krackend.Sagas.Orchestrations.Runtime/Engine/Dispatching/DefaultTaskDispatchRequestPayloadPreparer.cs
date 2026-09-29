@@ -41,7 +41,11 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
         ArgumentNullException.ThrowIfNull(request.Task);
         ArgumentNullException.ThrowIfNull(request.MessagingConfiguration);
 
-        var payloadContext = _payloadContextFactory.Create(request.Instance, request.StageKey, request.Task.Key);
+        var payloadContext = _payloadContextFactory.Create(
+            request.Instance,
+            request.StageKey,
+            request.Task.Key,
+            request.MetadataDescriptors);
         var requestPayload = string.IsNullOrWhiteSpace(request.Payload)
             ? payloadContext.TriggerPayload?.DeepClone()
             : JsonNode.Parse(request.Payload);

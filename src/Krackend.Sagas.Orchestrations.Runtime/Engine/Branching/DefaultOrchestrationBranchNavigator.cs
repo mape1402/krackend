@@ -68,7 +68,11 @@ public sealed class DefaultOrchestrationBranchNavigator : IOrchestrationBranchNa
                 new OrchestrationConditionEvaluationRequest
                 {
                     Condition = rule.Condition,
-                    PayloadContext = _payloadContextFactory.Create(request.Instance, request.Stage.Key, request.SourceKey),
+                    PayloadContext = _payloadContextFactory.Create(
+                        request.Instance,
+                        request.Stage.Key,
+                        request.SourceKey,
+                        request.MetadataDescriptors),
                     ElementKey = rule.Id.ToString(),
                     Phase = "Branch"
                 },
