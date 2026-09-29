@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
             ui.DefaultSchemaRegistryProviderKey = NormalizeSchemaRegistryProviderKey(options.DefaultSchemaRegistryProviderKey);
             ui.DistributionRoutePrefix = $"{adminRootPath}/orchestrator-distribution";
             ui.SecurityRoutePrefix = $"{adminRootPath}/orchestrator-security";
+            ui.Theme.ApplyFrom(options.Theme);
         });
         services.AddOrchestratorControlPlaneApplication();
         services.AddOrchestratorControlPlaneStorageEntityFramework(options.ConfigureStorage, options.ConfigureStorageModel);
@@ -77,11 +78,12 @@ public static class ServiceCollectionExtensions
         var options = new OrchestratorControlPlaneWebUIOptions();
         configureOptions(options);
 
-        services.AddOrchestratorWebUIShell();
+        services.AddOrchestratorWebUIShell(theme => theme.ApplyFrom(options.Theme));
         DesignWebUIServices.AddOrchestratorDesignWebUI(services, ui =>
         {
             ui.RoutePrefix = NormalizePrefix(options.DesignRoutePrefix, "admin");
             ui.DefaultSchemaRegistryProviderKey = NormalizeSchemaRegistryProviderKey(options.DefaultSchemaRegistryProviderKey);
+            ui.Theme.ApplyFrom(options.Theme);
         });
         DistributionWebUIServices.AddOrchestratorDistributionWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.DistributionRoutePrefix, "admin/orchestrator-distribution"));
         SecurityWebUIServices.AddOrchestratorSecurityWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.SecurityRoutePrefix, "admin/orchestrator-security"));

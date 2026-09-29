@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection;
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using ButterMorph.Web.Razor;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
@@ -51,6 +52,34 @@ builder.Services.AddOrchestratorControlPlane(options =>
 {
     options.AdminRootPath = adminRootPath;
     options.DefaultSchemaRegistryProviderKey = builder.Configuration["SchemaRegistry:KnOwl:ProviderKey"] ?? "knowl";
+    options.Theme.Title = "Krackend";
+    options.Theme.Subtitle = "Control Plane";
+    options.Theme.IconCssClass = "bi-diagram-3-fill";
+    options.Theme.Mode = OrchestratorWebUIThemeMode.Light;
+    options.Theme.PrimaryColor = "#0b3d91";
+    options.Theme.PrimaryHoverColor = "#082f6f";
+    options.Theme.SidebarBackgroundColor = "#061a36";
+    options.Theme.SidebarBrandBackgroundColor = "#041225";
+    options.Theme.SidebarTextColor = "#eef5ff";
+    options.Theme.SidebarMutedTextColor = "#9fb6d8";
+    options.Theme.ContentBackgroundColor = "#f2f6fb";
+    options.Theme.SurfaceColor = "#ffffff";
+    options.Theme.TextColor = "#10233f";
+    options.Theme.Light.MutedTextColor = "#52657f";
+    options.Theme.Light.BorderColor = "#cbd8e8";
+    options.Theme.Light.SubtleBackgroundColor = "#eaf1fa";
+    options.Theme.Dark.PrimaryColor = "#73a8ff";
+    options.Theme.Dark.PrimaryHoverColor = "#96beff";
+    options.Theme.Dark.SidebarBackgroundColor = "#031021";
+    options.Theme.Dark.SidebarBrandBackgroundColor = "#020a16";
+    options.Theme.Dark.SidebarTextColor = "#f1f7ff";
+    options.Theme.Dark.SidebarMutedTextColor = "#9eb7d9";
+    options.Theme.Dark.ContentBackgroundColor = "#07111f";
+    options.Theme.Dark.SurfaceColor = "#0d1b2f";
+    options.Theme.Dark.TextColor = "#edf6ff";
+    options.Theme.Dark.MutedTextColor = "#9fb0c8";
+    options.Theme.Dark.BorderColor = "#203654";
+    options.Theme.Dark.SubtleBackgroundColor = "#10243d";
     options.ConfigureStorage = db => db.UseSqlServer(
         sqlConnection,
         sql => sql.MigrationsAssembly(migrationsAssembly));
