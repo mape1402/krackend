@@ -1,3 +1,5 @@
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
+
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 
 /// <summary>
@@ -14,6 +16,11 @@ public sealed class OrchestratorControlPlaneWebUIOptions
     /// Gets or sets the default schema registry provider key used when creating schema bindings from the designer UI.
     /// </summary>
     public string DefaultSchemaRegistryProviderKey { get; set; } = "knowl";
+
+    /// <summary>
+    /// Gets the visual theme and branding options used by the Control Plane Web UI.
+    /// </summary>
+    public OrchestratorWebUIThemeOptions Theme { get; } = new();
 
     /// <summary>
     /// Gets or sets the route prefix used by the distribution area.

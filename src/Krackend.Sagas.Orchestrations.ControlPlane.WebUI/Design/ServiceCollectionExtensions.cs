@@ -35,6 +35,8 @@ public static class ServiceCollectionExtensions
         services.AddButterMorphSchemaDesign();
         services.AddButterMorphDesign();
         services.AddButterMorphRazorDesigner(options => options.ShowSchemaActions = false);
+        services.TryAddSingleton<IOrchestrationButterMorphThemeMapper, OrchestrationButterMorphThemeMapper>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<ButterMorphRazorDesignerOptions>, ConfigureButterMorphDesignerThemeOptions>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureDesignAreaRoutes>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, DesignNavigationContributor>());
         services.TryAddSingleton<IOrchestrationButterMorphDesignerContextParser, OrchestrationButterMorphDesignerContextParser>();

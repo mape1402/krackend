@@ -35,9 +35,12 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configureOptions));
         }
 
-        services.AddOrchestratorWebUIShell();
+        var options = new OrchestratorRuntimeWebUIOptions();
+        configureOptions(options);
+
+        services.AddOrchestratorWebUIShell(theme => theme.ApplyFrom(options.Theme));
         services.AddSignalR();
-        services.Configure(configureOptions);
+        services.Configure<OrchestratorRuntimeWebUIOptions>(registered => registered.ApplyFrom(options));
         services.TryAddSingleton<SignalRRuntimeReactiveEventQueue>();
         services.AddHostedService<SignalRRuntimeReactiveEventDispatcher>();
         services.TryAddScoped<IRuntimeDiagnosticsReader, RuntimeDiagnosticsReader>();
