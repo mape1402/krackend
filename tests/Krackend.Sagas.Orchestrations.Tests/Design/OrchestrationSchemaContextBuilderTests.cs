@@ -28,22 +28,31 @@ public sealed class OrchestrationSchemaContextBuilderTests
     }
 
     [Fact]
-    public async Task BuildForTask_ExposesMetadataDescriptorsAsSingleMetadataSource()
+    public async Task BuildForTask_ExposesMetadataDescriptorsAsSeparateSources()
     {
         var version = CreateVersion();
         var repository = Substitute.For<IMetadataDescriptorRepository>();
-        repository.GetAllDescriptors(Arg.Any<CancellationToken>())
-            .Returns([MetadataDescriptor("audit"), MetadataDescriptor("security")]);
+        var audit = MetadataDescriptor("audit_metadata", "AuditMetadata");
+        var security = MetadataDescriptor("security_metadata", "SecurityMetadata");
+        repository.GetAllDescriptors(Arg.Any<CancellationToken>()).Returns([audit, security]);
         var builder = new OrchestrationSchemaContextBuilder(repository);
 
         var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[0].Id);
 
-        var metadata = Assert.Single(context.Sources, x => x.Alias == "metadata");
-        Assert.Equal(OrchestrationSchemaContextSourceKind.Metadata, metadata.SourceKind);
-        Assert.Equal("metadata", metadata.SchemaBinding.ContractKey);
-        Assert.Equal("JsonSchema", metadata.SchemaBinding.Snapshot!.SchemaFormat);
-        Assert.Contains("\"audit\"", metadata.SchemaBinding.Snapshot.SchemaJson, StringComparison.Ordinal);
-        Assert.Contains("\"security\"", metadata.SchemaBinding.Snapshot.SchemaJson, StringComparison.Ordinal);
+        var auditSource = Assert.Single(context.Sources, x => x.Alias == "audit_metadata");
+        Assert.Equal(OrchestrationSchemaContextSourceKind.Metadata, auditSource.SourceKind);
+        Assert.Equal("audit_metadata", auditSource.SchemaBinding.ContractKey);
+        Assert.Equal("JsonSchema", auditSource.SchemaBinding.Snapshot!.SchemaFormat);
+        Assert.Equal(audit.SchemaJson, auditSource.SchemaBinding.Snapshot.SchemaJson);
+        Assert.Equal(audit.ContentHash, auditSource.SchemaBinding.Snapshot.ContentHash);
+
+        var securitySource = Assert.Single(context.Sources, x => x.Alias == "security_metadata");
+        Assert.Equal(OrchestrationSchemaContextSourceKind.Metadata, securitySource.SourceKind);
+        Assert.Equal("security_metadata", securitySource.SchemaBinding.ContractKey);
+        Assert.Equal(security.SchemaJson, securitySource.SchemaBinding.Snapshot!.SchemaJson);
+        Assert.Equal(security.ContentHash, securitySource.SchemaBinding.Snapshot.ContentHash);
+
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "metadata");
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }
@@ -438,12 +447,12 @@ public sealed class OrchestrationSchemaContextBuilderTests
             IsValidationEnabled = false
         };
 
-    private static MetadataDescriptor MetadataDescriptor(string key)
+    private static MetadataDescriptor MetadataDescriptor(string key, string? sourceKey = null)
         => new()
         {
             Id = Id.New(),
             Key = key,
-            SourceKey = key,
+            SourceKey = sourceKey ?? key,
             DisplayName = key,
             SchemaJson = $"{{\"type\":\"object\",\"properties\":{{\"{key}Id\":{{\"type\":\"string\"}}}}}}",
             ContentHash = $"{key}-hash",

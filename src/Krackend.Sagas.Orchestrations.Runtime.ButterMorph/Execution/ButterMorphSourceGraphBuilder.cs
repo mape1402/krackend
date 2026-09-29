@@ -13,7 +13,6 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
 {
     private const string ContextAlias = "context";
     private const string TriggerAlias = "trigger";
-    private const string MetadataAlias = "metadata";
     private const string RequestsAlias = "requests";
     private const string ResponsesAlias = "responses";
     private const string StagesAlias = "stages";
@@ -44,13 +43,31 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
         var sources = new Dictionary<string, IStructureGraph>(StringComparer.OrdinalIgnoreCase);
         AddSource(sources, ContextAlias, payloadContext.ContextPayload);
         AddSource(sources, TriggerAlias, payloadContext.TriggerPayload);
-        AddSource(sources, MetadataAlias, payloadContext.MetadataPayload);
+        AddMetadataSources(sources, payloadContext.MetadataPayload);
         AddSource(sources, RequestsAlias, BuildTaskPayloadCollection(payloadContext.ContextPayload, RequestPropertyName));
         AddSource(sources, ResponsesAlias, BuildTaskPayloadCollection(payloadContext.ContextPayload, ResponsePropertyName));
         AddSource(sources, StagesAlias, BuildSanitizedStagesPayload(payloadContext.ContextPayload));
         AddSource(sources, VariablesAlias, GetObjectPayload(payloadContext.ContextPayload, VariablesPropertyName));
 
         return sources;
+    }
+
+    private void AddMetadataSources(IDictionary<string, IStructureGraph> sources, JsonNode metadataPayload)
+    {
+        if (metadataPayload is not JsonObject metadata)
+        {
+            return;
+        }
+
+        foreach (var item in metadata)
+        {
+            if (item.Value is null)
+            {
+                continue;
+            }
+
+            AddSource(sources, _aliasNameFormatter.Format(item.Key), item.Value);
+        }
     }
 
     private JsonNode BuildSanitizedStagesPayload(JsonNode contextPayload)
@@ -152,6 +169,24 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
             Content = payload.ToJsonString()
         });
 
-        sources[alias] = graph;
+        sources[EnsureUniqueAlias(sources, alias)] = graph;
+    }
+
+    private static string EnsureUniqueAlias(IDictionary<string, IStructureGraph> sources, string alias)
+    {
+        if (!sources.ContainsKey(alias))
+        {
+            return alias;
+        }
+
+        var index = 2;
+        var candidate = $"{alias}_{index}";
+        while (sources.ContainsKey(candidate))
+        {
+            index++;
+            candidate = $"{alias}_{index}";
+        }
+
+        return candidate;
     }
 }

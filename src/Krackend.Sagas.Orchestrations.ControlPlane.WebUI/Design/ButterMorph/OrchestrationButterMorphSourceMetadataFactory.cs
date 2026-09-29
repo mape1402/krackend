@@ -36,7 +36,7 @@ public sealed class OrchestrationButterMorphSourceMetadataFactory : IOrchestrati
         => source.SourceKind switch
         {
             OrchestrationSchemaContextSourceKind.Trigger => "Trigger event",
-            OrchestrationSchemaContextSourceKind.Metadata => "Metadata",
+            OrchestrationSchemaContextSourceKind.Metadata => BuildMetadataDisplayName(source),
             OrchestrationSchemaContextSourceKind.TaskRequest => $"{source.TaskKey} request",
             OrchestrationSchemaContextSourceKind.TaskResponse => $"{source.TaskKey} reply",
             _ => source.Alias
@@ -51,6 +51,14 @@ public sealed class OrchestrationButterMorphSourceMetadataFactory : IOrchestrati
             OrchestrationSchemaContextSourceKind.TaskResponse => $"Reply payload received from task '{source.TaskKey}' in stage '{source.StageKey}'.",
             _ => string.Empty
         };
+
+    private static string BuildMetadataDisplayName(OrchestrationSchemaSource source)
+    {
+        var contractKey = source.SchemaBinding?.ContractKey;
+        return string.IsNullOrWhiteSpace(contractKey)
+            ? source.Alias
+            : contractKey;
+    }
 
     private static IReadOnlyList<string> BuildTags(OrchestrationSchemaSource source)
     {
