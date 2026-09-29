@@ -94,6 +94,39 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineUsesTriggerMetadataCorrelationAndTraceWhenPromoting()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.one", 1))));
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    CorrelationId = "trigger-correlation-1",
+                    TraceId = "trace-runtime-1",
+                    EventId = "event-runtime-1",
+                    IdempotencyKey = "idempotency-runtime-1"
+                }.ToJson()
+            }
+        };
+
+        await harness.StartAsync(BusinessPayload("trigger"), null, propagationMetadata);
+
+        var firstCommand = harness.Dispatcher.Commands.Single();
+        var instance = await harness.GetInstanceAsync(firstCommand);
+        Assert.Equal("trigger-correlation-1", instance.CorrelationId);
+        Assert.Equal("trigger-correlation-1", firstCommand.MessageMetadata!.CorrelationId);
+        Assert.Equal("trace-runtime-1", instance.Metadata["TriggerTraceId"]!.GetValue<string>());
+        Assert.Equal("idempotency-runtime-1", instance.Metadata["TriggerIdempotencyKey"]!.GetValue<string>());
+        Assert.Equal(
+            "trace-runtime-1",
+            firstCommand.PropagationMetadata!.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!
+                [nameof(OrchestrationTriggerMetadata.TraceId)]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task EnginePromotesWhenTriggerValidationSucceedsAndPassesValidationContext()
     {
         OrchestrationValidationRequest? capturedRequest = null;

@@ -47,7 +47,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
             metadata.SagaId = promotionResult.SagaId;
             metadata.OrchestrationInstanceId = promotionResult.InstanceId;
             metadata.CorrelationId = string.IsNullOrWhiteSpace(metadata.CorrelationId)
-                ? promotionResult.InstanceId
+                ? promotionResult.CorrelationId
                 : metadata.CorrelationId;
 
             var forwardIntent = new ForwardIntent

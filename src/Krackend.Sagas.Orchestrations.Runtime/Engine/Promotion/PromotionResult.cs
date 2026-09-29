@@ -21,6 +21,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         public string SagaId { get; set; }
 
         /// <summary>
+        /// Gets or sets the correlation id selected for the promoted orchestration.
+        /// </summary>
+        public string CorrelationId { get; set; }
+
+        /// <summary>
         /// Gets or sets the runtime orchestration instance id.
         /// </summary>
         public string InstanceId { get; set; }

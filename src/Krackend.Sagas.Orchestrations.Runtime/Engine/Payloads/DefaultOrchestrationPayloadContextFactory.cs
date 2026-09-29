@@ -50,14 +50,17 @@ public sealed class DefaultOrchestrationPayloadContextFactory : IOrchestrationPa
         IReadOnlyCollection<MetadataDescriptorArtifact> descriptors)
     {
         var payload = new JsonObject();
-        if (metadata?.Items is null)
+        if (metadata?.Items is not null)
         {
-            return payload;
+            foreach (var item in metadata.Items)
+            {
+                payload[item.Key] = item.Value?.DeepClone();
+            }
         }
 
-        foreach (var item in metadata.Items)
+        if (!payload.ContainsKey(OrchestrationMetadataConstants.TriggerMetadataKey))
         {
-            payload[item.Key] = item.Value?.DeepClone();
+            payload[OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata().ToJson();
         }
 
         foreach (var descriptor in descriptors ?? [])

@@ -21,6 +21,11 @@ public static class OrchestrationMetadataConstants
     public const string OrchestrationPropagationMetadataKey = "Krackend.Sagas.Orchestrations.Propagation.Metadata";
 
     /// <summary>
+    /// Gets the propagation metadata key used to carry the trigger metadata contract.
+    /// </summary>
+    public const string TriggerMetadataKey = "trigger_metadata";
+
+    /// <summary>
     /// Gets the execution metadata key used to indicate that the original business payload was null.
     /// </summary>
     public const string OrchestrationPayloadWasNullMetadataKey = "Krackend.Sagas.Orchestrations.Payload.WasNull";
