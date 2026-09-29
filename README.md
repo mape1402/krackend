@@ -150,6 +150,12 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 - `Krackend.Sagas.Orchestrations.Security*` keeps authentication in the host and adds provider-agnostic orchestration authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
 
+Orchestration metadata:
+
+Krackend propagates transversal metadata through transport metadata so business payloads stay focused on business data. Runtime command dispatches include `Krackend.Sagas.Orchestrations.Message.Metadata` for the current runtime backchannel and flat propagated entries such as `Krackend.Sagas.Orchestrations.Trigger.Metadata`, `audit.context`, and `security.context`. The runtime no longer duplicates propagated metadata inside the reserved `Krackend.Sagas.Orchestrations.Propagation.Metadata` envelope when publishing commands; that envelope is only understood as a legacy inbound shape for compatibility.
+
+`Krackend.Sagas.Orchestrations.Trigger.Metadata` is the canonical trigger metadata entry. It carries values such as correlation id, trace id, event id, event type, idempotency key, aggregate type, and causation id. The runtime uses the trigger correlation id as the saga correlation id when it is available, and still accepts the legacy `trigger_metadata` key when reading older messages.
+
 Security model:
 
 Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates orchestration permissions.
@@ -289,7 +295,7 @@ See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full pa
 
 ## Release
 
-Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v2.3.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
+Packages are produced only by explicit `dotnet pack` or by the `Build and Release` workflow. The repository `.release` file contains the next release tag, for example `v3.0.0`; when that marker changes on `main`, the workflow validates the changelog section, creates the release branch/tag, packs all source libraries, and publishes the NuGet artifacts.
 
 ## Event Sourcing Testing
 

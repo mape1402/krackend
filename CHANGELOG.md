@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v3.0.0] - 2026-09-29
+
+- ### Changed
+
+  - Changed orchestration metadata propagation to publish flat metadata entries on command dispatches instead of duplicating them inside the reserved propagation envelope.
+  - Changed the canonical trigger metadata key from `trigger_metadata` to `Krackend.Sagas.Orchestrations.Trigger.Metadata` so trigger context is namespaced consistently with the rest of the orchestration runtime metadata.
+  - Updated runtime dispatch, retry, diagnostics, Pigeon messaging, and Spider deferred flows to preserve object-valued metadata without re-wrapping it in transport-specific payloads.
+
+- ### Fixed
+
+  - Fixed runtime dispatch metadata snapshots so diagnostics show the propagated trigger, audit, security, and message metadata exactly as downstream services receive it.
+  - Preserved backward compatibility for existing messages that still provide the legacy `trigger_metadata` key.
+  - Added runtime and messaging coverage for flat metadata propagation, legacy trigger metadata fallback, ButterMorph trigger metadata source naming, and runtime diagnostics.
+
+------
+
 ## [v2.3.3] - 2026-09-27
 
 - ### Added
