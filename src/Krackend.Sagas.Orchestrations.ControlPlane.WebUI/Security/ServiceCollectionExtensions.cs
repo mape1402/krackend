@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Navigation;
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security;
@@ -30,6 +31,7 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<OrchestratorSecurityWebUIOptions> configureOptions)
     {
+        services.AddOrchestratorWebUIShell();
         services.Configure(configureOptions);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureSecurityAreaRoutes>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, SecurityNavigationContributor>());
@@ -48,9 +50,9 @@ public static class ServiceCollectionExtensions
         public void Configure(RazorPagesOptions options)
         {
             var prefix = string.IsNullOrWhiteSpace(_options.RoutePrefix)
-                ? "orchestrator-security"
+                ? "admin/security"
                 : _options.RoutePrefix.Trim('/');
-            options.Conventions.AddAreaPageRoute("OrchestratorSecurity", "/Teams/Index", prefix);
+            options.Conventions.AddAreaPageRoute("OrchestratorSecurity", "/Teams/Index", $"{prefix}/teams");
         }
     }
 }

@@ -10,7 +10,7 @@ public sealed class OrchestratorControlPlaneWebUIOptions
     /// <summary>
     /// Gets or sets the route prefix used by the design area.
     /// </summary>
-    public string DesignRoutePrefix { get; set; } = "admin";
+    public string DesignRoutePrefix { get; set; } = "admin/design";
 
     /// <summary>
     /// Gets or sets the default schema registry provider key used when creating schema bindings from the designer UI.
@@ -25,10 +25,10 @@ public sealed class OrchestratorControlPlaneWebUIOptions
     /// <summary>
     /// Gets or sets the route prefix used by the distribution area.
     /// </summary>
-    public string DistributionRoutePrefix { get; set; } = "admin/orchestrator-distribution";
+    public string DistributionRoutePrefix { get; set; } = "admin/distribution";
 
     /// <summary>
     /// Gets or sets the route prefix used by the security area.
     /// </summary>
-    public string SecurityRoutePrefix { get; set; } = "admin/orchestrator-security";
+    public string SecurityRoutePrefix { get; set; } = "admin/security";
 }

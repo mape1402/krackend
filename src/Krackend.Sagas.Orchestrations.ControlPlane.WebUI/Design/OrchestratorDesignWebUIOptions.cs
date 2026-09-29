@@ -10,7 +10,7 @@ public sealed class OrchestratorDesignWebUIOptions
     /// <summary>
     /// Gets or sets the route prefix used to expose the module.
     /// </summary>
-    public string RoutePrefix { get; set; } = "orchestrator-design";
+    public string RoutePrefix { get; set; } = "admin/design";
 
     /// <summary>
     /// Gets or sets the default schema registry provider key used when creating schema bindings from the designer UI.

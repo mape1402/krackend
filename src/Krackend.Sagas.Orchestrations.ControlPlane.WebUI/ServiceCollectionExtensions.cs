@@ -40,10 +40,10 @@ public static class ServiceCollectionExtensions
 
         services.AddOrchestratorControlPlaneWebUI(ui =>
         {
-            ui.DesignRoutePrefix = adminRootPath;
+            ui.DesignRoutePrefix = $"{adminRootPath}/design";
             ui.DefaultSchemaRegistryProviderKey = NormalizeSchemaRegistryProviderKey(options.DefaultSchemaRegistryProviderKey);
-            ui.DistributionRoutePrefix = $"{adminRootPath}/orchestrator-distribution";
-            ui.SecurityRoutePrefix = $"{adminRootPath}/orchestrator-security";
+            ui.DistributionRoutePrefix = $"{adminRootPath}/distribution";
+            ui.SecurityRoutePrefix = $"{adminRootPath}/security";
             ui.Theme.ApplyFrom(options.Theme);
         });
         services.AddOrchestratorControlPlaneApplication();
@@ -81,12 +81,12 @@ public static class ServiceCollectionExtensions
         services.AddOrchestratorWebUIShell(theme => theme.ApplyFrom(options.Theme));
         DesignWebUIServices.AddOrchestratorDesignWebUI(services, ui =>
         {
-            ui.RoutePrefix = NormalizePrefix(options.DesignRoutePrefix, "admin");
+            ui.RoutePrefix = NormalizePrefix(options.DesignRoutePrefix, "admin/design");
             ui.DefaultSchemaRegistryProviderKey = NormalizeSchemaRegistryProviderKey(options.DefaultSchemaRegistryProviderKey);
             ui.Theme.ApplyFrom(options.Theme);
         });
-        DistributionWebUIServices.AddOrchestratorDistributionWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.DistributionRoutePrefix, "admin/orchestrator-distribution"));
-        SecurityWebUIServices.AddOrchestratorSecurityWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.SecurityRoutePrefix, "admin/orchestrator-security"));
+        DistributionWebUIServices.AddOrchestratorDistributionWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.DistributionRoutePrefix, "admin/distribution"));
+        SecurityWebUIServices.AddOrchestratorSecurityWebUI(services, ui => ui.RoutePrefix = NormalizePrefix(options.SecurityRoutePrefix, "admin/security"));
         return services;
     }
 

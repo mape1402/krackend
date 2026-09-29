@@ -214,26 +214,27 @@
     padding: 1rem 1.1rem;
     max-height: 420px;
     overflow: auto;
-    border: 1px solid #bfcdea;
+    border: 1px solid var(--od-border);
     border-radius: 0.65rem;
-    background: linear-gradient(180deg, #f4f7ff 0%, #edf3ff 100%);
-    color: #16233f;
+    background: var(--krackend-code-bg, var(--od-surface-2));
+    color: var(--krackend-code-text, var(--od-text));
     font-family: Consolas, "Courier New", monospace;
     font-size: 0.85rem;
     line-height: 1.4;
     white-space: pre;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .artifact-modal {
-    border: 1px solid #cbd7ec;
-    box-shadow: 0 14px 36px rgba(24, 39, 74, 0.16);
+    border: 1px solid var(--od-border);
+    background: var(--od-surface);
+    color: var(--od-text);
+    box-shadow: 0 14px 36px var(--krackend-shadow-color, rgba(24, 39, 74, 0.16));
 }
 
 .artifact-modal-header {
-    background: linear-gradient(180deg, #f3f7ff 0%, #e9f0ff 100%);
-    color: #1a2a4b;
-    border-bottom: 1px solid #c9d7f1;
+    background: var(--od-surface-2);
+    color: var(--od-text);
+    border-bottom: 1px solid var(--od-border);
 }
 
 .artifact-modal-header .modal-title {
@@ -242,26 +243,26 @@
 }
 
 .artifact-modal-body {
-    background: linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%);
+    background: var(--od-surface);
 }
 
 .artifact-label {
-    color: #3a4f78;
+    color: var(--od-muted);
     font-weight: 600;
     font-size: 0.83rem;
     letter-spacing: 0.005em;
 }
 
 .artifact-readonly {
-    background: #ffffff;
-    border-color: #c9d6ee;
-    color: #1e2d4b;
+    background: var(--od-surface-2);
+    border-color: var(--od-border);
+    color: var(--od-text);
     font-weight: 450;
 }
 
 .artifact-readonly:focus {
-    border-color: #9db5e1;
-    box-shadow: 0 0 0 0.16rem rgba(93, 132, 205, 0.16);
+    border-color: var(--od-primary);
+    box-shadow: 0 0 0 0.16rem color-mix(in srgb, var(--od-primary) 20%, transparent);
 }
 
 .od-orch-card {
@@ -270,12 +271,12 @@
 }
 
 .od-orch-title {
-    color: #111111;
+    color: var(--od-text);
 }
 
 .od-selected {
-    border-color: #7e90ff !important;
-    box-shadow: 0 0 0 2px rgba(126, 144, 255, 0.16);
+    border-color: var(--od-primary) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--od-primary) 22%, transparent);
 }
 
 .od-release-split {
@@ -289,7 +290,7 @@
 
 .od-release-left,
 .od-release-right {
-    border: 1px solid #dbe4f3;
+    border: 1px solid var(--od-border);
     border-radius: 0.65rem;
     padding: 0.55rem;
     min-height: 100%;
@@ -298,13 +299,13 @@
 }
 
 .od-release-left {
-    background: #edf3fb;
-    border-right: 2px solid #cfdaee;
+    background: color-mix(in srgb, var(--od-surface-2) 78%, var(--od-surface));
+    border-right: 2px solid var(--od-border);
     max-height: 100%;
 }
 
 .od-release-right {
-    background: #f1f6ff;
+    background: color-mix(in srgb, var(--od-surface-2) 72%, var(--od-surface));
     min-height: 100%;
 }
 
@@ -325,9 +326,9 @@
 }
 
 .od-release-row {
-    border: 1px solid #d4ddef;
+    border: 1px solid var(--od-border);
     border-radius: 0.75rem;
-    background: #ffffff;
+    background: var(--od-surface);
     padding: 1.15rem 1rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -356,9 +357,9 @@
 }
 
 .od-release-details-btn {
-    border: 1px solid #9eb3d8;
-    background: #f8fbff;
-    color: #2a456d;
+    border: 1px solid var(--od-border);
+    background: var(--od-surface-2);
+    color: var(--od-text);
     border-radius: 0.5rem;
     padding: 0.24rem 0.58rem;
     line-height: 1.2;
@@ -366,9 +367,9 @@
 }
 
 .od-release-details-btn:hover {
-    background: #eef4ff;
-    border-color: #87a3d2;
-    color: #1d3557;
+    background: color-mix(in srgb, var(--od-primary) 14%, var(--od-surface));
+    border-color: var(--od-primary);
+    color: var(--od-text);
 }
 
 @@media (max-width: 991.98px) {
@@ -382,7 +383,7 @@
         max-height: none;
         min-height: auto;
         height: auto;
-        border-right: 1px solid #dbe4f3;
+        border-right: 1px solid var(--od-border);
     }
 
     .od-release-right {

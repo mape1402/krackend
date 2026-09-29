@@ -11,6 +11,7 @@ using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using global::ButterMorph.Web.Razor;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +85,27 @@ public sealed class WebUINavigationTests
         Assert.Equal("#4856d7", theme.PrimaryColor);
         Assert.IsType<DefaultOrchestratorThemeCssRenderer>(
             provider.GetRequiredService<IOrchestratorThemeCssRenderer>());
+        Assert.IsType<DefaultOrchestratorThemeModeAccessor>(
+            provider.GetRequiredService<IOrchestratorThemeModeAccessor>());
+    }
+
+    [Fact]
+    public void ThemeModeAccessorUsesCookieBeforeConfiguredDefault()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOrchestratorWebUIShell(options => options.Mode = OrchestratorWebUIThemeMode.Light);
+
+        using var provider = services.BuildServiceProvider();
+        var httpContextAccessor = provider.GetRequiredService<IHttpContextAccessor>();
+        httpContextAccessor.HttpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Request.Headers.Cookie = ".Krackend.Orchestrator.ThemeMode=dark";
+
+        var accessor = provider.GetRequiredService<IOrchestratorThemeModeAccessor>();
+        var theme = provider.GetRequiredService<IOptions<OrchestratorWebUIThemeOptions>>().Value;
+
+        Assert.Equal(OrchestratorWebUIThemeMode.Dark, accessor.GetMode(theme));
+        Assert.Equal("dark", accessor.GetCssMode(theme));
     }
 
     [Fact]
@@ -239,7 +261,21 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(16, options.Conventions.Count);
+        Assert.Equal(18, options.Conventions.Count);
+    }
+
+    [Fact]
+    public void ControlPlaneWebUiRegistersExpectedDefaultRoutePrefixes()
+    {
+        var services = new ServiceCollection();
+
+        ControlPlaneWebUiServices.AddOrchestratorControlPlaneWebUI(services);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Equal("admin/design", provider.GetRequiredService<IOptions<OrchestratorDesignWebUIOptions>>().Value.RoutePrefix);
+        Assert.Equal("admin/distribution", provider.GetRequiredService<IOptions<OrchestratorDistributionWebUIOptions>>().Value.RoutePrefix);
+        Assert.Equal("admin/security", provider.GetRequiredService<IOptions<OrchestratorSecurityWebUIOptions>>().Value.RoutePrefix);
     }
 
     [Fact]
@@ -282,7 +318,9 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(provider.GetRequiredService<ControlPlaneDbContext>());
         Assert.NotNull(provider.GetRequiredService<IOrchestrationSchemaContextBuilder>());
-        Assert.Equal("ops", provider.GetRequiredService<IOptions<OrchestratorDesignWebUIOptions>>().Value.RoutePrefix);
+        Assert.Equal("ops/design", provider.GetRequiredService<IOptions<OrchestratorDesignWebUIOptions>>().Value.RoutePrefix);
+        Assert.Equal("ops/distribution", provider.GetRequiredService<IOptions<OrchestratorDistributionWebUIOptions>>().Value.RoutePrefix);
+        Assert.Equal("ops/security", provider.GetRequiredService<IOptions<OrchestratorSecurityWebUIOptions>>().Value.RoutePrefix);
         Assert.Equal("knowl", provider.GetRequiredService<IOptions<OrchestratorDesignWebUIOptions>>().Value.DefaultSchemaRegistryProviderKey);
     }
 
