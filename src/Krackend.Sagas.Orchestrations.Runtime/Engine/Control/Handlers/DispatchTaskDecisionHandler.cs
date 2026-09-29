@@ -261,6 +261,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     Version = messagingConfiguration.Version.ToString(),
                     Payload = commandPayload
                 };
+                var propagationMetadata = _propagationMetadataStore.Load(instance);
+                var messageMetadata = new OrchestrationMessageMetadata
+                {
+                    SagaId = GetSagaId(instance),
+                    OrchestrationInstanceId = instance.Id.ToString(),
+                    CurrentStage = decision.StageKey,
+                    CurrentTasks = [decision.Task.Key],
+                    CorrelationId = taskExecution.CorrelationId,
+                    TaskExecutionId = taskExecution.Id.ToString(),
+                    DispatchId = dispatch.Id.ToString(),
+                    Attempt = attempt.AttemptNumber,
+                    ReplyAddress = replyAddress
+                };
+
+                dispatch.Metadata = RemoteCommandMetadataBuilder.Build(messageMetadata, propagationMetadata);
+                await _dispatchRepository.Update(dispatch, cancellationToken);
 
                 await _dispatcher.DispatchAsync(new RemoteCommand
                 {
@@ -275,19 +291,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     StageKey = decision.StageKey,
                     TaskKey = decision.Task.Key,
                     AwaitResponse = decision.Task.DispatchType != TaskDispatchType.FireAndForget,
-                    PropagationMetadata = _propagationMetadataStore.Load(instance),
-                    MessageMetadata = new OrchestrationMessageMetadata
-                    {
-                        SagaId = GetSagaId(instance),
-                        OrchestrationInstanceId = instance.Id.ToString(),
-                        CurrentStage = decision.StageKey,
-                        CurrentTasks = [decision.Task.Key],
-                        CorrelationId = taskExecution.CorrelationId,
-                        TaskExecutionId = taskExecution.Id.ToString(),
-                        DispatchId = dispatch.Id.ToString(),
-                        Attempt = attempt.AttemptNumber,
-                        ReplyAddress = replyAddress
-                    }
+                    PropagationMetadata = propagationMetadata,
+                    MessageMetadata = messageMetadata
                 }, cancellationToken);
 
                 return true;

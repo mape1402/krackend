@@ -31,10 +31,7 @@ internal sealed class PigeonPropagationMetadataMapper
             return;
         }
 
-        var clone = metadata.Clone();
-        context.AddMetadata(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey, clone);
-
-        foreach (var item in clone.Items)
+        foreach (var item in metadata.Clone().Items)
         {
             if (IsReserved(item.Key))
             {
@@ -179,5 +176,6 @@ internal sealed class PigeonPropagationMetadataMapper
     }
 
     private static bool IsReserved(string key)
-        => key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal);
+        => !string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal) &&
+            key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal);
 }

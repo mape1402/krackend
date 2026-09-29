@@ -1,6 +1,7 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.ButterMorph;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 
@@ -93,14 +94,18 @@ public sealed class ButterMorphSourceGraphBuilderTests
         {
             ContextPayload = JsonNode.Parse("""{"trigger": {"payload": {"saleId":"sale-1"}}}""")!,
             TriggerPayload = JsonNode.Parse("""{"saleId":"sale-1"}""")!,
-            MetadataPayload = JsonNode.Parse("""{"trigger_metadata":{"CorrelationId":"corr-1","TraceId":"trace-1"}}""")!,
+            MetadataPayload = new JsonObject
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] =
+                    JsonNode.Parse("""{"CorrelationId":"corr-1","TraceId":"trace-1"}""")
+            },
             StageKey = "inventory-reservation",
             TaskKey = "inventories.reserve"
         };
 
         var sources = builder.Build(context);
 
-        Assert.Contains("trigger_metadata", sources.Keys);
+        Assert.Contains("Krackend_Sagas_Orchestrations_Trigger_Metadata", sources.Keys);
         Assert.DoesNotContain("metadata", sources.Keys);
     }
 

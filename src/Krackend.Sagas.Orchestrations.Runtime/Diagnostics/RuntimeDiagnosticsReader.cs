@@ -3,7 +3,9 @@ using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 
@@ -93,11 +95,11 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         var runtimeArtifact = await TryGetRuntimeArtifact(instance, cancellationToken);
         var artifact = DeserializeArtifact(runtimeArtifact);
 
-        var taskDetails = await BuildTaskDetails(instance.SagaId, tasks, cancellationToken);
-        var stageDetails = BuildStageDetails(stages, taskDetails, artifact);
-        var allTaskDetails = stageDetails.SelectMany(x => x.Tasks).ToArray();
         var stageById = stages.ToDictionary(x => x.Id.ToString(), x => x.StageKey);
         var taskById = tasks.ToDictionary(x => x.Id.ToString(), x => x.TaskKey);
+        var taskDetails = await BuildTaskDetails(instance, tasks, stageById, cancellationToken);
+        var stageDetails = BuildStageDetails(stages, taskDetails, artifact);
+        var allTaskDetails = stageDetails.SelectMany(x => x.Tasks).ToArray();
         var transitionDetails = transitions.Select(x => ToTransition(x, stageById, taskById)).ToArray();
         var timeline = transitionDetails.Select(ToTimelineEntry).ToArray();
 
@@ -191,8 +193,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
     }
 
     private async Task<IReadOnlyCollection<TaskDetailModel>> BuildTaskDetails(
-        string sagaId,
+        OrchestrationInstance instance,
         IReadOnlyCollection<TaskExecution> tasks,
+        IReadOnlyDictionary<string, string> stageById,
         CancellationToken cancellationToken)
     {
         var taskDetails = new List<TaskDetailModel>();
@@ -219,7 +222,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
                     FormatJson(attempt.ResponsePayload),
                     attempt.ErrorCode,
                     attempt.ErrorMessage,
-                    dispatch is null ? null : ToDispatch(dispatch),
+                    dispatch is null ? null : ToDispatch(dispatch, instance, task, attempt, stageById),
                     FormatJson(attempt.Metadata),
                     attempt.TaskExecutionId.ToString(),
                     attempt.DispatchId?.ToString()));
@@ -246,7 +249,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
                 FormatJson(task.OutputVariablesPayload),
                 FormatJson(task.Metadata),
                 attemptDetails,
-                sagaId,
+                instance.SagaId,
                 task.OnErrorPolicy.ToString(),
                 task.ParallelGroupId?.ToString(),
                 task.WasSkipped,
@@ -439,7 +442,12 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             stageArtifact?.Description);
     }
 
-    private static DispatchDetailModel ToDispatch(TaskDispatch dispatch)
+    private static DispatchDetailModel ToDispatch(
+        TaskDispatch dispatch,
+        OrchestrationInstance instance,
+        TaskExecution task,
+        TaskExecutionAttempt attempt,
+        IReadOnlyDictionary<string, string> stageById)
     {
         return new DispatchDetailModel(
             dispatch.Id.ToString(),
@@ -453,7 +461,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             dispatch.FailedOnUtc,
             dispatch.FailureReason,
             FormatJson(dispatch.RequestPayload),
-            FormatJson(dispatch.Metadata),
+            FormatJson(BuildDispatchMetadata(dispatch, instance, task, attempt, stageById)),
             dispatch.TaskExecutionAttemptId.ToString());
     }
 
@@ -570,6 +578,97 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         => values is null || values.Count == 0
             ? string.Empty
             : JsonSerializer.Serialize(values.ToDictionary(x => x.Key, x => x.Value), IndentedJsonOptions);
+
+    private static Dictionary<string, JsonNode> BuildDispatchMetadata(
+        TaskDispatch dispatch,
+        OrchestrationInstance instance,
+        TaskExecution task,
+        TaskExecutionAttempt attempt,
+        IReadOnlyDictionary<string, string> stageById)
+    {
+        if (dispatch.Metadata is { Count: > 0 })
+        {
+            return dispatch.Metadata;
+        }
+
+        var messageMetadata = new OrchestrationMessageMetadata
+        {
+            SagaId = string.IsNullOrWhiteSpace(instance.SagaId) ? instance.Id.ToString() : instance.SagaId,
+            OrchestrationInstanceId = instance.Id.ToString(),
+            CurrentStage = stageById.GetValueOrDefault(task.StageExecutionId.ToString()),
+            CurrentTasks = [task.TaskKey],
+            CorrelationId = FirstNonEmpty(dispatch.CorrelationId, task.CorrelationId, instance.CorrelationId),
+            TaskExecutionId = task.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            Attempt = attempt.AttemptNumber
+        };
+
+        return RemoteCommandMetadataBuilder.Build(
+            messageMetadata,
+            LoadPropagationMetadata(instance));
+    }
+
+    private static OrchestrationPropagationMetadata LoadPropagationMetadata(OrchestrationInstance instance)
+    {
+        if (instance?.Metadata is null ||
+            !instance.Metadata.TryGetValue(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey, out var node) ||
+            node is null)
+        {
+            return new OrchestrationPropagationMetadata();
+        }
+
+        return TryDeserializePropagationEnvelope(node)
+            ?? TryDeserializePropagationItems(node)
+            ?? new OrchestrationPropagationMetadata();
+    }
+
+    private static OrchestrationPropagationMetadata TryDeserializePropagationEnvelope(JsonNode node)
+    {
+        try
+        {
+            var metadata = node.Deserialize<OrchestrationPropagationMetadata>(ArtifactJsonOptions);
+            return metadata?.Items is null ? null : metadata.Clone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static OrchestrationPropagationMetadata TryDeserializePropagationItems(JsonNode node)
+    {
+        try
+        {
+            var items = node.Deserialize<Dictionary<string, JsonNode>>(ArtifactJsonOptions);
+            if (items is null)
+            {
+                return null;
+            }
+
+            var metadata = new OrchestrationPropagationMetadata();
+            foreach (var item in items)
+            {
+                metadata.Items[item.Key] = item.Value?.DeepClone();
+            }
+
+            return metadata;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static Id ParseId(string value) => new(Ulid.Parse(value));
 }
