@@ -36,7 +36,7 @@ public sealed class OrchestrationButterMorphSourceMetadataFactory : IOrchestrati
         => source.SourceKind switch
         {
             OrchestrationSchemaContextSourceKind.Trigger => "Trigger event",
-            OrchestrationSchemaContextSourceKind.TriggerMetadata => "Trigger metadata",
+            OrchestrationSchemaContextSourceKind.TriggerMetadata => "Trigger Metadata",
             OrchestrationSchemaContextSourceKind.Metadata => BuildMetadataDisplayName(source),
             OrchestrationSchemaContextSourceKind.TaskRequest => $"{source.TaskKey} request",
             OrchestrationSchemaContextSourceKind.TaskResponse => $"{source.TaskKey} reply",

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using global::ButterMorph.Abstractions;
 using global::ButterMorph.Core;
 using global::ButterMorph.Json;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 
 /// <summary>
@@ -17,6 +18,7 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
     private const string ResponsesAlias = "responses";
     private const string StagesAlias = "stages";
     private const string VariablesAlias = "variables";
+    private const string TriggerMetadataAlias = "trigger_metadata";
     private const string StagesPropertyName = "stages";
     private const string TasksPropertyName = "tasks";
     private const string RequestPropertyName = "request";
@@ -66,9 +68,14 @@ public sealed class ButterMorphSourceGraphBuilder : IButterMorphSourceGraphBuild
                 continue;
             }
 
-            AddSource(sources, _aliasNameFormatter.Format(item.Key), item.Value);
+            AddSource(sources, FormatMetadataAlias(item.Key), item.Value);
         }
     }
+
+    private string FormatMetadataAlias(string key)
+        => string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal)
+            ? TriggerMetadataAlias
+            : _aliasNameFormatter.Format(key);
 
     private JsonNode BuildSanitizedStagesPayload(JsonNode contextPayload)
     {

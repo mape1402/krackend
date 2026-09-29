@@ -12,7 +12,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Design;
 
 public sealed class OrchestrationSchemaContextBuilderTests
 {
-    private const string TriggerMetadataAlias = "Krackend_Sagas_Orchestrations_Trigger_Metadata";
+    private const string TriggerMetadataAlias = "trigger_metadata";
 
     [Fact]
     public async Task BuildForTask_ExposesOnlyTriggerForFirstTask()

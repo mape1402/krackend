@@ -105,7 +105,7 @@ public sealed class ButterMorphSourceGraphBuilderTests
 
         var sources = builder.Build(context);
 
-        Assert.Contains("Krackend_Sagas_Orchestrations_Trigger_Metadata", sources.Keys);
+        Assert.Contains("trigger_metadata", sources.Keys);
         Assert.DoesNotContain("metadata", sources.Keys);
     }
 
