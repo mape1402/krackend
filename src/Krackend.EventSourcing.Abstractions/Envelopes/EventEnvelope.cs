@@ -6,7 +6,7 @@ using Krackend.EventSourcing.Contracts;
 /// Default immutable event envelope used by event stores.
 /// </summary>
 public sealed record EventEnvelope(
-    Guid EventId,
+    string EventId,
     string StreamName,
     string StreamId,
     string? StreamType,

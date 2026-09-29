@@ -6,7 +6,7 @@ namespace Krackend.EventSourcing.Testing;
 /// Represents one event captured by the in-memory event sourcing test store.
 /// </summary>
 public sealed record EventSourcingTestEventEnvelope(
-    Guid EventId,
+    string EventId,
     EventStreamReference Stream,
     long StreamVersion,
     long GlobalPosition,

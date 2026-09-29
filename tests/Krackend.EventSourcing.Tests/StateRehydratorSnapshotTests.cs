@@ -35,7 +35,7 @@ public sealed class StateRehydratorSnapshotTests
 
         var eventStore = new RecordingEventStore([
             new EventEnvelope(
-                EventId: Guid.NewGuid(),
+                EventId: "event-101",
                 StreamName: "accounts",
                 StreamId: "account-1",
                 StreamType: null,
@@ -91,7 +91,7 @@ public sealed class StateRehydratorSnapshotTests
             });
         var eventStore = new RecordingEventStore([
             new EventEnvelope(
-                EventId: Guid.NewGuid(),
+                EventId: "event-1",
                 StreamName: "accounts",
                 StreamId: "account-1",
                 StreamType: null,
@@ -113,7 +113,7 @@ public sealed class StateRehydratorSnapshotTests
                 }),
                 Metadata: null),
             new EventEnvelope(
-                EventId: Guid.NewGuid(),
+                EventId: "event-2",
                 StreamName: "accounts",
                 StreamId: "account-1",
                 StreamType: null,

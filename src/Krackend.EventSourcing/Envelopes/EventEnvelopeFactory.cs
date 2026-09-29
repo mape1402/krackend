@@ -13,6 +13,7 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
     private readonly IEventTypeRegistry _eventTypeRegistry;
     private readonly IEventSerializer _serializer;
     private readonly EventMetadataCollector _metadataCollector;
+    private readonly IEventIdFactory _eventIdFactory;
     private readonly IEventExecutionContext? _executionContext;
 
     /// <summary>
@@ -22,11 +23,13 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
         IEventTypeRegistry eventTypeRegistry,
         IEventSerializer serializer,
         EventMetadataCollector metadataCollector,
-        IEventExecutionContext? executionContext = null)
+        IEventExecutionContext? executionContext = null,
+        IEventIdFactory? eventIdFactory = null)
     {
         _eventTypeRegistry = eventTypeRegistry ?? throw new ArgumentNullException(nameof(eventTypeRegistry));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _metadataCollector = metadataCollector ?? throw new ArgumentNullException(nameof(metadataCollector));
+        _eventIdFactory = eventIdFactory ?? new UlidEventIdFactory();
         _executionContext = executionContext;
     }
 
@@ -54,9 +57,17 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
 
             var registration = _eventTypeRegistry.GetRegistration(@event.GetType());
             version++;
+            var eventId = CreateEventId(new EventIdFactoryContext(
+                streamName,
+                streamId,
+                streamType,
+                version,
+                registration.EventType,
+                registration.EventSchemaVersion,
+                @event));
 
             envelopes.Add(new EventEnvelope(
-                EventId: Guid.NewGuid(),
+                EventId: eventId,
                 StreamName: streamName,
                 StreamId: streamId,
                 StreamType: streamType,
@@ -100,9 +111,17 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
             ArgumentNullException.ThrowIfNull(@event);
 
             version++;
+            var eventId = CreateEventId(new EventIdFactoryContext(
+                streamName,
+                streamId,
+                streamType,
+                version,
+                @event.EventType,
+                @event.EventSchemaVersion,
+                @event));
 
             envelopes.Add(new EventEnvelope(
-                EventId: Guid.NewGuid(),
+                EventId: eventId,
                 StreamName: streamName,
                 StreamId: streamId,
                 StreamType: streamType,
@@ -123,5 +142,16 @@ public sealed class EventEnvelopeFactory : IEventEnvelopeFactory
         }
 
         return envelopes;
+    }
+
+    private string CreateEventId(EventIdFactoryContext context)
+    {
+        var eventId = _eventIdFactory.Create(context);
+
+        if (string.IsNullOrWhiteSpace(eventId))
+            throw new InvalidOperationException(
+                $"The configured {nameof(IEventIdFactory)} returned an empty event identifier.");
+
+        return eventId;
     }
 }

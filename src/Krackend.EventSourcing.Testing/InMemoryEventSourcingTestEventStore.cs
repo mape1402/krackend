@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Krackend.EventSourcing.Contracts;
+using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Stores;
 using Krackend.EventSourcing.Streams;
 
@@ -12,7 +14,16 @@ public sealed class InMemoryEventSourcingTestEventStore : IEventSourcingTestEven
     private readonly object _syncRoot = new();
     private readonly Dictionary<EventStreamReference, List<EventSourcingTestEventEnvelope>> _streams = [];
     private readonly HashSet<EventStreamReference> _failedAppends = [];
+    private readonly IEventIdFactory _eventIdFactory;
     private long _globalPosition;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryEventSourcingTestEventStore"/> class.
+    /// </summary>
+    public InMemoryEventSourcingTestEventStore(IEventIdFactory? eventIdFactory = null)
+    {
+        _eventIdFactory = eventIdFactory ?? new UlidEventIdFactory();
+    }
 
     /// <inheritdoc />
     public Task<IReadOnlyCollection<EventSourcingTestEventEnvelope>> AppendAsync(
@@ -76,13 +87,22 @@ public sealed class InMemoryEventSourcingTestEventStore : IEventSourcingTestEven
 
                 version++;
                 _globalPosition++;
+                var eventType = @event.GetType().Name;
+                var eventId = _eventIdFactory.Create(new EventIdFactoryContext(
+                    stream.Name,
+                    stream.Id,
+                    null,
+                    version,
+                    eventType,
+                    SemanticVersion.Default,
+                    @event));
 
                 var envelope = new EventSourcingTestEventEnvelope(
-                    EventId: Guid.NewGuid(),
+                    EventId: eventId,
                     Stream: stream,
                     StreamVersion: version,
                     GlobalPosition: _globalPosition,
-                    EventType: @event.GetType().Name,
+                    EventType: eventType,
                     EventClrType: @event.GetType(),
                     Event: @event,
                     SerializedPayload: JsonSerializer.Serialize(@event, @event.GetType()),

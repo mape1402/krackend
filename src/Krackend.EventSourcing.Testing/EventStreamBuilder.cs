@@ -16,6 +16,7 @@ public sealed class EventStreamBuilder
     private readonly string _streamId;
     private readonly IEventSerializer _serializer;
     private readonly EventTypeRegistry _eventTypes;
+    private readonly IEventIdFactory _eventIdFactory;
 
     private long _globalPosition;
     private long _startVersion = 1;
@@ -24,12 +25,14 @@ public sealed class EventStreamBuilder
         string streamName,
         string streamId,
         IEventSerializer serializer,
-        EventTypeRegistry eventTypes)
+        EventTypeRegistry eventTypes,
+        IEventIdFactory eventIdFactory)
     {
         _streamName = streamName;
         _streamId = streamId;
         _serializer = serializer;
         _eventTypes = eventTypes;
+        _eventIdFactory = eventIdFactory;
     }
 
     /// <summary>
@@ -44,7 +47,8 @@ public sealed class EventStreamBuilder
             streamName,
             streamId,
             new SystemTextJsonEventSerializer(),
-            new EventTypeRegistry());
+            new EventTypeRegistry(),
+            new UlidEventIdFactory());
     }
 
     /// <summary>
@@ -90,9 +94,17 @@ public sealed class EventStreamBuilder
         foreach (var @event in _events)
         {
             var registration = _eventTypes.GetRegistration(@event.GetType());
+            var eventId = _eventIdFactory.Create(new EventIdFactoryContext(
+                _streamName,
+                _streamId,
+                null,
+                streamVersion,
+                registration.EventType,
+                registration.EventSchemaVersion,
+                @event));
 
             envelopes.Add(new EventEnvelope(
-                EventId: Guid.NewGuid(),
+                EventId: eventId,
                 StreamName: _streamName,
                 StreamId: _streamId,
                 StreamType: null,
