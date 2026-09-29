@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
@@ -56,9 +57,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 
             var now = DateTime.UtcNow;
             var instanceId = Id.New();
-            var correlationId = string.IsNullOrWhiteSpace(request.MessageMetadata?.CorrelationId)
-                ? Id.New().ToString()
-                : request.MessageMetadata.CorrelationId;
+            var triggerMetadata = GetTriggerMetadata(request.PropagationMetadata);
+            var correlationId = FirstNonEmpty(triggerMetadata.CorrelationId, request.MessageMetadata?.CorrelationId)
+                ?? Id.New().ToString();
             var sagaId = string.IsNullOrWhiteSpace(request.MessageMetadata?.SagaId)
                 ? instanceId.ToString()
                 : request.MessageMetadata.SagaId;
@@ -82,6 +83,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 ErrorSummary = string.Empty,
                 SnapshotPayload = _payloadState.CreateInitialPayload(request.Payload)
             };
+            AddTriggerMetadataDiagnostics(instance, triggerMetadata);
             _propagationMetadataStore.Save(instance, request.PropagationMetadata);
 
             await _instanceRepository.Create(instance, cancellationToken);
@@ -102,8 +104,44 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             {
                 Success = true,
                 SagaId = sagaId,
+                CorrelationId = correlationId,
                 InstanceId = instance.Id.ToString()
             };
         }
+
+        private static OrchestrationTriggerMetadata GetTriggerMetadata(OrchestrationPropagationMetadata propagationMetadata)
+        {
+            if (propagationMetadata?.Items is null ||
+                !propagationMetadata.Items.TryGetValue(OrchestrationMetadataConstants.TriggerMetadataKey, out var payload))
+            {
+                return new OrchestrationTriggerMetadata();
+            }
+
+            return OrchestrationTriggerMetadata.FromJson(payload);
+        }
+
+        private static void AddTriggerMetadataDiagnostics(
+            OrchestrationInstance instance,
+            OrchestrationTriggerMetadata triggerMetadata)
+        {
+            Add(instance, "TriggerTraceId", triggerMetadata.TraceId);
+            Add(instance, "TriggerEventId", triggerMetadata.EventId);
+            Add(instance, "TriggerEventType", triggerMetadata.EventType);
+            Add(instance, "TriggerIdempotencyKey", triggerMetadata.IdempotencyKey);
+            Add(instance, "TriggerAggregateId", triggerMetadata.AggregateId);
+            Add(instance, "TriggerAggregateType", triggerMetadata.AggregateType);
+            Add(instance, "TriggerCausationId", triggerMetadata.CausationId);
+        }
+
+        private static void Add(OrchestrationInstance instance, string key, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                instance.Metadata[key] = System.Text.Json.Nodes.JsonValue.Create(value);
+            }
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+            => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 }

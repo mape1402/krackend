@@ -303,6 +303,66 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task ReportSuccessAsync_WhenTriggerMetadataAccessorIsConfigured_PublishesTriggerMetadata()
+    {
+        var triggerMetadata = new OrchestrationTriggerMetadata
+        {
+            CorrelationId = "sale-correlation-1",
+            TraceId = "trace-1",
+            EventId = "event-1",
+            EventType = "sales.sale.created",
+            IdempotencyKey = "idem-1",
+            AggregateId = "sale-1",
+            AggregateType = "Sale",
+            CausationId = "command-1"
+        };
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationTriggerMetadataAccessor>(
+            _ => new StaticTriggerMetadataAccessor(triggerMetadata)));
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var propagationSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationPropagationMetadataSetter>();
+        propagationSetter.Set(new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit_metadata"] = JsonNode.Parse("""{"userId":"mario"}""")
+            }
+        });
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var payload = JsonNode.Parse("""{"saleId":"sale-1"}""");
+
+        await client.ReportSuccessAsync(
+            typeof(ReserveInventoryRequest),
+            typeof(ReserveInventoryResponse),
+            payload!,
+            new OrchestrationOperationOptions
+            {
+                TriggerAddress = new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = """{"topic":"events.sales.sale.created","version":"1.0.0"}"""
+                }
+            });
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Equal("sale-correlation-1", publisher.MessageMetadata?.CorrelationId);
+        Assert.NotNull(publisher.PropagationMetadata);
+        Assert.Equal(
+            "mario",
+            publisher.PropagationMetadata.Items["audit_metadata"]!["userId"]!.GetValue<string>());
+        var publishedTriggerMetadata = publisher.PropagationMetadata.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!;
+        Assert.Equal("trace-1", publishedTriggerMetadata[nameof(OrchestrationTriggerMetadata.TraceId)]!.GetValue<string>());
+        Assert.Equal("event-1", publishedTriggerMetadata[nameof(OrchestrationTriggerMetadata.EventId)]!.GetValue<string>());
+        Assert.Equal("idem-1", publishedTriggerMetadata[nameof(OrchestrationTriggerMetadata.IdempotencyKey)]!.GetValue<string>());
+
+        var currentPropagation = scope.ServiceProvider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get();
+        Assert.False(currentPropagation.Items.ContainsKey(OrchestrationMetadataConstants.TriggerMetadataKey));
+    }
+
+    [Fact]
     public async Task ReportSuccessAsyncPublishesBusinessPayloadWithoutWrappingExecutionMetadata()
     {
         var services = new ServiceCollection();
@@ -462,4 +522,17 @@ public sealed class OrchestrationOperationClientTests
     private sealed record ReleaseInventoryRequest;
 
     private sealed record ReleaseInventoryResponse;
+
+    private sealed class StaticTriggerMetadataAccessor : IOrchestrationTriggerMetadataAccessor
+    {
+        private readonly OrchestrationTriggerMetadata _metadata;
+
+        public StaticTriggerMetadataAccessor(OrchestrationTriggerMetadata metadata)
+        {
+            _metadata = metadata;
+        }
+
+        public ValueTask<OrchestrationTriggerMetadata> GetAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(_metadata);
+    }
 }

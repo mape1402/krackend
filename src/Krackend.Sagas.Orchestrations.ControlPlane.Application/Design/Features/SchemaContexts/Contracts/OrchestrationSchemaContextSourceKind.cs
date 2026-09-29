@@ -28,5 +28,10 @@ public enum OrchestrationSchemaContextSourceKind
     /// <summary>
     /// Source comes from transversal orchestration metadata descriptors.
     /// </summary>
-    Metadata = 5
+    Metadata = 5,
+
+    /// <summary>
+    /// Source comes from Krackend trigger metadata.
+    /// </summary>
+    TriggerMetadata = 6
 }

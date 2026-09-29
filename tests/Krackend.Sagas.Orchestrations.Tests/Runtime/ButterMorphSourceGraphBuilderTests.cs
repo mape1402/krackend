@@ -86,6 +86,25 @@ public sealed class ButterMorphSourceGraphBuilderTests
     }
 
     [Fact]
+    public void Build_WhenMetadataContainsTriggerMetadata_ProjectsItAsSeparateSource()
+    {
+        var builder = new ButterMorphSourceGraphBuilder(new ButterMorphAliasNameFormatter());
+        var context = new OrchestrationPayloadContext
+        {
+            ContextPayload = JsonNode.Parse("""{"trigger": {"payload": {"saleId":"sale-1"}}}""")!,
+            TriggerPayload = JsonNode.Parse("""{"saleId":"sale-1"}""")!,
+            MetadataPayload = JsonNode.Parse("""{"trigger_metadata":{"CorrelationId":"corr-1","TraceId":"trace-1"}}""")!,
+            StageKey = "inventory-reservation",
+            TaskKey = "inventories.reserve"
+        };
+
+        var sources = builder.Build(context);
+
+        Assert.Contains("trigger_metadata", sources.Keys);
+        Assert.DoesNotContain("metadata", sources.Keys);
+    }
+
+    [Fact]
     public void Build_WhenMetadataAliasConflictsWithBuiltInSource_KeepsBothSources()
     {
         var builder = new ButterMorphSourceGraphBuilder(new ButterMorphAliasNameFormatter());

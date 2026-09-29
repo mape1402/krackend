@@ -2,7 +2,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
@@ -14,6 +16,9 @@ using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.
 /// </summary>
 public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaContextBuilder
 {
+    private static readonly string TriggerMetadataSchemaJson = CreateTriggerMetadataSchemaJson();
+    private static readonly string TriggerMetadataContentHash = BuildContentHash(TriggerMetadataSchemaJson);
+
     private readonly IMetadataDescriptorRepository _metadataDescriptorRepository;
 
     /// <summary>
@@ -60,6 +65,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
+        AddTriggerMetadataSource(sources);
         await AddMetadataSources(sources, cancellationToken);
         AddPreviousStageTaskSources(stages, targetStage, sources);
         AddCurrentStageTaskSources(targetStage, targetTask, sources);
@@ -102,6 +108,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
+        AddTriggerMetadataSource(sources);
         await AddMetadataSources(sources, cancellationToken);
         AddPreviousStageTaskSources(stages, targetStage, sources);
 
@@ -139,6 +146,16 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
                 SchemaBinding = CreateMetadataSchemaBinding(descriptor)
             });
         }
+    }
+
+    private static void AddTriggerMetadataSource(ICollection<OrchestrationSchemaSource> sources)
+    {
+        AddSource(sources, new OrchestrationSchemaSource
+        {
+            Alias = OrchestrationMetadataConstants.TriggerMetadataKey,
+            SourceKind = OrchestrationSchemaContextSourceKind.TriggerMetadata,
+            SchemaBinding = CreateTriggerMetadataSchemaBinding()
+        });
     }
 
     private static void AddTriggerSources(OrchestrationVersion version, ICollection<OrchestrationSchemaSource> sources)
@@ -263,6 +280,37 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             SchemaBinding = GetRequestSchemaBinding(task)
         };
 
+    private static SchemaBinding CreateTriggerMetadataSchemaBinding()
+        => new()
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Orchestration,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
+            ContractKey = OrchestrationMetadataConstants.TriggerMetadataKey,
+            ContractVersion = new SemanticVersion(1, 0, 0),
+            RegistryProviderId = Id.New(),
+            RegistryProviderKey = "krackend",
+            ContractKind = SchemaContractKind.Unspecified,
+            StrictMode = false,
+            IsValidationEnabled = false,
+            Snapshot = new DesignSchemaContractSnapshot
+            {
+                ContractKind = SchemaContractKind.Unspecified,
+                RegistryProviderId = "krackend",
+                RegistryProviderKey = "krackend",
+                ContractId = OrchestrationMetadataConstants.TriggerMetadataKey,
+                ContractKey = OrchestrationMetadataConstants.TriggerMetadataKey,
+                ContractVersion = "1.0.0",
+                SchemaFormat = "JsonSchema",
+                SchemaJson = TriggerMetadataSchemaJson,
+                ContentHash = TriggerMetadataContentHash,
+                SourceArtifactId = string.Empty,
+                ResolvedBy = "Krackend.TriggerMetadata",
+                ResolvedAtUtc = DateTimeOffset.UtcNow
+            }
+        };
+
     private static SchemaBinding CreateMetadataSchemaBinding(MetadataDescriptor descriptor)
     {
         if (string.IsNullOrWhiteSpace(descriptor.SchemaJson))
@@ -300,6 +348,37 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             }
         };
     }
+
+    private static string CreateTriggerMetadataSchemaJson()
+    {
+        JsonObject Property()
+            => new()
+            {
+                ["type"] = "string"
+            };
+
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["additionalProperties"] = false,
+            ["properties"] = new JsonObject
+            {
+                [nameof(OrchestrationTriggerMetadata.CorrelationId)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.TraceId)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.EventId)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.EventType)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.IdempotencyKey)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.AggregateId)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.AggregateType)] = Property(),
+                [nameof(OrchestrationTriggerMetadata.CausationId)] = Property()
+            }
+        };
+
+        return schema.ToJsonString();
+    }
+
+    private static string BuildContentHash(string content)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
 
     private static SchemaBinding GetRequestSchemaBinding(TaskDefinition task)
         => task.Configuration switch

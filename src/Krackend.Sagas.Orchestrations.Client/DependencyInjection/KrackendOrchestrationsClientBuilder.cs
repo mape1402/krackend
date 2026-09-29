@@ -1,7 +1,9 @@
 namespace Krackend.Sagas.Orchestrations.Client.DependencyInjection;
 
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Errors;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
 /// Builds Krackend orchestration client integrations.
@@ -35,6 +37,18 @@ public sealed class KrackendOrchestrationsClientBuilder
         }
 
         Services.Configure(configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the accessor that provides Krackend trigger metadata for new orchestration events.
+    /// </summary>
+    /// <typeparam name="TAccessor">Accessor implementation type.</typeparam>
+    /// <returns>The same builder instance.</returns>
+    public KrackendOrchestrationsClientBuilder UseTriggerMetadataAccessor<TAccessor>()
+        where TAccessor : class, IOrchestrationTriggerMetadataAccessor
+    {
+        Services.Replace(ServiceDescriptor.Scoped<IOrchestrationTriggerMetadataAccessor, TAccessor>());
         return this;
     }
 

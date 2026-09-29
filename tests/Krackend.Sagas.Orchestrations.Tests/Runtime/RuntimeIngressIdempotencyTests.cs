@@ -1,7 +1,9 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
+using System.Text.Json.Nodes;
 
 public sealed class RuntimeIngressIdempotencyTests
 {
@@ -38,6 +40,49 @@ public sealed class RuntimeIngressIdempotencyTests
         var result = RuntimeIngressIdempotency.Build(envelope);
 
         Assert.Equal("trigger|sales.sale.created|1.0.0|message-1|correlation-1", result);
+    }
+
+    [Fact]
+    public void Build_WhenTriggerMetadataHasIdempotencyKey_UsesIt()
+    {
+        var envelope = new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            OrchestrationName = "sales.sale.created",
+            Metadata =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    IdempotencyKey = "trigger-idem-1",
+                    EventId = "event-1",
+                    CorrelationId = "correlation-1"
+                }.ToJson()
+            }
+        };
+
+        var result = RuntimeIngressIdempotency.Build(envelope);
+
+        Assert.Equal("trigger-idem-1", result);
+    }
+
+    [Fact]
+    public void Build_WhenTriggerEnvelopeIsMissingSourceFields_UsesTriggerMetadata()
+    {
+        var envelope = new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            OrchestrationName = "sales.sale.created",
+            OrchestrationVersion = "1.0.0",
+            Metadata =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse(
+                    """{"EventId":"event-1","CorrelationId":"correlation-1"}""")!
+            }
+        };
+
+        var result = RuntimeIngressIdempotency.Build(envelope);
+
+        Assert.Equal("trigger|sales.sale.created|1.0.0|event-1|correlation-1", result);
     }
 
     [Fact]

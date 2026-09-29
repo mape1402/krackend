@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
@@ -19,9 +20,12 @@ public sealed class OrchestrationSchemaContextBuilderTests
 
         var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[0].Id);
 
-        var source = Assert.Single(context.Sources);
+        var source = Assert.Single(context.Sources, x => x.Alias == "trigger");
         Assert.Equal("trigger", source.Alias);
         Assert.Equal(SchemaContractKind.Event, source.SchemaBinding.ContractKind);
+        var triggerMetadata = Assert.Single(context.Sources, x => x.Alias == OrchestrationMetadataConstants.TriggerMetadataKey);
+        Assert.Equal(OrchestrationSchemaContextSourceKind.TriggerMetadata, triggerMetadata.SourceKind);
+        Assert.NotNull(triggerMetadata.SchemaBinding.Snapshot);
         Assert.Equal("reserve_inventory", context.Target.Alias);
         Assert.Equal(SchemaContractKind.CommandRequest, context.Target.SchemaBinding.ContractKind);
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
@@ -54,6 +58,7 @@ public sealed class OrchestrationSchemaContextBuilderTests
 
         Assert.DoesNotContain(context.Sources, x => x.Alias == "metadata");
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        Assert.Contains(context.Sources, x => x.Alias == OrchestrationMetadataConstants.TriggerMetadataKey);
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }
 
@@ -141,6 +146,7 @@ public sealed class OrchestrationSchemaContextBuilderTests
 
         Assert.Null(context.Target);
         Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        Assert.Contains(context.Sources, x => x.Alias == OrchestrationMetadataConstants.TriggerMetadataKey);
         Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
         Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory_reply");
         Assert.Contains(context.Sources, x => x.Alias == "authorize_payment");
@@ -179,7 +185,9 @@ public sealed class OrchestrationSchemaContextBuilderTests
 
         var context = await builder.BuildForTask(version, target.Id);
 
-        Assert.Empty(context.Sources);
+        var source = Assert.Single(context.Sources);
+        Assert.Equal(OrchestrationMetadataConstants.TriggerMetadataKey, source.Alias);
+        Assert.Equal(OrchestrationSchemaContextSourceKind.TriggerMetadata, source.SourceKind);
         Assert.Null(context.Target.SchemaBinding);
         Assert.False(string.IsNullOrWhiteSpace(context.Signature));
     }

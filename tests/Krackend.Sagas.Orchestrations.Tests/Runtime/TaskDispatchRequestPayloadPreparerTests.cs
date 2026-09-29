@@ -84,6 +84,30 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
         Assert.NotNull(capturedRequest);
         Assert.Equal("user-1", capturedRequest.PayloadContext.MetadataPayload!["audit"]!["userId"]!.GetValue<string>());
         Assert.Equal("tenant-1", capturedRequest.PayloadContext.MetadataPayload!["security"]!["tenantId"]!.GetValue<string>());
+        Assert.NotNull(capturedRequest.PayloadContext.MetadataPayload![OrchestrationMetadataConstants.TriggerMetadataKey]);
+    }
+
+    [Fact]
+    public async Task PrepareAsyncPassesDefaultTriggerMetadataSourceWhenNoPropagationMetadataExists()
+    {
+        OrchestrationTransformationRequest? capturedRequest = null;
+        var transformationExecutor = Substitute.For<IOrchestrationTransformationExecutor>();
+        transformationExecutor.TransformAsync(
+                Arg.Do<OrchestrationTransformationRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationTransformationResult.Success(JsonNode.Parse("""{"inventoryReservationId":"reservation-1"}""")));
+        var preparer = CreatePreparer(transformationExecutor: transformationExecutor);
+
+        await preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+        {
+            Instance = CreateInstance(),
+            StageKey = "inventory-reservation",
+            Task = CreateTask(transformEnabled: true),
+            MessagingConfiguration = CreateMessagingConfiguration()
+        });
+
+        Assert.NotNull(capturedRequest);
+        Assert.NotNull(capturedRequest.PayloadContext.MetadataPayload![OrchestrationMetadataConstants.TriggerMetadataKey]);
     }
 
     [Fact]
