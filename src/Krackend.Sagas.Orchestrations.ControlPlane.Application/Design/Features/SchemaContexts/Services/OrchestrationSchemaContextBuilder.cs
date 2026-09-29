@@ -2,7 +2,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
@@ -61,7 +60,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
-        await AddMetadataSource(sources, cancellationToken);
+        await AddMetadataSources(sources, cancellationToken);
         AddPreviousStageTaskSources(stages, targetStage, sources);
         AddCurrentStageTaskSources(targetStage, targetTask, sources);
 
@@ -103,7 +102,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
         var sources = new List<OrchestrationSchemaSource>();
         AddTriggerSources(version, sources);
-        await AddMetadataSource(sources, cancellationToken);
+        await AddMetadataSources(sources, cancellationToken);
         AddPreviousStageTaskSources(stages, targetStage, sources);
 
         var context = new OrchestrationSchemaContext
@@ -120,7 +119,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         return context;
     }
 
-    private async Task AddMetadataSource(ICollection<OrchestrationSchemaSource> sources, CancellationToken cancellationToken)
+    private async Task AddMetadataSources(ICollection<OrchestrationSchemaSource> sources, CancellationToken cancellationToken)
     {
         if (_metadataDescriptorRepository is null)
         {
@@ -130,17 +129,16 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         var descriptors = (await _metadataDescriptorRepository.GetAllDescriptors(cancellationToken))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .ToArray();
-        if (descriptors.Length == 0)
-        {
-            return;
-        }
 
-        AddSource(sources, new OrchestrationSchemaSource
+        foreach (var descriptor in descriptors)
         {
-            Alias = "metadata",
-            SourceKind = OrchestrationSchemaContextSourceKind.Metadata,
-            SchemaBinding = CreateMetadataSchemaBinding(descriptors)
-        });
+            AddSource(sources, new OrchestrationSchemaSource
+            {
+                Alias = SanitizeAlias(descriptor.Key),
+                SourceKind = OrchestrationSchemaContextSourceKind.Metadata,
+                SchemaBinding = CreateMetadataSchemaBinding(descriptor)
+            });
+        }
     }
 
     private static void AddTriggerSources(OrchestrationVersion version, ICollection<OrchestrationSchemaSource> sources)
@@ -265,31 +263,20 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             SchemaBinding = GetRequestSchemaBinding(task)
         };
 
-    private static SchemaBinding CreateMetadataSchemaBinding(IReadOnlyCollection<MetadataDescriptor> descriptors)
+    private static SchemaBinding CreateMetadataSchemaBinding(MetadataDescriptor descriptor)
     {
-        var properties = new JsonObject();
-        foreach (var descriptor in descriptors)
+        if (string.IsNullOrWhiteSpace(descriptor.SchemaJson))
         {
-            properties[descriptor.Key] = JsonNode.Parse(descriptor.SchemaJson)
-                ?? throw new InvalidOperationException($"Metadata descriptor '{descriptor.Key}' does not contain a valid schema snapshot.");
+            throw new InvalidOperationException($"Metadata descriptor '{descriptor.Key}' does not contain a valid schema snapshot.");
         }
-
-        var schema = new JsonObject
-        {
-            ["type"] = "object",
-            ["additionalProperties"] = true,
-            ["properties"] = properties
-        };
-        var schemaJson = schema.ToJsonString();
-        var contentHash = BuildMetadataContentHash(descriptors);
 
         return new SchemaBinding
         {
             Id = Id.New(),
             ElementType = ElementType.Orchestration,
             ElementId = Id.New(),
-            ContractId = Id.New(),
-            ContractKey = "metadata",
+            ContractId = descriptor.Id,
+            ContractKey = descriptor.Key,
             ContractVersion = new SemanticVersion(0, 0, 0),
             RegistryProviderId = Id.New(),
             RegistryProviderKey = "control-plane",
@@ -301,31 +288,17 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
                 ContractKind = SchemaContractKind.Unspecified,
                 RegistryProviderId = "control-plane",
                 RegistryProviderKey = "control-plane",
-                ContractId = "metadata",
-                ContractKey = "metadata",
+                ContractId = descriptor.Id.ToString(),
+                ContractKey = descriptor.Key,
                 ContractVersion = "0.0.0",
                 SchemaFormat = "JsonSchema",
-                SchemaJson = schemaJson,
-                ContentHash = contentHash,
-                SourceArtifactId = string.Empty,
+                SchemaJson = descriptor.SchemaJson,
+                ContentHash = descriptor.ContentHash,
+                SourceArtifactId = descriptor.Id.ToString(),
                 ResolvedBy = "ControlPlane.MetadataDescriptors",
                 ResolvedAtUtc = DateTimeOffset.UtcNow
             }
         };
-    }
-
-    private static string BuildMetadataContentHash(IEnumerable<MetadataDescriptor> descriptors)
-    {
-        var builder = new StringBuilder();
-        foreach (var descriptor in descriptors.OrderBy(x => x.Key, StringComparer.Ordinal))
-        {
-            builder.Append(descriptor.Key).Append('|');
-            builder.Append(descriptor.ContentHash).Append('|');
-            builder.Append(descriptor.SchemaJson).AppendLine();
-        }
-
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static SchemaBinding GetRequestSchemaBinding(TaskDefinition task)

@@ -39,7 +39,7 @@ public sealed class ButterMorphSourceGraphBuilderTests
         Assert.Contains("responses", sources.Keys);
         Assert.Contains("stages", sources.Keys);
         Assert.Contains("variables", sources.Keys);
-        Assert.Contains("metadata", sources.Keys);
+        Assert.DoesNotContain("metadata", sources.Keys);
         Assert.DoesNotContain("trigger", sources.Keys);
     }
 
@@ -80,6 +80,27 @@ public sealed class ButterMorphSourceGraphBuilderTests
         Assert.Contains("responses", sources.Keys);
         Assert.Contains("stages", sources.Keys);
         Assert.Contains("variables", sources.Keys);
-        Assert.Contains("metadata", sources.Keys);
+        Assert.Contains("audit", sources.Keys);
+        Assert.Contains("security", sources.Keys);
+        Assert.DoesNotContain("metadata", sources.Keys);
+    }
+
+    [Fact]
+    public void Build_WhenMetadataAliasConflictsWithBuiltInSource_KeepsBothSources()
+    {
+        var builder = new ButterMorphSourceGraphBuilder(new ButterMorphAliasNameFormatter());
+        var context = new OrchestrationPayloadContext
+        {
+            ContextPayload = JsonNode.Parse("""{"trigger": {"payload": {"saleId":"sale-1"}}}""")!,
+            TriggerPayload = JsonNode.Parse("""{"saleId":"sale-1"}""")!,
+            MetadataPayload = JsonNode.Parse("""{"trigger":{"userId":"mario"}}""")!,
+            StageKey = "inventory-reservation",
+            TaskKey = "inventories.reserve"
+        };
+
+        var sources = builder.Build(context);
+
+        Assert.Contains("trigger", sources.Keys);
+        Assert.Contains("trigger_2", sources.Keys);
     }
 }
