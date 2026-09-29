@@ -9,6 +9,7 @@ using global::ButterMorph.SchemaDesign;
 using global::ButterMorph.Web.Razor;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Navigation;
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
@@ -29,6 +30,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configureOptions));
         }
 
+        services.AddOrchestratorWebUIShell();
         services.Configure(configureOptions);
         services.AddButterMorph();
         services.AddButterMorphJsonSchema();
@@ -59,6 +61,12 @@ public static class ServiceCollectionExtensions
         public void Configure(RazorPagesOptions options)
         {
             var prefix = NormalizePrefix(_options.RoutePrefix);
+            var rootPrefix = GetRootPrefix(prefix);
+
+            if (!string.IsNullOrWhiteSpace(rootPrefix))
+            {
+                options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Index", rootPrefix);
+            }
 
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Index", prefix);
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Orchestrations/Index", $"{prefix}/orchestrations");
@@ -73,15 +81,26 @@ public static class ServiceCollectionExtensions
         {
             if (string.IsNullOrWhiteSpace(routePrefix))
             {
-                return "orchestrator-design";
+                return "admin/design";
             }
 
             var normalized = routePrefix.Trim();
             normalized = normalized.Trim('/');
 
             return string.IsNullOrWhiteSpace(normalized)
-                ? "orchestrator-design"
+                ? "admin/design"
                 : normalized;
+        }
+
+        private static string GetRootPrefix(string routePrefix)
+        {
+            var segments = routePrefix.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 2 || !string.Equals(segments[^1], "design", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return string.Join('/', segments.Take(segments.Length - 1));
         }
     }
 }

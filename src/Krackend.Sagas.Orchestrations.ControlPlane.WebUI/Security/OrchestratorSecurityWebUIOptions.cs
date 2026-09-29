@@ -8,5 +8,5 @@ public sealed class OrchestratorSecurityWebUIOptions
     /// <summary>
     /// Gets or sets route prefix.
     /// </summary>
-    public string RoutePrefix { get; set; } = "orchestrator-security";
+    public string RoutePrefix { get; set; } = "admin/security";
 }

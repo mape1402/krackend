@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Navigation;
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution;
@@ -14,6 +15,7 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddOrchestratorDistributionWebUI(this IServiceCollection services, Action<OrchestratorDistributionWebUIOptions> configureOptions)
     {
+        services.AddOrchestratorWebUIShell();
         services.Configure(configureOptions);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureDistributionAreaRoutes>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, DistributionNavigationContributor>());
@@ -31,9 +33,10 @@ public static class ServiceCollectionExtensions
 
         public void Configure(RazorPagesOptions options)
         {
-            var prefix = string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "orchestrator-distribution" : _options.RoutePrefix.Trim('/');
+            var prefix = string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "admin/distribution" : _options.RoutePrefix.Trim('/');
+            options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Index", prefix);
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Environments/Index", $"{prefix}/environments");
-            options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/RuntimeNodes/Index", prefix);
+            options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/RuntimeNodes/Index", $"{prefix}/runtime-nodes");
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/ArtifactReleases/Index", $"{prefix}/artifacts");
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Promotions/Index", $"{prefix}/releases");
         }

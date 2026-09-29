@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 
 namespace Krackend.Sagas.Orchestrations.WebUI.Shell;
@@ -34,7 +36,19 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<OrchestratorNavigationRegistry>();
         services.TryAddSingleton<IOrchestratorThemeCssRenderer, DefaultOrchestratorThemeCssRenderer>();
+        services.TryAddScoped<IOrchestratorThemeModeAccessor, DefaultOrchestratorThemeModeAccessor>();
+        services.AddHttpContextAccessor();
+        services.AddOptions<OrchestratorThemeModeCookieOptions>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureShellAreaRoutes>());
         services.Configure(configureTheme);
         return services;
+    }
+
+    private sealed class ConfigureShellAreaRoutes : IConfigureOptions<RazorPagesOptions>
+    {
+        public void Configure(RazorPagesOptions options)
+        {
+            options.Conventions.AddAreaPageRoute("OrchestratorShell", "/Theme", "_orchestrator/theme-mode");
+        }
     }
 }

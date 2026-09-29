@@ -263,6 +263,47 @@ body {
     text-overflow: ellipsis;
 }
 
+.topbar-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+}
+
+.theme-mode-form {
+    margin: 0;
+}
+
+.theme-mode-label {
+    color: var(--topbar-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.theme-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--topbar-border);
+    border-radius: var(--radius-sm);
+    background: var(--krackend-subtle-bg, #f8f9ff);
+    color: var(--topbar-muted);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.theme-mode-toggle:hover,
+.theme-mode-toggle:focus-visible {
+    background: var(--krackend-primary, #4856d7);
+    border-color: var(--krackend-primary, #4856d7);
+    color: #ffffff;
+}
+
 .hamburger-btn {
     display: inline-flex;
     align-items: center;
