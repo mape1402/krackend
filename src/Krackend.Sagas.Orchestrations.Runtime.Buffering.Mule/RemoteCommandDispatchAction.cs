@@ -60,6 +60,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             try
             {
+                await PersistCommandMetadataAsync(command, cancellationToken);
+
                 var executor = _serviceProvider.GetKeyedService<IRemoteCommandExecutor>(command.RemoteCommandTransport)
                     ?? throw new RemoteCommandConfigurationException($"No remote command executor is configured for '{command.RemoteCommandTransport}'.");
 
@@ -101,6 +103,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     throw;
                 }
             }
+        }
+
+        private async Task PersistCommandMetadataAsync(RemoteCommand command, CancellationToken cancellationToken)
+        {
+            if (!HasRuntimeDispatchState(command))
+            {
+                return;
+            }
+
+            var metadata = RemoteCommandMetadataBuilder.Build(command.MessageMetadata, command.PropagationMetadata);
+            if (metadata.Count == 0)
+            {
+                return;
+            }
+
+            var dispatch = await _dispatchRepository.GetById(ParseId(command.DispatchId), cancellationToken);
+            dispatch.Metadata = metadata;
+            await _dispatchRepository.Update(dispatch, cancellationToken);
         }
 
         private async Task MarkReadyForCallbackAsync(

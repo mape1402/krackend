@@ -112,7 +112,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         private static OrchestrationTriggerMetadata GetTriggerMetadata(OrchestrationPropagationMetadata propagationMetadata)
         {
             if (propagationMetadata?.Items is null ||
-                !propagationMetadata.Items.TryGetValue(OrchestrationMetadataConstants.TriggerMetadataKey, out var payload))
+                (!propagationMetadata.Items.TryGetValue(OrchestrationMetadataConstants.TriggerMetadataKey, out var payload) &&
+                 !propagationMetadata.Items.TryGetValue(OrchestrationMetadataConstants.LegacyTriggerMetadataKey, out payload)))
             {
                 return new OrchestrationTriggerMetadata();
             }

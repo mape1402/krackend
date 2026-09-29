@@ -71,12 +71,13 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     [Theory]
     [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor")]
     [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor")]
-    public async Task PublishInterceptorsAttachPropagationMetadataAsEnvelopeAndIndividualItems(string assemblyName, string typeName)
+    public async Task PublishInterceptorsAttachPropagationMetadataAsIndividualItemsOnly(string assemblyName, string typeName)
     {
         var propagationMetadata = new OrchestrationPropagationMetadata
         {
             Items =
             {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse("""{"CorrelationId":"corr-1"}"""),
                 ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1","attempt":2}"""),
                 ["security.context"] = JsonNode.Parse("""{"tenant":"north"}""")
             }
@@ -93,9 +94,9 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         await interceptor.Intercept(context, CancellationToken.None);
 
         var metadata = GetPublishMetadata(context);
-        var envelope = Assert.IsType<OrchestrationPropagationMetadata>(
-            metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey]);
-        Assert.Equal("req-1", envelope.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.False(metadata.ContainsKey(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey));
+        Assert.Equal("corr-1", ((JsonNode)metadata[OrchestrationMetadataConstants.TriggerMetadataKey])!["CorrelationId"]!.GetValue<string>());
+        Assert.Equal("req-1", ((JsonNode)metadata["audit.context"])!["requestId"]!.GetValue<string>());
         Assert.Equal("north", ((JsonNode)metadata["security.context"])!["tenant"]!.GetValue<string>());
     }
 

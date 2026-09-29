@@ -54,13 +54,21 @@ public sealed class DefaultOrchestrationPayloadContextFactory : IOrchestrationPa
         {
             foreach (var item in metadata.Items)
             {
+                if (string.Equals(item.Key, OrchestrationMetadataConstants.LegacyTriggerMetadataKey, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 payload[item.Key] = item.Value?.DeepClone();
             }
         }
 
         if (!payload.ContainsKey(OrchestrationMetadataConstants.TriggerMetadataKey))
         {
-            payload[OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata().ToJson();
+            payload[OrchestrationMetadataConstants.TriggerMetadataKey] =
+                TryResolveMetadataItem(metadata?.Items, OrchestrationMetadataConstants.LegacyTriggerMetadataKey, out var legacyTrigger)
+                    ? legacyTrigger?.DeepClone()
+                    : new OrchestrationTriggerMetadata().ToJson();
         }
 
         foreach (var descriptor in descriptors ?? [])

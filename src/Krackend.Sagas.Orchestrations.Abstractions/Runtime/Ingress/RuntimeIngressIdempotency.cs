@@ -54,7 +54,8 @@ public static class RuntimeIngressIdempotency
     private static OrchestrationTriggerMetadata GetTriggerMetadata(RuntimeIngressEnvelope envelope)
     {
         if (envelope.Metadata is null ||
-            !envelope.Metadata.TryGetValue(OrchestrationMetadataConstants.TriggerMetadataKey, out var payload))
+            (!envelope.Metadata.TryGetValue(OrchestrationMetadataConstants.TriggerMetadataKey, out var payload) &&
+             !envelope.Metadata.TryGetValue(OrchestrationMetadataConstants.LegacyTriggerMetadataKey, out payload)))
         {
             return new OrchestrationTriggerMetadata();
         }

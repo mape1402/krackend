@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 
@@ -176,6 +177,36 @@ public sealed class RuntimeDiagnosticsReaderTests
         Assert.Contains("\"elapsed\": 123", attempt.Metadata);
         Assert.Contains("\"provider\": \"pigeon\"", attempt.Dispatch.Metadata);
         Assert.Contains("\"reason\": \"rollback\"", Assert.Single(detail.Compensations).Metadata);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenDispatchMetadataIsEmpty_ReconstructsOrchestrationMetadata()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] =
+                    JsonNode.Parse("""{"correlationId":"corr-123","traceId":"trace-123"}""")!,
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-123"}""")!
+            }
+        };
+        store.Instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonSerializer.SerializeToNode(propagationMetadata, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var dispatchMetadata = Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch.Metadata;
+        Assert.Contains(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey, dispatchMetadata);
+        Assert.DoesNotContain(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey, dispatchMetadata);
+        Assert.Contains(OrchestrationMetadataConstants.TriggerMetadataKey, dispatchMetadata);
+        Assert.Contains("\"traceId\": \"trace-123\"", dispatchMetadata);
+        Assert.Contains("\"audit.context\"", dispatchMetadata);
+        Assert.Contains("\"requestId\": \"req-123\"", dispatchMetadata);
+        Assert.Contains("\"currentStage\": \"reserve-stock\"", dispatchMetadata);
+        Assert.Contains("\"attempt\": 1", dispatchMetadata);
     }
 
     [Theory]

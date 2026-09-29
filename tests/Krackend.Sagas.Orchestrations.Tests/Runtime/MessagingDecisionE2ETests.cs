@@ -81,12 +81,31 @@ public sealed class MessagingDecisionE2ETests
         var firstCommand = harness.Dispatcher.Commands.Single();
         Assert.Equal("req-runtime-1", firstCommand.PropagationMetadata!.Items["audit.context"]!["requestId"]!.GetValue<string>());
         Assert.Equal("north", firstCommand.PropagationMetadata.Items["security.context"]!["tenant"]!.GetValue<string>());
+        var firstDispatch = await harness
+            .GetRequiredService<ITaskDispatchRepository>()
+            .GetById(IdFrom(firstCommand.DispatchId));
+        Assert.Equal(
+            "req-runtime-1",
+            firstDispatch.Metadata["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Equal(
+            "north",
+            firstDispatch.Metadata["security.context"]!["tenant"]!.GetValue<string>());
+        Assert.Equal(
+            "correlation-propagation",
+            firstDispatch.Metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]!
+                ["correlationId"]!.GetValue<string>());
 
         await harness.ForwardAsync(firstCommand, BusinessPayload("response-one"), Success("service-a", "operation-a"));
 
         var secondCommand = harness.Dispatcher.Commands[1];
         Assert.Equal("req-runtime-1", secondCommand.PropagationMetadata!.Items["audit.context"]!["requestId"]!.GetValue<string>());
         Assert.Equal("north", secondCommand.PropagationMetadata.Items["security.context"]!["tenant"]!.GetValue<string>());
+        var secondDispatch = await harness
+            .GetRequiredService<ITaskDispatchRepository>()
+            .GetById(IdFrom(secondCommand.DispatchId));
+        Assert.Equal(
+            "req-runtime-1",
+            secondDispatch.Metadata["audit.context"]!["requestId"]!.GetValue<string>());
 
         var instance = await harness.GetInstanceAsync(firstCommand);
         var storedPropagation = instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey];
@@ -192,6 +211,13 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(2, harness.Dispatcher.Commands.Count);
         var retryCommand = harness.Dispatcher.Commands[1];
         Assert.Equal(2, retryCommand.MessageMetadata.Attempt);
+        var retryDispatch = await harness
+            .GetRequiredService<ITaskDispatchRepository>()
+            .GetById(IdFrom(retryCommand.DispatchId));
+        Assert.Equal(
+            2,
+            retryDispatch.Metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]!
+                ["attempt"]!.GetValue<int>());
 
         await harness.ForwardAsync(retryCommand, BusinessPayload("retry-response"), Success());
 

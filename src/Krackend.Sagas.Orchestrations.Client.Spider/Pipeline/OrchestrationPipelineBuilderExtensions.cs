@@ -530,7 +530,7 @@ public static class OrchestrationPipelineBuilderExtensions
         foreach (var item in inbox.Entry.Metadata)
         {
             if (string.IsNullOrWhiteSpace(item.Key) ||
-                item.Key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal) ||
+                IsReservedPropagationMetadataKey(item.Key) ||
                 metadata.Items.ContainsKey(item.Key))
             {
                 continue;
@@ -544,6 +544,10 @@ public static class OrchestrationPipelineBuilderExtensions
             services.GetRequiredService<IOrchestrationPropagationMetadataSetter>().Set(metadata);
         }
     }
+
+    private static bool IsReservedPropagationMetadataKey(string key)
+        => !string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal) &&
+            key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal);
 
     private static JsonNode TryParseJson(string value)
     {
