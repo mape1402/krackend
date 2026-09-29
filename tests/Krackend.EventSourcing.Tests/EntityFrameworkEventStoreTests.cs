@@ -2,6 +2,7 @@ using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.DependencyInjection;
 using Krackend.EventSourcing.EntityFrameworkCore;
+using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +40,25 @@ public sealed class EntityFrameworkEventStoreTests
         Assert.Single(envelopes);
         Assert.Equal("OrderCreated", envelopes.Single().EventType);
         Assert.Equal(1, await dbContext.Set<EventStoreRecord>("orders").CountAsync());
+    }
+
+    [Fact]
+    public async Task AppendAsync_persists_custom_event_id_factory_values()
+    {
+        using var provider = BuildProvider(services =>
+        {
+            services.AddScoped<IEventIdFactory, CustomEventIdFactory>();
+        });
+        using var scope = provider.CreateScope();
+        var eventStore = scope.ServiceProvider.GetRequiredService<IEventStore>();
+
+        var envelopes = await eventStore.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var record = await dbContext.Set<EventStoreRecord>("orders").SingleAsync();
+        var envelope = Assert.Single(envelopes);
+        Assert.Equal("custom:orders:order-1:1", envelope.EventId);
+        Assert.Equal("custom:orders:order-1:1", record.EventId);
     }
 
     [Fact]
@@ -140,9 +160,11 @@ public sealed class EntityFrameworkEventStoreTests
         Assert.Equal("1.0.0", snapshot.StateSchemaVersion);
     }
 
-    private static ServiceProvider BuildProvider()
+    private static ServiceProvider BuildProvider(Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();
+
+        configureServices?.Invoke(services);
 
         services.AddDbContext<TestDbContext>(options =>
             options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
@@ -169,4 +191,10 @@ public sealed class EntityFrameworkEventStoreTests
 
     [EventSchema("OrderCreated")]
     private sealed record OrderCreated(string OrderId);
+
+    private sealed class CustomEventIdFactory : IEventIdFactory
+    {
+        public string Create(EventIdFactoryContext context)
+            => $"custom:{context.StreamName}:{context.StreamId}:{context.StreamVersion}";
+    }
 }

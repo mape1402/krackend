@@ -2,6 +2,7 @@ using Krackend.EventSourcing.Core;
 using Krackend.EventSourcing.Configuration;
 using Krackend.EventSourcing.Contracts;
 using Krackend.EventSourcing.DependencyInjection;
+using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Registry;
 using Krackend.EventSourcing.Streams;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +42,33 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
         var store = Assert.Single(stores.Values.Values);
         Assert.Equal("orders", store.Name);
         Assert.Equal("OrderEvents", store.TableName);
+    }
+
+    [Fact]
+    public void AddKrackendEventSourcing_registers_ulid_event_id_factory_by_default()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendEventSourcing();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        Assert.IsType<UlidEventIdFactory>(scope.ServiceProvider.GetRequiredService<IEventIdFactory>());
+    }
+
+    [Fact]
+    public void AddKrackendEventSourcing_keeps_host_event_id_factory_registration()
+    {
+        var services = new ServiceCollection();
+
+        services.AddScoped<IEventIdFactory, CustomEventIdFactory>();
+        services.AddKrackendEventSourcing();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        Assert.IsType<CustomEventIdFactory>(scope.ServiceProvider.GetRequiredService<IEventIdFactory>());
     }
 
     [Fact]
@@ -265,5 +293,10 @@ public sealed class EventSourcingServiceCollectionExtensionsTests
                 IsCreated = true
             };
         }
+    }
+
+    private sealed class CustomEventIdFactory : IEventIdFactory
+    {
+        public string Create(EventIdFactoryContext context) => "custom";
     }
 }

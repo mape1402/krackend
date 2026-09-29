@@ -37,7 +37,7 @@ public static class EventStoreEntityModelBuilderExtensions
     {
         entity.ToTable(store.TableName, store.Schema);
         entity.HasKey(x => x.EventId);
-        entity.Property(x => x.EventId).ValueGeneratedNever();
+        entity.Property(x => x.EventId).IsRequired().HasMaxLength(200).ValueGeneratedNever();
         entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
         entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
         entity.Property(x => x.StreamType).HasMaxLength(300);

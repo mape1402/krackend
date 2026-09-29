@@ -35,6 +35,45 @@ public sealed class InMemoryEventStoreTests
     }
 
     [Fact]
+    public async Task AppendAsync_uses_ulid_event_ids_by_default()
+    {
+        var store = CreateStore();
+
+        var envelopes = await store.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);
+
+        var envelope = Assert.Single(envelopes);
+        Assert.True(Ulid.TryParse(envelope.EventId, out _));
+    }
+
+    [Fact]
+    public async Task AppendAsync_uses_configured_event_id_factory()
+    {
+        var eventIdFactory = new RecordingEventIdFactory("custom-event-1");
+        var store = CreateStore(eventIdFactory: eventIdFactory);
+
+        var envelopes = await store.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]);
+
+        var envelope = Assert.Single(envelopes);
+        var context = Assert.Single(eventIdFactory.Contexts);
+        Assert.Equal("custom-event-1", envelope.EventId);
+        Assert.Equal("orders", context.StreamName);
+        Assert.Equal("order-1", context.StreamId);
+        Assert.Equal(1, context.StreamVersion);
+        Assert.Equal("OrderCreated", context.EventType);
+    }
+
+    [Fact]
+    public async Task AppendAsync_rejects_empty_event_id_factory_values()
+    {
+        var store = CreateStore(eventIdFactory: new RecordingEventIdFactory(" "));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.AppendAsync("orders", "order-1", 0, [new OrderCreated("order-1")]));
+
+        Assert.Contains(nameof(IEventIdFactory), exception.Message);
+    }
+
+    [Fact]
     public async Task AppendAsync_rejects_conflicting_expected_version()
     {
         var store = CreateStore();
@@ -199,7 +238,8 @@ public sealed class InMemoryEventStoreTests
 
     private static InMemoryEventStore CreateStore(
         EventEnvelopeOptions? options = null,
-        IServiceProvider? serviceProvider = null)
+        IServiceProvider? serviceProvider = null,
+        IEventIdFactory? eventIdFactory = null)
     {
         var registry = new EventTypeRegistry()
             .Register<OrderCreated>("OrderCreated")
@@ -213,7 +253,8 @@ public sealed class InMemoryEventStoreTests
             registry,
             serializer,
             collector,
-            serviceProvider?.GetService(typeof(IEventExecutionContext)) as IEventExecutionContext);
+            serviceProvider?.GetService(typeof(IEventExecutionContext)) as IEventExecutionContext,
+            eventIdFactory);
 
         return new InMemoryEventStore(factory);
     }
@@ -238,5 +279,23 @@ public sealed class InMemoryEventStoreTests
 
         public object? GetService(Type serviceType)
             => serviceType == typeof(IEventExecutionContext) ? _context : null;
+    }
+
+    private sealed class RecordingEventIdFactory : IEventIdFactory
+    {
+        private readonly string _eventId;
+
+        public RecordingEventIdFactory(string eventId)
+        {
+            _eventId = eventId;
+        }
+
+        public List<EventIdFactoryContext> Contexts { get; } = [];
+
+        public string Create(EventIdFactoryContext context)
+        {
+            Contexts.Add(context);
+            return _eventId;
+        }
     }
 }

@@ -8,7 +8,7 @@ public sealed class EventStoreRecord
     /// <summary>
     /// Gets or sets the event identifier.
     /// </summary>
-    public Guid EventId { get; set; }
+    public string EventId { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the logical stream name.

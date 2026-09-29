@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.0.0] - 2026-09-29
+
+- ### Added
+
+  - Added `IEventIdFactory` and `EventIdFactoryContext` to Event Sourcing so hosts can choose the identifier format used for persisted event envelopes.
+  - Added `UlidEventIdFactory` as the default Event Sourcing event id generator.
+  - Added Event Sourcing tests covering default ULID ids, host-provided event id factories, empty id rejection, and EF Core persistence of custom string ids across `net9.0` and `net10.0`.
+
+- ### Changed
+
+  - Changed Event Sourcing envelope `EventId` from `Guid` to `string` so event id type and format are host-owned instead of hardcoded by Krackend.
+  - Changed the EF Core event store record mapping to persist `EventId` as required text.
+  - Updated Event Sourcing testing helpers to generate ULID ids by default and expose string event ids consistently with runtime envelopes.
+
+------
+
 ## [v3.0.0] - 2026-09-29
 
 - ### Changed

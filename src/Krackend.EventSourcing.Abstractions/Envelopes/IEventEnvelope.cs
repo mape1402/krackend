@@ -10,7 +10,7 @@ public interface IEventEnvelope
     /// <summary>
     /// Gets the unique event identifier.
     /// </summary>
-    Guid EventId { get; }
+    string EventId { get; }
 
     /// <summary>
     /// Gets the logical store or stream group name.

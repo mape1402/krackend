@@ -76,6 +76,7 @@ dotnet add package Krackend.Sagas.Orchestrations.Security.Storage.EntityFramewor
 - state rehydration with reducers
 - snapshots of state
 - EF Core event store adapter
+- configurable event envelope ids through `IEventIdFactory`, with ULID ids by default
 - raw JSON event appends for centralized event stores
 - runtime diagnostics
 - Roslyn analyzers
@@ -92,6 +93,15 @@ services.AddKrackendEventSourcing(options =>
 
 services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateFactory>();
 services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
+```
+
+Event ids:
+
+`EventId` is stored as text. Krackend uses ULID ids by default, and hosts can replace the generator by registering `IEventIdFactory` before calling `AddKrackendEventSourcing`.
+
+```csharp
+services.AddScoped<IEventIdFactory, HostEventIdFactory>();
+services.AddKrackendEventSourcing();
 ```
 
 Usage:

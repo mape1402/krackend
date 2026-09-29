@@ -49,6 +49,7 @@ public static class EventSourcingServiceCollectionExtensions
         services.AddSingleton(stateSchemaRegistry);
         services.AddSingleton<IEventSerializer, SystemTextJsonEventSerializer>();
         services.AddSingleton<IEventStreamResolver, ConfiguredEventStreamResolver>();
+        services.TryAddScoped<IEventIdFactory, UlidEventIdFactory>();
         services.AddSingleton<ISnapshotStore, InMemorySnapshotStore>();
         services.AddSingleton<ISnapshotSerializer, SystemTextJsonSnapshotSerializer>();
         services.AddSingleton<ISnapshotStrategy, NeverSnapshotStrategy>();
