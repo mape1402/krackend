@@ -16,6 +16,8 @@ using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.
 /// </summary>
 public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaContextBuilder
 {
+    private const string TriggerMetadataSourceAlias = "Krackend_Sagas_Orchestrations_Trigger_Metadata";
+
     private static readonly string TriggerMetadataSchemaJson = CreateTriggerMetadataSchemaJson();
     private static readonly string TriggerMetadataContentHash = BuildContentHash(TriggerMetadataSchemaJson);
 
@@ -152,7 +154,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
     {
         AddSource(sources, new OrchestrationSchemaSource
         {
-            Alias = OrchestrationMetadataConstants.TriggerMetadataKey,
+            Alias = TriggerMetadataSourceAlias,
             SourceKind = OrchestrationSchemaContextSourceKind.TriggerMetadata,
             SchemaBinding = CreateTriggerMetadataSchemaBinding()
         });
