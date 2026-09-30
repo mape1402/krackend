@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.0.1] - 2026-09-30
+
+- ### Fixed
+
+  - Fixed Control Plane topic capture so broker topics are treated as external addresses and can use host/provider naming such as dashes, underscores, dots, and uppercase characters.
+  - Fixed orchestration key validation messages and UI pre-validation so design keys, metadata descriptors, domains, teams, environments, runtime nodes, and design nodes are no longer forced to lowercase.
+  - Added focused validator and WebUI PageModel coverage for event topics, task messaging topics, compensation topics, and internal orchestration keys.
+
+------
+
 ## [v4.0.0] - 2026-09-29
 
 - ### Added
