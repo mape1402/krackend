@@ -166,6 +166,10 @@ Krackend propagates transversal metadata through transport metadata so business 
 
 `Krackend.Sagas.Orchestrations.Trigger.Metadata` is the canonical trigger metadata entry. It carries values such as correlation id, trace id, event id, event type, idempotency key, aggregate type, and causation id. The runtime uses the trigger correlation id as the saga correlation id when it is available, and still accepts the legacy `trigger_metadata` key when reading older messages.
 
+Client consumers forward incoming propagation metadata when publishing follow-up messages. Non-reserved metadata entries such as `audit.context` and `security.context` are attached back to the outgoing transport metadata, and `Krackend.Sagas.Orchestrations.Trigger.Metadata` is forwarded as the canonical trigger context. Reserved Krackend metadata keys are not blindly forwarded.
+
+When a client publishes a new trigger through `TriggerAddress`, the outgoing trigger context is produced by `IOrchestrationTriggerMetadataAccessor`. Hosts that want to keep the incoming trigger context in that new trigger publication should have the accessor return that context; otherwise the new trigger publication can replace `Krackend.Sagas.Orchestrations.Trigger.Metadata` with an empty trigger metadata payload.
+
 Security model:
 
 Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates orchestration permissions.
