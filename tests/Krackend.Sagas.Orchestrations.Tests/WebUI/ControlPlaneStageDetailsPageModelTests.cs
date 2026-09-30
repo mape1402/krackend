@@ -768,7 +768,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
             DispatchType = TaskDispatchType.FireAndWaitCallback.ToString(),
             OnErrorPolicy = OnErrorPolicy.StopAndCompensate.ToString(),
             Notes = "critical",
-            MessagingTopic = "inventories.reserve",
+            MessagingTopic = "Inventories.Reserve-Request_v2",
             MessagingVersion = "2.1.0",
             HasMessagingSchemaValidation = true,
             MessagingSchemaContractKey = "ReserveInventory",
@@ -795,7 +795,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
             TimeoutReconcileRetryableErrorCodes = "TIMEOUT",
             HasCompensation = true,
             CompensationKind = TaskKind.Messaging.ToString(),
-            CompensationMessagingTopic = "inventories.release",
+            CompensationMessagingTopic = "Inventories.Release-Undo_v1",
             CompensationMessagingVersion = "1.2.3",
             HasCompensationMessagingSchemaValidation = true,
             CompensationMessagingSchemaContractKey = "ReleaseInventory",
@@ -821,7 +821,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Equal("inventories.reserve", captured.Key);
         Assert.Equal(OnErrorPolicy.StopAndCompensate, captured.OnErrorPolicy);
         var config = Assert.IsType<MessagingTaskConfiguration>(captured.Configuration);
-        Assert.Equal("inventories.reserve", config.Topic);
+        Assert.Equal("Inventories.Reserve-Request_v2", config.Topic);
         Assert.Equal(new SemanticVersion(2, 1, 0), config.Version);
         Assert.True(config.HasSchemaValidation);
         Assert.Equal("ReserveInventory", config.SchemaBinding!.ContractKey);
@@ -831,7 +831,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Equal(3, captured.RetryPolicy!.MaxRetries);
         Assert.Equal(["TEMP", "LOCKED"], captured.RetryPolicy.RetryableErrorCodes.ToArray());
         Assert.Equal(TimeoutBehavior.Reconcile, captured.TimeoutPolicy!.TimeoutBehavior);
-        Assert.Equal("inventories.release", Assert.IsType<MessagingTaskConfiguration>(captured.CompensationDefinition!.Configuration).Topic);
+        Assert.Equal("Inventories.Release-Undo_v1", Assert.IsType<MessagingTaskConfiguration>(captured.CompensationDefinition!.Configuration).Topic);
         Assert.True(captured.CompensationDefinition.HasExecutionCondition);
         Assert.True(captured.CompensationDefinition.HasTransformation);
         Assert.Equal(1, captured.CompensationDefinition.RetryPolicy!.MaxRetries);
@@ -1040,7 +1040,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
             ExecutionMode = TaskExecutionMode.Sequential.ToString(),
             DispatchType = TaskDispatchType.FireAndWaitCallback.ToString(),
             OnErrorPolicy = OnErrorPolicy.Stop.ToString(),
-            MessagingTopic = "payments.capture",
+            MessagingTopic = "Payments.Capture-Request_v1",
             MessagingVersion = "",
             HasCompensation = false,
             HasRetryPolicy = false,
@@ -1058,7 +1058,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Null(captured.TimeoutPolicy);
         Assert.Null(captured.CompensationDefinition);
         var config = Assert.IsType<MessagingTaskConfiguration>(captured.Configuration);
-        Assert.Equal("payments.capture", config.Topic);
+        Assert.Equal("Payments.Capture-Request_v1", config.Topic);
         Assert.Equal(new SemanticVersion(1, 0, 0), config.Version);
         Assert.False(config.HasSchemaValidation);
         Assert.False(config.HasRequestValidation);

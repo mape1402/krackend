@@ -653,7 +653,7 @@ public sealed class DetailsModel : PageModel
         public string StageId { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or underscore, starting with a letter.")]
+        [RegularExpression(@"^[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*$", ErrorMessage = "Use letters or numbers separated by dot or underscore, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]
@@ -667,7 +667,7 @@ public sealed class DetailsModel : PageModel
         public string TriggerId { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or underscore, starting with a letter.")]
+        [RegularExpression(@"^[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*$", ErrorMessage = "Use letters or numbers separated by dot or underscore, starting with a letter.")]
         public string Key { get; set; } = string.Empty;
 
         [Required]
@@ -676,7 +676,7 @@ public sealed class DetailsModel : PageModel
         public string Description { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+        [MaxLength(512)]
         public string EventTopic { get; set; } = string.Empty;
 
         [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]

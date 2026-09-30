@@ -27,7 +27,7 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHost : IButterMor
         """;
 
     private static readonly Regex KeyPattern = new(
-        "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+        "^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly IMetadataDescriptorRepository _repository;
@@ -126,7 +126,7 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHost : IButterMor
 
         if (!KeyPattern.IsMatch(key))
         {
-            return CreateSaveFailure("Metadata key must use lowercase segments separated only by underscores, starting with a letter.");
+            return CreateSaveFailure("Metadata key must use letters or numbers separated only by underscores, starting with a letter.");
         }
 
         var jsonSchema = BuildJsonSchema(definition, out var schemaError);

@@ -18,8 +18,8 @@ public sealed class UpsertMetadataDescriptorCommandValidator : AbstractValidator
         RuleFor(x => x.Key)
             .NotEmpty()
             .MaximumLength(128)
-            .Matches("^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
-            .WithMessage("Use lowercase segments separated only by underscores, starting with a letter.");
+            .Matches("^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$")
+            .WithMessage("Use letters or numbers separated only by underscores, starting with a letter.");
         RuleFor(x => x.SourceKey)
             .MaximumLength(256)
             .Must(value => string.IsNullOrWhiteSpace(value) || value.All(character => !char.IsControl(character)))

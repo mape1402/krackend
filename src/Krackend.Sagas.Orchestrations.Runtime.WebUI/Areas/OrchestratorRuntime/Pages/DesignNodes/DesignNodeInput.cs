@@ -17,7 +17,7 @@ public sealed class DesignNodeInput
     /// </summary>
     [Required(ErrorMessage = "Capture the design node key.")]
     [MaxLength(128)]
-    [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+    [RegularExpression(@"^[A-Za-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$", ErrorMessage = "Use letters or numbers separated by dot or dash, starting with a letter.")]
     [Display(Name = "Key")]
     public string Key { get; set; } = string.Empty;
 

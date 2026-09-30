@@ -241,7 +241,7 @@ public sealed class IndexModel : PageModel
         /// </summary>
         [Required]
         [MaxLength(128)]
-        [RegularExpression(@"^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or underscore, starting with a letter.")]
+        [RegularExpression(@"^[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*$", ErrorMessage = "Use letters or numbers separated by dot or underscore, starting with a letter.")]
         [Display(Name = "Key")]
         public string Key { get; set; } = string.Empty;
 
