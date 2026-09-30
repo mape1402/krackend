@@ -160,6 +160,12 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 - `Krackend.Sagas.Orchestrations.Security*` keeps authentication in the host and adds provider-agnostic orchestration authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
 
+Design validation:
+
+Orchestrator component keys are internal identifiers and use alphanumeric segments separated by dots or underscores, starting with a letter. They preserve the casing captured by the host/UI and are not normalized to lowercase by Krackend.
+
+Messaging topics are external broker addresses, not orchestrator keys. Event trigger topics, task command topics, and compensation topics are stored as captured after trimming and can follow the naming rules of the selected transport or provider, including dashes, underscores, dots, and uppercase characters.
+
 Orchestration metadata:
 
 Krackend propagates transversal metadata through transport metadata so business payloads stay focused on business data. Runtime command dispatches include `Krackend.Sagas.Orchestrations.Message.Metadata` for the current runtime backchannel and flat propagated entries such as `Krackend.Sagas.Orchestrations.Trigger.Metadata`, `audit.context`, and `security.context`. The runtime no longer duplicates propagated metadata inside the reserved `Krackend.Sagas.Orchestrations.Propagation.Metadata` envelope when publishing commands; that envelope is only understood as a legacy inbound shape for compatibility.
