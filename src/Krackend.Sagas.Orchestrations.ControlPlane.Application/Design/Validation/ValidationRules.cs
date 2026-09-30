@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 internal static class ValidationRules
 {
     private static readonly Regex OrchestratorKeyExpression = new(
-        "^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$",
+        "^[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -48,7 +48,7 @@ internal static class ValidationRules
     /// Determines whether the value is a valid orchestrator component key.
     /// </summary>
     /// <param name="value">Input value.</param>
-    /// <returns>True when the key uses lowercase alphanumeric segments separated only by dot or underscore.</returns>
+    /// <returns>True when the key uses alphanumeric segments separated only by dot or underscore.</returns>
     public static bool IsOrchestratorKey(string value)
     {
         return !string.IsNullOrWhiteSpace(value) &&

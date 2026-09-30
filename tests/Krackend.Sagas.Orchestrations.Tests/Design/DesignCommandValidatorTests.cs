@@ -76,14 +76,15 @@ public sealed class DesignCommandValidatorTests
         var update = new UpdateTriggerBindingCommandValidator();
         var channel = new EventTriggerChannel
         {
-            Topic = "events.sales.sale.created",
+            Topic = "Events.Sales-Sale_Created",
             Version = new SemanticVersion(1, 0, 0),
             HasValidation = true,
             Validation = DslValidation("$payload.saleId != null")
         };
 
-        Assert.True(create.Validate(new CreateTriggerBindingCommand(ValidId, "sales.sale.created", TriggerType.Event, channel, true, "")).IsValid);
-        Assert.True(update.Validate(new UpdateTriggerBindingCommand(ValidId, "sales.sale.created", TriggerType.Event, channel, true, "")).IsValid);
+        Assert.True(create.Validate(new CreateTriggerBindingCommand(ValidId, "Sales.Sale_Created", TriggerType.Event, channel, true, "")).IsValid);
+        Assert.True(update.Validate(new UpdateTriggerBindingCommand(ValidId, "Sales.Sale_Created", TriggerType.Event, channel, true, "")).IsValid);
+        Assert.False(create.Validate(new CreateTriggerBindingCommand(ValidId, "sales-sale-created", TriggerType.Event, channel, true, "")).IsValid);
         Assert.False(create.Validate(new CreateTriggerBindingCommand("bad", "", (TriggerType)999, null!, true, "")).IsValid);
         Assert.False(update.Validate(new UpdateTriggerBindingCommand("bad", "", (TriggerType)999, new EventTriggerChannel { Topic = "", HasValidation = true }, true, "")).IsValid);
         Assert.False(create.Validate(new CreateTriggerBindingCommand(ValidId, "sales.sale.created", TriggerType.Event, new EventTriggerChannel
@@ -106,6 +107,18 @@ public sealed class DesignCommandValidatorTests
                 Configuration = new UnsupportedValidationConfiguration()
             }
         }, true, "")).IsValid);
+    }
+
+    [Fact]
+    public void TaskValidatorsTreatMessagingTopicsAsExternalNames()
+    {
+        var create = new CreateTaskDefinitionCommandValidator();
+        var update = new UpdateTaskDefinitionCommandValidator();
+        var topic = "Commands.Inventory-Reserve_Request";
+
+        Assert.True(create.Validate(CreateTask(key: "Inventory.Reserve_Request", configuration: Messaging(topic))).IsValid);
+        Assert.True(update.Validate(UpdateTask(key: "Inventory.Reserve_Request", configuration: Messaging(topic))).IsValid);
+        Assert.False(create.Validate(CreateTask(key: "inventory-reserve", configuration: Messaging(topic))).IsValid);
     }
 
     public static IEnumerable<object[]> InvalidTaskCreateCommands()

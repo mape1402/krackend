@@ -201,7 +201,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         {
             Key = "sales.sale.created",
             TriggerType = TriggerType.Event.ToString(),
-            EventTopic = "events.sales.sale.created",
+            EventTopic = "Events.Sales-Sale_Created",
             EventVersion = "1.1.0",
             HasEventSchemaValidation = true,
             EventSchemaContractKey = "sales.sale.created",
@@ -527,7 +527,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var channel = command.TriggerChannel as EventTriggerChannel;
         return command.Key == "sales.sale.created" &&
                channel is not null &&
-               channel.Topic == "events.sales.sale.created" &&
+               channel.Topic == "Events.Sales-Sale_Created" &&
                channel.Version.ToString() == "1.1.0" &&
                channel.SchemaBinding is not null &&
                channel.SchemaBinding.RegistryProviderKey == "knowl";

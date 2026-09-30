@@ -231,8 +231,8 @@ else
 
         if (!key) {
             errors.push('Key is required.');
-        } else if (!/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(key)) {
-            errors.push('Key must use lowercase segments separated only by underscores, starting with a letter.');
+        } else if (!/^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*$/.test(key)) {
+            errors.push('Key must use letters or numbers separated only by underscores, starting with a letter.');
         }
 
         if (!name) {

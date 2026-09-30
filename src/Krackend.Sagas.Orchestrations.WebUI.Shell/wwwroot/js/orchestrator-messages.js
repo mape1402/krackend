@@ -237,8 +237,8 @@
             errors.push(`${label} must be ${maxLength} characters or fewer.`);
         }
 
-        if (field.dataset.orchestratorKey === 'true' && !/^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$/.test(value)) {
-            errors.push(`${label} must use lowercase segments separated by dot or underscore.`);
+        if (field.dataset.orchestratorKey === 'true' && !/^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(value)) {
+            errors.push(`${label} must use letters or numbers separated by dot, dash, or underscore.`);
         }
 
         if (field.dataset.orchestratorVersion === 'true' && !/^\d+\.\d+\.\d+$/.test(value)) {

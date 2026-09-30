@@ -25,7 +25,7 @@ public sealed class RuntimeNodeInput
     /// </summary>
     [Required]
     [MaxLength(128)]
-    [RegularExpression(@"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", ErrorMessage = "Use lowercase segments separated by dot or dash, starting with a letter.")]
+    [RegularExpression(@"^[A-Za-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$", ErrorMessage = "Use letters or numbers separated by dot or dash, starting with a letter.")]
     public string Code { get; set; } = string.Empty;
 
     /// <summary>
