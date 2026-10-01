@@ -1,9 +1,12 @@
 #nullable enable
 
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Security.Storage;
@@ -36,16 +39,36 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureDbContext);
 
-        if (configureStorage is not null)
+        var storageOptions = new ControlPlaneEntityFrameworkStorageOptions();
+        configureStorage?.Invoke(storageOptions);
+
+        services.Configure<ControlPlaneEntityFrameworkStorageOptions>(options =>
         {
-            services.Configure(configureStorage);
-        }
+            options.PersistDataProtectionKeysToStorage = storageOptions.PersistDataProtectionKeysToStorage;
+            options.DataProtectionApplicationName = storageOptions.DataProtectionApplicationName;
+            options.ConfigureDataProtection = storageOptions.ConfigureDataProtection;
+            options.ConfigureModel = storageOptions.ConfigureModel;
+        });
 
         services.AddDbContext<ControlPlaneDbContext>(options =>
         {
             configureDbContext(options);
             options.ReplaceService<IModelCacheKeyFactory, ControlPlaneEntityFrameworkModelCacheKeyFactory>();
         });
+        var dataProtection = services.AddDataProtection();
+        if (!string.IsNullOrWhiteSpace(storageOptions.DataProtectionApplicationName))
+        {
+            dataProtection.SetApplicationName(storageOptions.DataProtectionApplicationName.Trim());
+        }
+
+        if (storageOptions.PersistDataProtectionKeysToStorage)
+        {
+            services.TryAddSingleton<ControlPlaneDataProtectionKeyXmlRepository>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<KeyManagementOptions>, ControlPlaneDataProtectionKeyManagementOptionsSetup>());
+        }
+
+        storageOptions.ConfigureDataProtection?.Invoke(dataProtection);
+
         services.TryAddScoped<IControlPlaneUnitOfWork, EntityFrameworkControlPlaneUnitOfWork>();
         services.TryAddSingleton<ISieveProcessor, SieveProcessor>();
 

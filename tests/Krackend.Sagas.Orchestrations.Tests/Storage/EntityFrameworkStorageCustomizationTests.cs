@@ -1,12 +1,15 @@
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Security.Core;
 using Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Storage;
@@ -61,9 +64,79 @@ public sealed class EntityFrameworkStorageCustomizationTests
         Assert.Equal(512, GetMaxLength<KrackendSubject>(dbContext, nameof(KrackendSubject.DisplayName)));
     }
 
+    [Fact]
+    public void ControlPlaneStoragePersistsDistributionSecretProtectionKeysInDatabaseByDefault()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = $"control-plane-dp-{Guid.NewGuid():N}";
+        string protectedSecret;
+
+        using (var provider = CreateControlPlaneDistributionProvider(databaseName, databaseRoot))
+        {
+            protectedSecret = provider
+                .GetRequiredService<IControlPlaneRuntimeNodeSecretProtector>()
+                .Protect("runtime-secret");
+        }
+
+        using (var provider = CreateControlPlaneDistributionProvider(databaseName, databaseRoot))
+        {
+            var secret = provider
+                .GetRequiredService<IControlPlaneRuntimeNodeSecretProtector>()
+                .Unprotect(protectedSecret);
+
+            Assert.Equal("runtime-secret", secret);
+        }
+    }
+
+    [Fact]
+    public void RuntimeStoragePersistsDistributionSecretProtectionKeysInDatabaseByDefault()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = $"runtime-dp-{Guid.NewGuid():N}";
+        string protectedSecret;
+
+        using (var provider = CreateRuntimeDistributionProvider(databaseName, databaseRoot))
+        {
+            protectedSecret = provider
+                .GetRequiredService<IRuntimeDesignNodeSecretProtector>()
+                .Protect("design-secret");
+        }
+
+        using (var provider = CreateRuntimeDistributionProvider(databaseName, databaseRoot))
+        {
+            var secret = provider
+                .GetRequiredService<IRuntimeDesignNodeSecretProtector>()
+                .Unprotect(protectedSecret);
+
+            Assert.Equal("design-secret", secret);
+        }
+    }
+
     private static int? GetMaxLength<TEntity>(DbContext dbContext, string propertyName)
         where TEntity : class
     {
         return dbContext.Model.FindEntityType(typeof(TEntity))?.FindProperty(propertyName)?.GetMaxLength();
+    }
+
+    private static ServiceProvider CreateControlPlaneDistributionProvider(
+        string databaseName,
+        InMemoryDatabaseRoot databaseRoot)
+    {
+        var services = new ServiceCollection();
+        services.AddOrchestratorDistributionApplication();
+        services.AddOrchestratorControlPlaneStorageEntityFramework(
+            options => options.UseInMemoryDatabase(databaseName, databaseRoot));
+        return services.BuildServiceProvider();
+    }
+
+    private static ServiceProvider CreateRuntimeDistributionProvider(
+        string databaseName,
+        InMemoryDatabaseRoot databaseRoot)
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsRuntime();
+        services.AddOrchestratorRuntimeStorageEntityFramework(
+            options => options.UseInMemoryDatabase(databaseName, databaseRoot));
+        return services.BuildServiceProvider();
     }
 }

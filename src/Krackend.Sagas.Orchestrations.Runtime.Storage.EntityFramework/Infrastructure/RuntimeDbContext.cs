@@ -52,6 +52,8 @@ public sealed class RuntimeDbContext : DbContext
 
     public DbSet<RuntimeIngressConfiguration> RuntimeIngressConfigurations => Set<RuntimeIngressConfiguration>();
 
+    public DbSet<RuntimeDataProtectionKeyEntity> DataProtectionKeys => Set<RuntimeDataProtectionKeyEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("Runtime");
@@ -66,9 +68,19 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureVariables(modelBuilder);
         ConfigureCompensations(modelBuilder);
         ConfigureIngressConfigurations(modelBuilder);
+        ConfigureDataProtectionKeys(modelBuilder);
         modelBuilder.UseMuleModel();
         base.OnModelCreating(modelBuilder);
         storageOptions.ConfigureModel?.Invoke(modelBuilder);
+    }
+
+    private static void ConfigureDataProtectionKeys(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<RuntimeDataProtectionKeyEntity>();
+        builder.ToTable("DataProtectionKeys");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.FriendlyName).HasMaxLength(256);
+        builder.Property(x => x.Xml).IsRequired();
     }
 
     private static void ConfigureRuntimeDesignNodes(ModelBuilder modelBuilder)

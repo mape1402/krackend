@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -98,6 +99,26 @@ public sealed class AccessTokenProviderTests
     }
 
     [Fact]
+    public async Task DesignProviderExplainsMissingDataProtectionKeyBeforeCallingRuntime()
+    {
+        var provider = new RuntimeAccessTokenProvider(
+            new HttpClient(new RecordingHttpMessageHandler(_ =>
+                throw new InvalidOperationException("Runtime token endpoint should not be called."))),
+            new ThrowingControlPlaneRuntimeNodeSecretProtector(),
+            new DefaultConnectionScopeFormatter(),
+            new ConnectionTokenCacheKeyBuilder(),
+            CreateCache());
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://runtime.local/protected");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            provider.AttachTokenAsync(request, RuntimeNode(), [ArtifactDeliveryScope.ArtifactPush]));
+
+        Assert.Contains("credentials cannot be decrypted", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Re-import Runtime credentials", exception.Message, StringComparison.Ordinal);
+        Assert.IsType<CryptographicException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task RuntimeProviderRequestsDesignTokenOnceAndReusesCachedToken()
     {
         var calls = 0;
@@ -165,6 +186,26 @@ public sealed class AccessTokenProviderTests
             provider.AttachTokenAsync(request, ControlPlaneSource(), [ArtifactDeliveryScope.ReleaseRead]));
     }
 
+    [Fact]
+    public async Task RuntimeProviderExplainsMissingDataProtectionKeyBeforeCallingDesign()
+    {
+        var provider = new ControlPlaneAccessTokenProvider(
+            new HttpClient(new RecordingHttpMessageHandler(_ =>
+                throw new InvalidOperationException("Design token endpoint should not be called."))),
+            new ThrowingRuntimeDesignNodeSecretProtector(),
+            new DefaultConnectionScopeFormatter(),
+            new ConnectionTokenCacheKeyBuilder(),
+            CreateCache());
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://design.local/protected");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            provider.AttachTokenAsync(request, ControlPlaneSource(), [ArtifactDeliveryScope.ReleaseRead]));
+
+        Assert.Contains("credentials cannot be decrypted", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Re-import Design credentials", exception.Message, StringComparison.Ordinal);
+        Assert.IsType<CryptographicException>(exception.InnerException);
+    }
+
     private static MemoryDistributedCache CreateCache()
         => new(Options.Create(new MemoryDistributedCacheOptions()));
 
@@ -217,10 +258,26 @@ public sealed class AccessTokenProviderTests
         public string Unprotect(string protectedSecret) => protectedSecret;
     }
 
+    private sealed class ThrowingControlPlaneRuntimeNodeSecretProtector : IControlPlaneRuntimeNodeSecretProtector
+    {
+        public string Protect(string secret) => secret;
+
+        public string Unprotect(string protectedSecret)
+            => throw new CryptographicException("The key was not found in the key ring.");
+    }
+
     private sealed class EchoRuntimeDesignNodeSecretProtector : IRuntimeDesignNodeSecretProtector
     {
         public string Protect(string secret) => secret;
 
         public string Unprotect(string protectedSecret) => protectedSecret;
+    }
+
+    private sealed class ThrowingRuntimeDesignNodeSecretProtector : IRuntimeDesignNodeSecretProtector
+    {
+        public string Protect(string secret) => secret;
+
+        public string Unprotect(string protectedSecret)
+            => throw new CryptographicException("The key was not found in the key ring.");
     }
 }

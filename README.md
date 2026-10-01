@@ -233,6 +233,28 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
 
 The same pattern is available for Control Plane and Security storage. The sample hosts keep their SQL Server-specific model customization beside their migrations so another host can choose a different EF Core provider without changing Krackend packages.
 
+Distribution credential protection:
+
+Control Plane runtime-node credentials and Runtime design-node credentials are durable records. The Entity Framework storage adapters therefore persist the ASP.NET Core Data Protection key ring in the same storage model by default, under `Distribution.DataProtectionKeys` for Control Plane and `Runtime.DataProtectionKeys` for Runtime. This keeps protected distribution credentials decryptable across restarts, rollouts, and multiple replicas.
+
+Hosts can keep the default database-backed key ring, set a stable Data Protection application name, or replace/harden key storage through the storage options:
+
+```csharp
+builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
+    db => db.UseSqlServer(builder.Configuration.GetConnectionString("Runtime")),
+    storage =>
+    {
+        storage.DataProtectionApplicationName = "krackend-runtime-prod";
+        storage.ConfigureDataProtection = dataProtection =>
+        {
+            // Optional host-owned Data Protection hardening such as a certificate
+            // or another persistent key repository.
+        };
+    });
+```
+
+The same options are available on `AddOrchestratorControlPlaneStorageEntityFramework`. If a host disables database key persistence or replaces it with another repository, that repository must be durable and shared by every replica that needs to decrypt existing distribution credentials. Credentials protected with a key that has already been lost cannot be recovered and must be reimported or regenerated.
+
 MongoDB sample hosts are included to validate that provider choice belongs to the host:
 
 ```csharp

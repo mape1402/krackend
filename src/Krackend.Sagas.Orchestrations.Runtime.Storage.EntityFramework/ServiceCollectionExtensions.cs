@@ -8,10 +8,13 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 
@@ -32,16 +35,36 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureDbContext);
 
-        if (configureStorage is not null)
+        var storageOptions = new RuntimeEntityFrameworkStorageOptions();
+        configureStorage?.Invoke(storageOptions);
+
+        services.Configure<RuntimeEntityFrameworkStorageOptions>(options =>
         {
-            services.Configure(configureStorage);
-        }
+            options.PersistDataProtectionKeysToStorage = storageOptions.PersistDataProtectionKeysToStorage;
+            options.DataProtectionApplicationName = storageOptions.DataProtectionApplicationName;
+            options.ConfigureDataProtection = storageOptions.ConfigureDataProtection;
+            options.ConfigureModel = storageOptions.ConfigureModel;
+        });
 
         services.AddDbContext<RuntimeDbContext>(options =>
         {
             configureDbContext(options);
             options.ReplaceService<IModelCacheKeyFactory, RuntimeEntityFrameworkModelCacheKeyFactory>();
         });
+        var dataProtection = services.AddDataProtection();
+        if (!string.IsNullOrWhiteSpace(storageOptions.DataProtectionApplicationName))
+        {
+            dataProtection.SetApplicationName(storageOptions.DataProtectionApplicationName.Trim());
+        }
+
+        if (storageOptions.PersistDataProtectionKeysToStorage)
+        {
+            services.TryAddSingleton<RuntimeDataProtectionKeyXmlRepository>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<KeyManagementOptions>, RuntimeDataProtectionKeyManagementOptionsSetup>());
+        }
+
+        storageOptions.ConfigureDataProtection?.Invoke(dataProtection);
+
         services.Replace(ServiceDescriptor.Scoped<IRuntimeStorageUnitOfWork, RuntimeStorageUnitOfWork>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeDesignNodeRepository, RuntimeDesignNodeRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>());
