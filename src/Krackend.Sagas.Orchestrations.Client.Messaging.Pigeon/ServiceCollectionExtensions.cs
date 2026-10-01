@@ -35,6 +35,16 @@ public static class ServiceCollectionExtensions
         this KrackendOrchestrationsClientBuilder builder,
         IConfiguration configuration,
         Action<GlobalSettingsBuilder> configure)
+        => builder.AddPigeon(configuration, configure, _ => { });
+
+    /// <summary>
+    /// Adds Pigeon orchestration client publishing and configures Pigeon with application settings.
+    /// </summary>
+    public static KrackendOrchestrationsClientBuilder AddPigeon(
+        this KrackendOrchestrationsClientBuilder builder,
+        IConfiguration configuration,
+        Action<GlobalSettingsBuilder> configure,
+        Action<IPigeonServiceBuilder> configurePigeon)
     {
         if (builder is null)
         {
@@ -51,8 +61,14 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configure));
         }
 
+        if (configurePigeon is null)
+        {
+            throw new ArgumentNullException(nameof(configurePigeon));
+        }
+
         RegisterPigeonClientServices(builder.Services);
-        builder.Services.AddPigeon(configuration, configure);
+        var pigeonBuilder = builder.Services.AddPigeon(configuration, configure);
+        configurePigeon(pigeonBuilder);
 
         return builder;
     }
