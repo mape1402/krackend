@@ -13,16 +13,19 @@ public static class EventStoreEntityModelBuilderExtensions
     /// </summary>
     public static ModelBuilder AddKrackendEventStore(
         this ModelBuilder modelBuilder,
-        EventStoreOptionsCollection stores)
+        EventStoreOptionsCollection stores,
+        Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
         ArgumentNullException.ThrowIfNull(stores);
+
+        options ??= new Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions();
 
         foreach (var store in stores.Values.Values)
         {
             modelBuilder.SharedTypeEntity<Krackend.EventSourcing.EntityFrameworkCore.EventStoreRecord>(
                 store.Name,
-                entity => ConfigureEntity(entity, store));
+                entity => ConfigureEntity(entity, store, options));
         }
 
         modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord>(ConfigureSnapshotEntity);
@@ -33,11 +36,20 @@ public static class EventStoreEntityModelBuilderExtensions
 
     private static void ConfigureEntity(
         EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.EventStoreRecord> entity,
-        EventStoreOptions store)
+        EventStoreOptions store,
+        Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions options)
     {
         entity.ToTable(store.TableName, store.Schema);
         entity.HasKey(x => x.EventId);
-        entity.Property(x => x.EventId).IsRequired().HasMaxLength(200).ValueGeneratedNever();
+        var eventIdProperty = entity.Property(x => x.EventId)
+            .IsRequired()
+            .ValueGeneratedNever();
+
+        if (options.EventIdPropertyConfigurator is null)
+            eventIdProperty.HasMaxLength(200);
+        else
+            options.EventIdPropertyConfigurator(eventIdProperty, store);
+
         entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
         entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
         entity.Property(x => x.StreamType).HasMaxLength(300);

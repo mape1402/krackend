@@ -6,6 +6,7 @@ using Krackend.EventSourcing.Envelopes;
 using Krackend.EventSourcing.Snapshots;
 using Krackend.EventSourcing.Stores;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Krackend.EventSourcing.Tests;
@@ -57,8 +58,50 @@ public sealed class EntityFrameworkEventStoreTests
         var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
         var record = await dbContext.Set<EventStoreRecord>("orders").SingleAsync();
         var envelope = Assert.Single(envelopes);
-        Assert.Equal("custom:orders:order-1:1", envelope.EventId);
-        Assert.Equal("custom:orders:order-1:1", record.EventId);
+        Assert.Equal(CustomEventIdFactory.EventId, envelope.EventId);
+        Assert.Equal(CustomEventIdFactory.EventId, record.EventId);
+    }
+
+    [Fact]
+    public void AddKrackendEntityFrameworkEventStore_uses_portable_text_event_id_mapping_by_default()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var eventId = dbContext.Model.FindEntityType("orders")!
+            .FindProperty(nameof(EventStoreRecord.EventId))!;
+
+        Assert.Null(eventId.FindAnnotation(RelationalAnnotationNames.ColumnType)?.Value);
+        Assert.Null(eventId.GetValueConverter());
+        Assert.Equal(200, eventId.GetMaxLength());
+    }
+
+    [Fact]
+    public void AddKrackendEntityFrameworkEventStore_allows_host_configured_event_id_binary_mapping()
+    {
+        using var provider = BuildProvider(configureEventStore: options =>
+        {
+            options.ConfigureEventIdProperty((property, _) =>
+            {
+                property.HasUlidBytesConversion("binary(16)");
+            });
+        });
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var eventId = dbContext.Model.FindEntityType("orders")!
+            .FindProperty(nameof(EventStoreRecord.EventId))!;
+
+        Assert.Equal("binary(16)", eventId.FindAnnotation(RelationalAnnotationNames.ColumnType)?.Value);
+        var converter = eventId.GetValueConverter();
+        Assert.NotNull(converter);
+        Assert.Equal("UlidEventIdToBytesConverter", converter.GetType().Name);
+        Assert.Equal(typeof(byte[]), converter.ProviderClrType);
+
+        var providerValue = Assert.IsType<byte[]>(converter.ConvertToProvider(BinaryEventId));
+        Assert.Equal(16, providerValue.Length);
+        Assert.Equal(BinaryEventId, converter.ConvertFromProvider(providerValue));
+        var exception = Assert.Throws<InvalidOperationException>(() => converter.ConvertToProvider("custom:orders:order-1:1"));
+        Assert.Contains("valid ULID", exception.Message);
     }
 
     [Fact]
@@ -160,7 +203,9 @@ public sealed class EntityFrameworkEventStoreTests
         Assert.Equal("1.0.0", snapshot.StateSchemaVersion);
     }
 
-    private static ServiceProvider BuildProvider(Action<IServiceCollection>? configureServices = null)
+    private static ServiceProvider BuildProvider(
+        Action<IServiceCollection>? configureServices = null,
+        Action<EntityFrameworkEventStoreOptions>? configureEventStore = null)
     {
         var services = new ServiceCollection();
 
@@ -176,7 +221,7 @@ public sealed class EntityFrameworkEventStoreTests
             options.Stores.Add("payments", store => store.TableName = "PaymentEvents");
         });
 
-        services.AddKrackendEntityFrameworkEventStore<TestDbContext>();
+        services.AddKrackendEntityFrameworkEventStore<TestDbContext>(configureEventStore);
 
         return services.BuildServiceProvider();
     }
@@ -194,7 +239,11 @@ public sealed class EntityFrameworkEventStoreTests
 
     private sealed class CustomEventIdFactory : IEventIdFactory
     {
+        public const string EventId = "custom:orders:order-1:1";
+
         public string Create(EventIdFactoryContext context)
-            => $"custom:{context.StreamName}:{context.StreamId}:{context.StreamVersion}";
+            => EventId;
     }
+
+    private const string BinaryEventId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 }

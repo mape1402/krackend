@@ -8,12 +8,14 @@ internal static class KrackendEventStoreDbContextOptionsBuilderExtensions
 {
     public static DbContextOptionsBuilder UseKrackendEventStoreModel(
         this DbContextOptionsBuilder optionsBuilder,
-        EventStoreOptionsCollection stores)
+        EventStoreOptionsCollection stores,
+        Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions options)
     {
         ArgumentNullException.ThrowIfNull(optionsBuilder);
         ArgumentNullException.ThrowIfNull(stores);
+        ArgumentNullException.ThrowIfNull(options);
 
-        var extension = new KrackendEventStoreOptionsExtension(stores);
+        var extension = new KrackendEventStoreOptionsExtension(stores, options);
         ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(extension);
         return optionsBuilder;
     }

@@ -18,6 +18,6 @@ internal sealed class KrackendEventStoreModelCustomizer : ModelCustomizer
             .FindExtension<KrackendEventStoreOptionsExtension>();
 
         if (extension is not null)
-            modelBuilder.AddKrackendEventStore(extension.Stores);
+            modelBuilder.AddKrackendEventStore(extension.Stores, extension.Options);
     }
 }
