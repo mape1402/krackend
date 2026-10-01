@@ -329,6 +329,32 @@ app.MapKrackendOrchestrationsRuntimeApi();
 app.MapOrchestratorRuntimeReactiveHub();
 ```
 
+Pigeon adapter configuration:
+
+Krackend keeps the regular Pigeon global settings callback and also exposes Pigeon's full `IPigeonServiceBuilder` so hosts can configure serializer options, custom serializers, route interceptors, or other Pigeon features without bypassing the Krackend adapter:
+
+```csharp
+using System.Text.Json;
+
+builder.Services
+    .AddKrackendOrchestrationsRuntime()
+    .AddPigeon(
+        builder.Configuration,
+        settings =>
+        {
+            settings.SetDomain("orders-runtime");
+        },
+        pigeon =>
+        {
+            pigeon.ConfigureJsonOptions(options =>
+            {
+                options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            });
+        });
+```
+
+The same full-builder overload is available for `Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon`.
+
 Minimal control-plane host setup:
 
 ```csharp

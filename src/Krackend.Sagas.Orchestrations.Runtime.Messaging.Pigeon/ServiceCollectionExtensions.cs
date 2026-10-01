@@ -35,6 +35,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             this KrackendOrchestrationsRuntimeBuilder builder,
             IConfiguration configuration,
             Action<GlobalSettingsBuilder> configure)
+            => builder.AddPigeon(configuration, configure, _ => { });
+
+        /// <summary>
+        /// Registers Pigeon as the runtime messaging ingress and dispatch adapter.
+        /// </summary>
+        /// <param name="builder">Runtime builder to extend.</param>
+        /// <param name="configuration">Configuration used by Pigeon.</param>
+        /// <param name="configure">Additional Pigeon global settings configuration.</param>
+        /// <param name="configurePigeon">Additional Pigeon service builder configuration.</param>
+        /// <returns>The same runtime builder for chained configuration.</returns>
+        public static KrackendOrchestrationsRuntimeBuilder AddPigeon(
+            this KrackendOrchestrationsRuntimeBuilder builder,
+            IConfiguration configuration,
+            Action<GlobalSettingsBuilder> configure,
+            Action<IPigeonServiceBuilder> configurePigeon)
         {
             if (builder is null)
             {
@@ -51,9 +66,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 throw new ArgumentNullException(nameof(configure));
             }
 
-            builder.Services.AddPigeon(configuration, configure)
+            if (configurePigeon is null)
+            {
+                throw new ArgumentNullException(nameof(configurePigeon));
+            }
+
+            var pigeonBuilder = builder.Services.AddPigeon(configuration, configure)
                 .AddConsumeInterceptor<KrackendConsumeInterceptor>()
                 .AddPublishInterceptor<KrackendPublishInterceptor>();
+            configurePigeon(pigeonBuilder);
+
             builder.Services.TryAddSingleton<IPigeonIngressConsumerRegistry, PigeonIngressConsumerRegistry>();
             builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingIngressAdapter, PigeonIngressAdapter>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingDispatchAdapter, PigeonDispatchAdapter>());

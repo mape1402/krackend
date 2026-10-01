@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.0.4] - 2026-10-01
+
+- ### Added
+
+  - Added Pigeon service builder callbacks to the Runtime and Client Pigeon adapters so hosts can configure the full Pigeon surface, including JSON serializer options such as `JsonSerializerOptions.PropertyNamingPolicy`.
+
+------
+
 ## [v4.0.3] - 2026-10-01
 
 - ### Added
