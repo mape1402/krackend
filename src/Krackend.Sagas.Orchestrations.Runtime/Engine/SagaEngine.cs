@@ -32,6 +32,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
             {
                 ArtifactId = intent.ArtifactId,
                 MessageMetadata = intent.MessageMetadata,
+                StartIdempotencyKey = intent.StartIdempotencyKey,
                 PropagationMetadata = intent.PropagationMetadata,
                 Payload = intent.Payload
             };

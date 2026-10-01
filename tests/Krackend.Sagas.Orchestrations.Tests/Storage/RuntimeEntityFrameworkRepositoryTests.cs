@@ -67,6 +67,10 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Equal("lease-1", (await instanceRepository.GetById(instance.Id)).ActiveLeaseId);
         await instanceRepository.ReleaseLease(instance.Id, "lease-1");
         Assert.Null((await instanceRepository.GetById(instance.Id)).ActiveLeaseId);
+        Assert.Equal(
+            instance.Id,
+            (await instanceRepository.TryGetByStartIdempotencyKey(instance.StartIdempotencyKey))!.Id);
+        Assert.Null(await instanceRepository.TryGetByStartIdempotencyKey("missing-start-key"));
 
         var inventoryStage = new StageExecution
         {
@@ -776,6 +780,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             Id = Id.New(),
             RuntimeOrchestrationArtifactId = artifactId,
             TriggerIntakeId = Id.New(),
+            StartIdempotencyKey = $"start:{Guid.NewGuid():N}",
             OrchestrationDefinitionKey = "sales.sale.created",
             CorrelationId = "correlation-ef",
             SagaId = "saga-ef",

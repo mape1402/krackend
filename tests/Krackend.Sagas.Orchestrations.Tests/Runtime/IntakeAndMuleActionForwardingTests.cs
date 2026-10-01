@@ -20,7 +20,9 @@ public sealed class IntakeAndMuleActionForwardingTests
         var engine = Substitute.For<ISagaEngine>();
         var action = new TriggerAction(engine);
         var workItem = WorkItem();
+        var deduplicationKey = Id.New().ToString();
         var context = Context("TriggerSaga", workItem);
+        context.Action.DeduplicationKey = deduplicationKey;
 
         await action.ExecuteAsync(context, CancellationToken.None);
 
@@ -28,6 +30,7 @@ public sealed class IntakeAndMuleActionForwardingTests
             Arg.Is<StartIntent>(intent =>
                 intent.ArtifactId == workItem.ArtifactId &&
                 intent.IngressTransport == workItem.IngressTransport &&
+                intent.StartIdempotencyKey == $"mule:TriggerSaga:{deduplicationKey}" &&
                 ReferenceEquals(intent.MessageMetadata, workItem.MessageMetadata) &&
                 intent.Payload!["saleId"]!.GetValue<string>() == "sale-1"),
             Arg.Any<CancellationToken>());

@@ -30,6 +30,20 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         => await DbContext.OrchestrationInstances.AsNoTracking().FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
             ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
 
+    public async Task<OrchestrationInstance> TryGetByStartIdempotencyKey(
+        string startIdempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(startIdempotencyKey))
+        {
+            return null;
+        }
+
+        var normalizedKey = startIdempotencyKey.Trim();
+        return await DbContext.OrchestrationInstances.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.StartIdempotencyKey == normalizedKey, cancellationToken);
+    }
+
     public async Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
     {
         var instance = await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)

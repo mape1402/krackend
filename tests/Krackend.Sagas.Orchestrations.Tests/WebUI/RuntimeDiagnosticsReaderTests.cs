@@ -590,6 +590,7 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default) => Task.FromResult(store.Instance);
+        public Task<OrchestrationInstance> TryGetByStartIdempotencyKey(string startIdempotencyKey, CancellationToken cancellationToken = default) => Task.FromResult<OrchestrationInstance>(null!);
         public Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>([store.Instance]);

@@ -29,5 +29,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         /// Gets or sets the runtime orchestration instance id.
         /// </summary>
         public string InstanceId { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether an existing promoted instance was reused.
+        /// </summary>
+        public bool AlreadyPromoted { get; set; }
     }
 }
