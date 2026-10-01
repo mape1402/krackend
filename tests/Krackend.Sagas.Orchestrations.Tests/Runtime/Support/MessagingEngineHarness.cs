@@ -68,7 +68,8 @@ internal sealed class MessagingEngineHarness : IDisposable
     public Task StartAsync(
         JsonNode payload,
         string? correlationId = null,
-        OrchestrationPropagationMetadata? propagationMetadata = null)
+        OrchestrationPropagationMetadata? propagationMetadata = null,
+        string? startIdempotencyKey = null)
         => Engine.StartOrchestrationAsync(new StartIntent
         {
             ArtifactId = ArtifactId.ToString(),
@@ -77,6 +78,7 @@ internal sealed class MessagingEngineHarness : IDisposable
             {
                 CorrelationId = correlationId
             },
+            StartIdempotencyKey = startIdempotencyKey,
             PropagationMetadata = propagationMetadata,
             Payload = payload
         });

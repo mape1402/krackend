@@ -186,6 +186,8 @@ Client consumers forward incoming propagation metadata when publishing follow-up
 
 When a client publishes a new trigger through `TriggerAddress`, the outgoing trigger context is produced by `IOrchestrationTriggerMetadataAccessor`. Hosts that want to keep the incoming trigger context in that new trigger publication should have the accessor return that context; otherwise the new trigger publication can replace `Krackend.Sagas.Orchestrations.Trigger.Metadata` with an empty trigger metadata payload.
 
+Runtime trigger promotion is idempotent when a stable start key is available. The Mule adapter maps the durable action deduplication key, or the durable action id when no deduplication key exists, into the runtime start idempotency key. The core runtime also falls back to the trigger metadata idempotency key. Retried trigger actions therefore continue the already-promoted `OrchestrationInstance` instead of creating a second saga instance after a partial start, timeout, or action re-execution. Hosts using Entity Framework runtime storage should apply a migration for the nullable `StartIdempotencyKey` column and its unique non-null index.
+
 Security model:
 
 Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates orchestration permissions.

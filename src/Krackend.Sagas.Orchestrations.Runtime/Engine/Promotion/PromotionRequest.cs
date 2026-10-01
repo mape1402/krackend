@@ -24,6 +24,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         public OrchestrationMessageMetadata MessageMetadata { get; set; }
 
         /// <summary>
+        /// Gets or sets the stable key used to make trigger promotion idempotent across durable action retries.
+        /// </summary>
+        public string StartIdempotencyKey { get; set; }
+
+        /// <summary>
         /// Gets or sets the propagation metadata received with the trigger.
         /// </summary>
         public OrchestrationPropagationMetadata PropagationMetadata { get; set; }

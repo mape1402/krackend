@@ -29,6 +29,11 @@ public sealed class OrchestrationInstance
     public Id TriggerIntakeId { get; set; }
 
     /// <summary>
+    /// Gets or sets the stable key used to make trigger promotion idempotent.
+    /// </summary>
+    public string StartIdempotencyKey { get; set; }
+
+    /// <summary>
     /// Gets or sets correlation id.
     /// </summary>
     public required string CorrelationId { get; set; }

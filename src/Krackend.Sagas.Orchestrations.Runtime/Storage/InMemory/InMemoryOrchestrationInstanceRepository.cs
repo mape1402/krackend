@@ -30,6 +30,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 ? instance
                 : throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found."));
 
+        public Task<OrchestrationInstance> TryGetByStartIdempotencyKey(
+            string startIdempotencyKey,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(startIdempotencyKey))
+            {
+                return Task.FromResult<OrchestrationInstance>(null);
+            }
+
+            var normalizedKey = startIdempotencyKey.Trim();
+            return Task.FromResult(_store.Instances.Values.FirstOrDefault(instance =>
+                string.Equals(instance.StartIdempotencyKey, normalizedKey, StringComparison.Ordinal)));
+        }
+
         public Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
         {
             var instance = _store.Instances[instanceId];

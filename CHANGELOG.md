@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   - Added Pigeon service builder callbacks to the Runtime and Client Pigeon adapters so hosts can configure the full Pigeon surface, including JSON serializer options such as `JsonSerializerOptions.PropertyNamingPolicy`.
 
+- ### Fixed
+
+  - Fixed runtime trigger promotion so Mule durable action retries and trigger idempotency metadata reuse the already-promoted orchestration instance instead of creating duplicate saga instances after partial start failures or action re-execution, with Entity Framework storage persisting the start idempotency key.
+
 ------
 
 ## [v4.0.3] - 2026-10-01

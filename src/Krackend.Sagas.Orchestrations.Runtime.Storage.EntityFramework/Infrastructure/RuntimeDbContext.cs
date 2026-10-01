@@ -147,6 +147,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.TriggerIntakeId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.StartIdempotencyKey).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.SagaId).HasMaxLength(256).IsRequired();
@@ -161,6 +162,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.SnapshotPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.LastUpdatedOnUtc);
+        builder.HasIndex(x => x.StartIdempotencyKey).IsUnique();
         builder.HasIndex(x => x.CorrelationId);
         builder.HasIndex(x => x.SagaId);
     }

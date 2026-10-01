@@ -146,6 +146,58 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineReusesPromotedInstanceWhenStartIdempotencyKeyIsRetried()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.one", 1))));
+        const string startIdempotencyKey = "mule:TriggerSaga:trigger:artifact-1:correlation-retry";
+
+        await harness.StartAsync(
+            BusinessPayload("trigger"),
+            "correlation-retry",
+            startIdempotencyKey: startIdempotencyKey);
+        await harness.StartAsync(
+            BusinessPayload("trigger"),
+            "correlation-retry",
+            startIdempotencyKey: startIdempotencyKey);
+
+        var instances = await harness.GetRequiredService<IOrchestrationInstanceRepository>().GetRecent();
+        var instance = Assert.Single(instances);
+
+        Assert.Single(harness.Dispatcher.Commands);
+        Assert.Equal(harness.Dispatcher.Commands[0].OrchestrationInstanceId, instance.Id.ToString());
+        Assert.Equal(startIdempotencyKey, instance.StartIdempotencyKey);
+        Assert.Equal(startIdempotencyKey, instance.Metadata["StartIdempotencyKey"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task EngineReusesPromotedInstanceWhenTriggerIdempotencyMetadataIsRetried()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.one", 1))));
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    CorrelationId = "trigger-correlation-retry",
+                    IdempotencyKey = "trigger-event-1"
+                }.ToJson()
+            }
+        };
+
+        await harness.StartAsync(BusinessPayload("trigger"), null, propagationMetadata);
+        await harness.StartAsync(BusinessPayload("trigger"), null, propagationMetadata);
+
+        var instances = await harness.GetRequiredService<IOrchestrationInstanceRepository>().GetRecent();
+        var instance = Assert.Single(instances);
+
+        Assert.Single(harness.Dispatcher.Commands);
+        Assert.Equal($"trigger:{harness.ArtifactId}:trigger-event-1", instance.StartIdempotencyKey);
+    }
+
+    [Fact]
     public async Task EnginePromotesWhenTriggerValidationSucceedsAndPassesValidationContext()
     {
         OrchestrationValidationRequest? capturedRequest = null;

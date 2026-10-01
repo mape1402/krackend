@@ -38,6 +38,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 
         public async Task<PromotionResult> PromoteToInstanceAsync(PromotionRequest request, CancellationToken cancellationToken = default)
         {
+            var now = DateTime.UtcNow;
+            var triggerMetadata = GetTriggerMetadata(request.PropagationMetadata);
+            var startIdempotencyKey = ResolveStartIdempotencyKey(request, triggerMetadata);
+            if (!string.IsNullOrWhiteSpace(startIdempotencyKey))
+            {
+                var existingInstance = await _instanceRepository.TryGetByStartIdempotencyKey(
+                    startIdempotencyKey,
+                    cancellationToken);
+                if (existingInstance is not null)
+                {
+                    return FromExistingInstance(existingInstance);
+                }
+            }
+
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
             _artifactAccessor.Set(resolvedArtifact);
             var validationResult = await _triggerPayloadValidator.ValidateAsync(
@@ -55,9 +69,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 };
             }
 
-            var now = DateTime.UtcNow;
             var instanceId = Id.New();
-            var triggerMetadata = GetTriggerMetadata(request.PropagationMetadata);
             var correlationId = FirstNonEmpty(triggerMetadata.CorrelationId, request.MessageMetadata?.CorrelationId)
                 ?? Id.New().ToString();
             var sagaId = string.IsNullOrWhiteSpace(request.MessageMetadata?.SagaId)
@@ -70,6 +82,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 OrchestrationDefinitionKey = resolvedArtifact.RuntimeArtifact.OrchestrationDefinitionKey,
                 RuntimeOrchestrationArtifactId = resolvedArtifact.RuntimeArtifact.Id,
                 TriggerIntakeId = default,
+                StartIdempotencyKey = startIdempotencyKey,
                 CorrelationId = correlationId,
                 SagaId = sagaId,
                 ExecutionKey = $"{resolvedArtifact.Artifact.Key}:{instanceId}",
@@ -84,9 +97,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 SnapshotPayload = _payloadState.CreateInitialPayload(request.Payload)
             };
             AddTriggerMetadataDiagnostics(instance, triggerMetadata);
+            Add(instance, "StartIdempotencyKey", startIdempotencyKey);
             _propagationMetadataStore.Save(instance, request.PropagationMetadata);
 
-            await _instanceRepository.Create(instance, cancellationToken);
+            try
+            {
+                await _instanceRepository.Create(instance, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException &&
+                !string.IsNullOrWhiteSpace(startIdempotencyKey))
+            {
+                var existingInstance = await _instanceRepository.TryGetByStartIdempotencyKey(
+                    startIdempotencyKey,
+                    cancellationToken);
+                if (existingInstance is not null)
+                {
+                    return FromExistingInstance(existingInstance);
+                }
+
+                throw;
+            }
+
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),
@@ -109,6 +140,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             };
         }
 
+        private static PromotionResult FromExistingInstance(OrchestrationInstance instance)
+            => new()
+            {
+                Success = true,
+                SagaId = instance.SagaId,
+                CorrelationId = instance.CorrelationId,
+                InstanceId = instance.Id.ToString(),
+                AlreadyPromoted = true
+            };
+
         private static OrchestrationTriggerMetadata GetTriggerMetadata(OrchestrationPropagationMetadata propagationMetadata)
         {
             if (propagationMetadata?.Items is null ||
@@ -119,6 +160,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             }
 
             return OrchestrationTriggerMetadata.FromJson(payload);
+        }
+
+        private static string ResolveStartIdempotencyKey(
+            PromotionRequest request,
+            OrchestrationTriggerMetadata triggerMetadata)
+        {
+            if (!string.IsNullOrWhiteSpace(request.StartIdempotencyKey))
+            {
+                return request.StartIdempotencyKey.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(triggerMetadata.IdempotencyKey))
+            {
+                return $"trigger:{request.ArtifactId}:{triggerMetadata.IdempotencyKey.Trim()}";
+            }
+
+            return null;
         }
 
         private static void AddTriggerMetadataDiagnostics(
