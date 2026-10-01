@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.0.2] - 2026-10-01
+
+- ### Fixed
+
+  - Added EF Core event store `EventId` property mapping customization so hosts can opt into provider-specific storage such as `binary(16)` without changing public string envelopes.
+
+------
+
 ## [v4.0.1] - 2026-09-30
 
 - ### Fixed

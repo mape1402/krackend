@@ -80,7 +80,7 @@ services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 
 ## Event Identifiers
 
-Each persisted envelope has an `EventId`. The core runtime treats it as a string so the host can choose the identifier format used by its storage and operational standards instead of being forced into `Guid`.
+Each persisted envelope has an `EventId`. The core runtime treats it as a string. The EF Core adapter stores it as required text by default so the mapping stays provider-neutral.
 
 By default, Krackend uses ULIDs:
 
@@ -88,22 +88,36 @@ By default, Krackend uses ULIDs:
 services.AddKrackendEventSourcing();
 ```
 
-To use another identifier strategy, implement `IEventIdFactory`:
+To customize identifier creation, implement `IEventIdFactory`:
 
 ```csharp
-public sealed class SnowflakeEventIdFactory : IEventIdFactory
+public sealed class HostEventIdFactory : IEventIdFactory
 {
     public string Create(EventIdFactoryContext context)
     {
-        return Snowflake.NextId().ToString(CultureInfo.InvariantCulture);
+        return HostIds.Next();
     }
 }
 
-services.AddScoped<IEventIdFactory, SnowflakeEventIdFactory>();
+services.AddScoped<IEventIdFactory, HostEventIdFactory>();
 services.AddKrackendEventSourcing();
 ```
 
-The factory receives the stream name, stream id, stream version, event type, event schema version, and source event. It must return a non-empty identifier. EF Core stores `EventId` as required text.
+The factory receives the stream name, stream id, stream version, event type, event schema version, and source event. It must return a non-empty identifier.
+
+EF Core hosts can override the `EventId` property mapping when they want provider-specific storage. For example, SQL Server hosts can store the default ULID strings as 16 bytes:
+
+```csharp
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>(options =>
+{
+    options.ConfigureEventIdProperty((property, store) =>
+    {
+        property.HasUlidBytesConversion("binary(16)");
+    });
+});
+```
+
+Use the column type that belongs to the provider, such as `binary(16)` for SQL Server, `BLOB` for SQLite, or `bytea` for PostgreSQL. Binary ULID storage requires the configured `IEventIdFactory` to return valid ULID strings.
 
 ## Defining Events
 

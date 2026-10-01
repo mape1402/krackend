@@ -97,11 +97,21 @@ services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 
 Event ids:
 
-`EventId` is stored as text. Krackend uses ULID ids by default, and hosts can replace the generator by registering `IEventIdFactory` before calling `AddKrackendEventSourcing`.
+Krackend uses ULID ids by default. The core envelope exposes `EventId` as a string, and the EF Core adapter stores it as text by default. Hosts can replace the generator by registering `IEventIdFactory` before calling `AddKrackendEventSourcing`, or customize the EF Core property mapping when they want provider-specific storage such as SQL Server `binary(16)`.
 
 ```csharp
 services.AddScoped<IEventIdFactory, HostEventIdFactory>();
 services.AddKrackendEventSourcing();
+```
+
+```csharp
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>(options =>
+{
+    options.ConfigureEventIdProperty((property, store) =>
+    {
+        property.HasUlidBytesConversion("binary(16)");
+    });
+});
 ```
 
 Usage:

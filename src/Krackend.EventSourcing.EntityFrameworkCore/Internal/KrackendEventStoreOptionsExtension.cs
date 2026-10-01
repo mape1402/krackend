@@ -1,4 +1,5 @@
 using Krackend.EventSourcing.Configuration;
+using Krackend.EventSourcing.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -9,12 +10,17 @@ internal sealed class KrackendEventStoreOptionsExtension : IDbContextOptionsExte
 {
     private DbContextOptionsExtensionInfo? _info;
 
-    public KrackendEventStoreOptionsExtension(EventStoreOptionsCollection stores)
+    public KrackendEventStoreOptionsExtension(
+        EventStoreOptionsCollection stores,
+        EntityFrameworkEventStoreOptions options)
     {
         Stores = stores ?? throw new ArgumentNullException(nameof(stores));
+        Options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     public EventStoreOptionsCollection Stores { get; }
+
+    public EntityFrameworkEventStoreOptions Options { get; }
 
     public DbContextOptionsExtensionInfo Info => _info ??= new ExtensionInfo(this);
 
@@ -44,12 +50,14 @@ internal sealed class KrackendEventStoreOptionsExtension : IDbContextOptionsExte
         public override int GetServiceProviderHashCode()
             => HashCode.Combine(
                 typeof(KrackendEventStoreOptionsExtension),
-                string.Join('|', _extension.Stores.Values.Keys.OrderBy(x => x)));
+                string.Join('|', _extension.Stores.Values.Keys.OrderBy(x => x)),
+                _extension.Options.EventIdPropertyConfigurator?.GetHashCode() ?? 0);
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
             => debugInfo["KrackendEventStore"] = string.Join(",", _extension.Stores.Values.Keys.OrderBy(x => x));
 
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
-            => other is ExtensionInfo;
+            => other is ExtensionInfo otherInfo &&
+               GetServiceProviderHashCode() == otherInfo.GetServiceProviderHashCode();
     }
 }

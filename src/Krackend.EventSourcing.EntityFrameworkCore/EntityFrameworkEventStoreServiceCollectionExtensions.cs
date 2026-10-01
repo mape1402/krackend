@@ -13,12 +13,19 @@ public static class EntityFrameworkEventStoreServiceCollectionExtensions
     /// <summary>
     /// Enables Krackend event sourcing using the application's Entity Framework Core DbContext.
     /// </summary>
-    public static IServiceCollection AddKrackendEntityFrameworkEventStore<TDbContext>(this IServiceCollection services)
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional EF Core event store mapping configuration.</param>
+    public static IServiceCollection AddKrackendEntityFrameworkEventStore<TDbContext>(
+        this IServiceCollection services,
+        Action<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions>? configure = null)
         where TDbContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddKrackendEventStoreDbContextOptions<TDbContext>();
+        var options = new Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions();
+        configure?.Invoke(options);
+
+        services.AddKrackendEventStoreDbContextOptions<TDbContext>(options);
         services.AddScoped<Krackend.EventSourcing.EntityFrameworkCore.IEventStoreDbContextFactory<TDbContext>, Krackend.EventSourcing.EntityFrameworkCore.EventStoreDbContextFactory<TDbContext>>();
         services.AddScoped<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStore<TDbContext>>();
         services.AddScoped<Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkSnapshotStore<TDbContext>>();
@@ -32,7 +39,9 @@ public static class EntityFrameworkEventStoreServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddKrackendEventStoreDbContextOptions<TDbContext>(this IServiceCollection services)
+    private static IServiceCollection AddKrackendEventStoreDbContextOptions<TDbContext>(
+        this IServiceCollection services,
+        Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions eventStoreOptions)
         where TDbContext : DbContext
     {
         var serviceType = typeof(DbContextOptions<TDbContext>);
@@ -48,7 +57,7 @@ public static class EntityFrameworkEventStoreServiceCollectionExtensions
             var stores = provider.GetRequiredService<EventStoreOptionsCollection>();
 
             return new DbContextOptionsBuilder<TDbContext>(options)
-                .UseKrackendEventStoreModel(stores)
+                .UseKrackendEventStoreModel(stores, eventStoreOptions)
                 .Options;
         }, descriptor.Lifetime));
 
