@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.0.3] - 2026-10-01
+
+- ### Added
+
+  - Added first-class Data Protection configuration hooks to Control Plane and Runtime Entity Framework storage adapters so hosts can set stable application names or replace/harden the key storage used for distribution credentials.
+  - Added Entity Framework-backed Data Protection key storage for Control Plane and Runtime distribution secrets, including sample SQL Server migrations for `Distribution.DataProtectionKeys` and `Runtime.DataProtectionKeys`.
+
+- ### Fixed
+
+  - Fixed Control Plane to Runtime and Runtime to Control Plane authentication so durable distribution credentials no longer depend on an ephemeral host key ring after restarts, rollouts, or multi-pod deployments.
+  - Improved missing Data Protection key errors to explain that runtime/design credentials cannot be decrypted and must be reimported or backed by persistent key storage.
+
+------
+
 ## [v4.0.2] - 2026-10-01
 
 - ### Fixed

@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
@@ -65,7 +66,7 @@ public sealed class ControlPlaneAccessTokenProvider : IControlPlaneAccessTokenPr
             }
         }
 
-        var secret = _secretProtector.Unprotect(source.ProtectedSecret);
+        var secret = UnprotectOutboundSecret(source);
         var body = JsonSerializer.Serialize(new ConnectionTokenRequest
         {
             GrantType = "client_credentials",
@@ -104,6 +105,20 @@ public sealed class ControlPlaneAccessTokenProvider : IControlPlaneAccessTokenPr
             cancellationToken);
 
         return token.AccessToken;
+    }
+
+    private string UnprotectOutboundSecret(ControlPlaneDistributionSource source)
+    {
+        try
+        {
+            return _secretProtector.Unprotect(source.ProtectedSecret);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new InvalidOperationException(
+                $"Design node '{source.Name}' credentials cannot be decrypted because the Data Protection key is missing. Re-import Design credentials for this node or configure persistent Data Protection key storage.",
+                ex);
+        }
     }
 
     private static Uri BuildTokenUri(ControlPlaneDistributionSource source)

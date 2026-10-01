@@ -150,6 +150,11 @@ public sealed class ControlPlaneDbContext : DbContext
     public DbSet<TeamMemberEntity> TeamMembers => Set<TeamMemberEntity>();
 
     /// <summary>
+    /// Gets Data Protection keys used to decrypt durable distribution secrets across control-plane replicas.
+    /// </summary>
+    public DbSet<ControlPlaneDataProtectionKeyEntity> DataProtectionKeys => Set<ControlPlaneDataProtectionKeyEntity>();
+
+    /// <summary>
     /// Saves all pending changes after normalizing polymorphic JSON discriminators.
     /// </summary>
     /// <returns>The number of state entries written to the database.</returns>
@@ -199,6 +204,7 @@ public sealed class ControlPlaneDbContext : DbContext
 
         modelBuilder.ApplyConfiguration(new TeamEntityConfiguration());
         modelBuilder.ApplyConfiguration(new TeamMemberEntityConfiguration());
+        ConfigureDataProtectionKeys(modelBuilder);
 
         ApplySchema(modelBuilder, ".Design.", "Design");
         ApplySchema(modelBuilder, ".Distribution.", "Distribution");
@@ -206,6 +212,15 @@ public sealed class ControlPlaneDbContext : DbContext
 
         base.OnModelCreating(modelBuilder);
         storageOptions.ConfigureModel?.Invoke(modelBuilder);
+    }
+
+    private static void ConfigureDataProtectionKeys(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<ControlPlaneDataProtectionKeyEntity>();
+        builder.ToTable("DataProtectionKeys", "Distribution");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.FriendlyName).HasMaxLength(256);
+        builder.Property(x => x.Xml).IsRequired();
     }
 
     private static void ApplySchema(ModelBuilder modelBuilder, string namespaceSegment, string schema)

@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
@@ -72,7 +73,7 @@ public sealed class RuntimeAccessTokenProvider : IRuntimeAccessTokenProvider
             }
         }
 
-        var secret = _secretProtector.Unprotect(node.ProtectedOutboundSecret);
+        var secret = UnprotectOutboundSecret(node);
         var body = JsonSerializer.Serialize(new ConnectionTokenRequest
         {
             GrantType = "client_credentials",
@@ -111,6 +112,20 @@ public sealed class RuntimeAccessTokenProvider : IRuntimeAccessTokenProvider
             cancellationToken);
 
         return token.AccessToken;
+    }
+
+    private string UnprotectOutboundSecret(RuntimeNode node)
+    {
+        try
+        {
+            return _secretProtector.Unprotect(node.ProtectedOutboundSecret);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new InvalidOperationException(
+                $"Runtime node '{node.Name}' credentials cannot be decrypted because the Data Protection key is missing. Re-import Runtime credentials for this node or configure persistent Data Protection key storage.",
+                ex);
+        }
     }
 
     private static Uri BuildTokenUri(RuntimeNode node)
