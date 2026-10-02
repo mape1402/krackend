@@ -12,6 +12,37 @@ public static class ExtensionConstants
 }
 
 /// <summary>
+/// Well-known built-in capability keys.
+/// </summary>
+public static class BuiltInCapabilityKeys
+{
+    /// <summary>
+    /// Event trigger capability key.
+    /// </summary>
+    public const string EventTrigger = "trigger.event";
+
+    /// <summary>
+    /// Messaging task capability key.
+    /// </summary>
+    public const string MessagingTask = "task.messaging";
+
+    /// <summary>
+    /// HTTP task capability key.
+    /// </summary>
+    public const string HttpTask = "task.http";
+
+    /// <summary>
+    /// Plugin task capability key.
+    /// </summary>
+    public const string PluginTask = "task.plugin";
+
+    /// <summary>
+    /// Human approval task capability key.
+    /// </summary>
+    public const string HumanApprovalTask = "task.human-approval";
+}
+
+/// <summary>
 /// Identifies an extension package.
 /// </summary>
 public readonly record struct ExtensionKey(string Value)
@@ -64,4 +95,3 @@ public readonly record struct ExtensionBundleId(string Value)
     /// <inheritdoc />
     public override string ToString() => Value ?? string.Empty;
 }
-

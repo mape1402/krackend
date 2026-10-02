@@ -3,7 +3,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 
@@ -14,12 +16,13 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly ITaskRuntimeAdapterRegistry _adapterRegistry;
+    private readonly IOrchestrationArtifactMigrator _artifactMigrator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagingRuntimeArtifactCompatibilityValidator"/> class.
     /// </summary>
     public MessagingRuntimeArtifactCompatibilityValidator()
-        : this(new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]))
+        : this(new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]), new DefaultOrchestrationArtifactMigrator())
     {
     }
 
@@ -28,8 +31,21 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
     /// </summary>
     /// <param name="adapterRegistry">Runtime task adapter registry.</param>
     public MessagingRuntimeArtifactCompatibilityValidator(ITaskRuntimeAdapterRegistry adapterRegistry)
+        : this(adapterRegistry, new DefaultOrchestrationArtifactMigrator())
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MessagingRuntimeArtifactCompatibilityValidator"/> class.
+    /// </summary>
+    /// <param name="adapterRegistry">Runtime task adapter registry.</param>
+    /// <param name="artifactMigrator">Artifact migrator.</param>
+    public MessagingRuntimeArtifactCompatibilityValidator(
+        ITaskRuntimeAdapterRegistry adapterRegistry,
+        IOrchestrationArtifactMigrator artifactMigrator)
     {
         _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
+        _artifactMigrator = artifactMigrator ?? throw new ArgumentNullException(nameof(artifactMigrator));
     }
 
     /// <inheritdoc />
@@ -67,13 +83,18 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
                 "Artifact payload could not be deserialized as an orchestration artifact."));
         }
 
-        var result = ValidateArtifact(artifact);
+        var result = ValidateArtifact(_artifactMigrator.Migrate(artifact));
         return Task.FromResult(result);
     }
 
     private RuntimeArtifactCompatibilityValidationResult ValidateArtifact(OrchestrationArtifact artifact)
     {
         var stages = artifact.StageDefinitions?.OrderBy(stage => stage.Order).ToArray() ?? [];
+        var capabilityResult = ValidateRequiredCapabilities(artifact);
+        if (!capabilityResult.Succeeded)
+        {
+            return capabilityResult;
+        }
 
         foreach (var trigger in artifact.TriggerBindings?.Where(trigger => trigger.IsEnabled) ?? Enumerable.Empty<TriggerBindingArtifact>())
         {
@@ -366,6 +387,24 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
             return Failure(
                 "RetryableErrorCodesMissing",
                 $"The retry policy configured for {owner} must list explicit retryable error codes when max retries is greater than zero.");
+        }
+
+        return RuntimeArtifactCompatibilityValidationResult.Success();
+    }
+
+    private static RuntimeArtifactCompatibilityValidationResult ValidateRequiredCapabilities(OrchestrationArtifact artifact)
+    {
+        foreach (var capability in artifact.RequiredCapabilities ?? Array.Empty<RequiredCapabilityArtifact>())
+        {
+            if (string.IsNullOrWhiteSpace(capability.ExtensionKey) ||
+                string.Equals(capability.ExtensionKey, ExtensionConstants.BuiltInExtensionKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return Failure(
+                "ExtensionCapabilityNotConfigured",
+                $"Artifact requires extension capability '{capability.ExtensionKey}/{capability.CapabilityKey}', but external extension execution is not enabled on this runtime node.");
         }
 
         return RuntimeArtifactCompatibilityValidationResult.Success();

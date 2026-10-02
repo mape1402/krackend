@@ -88,6 +88,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionHandler<CompensateInstanceDecision>, CompensateInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DeadLetterInstanceDecision>, DeadLetterInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<RetryDecision>, RetryDecisionHandler>();
+            services.TryAddSingleton<IOrchestrationArtifactMigrator, DefaultOrchestrationArtifactMigrator>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();
             services.TryAddScoped<IRuntimeArtifactResolver, DefaultRuntimeArtifactResolver>();
             services.TryAddScoped<IResolvedOrchestrationArtifactAccessor, DefaultResolvedOrchestrationArtifactAccessor>();

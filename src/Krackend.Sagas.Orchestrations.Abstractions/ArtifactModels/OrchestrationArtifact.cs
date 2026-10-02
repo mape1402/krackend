@@ -5,6 +5,27 @@ using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 
 /// <summary>
+/// Defines orchestration artifact schema versions.
+/// </summary>
+public static class OrchestrationArtifactSchemaVersions
+{
+    /// <summary>
+    /// Legacy/current linear stage artifact format without explicit extension metadata.
+    /// </summary>
+    public const int LinearV1 = 1;
+
+    /// <summary>
+    /// Extension-ready artifact format with explicit capabilities and execution policy metadata.
+    /// </summary>
+    public const int ExtensionReadyV2 = 2;
+
+    /// <summary>
+    /// Current artifact schema version.
+    /// </summary>
+    public const int Current = ExtensionReadyV2;
+}
+
+/// <summary>
 /// Represents an immutable deployable orchestration artifact shared by Design and Runtime.
 /// </summary>
 public sealed record OrchestrationArtifact(
@@ -25,7 +46,7 @@ public sealed record OrchestrationArtifact(
     /// <summary>
     /// Gets the artifact schema version. Version 1 represents the current linear stage artifact format.
     /// </summary>
-    public int ArtifactSchemaVersion { get; init; } = 1;
+    public int ArtifactSchemaVersion { get; init; } = OrchestrationArtifactSchemaVersions.Current;
 
     /// <summary>
     /// Gets transversal metadata descriptor snapshots available to orchestration mappings and execution conditions.
