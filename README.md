@@ -194,6 +194,29 @@ Runtime task dispatch is adapter-based. Initial dispatch, retry dispatch, compen
 
 Retry policies are explicit error-code allowlists. When `MaxRetries` is greater than zero, `RetryableErrorCodes` must contain at least one non-empty code; an empty list means the runtime will not retry any failure. Runtime callbacks can also set `IsRetryableCandidate = false` to suppress retry even when the reported error code appears in the allowlist.
 
+Execution policies and extension bundles:
+
+Orchestration artifacts use an extension-ready schema. Existing linear artifacts are migrated at runtime to schema v2, which adds built-in capability metadata, required external capabilities, required bundles, and execution policy slots without changing the behavior of existing messaging orchestrations.
+
+The runtime resolves execution policy hierarchically: environment defaults, runtime-node overrides, orchestration overrides, stage overrides, and finally task overrides. The selected policy is validated against runtime node capabilities and stored on task attempt/dispatch metadata as `ResolvedExecutionPolicy`. The default provider is `built-in-local`, so existing tasks continue to execute through the installed in-process task adapters.
+
+External bundles are explicit runtime state. Artifacts that require an external bundle or capability are accepted only when the runtime node has an activated `RuntimeExtensionPackage` with the matching bundle id, extension key, semantic version, checksum when provided, and manifest capability. The in-memory repository is suitable for tests or simple hosts; `Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework` persists activation state in `Runtime.RuntimeExtensionPackages` for durable multi-replica hosts.
+
+Hosts can configure runtime execution defaults through `Runtime:Execution` or `RuntimeExecutionOptions`:
+
+```csharp
+services.Configure<RuntimeExecutionOptions>(options =>
+{
+    options.EnvironmentPolicy = new ExecutionPolicyArtifact
+    {
+        DefaultProviderKey = ExecutionConstants.BuiltInLocalProvider,
+        AllowedProviderKeys = [ExecutionConstants.BuiltInLocalProvider],
+        RequireSandboxForExternalExtensions = true
+    };
+    options.RuntimeNodeCapabilities = RuntimeNodeCapabilitiesArtifact.LocalDefaults;
+});
+```
+
 Recoverable runtime failures:
 
 When a task exhausts its configured retries, times out, or leaves the orchestration unable to advance, the runtime moves the instance into `DeadLettered` when the failure can still be reviewed by an operator. `DeadLettered` is not a broker queue; it is an explicit durable state that says the saga stopped, preserved its context, and can be resumed after the underlying issue is corrected. `Failed` and `Aborted` are reserved for outcomes that should not continue automatically.
