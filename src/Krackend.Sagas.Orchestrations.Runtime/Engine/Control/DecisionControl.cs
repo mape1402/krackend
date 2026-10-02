@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Execution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
@@ -136,7 +137,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                         failedArtifact,
                         dispatchPayload?.ToJsonString())
                     {
-                        MetadataDescriptors = metadataDescriptors
+                        MetadataDescriptors = metadataDescriptors,
+                        OrchestrationExecutionPolicy = resolvedArtifact.Artifact.ExecutionPolicy,
+                        StageExecutionPolicy = currentStage.ExecutionPolicy
                     }];
                 }
 
@@ -147,7 +150,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
                 if (ShouldContinueAfterFailure(failedTask, failedArtifact))
                 {
-                    return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload, metadataDescriptors);
+                    return BuildNextTaskDecisions(
+                        instance,
+                        stages,
+                        currentStage,
+                        currentStageExecution,
+                        tasks,
+                        taskExecutions,
+                        dispatchPayload,
+                        metadataDescriptors,
+                        resolvedArtifact.Artifact.ExecutionPolicy);
                 }
 
                 return [new DeadLetterInstanceDecision(
@@ -162,7 +174,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return [];
             }
 
-            return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload, metadataDescriptors);
+            return BuildNextTaskDecisions(
+                instance,
+                stages,
+                currentStage,
+                currentStageExecution,
+                tasks,
+                taskExecutions,
+                dispatchPayload,
+                metadataDescriptors,
+                resolvedArtifact.Artifact.ExecutionPolicy);
         }
 
         private static IReadOnlyCollection<IDecision> BuildNextTaskDecisions(
@@ -173,7 +194,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             IReadOnlyCollection<TaskArtifact> tasks,
             IReadOnlyCollection<TaskExecution> taskExecutions,
             JsonNode dispatchPayload,
-            IReadOnlyCollection<MetadataDescriptorArtifact> metadataDescriptors)
+            IReadOnlyCollection<MetadataDescriptorArtifact> metadataDescriptors,
+            ExecutionPolicyArtifact orchestrationExecutionPolicy)
         {
             var nextTask = tasks.FirstOrDefault(task =>
                 taskExecutions.All(execution => execution.TaskKey != task.Key));
@@ -194,7 +216,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     nextTask,
                     dispatchPayload?.ToJsonString())
                 {
-                    MetadataDescriptors = metadataDescriptors
+                    MetadataDescriptors = metadataDescriptors,
+                    OrchestrationExecutionPolicy = orchestrationExecutionPolicy,
+                    StageExecutionPolicy = currentStage.ExecutionPolicy
                 }];
             }
 
@@ -211,7 +235,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     task,
                     dispatchPayload?.ToJsonString())
                 {
-                    MetadataDescriptors = metadataDescriptors
+                    MetadataDescriptors = metadataDescriptors,
+                    OrchestrationExecutionPolicy = orchestrationExecutionPolicy,
+                    StageExecutionPolicy = currentStage.ExecutionPolicy
                 })
                 .Cast<IDecision>()
                 .ToArray();

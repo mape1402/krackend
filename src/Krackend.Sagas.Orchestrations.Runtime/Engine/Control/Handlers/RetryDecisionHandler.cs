@@ -40,6 +40,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     StageExecutionId = decision.StageExecutionId,
                     StageKey = decision.StageKey,
                     Task = decision.Task,
+                    OrchestrationExecutionPolicy = decision.OrchestrationExecutionPolicy,
+                    StageExecutionPolicy = decision.StageExecutionPolicy,
                     TaskExecution = taskExecution,
                     Payload = decision.Payload,
                     MetadataDescriptors = decision.MetadataDescriptors,

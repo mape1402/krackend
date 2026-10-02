@@ -16,6 +16,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
+using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Http;
@@ -28,6 +29,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -46,6 +48,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
         /// <returns>A runtime builder that can be used by transport and storage adapters.</returns>
         public static KrackendOrchestrationsRuntimeBuilder AddKrackendOrchestrationsRuntime(this IServiceCollection services)
         {
+            services.TryAddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
             services.TryAddSingleton<IIngressRegistry, IngressRegistry>();
             services.TryAddSingleton<IRuntimeIngressLocalState, RuntimeIngressLocalState>();
             services.TryAddScoped<IGetAllIngressConfigurationsAccessor, DefaultIngressConfigurationAccessor>();
@@ -72,6 +75,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IOrchestrationRecoveryService, DefaultOrchestrationRecoveryService>();
             services.TryAddScoped<ITaskDispatchRequestPayloadPreparer, DefaultTaskDispatchRequestPayloadPreparer>();
             services.TryAddScoped<ITaskRuntimeAdapterRegistry, TaskRuntimeAdapterRegistry>();
+            services.TryAddScoped<IExecutionPolicyResolver, DefaultExecutionPolicyResolver>();
+            services.TryAddScoped<IExecutionSandboxProviderRegistry, ExecutionSandboxProviderRegistry>();
+            services.TryAddEnumerable(ServiceDescriptor.Scoped<IExecutionSandboxProvider, BuiltInLocalExecutionSandboxProvider>());
             services.TryAddScoped<ITaskAttemptDispatcher, TaskAttemptDispatcher>();
             services.TryAddScoped<IOrchestrationTimeoutProcessor, DefaultOrchestrationTimeoutProcessor>();
             services.TryAddScoped<IDecisionHandler<StartStageDecision>, StartStageDecisionHandler>();
@@ -92,6 +98,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddEnumerable(ServiceDescriptor.Scoped<ITaskRuntimeAdapter, MessagingTaskRuntimeAdapter>());
             services.AddOptions<RuntimeReplicaOptions>().BindConfiguration("Runtime:Replica");
             services.AddOptions<RuntimeGossipOptions>().BindConfiguration("Runtime:Gossip");
+            services.AddOptions<RuntimeExecutionOptions>().BindConfiguration("Runtime:Execution");
             services.AddOptions<OrchestrationTimeoutOptions>().BindConfiguration("Runtime:Timeouts");
             services.TryAddSingleton<IRuntimeReplicaIdentity, DefaultRuntimeReplicaIdentity>();
             services.TryAddScoped<IRuntimeArtifactProjectionScheduler, ImmediateRuntimeArtifactProjectionScheduler>();

@@ -1,25 +1,30 @@
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Execution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 
 internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
     private readonly ITaskRuntimeAdapterRegistry _adapterRegistry;
     private readonly ITaskExecutionRepository _taskRepository;
     private readonly ITaskExecutionAttemptRepository _attemptRepository;
     private readonly ITaskDispatchRepository _dispatchRepository;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IExecutionTransitionRepository _transitionRepository;
-    private readonly IRemoteCommandDispatcher _dispatcher;
     private readonly ITaskDispatchRequestPayloadPreparer _requestPayloadPreparer;
     private readonly IOrchestrationPayloadState _payloadState;
     private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
+    private readonly IExecutionPolicyResolver _executionPolicyResolver;
 
     public TaskAttemptDispatcher(
         ITaskRuntimeAdapterRegistry adapterRegistry,
@@ -28,9 +33,9 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         ITaskDispatchRepository dispatchRepository,
         IOrchestrationInstanceRepository instanceRepository,
         IExecutionTransitionRepository transitionRepository,
-        IRemoteCommandDispatcher dispatcher,
         ITaskDispatchRequestPayloadPreparer requestPayloadPreparer,
         IOrchestrationPayloadState payloadState,
+        IExecutionPolicyResolver executionPolicyResolver,
         IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
     {
         _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
@@ -39,9 +44,9 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         _dispatchRepository = dispatchRepository ?? throw new ArgumentNullException(nameof(dispatchRepository));
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
         _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
+        _executionPolicyResolver = executionPolicyResolver ?? throw new ArgumentNullException(nameof(executionPolicyResolver));
         _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
     }
 
@@ -66,6 +71,25 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
                 string.IsNullOrWhiteSpace(validation.ErrorCode) ? "TaskRuntimeAdapterValidationFailed" : validation.ErrorCode,
                 string.IsNullOrWhiteSpace(validation.ErrorMessage) ? $"Task '{request.Task.Key}' is not compatible with the runtime adapter for '{request.Task.Kind}'." : validation.ErrorMessage,
                 "TaskDispatchConfigurationFailed",
+                cancellationToken);
+            return;
+        }
+
+        var executionPolicy = _executionPolicyResolver.Resolve(new ExecutionPolicyResolutionRequest
+        {
+            StageKey = request.StageKey,
+            Task = request.Task,
+            OrchestrationPolicy = request.OrchestrationExecutionPolicy,
+            StagePolicy = request.StageExecutionPolicy
+        });
+
+        if (!executionPolicy.Succeeded)
+        {
+            await MarkDispatchConfigurationFailedAsync(
+                request,
+                string.IsNullOrWhiteSpace(executionPolicy.ErrorCode) ? "ExecutionPolicyResolutionFailed" : executionPolicy.ErrorCode,
+                string.IsNullOrWhiteSpace(executionPolicy.ErrorMessage) ? $"Execution policy could not be resolved for task '{request.Task.Key}'." : executionPolicy.ErrorMessage,
+                "TaskExecutionPolicyFailed",
                 cancellationToken);
             return;
         }
@@ -104,6 +128,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             ScheduledOnUtc = scheduledOnUtc.UtcDateTime
         };
         attempt.DispatchId = dispatch.Id;
+        ApplyExecutionPolicySnapshot(taskExecution, attempt, dispatch, executionPolicy.ResolvedPolicy);
 
         PrepareRunningState(request, taskExecution, attemptNumber, now, requestPayload);
 
@@ -181,6 +206,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         await QueueAsync(
             request,
             adapter,
+            executionPolicy,
             taskExecution,
             attempt,
             dispatch,
@@ -192,6 +218,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
     private async Task QueueAsync(
         TaskAttemptDispatchRequest request,
         ITaskRuntimeAdapter adapter,
+        ExecutionPolicyResolutionResult executionPolicy,
         TaskExecution taskExecution,
         TaskExecutionAttempt attempt,
         TaskDispatch dispatch,
@@ -201,7 +228,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
     {
         try
         {
-            var descriptor = await adapter.BuildCommandAsync(new TaskRuntimeCommandRequest
+            var commandRequest = new TaskRuntimeCommandRequest
             {
                 Instance = request.Instance,
                 StageExecutionId = request.StageExecutionId,
@@ -211,7 +238,8 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
                 Attempt = attempt,
                 Dispatch = dispatch,
                 Payload = commandPayload
-            }, cancellationToken);
+            };
+            var descriptor = await adapter.BuildCommandAsync(commandRequest, cancellationToken);
             var propagationMetadata = _propagationMetadataStore.Load(request.Instance);
             var messageMetadata = new OrchestrationMessageMetadata
             {
@@ -226,10 +254,18 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
                 ReplyAddress = descriptor.ReplyAddress
             };
 
+            var policySnapshot = dispatch.Metadata.TryGetValue("ResolvedExecutionPolicy", out var resolvedPolicy)
+                ? resolvedPolicy?.DeepClone()
+                : null;
             dispatch.Metadata = RemoteCommandMetadataBuilder.Build(messageMetadata, propagationMetadata);
+            if (policySnapshot is not null)
+            {
+                dispatch.Metadata["ResolvedExecutionPolicy"] = policySnapshot;
+            }
+
             await _dispatchRepository.Update(dispatch, cancellationToken);
 
-            await _dispatcher.DispatchAsync(new RemoteCommand
+            var command = new RemoteCommand
             {
                 Payload = commandPayload,
                 RemoteCommandTransport = descriptor.Transport,
@@ -245,6 +281,13 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
                 ScheduledOnUtc = scheduledOnUtc,
                 PropagationMetadata = propagationMetadata,
                 MessageMetadata = messageMetadata
+            };
+
+            await executionPolicy.Provider.DispatchAsync(new ExecutionEnvelope
+            {
+                TaskRequest = commandRequest,
+                Command = command,
+                ResolvedPolicy = executionPolicy.ResolvedPolicy
             }, cancellationToken);
         }
         catch (Exception exception)
@@ -512,6 +555,23 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
 
     private static JsonNode ParsePayload(string payload)
         => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
+
+    private static void ApplyExecutionPolicySnapshot(
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        ResolvedExecutionPolicyArtifact policy)
+    {
+        var snapshot = JsonSerializer.SerializeToNode(policy, SerializerOptions);
+        if (snapshot is not null)
+        {
+            attempt.Metadata["ResolvedExecutionPolicy"] = snapshot.DeepClone();
+            dispatch.Metadata["ResolvedExecutionPolicy"] = snapshot.DeepClone();
+        }
+
+        taskExecution.Metadata["ResolvedExecutionProvider"] = JsonValue.Create(policy.ProviderKey);
+        taskExecution.Metadata["ResolvedExecutionMode"] = JsonValue.Create(policy.ExecutionMode);
+    }
 
     private static string GetSagaId(OrchestrationInstance instance)
         => string.IsNullOrWhiteSpace(instance.SagaId)
