@@ -157,6 +157,8 @@ Samples:
 - `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample`: Mongo-backed runtime host that uses the MongoDB EF Core provider while keeping Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, Runtime WebUI, and runtime APIs wired through the same orchestration packages.
 - `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample`: Mongo-backed control-plane host that uses the MongoDB EF Core provider with design, distribution, security, WebUI, artifact delivery endpoints, APIs, and seed data.
 
+Runtime samples register the Azure Service Bus Pigeon adapter only when `ConnectionStrings:AzureServiceBus` or `Pigeon:MessageBrokers:AzureServiceBus:ConnectionString` is configured. With the default empty value, the hosts still start for local storage, distribution, and WebUI smoke testing without requiring a broker.
+
 ## Sagas Orchestrations
 
 Krackend Sagas Orchestrations is split into composable libraries so the runtime, control plane, transport adapters, client integrations, and UI modules can evolve independently:
