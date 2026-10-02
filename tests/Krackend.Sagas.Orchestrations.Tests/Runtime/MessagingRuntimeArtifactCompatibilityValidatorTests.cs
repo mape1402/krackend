@@ -217,7 +217,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
 
         var result = await ValidateAsync(artifact);
 
-        AssertFailure(result, "TaskKindNotSupported");
+        AssertFailure(result, "TaskRuntimeAdapterNotConfigured");
     }
 
     [Fact]
@@ -295,6 +295,25 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(artifact);
 
         AssertFailure(result, "RetryStrategyNotSupported");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRetryPolicyHasRetriesWithoutErrorCodes_ReturnsRetryableErrorCodesMissing()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            RetryPolicy = new RetryPolicyArtifact(
+                1,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                [],
+                true)
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "RetryableErrorCodesMissing");
     }
 
     [Fact]
@@ -426,7 +445,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
 
         var result = await ValidateAsync(artifact);
 
-        AssertFailure(result, "CompensationTaskKindNotSupported");
+        AssertFailure(result, "CompensationTaskRuntimeAdapterNotConfigured");
     }
 
     [Fact]

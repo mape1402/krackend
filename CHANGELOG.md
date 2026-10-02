@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ### Added
 
   - Added Pigeon service builder callbacks to the Runtime and Client Pigeon adapters so hosts can configure the full Pigeon surface, including JSON serializer options such as `JsonSerializerOptions.PropertyNamingPolicy`.
+  - Added runtime task adapter resolution for dispatch, retry, compensation, and artifact compatibility validation, with Messaging registered as the default adapter.
 
 - ### Fixed
 
   - Fixed runtime trigger promotion so Mule durable action retries and trigger idempotency metadata reuse the already-promoted orchestration instance instead of creating duplicate saga instances after partial start failures or action re-execution, with Entity Framework storage persisting the start idempotency key.
+  - Fixed runtime retry dispatch so it is transport-agnostic, uses the same adapter path as initial dispatch, and no longer assumes every retryable task is a messaging task.
+  - Fixed retry policy semantics so retries only occur for explicitly configured `RetryableErrorCodes`; empty retry-code lists do not retry, and `IsRetryableCandidate = false` suppresses retry even when the error code matches.
 
 ------
 

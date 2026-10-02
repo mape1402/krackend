@@ -373,6 +373,58 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineDoesNotRetryWhenRetryPolicyHasNoRetryableErrorCodes()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask(
+                "task.no.retry.codes",
+                1,
+                retryPolicy: RetryPolicy(2)))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-no-retry-codes");
+
+        var command = harness.Dispatcher.Commands.Single();
+        await harness.ForwardAsync(command, null, Failure("TransientFailure", "temporary outage"));
+
+        var instance = await harness.GetInstanceAsync(command);
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+
+        Assert.Single(harness.Dispatcher.Commands);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, task.Status);
+        Assert.Equal("TransientFailure", attempt.ErrorCode);
+    }
+
+    [Fact]
+    public async Task EngineDoesNotRetryWhenClientMarksMatchingErrorCodeAsNonRetryable()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask(
+                "task.nonretryable.hint",
+                1,
+                retryPolicy: RetryPolicy(2, "TransientFailure")))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-nonretryable-hint");
+
+        var command = harness.Dispatcher.Commands.Single();
+        await harness.ForwardAsync(
+            command,
+            null,
+            Failure("TransientFailure", "client says no retry", isRetryableCandidate: false));
+
+        var instance = await harness.GetInstanceAsync(command);
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+
+        Assert.Single(harness.Dispatcher.Commands);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, task.Status);
+        Assert.Equal("TransientFailure", attempt.ErrorCode);
+        Assert.False(attempt.Metadata["ExecutionIsRetryableCandidate"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task EngineStopsAfterRetryBudgetIsExhausted()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
@@ -729,7 +781,7 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, persistedTask.Status);
         Assert.True(persistedTask.Metadata["RetrySuppressed"]!.GetValue<bool>());
-        Assert.Contains("Task kind 'Http'", persistedTask.Metadata["RetryConfigurationError"]!.GetValue<string>());
+        Assert.Contains("No runtime task adapter is configured", persistedTask.Metadata["RetryConfigurationError"]!.GetValue<string>());
         Assert.Single(attempts);
         Assert.Contains(transitions, transition => transition.TransitionType == "TaskRetryConfigurationFailed");
     }
@@ -765,7 +817,7 @@ public sealed class MessagingDecisionE2ETests
         Assert.Empty(harness.Dispatcher.Commands);
         Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.True(persistedTask.Metadata["RetrySuppressed"]!.GetValue<bool>());
-        Assert.Contains("does not contain a messaging configuration", persistedTask.Metadata["RetryConfigurationError"]!.GetValue<string>());
+        Assert.Contains("does not contain messaging task configuration", persistedTask.Metadata["RetryConfigurationError"]!.GetValue<string>());
         Assert.Contains(transitions, transition => transition.TransitionType == "TaskRetryConfigurationFailed");
     }
 
@@ -1305,9 +1357,9 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal(TaskKind.Http, task.TaskKind);
-        Assert.Equal("UnsupportedTaskKind", task.Metadata["ExecutionErrorCode"]!.GetValue<string>());
+        Assert.Equal("TaskRuntimeAdapterNotConfigured", task.Metadata["ExecutionErrorCode"]!.GetValue<string>());
         Assert.True(task.Metadata["RetrySuppressed"]!.GetValue<bool>());
-        Assert.Contains(transitions, transition => transition.TransitionType == "TaskDispatchUnsupported");
+        Assert.Contains(transitions, transition => transition.TransitionType == "TaskDispatchAdapterMissing");
     }
 
     [Fact]
@@ -1903,13 +1955,15 @@ public sealed class MessagingDecisionE2ETests
 
     private static OrchestrationExecutionResultMetadata Failure(
         string errorCode,
-        string errorMessage)
+        string errorMessage,
+        bool? isRetryableCandidate = null)
         => new()
         {
             Succeeded = false,
             Status = "Failed",
             ErrorCode = errorCode,
             ErrorMessage = errorMessage,
+            IsRetryableCandidate = isRetryableCandidate,
             CompletedOnUtc = DateTime.UtcNow
         };
 

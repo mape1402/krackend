@@ -69,6 +69,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IOrchestrationTransformationExecutor, DefaultOrchestrationTransformationExecutor>();
             services.TryAddScoped<IOrchestrationValidationExecutor, DefaultOrchestrationValidationExecutor>();
             services.TryAddScoped<ITaskDispatchRequestPayloadPreparer, DefaultTaskDispatchRequestPayloadPreparer>();
+            services.TryAddScoped<ITaskRuntimeAdapterRegistry, TaskRuntimeAdapterRegistry>();
+            services.TryAddScoped<ITaskAttemptDispatcher, TaskAttemptDispatcher>();
             services.TryAddScoped<IOrchestrationTimeoutProcessor, DefaultOrchestrationTimeoutProcessor>();
             services.TryAddScoped<IDecisionHandler<StartStageDecision>, StartStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DispatchTaskDecision>, DispatchTaskDecisionHandler>();
@@ -84,6 +86,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IRemoteCommandDispatcher, RemoteCommandDispatcher>();
             services.TryAddScoped<IMessagingCommandSerializer, DefaultMessagingCommandSerializer>();
             services.TryAddScoped<IMessagingDispatchAdapter, DefaultMessagingDispatchAdapter>();
+            services.TryAddEnumerable(ServiceDescriptor.Scoped<ITaskRuntimeAdapter, MessagingTaskRuntimeAdapter>());
             services.AddOptions<RuntimeReplicaOptions>().BindConfiguration("Runtime:Replica");
             services.AddOptions<RuntimeGossipOptions>().BindConfiguration("Runtime:Gossip");
             services.AddOptions<OrchestrationTimeoutOptions>().BindConfiguration("Runtime:Timeouts");

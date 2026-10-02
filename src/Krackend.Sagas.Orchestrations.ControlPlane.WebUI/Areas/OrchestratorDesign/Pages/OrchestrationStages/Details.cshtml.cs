@@ -633,7 +633,13 @@ public sealed class DetailsModel : PageModel
 
         if (NewTask.HasRetryPolicy)
         {
-            ValidateRetryPolicy(nameof(NewTask.RetryMaxRetries), NewTask.RetryMaxRetries, nameof(NewTask.RetryDelaySeconds), NewTask.RetryDelaySeconds);
+            ValidateRetryPolicy(
+                nameof(NewTask.RetryMaxRetries),
+                NewTask.RetryMaxRetries,
+                nameof(NewTask.RetryDelaySeconds),
+                NewTask.RetryDelaySeconds,
+                nameof(NewTask.RetryableErrorCodes),
+                NewTask.RetryableErrorCodes);
         }
 
         if (NewTask.HasTimeoutPolicy)
@@ -641,12 +647,15 @@ public sealed class DetailsModel : PageModel
             ValidateTimeoutPolicy(
                 nameof(NewTask.TimeoutSeconds),
                 NewTask.TimeoutSeconds,
+                NewTask.TimeoutBehavior,
                 nameof(NewTask.TimeoutWaitSeconds),
                 NewTask.TimeoutWaitSeconds,
                 nameof(NewTask.TimeoutReconcileRetries),
                 NewTask.TimeoutReconcileRetries,
                 nameof(NewTask.TimeoutReconcileDelaySeconds),
-                NewTask.TimeoutReconcileDelaySeconds);
+                NewTask.TimeoutReconcileDelaySeconds,
+                nameof(NewTask.TimeoutReconcileRetryableErrorCodes),
+                NewTask.TimeoutReconcileRetryableErrorCodes);
         }
 
         if (!NewTask.HasCompensation)
@@ -663,7 +672,9 @@ public sealed class DetailsModel : PageModel
                 nameof(NewTask.CompensationRetryMaxRetries),
                 NewTask.CompensationRetryMaxRetries,
                 nameof(NewTask.CompensationRetryDelaySeconds),
-                NewTask.CompensationRetryDelaySeconds);
+                NewTask.CompensationRetryDelaySeconds,
+                nameof(NewTask.CompensationRetryableErrorCodes),
+                NewTask.CompensationRetryableErrorCodes);
         }
 
         if (NewTask.HasCompensationTimeoutPolicy)
@@ -671,12 +682,15 @@ public sealed class DetailsModel : PageModel
             ValidateTimeoutPolicy(
                 nameof(NewTask.CompensationTimeoutSeconds),
                 NewTask.CompensationTimeoutSeconds,
+                NewTask.CompensationTimeoutBehavior,
                 nameof(NewTask.CompensationTimeoutWaitSeconds),
                 NewTask.CompensationTimeoutWaitSeconds,
                 nameof(NewTask.CompensationTimeoutReconcileRetries),
                 NewTask.CompensationTimeoutReconcileRetries,
                 nameof(NewTask.CompensationTimeoutReconcileDelaySeconds),
-                NewTask.CompensationTimeoutReconcileDelaySeconds);
+                NewTask.CompensationTimeoutReconcileDelaySeconds,
+                nameof(NewTask.CompensationTimeoutReconcileRetryableErrorCodes),
+                NewTask.CompensationTimeoutReconcileRetryableErrorCodes);
         }
     }
 
@@ -763,7 +777,13 @@ public sealed class DetailsModel : PageModel
         ValidateOptionalUlid($"{prefix}PluginId", pluginId);
     }
 
-    private void ValidateRetryPolicy(string retriesField, int retries, string delayField, double delaySeconds)
+    private void ValidateRetryPolicy(
+        string retriesField,
+        int retries,
+        string delayField,
+        double delaySeconds,
+        string retryableErrorCodesField,
+        string retryableErrorCodes)
     {
         if (retries < 0)
         {
@@ -774,17 +794,25 @@ public sealed class DetailsModel : PageModel
         {
             ModelState.AddModelError(delayField, "Delay cannot be negative.");
         }
+
+        if (retries > 0 && !ParseStringList(retryableErrorCodes).Any())
+        {
+            ModelState.AddModelError(retryableErrorCodesField, "Capture at least one retryable error code.");
+        }
     }
 
     private void ValidateTimeoutPolicy(
         string timeoutField,
         double timeoutSeconds,
+        string timeoutBehavior,
         string waitField,
         double waitSeconds,
         string reconcileRetriesField,
         int reconcileRetries,
         string reconcileDelayField,
-        double reconcileDelaySeconds)
+        double reconcileDelaySeconds,
+        string reconcileRetryableErrorCodesField,
+        string reconcileRetryableErrorCodes)
     {
         if (timeoutSeconds <= 0)
         {
@@ -804,6 +832,13 @@ public sealed class DetailsModel : PageModel
         if (reconcileDelaySeconds < 0)
         {
             ModelState.AddModelError(reconcileDelayField, "Reconcile delay cannot be negative.");
+        }
+
+        if (ParseEnum(timeoutBehavior, TimeoutBehavior.Fail) == TimeoutBehavior.Reconcile &&
+            reconcileRetries > 0 &&
+            !ParseStringList(reconcileRetryableErrorCodes).Any())
+        {
+            ModelState.AddModelError(reconcileRetryableErrorCodesField, "Capture at least one retryable error code.");
         }
     }
 

@@ -149,6 +149,7 @@ public sealed class DesignCommandValidatorTests
         yield return [CreateTask(condition: new ExecutionCondition { Engine = EngineType.Custom, Configuration = new DslConditionConfiguration { Expression = new Expression("true") } })];
         yield return [CreateTask(transformation: new TransformationDefinition { Engine = EngineType.Custom, Configuration = new DslTransformationConfiguration { Dsl = "{}" } })];
         yield return [CreateTask(retryPolicy: Retry(maxRetries: -1))];
+        yield return [CreateTask(retryPolicy: RetryWithoutCodes(maxRetries: 1))];
         yield return [CreateTask(retryPolicy: new RetryPolicy { MaxRetries = 1, StrategyType = RetryStrategyType.Exponential, Strategy = FixedDelay(1) })];
         yield return [CreateTask(timeoutPolicy: new TimeoutPolicy { Timeout = Duration.FromSeconds(0), TimeoutBehavior = TimeoutBehavior.Fail, TimeoutBehaviorPolicy = new FailTimeoutBehaviorPolicy() })];
         yield return [CreateTask(timeoutPolicy: new TimeoutPolicy { Timeout = Duration.FromSeconds(1), TimeoutBehavior = TimeoutBehavior.Wait, TimeoutBehaviorPolicy = new WaitTimeoutBehaviorPolicy { WaitingTime = Duration.FromSeconds(0) } })];
@@ -286,6 +287,15 @@ public sealed class DesignCommandValidatorTests
         };
 
     private static RetryPolicy Retry(int maxRetries = 3)
+        => new()
+        {
+            MaxRetries = maxRetries,
+            StrategyType = RetryStrategyType.Fixed,
+            Strategy = FixedDelay(1),
+            RetryableErrorCodes = ["Transient"]
+        };
+
+    private static RetryPolicy RetryWithoutCodes(int maxRetries)
         => new()
         {
             MaxRetries = maxRetries,
