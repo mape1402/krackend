@@ -170,6 +170,189 @@ public sealed class ExecutionPolicyResolverTests
         Assert.Equal("ExecutionSecretUnavailable", result.ErrorCode);
     }
 
+    [Fact]
+    public void ResolveRejectsForbiddenProvider()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = new ExecutionPolicyArtifact
+            {
+                DefaultProviderKey = ExecutionConstants.BuiltInLocalProvider,
+                ForbiddenProviderKeys = [ExecutionConstants.BuiltInLocalProvider]
+            },
+            RuntimeNodeCapabilities = RuntimeNodeCapabilitiesArtifact.LocalDefaults
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.forbidden-provider")));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionProviderForbidden", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveRejectsProviderThatIsAllowedButNotConfigured()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = Policy("missing-provider"),
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = ["missing-provider"],
+                SupportedExecutionModes = [ExecutionConstants.SandboxMode]
+            }
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.missing-provider")));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionProviderNotConfigured", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveRejectsProviderExecutionModeUnsupportedByRuntimeNode()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = Policy("kubernetes"),
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = ["kubernetes"],
+                SupportedExecutionModes = [ExecutionConstants.RemoteWorkerMode]
+            }
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.unsupported-mode")));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionModeNotSupported", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveRejectsExecutionModeDisallowedByTask()
+    {
+        var task = TaskArtifactFor("task.disallowed-mode") with
+        {
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                AllowedExecutionModes = [ExecutionConstants.RemoteWorkerMode]
+            }
+        };
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            RuntimeNodeCapabilities = RuntimeNodeCapabilitiesArtifact.LocalDefaults
+        });
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionModeNotAllowed", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveRejectsNetworkRequirementWhenRuntimeNodeCannotProvideNetwork()
+    {
+        var task = TaskArtifactFor("task.network") with
+        {
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                RequiresNetwork = true
+            }
+        };
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = [ExecutionConstants.BuiltInLocalProvider],
+                SupportedExecutionModes = [ExecutionConstants.InProcessTrustedMode],
+                SupportsNetwork = false
+            }
+        });
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionNetworkUnavailable", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveRejectsMemoryRequirementAboveRuntimeNodeLimit()
+    {
+        var task = TaskArtifactFor("task.memory") with
+        {
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                MinMemoryMb = 512
+            }
+        };
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = [ExecutionConstants.BuiltInLocalProvider],
+                SupportedExecutionModes = [ExecutionConstants.InProcessTrustedMode],
+                MaxMemoryMb = 128
+            }
+        });
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionMemoryUnavailable", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveClampsPolicyMemoryToTaskMaximumAndPromotesIsolationRequirement()
+    {
+        var task = TaskArtifactFor("task.memory-clamp") with
+        {
+            ExecutionPolicy = new ExecutionPolicyArtifact
+            {
+                DefaultProviderKey = "kubernetes",
+                MemoryMb = 512
+            },
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                MaxMemoryMb = 128,
+                Isolation = ExecutionIsolationRequirement.Required
+            }
+        };
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = ["kubernetes"],
+                SupportedExecutionModes = [ExecutionConstants.SandboxMode],
+                MaxMemoryMb = 256
+            }
+        });
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(128, result.ResolvedPolicy.MemoryMb);
+        Assert.Equal(ExecutionIsolationRequirement.Required, result.ResolvedPolicy.Isolation);
+    }
+
+    [Fact]
+    public void ResolveSelectsFirstAllowedProviderWhenNoDefaultProviderIsConfigured()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = ExecutionPolicyArtifact.Empty,
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = ["remote-worker", "kubernetes"],
+                SupportedExecutionModes = [ExecutionConstants.RemoteWorkerMode, ExecutionConstants.SandboxMode]
+            }
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.first-provider")));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("kubernetes", result.ResolvedPolicy.ProviderKey);
+        Assert.Equal(ExecutionPolicyScope.Environment, result.ResolvedPolicy.ProviderSource);
+    }
+
     private static IExecutionPolicyResolver CreateResolver(RuntimeExecutionOptions options)
         => new DefaultExecutionPolicyResolver(
             Options.Create(options),
