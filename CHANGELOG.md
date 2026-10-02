@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.2.0] - 2026-10-02
+
+- ### Added
+
+  - Added extension-ready orchestration artifacts with schema versioning, required capability declarations, required bundle declarations, and migration of legacy artifacts to the current schema at runtime.
+  - Added runtime execution policies with environment, runtime-node, orchestration, stage, and task overrides, plus runtime node capability checks and resolved execution policy snapshots on attempts and dispatches.
+  - Added sandbox provider abstractions with the current `built-in-local` provider preserving existing in-process dispatch behavior while leaving the runtime ready for isolated providers such as Kubernetes-backed workers.
+  - Added runtime extension package activation tracking with in-memory and Entity Framework repositories, including SQL Server sample migrations for durable `RuntimeExtensionPackages` storage.
+
+- ### Changed
+
+  - Changed runtime dispatch to resolve execution policy before dispatch and route work through the selected execution provider while keeping the default behavior compatible with existing messaging tasks.
+  - Changed runtime artifact compatibility validation to reject external bundles/capabilities unless the runtime node has the matching activated package and manifest capability.
+
+------
+
 ## [v4.1.0] - 2026-10-02
 
 - ### Added
