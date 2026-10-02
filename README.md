@@ -202,6 +202,8 @@ The runtime resolves execution policy hierarchically: environment defaults, runt
 
 External bundles are explicit runtime state. Artifacts that require an external bundle or capability are accepted only when the runtime node has an activated `RuntimeExtensionPackage` with the matching bundle id, extension key, semantic version, checksum when provided, and manifest capability. The in-memory repository is suitable for tests or simple hosts; `Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework` persists activation state in `Runtime.RuntimeExtensionPackages` for durable multi-replica hosts.
 
+That activation state is part of the shared Entity Framework runtime model, so relational hosts and the MongoDB EF provider used by the Mongo runtime sample validate bundles through the same repository contract.
+
 Hosts can configure runtime execution defaults through `Runtime:Execution` or `RuntimeExecutionOptions`:
 
 ```csharp

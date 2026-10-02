@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added runtime execution policies with environment, runtime-node, orchestration, stage, and task overrides, plus runtime node capability checks and resolved execution policy snapshots on attempts and dispatches.
   - Added sandbox provider abstractions with the current `built-in-local` provider preserving existing in-process dispatch behavior while leaving the runtime ready for isolated providers such as Kubernetes-backed workers.
   - Added runtime extension package activation tracking with in-memory and Entity Framework repositories, including SQL Server sample migrations for durable `RuntimeExtensionPackages` storage.
+  - Added a MongoDB EF provider regression test for the runtime extension package model used by the Mongo runtime sample.
 
 - ### Changed
 

@@ -21,6 +21,10 @@
     <PackageReference Include="TurtlePath.Spider" Version="1.6.3" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="MongoDB.EntityFrameworkCore" Version="10.0.4" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Abstractions\Krackend.Sagas.Orchestrations.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.csproj" />
