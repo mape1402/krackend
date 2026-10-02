@@ -332,7 +332,8 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             true,
             true,
             "not-a-ulid",
-            " provider ");
+            " provider ",
+            SchemaContractKind.Event);
 
         var eventChannel = Assert.IsType<EventTriggerChannel>(fallbackChannel);
         Assert.Equal("events.sales.sale.created", eventChannel.Topic);

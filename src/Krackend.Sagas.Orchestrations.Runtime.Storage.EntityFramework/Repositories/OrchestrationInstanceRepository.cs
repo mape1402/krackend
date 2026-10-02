@@ -84,7 +84,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Created || x.Status == OrchestrationInstanceStatus.Running, cancellationToken),
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Waiting, cancellationToken),
             await query.CountAsync(x => x.CompletedOnUtc >= recentSinceUtc, cancellationToken),
-            await query.CountAsync(x => x.FailedOnUtc >= recentSinceUtc, cancellationToken),
+            await query.CountAsync(x => x.FailedOnUtc >= recentSinceUtc || x.Status == OrchestrationInstanceStatus.DeadLettered, cancellationToken),
             recentSinceUtc);
     }
 }

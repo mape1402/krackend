@@ -32,6 +32,12 @@ internal sealed class TriggerBindingEntityConfiguration : IEntityTypeConfigurati
                 value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
                 value => JsonSerializer.Deserialize<TriggerChannelEnvelopeJsonModel>(value, (JsonSerializerOptions)null));
 
+        builder.Property(x => x.CompensationDefinition)
+            .HasColumnName("CompensationDefinitionJson")
+            .HasConversion(
+                value => JsonSerializer.Serialize(value, (JsonSerializerOptions)null),
+                value => JsonSerializer.Deserialize<CompensationDefinitionJsonModel>(value, (JsonSerializerOptions)null));
+
         builder.HasIndex(x => x.OrchestrationVersionId);
     }
 }

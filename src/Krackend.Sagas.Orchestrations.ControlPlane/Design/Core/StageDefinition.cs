@@ -36,6 +36,10 @@ public sealed class StageDefinition
     /// Gets or sets order.
     /// </summary>
     public int Order { get; set; }
+    /// <summary>
+    /// Gets or sets is enabled.
+    /// </summary>
+    public bool IsEnabled { get; set; } = true;
 
     /// <summary>
     /// Gets or sets execution condition.

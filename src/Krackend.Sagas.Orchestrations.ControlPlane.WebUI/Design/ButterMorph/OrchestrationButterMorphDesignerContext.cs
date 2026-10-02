@@ -19,4 +19,9 @@ public sealed record OrchestrationButterMorphDesignerContext
     /// Gets the stage definition identifier.
     /// </summary>
     public string StageDefinitionId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the trigger binding identifier.
+    /// </summary>
+    public string TriggerBindingId { get; init; } = string.Empty;
 }

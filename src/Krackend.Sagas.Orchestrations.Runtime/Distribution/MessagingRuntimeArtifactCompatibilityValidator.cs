@@ -101,6 +101,12 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
             {
                 return validationResult;
             }
+
+            var compensationResult = ValidateTriggerCompensation(trigger);
+            if (!compensationResult.Succeeded)
+            {
+                return compensationResult;
+            }
         }
 
         foreach (var stage in stages)
@@ -182,6 +188,65 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         }
 
         return ValidateCompensation(task, stage);
+    }
+
+    private RuntimeArtifactCompatibilityValidationResult ValidateTriggerCompensation(TriggerBindingArtifact trigger)
+    {
+        if (trigger.Compensation is null || trigger.Compensation.Configuration is null)
+        {
+            return RuntimeArtifactCompatibilityValidationResult.Success();
+        }
+
+        if (!_adapterRegistry.TryGet(trigger.Compensation.CompensationTaskKind, out var adapter))
+        {
+            return Failure(
+                "CompensationTaskRuntimeAdapterNotConfigured",
+                $"Compensation for trigger '{trigger.Id}' uses '{trigger.Compensation.CompensationTaskKind}', but no runtime task adapter is configured for that compensation task kind.");
+        }
+
+        var syntheticTask = new TaskArtifact(
+            trigger.Id,
+            $"trigger:{trigger.Id}",
+            trigger.Description ?? $"trigger:{trigger.Id}",
+            0,
+            string.Empty,
+            trigger.Compensation.CompensationTaskKind,
+            TaskExecutionMode.Sequential,
+            null,
+            null,
+            trigger.Compensation.Transformation,
+            trigger.Compensation.Configuration,
+            trigger.Compensation.RetryPolicy,
+            trigger.Compensation.TimeoutPolicy,
+            OnErrorPolicy.Stop,
+            trigger.Compensation,
+            trigger.Compensation.DispatchType,
+            true);
+        var adapterResult = adapter.ValidateCompensation(syntheticTask, "trigger");
+        if (!adapterResult.Succeeded)
+        {
+            return adapterResult;
+        }
+
+        var retryPolicyResult = ValidateRetryPolicy(trigger.Compensation.RetryPolicy, $"compensation for trigger '{trigger.Id}'");
+        if (!retryPolicyResult.Succeeded)
+        {
+            return retryPolicyResult;
+        }
+
+        var timeoutPolicyResult = ValidateTimeoutPolicy(trigger.Compensation.TimeoutPolicy, $"compensation for trigger '{trigger.Id}'");
+        if (!timeoutPolicyResult.Succeeded)
+        {
+            return timeoutPolicyResult;
+        }
+
+        var conditionResult = ValidateCondition(trigger.Compensation.ExecutionCondition, $"compensation for trigger '{trigger.Id}'");
+        if (!conditionResult.Succeeded)
+        {
+            return conditionResult;
+        }
+
+        return ValidateTransformation(trigger.Compensation.Transformation, $"compensation for trigger '{trigger.Id}'");
     }
 
     private RuntimeArtifactCompatibilityValidationResult ValidateCompensation(TaskArtifact task, StageArtifact stage)

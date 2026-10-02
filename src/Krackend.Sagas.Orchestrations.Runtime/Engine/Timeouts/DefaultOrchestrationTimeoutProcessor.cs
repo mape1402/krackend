@@ -270,6 +270,8 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             or OrchestrationInstanceStatus.Stopped
             or OrchestrationInstanceStatus.Compensating
             or OrchestrationInstanceStatus.Compensated
+            or OrchestrationInstanceStatus.DeadLettered
+            or OrchestrationInstanceStatus.Aborted
             or OrchestrationInstanceStatus.Failed;
 
     private static bool IsContinueTimeout(TimeoutPolicyArtifact timeoutPolicy)

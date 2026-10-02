@@ -36,4 +36,8 @@ public sealed class TriggerBindingEntity
     /// Gets or sets TriggerChannel.
     /// </summary>
     public TriggerChannelEnvelopeJsonModel TriggerChannel { get; set; } = new();
+    /// <summary>
+    /// Gets or sets CompensationDefinition.
+    /// </summary>
+    public CompensationDefinitionJsonModel CompensationDefinition { get; set; }
 }

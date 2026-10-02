@@ -54,6 +54,22 @@ public interface ITaskRepository
     Task SetTransformation(Id taskDefinitionId, TransformationDefinition transformation, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only compensation execution condition of one task definition.
+    /// </summary>
+    /// <param name="taskDefinitionId">Identifier of the task definition.</param>
+    /// <param name="executionCondition">Compensation execution condition to persist.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetCompensationExecutionCondition(Id taskDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates only compensation transformation of one task definition.
+    /// </summary>
+    /// <param name="taskDefinitionId">Identifier of the task definition.</param>
+    /// <param name="transformation">Compensation transformation to persist.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetCompensationTransformation(Id taskDefinitionId, TransformationDefinition transformation, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all tasks that belong to one stage definition.
     /// </summary>
     /// <param name="stageDefinitionId">Parent stage definition identifier.</param>

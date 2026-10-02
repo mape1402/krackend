@@ -6,7 +6,11 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrationButterMorphDesignerContextParser
 {
     private const string TaskTransformationPrefix = "orchestration-task-transform";
+    private const string TaskCompensationTransformationPrefix = "orchestration-task-compensation-transform";
+    private const string TriggerCompensationTransformationPrefix = "orchestration-trigger-compensation-transform";
     private const string TaskExecutionConditionPrefix = "orchestration-task-execution-condition";
+    private const string TaskCompensationExecutionConditionPrefix = "orchestration-task-compensation-execution-condition";
+    private const string TriggerCompensationExecutionConditionPrefix = "orchestration-trigger-compensation-execution-condition";
     private const string StageExecutionConditionPrefix = "orchestration-stage-execution-condition";
 
     /// <inheritdoc />
@@ -16,9 +20,33 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
     }
 
     /// <inheritdoc />
+    public string FormatTaskCompensationTransformation(string orchestrationVersionId, string taskDefinitionId)
+    {
+        return Format(TaskCompensationTransformationPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
+    }
+
+    /// <inheritdoc />
+    public string FormatTriggerCompensationTransformation(string orchestrationVersionId, string triggerBindingId)
+    {
+        return Format(TriggerCompensationTransformationPrefix, orchestrationVersionId, triggerBindingId, nameof(triggerBindingId));
+    }
+
+    /// <inheritdoc />
     public string FormatTaskExecutionCondition(string orchestrationVersionId, string taskDefinitionId)
     {
         return Format(TaskExecutionConditionPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
+    }
+
+    /// <inheritdoc />
+    public string FormatTaskCompensationExecutionCondition(string orchestrationVersionId, string taskDefinitionId)
+    {
+        return Format(TaskCompensationExecutionConditionPrefix, orchestrationVersionId, taskDefinitionId, nameof(taskDefinitionId));
+    }
+
+    /// <inheritdoc />
+    public string FormatTriggerCompensationExecutionCondition(string orchestrationVersionId, string triggerBindingId)
+    {
+        return Format(TriggerCompensationExecutionConditionPrefix, orchestrationVersionId, triggerBindingId, nameof(triggerBindingId));
     }
 
     /// <inheritdoc />
@@ -34,9 +62,33 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
     }
 
     /// <inheritdoc />
+    public bool TryParseTaskCompensationTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    {
+        return TryParseTaskContext(contextKey, TaskCompensationTransformationPrefix, out context);
+    }
+
+    /// <inheritdoc />
+    public bool TryParseTriggerCompensationTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    {
+        return TryParseTriggerContext(contextKey, TriggerCompensationTransformationPrefix, out context);
+    }
+
+    /// <inheritdoc />
     public bool TryParseTaskExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context)
     {
         return TryParseTaskContext(contextKey, TaskExecutionConditionPrefix, out context);
+    }
+
+    /// <inheritdoc />
+    public bool TryParseTaskCompensationExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    {
+        return TryParseTaskContext(contextKey, TaskCompensationExecutionConditionPrefix, out context);
+    }
+
+    /// <inheritdoc />
+    public bool TryParseTriggerCompensationExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context)
+    {
+        return TryParseTriggerContext(contextKey, TriggerCompensationExecutionConditionPrefix, out context);
     }
 
     /// <inheritdoc />
@@ -52,6 +104,25 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
         {
             OrchestrationVersionId = versionId,
             StageDefinitionId = stageId
+        };
+        return true;
+    }
+
+    private static bool TryParseTriggerContext(
+        string contextKey,
+        string prefix,
+        out OrchestrationButterMorphDesignerContext context)
+    {
+        context = null;
+        if (!TryParse(contextKey, prefix, out var versionId, out var triggerId))
+        {
+            return false;
+        }
+
+        context = new OrchestrationButterMorphDesignerContext
+        {
+            OrchestrationVersionId = versionId,
+            TriggerBindingId = triggerId
         };
         return true;
     }

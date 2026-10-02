@@ -55,7 +55,8 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             trigger.TriggerType,
             MapTriggerChannel(trigger.TriggerChannel),
             trigger.IsEnabled,
-            trigger.Description);
+            trigger.Description,
+            MapCompensation(trigger.CompensationDefinition));
 
     private static ITriggerChannelArtifact MapTriggerChannel(ITriggerChannel channel)
         => channel switch
@@ -102,6 +103,7 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             stage.Key,
             stage.Name,
             stage.Order,
+            stage.IsEnabled,
             MapCondition(stage.ExecutionCondition, stage.HasExecutionCondition),
             stage.TaskDefinitions.OrderBy(x => x.Order).Select(MapTask).ToArray(),
             stage.ParallelGroups.Select(MapParallelGroup).ToArray(),

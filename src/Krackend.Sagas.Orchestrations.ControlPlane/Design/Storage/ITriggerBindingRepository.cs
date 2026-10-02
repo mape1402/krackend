@@ -38,6 +38,22 @@ public interface ITriggerBindingRepository
     Task SetIsEnabled(Id triggerBindingId, bool isEnabled, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only compensation execution condition of one trigger binding.
+    /// </summary>
+    /// <param name="triggerBindingId">Identifier of the trigger binding.</param>
+    /// <param name="executionCondition">Compensation execution condition to persist.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetCompensationExecutionCondition(Id triggerBindingId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates only compensation transformation of one trigger binding.
+    /// </summary>
+    /// <param name="triggerBindingId">Identifier of the trigger binding.</param>
+    /// <param name="transformation">Compensation transformation to persist.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetCompensationTransformation(Id triggerBindingId, TransformationDefinition transformation, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all trigger bindings that belong to one orchestration version.
     /// </summary>
     /// <param name="orchestrationVersionId">Parent orchestration version identifier.</param>

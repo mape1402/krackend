@@ -46,6 +46,22 @@ public interface ITriggerBindingApplicationService
     Task<bool> Disable(DisableTriggerBindingCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates compensation execution condition of one trigger.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> SetCompensationExecutionCondition(SetTriggerCompensationExecutionConditionCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates compensation transformation of one trigger.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> SetCompensationTransformation(SetTriggerCompensationTransformationCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets resources that match the query.
     /// </summary>
     /// <param name="query">Query to execute.</param>

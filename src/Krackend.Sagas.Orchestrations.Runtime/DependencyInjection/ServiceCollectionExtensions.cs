@@ -12,6 +12,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
@@ -68,6 +69,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IOrchestrationBranchNavigator, DefaultOrchestrationBranchNavigator>();
             services.TryAddScoped<IOrchestrationTransformationExecutor, DefaultOrchestrationTransformationExecutor>();
             services.TryAddScoped<IOrchestrationValidationExecutor, DefaultOrchestrationValidationExecutor>();
+            services.TryAddScoped<IOrchestrationRecoveryService, DefaultOrchestrationRecoveryService>();
             services.TryAddScoped<ITaskDispatchRequestPayloadPreparer, DefaultTaskDispatchRequestPayloadPreparer>();
             services.TryAddScoped<ITaskRuntimeAdapterRegistry, TaskRuntimeAdapterRegistry>();
             services.TryAddScoped<ITaskAttemptDispatcher, TaskAttemptDispatcher>();
@@ -78,6 +80,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionHandler<CompleteInstanceDecision>, CompleteInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteCallbackDecision>, CompleteCallbackDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompensateInstanceDecision>, CompensateInstanceDecisionHandler>();
+            services.TryAddScoped<IDecisionHandler<DeadLetterInstanceDecision>, DeadLetterInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<RetryDecision>, RetryDecisionHandler>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();
             services.TryAddScoped<IRuntimeArtifactResolver, DefaultRuntimeArtifactResolver>();

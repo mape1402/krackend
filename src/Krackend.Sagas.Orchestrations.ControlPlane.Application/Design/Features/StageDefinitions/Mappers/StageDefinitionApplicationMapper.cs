@@ -22,6 +22,7 @@ public sealed class StageDefinitionApplicationMapper : IStageDefinitionApplicati
             Name = source.Name,
             Description = source.Description ?? string.Empty,
             Order = source.Order,
+            IsEnabled = source.IsEnabled,
             ExecutionCondition = source.ExecutionCondition,
             HasExecutionCondition = source.HasExecutionCondition,
         };

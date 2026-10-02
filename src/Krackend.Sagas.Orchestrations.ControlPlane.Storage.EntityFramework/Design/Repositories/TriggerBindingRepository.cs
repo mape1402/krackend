@@ -71,6 +71,40 @@ public sealed class TriggerBindingRepository : ITriggerBindingRepository
     }
 
     /// <summary>
+    /// Executes SetCompensationExecutionCondition.
+    /// </summary>
+    public async Task SetCompensationExecutionCondition(Id triggerBindingId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+    {
+        var current = await _dbContext.TriggerBindings.FirstOrDefaultAsync(x => x.Id == triggerBindingId, cancellationToken)
+            ?? throw new KeyNotFoundException($"TriggerBinding '{triggerBindingId}' was not found.");
+
+        var definition = current.ToDefinition();
+        definition.CompensationDefinition = EnsureCompensation(definition.CompensationDefinition);
+        definition.CompensationDefinition.ExecutionCondition = executionCondition;
+        definition.CompensationDefinition.HasExecutionCondition = executionCondition is not null;
+
+        current.CompensationDefinition = definition.ToEntity().CompensationDefinition;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes SetCompensationTransformation.
+    /// </summary>
+    public async Task SetCompensationTransformation(Id triggerBindingId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+    {
+        var current = await _dbContext.TriggerBindings.FirstOrDefaultAsync(x => x.Id == triggerBindingId, cancellationToken)
+            ?? throw new KeyNotFoundException($"TriggerBinding '{triggerBindingId}' was not found.");
+
+        var definition = current.ToDefinition();
+        definition.CompensationDefinition = EnsureCompensation(definition.CompensationDefinition);
+        definition.CompensationDefinition.Transformation = transformation;
+        definition.CompensationDefinition.HasTransformation = transformation is not null;
+
+        current.CompensationDefinition = definition.ToEntity().CompensationDefinition;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Executes GetAll.
     /// </summary>
     public async Task<IEnumerable<TriggerBinding>> GetAll(Id orchestrationVersionId, CancellationToken cancellationToken = default)
@@ -93,4 +127,12 @@ public sealed class TriggerBindingRepository : ITriggerBindingRepository
 
         return entity.ToDefinition();
     }
+
+    private static CompensationDefinition EnsureCompensation(CompensationDefinition compensation)
+        => compensation ?? new CompensationDefinition
+        {
+            CompensationTaskKind = TaskKind.Messaging,
+            Configuration = new MessagingTaskConfiguration { Topic = string.Empty },
+            DispatchType = TaskDispatchType.FireAndForget,
+        };
 }

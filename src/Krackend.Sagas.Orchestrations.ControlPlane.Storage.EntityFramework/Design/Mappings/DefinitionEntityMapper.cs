@@ -131,6 +131,7 @@ internal static class DefinitionEntityMapper
             Name = definition.Name,
             Order = definition.Order,
             Description = definition.Description,
+            IsEnabled = definition.IsEnabled,
             ExecutionCondition = ToOptionalJson(definition.ExecutionCondition, definition.HasExecutionCondition),
         };
     }
@@ -220,6 +221,7 @@ internal static class DefinitionEntityMapper
             Name = entity.Name,
             Description = entity.Description,
             Order = entity.Order,
+            IsEnabled = entity.IsEnabled,
             ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
             HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
         };
@@ -297,6 +299,7 @@ internal static class DefinitionEntityMapper
             IsEnabled = definition.IsEnabled,
             Description = definition.Description,
             TriggerChannel = ToJson(definition.TriggerChannel),
+            CompensationDefinition = ToOptionalJson(definition.CompensationDefinition),
         };
     }
 
@@ -314,6 +317,7 @@ internal static class DefinitionEntityMapper
             TriggerChannel = ToModel(entity.TriggerChannel),
             IsEnabled = entity.IsEnabled,
             Description = entity.Description,
+            CompensationDefinition = ToOptionalModel(entity.CompensationDefinition),
         };
     }
 

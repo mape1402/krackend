@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
@@ -75,6 +76,30 @@ public static class EndpointRouteBuilderExtensions
             => string.IsNullOrWhiteSpace(instanceId)
                 ? ApiEndpointResults.BadRequest("Instance id is required.")
                 : Results.Ok(await diagnostics.GetDetail(instanceId, cancellationToken)));
+
+        var manageGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ManagePolicy);
+
+        manageGroup.MapPost("/instances/{instanceId}/replay", async (
+            string instanceId,
+            [FromBody] RuntimeInstanceRecoveryRequest request,
+            [FromServices] IOrchestrationRecoveryService recovery,
+            CancellationToken cancellationToken)
+            =>
+            {
+                var result = await recovery.ReplayAsync(instanceId, request?.Payload, cancellationToken);
+                return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+            });
+
+        manageGroup.MapPost("/instances/{instanceId}/abort", async (
+            string instanceId,
+            [FromBody] RuntimeInstanceRecoveryRequest request,
+            [FromServices] IOrchestrationRecoveryService recovery,
+            CancellationToken cancellationToken)
+            =>
+            {
+                var result = await recovery.AbortAsync(instanceId, request?.Reason, cancellationToken);
+                return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+            });
     }
 
     private static void MapArtifacts(RouteGroupBuilder group, RuntimeRestApiOptions options)

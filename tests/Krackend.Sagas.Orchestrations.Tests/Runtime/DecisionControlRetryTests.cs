@@ -179,6 +179,7 @@ public sealed class DecisionControlRetryTests
             "inventory",
             "Inventory",
             1,
+            true,
             null,
             [task],
             [],

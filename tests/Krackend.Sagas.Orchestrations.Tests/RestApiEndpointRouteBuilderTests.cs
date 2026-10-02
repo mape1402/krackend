@@ -13,11 +13,13 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Api;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums;
 using Krackend.Sagas.Orchestrations.Runtime.Api;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -236,6 +238,53 @@ public sealed class RestApiEndpointRouteBuilderTests
     }
 
     [Fact]
+    public async Task RuntimeApiMapsReplayAndAbortRecoveryEndpoints()
+    {
+        var recovery = Substitute.For<IOrchestrationRecoveryService>();
+        var replayPayload = string.Empty;
+        var abortReason = string.Empty;
+        recovery.ReplayAsync("instance-1", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                replayPayload = call.ArgAt<string>(1);
+                return OrchestrationRecoveryResult.Success("instance-1", "Running", "Replay requested.");
+            });
+        recovery.AbortAsync("instance-2", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                abortReason = call.ArgAt<string>(1);
+                return OrchestrationRecoveryResult.Success("instance-2", "Aborted", "Operator cancelled.");
+            });
+
+        await using var app = BuildApp(
+            services => services.AddSingleton(recovery),
+            endpoints => endpoints.MapKrackendOrchestrationsRuntimeApi());
+
+        var replay = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/instances/{instanceId}/replay",
+            "{\"payload\":\"{\\\"fixed\\\":true}\"}",
+            new Dictionary<string, object?> { ["instanceId"] = "instance-1" });
+        var abort = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/instances/{instanceId}/abort",
+            "{\"reason\":\"Operator cancelled.\"}",
+            new Dictionary<string, object?> { ["instanceId"] = "instance-2" });
+
+        Assert.Equal(StatusCodes.Status200OK, replay.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, abort.StatusCode);
+        Assert.Contains("Running", replay.Body, StringComparison.Ordinal);
+        Assert.Contains("Aborted", abort.Body, StringComparison.Ordinal);
+        Assert.Equal("{\"fixed\":true}", replayPayload);
+        Assert.Equal("Operator cancelled.", abortReason);
+
+        await recovery.Received(1).ReplayAsync("instance-1", Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await recovery.Received(1).AbortAsync("instance-2", Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RuntimeApiMapsIngressesAndDesignNodes()
     {
         var ingressRepository = Substitute.For<IRuntimeIngressConfigurationRepository>();
@@ -329,6 +378,8 @@ public sealed class RestApiEndpointRouteBuilderTests
             httpContext.Request.ContentType = "application/json";
             httpContext.Request.ContentLength = bytes.Length;
             httpContext.Request.Body = new MemoryStream(bytes);
+            httpContext.Features.Set<IHttpRequestBodyDetectionFeature>(
+                new TestHttpRequestBodyDetectionFeature(canHaveBody: true));
         }
 
         await endpoint.RequestDelegate!(httpContext);
@@ -355,4 +406,9 @@ public sealed class RestApiEndpointRouteBuilderTests
         };
 
     private sealed record EndpointInvocationResult(int StatusCode, string Body);
+
+    private sealed class TestHttpRequestBodyDetectionFeature(bool canHaveBody) : IHttpRequestBodyDetectionFeature
+    {
+        public bool CanHaveBody { get; } = canHaveBody;
+    }
 }

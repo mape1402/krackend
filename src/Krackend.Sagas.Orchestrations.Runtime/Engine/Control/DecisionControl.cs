@@ -66,12 +66,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 or OrchestrationInstanceStatus.CompletedWithErrors
                 or OrchestrationInstanceStatus.Stopped
                 or OrchestrationInstanceStatus.Compensating
-                or OrchestrationInstanceStatus.Compensated)
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Aborted)
             {
                 return [];
             }
 
-            var stages = resolvedArtifact.Artifact.StageDefinitions.OrderBy(x => x.Order).ToArray();
+            if (instance.Status == OrchestrationInstanceStatus.DeadLettered)
+            {
+                return [];
+            }
+
+            var stages = resolvedArtifact.Artifact.StageDefinitions
+                .Where(x => x.IsEnabled)
+                .OrderBy(x => x.Order)
+                .ToArray();
             var metadataDescriptors = resolvedArtifact.Artifact.MetadataDescriptors ?? Array.Empty<MetadataDescriptorArtifact>();
             var stageExecutions = await _stageRepository.GetByInstanceId(instance.Id, cancellationToken);
             var currentStage = ResolveCurrentStage(stages, stageExecutions, instance);
@@ -102,7 +111,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 x.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut);
             if (instance.Status == OrchestrationInstanceStatus.Failed && failedTask is null)
             {
-                return [];
+                return [new DeadLetterInstanceDecision(
+                    instance.Id,
+                    currentStageExecution?.Id,
+                    null,
+                    instance.ErrorSummary ?? "Orchestration instance failed without a recoverable task decision.")];
             }
 
             if (failedTask is not null)
@@ -137,7 +150,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions, dispatchPayload, metadataDescriptors);
                 }
 
-                return [];
+                return [new DeadLetterInstanceDecision(
+                    instance.Id,
+                    currentStageExecution.Id,
+                    failedTask.Id,
+                    ResolveDeadLetterReason(instance, failedTask))];
             }
 
             if (taskExecutions.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse))
@@ -363,6 +380,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 wait.OrchestrationAction == OrchestrationActionOnTimeout.Continue;
         }
 
+        private static string ResolveDeadLetterReason(
+            OrchestrationInstance instance,
+            TaskExecution failedTask)
+        {
+            if (!string.IsNullOrWhiteSpace(instance?.ErrorSummary))
+            {
+                return instance.ErrorSummary;
+            }
+
+            var errorCode = TryGetString(failedTask?.Metadata, "ExecutionErrorCode")
+                ?? TryGetString(failedTask?.Metadata, "PreparationErrorCode")
+                ?? TryGetString(failedTask?.Metadata, "TimeoutErrorCode");
+
+            return string.IsNullOrWhiteSpace(errorCode)
+                ? $"Task '{failedTask?.TaskKey}' failed and no retry, continue, or compensation policy can recover it."
+                : $"Task '{failedTask?.TaskKey}' failed with '{errorCode}' and no retry, continue, or compensation policy can recover it.";
+        }
+
         private static string TryGetString(
             IReadOnlyDictionary<string, JsonNode> metadata,
             string key)
@@ -426,25 +461,37 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             if (IsCallbackResolved(task, attempt, dispatch))
             {
-                return null;
+                return IsRecoverableLateSuccess(instance, task, attempt, dispatch, request.ExecutionResultMetadata)
+                    ? BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId)
+                    : null;
             }
 
             if (!IsCallbackReady(task, attempt, dispatch))
             {
+                if (IsRecoverableLateSuccess(instance, task, attempt, dispatch, request.ExecutionResultMetadata))
+                {
+                    return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+                }
+
                 throw new InvalidOperationException(
                     $"Backchannel callback for dispatch '{dispatchId}' arrived before runtime state was ready. " +
                     $"Task='{task.Status}', Attempt='{attempt.Status}', Dispatch='{dispatch.DispatchStatus}'.");
             }
 
-            var payload = request.Payload?.ToJsonString();
+            return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
+        }
 
-            return new CompleteCallbackDecision(
+        private static CompleteCallbackDecision BuildCompleteCallbackDecision(
+            DecisionRequest request,
+            Id instanceId,
+            Id taskExecutionId,
+            Id dispatchId)
+            => new(
                 instanceId,
                 taskExecutionId,
                 dispatchId,
-                payload,
+                request.Payload?.ToJsonString(),
                 request.ExecutionResultMetadata);
-        }
 
         private static bool TryParseId(string value, out Id id)
         {
@@ -506,7 +553,41 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 or OrchestrationInstanceStatus.Stopped
                 or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated
-                or OrchestrationInstanceStatus.Failed;
+                or OrchestrationInstanceStatus.Aborted;
+
+        private static bool IsRecoverableLateSuccess(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            OrchestrationExecutionResultMetadata result)
+        {
+            if (!IsSuccessfulCallback(result) ||
+                task.Status == TaskExecutionStatus.Completed ||
+                task.Status == TaskExecutionStatus.Compensated)
+            {
+                return false;
+            }
+
+            if (instance.Status is OrchestrationInstanceStatus.DeadLettered
+                or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.Running
+                or OrchestrationInstanceStatus.Waiting)
+            {
+                return attempt.Status is TaskExecutionStatus.WaitingResponse
+                        or TaskExecutionStatus.TimedOut
+                        or TaskExecutionStatus.Failed
+                    || IsFinishedDispatchStatus(dispatch.DispatchStatus);
+            }
+
+            return false;
+        }
+
+        private static bool IsSuccessfulCallback(OrchestrationExecutionResultMetadata result)
+            => result?.Succeeded == true ||
+                string.Equals(result?.Status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(result?.Status, "Succeeded", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(result?.Status, "Success", StringComparison.OrdinalIgnoreCase);
 
         private static bool TryGetBoolean(
             IReadOnlyDictionary<string, JsonNode> metadata,

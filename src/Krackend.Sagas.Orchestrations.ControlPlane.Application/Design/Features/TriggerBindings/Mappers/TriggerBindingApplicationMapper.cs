@@ -23,6 +23,7 @@ public sealed class TriggerBindingApplicationMapper : ITriggerBindingApplication
             TriggerChannel = source.TriggerChannel,
             IsEnabled = source.IsEnabled,
             Description = source.Description ?? string.Empty,
+            CompensationDefinition = source.CompensationDefinition,
         };
     }
 }

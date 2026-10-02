@@ -176,6 +176,8 @@ Orchestrator component keys are internal identifiers and use alphanumeric segmen
 
 Messaging topics are external broker addresses, not orchestrator keys. Event trigger topics, task command topics, and compensation topics are stored as captured after trimming and can follow the naming rules of the selected transport or provider, including dashes, underscores, dots, and uppercase characters.
 
+Enable flags are part of the deployed orchestration shape. Disabled triggers do not start the orchestration, disabled stages are skipped by the runtime, and disabled tasks are not dispatched. This is useful for staged rollouts or temporarily removing a branch from execution without deleting the design history.
+
 Orchestration metadata:
 
 Krackend propagates transversal metadata through transport metadata so business payloads stay focused on business data. Runtime command dispatches include `Krackend.Sagas.Orchestrations.Message.Metadata` for the current runtime backchannel and flat propagated entries such as `Krackend.Sagas.Orchestrations.Trigger.Metadata`, `audit.context`, and `security.context`. The runtime no longer duplicates propagated metadata inside the reserved `Krackend.Sagas.Orchestrations.Propagation.Metadata` envelope when publishing commands; that envelope is only understood as a legacy inbound shape for compatibility.
@@ -191,6 +193,36 @@ Runtime trigger promotion is idempotent when a stable start key is available. Th
 Runtime task dispatch is adapter-based. Initial dispatch, retry dispatch, compensation dispatch, and runtime artifact compatibility validation resolve an installed task adapter by `TaskKind` instead of hardcoding the messaging transport in the engine. The built-in runtime registers the Messaging adapter by default; other task kinds must provide and register an `ITaskRuntimeAdapter` before artifacts using that kind can be deployed or dispatched.
 
 Retry policies are explicit error-code allowlists. When `MaxRetries` is greater than zero, `RetryableErrorCodes` must contain at least one non-empty code; an empty list means the runtime will not retry any failure. Runtime callbacks can also set `IsRetryableCandidate = false` to suppress retry even when the reported error code appears in the allowlist.
+
+Recoverable runtime failures:
+
+When a task exhausts its configured retries, times out, or leaves the orchestration unable to advance, the runtime moves the instance into `DeadLettered` when the failure can still be reviewed by an operator. `DeadLettered` is not a broker queue; it is an explicit durable state that says the saga stopped, preserved its context, and can be resumed after the underlying issue is corrected. `Failed` and `Aborted` are reserved for outcomes that should not continue automatically.
+
+The Runtime API exposes recovery operations under the configured runtime API prefix, `/api/v1/runtime` by default:
+
+```http
+POST /api/v1/runtime/instances/{instanceId}/replay
+Content-Type: application/json
+
+{ "payload": "{...optional replacement payload...}" }
+```
+
+```http
+POST /api/v1/runtime/instances/{instanceId}/abort
+Content-Type: application/json
+
+{ "reason": "External order was cancelled by support." }
+```
+
+Replay finds the latest failed or timed-out task first and dispatches it again through the configured task adapter. If no failed task exists but a stage failed, replay restarts that stage. If neither exists, the runtime re-enters the forward engine with the preserved instance snapshot or the optional replacement payload. Abort marks the instance as `Aborted` and records the operator reason in metadata and transitions.
+
+Late callbacks are accepted conservatively. If an earlier timeout attempt eventually reports success after the instance already moved to `DeadLettered`, the task execution can be completed so idempotent downstream systems can reconcile correctly, while the instance remains in the operator-visible stopped state until replay or abort.
+
+Compensation:
+
+Tasks and event triggers can define compensating tasks. The runtime evaluates the compensation execution condition, applies the compensation transformation, and dispatches the transformed compensation request through the task adapter abstraction. This keeps compensation transport-agnostic and lets messaging, or another installed task kind, own its own dispatch behavior.
+
+ButterMorph compensation contexts include the data that is technically available at that point in the saga. Task compensation can use the trigger payload and metadata, forward task requests and replies up to the task being compensated, the failed task request when available, and previous compensation replies. Trigger compensation can use trigger payload and metadata plus completed forward task data. This lets a compensation step reverse the paired forward task and still emit additional compensating side effects when the design requires them.
 
 Security model:
 

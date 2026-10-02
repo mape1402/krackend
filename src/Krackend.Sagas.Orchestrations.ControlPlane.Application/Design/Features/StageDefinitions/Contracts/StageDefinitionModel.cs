@@ -32,6 +32,10 @@ public sealed class StageDefinitionModel
     /// </summary>
     public int Order { get; set; }
     /// <summary>
+    /// Gets or sets whether the stage participates in generated artifacts and runtime execution.
+    /// </summary>
+    public bool IsEnabled { get; set; } = true;
+    /// <summary>
     /// Gets or sets the execution condition.
     /// </summary>
     public ExecutionCondition ExecutionCondition { get; set; }
