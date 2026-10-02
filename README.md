@@ -188,6 +188,10 @@ When a client publishes a new trigger through `TriggerAddress`, the outgoing tri
 
 Runtime trigger promotion is idempotent when a stable start key is available. The Mule adapter maps the durable action deduplication key, or the durable action id when no deduplication key exists, into the runtime start idempotency key. The core runtime also falls back to the trigger metadata idempotency key. Retried trigger actions therefore continue the already-promoted `OrchestrationInstance` instead of creating a second saga instance after a partial start, timeout, or action re-execution. Hosts using Entity Framework runtime storage should apply a migration for the nullable `StartIdempotencyKey` column and its unique non-null index.
 
+Runtime task dispatch is adapter-based. Initial dispatch, retry dispatch, compensation dispatch, and runtime artifact compatibility validation resolve an installed task adapter by `TaskKind` instead of hardcoding the messaging transport in the engine. The built-in runtime registers the Messaging adapter by default; other task kinds must provide and register an `ITaskRuntimeAdapter` before artifacts using that kind can be deployed or dispatched.
+
+Retry policies are explicit error-code allowlists. When `MaxRetries` is greater than zero, `RetryableErrorCodes` must contain at least one non-empty code; an empty list means the runtime will not retry any failure. Runtime callbacks can also set `IsRetryableCandidate = false` to suppress retry even when the reported error code appears in the allowlist.
+
 Security model:
 
 Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates orchestration permissions.

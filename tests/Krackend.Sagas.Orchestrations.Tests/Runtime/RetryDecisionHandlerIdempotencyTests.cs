@@ -8,9 +8,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
-using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using NSubstitute;
 
 public sealed class RetryDecisionHandlerIdempotencyTests
@@ -41,25 +38,11 @@ public sealed class RetryDecisionHandlerIdempotencyTests
         };
         var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
         var taskRepository = Substitute.For<ITaskExecutionRepository>();
-        var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
-        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
-        var transitionRepository = Substitute.For<IExecutionTransitionRepository>();
-        var dispatcher = Substitute.For<IRemoteCommandDispatcher>();
-        var serializer = Substitute.For<IMessagingCommandSerializer>();
-        var ingressAccessor = Substitute.For<IGetIngressConfigurationByArtifactAccessor>();
-        var payloadState = Substitute.For<IOrchestrationPayloadState>();
-        var requestPayloadPreparer = Substitute.For<ITaskDispatchRequestPayloadPreparer>();
+        var taskAttemptDispatcher = Substitute.For<ITaskAttemptDispatcher>();
         var handler = new RetryDecisionHandler(
             instanceRepository,
             taskRepository,
-            attemptRepository,
-            dispatchRepository,
-            transitionRepository,
-            dispatcher,
-            serializer,
-            ingressAccessor,
-            payloadState,
-            requestPayloadPreparer);
+            taskAttemptDispatcher);
         instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(instance));
         taskRepository.GetById(task.Id, Arg.Any<CancellationToken>())
@@ -74,9 +57,7 @@ public sealed class RetryDecisionHandlerIdempotencyTests
 
         await handler.HandleAsync(decision);
 
-        await attemptRepository.DidNotReceiveWithAnyArgs().Create(default!, default);
-        await dispatchRepository.DidNotReceiveWithAnyArgs().Create(default!, default);
-        await dispatcher.DidNotReceiveWithAnyArgs().DispatchAsync(default!, default);
+        await taskAttemptDispatcher.DidNotReceiveWithAnyArgs().DispatchAsync(default!, default);
     }
 
     private static TaskArtifact CreateMessagingTask()

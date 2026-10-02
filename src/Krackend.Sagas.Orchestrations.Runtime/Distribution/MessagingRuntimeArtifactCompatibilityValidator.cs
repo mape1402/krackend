@@ -4,13 +4,33 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 
 /// <summary>
-/// Validates deployable artifacts against the messaging runtime capabilities.
+/// Validates deployable artifacts against configured runtime task adapter capabilities.
 /// </summary>
 public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArtifactCompatibilityValidator
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private readonly ITaskRuntimeAdapterRegistry _adapterRegistry;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MessagingRuntimeArtifactCompatibilityValidator"/> class.
+    /// </summary>
+    public MessagingRuntimeArtifactCompatibilityValidator()
+        : this(new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]))
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MessagingRuntimeArtifactCompatibilityValidator"/> class.
+    /// </summary>
+    /// <param name="adapterRegistry">Runtime task adapter registry.</param>
+    public MessagingRuntimeArtifactCompatibilityValidator(ITaskRuntimeAdapterRegistry adapterRegistry)
+    {
+        _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
+    }
 
     /// <inheritdoc />
     public Task<RuntimeArtifactCompatibilityValidationResult> ValidateAsync(
@@ -51,7 +71,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         return Task.FromResult(result);
     }
 
-    private static RuntimeArtifactCompatibilityValidationResult ValidateArtifact(OrchestrationArtifact artifact)
+    private RuntimeArtifactCompatibilityValidationResult ValidateArtifact(OrchestrationArtifact artifact)
     {
         var stages = artifact.StageDefinitions?.OrderBy(stage => stage.Order).ToArray() ?? [];
 
@@ -110,34 +130,19 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         return RuntimeArtifactCompatibilityValidationResult.Success();
     }
 
-    private static RuntimeArtifactCompatibilityValidationResult ValidateTask(TaskArtifact task, StageArtifact stage)
+    private RuntimeArtifactCompatibilityValidationResult ValidateTask(TaskArtifact task, StageArtifact stage)
     {
-        if (task.Kind != TaskKind.Messaging)
+        if (!_adapterRegistry.TryGet(task.Kind, out var adapter))
         {
             return Failure(
-                "TaskKindNotSupported",
-                $"Task '{task.Key}' in stage '{stage.Key}' uses '{task.Kind}', but this runtime currently supports messaging tasks.");
+                "TaskRuntimeAdapterNotConfigured",
+                $"Task '{task.Key}' in stage '{stage.Key}' uses '{task.Kind}', but no runtime task adapter is configured for that task kind.");
         }
 
-        if (task.Configuration is not MessagingTaskConfigurationArtifact messaging)
+        var adapterResult = adapter.ValidateTask(task, stage.Key);
+        if (!adapterResult.Succeeded)
         {
-            return Failure(
-                "TaskConfigurationNotSupported",
-                $"Task '{task.Key}' in stage '{stage.Key}' does not contain messaging task configuration.");
-        }
-
-        if (string.IsNullOrWhiteSpace(messaging.Topic))
-        {
-            return Failure(
-                "MessagingTopicMissing",
-                $"Task '{task.Key}' in stage '{stage.Key}' does not contain a messaging topic.");
-        }
-
-        if (task.DispatchType is not (TaskDispatchType.FireAndForget or TaskDispatchType.FireAndWaitCallback))
-        {
-            return Failure(
-                "MessagingDispatchTypeNotSupported",
-                $"Task '{task.Key}' in stage '{stage.Key}' uses '{task.DispatchType}', but messaging tasks must use FireAndForget or FireAndWaitCallback.");
+            return adapterResult;
         }
 
         var retryPolicyResult = ValidateRetryPolicy(task.RetryPolicy, $"task '{task.Key}'");
@@ -164,19 +169,13 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
             return transformationResult;
         }
 
-        var requestValidationResult = ValidateValidation(
-            messaging.RequestValidation,
-            messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
-            $"task '{task.Key}' request");
+        var requestValidationResult = ValidateRequestValidation(task.Configuration, $"task '{task.Key}' request");
         if (!requestValidationResult.Succeeded)
         {
             return requestValidationResult;
         }
 
-        var responseValidationResult = ValidateValidation(
-            messaging.ResponseValidation,
-            messaging.ResponseSchemaBinding,
-            $"task '{task.Key}' response");
+        var responseValidationResult = ValidateResponseValidation(task.Configuration, $"task '{task.Key}' response");
         if (!responseValidationResult.Succeeded)
         {
             return responseValidationResult;
@@ -185,39 +184,24 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         return ValidateCompensation(task, stage);
     }
 
-    private static RuntimeArtifactCompatibilityValidationResult ValidateCompensation(TaskArtifact task, StageArtifact stage)
+    private RuntimeArtifactCompatibilityValidationResult ValidateCompensation(TaskArtifact task, StageArtifact stage)
     {
         if (task.Compensation is null || task.Compensation.Configuration is null)
         {
             return RuntimeArtifactCompatibilityValidationResult.Success();
         }
 
-        if (task.Compensation.CompensationTaskKind != TaskKind.Messaging)
+        if (!_adapterRegistry.TryGet(task.Compensation.CompensationTaskKind, out var adapter))
         {
             return Failure(
-                "CompensationTaskKindNotSupported",
-                $"Compensation for task '{task.Key}' in stage '{stage.Key}' uses '{task.Compensation.CompensationTaskKind}', but this runtime currently supports messaging compensation tasks.");
+                "CompensationTaskRuntimeAdapterNotConfigured",
+                $"Compensation for task '{task.Key}' in stage '{stage.Key}' uses '{task.Compensation.CompensationTaskKind}', but no runtime task adapter is configured for that compensation task kind.");
         }
 
-        if (task.Compensation.Configuration is not MessagingTaskConfigurationArtifact messaging)
+        var adapterResult = adapter.ValidateCompensation(task, stage.Key);
+        if (!adapterResult.Succeeded)
         {
-            return Failure(
-                "CompensationConfigurationNotSupported",
-                $"Compensation for task '{task.Key}' in stage '{stage.Key}' does not contain messaging task configuration.");
-        }
-
-        if (string.IsNullOrWhiteSpace(messaging.Topic))
-        {
-            return Failure(
-                "CompensationMessagingTopicMissing",
-                $"Compensation for task '{task.Key}' in stage '{stage.Key}' does not contain a messaging topic.");
-        }
-
-        if (task.Compensation.DispatchType != TaskDispatchType.FireAndForget)
-        {
-            return Failure(
-                "CompensationDispatchTypeNotSupported",
-                $"Compensation for task '{task.Key}' in stage '{stage.Key}' uses '{task.Compensation.DispatchType}', but messaging compensations currently run as FireAndForget.");
+            return adapterResult;
         }
 
         var retryPolicyResult = ValidateRetryPolicy(task.Compensation.RetryPolicy, $"compensation for task '{task.Key}'");
@@ -311,8 +295,36 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
                 $"The retry policy configured for {owner} uses '{retryPolicy.StrategyType}', but this runtime currently supports Fixed retry strategy.");
         }
 
+        if (retryPolicy.MaxRetries > 0 &&
+            retryPolicy.RetryableErrorCodes?.Any(code => !string.IsNullOrWhiteSpace(code)) != true)
+        {
+            return Failure(
+                "RetryableErrorCodesMissing",
+                $"The retry policy configured for {owner} must list explicit retryable error codes when max retries is greater than zero.");
+        }
+
         return RuntimeArtifactCompatibilityValidationResult.Success();
     }
+
+    private static RuntimeArtifactCompatibilityValidationResult ValidateRequestValidation(
+        ITaskConfigurationArtifact configuration,
+        string owner)
+        => configuration is MessagingTaskConfigurationArtifact messaging
+            ? ValidateValidation(
+                messaging.RequestValidation,
+                messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+                owner)
+            : RuntimeArtifactCompatibilityValidationResult.Success();
+
+    private static RuntimeArtifactCompatibilityValidationResult ValidateResponseValidation(
+        ITaskConfigurationArtifact configuration,
+        string owner)
+        => configuration is MessagingTaskConfigurationArtifact messaging
+            ? ValidateValidation(
+                messaging.ResponseValidation,
+                messaging.ResponseSchemaBinding,
+                owner)
+            : RuntimeArtifactCompatibilityValidationResult.Success();
 
     private static RuntimeArtifactCompatibilityValidationResult ValidateTimeoutPolicy(
         TimeoutPolicyArtifact timeoutPolicy,

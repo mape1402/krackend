@@ -1,16 +1,13 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
-using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
-using Krackend.Sagas.Orchestrations.Runtime.Ingress;
-using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
@@ -27,8 +24,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly ICompensationExecutionRepository _compensationRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IRemoteCommandDispatcher _dispatcher;
-        private readonly IMessagingCommandSerializer _messagingCommandSerializer;
-        private readonly IGetIngressConfigurationByArtifactAccessor _ingressConfigurationAccessor;
+        private readonly ITaskRuntimeAdapterRegistry _adapterRegistry;
         private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
         private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
@@ -41,8 +37,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             ICompensationExecutionRepository compensationRepository,
             IExecutionTransitionRepository transitionRepository,
             IRemoteCommandDispatcher dispatcher,
-            IMessagingCommandSerializer messagingCommandSerializer,
-            IGetIngressConfigurationByArtifactAccessor ingressConfigurationAccessor,
+            ITaskRuntimeAdapterRegistry adapterRegistry,
             IOrchestrationConditionEvaluator conditionEvaluator,
             IOrchestrationPayloadContextFactory payloadContextFactory,
             IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
@@ -54,8 +49,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _compensationRepository = compensationRepository ?? throw new ArgumentNullException(nameof(compensationRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-            _messagingCommandSerializer = messagingCommandSerializer ?? throw new ArgumentNullException(nameof(messagingCommandSerializer));
-            _ingressConfigurationAccessor = ingressConfigurationAccessor ?? throw new ArgumentNullException(nameof(ingressConfigurationAccessor));
+            _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
             _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
             _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
@@ -65,7 +59,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
-            var replyAddress = await ResolveBackchannelReplyAddressAsync(instance, cancellationToken);
             var completedTasks = (await _taskRepository.GetByInstanceId(decision.InstanceId, cancellationToken))
                 .Where(x => x.Status == TaskExecutionStatus.Completed)
                 .OrderByDescending(x => x.CompletedOnUtc)
@@ -93,6 +86,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 }
 
                 var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
+                var adapter = _adapterRegistry.TryGet(taskArtifact.Compensation.CompensationTaskKind, out var resolvedAdapter)
+                    ? resolvedAdapter
+                    : null;
                 var condition = await _conditionEvaluator.EvaluateAsync(
                     new OrchestrationConditionEvaluationRequest
                     {
@@ -111,10 +107,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     Id = Id.New(),
                     OrchestrationInstanceId = instance.Id,
                     SourceTaskExecutionId = task.Id,
-                    CompensationTaskKey = ResolveCompensationTaskKey(taskArtifact.Compensation),
+                    CompensationTaskKey = ResolveCompensationTaskKey(adapter, taskArtifact.Compensation),
                     Status = "Running",
                     StartedOnUtc = DateTime.UtcNow,
-                    RequestPayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(decision.Payload)
+                    RequestPayload = string.IsNullOrWhiteSpace(decision.Payload) ? null : JsonNode.Parse(decision.Payload)
                 };
                 await _compensationRepository.Create(compensation, cancellationToken);
 
@@ -135,45 +131,54 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     continue;
                 }
 
-                if (taskArtifact.Compensation.Configuration is not MessagingTaskConfigurationArtifact messagingConfiguration)
+                if (adapter is null)
                 {
                     await MarkCompensationFailedAsync(
                         instance,
                         task,
                         compensation,
-                        new InvalidOperationException($"Compensation task kind '{taskArtifact.Compensation.CompensationTaskKind}' is not supported by the runtime messaging engine."),
-                        "UnsupportedCompensationTaskKind",
+                        new InvalidOperationException($"No runtime task adapter is configured for compensation task kind '{taskArtifact.Compensation.CompensationTaskKind}'."),
+                        "CompensationTaskRuntimeAdapterNotConfigured",
                         cancellationToken);
                     return;
                 }
 
-                var command = new MessagingCommand
-                {
-                    Topic = messagingConfiguration.Topic,
-                    Version = messagingConfiguration.Version.ToString(),
-                    Payload = decision.Payload
-                };
                 try
                 {
+                    var descriptor = await adapter.BuildCompensationCommandAsync(
+                        new TaskRuntimeCompensationCommandRequest
+                        {
+                            Instance = instance,
+                            SourceTaskExecution = task,
+                            CompensationExecution = compensation,
+                            Compensation = taskArtifact.Compensation,
+                            Payload = decision.Payload
+                        },
+                        cancellationToken);
+                    var propagationMetadata = _propagationMetadataStore.Load(instance);
+                    var messageMetadata = new OrchestrationMessageMetadata
+                    {
+                        SagaId = GetSagaId(instance),
+                        OrchestrationInstanceId = instance.Id.ToString(),
+                        CurrentStage = stage.StageKey,
+                        CurrentTasks = [task.TaskKey],
+                        CorrelationId = instance.CorrelationId,
+                        TaskExecutionId = task.Id.ToString(),
+                        ReplyAddress = descriptor.ReplyAddress
+                    };
+
                     await _dispatcher.DispatchAsync(new RemoteCommand
                     {
                         Payload = decision.Payload,
-                        RemoteCommandTransport = RemoteCommandTransport.Messaging,
-                        SettingsPayload = _messagingCommandSerializer.Serialize(command),
+                        RemoteCommandTransport = descriptor.Transport,
+                        SettingsPayload = descriptor.SettingsPayload,
                         OrchestrationInstanceId = instance.Id.ToString(),
+                        StageExecutionId = task.StageExecutionId.ToString(),
                         TaskExecutionId = task.Id.ToString(),
                         TaskKey = task.TaskKey,
                         AwaitResponse = false,
-                        PropagationMetadata = _propagationMetadataStore.Load(instance),
-                        MessageMetadata = new OrchestrationMessageMetadata
-                        {
-                            SagaId = GetSagaId(instance),
-                            OrchestrationInstanceId = instance.Id.ToString(),
-                            CorrelationId = instance.CorrelationId,
-                            TaskExecutionId = task.Id.ToString(),
-                            CurrentTasks = [task.TaskKey],
-                            ReplyAddress = replyAddress
-                        }
+                        PropagationMetadata = propagationMetadata,
+                        MessageMetadata = messageMetadata
                     }, cancellationToken);
                 }
                 catch (Exception exception)
@@ -228,10 +233,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ? instance.Id.ToString()
                 : instance.SagaId;
 
-        private static string ResolveCompensationTaskKey(CompensationArtifact compensation)
-            => compensation.Configuration is MessagingTaskConfigurationArtifact messaging
-                ? messaging.Topic
-                : compensation.CompensationTaskKind.ToString();
+        private static string ResolveCompensationTaskKey(
+            ITaskRuntimeAdapter adapter,
+            CompensationArtifact compensation)
+        {
+            if (adapter is null)
+            {
+                return compensation.CompensationTaskKind.ToString();
+            }
+
+            try
+            {
+                return adapter.GetCompensationDestination(compensation);
+            }
+            catch (InvalidOperationException)
+            {
+                return compensation.CompensationTaskKind.ToString();
+            }
+        }
 
         private async Task MarkCompensationConditionFailedAsync(
             OrchestrationInstance instance,
@@ -347,26 +366,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             {
                 metadata[$"Condition.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
-        }
-
-        private async Task<OrchestrationReplyAddress> ResolveBackchannelReplyAddressAsync(
-            OrchestrationInstance instance,
-            CancellationToken cancellationToken)
-        {
-            var configurations = await _ingressConfigurationAccessor.GetConfigurationAsync(
-                instance.RuntimeOrchestrationArtifactId.ToString(),
-                cancellationToken);
-            var backchannel = configurations.FirstOrDefault(x =>
-                x.IngressKind == IngressKind.Backchannel &&
-                x.IngressTransport == IngressTransport.Messaging);
-
-            return backchannel is null
-                ? null
-                : new OrchestrationReplyAddress
-                {
-                    Transport = OrchestrationTransportNames.Messaging,
-                    SettingsPayload = backchannel.SettingsPayload
-                };
         }
     }
 }

@@ -360,7 +360,7 @@ public sealed class RuntimeArtifactDeploymentServiceTests
 
         Assert.False(result.Accepted);
         Assert.Equal("Rejected", result.Status);
-        Assert.Contains("TaskKindNotSupported", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("TaskRuntimeAdapterNotConfigured", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(scheduler.Requests);
         Assert.Empty(repository.Artifacts);
     }

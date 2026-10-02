@@ -275,7 +275,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             if (retryPolicy.RetryableErrorCodes is null || retryPolicy.RetryableErrorCodes.Count == 0)
             {
-                return true;
+                return false;
+            }
+
+            if (await IsNonRetryableCandidateAsync(failedTask, request, cancellationToken))
+            {
+                return false;
             }
 
             var errorCode = await ResolveFailureErrorCodeAsync(failedTask, request, cancellationToken);
@@ -305,6 +310,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             return TryGetString(lastAttempt?.Metadata, "ExecutionErrorCode")
                 ?? TryGetString(lastAttempt?.Metadata, "PreparationErrorCode");
+        }
+
+        private async Task<bool> IsNonRetryableCandidateAsync(
+            TaskExecution failedTask,
+            DecisionRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (request.ExecutionResultMetadata?.IsRetryableCandidate == false)
+            {
+                return true;
+            }
+
+            var attempts = await _attemptRepository.GetByTaskExecutionId(failedTask.Id, cancellationToken);
+            var lastAttempt = attempts
+                .OrderByDescending(x => x.AttemptNumber)
+                .FirstOrDefault();
+
+            return TryGetNullableBoolean(lastAttempt?.Metadata, "ExecutionIsRetryableCandidate") == false;
         }
 
         private static RetryPolicyArtifact ResolveRetryPolicy(
@@ -488,28 +511,46 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         private static bool TryGetBoolean(
             IReadOnlyDictionary<string, JsonNode> metadata,
             string key)
+            => TryGetNullableBoolean(metadata, key) == true;
+
+        private static bool? TryGetNullableBoolean(
+            IReadOnlyDictionary<string, JsonNode> metadata,
+            string key)
         {
             if (metadata is null ||
                 !metadata.TryGetValue(key, out var value) ||
                 value is null)
             {
-                return false;
+                return null;
             }
 
             try
             {
-                return value.GetValueKind() == System.Text.Json.JsonValueKind.True ||
-                    (value.GetValueKind() == System.Text.Json.JsonValueKind.String &&
-                    bool.TryParse(value.GetValue<string>(), out var parsed) &&
-                    parsed);
+                if (value.GetValueKind() == System.Text.Json.JsonValueKind.True)
+                {
+                    return true;
+                }
+
+                if (value.GetValueKind() == System.Text.Json.JsonValueKind.False)
+                {
+                    return false;
+                }
+
+                if (value.GetValueKind() == System.Text.Json.JsonValueKind.String &&
+                    bool.TryParse(value.GetValue<string>(), out var parsed))
+                {
+                    return parsed;
+                }
+
+                return null;
             }
             catch (InvalidOperationException)
             {
-                return false;
+                return null;
             }
             catch (FormatException)
             {
-                return false;
+                return null;
             }
         }
     }
