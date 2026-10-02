@@ -6,6 +6,11 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
@@ -94,6 +99,57 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(artifact);
 
         AssertFailure(result, "ExtensionCapabilityNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityPackageIsActivated_ReturnsSuccess()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        await repository.UpsertAsync(new RuntimeExtensionPackage
+        {
+            Id = Id.New(),
+            BundleId = "bundle-contoso-billing-2.1.0",
+            ExtensionKey = "contoso.billing",
+            Version = new SemanticVersion(2, 1, 0),
+            Sha256 = "bundle-sha",
+            SizeBytes = 1024,
+            Status = RuntimeExtensionPackageStatus.Activated,
+            CreatedOnUtc = DateTime.UtcNow,
+            UpdatedOnUtc = DateTime.UtcNow,
+            ActivatedOnUtc = DateTime.UtcNow,
+            Manifest = new KrackendExtensionManifest(
+                new ExtensionKey("contoso.billing"),
+                new SemanticVersion(2, 1, 0),
+                "Contoso Billing",
+                "Contoso",
+                ExtensionLoadMode.ExternalAssembly,
+                ExtensionTrustLevel.PublisherTrusted)
+        });
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    new SemanticVersion(2, 1, 0),
+                    "Task")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
     }
 
     [Fact]

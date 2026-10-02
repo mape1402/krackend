@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 
 /// <summary>
 /// Validates deployable artifacts against configured runtime task adapter capabilities.
@@ -17,6 +18,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly ITaskRuntimeAdapterRegistry _adapterRegistry;
     private readonly IOrchestrationArtifactMigrator _artifactMigrator;
+    private readonly IRuntimeExtensionPackageRepository _extensionPackageRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagingRuntimeArtifactCompatibilityValidator"/> class.
@@ -43,13 +45,28 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
     public MessagingRuntimeArtifactCompatibilityValidator(
         ITaskRuntimeAdapterRegistry adapterRegistry,
         IOrchestrationArtifactMigrator artifactMigrator)
+        : this(adapterRegistry, artifactMigrator, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MessagingRuntimeArtifactCompatibilityValidator"/> class.
+    /// </summary>
+    /// <param name="adapterRegistry">Runtime task adapter registry.</param>
+    /// <param name="artifactMigrator">Artifact migrator.</param>
+    /// <param name="extensionPackageRepository">Runtime extension package repository.</param>
+    public MessagingRuntimeArtifactCompatibilityValidator(
+        ITaskRuntimeAdapterRegistry adapterRegistry,
+        IOrchestrationArtifactMigrator artifactMigrator,
+        IRuntimeExtensionPackageRepository extensionPackageRepository)
     {
         _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
         _artifactMigrator = artifactMigrator ?? throw new ArgumentNullException(nameof(artifactMigrator));
+        _extensionPackageRepository = extensionPackageRepository;
     }
 
     /// <inheritdoc />
-    public Task<RuntimeArtifactCompatibilityValidationResult> ValidateAsync(
+    public async Task<RuntimeArtifactCompatibilityValidationResult> ValidateAsync(
         JsonNode artifactPayload,
         CancellationToken cancellationToken = default)
     {
@@ -57,9 +74,9 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
 
         if (artifactPayload is null)
         {
-            return Task.FromResult(RuntimeArtifactCompatibilityValidationResult.Failure(
+            return RuntimeArtifactCompatibilityValidationResult.Failure(
                 "ArtifactPayloadMissing",
-                "Artifact payload is required for runtime compatibility validation."));
+                "Artifact payload is required for runtime compatibility validation.");
         }
 
         OrchestrationArtifact artifact;
@@ -71,26 +88,28 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         }
         catch (Exception exception) when (exception is JsonException or NotSupportedException)
         {
-            return Task.FromResult(RuntimeArtifactCompatibilityValidationResult.Failure(
+            return RuntimeArtifactCompatibilityValidationResult.Failure(
                 "ArtifactPayloadNotDeserializable",
-                $"Artifact payload could not be deserialized as an orchestration artifact: {exception.Message}"));
+                $"Artifact payload could not be deserialized as an orchestration artifact: {exception.Message}");
         }
 
         if (artifact is null)
         {
-            return Task.FromResult(RuntimeArtifactCompatibilityValidationResult.Failure(
+            return RuntimeArtifactCompatibilityValidationResult.Failure(
                 "ArtifactPayloadNotDeserializable",
-                "Artifact payload could not be deserialized as an orchestration artifact."));
+                "Artifact payload could not be deserialized as an orchestration artifact.");
         }
 
-        var result = ValidateArtifact(_artifactMigrator.Migrate(artifact));
-        return Task.FromResult(result);
+        var result = await ValidateArtifactAsync(_artifactMigrator.Migrate(artifact), cancellationToken);
+        return result;
     }
 
-    private RuntimeArtifactCompatibilityValidationResult ValidateArtifact(OrchestrationArtifact artifact)
+    private async Task<RuntimeArtifactCompatibilityValidationResult> ValidateArtifactAsync(
+        OrchestrationArtifact artifact,
+        CancellationToken cancellationToken)
     {
         var stages = artifact.StageDefinitions?.OrderBy(stage => stage.Order).ToArray() ?? [];
-        var capabilityResult = ValidateRequiredCapabilities(artifact);
+        var capabilityResult = await ValidateRequiredCapabilitiesAsync(artifact, cancellationToken);
         if (!capabilityResult.Succeeded)
         {
             return capabilityResult;
@@ -392,12 +411,23 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         return RuntimeArtifactCompatibilityValidationResult.Success();
     }
 
-    private static RuntimeArtifactCompatibilityValidationResult ValidateRequiredCapabilities(OrchestrationArtifact artifact)
+    private async Task<RuntimeArtifactCompatibilityValidationResult> ValidateRequiredCapabilitiesAsync(
+        OrchestrationArtifact artifact,
+        CancellationToken cancellationToken)
     {
         foreach (var capability in artifact.RequiredCapabilities ?? Array.Empty<RequiredCapabilityArtifact>())
         {
             if (string.IsNullOrWhiteSpace(capability.ExtensionKey) ||
                 string.Equals(capability.ExtensionKey, ExtensionConstants.BuiltInExtensionKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (_extensionPackageRepository is not null &&
+                await _extensionPackageRepository.TryGetActiveAsync(
+                    capability.ExtensionKey,
+                    capability.Version,
+                    cancellationToken) is not null)
             {
                 continue;
             }

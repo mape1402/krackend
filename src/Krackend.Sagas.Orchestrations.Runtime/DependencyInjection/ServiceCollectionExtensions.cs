@@ -17,6 +17,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.Runtime.Execution;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Http;
@@ -128,6 +129,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddSingleton<InMemoryRuntimeStore>();
             services.TryAddScoped<IRuntimeStorageUnitOfWork, InMemoryRuntimeStorageUnitOfWork>();
             services.TryAddScoped<IRuntimeDesignNodeRepository, InMemoryRuntimeDesignNodeRepository>();
+            services.TryAddScoped<IRuntimeExtensionPackageRepository, InMemoryRuntimeExtensionPackageRepository>();
             services.TryAddScoped<IRuntimeArtifactRepository, InMemoryRuntimeArtifactRepository>();
             services.TryAddScoped<IOrchestrationInstanceRepository, InMemoryOrchestrationInstanceRepository>();
             services.TryAddScoped<IStageExecutionRepository, InMemoryStageExecutionRepository>();
