@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distrib
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Security.Core;
@@ -31,6 +32,29 @@ public sealed class EntityFrameworkStorageCustomizationTests
 
         Assert.Equal(512, GetMaxLength<RuntimeDesignNode>(dbContext, nameof(RuntimeDesignNode.Name)));
     }
+
+#if NET10_0
+    [Fact]
+    public void RuntimeStorageModelIncludesExtensionPackagesWhenConfiguredForMongo()
+    {
+        var services = new ServiceCollection();
+        services.AddOrchestratorRuntimeStorageEntityFramework(
+            options => options.UseMongoDB(
+                "mongodb://localhost:27017",
+                $"krackend-runtime-model-{Guid.NewGuid():N}"));
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+
+        var entityType = dbContext.Model.FindEntityType(typeof(RuntimeExtensionPackage));
+
+        Assert.NotNull(entityType);
+        Assert.Equal("RuntimeExtensionPackages", entityType!.GetTableName());
+        Assert.NotNull(entityType.FindProperty(nameof(RuntimeExtensionPackage.Manifest))?.GetValueConverter());
+        Assert.NotNull(entityType.FindProperty(nameof(RuntimeExtensionPackage.Version))?.GetValueConverter());
+    }
+#endif
 
     [Fact]
     public void ControlPlaneStorageAllowsHostModelCustomization()
