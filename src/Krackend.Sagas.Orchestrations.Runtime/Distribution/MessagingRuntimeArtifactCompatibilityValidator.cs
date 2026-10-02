@@ -109,6 +109,12 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         CancellationToken cancellationToken)
     {
         var stages = artifact.StageDefinitions?.OrderBy(stage => stage.Order).ToArray() ?? [];
+        var bundleResult = await ValidateRequiredBundlesAsync(artifact, cancellationToken);
+        if (!bundleResult.Succeeded)
+        {
+            return bundleResult;
+        }
+
         var capabilityResult = await ValidateRequiredCapabilitiesAsync(artifact, cancellationToken);
         if (!capabilityResult.Succeeded)
         {
@@ -411,6 +417,44 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         return RuntimeArtifactCompatibilityValidationResult.Success();
     }
 
+    private async Task<RuntimeArtifactCompatibilityValidationResult> ValidateRequiredBundlesAsync(
+        OrchestrationArtifact artifact,
+        CancellationToken cancellationToken)
+    {
+        foreach (var bundle in artifact.RequiredBundles ?? Array.Empty<RequiredExtensionBundleArtifact>())
+        {
+            if (string.IsNullOrWhiteSpace(bundle.ExtensionKey) ||
+                string.Equals(bundle.ExtensionKey, ExtensionConstants.BuiltInExtensionKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(bundle.BundleId))
+            {
+                return Failure(
+                    "ExtensionBundleReferenceInvalid",
+                    $"Artifact contains an invalid bundle reference for extension '{bundle.ExtensionKey}'.");
+            }
+
+            if (_extensionPackageRepository is not null &&
+                await _extensionPackageRepository.TryGetActiveBundleAsync(
+                    bundle.BundleId,
+                    bundle.ExtensionKey,
+                    bundle.Version,
+                    bundle.Sha256,
+                    cancellationToken) is not null)
+            {
+                continue;
+            }
+
+            return Failure(
+                "ExtensionBundleNotActivated",
+                $"Artifact requires extension bundle '{bundle.BundleId}' for '{bundle.ExtensionKey}' version '{bundle.Version}', but that bundle is not activated on this runtime node.");
+        }
+
+        return RuntimeArtifactCompatibilityValidationResult.Success();
+    }
+
     private async Task<RuntimeArtifactCompatibilityValidationResult> ValidateRequiredCapabilitiesAsync(
         OrchestrationArtifact artifact,
         CancellationToken cancellationToken)
@@ -427,7 +471,8 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
                 await _extensionPackageRepository.TryGetActiveAsync(
                     capability.ExtensionKey,
                     capability.Version,
-                    cancellationToken) is not null)
+                    cancellationToken) is RuntimeExtensionPackage package &&
+                PackageContainsCapability(package, capability))
             {
                 continue;
             }
@@ -439,6 +484,16 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
 
         return RuntimeArtifactCompatibilityValidationResult.Success();
     }
+
+    private static bool PackageContainsCapability(
+        RuntimeExtensionPackage package,
+        RequiredCapabilityArtifact capability)
+        => package.Manifest?.Capabilities?.Any(descriptor =>
+            string.Equals(descriptor.Key.Value, capability.CapabilityKey, StringComparison.OrdinalIgnoreCase) &&
+            descriptor.Version.Equals(capability.Version) &&
+            (string.IsNullOrWhiteSpace(capability.Kind) ||
+                string.IsNullOrWhiteSpace(descriptor.Kind) ||
+                string.Equals(descriptor.Kind, capability.Kind, StringComparison.OrdinalIgnoreCase))) == true;
 
     private static RuntimeArtifactCompatibilityValidationResult ValidateRequestValidation(
         ITaskConfigurationArtifact configuration,

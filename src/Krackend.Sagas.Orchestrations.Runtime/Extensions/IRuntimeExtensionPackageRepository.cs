@@ -32,5 +32,20 @@ public interface IRuntimeExtensionPackageRepository
         string extensionKey,
         SemanticVersion version,
         CancellationToken cancellationToken = default);
-}
 
+    /// <summary>
+    /// Gets the active package matching a required bundle reference.
+    /// </summary>
+    /// <param name="bundleId">Bundle id.</param>
+    /// <param name="extensionKey">Extension key.</param>
+    /// <param name="version">Extension version.</param>
+    /// <param name="sha256">Optional bundle checksum.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Active extension package, or null.</returns>
+    Task<RuntimeExtensionPackage> TryGetActiveBundleAsync(
+        string bundleId,
+        string extensionKey,
+        SemanticVersion version,
+        string sha256,
+        CancellationToken cancellationToken = default);
+}

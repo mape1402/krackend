@@ -23,6 +23,26 @@ public sealed class InMemoryRuntimeExtensionPackageRepositoryTests
     }
 
     [Fact]
+    public async Task TryGetActiveBundleAsyncMatchesBundleAndChecksum()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        var version = new SemanticVersion(1, 2, 3);
+        var activated = Package("contoso.billing", version, RuntimeExtensionPackageStatus.Activated);
+        activated.BundleId = "bundle-contoso-billing-1.2.3";
+        activated.Sha256 = "ABC123";
+        await repository.UpsertAsync(activated);
+
+        var result = await repository.TryGetActiveBundleAsync(
+            "BUNDLE-CONTOSO-BILLING-1.2.3",
+            "CONTOSO.BILLING",
+            version,
+            "abc123");
+
+        Assert.NotNull(result);
+        Assert.Equal(activated.Id, result.Id);
+    }
+
+    [Fact]
     public async Task GetAllAsyncReturnsStoredPackages()
     {
         var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
@@ -59,4 +79,3 @@ public sealed class InMemoryRuntimeExtensionPackageRepositoryTests
                 ExtensionTrustLevel.PublisherTrusted)
         };
 }
-
