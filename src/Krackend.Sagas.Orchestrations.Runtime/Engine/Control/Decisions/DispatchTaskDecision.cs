@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Execution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
@@ -13,5 +14,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         public string Kind => "dispatch-task";
 
         public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
+
+        public ExecutionPolicyArtifact OrchestrationExecutionPolicy { get; init; } = ExecutionPolicyArtifact.Empty;
+
+        public ExecutionPolicyArtifact StageExecutionPolicy { get; init; } = ExecutionPolicyArtifact.Empty;
     }
 }
