@@ -1,15 +1,19 @@
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
+using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -582,6 +586,52 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task RuntimeExtensionPackageRepositoryPersistsActivatedBundlesAcrossScopes()
+    {
+        RuntimeExtensionPackage activated;
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using (var setupScope = provider.CreateScope())
+        {
+            var dbContext = setupScope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+            await dbContext.Database.EnsureCreatedAsync();
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<IRuntimeExtensionPackageRepository>();
+            Assert.Contains("EntityFramework", repository.GetType().FullName);
+            Assert.Contains("EntityFramework", scope.ServiceProvider.GetRequiredService<IRuntimeStorageUnitOfWork>().GetType().FullName);
+            activated = ExtensionPackage(
+                "contoso.billing",
+                "task.send-invoice",
+                new SemanticVersion(2, 1, 0),
+                RuntimeExtensionPackageStatus.Activated);
+            await repository.UpsertAsync(activated);
+            Assert.Single(await repository.GetAllAsync());
+        }
+
+        using var readScope = provider.CreateScope();
+        var storedRepository = readScope.ServiceProvider.GetRequiredService<IRuntimeExtensionPackageRepository>();
+        Assert.Contains("EntityFramework", storedRepository.GetType().FullName);
+        var allPackages = await storedRepository.GetAllAsync();
+        var byCapability = await storedRepository.TryGetActiveAsync(
+            "CONTOSO.BILLING",
+            new SemanticVersion(2, 1, 0));
+        var byBundle = await storedRepository.TryGetActiveBundleAsync(
+            activated.BundleId.ToUpperInvariant(),
+            "CONTOSO.BILLING",
+            new SemanticVersion(2, 1, 0),
+            activated.Sha256.ToLowerInvariant());
+
+        Assert.Single(allPackages);
+        Assert.Equal(activated.Id, byCapability.Id);
+        Assert.Equal(activated.Id, byBundle.Id);
+        Assert.Equal("task.send-invoice", Assert.Single(byCapability.Manifest.Capabilities).Key.Value);
+    }
+
+    [Fact]
     public async Task ExecutionTransitionRepositoryPublishesReactiveEventsForRuntimeTimeline()
     {
         var publisher = new RecordingRuntimeReactiveEventPublisher();
@@ -737,13 +787,16 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Contains(traffic, point => point.Active >= 3);
     }
 
-    private static ServiceProvider CreateProvider(IRuntimeReactiveEventPublisher? publisher = null)
+    private static ServiceProvider CreateProvider(
+        IRuntimeReactiveEventPublisher? publisher = null,
+        Action<DbContextOptionsBuilder>? configureDbContext = null)
     {
         var services = new ServiceCollection();
+        var databaseRoot = new InMemoryDatabaseRoot();
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
-        services.AddOrchestratorRuntimeStorageEntityFramework(options =>
-            options.UseInMemoryDatabase($"runtime-storage-{Guid.NewGuid():N}"));
+        services.AddOrchestratorRuntimeStorageEntityFramework(configureDbContext ?? (options =>
+            options.UseInMemoryDatabase($"runtime-storage-{Guid.NewGuid():N}", databaseRoot)));
         if (publisher is not null)
         {
             services.Replace(ServiceDescriptor.Singleton(publisher));
@@ -844,6 +897,42 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             IsEnabled = isEnabled,
             CreatedOnUtc = DateTime.UtcNow,
             UpdatedOnUtc = DateTime.UtcNow,
+        };
+
+    private static RuntimeExtensionPackage ExtensionPackage(
+        string extensionKey,
+        string capabilityKey,
+        SemanticVersion version,
+        RuntimeExtensionPackageStatus status)
+        => new()
+        {
+            Id = Id.New(),
+            BundleId = $"bundle-{extensionKey}-{version}",
+            ExtensionKey = extensionKey,
+            Version = version,
+            Sha256 = "ABC123",
+            SizeBytes = 4096,
+            Status = status,
+            CreatedOnUtc = DateTime.UtcNow,
+            UpdatedOnUtc = DateTime.UtcNow,
+            ActivatedOnUtc = status == RuntimeExtensionPackageStatus.Activated ? DateTime.UtcNow : null,
+            Manifest = new KrackendExtensionManifest(
+                new ExtensionKey(extensionKey),
+                version,
+                extensionKey,
+                "tests",
+                ExtensionLoadMode.ExternalAssembly,
+                ExtensionTrustLevel.PublisherTrusted)
+            {
+                Capabilities =
+                [
+                    new ExtensionCapabilityDescriptor(
+                        new CapabilityKey(capabilityKey),
+                        version,
+                        "Task",
+                        capabilityKey)
+                ]
+            }
         };
 
     private sealed class RecordingRuntimeReactiveEventPublisher : IRuntimeReactiveEventPublisher
