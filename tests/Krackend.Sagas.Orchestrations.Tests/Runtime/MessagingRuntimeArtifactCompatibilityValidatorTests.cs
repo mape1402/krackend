@@ -3,6 +3,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
@@ -49,6 +50,50 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(CreateArtifact());
 
         Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenLegacyArtifactOmitsExtensionMetadata_ReturnsSuccess()
+    {
+        var payload = JsonSerializer.SerializeToNode(CreateArtifact(), SerializerOptions)!;
+        payload.AsObject().Remove("artifactSchemaVersion");
+        payload.AsObject().Remove("requiredCapabilities");
+        var task = payload["stageDefinitions"]![0]!["taskDefinitions"]![0]!.AsObject();
+        task.Remove("extensionKey");
+        task.Remove("capabilityKey");
+        task.Remove("capabilityVersion");
+        task.Remove("runtimeRequirements");
+        task.Remove("executionPolicy");
+
+        var result = await new MessagingRuntimeArtifactCompatibilityValidator().ValidateAsync(payload);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityIsRequired_ReturnsExtensionCapabilityNotConfigured()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    new SemanticVersion(2, 1, 0),
+                    "Task")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ExtensionCapabilityNotConfigured");
     }
 
     [Fact]
