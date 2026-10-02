@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   - Changed runtime dispatch to resolve execution policy before dispatch and route work through the selected execution provider while keeping the default behavior compatible with existing messaging tasks.
   - Changed runtime artifact compatibility validation to reject external bundles/capabilities unless the runtime node has the matching activated package and manifest capability.
+  - Changed runtime sample hosts to register Azure Service Bus only when a connection string is configured, so local storage and WebUI smoke tests can run with the default empty sample configuration.
 
 ------
 

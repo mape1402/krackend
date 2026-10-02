@@ -97,13 +97,14 @@ builder.Services
     .AddPigeon(builder.Configuration, pigeon =>
     {
         pigeon.SetTopologyProvisioningMode(TopologyProvisioningMode.Manual);
-        pigeon.UseAzureServiceBus(serviceBus =>
+        if (!string.IsNullOrWhiteSpace(serviceBusConnectionString))
         {
-            if (!string.IsNullOrWhiteSpace(serviceBusConnectionString))
+            pigeon.UseAzureServiceBus(serviceBus =>
             {
                 serviceBus.ConnectionString = serviceBusConnectionString;
-            }
-        });
+            });
+        }
+
         pigeon.ConfigureConsumerExecution(execution =>
         {
             execution.MaxConcurrency = null;
