@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Client.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Krackend.Sagas.Orchestrations.Contracts.Events;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
@@ -239,6 +240,31 @@ public sealed class AdaptersAndContractsTests
     }
 
     [Fact]
+    public void RuntimeBuilderRegistersExternalExecutionSandboxProvider()
+    {
+        KrackendOrchestrationsRuntimeBuilder nullBuilder = null!;
+        var services = new ServiceCollection();
+        var builder = services.AddKrackendOrchestrationsRuntime();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            Krackend.Sagas.Orchestrations.Runtime.DependencyInjection.ServiceCollectionExtensions
+                .AddExecutionSandboxProvider<ContractExecutionSandboxProvider>(nullBuilder));
+
+        var returned = builder.AddExecutionSandboxProvider<ContractExecutionSandboxProvider>();
+
+        Assert.Same(builder, returned);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IExecutionSandboxProvider) &&
+            descriptor.ImplementationType == typeof(ContractExecutionSandboxProvider));
+
+        using var provider = services.BuildServiceProvider();
+        var executionProviders = provider.GetServices<IExecutionSandboxProvider>().ToArray();
+
+        Assert.Contains(executionProviders, executionProvider =>
+            executionProvider.ProviderKey == ContractExecutionSandboxProvider.Provider);
+    }
+
+    [Fact]
     public void RuntimePigeonExtensionExposesPigeonServiceBuilderConfiguration()
     {
         var services = new ServiceCollection();
@@ -464,4 +490,18 @@ public sealed class AdaptersAndContractsTests
     public sealed record TestResponse(bool Ok);
 
     private sealed record PigeonJsonOptionsProbe(string SampleValue);
+
+    private sealed class ContractExecutionSandboxProvider : IExecutionSandboxProvider
+    {
+        public const string Provider = "contract-sandbox";
+
+        public string ProviderKey => Provider;
+
+        public string ExecutionMode => "sandbox";
+
+        public bool IsSandbox => true;
+
+        public Task DispatchAsync(ExecutionEnvelope envelope, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
 }

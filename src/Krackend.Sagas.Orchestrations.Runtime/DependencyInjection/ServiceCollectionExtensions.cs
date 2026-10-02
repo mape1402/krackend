@@ -163,5 +163,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
 
             return new KrackendOrchestrationsRuntimeBuilder(services);
         }
+
+        /// <summary>
+        /// Registers a runtime execution provider that can be selected by execution policy.
+        /// </summary>
+        /// <typeparam name="TProvider">Provider implementation type.</typeparam>
+        /// <param name="builder">Runtime builder.</param>
+        /// <returns>The same runtime builder for chaining.</returns>
+        public static KrackendOrchestrationsRuntimeBuilder AddExecutionSandboxProvider<TProvider>(
+            this KrackendOrchestrationsRuntimeBuilder builder)
+            where TProvider : class, IExecutionSandboxProvider
+        {
+            ArgumentNullException.ThrowIfNull(builder);
+            builder.Services.TryAddEnumerable(
+                ServiceDescriptor.Scoped<IExecutionSandboxProvider, TProvider>());
+            return builder;
+        }
     }
 }

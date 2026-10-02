@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Execution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.Support;
 using Microsoft.Extensions.DependencyInjection;
@@ -95,6 +96,48 @@ public sealed class ExecutionPolicyDispatchIntegrationTests
         Assert.Contains("must run in an execution sandbox", failedTask.Metadata["ExecutionErrorMessage"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task EngineDispatchesThroughRegisteredExternalSandboxProvider()
+    {
+        CapturingExecutionSandboxProvider.Reset();
+        var task = MessagingTask("task.external.sandbox", 1) with
+        {
+            ExtensionKey = "contoso.billing",
+            ExecutionPolicy = new ExecutionPolicyArtifact
+            {
+                DefaultProviderKey = CapturingExecutionSandboxProvider.Provider
+            }
+        };
+        using var harness = await MessagingEngineHarness.CreateAsync(
+            CreateArtifact(Stage("stage-one", 1, task)),
+            services =>
+            {
+                new KrackendOrchestrationsRuntimeBuilder(services)
+                    .AddExecutionSandboxProvider<CapturingExecutionSandboxProvider>();
+                services.Configure<RuntimeExecutionOptions>(options =>
+                {
+                    options.EnvironmentPolicy = new ExecutionPolicyArtifact
+                    {
+                        RequireSandboxForExternalExtensions = true
+                    };
+                    options.RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+                    {
+                        SupportedProviderKeys = [CapturingExecutionSandboxProvider.Provider],
+                        SupportedExecutionModes = [ExecutionConstants.SandboxMode],
+                        SupportsNetwork = true
+                    };
+                });
+            });
+
+        await harness.StartAsync(Payload("trigger"), "correlation-custom-sandbox");
+
+        var envelope = Assert.Single(CapturingExecutionSandboxProvider.Envelopes);
+        Assert.Empty(harness.Dispatcher.Commands);
+        Assert.Equal(CapturingExecutionSandboxProvider.Provider, envelope.ResolvedPolicy.ProviderKey);
+        Assert.Equal(ExecutionConstants.SandboxMode, envelope.ResolvedPolicy.ExecutionMode);
+        Assert.Equal("task.external.sandbox", envelope.Command.TaskKey);
+    }
+
     private static OrchestrationArtifact CreateArtifact(params StageArtifact[] stages)
         => new(
             Id.New(),
@@ -142,4 +185,30 @@ public sealed class ExecutionPolicyDispatchIntegrationTests
 
     private static Id IdFrom(string value)
         => new(Ulid.Parse(value));
+
+    private sealed class CapturingExecutionSandboxProvider : IExecutionSandboxProvider
+    {
+        public const string Provider = "capturing-sandbox";
+
+        private static readonly List<ExecutionEnvelope> CapturedEnvelopes = [];
+
+        public static IReadOnlyCollection<ExecutionEnvelope> Envelopes => CapturedEnvelopes;
+
+        public string ProviderKey => Provider;
+
+        public string ExecutionMode => ExecutionConstants.SandboxMode;
+
+        public bool IsSandbox => true;
+
+        public Task DispatchAsync(ExecutionEnvelope envelope, CancellationToken cancellationToken = default)
+        {
+            CapturedEnvelopes.Add(envelope);
+            return Task.CompletedTask;
+        }
+
+        public static void Reset()
+        {
+            CapturedEnvelopes.Clear();
+        }
+    }
 }
