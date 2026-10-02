@@ -35,5 +35,22 @@ internal sealed class InMemoryRuntimeExtensionPackageRepository : IRuntimeExtens
 
         return Task.FromResult(package);
     }
-}
 
+    public Task<RuntimeExtensionPackage> TryGetActiveBundleAsync(
+        string bundleId,
+        string extensionKey,
+        SemanticVersion version,
+        string sha256,
+        CancellationToken cancellationToken = default)
+    {
+        var package = _store.ExtensionPackages.Values.FirstOrDefault(candidate =>
+            candidate.Status == RuntimeExtensionPackageStatus.Activated &&
+            string.Equals(candidate.BundleId, bundleId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(candidate.ExtensionKey, extensionKey, StringComparison.OrdinalIgnoreCase) &&
+            candidate.Version.Equals(version) &&
+            (string.IsNullOrWhiteSpace(sha256) ||
+                string.Equals(candidate.Sha256, sha256, StringComparison.OrdinalIgnoreCase)));
+
+        return Task.FromResult(package);
+    }
+}

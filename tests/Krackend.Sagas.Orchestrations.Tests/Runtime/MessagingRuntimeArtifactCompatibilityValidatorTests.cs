@@ -105,26 +105,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     public async Task ValidateAsync_WhenExternalCapabilityPackageIsActivated_ReturnsSuccess()
     {
         var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
-        await repository.UpsertAsync(new RuntimeExtensionPackage
-        {
-            Id = Id.New(),
-            BundleId = "bundle-contoso-billing-2.1.0",
-            ExtensionKey = "contoso.billing",
-            Version = new SemanticVersion(2, 1, 0),
-            Sha256 = "bundle-sha",
-            SizeBytes = 1024,
-            Status = RuntimeExtensionPackageStatus.Activated,
-            CreatedOnUtc = DateTime.UtcNow,
-            UpdatedOnUtc = DateTime.UtcNow,
-            ActivatedOnUtc = DateTime.UtcNow,
-            Manifest = new KrackendExtensionManifest(
-                new ExtensionKey("contoso.billing"),
-                new SemanticVersion(2, 1, 0),
-                "Contoso Billing",
-                "Contoso",
-                ExtensionLoadMode.ExternalAssembly,
-                ExtensionTrustLevel.PublisherTrusted)
-        });
+        await repository.UpsertAsync(ExternalPackage("contoso.billing", "task.send-invoice", new SemanticVersion(2, 1, 0)));
         var task = MessagingTask("task-one") with
         {
             ExtensionKey = "contoso.billing",
@@ -308,6 +289,84 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var artifact = CreateArtifact(triggers: [trigger]);
 
         var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityIsNotDeclaredByPackage_ReturnsExtensionCapabilityNotConfigured()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        await repository.UpsertAsync(ExternalPackage("contoso.billing", "task.other", new SemanticVersion(2, 1, 0)));
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    new SemanticVersion(2, 1, 0),
+                    "Task")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
+
+        AssertFailure(result, "ExtensionCapabilityNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalBundleIsRequiredButNotActivated_ReturnsExtensionBundleNotActivated()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    "bundle-contoso-billing-2.1.0",
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ExtensionBundleNotActivated");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalBundleIsActivated_ReturnsSuccess()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        await repository.UpsertAsync(ExternalPackage("contoso.billing", "task.send-invoice", new SemanticVersion(2, 1, 0)));
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    "bundle-contoso.billing-2.1.0",
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
 
         Assert.True(result.Succeeded, result.ErrorMessage);
     }
@@ -789,6 +848,41 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var payload = JsonSerializer.SerializeToNode(artifact, SerializerOptions)!;
         return await new MessagingRuntimeArtifactCompatibilityValidator().ValidateAsync(payload);
     }
+
+    private static RuntimeExtensionPackage ExternalPackage(
+        string extensionKey,
+        string capabilityKey,
+        SemanticVersion version)
+        => new()
+        {
+            Id = Id.New(),
+            BundleId = $"bundle-{extensionKey}-{version}",
+            ExtensionKey = extensionKey,
+            Version = version,
+            Sha256 = "bundle-sha",
+            SizeBytes = 1024,
+            Status = RuntimeExtensionPackageStatus.Activated,
+            CreatedOnUtc = DateTime.UtcNow,
+            UpdatedOnUtc = DateTime.UtcNow,
+            ActivatedOnUtc = DateTime.UtcNow,
+            Manifest = new KrackendExtensionManifest(
+                new ExtensionKey(extensionKey),
+                version,
+                extensionKey,
+                "Contoso",
+                ExtensionLoadMode.ExternalAssembly,
+                ExtensionTrustLevel.PublisherTrusted)
+            {
+                Capabilities =
+                [
+                    new ExtensionCapabilityDescriptor(
+                        new CapabilityKey(capabilityKey),
+                        version,
+                        "Task",
+                        capabilityKey)
+                ]
+            }
+        };
 
     private static void AssertFailure(RuntimeArtifactCompatibilityValidationResult result, string errorCode)
     {
