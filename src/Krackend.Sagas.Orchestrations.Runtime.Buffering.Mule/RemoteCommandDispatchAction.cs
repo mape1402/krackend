@@ -443,6 +443,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             => status is OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
                 or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.DeadLettered
+                or OrchestrationInstanceStatus.Aborted
                 or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated
                 or OrchestrationInstanceStatus.Stopped;

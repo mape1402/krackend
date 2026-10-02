@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
@@ -247,6 +249,23 @@ public sealed class DetailsModel : PageModel
         return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
     }
 
+    /// <summary>
+    /// Sets enabled state of one stage from roadmap card toggle.
+    /// </summary>
+    public async Task<IActionResult> OnPostSetStageEnabledAsync([FromBody] SetStageEnabledRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.StageId))
+        {
+            return BadRequest();
+        }
+
+        var updated = request.IsEnabled
+            ? await _stageService.Enable(new EnableStageDefinitionCommand(request.StageId), cancellationToken)
+            : await _stageService.Disable(new DisableStageDefinitionCommand(request.StageId), cancellationToken);
+
+        return new JsonResult(new { success = updated });
+    }
+
     public async Task<IActionResult> OnPostUpsertTriggerAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
     {
         ModelState.Clear();
@@ -276,6 +295,7 @@ public sealed class DetailsModel : PageModel
         var triggerType = ResolveTriggerType(ParseEnum(TriggerInput.TriggerType, TriggerType.Event));
         var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
         var description = TriggerInput.Description ?? string.Empty;
+        var compensation = BuildTriggerCompensationDefinition(TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
 
         if (existingTrigger is not null)
         {
@@ -286,7 +306,8 @@ public sealed class DetailsModel : PageModel
                     triggerType,
                     triggerChannel,
                     existingTrigger.IsEnabled,
-                    description),
+                    description,
+                    compensation),
                 cancellationToken);
 
             return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
@@ -299,7 +320,8 @@ public sealed class DetailsModel : PageModel
                 triggerType,
                 triggerChannel,
                 true,
-                description),
+                description,
+                compensation),
             cancellationToken);
 
         return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
@@ -480,6 +502,11 @@ public sealed class DetailsModel : PageModel
             ModelState.AddModelError(nameof(TriggerInput.EventValidationDsl), "Capture the event validation DSL.");
         }
 
+        if (TriggerInput.HasCompensation && string.IsNullOrWhiteSpace(TriggerInput.CompensationMessagingTopic))
+        {
+            ModelState.AddModelError(nameof(TriggerInput.CompensationMessagingTopic), "Capture the compensation topic.");
+        }
+
         if (!string.IsNullOrWhiteSpace(TriggerInput.EventSchemaRegistryProviderId) &&
             !Ulid.TryParse(TriggerInput.EventSchemaRegistryProviderId, out _))
         {
@@ -514,6 +541,8 @@ public sealed class DetailsModel : PageModel
     {
         var eventChannel = trigger.TriggerChannel as EventTriggerChannel;
         var schema = eventChannel?.SchemaBinding;
+        var compensationMessaging = trigger.CompensationDefinition?.Configuration as MessagingTaskConfiguration;
+        var compensationSchema = compensationMessaging?.SchemaBinding;
 
         return new
         {
@@ -531,6 +560,18 @@ public sealed class DetailsModel : PageModel
             HasEventValidation = eventChannel?.HasValidation ?? false,
             EventValidationDsl = (eventChannel?.Validation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty,
             EventValidationErrorCode = eventChannel?.Validation?.ErrorCode ?? "TriggerValidationFailed",
+            HasCompensation = trigger.CompensationDefinition is not null,
+            CompensationMessagingTopic = compensationMessaging?.Topic ?? string.Empty,
+            CompensationMessagingVersion = compensationMessaging?.Version.ToString() ?? "1.0.0",
+            HasCompensationSchemaValidation = compensationMessaging?.HasSchemaValidation ?? false,
+            CompensationSchemaContractKey = compensationSchema?.ContractKey ?? string.Empty,
+            CompensationSchemaContractVersion = compensationSchema?.ContractVersion.ToString() ?? "1.0.0",
+            CompensationSchemaRegistryProviderId = compensationSchema is null || compensationSchema.RegistryProviderId == default ? string.Empty : compensationSchema.RegistryProviderId.ToString(),
+            CompensationSchemaStrictMode = compensationSchema?.StrictMode ?? false,
+            HasCompensationExecutionCondition = trigger.CompensationDefinition?.HasExecutionCondition ?? false,
+            CompensationConditionDslExpression = (trigger.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
+            HasCompensationTransformation = trigger.CompensationDefinition?.HasTransformation ?? false,
+            CompensationTransformationDsl = (trigger.CompensationDefinition?.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
         };
     }
 
@@ -583,6 +624,74 @@ public sealed class DetailsModel : PageModel
             }
         };
 
+    private static CompensationDefinition BuildTriggerCompensationDefinition(
+        UpsertTriggerInput input,
+        string orchestrationId,
+        string defaultSchemaRegistryProviderKey)
+    {
+        if (!input.HasCompensation)
+        {
+            return null;
+        }
+
+        var hasSchemaBinding = !string.IsNullOrWhiteSpace(input.CompensationSchemaContractKey);
+        return new CompensationDefinition
+        {
+            CompensationTaskKind = TaskKind.Messaging,
+            DispatchType = TaskDispatchType.FireAndForget,
+            Configuration = new MessagingTaskConfiguration
+            {
+                Topic = input.CompensationMessagingTopic.Trim(),
+                Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
+                HasSchemaValidation = input.HasCompensationSchemaValidation,
+                SchemaBinding = hasSchemaBinding
+                    ? CreateSchemaBinding(
+                        input.CompensationSchemaContractKey,
+                        input.CompensationSchemaContractVersion,
+                        input.CompensationSchemaRegistryProviderId,
+                        input.CompensationSchemaStrictMode,
+                        input.HasCompensationSchemaValidation,
+                        orchestrationId,
+                        defaultSchemaRegistryProviderKey,
+                        SchemaContractKind.Command)
+                    : null,
+            },
+            HasExecutionCondition = input.HasCompensationExecutionCondition,
+            ExecutionCondition = input.HasCompensationExecutionCondition
+                ? BuildExecutionCondition(input.CompensationConditionDslExpression)
+                : null,
+            HasTransformation = input.HasCompensationTransformation,
+            Transformation = input.HasCompensationTransformation
+                ? BuildTransformation(input.CompensationTransformationDsl)
+                : null,
+        };
+    }
+
+    private static ExecutionCondition BuildExecutionCondition(string expression)
+        => new()
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslConditionConfiguration
+            {
+                Expression = new Expression(string.IsNullOrWhiteSpace(expression) ? "true" : expression)
+            }
+        };
+
+    private static TransformationDefinition BuildTransformation(string dsl)
+        => string.IsNullOrWhiteSpace(dsl)
+            ? null
+            : new TransformationDefinition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new DslTransformationConfiguration
+                {
+                    Dsl = dsl,
+                    SourceContextHash = string.Empty,
+                    TargetSchemaHash = string.Empty,
+                    SemanticDiagnosticsJson = "{}"
+                }
+            };
+
     private static SchemaBinding CreateSchemaBinding(
         string contractKey,
         string contractVersion,
@@ -590,7 +699,8 @@ public sealed class DetailsModel : PageModel
         bool strictMode,
         bool isValidationEnabled,
         string orchestrationId,
-        string defaultSchemaRegistryProviderKey)
+        string defaultSchemaRegistryProviderKey,
+        SchemaContractKind contractKind = SchemaContractKind.Event)
     {
         return new SchemaBinding
         {
@@ -602,7 +712,7 @@ public sealed class DetailsModel : PageModel
             ContractVersion = ParseSemanticVersion(contractVersion, new SemanticVersion(1, 0, 0)),
             RegistryProviderId = ParseId(registryProviderId),
             RegistryProviderKey = defaultSchemaRegistryProviderKey,
-            ContractKind = SchemaContractKind.Event,
+            ContractKind = contractKind,
             StrictMode = strictMode,
             IsValidationEnabled = isValidationEnabled,
         };
@@ -698,6 +808,33 @@ public sealed class DetailsModel : PageModel
         public string EventValidationDsl { get; set; } = string.Empty;
 
         public string EventValidationErrorCode { get; set; } = "TriggerValidationFailed";
+
+        public bool HasCompensation { get; set; }
+
+        [MaxLength(512)]
+        public string CompensationMessagingTopic { get; set; } = string.Empty;
+
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
+        public string CompensationMessagingVersion { get; set; } = "1.0.0";
+
+        public bool HasCompensationSchemaValidation { get; set; }
+
+        public string CompensationSchemaContractKey { get; set; } = string.Empty;
+
+        [RegularExpression(@"^\d+\.\d+\.\d+$", ErrorMessage = "Use semantic version format, for example 1.0.0.")]
+        public string CompensationSchemaContractVersion { get; set; } = "1.0.0";
+
+        public string CompensationSchemaRegistryProviderId { get; set; } = string.Empty;
+
+        public bool CompensationSchemaStrictMode { get; set; }
+
+        public bool HasCompensationExecutionCondition { get; set; }
+
+        public string CompensationConditionDslExpression { get; set; } = "true";
+
+        public bool HasCompensationTransformation { get; set; }
+
+        public string CompensationTransformationDsl { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -725,6 +862,22 @@ public sealed class DetailsModel : PageModel
         /// Gets or sets trigger identifier.
         /// </summary>
         public string TriggerId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets enabled state.
+        /// </summary>
+        public bool IsEnabled { get; set; }
+    }
+
+    /// <summary>
+    /// Represents toggle payload for stage enabled state.
+    /// </summary>
+    public sealed class SetStageEnabledRequest
+    {
+        /// <summary>
+        /// Gets or sets stage identifier.
+        /// </summary>
+        public string StageId { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets enabled state.

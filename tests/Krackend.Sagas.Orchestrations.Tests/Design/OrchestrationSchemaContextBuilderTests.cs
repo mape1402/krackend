@@ -258,6 +258,47 @@ public sealed class OrchestrationSchemaContextBuilderTests
         Assert.DoesNotContain(context.Sources, x => x.Alias == "reserve_inventory_reply");
     }
 
+    [Fact]
+    public async Task BuildForTaskCompensation_ExposesForwardSourcesThroughOwningTask()
+    {
+        var version = CreateVersion();
+        var target = version.StageDefinitions[0].TaskDefinitions[1];
+        target.CompensationDefinition = Compensation("authorize-payment.undo");
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTaskCompensation(version, target.Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        Assert.Contains(context.Sources, x => x.Alias == TriggerMetadataAlias);
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment");
+        Assert.Contains(context.Sources, x => x.Alias == "authorize_payment_reply");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "notify_customer");
+        Assert.Equal("authorize_payment_compensation_request", context.Target.Alias);
+        Assert.Equal("authorize-payment.undo.request", context.Target.SchemaBinding.ContractKey);
+    }
+
+    [Fact]
+    public async Task BuildForTriggerCompensation_ExposesTriggerMetadataAndAllForwardTaskSources()
+    {
+        var version = CreateVersion();
+        var trigger = version.TriggerBindings.Single();
+        trigger.CompensationDefinition = Compensation("sale-created.undo");
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTriggerCompensation(version, trigger.Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        Assert.Contains(context.Sources, x => x.Alias == TriggerMetadataAlias);
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_sale_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "close_sale");
+        Assert.Contains(context.Sources, x => x.Alias == "close_sale_reply");
+        Assert.Equal("sale_created_compensation_request", context.Target.Alias);
+        Assert.Equal("sale-created.undo.request", context.Target.SchemaBinding.ContractKey);
+    }
+
     private static OrchestrationVersion CreateVersion()
     {
         var versionId = Id.New();
@@ -353,6 +394,19 @@ public sealed class OrchestrationSchemaContextBuilderTests
                 Version = new SemanticVersion(1, 0, 0),
                 RequestSchemaBinding = Binding($"{key}.request", SchemaContractKind.CommandRequest),
                 ResponseSchemaBinding = Binding($"{key}.response", SchemaContractKind.CommandResponse)
+            }
+        };
+
+    private static CompensationDefinition Compensation(string topic)
+        => new()
+        {
+            CompensationTaskKind = TaskKind.Messaging,
+            DispatchType = TaskDispatchType.FireAndForget,
+            Configuration = new MessagingTaskConfiguration
+            {
+                Topic = topic,
+                Version = new SemanticVersion(1, 0, 0),
+                RequestSchemaBinding = Binding($"{topic}.request", SchemaContractKind.CommandRequest)
             }
         };
 

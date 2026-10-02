@@ -13,5 +13,5 @@ public sealed record CreateTriggerBindingCommand(
     TriggerType TriggerType,
     ITriggerChannel TriggerChannel,
     bool IsEnabled,
-    string Description) : IRequest<string>;
-
+    string Description,
+    CompensationDefinition CompensationDefinition = null) : IRequest<string>;

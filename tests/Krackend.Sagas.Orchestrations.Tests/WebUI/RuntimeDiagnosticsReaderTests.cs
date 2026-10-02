@@ -477,6 +477,7 @@ public sealed class RuntimeDiagnosticsReaderTests
                     "reserve-stock",
                     "Reserve stock",
                     1,
+                    true,
                     DisabledCondition(),
                     reserveTasks,
                     [],
@@ -491,6 +492,7 @@ public sealed class RuntimeDiagnosticsReaderTests
                     "capture-payment",
                     "Capture payment",
                     2,
+                    true,
                     DisabledCondition(),
                     [
                         new TaskArtifact(

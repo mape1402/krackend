@@ -198,6 +198,34 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationIsValid_ReturnsSuccess()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationTopicIsMissing_ReturnsCompensationMessagingTopicMissing()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation(string.Empty, TaskKind.Messaging, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "CompensationMessagingTopicMissing");
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenStageConditionUsesUnsupportedEngine_ReturnsConditionEngineNotSupported()
     {
         var artifact = CreateArtifact(stages:
@@ -693,6 +721,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
             key,
             key,
             order,
+            true,
             condition ?? DisabledCondition(),
             tasks ?? [],
             [],

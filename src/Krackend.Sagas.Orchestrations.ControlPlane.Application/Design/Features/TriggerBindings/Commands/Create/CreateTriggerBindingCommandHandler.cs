@@ -45,6 +45,7 @@ public sealed class CreateTriggerBindingCommandHandler : IRequestHandler<CreateT
             TriggerChannel = request.TriggerChannel,
             IsEnabled = request.IsEnabled,
             Description = request.Description,
+            CompensationDefinition = request.CompensationDefinition,
         };
 
         if (_schemaBindingSnapshotResolver is not null)

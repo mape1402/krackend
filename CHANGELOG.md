@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.1.0] - 2026-10-02
+
+- ### Added
+
+  - Added recoverable runtime lifecycle support with `DeadLettered` and `Aborted` instance statuses, plus Runtime API endpoints to replay recoverable instances from the failed task/stage or abort them after operator review.
+  - Added trigger compensation definitions so event triggers can participate in the compensation flow, including validation, artifact snapshots, design persistence, Runtime dispatch, and WebUI capture.
+  - Added ButterMorph designer support for compensation execution conditions and transformations on tasks and triggers, with context sources for trigger payload, metadata, forward task requests/replies, and previous compensation replies available at the point of compensation.
+  - Added stage enablement to design storage, artifacts, runtime execution, and recovery so disabled stages are skipped consistently after deployment.
+  - Added Runtime compensation dispatch through the task adapter abstraction so compensation uses the same transport-agnostic path as initial dispatch and retry.
+  - Added SQL Server sample migrations for trigger compensation and stage enablement.
+
+- ### Changed
+
+  - Changed exhausted retry and timeout handling to move recoverable orchestration instances into `DeadLettered` instead of treating every exhausted failure as a final unrecoverable failure.
+  - Changed retry semantics so configured retries require explicit `RetryableErrorCodes`; when no retry codes are configured, the runtime does not retry the failure.
+  - Updated Mongo Runtime sample assembly naming to avoid Windows path-length failures while keeping the original namespace.
+
+- ### Fixed
+
+  - Fixed late task success callbacks after a timeout/retry/dead-letter transition so idempotent downstream systems can still report the successful attempt without creating a duplicate saga or corrupting the dead-lettered instance state.
+  - Fixed compensation request dispatch so execution conditions and transformations run before publishing the compensating command payload.
+  - Fixed Runtime artifact compatibility validation to include trigger compensation.
+
+------
+
 ## [v4.0.4] - 2026-10-01
 
 - ### Added

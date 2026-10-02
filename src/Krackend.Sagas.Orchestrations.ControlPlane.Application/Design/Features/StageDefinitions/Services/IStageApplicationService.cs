@@ -22,6 +22,22 @@ public interface IStageApplicationService
     Task<bool> Update(UpdateStageDefinitionCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Enables a resource.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> Enable(EnableStageDefinitionCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Disables a resource.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> Disable(DisableStageDefinitionCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates only execution condition of one stage.
     /// </summary>
     /// <param name="command">Command to execute.</param>

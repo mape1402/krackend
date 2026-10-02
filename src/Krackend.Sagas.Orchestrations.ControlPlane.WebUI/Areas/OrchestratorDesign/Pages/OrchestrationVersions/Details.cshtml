@@ -106,7 +106,7 @@
             {
                 var hasStageExecutionCondition = stage.HasExecutionCondition;
 
-                <article class="od-pipeline-item" data-stage-id="@stage.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
+                <article class="od-pipeline-item @(stage.IsEnabled ? string.Empty : "od-task-disabled")" data-stage-id="@stage.Id" draggable="@Model.CanEdit.ToString().ToLowerInvariant()">
                     <div class="od-pipeline-card od-stage-card">
                         <button type="button"
                                 class="od-stage-exec-btn js-stage-execution-btn @(hasStageExecutionCondition ? "od-stage-exec-btn-active" : "od-stage-exec-btn-inactive")"
@@ -161,6 +161,15 @@
                         <div class="od-stage-task-count-row">
                             <span class="od-stage-task-count-badge">@((Model.StageTaskCounts.TryGetValue(stage.Id, out var count) ? count : 0)) tasks</span>
                         </div>
+                        @if (Model.CanEdit)
+                        {
+                            <div class="od-task-toggle-row">
+                                <span class="od-task-toggle-label">Enabled</span>
+                                <div class="form-check form-switch od-task-toggle">
+                                    <input class="form-check-input js-stage-enabled-toggle" type="checkbox" role="switch" data-stage-id="@stage.Id" @(stage.IsEnabled ? "checked" : null) aria-label="Toggle stage enabled" />
+                                </div>
+                            </div>
+                        }
                     </div>
                 </article>
             }
@@ -271,6 +280,61 @@
                             <input type="hidden" name="TriggerInput.HasEventValidation" value="false" />
                             <input type="hidden" name="TriggerInput.EventValidationErrorCode" value="TriggerValidationFailed" />
                             <input type="hidden" name="TriggerInput.EventValidationDsl" value="" />
+                        </div>
+                    </div>
+
+                    <hr />
+                    <div class="form-check form-switch mb-2">
+                        <input asp-for="TriggerInput.HasCompensation" class="form-check-input" id="hasTriggerCompensation" />
+                        <label asp-for="TriggerInput.HasCompensation" class="form-check-label">Enable trigger compensation</label>
+                    </div>
+                    <div class="row g-2" id="triggerCompensationSection">
+                        <div class="col-md-7">
+                            <label asp-for="TriggerInput.CompensationMessagingTopic" class="form-label">Compensation topic</label>
+                            <input asp-for="TriggerInput.CompensationMessagingTopic" class="form-control" />
+                        </div>
+                        <div class="col-md-5">
+                            <label asp-for="TriggerInput.CompensationMessagingVersion" class="form-label">Version</label>
+                            <input asp-for="TriggerInput.CompensationMessagingVersion" class="form-control" data-orchestrator-version="true" />
+                        </div>
+                        <div class="col-md-8">
+                            <label asp-for="TriggerInput.CompensationSchemaContractKey" class="form-label">Command key</label>
+                            <input asp-for="TriggerInput.CompensationSchemaContractKey"
+                                   class="form-control"
+                                   data-schema-contract-key="true"
+                                   data-schema-contract-kind="Command"
+                                   data-schema-version-target="TriggerInput_CompensationSchemaContractVersion" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="TriggerInput.CompensationSchemaContractVersion" class="form-label">Command version</label>
+                            <input asp-for="TriggerInput.CompensationSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
+                        </div>
+                        <input asp-for="TriggerInput.CompensationSchemaRegistryProviderId" type="hidden" />
+                        <input type="hidden" name="TriggerInput.CompensationSchemaStrictMode" value="false" />
+                        <input type="hidden" name="TriggerInput.HasCompensationSchemaValidation" value="false" />
+                        <div class="col-12"><hr class="my-2" /></div>
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-input" id="hasTriggerCompensationExecutionCondition" />
+                                <label asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-label">Enable execution condition</label>
+                            </div>
+                        </div>
+                        <div class="col-12" id="triggerCompensationConditionSection">
+                            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="openTriggerCompensationConditionDesignerButton">Open ButterMorph condition</button>
+                            <label asp-for="TriggerInput.CompensationConditionDslExpression" class="form-label">Condition DSL expression</label>
+                            <input asp-for="TriggerInput.CompensationConditionDslExpression" class="form-control" />
+                        </div>
+                        <div class="col-12"><hr class="my-2" /></div>
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input asp-for="TriggerInput.HasCompensationTransformation" class="form-check-input" id="hasTriggerCompensationTransformation" />
+                                <label asp-for="TriggerInput.HasCompensationTransformation" class="form-check-label">Enable transformation</label>
+                            </div>
+                        </div>
+                        <div class="col-12" id="triggerCompensationTransformationSection">
+                            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="openTriggerCompensationTransformationDesignerButton">Open ButterMorph transformation</button>
+                            <label asp-for="TriggerInput.CompensationTransformationDsl" class="form-label">Transformation DSL</label>
+                            <textarea asp-for="TriggerInput.CompensationTransformationDsl" class="form-control" rows="3"></textarea>
                         </div>
                     </div>
 
@@ -561,6 +625,49 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
     });
 })();
 
+(() => {
+    const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
+    const toggles = document.querySelectorAll('.js-stage-enabled-toggle');
+    if (!toggles.length) {
+        return;
+    }
+
+    async function setStageEnabled(stageId, isEnabled) {
+        const response = await fetch(`${window.location.pathname}?handler=SetStageEnabled`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': antiForgeryToken
+            },
+            body: JSON.stringify({ stageId: stageId, isEnabled: isEnabled })
+        });
+
+        return response.ok;
+    }
+
+    toggles.forEach(toggle => {
+        toggle.addEventListener('change', async event => {
+            const input = event.target;
+            const stageId = input.getAttribute('data-stage-id') || '';
+            if (!stageId) {
+                return;
+            }
+
+            const nextValue = !!input.checked;
+            const success = await setStageEnabled(stageId, nextValue);
+            if (!success) {
+                input.checked = !nextValue;
+                return;
+            }
+
+            const card = input.closest('.od-pipeline-item');
+            if (card) {
+                card.classList.toggle('od-task-disabled', !nextValue);
+            }
+        });
+    });
+})();
+
 window.addEventListener('message', event => {
     if (event.origin !== window.location.origin || !event.data) {
         return;
@@ -603,6 +710,18 @@ window.addEventListener('message', event => {
         HasEventValidation: false,
         EventValidationDsl: '',
         EventValidationErrorCode: 'TriggerValidationFailed',
+        HasCompensation: false,
+        CompensationMessagingTopic: '',
+        CompensationMessagingVersion: '1.0.0',
+        HasCompensationSchemaValidation: false,
+        CompensationSchemaContractKey: '',
+        CompensationSchemaContractVersion: '1.0.0',
+        CompensationSchemaRegistryProviderId: '',
+        CompensationSchemaStrictMode: false,
+        HasCompensationExecutionCondition: false,
+        CompensationConditionDslExpression: 'true',
+        HasCompensationTransformation: false,
+        CompensationTransformationDsl: '',
     };
     const payloadFieldAliases = {
         triggerId: 'TriggerId',
@@ -619,6 +738,18 @@ window.addEventListener('message', event => {
         hasEventValidation: 'HasEventValidation',
         eventValidationDsl: 'EventValidationDsl',
         eventValidationErrorCode: 'EventValidationErrorCode',
+        hasCompensation: 'HasCompensation',
+        compensationMessagingTopic: 'CompensationMessagingTopic',
+        compensationMessagingVersion: 'CompensationMessagingVersion',
+        hasCompensationSchemaValidation: 'HasCompensationSchemaValidation',
+        compensationSchemaContractKey: 'CompensationSchemaContractKey',
+        compensationSchemaContractVersion: 'CompensationSchemaContractVersion',
+        compensationSchemaRegistryProviderId: 'CompensationSchemaRegistryProviderId',
+        compensationSchemaStrictMode: 'CompensationSchemaStrictMode',
+        hasCompensationExecutionCondition: 'HasCompensationExecutionCondition',
+        compensationConditionDslExpression: 'CompensationConditionDslExpression',
+        hasCompensationTransformation: 'HasCompensationTransformation',
+        compensationTransformationDsl: 'CompensationTransformationDsl',
     };
 
     function setInputValue(propertyName, value) {
@@ -645,6 +776,7 @@ window.addEventListener('message', event => {
 
         triggerIdInput.value = payload?.triggerId || payload?.TriggerId || '';
         refreshTriggerType();
+        refreshTriggerCompensation();
     }
 
     function refreshTriggerType() {
@@ -663,6 +795,64 @@ window.addEventListener('message', event => {
         }
     }
 
+    function refreshTriggerCompensation() {
+        const hasCompensation = document.getElementById('hasTriggerCompensation');
+        const section = document.getElementById('triggerCompensationSection');
+        const hasCondition = document.getElementById('hasTriggerCompensationExecutionCondition');
+        const conditionSection = document.getElementById('triggerCompensationConditionSection');
+        const hasTransformation = document.getElementById('hasTriggerCompensationTransformation');
+        const transformationSection = document.getElementById('triggerCompensationTransformationSection');
+
+        if (section && hasCompensation) {
+            section.classList.toggle('d-none', !hasCompensation.checked);
+        }
+
+        if (conditionSection && hasCondition) {
+            conditionSection.classList.toggle('d-none', !hasCondition.checked);
+        }
+
+        if (transformationSection && hasTransformation) {
+            transformationSection.classList.toggle('d-none', !hasTransformation.checked);
+        }
+    }
+
+    function notifyMissingTrigger() {
+        window.OrchestratorMessages?.notify({
+            title: 'Save the trigger first',
+            message: 'ButterMorph can be opened after the trigger has been saved.',
+            type: 'warning'
+        });
+    }
+
+    function openTriggerButterMorph(kind) {
+        const triggerId = triggerIdInput.value || '';
+        if (!triggerId) {
+            notifyMissingTrigger();
+            return;
+        }
+
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph designer could not be loaded.',
+                type: 'error'
+            });
+            return;
+        }
+
+        const mode = canEdit ? 'edit' : 'view';
+        const prefix = kind === 'condition'
+            ? 'orchestration-trigger-compensation-execution-condition'
+            : 'orchestration-trigger-compensation-transform';
+        const route = kind === 'condition' ? '/buttermorph/validations/designer' : '/buttermorph/designer';
+        const contextKey = `${prefix}:${orchestrationVersionId}:${triggerId}`;
+        window.ButterMorphHost.openFrame(`${route}?context=${encodeURIComponent(contextKey)}&mode=${mode}`, {
+            title: kind === 'condition' ? 'ButterMorph trigger compensation condition' : 'ButterMorph trigger compensation transformation',
+            width: '96vw',
+            height: '92vh'
+        });
+    }
+
     function openModal() {
         if (!window.bootstrap || !window.bootstrap.Modal) {
             return;
@@ -672,6 +862,11 @@ window.addEventListener('message', event => {
     }
 
     triggerTypeSelector.addEventListener('change', refreshTriggerType);
+    document.getElementById('hasTriggerCompensation')?.addEventListener('change', refreshTriggerCompensation);
+    document.getElementById('hasTriggerCompensationExecutionCondition')?.addEventListener('change', refreshTriggerCompensation);
+    document.getElementById('hasTriggerCompensationTransformation')?.addEventListener('change', refreshTriggerCompensation);
+    document.getElementById('openTriggerCompensationConditionDesignerButton')?.addEventListener('click', () => openTriggerButterMorph('condition'));
+    document.getElementById('openTriggerCompensationTransformationDesignerButton')?.addEventListener('click', () => openTriggerButterMorph('transformation'));
 
     document.querySelectorAll('.js-open-trigger-modal').forEach(button => {
         button.addEventListener('click', async () => {
@@ -710,6 +905,7 @@ window.addEventListener('message', event => {
     });
 
     refreshTriggerType();
+    refreshTriggerCompensation();
 })();
 
 (() => {

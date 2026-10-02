@@ -299,7 +299,7 @@
                             <button class="nav-link" id="task-policies-tab" data-bs-toggle="tab" data-bs-target="#task-policies-pane" type="button" role="tab" aria-controls="task-policies-pane" aria-selected="false">Policies</button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="task-compensation-tab" data-bs-toggle="tab" data-bs-target="#task-compensation-pane" type="button" role="tab" aria-controls="task-compensation-pane" aria-selected="false">Rollback</button>
+                            <button class="nav-link" id="task-compensation-tab" data-bs-toggle="tab" data-bs-target="#task-compensation-pane" type="button" role="tab" aria-controls="task-compensation-pane" aria-selected="false">Compensation</button>
                         </li>
                     </ul>
                     <div class="tab-content" id="taskCreateTabsContent">
@@ -532,14 +532,14 @@
                         <div class="tab-pane fade" id="task-compensation-pane" role="tabpanel" aria-labelledby="task-compensation-tab" tabindex="0">
                             <div class="form-check form-switch mb-2">
                                 <input asp-for="NewTask.HasCompensation" class="form-check-input" id="hasCompensation" />
-                                <label asp-for="NewTask.HasCompensation" class="form-check-label">Enable rollback for this completed task</label>
+                                <label asp-for="NewTask.HasCompensation" class="form-check-label">Enable compensation for this completed task</label>
                             </div>
                             <div class="alert alert-secondary py-2 mb-3">
-                                Rollback belongs to this task after it completes. It runs later only when a downstream failure starts compensation.
+                                Compensation belongs to this forward task after it completes. It runs later only when a downstream failure starts compensation.
                             </div>
                             <div class="row g-2" id="compensationSection">
                                 <div class="col-md-6">
-                                    <label asp-for="NewTask.CompensationKind" class="form-label">Rollback task type</label>
+                                    <label asp-for="NewTask.CompensationKind" class="form-label">Compensation task type</label>
                                     <select asp-for="NewTask.CompensationKind" class="form-select" asp-items="Model.TaskKinds" id="compensationKindSelector"></select>
                                 </div>
                                 <div class="col-md-6">
@@ -547,7 +547,7 @@
                                     <select asp-for="NewTask.CompensationDispatchType" class="form-select" asp-items="Model.CompensationDispatchTypes" id="compensationDispatchTypeSelector"></select>
                                 </div>
                                 <div class="col-md-12">
-                                    <h6 class="mb-2 mt-1">Rollback task configuration</h6>
+                                    <h6 class="mb-2 mt-1">Compensation task configuration</h6>
                                 </div>
                                 <div class="col-12 comp-task-config-block mb-2" data-comp-kind="Http">
                                     <div class="row g-2">
@@ -639,6 +639,9 @@
                                     </div>
                                 </div>
                                 <div id="compensationExecutionConditionSection" class="row g-2">
+                                    <div class="col-12">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="openCompensationConditionDesignerButton">Open ButterMorph condition</button>
+                                    </div>
                                     <div class="col-md-3">
                                         <label asp-for="NewTask.CompensationConditionEngine" class="form-label">Condition engine</label>
                                         <select asp-for="NewTask.CompensationConditionEngine" class="form-select" asp-items="Model.EngineTypes"></select>
@@ -657,6 +660,9 @@
                                     </div>
                                 </div>
                                 <div id="compensationTransformationSection" class="row g-2">
+                                    <div class="col-12">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="openCompensationTransformationDesignerButton">Open ButterMorph transformation</button>
+                                    </div>
                                     <div class="col-md-3">
                                         <label asp-for="NewTask.CompensationTransformationEngine" class="form-label">Transformation engine</label>
                                         <select asp-for="NewTask.CompensationTransformationEngine" class="form-select" asp-items="Model.EngineTypes"></select>
@@ -1002,6 +1008,78 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
             height: '92vh'
         });
     }
+
+    async function openTaskCompensationConditionModal(taskId) {
+        if (!taskId) {
+            notifyMissingSavedTask();
+            return;
+        }
+
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph condition designer could not be loaded.',
+                type: 'error'
+            });
+            return;
+        }
+
+        const mode = canEdit ? 'edit' : 'view';
+        const contextKey = `orchestration-task-compensation-execution-condition:${orchestrationStageVersionId}:${taskId}`;
+        const designerUrl = `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
+        window.ButterMorphHost.openFrame(designerUrl, {
+            title: 'ButterMorph compensation condition',
+            width: '96vw',
+            height: '92vh'
+        });
+    }
+
+    async function openTaskCompensationTransformationModal(taskId) {
+        if (!taskId) {
+            notifyMissingSavedTask();
+            return;
+        }
+
+        if (!window.ButterMorphHost?.openFrame) {
+            window.OrchestratorMessages?.notify({
+                title: 'ButterMorph unavailable',
+                message: 'The ButterMorph designer could not be loaded.',
+                type: 'error'
+            });
+            return;
+        }
+
+        const mode = canEdit ? 'edit' : 'view';
+        const contextKey = `orchestration-task-compensation-transform:${orchestrationStageVersionId}:${taskId}`;
+        const designerUrl = `/buttermorph/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
+        window.ButterMorphHost.openFrame(designerUrl, {
+            title: 'ButterMorph compensation transformation',
+            width: '96vw',
+            height: '92vh'
+        });
+    }
+
+    function getTaskModalTaskId() {
+        return document.getElementById('taskModalTaskIdRaw')?.value ||
+            document.getElementById('taskModalTaskId')?.value ||
+            '';
+    }
+
+    function notifyMissingSavedTask() {
+        window.OrchestratorMessages?.notify({
+            title: 'Save the task first',
+            message: 'ButterMorph can be opened after the compensation owner task has been saved.',
+            type: 'warning'
+        });
+    }
+
+    document.getElementById('openCompensationConditionDesignerButton')?.addEventListener('click', async () => {
+        await openTaskCompensationConditionModal(getTaskModalTaskId());
+    });
+
+    document.getElementById('openCompensationTransformationDesignerButton')?.addEventListener('click', async () => {
+        await openTaskCompensationTransformationModal(getTaskModalTaskId());
+    });
 
     function getRootDropTarget(target) {
         if (!target) {

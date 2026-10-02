@@ -46,8 +46,21 @@ public sealed class StageRepository : IStageRepository
         current.Name = next.Name;
         current.Order = next.Order;
         current.Description = next.Description;
+        current.IsEnabled = next.IsEnabled;
         current.ExecutionCondition = next.ExecutionCondition;
 
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes SetIsEnabled.
+    /// </summary>
+    public async Task SetIsEnabled(Id stageDefinitionId, bool isEnabled, CancellationToken cancellationToken = default)
+    {
+        var current = await _dbContext.StageDefinitions.FirstOrDefaultAsync(x => x.Id == stageDefinitionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"StageDefinition '{stageDefinitionId}' was not found.");
+
+        current.IsEnabled = isEnabled;
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -69,6 +82,7 @@ public sealed class StageRepository : IStageRepository
                 Name = current.Name,
                 Order = current.Order,
                 Description = current.Description,
+                IsEnabled = current.IsEnabled,
                 ExecutionCondition = executionCondition,
                 HasExecutionCondition = true,
                 TaskDefinitions = new List<TaskDefinition>(),

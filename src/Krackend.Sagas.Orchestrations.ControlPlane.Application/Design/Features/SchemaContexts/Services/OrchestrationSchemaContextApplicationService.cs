@@ -71,6 +71,42 @@ public sealed class OrchestrationSchemaContextApplicationService : IOrchestratio
             cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<OrchestrationSchemaContext> GetForTaskCompensation(
+        GetTaskCompensationSchemaContextQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var version = await _versionRepository.GetById(
+            PrimitiveParser.ParseId(query.OrchestrationVersionId),
+            cancellationToken);
+        version = await LoadCompleteVersionGraph(version, cancellationToken);
+
+        return await _contextBuilder.BuildForTaskCompensation(
+            version,
+            PrimitiveParser.ParseId(query.TaskDefinitionId),
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<OrchestrationSchemaContext> GetForTriggerCompensation(
+        GetTriggerCompensationSchemaContextQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var version = await _versionRepository.GetById(
+            PrimitiveParser.ParseId(query.OrchestrationVersionId),
+            cancellationToken);
+        version = await LoadCompleteVersionGraph(version, cancellationToken);
+
+        return await _contextBuilder.BuildForTriggerCompensation(
+            version,
+            PrimitiveParser.ParseId(query.TriggerBindingId),
+            cancellationToken);
+    }
+
     private async Task<OrchestrationVersion> LoadCompleteVersionGraph(
         OrchestrationVersion version,
         CancellationToken cancellationToken)

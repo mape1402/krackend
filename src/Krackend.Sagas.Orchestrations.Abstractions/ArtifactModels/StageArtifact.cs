@@ -10,6 +10,7 @@ public sealed record StageArtifact(
     string Key,
     string Name,
     int Order,
+    bool IsEnabled,
     ExecutionConditionArtifact ExecutionCondition,
     IReadOnlyList<TaskArtifact> TaskDefinitions,
     IReadOnlyList<ParallelGroupArtifact> ParallelGroups,

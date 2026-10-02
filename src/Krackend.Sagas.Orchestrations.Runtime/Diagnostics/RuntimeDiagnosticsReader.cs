@@ -126,10 +126,10 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
         {
             "Created" or "Pending" or "Skipped" or "Stopped" => "od-status-inactive",
             "Running" => "od-status-running",
-            "Retrying" or "CompletedWithErrors" => "od-status-warning",
+            "Retrying" or "CompletedWithErrors" or "DeadLettered" => "od-status-warning",
             "Waiting" or "WaitingResponse" or "Compensating" => "od-status-waiting",
             "Completed" or "Compensated" => "od-status-active",
-            "Failed" or "TimedOut" or "Cancelled" => "od-status-danger",
+            "Failed" or "TimedOut" or "Cancelled" or "Aborted" => "od-status-danger",
             _ => "od-status-inactive"
         };
     }

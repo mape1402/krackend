@@ -25,6 +25,7 @@ internal sealed class StageDefinitionEntityConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.Key).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(2048).IsRequired(false);
+        builder.Property(x => x.IsEnabled).HasDefaultValue(true);
 
         builder.Property(x => x.ExecutionCondition)
             .HasColumnName("ExecutionConditionJson")

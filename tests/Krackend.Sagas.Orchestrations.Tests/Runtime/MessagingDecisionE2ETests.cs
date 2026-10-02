@@ -13,6 +13,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
@@ -367,7 +368,7 @@ public sealed class MessagingDecisionE2ETests
         var attempt = await harness.GetAttemptAsync(command);
 
         Assert.Single(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("PermanentFailure", attempt.ErrorCode);
     }
@@ -391,7 +392,7 @@ public sealed class MessagingDecisionE2ETests
         var attempt = await harness.GetAttemptAsync(command);
 
         Assert.Single(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("TransientFailure", attempt.ErrorCode);
     }
@@ -418,7 +419,7 @@ public sealed class MessagingDecisionE2ETests
         var attempt = await harness.GetAttemptAsync(command);
 
         Assert.Single(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("TransientFailure", attempt.ErrorCode);
         Assert.False(attempt.Metadata["ExecutionIsRetryableCandidate"]!.GetValue<bool>());
@@ -446,7 +447,7 @@ public sealed class MessagingDecisionE2ETests
         var attempts = await harness.GetAttemptsAsync(firstCommand);
 
         Assert.Equal(2, harness.Dispatcher.Commands.Count);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal(2, attempts.Count);
     }
@@ -778,7 +779,7 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetRequiredService<IExecutionTransitionRepository>().GetByInstanceId(seeded.Instance.Id);
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, persistedTask.Status);
         Assert.True(persistedTask.Metadata["RetrySuppressed"]!.GetValue<bool>());
         Assert.Contains("No runtime task adapter is configured", persistedTask.Metadata["RetryConfigurationError"]!.GetValue<string>());
@@ -815,7 +816,7 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetRequiredService<IExecutionTransitionRepository>().GetByInstanceId(seeded.Instance.Id);
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.True(persistedTask.Metadata["RetrySuppressed"]!.GetValue<bool>());
         Assert.Contains("does not contain messaging task configuration", persistedTask.Metadata["RetryConfigurationError"]!.GetValue<string>());
         Assert.Contains(transitions, transition => transition.TransitionType == "TaskRetryConfigurationFailed");
@@ -860,7 +861,7 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetRequiredService<IExecutionTransitionRepository>().GetByInstanceId(seeded.Instance.Id);
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(2, attempts.Length);
         Assert.Equal("PreparationTransient", attempts[0].ErrorCode);
         Assert.Equal("RetryPreparationFailed", attempts[1].ErrorCode);
@@ -901,7 +902,7 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetRequiredService<IExecutionTransitionRepository>().GetByInstanceId(seeded.Instance.Id);
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal("CommandDispatchFailed", attempts[1].ErrorCode);
         Assert.Equal("Failed", dispatch.DispatchStatus);
         Assert.Contains("requires a backchannel reply address", dispatch.FailureReason, StringComparison.Ordinal);
@@ -963,7 +964,7 @@ public sealed class MessagingDecisionE2ETests
         var instance = await harness.GetInstanceAsync(command);
         var attempt = await harness.GetAttemptAsync(command);
 
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal("MissingExecutionResultMetadata", attempt.ErrorCode);
         Assert.Equal("untrusted-response", attempt.ResponsePayload!["value"]!.GetValue<string>());
         Assert.False(attempt.ResponsePayload.AsObject().ContainsKey(nameof(OrchestrationExecutionResultMetadata.Status)));
@@ -1000,7 +1001,7 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal("Response", capturedRequest.Phase);
         Assert.Equal("response validation dsl", capturedRequest.ValidationDsl);
         Assert.Equal("invalid-response", capturedRequest.Payload!["value"]!.GetValue<string>());
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("ResponseShapeInvalid", attempt.ErrorCode);
         Assert.Equal("Validation", attempt.Metadata["ExecutionErrorType"]!.GetValue<string>());
@@ -1278,7 +1279,7 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetRequiredService<IExecutionTransitionRepository>().GetByInstanceId(instance.Id);
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(StageExecutionStatus.Failed, stages.Single().Status);
         Assert.Contains(transitions, transition => transition.TransitionType == "StageConditionFailed");
     }
@@ -1328,7 +1329,7 @@ public sealed class MessagingDecisionE2ETests
         var task = tasks.Single();
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("task.condition.failure", task.TaskKey);
         Assert.True(task.Metadata.ContainsKey("ConditionErrorCode"));
@@ -1354,7 +1355,7 @@ public sealed class MessagingDecisionE2ETests
         var task = tasks.Single();
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal(TaskKind.Http, task.TaskKind);
         Assert.Equal("TaskRuntimeAdapterNotConfigured", task.Metadata["ExecutionErrorCode"]!.GetValue<string>());
@@ -1388,7 +1389,7 @@ public sealed class MessagingDecisionE2ETests
         var dispatch = dispatches.Single();
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("Failed", dispatch.DispatchStatus);
         Assert.Contains("requires a backchannel reply address", dispatch.FailureReason, StringComparison.Ordinal);
@@ -1461,7 +1462,7 @@ public sealed class MessagingDecisionE2ETests
         var sourceStage = stages.Single(stage => stage.StageKey == "stage-source");
         var transitions = await harness.GetTransitionsAsync(sourceCommand);
 
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
         Assert.Equal(StageExecutionStatus.Failed, sourceStage.Status);
         Assert.Equal("ConditionAdapterNotConfigured", sourceStage.Metadata["BranchErrorCode"]!.GetValue<string>());
         Assert.Contains("requires a DSL condition adapter", sourceStage.Metadata["BranchErrorMessage"]!.GetValue<string>());
@@ -1547,7 +1548,7 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
-    public async Task EngineIgnoresLateParallelCallbackAfterInstanceFailed()
+    public async Task EngineAcceptsLateParallelSuccessCallbackAfterInstanceIsDeadLettered()
     {
         var groupId = Id.New();
 
@@ -1573,9 +1574,9 @@ public sealed class MessagingDecisionE2ETests
         var lateTask = await harness.GetTaskAsync(lateCommand);
         var transitions = await harness.GetTransitionsAsync(failedCommand);
 
-        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
-        Assert.Equal(TaskExecutionStatus.WaitingResponse, lateTask.Status);
-        Assert.DoesNotContain(transitions, transition =>
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Completed, lateTask.Status);
+        Assert.Contains(transitions, transition =>
             transition.TaskExecutionId == lateTask.Id &&
             transition.TransitionType == "TaskCallbackCompleted");
     }
@@ -1679,6 +1680,73 @@ public sealed class MessagingDecisionE2ETests
         Assert.Contains(transitions, transition => transition.TransitionType == "CompensationFailed");
     }
 
+    [Fact]
+    public async Task EngineRunsTriggerCompensationWhenSagaFailsBeforeAnyForwardTaskCanBeCompensated()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            [EventTrigger(validationEnabled: false, compensation: Compensation("trigger.undo"))],
+            Stage("stage-one", 1, MessagingTask(
+                "task.failing",
+                1,
+                onErrorPolicy: OnErrorPolicy.StopAndCompensate))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-trigger-compensation");
+
+        var failingCommand = harness.Dispatcher.Commands.Single();
+        await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "requires trigger compensation"));
+
+        var instance = await harness.GetInstanceAsync(failingCommand);
+        var compensations = await harness.GetCompensationsAsync(failingCommand);
+        var compensationCommand = harness.Dispatcher.Commands.Last();
+        var transitions = await harness.GetTransitionsAsync(failingCommand);
+        var compensation = compensations.Single();
+
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, instance.Status);
+        Assert.Equal("Completed", compensation.Status);
+        Assert.Equal("Trigger", compensation.Metadata["SourceElementType"]!.GetValue<string>());
+        Assert.StartsWith("trigger:", compensationCommand.TaskKey, StringComparison.Ordinal);
+        Assert.Contains("trigger.undo", compensationCommand.SettingsPayload);
+        Assert.Contains(transitions, transition => transition.TransitionType == "TriggerCompensationCompleted");
+    }
+
+    [Fact]
+    public async Task EngineAppliesCompensationTransformationBeforeDispatchingUndoCommand()
+    {
+        OrchestrationTransformationRequest? capturedRequest = null;
+        var transformationExecutor = Substitute.For<IOrchestrationTransformationExecutor>();
+        transformationExecutor.TransformAsync(
+                Arg.Do<OrchestrationTransformationRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationTransformationResult.Success(JsonNode.Parse("""{"undoPayload":"mapped"}""")));
+        using var harness = await MessagingEngineHarness.CreateAsync(
+            CreateArtifact(
+                Stage("stage-one", 1, MessagingTask(
+                    "task.completed",
+                    1,
+                    compensation: Compensation("task.completed.undo", transformation: EnabledTransformation()))),
+                Stage("stage-two", 2, MessagingTask(
+                    "task.failing",
+                    1,
+                    onErrorPolicy: OnErrorPolicy.StopAndCompensate))),
+            services => services.Replace(ServiceDescriptor.Scoped(_ => transformationExecutor)));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-compensation-transform");
+
+        var completedCommand = harness.Dispatcher.Commands.Single();
+        await harness.ForwardAsync(completedCommand, BusinessPayload("completed-response"), Success());
+
+        var failingCommand = harness.Dispatcher.Commands[1];
+        await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "requires compensation"));
+
+        var compensationCommand = harness.Dispatcher.Commands.Last();
+        var compensations = await harness.GetCompensationsAsync(completedCommand);
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("task.completed", capturedRequest.Task.Key);
+        Assert.Equal("mapped", JsonNode.Parse(compensationCommand.Payload)!["undoPayload"]!.GetValue<string>());
+        Assert.Equal("mapped", compensations.Single().RequestPayload!["undoPayload"]!.GetValue<string>());
+    }
+
     private static OrchestrationArtifact CreateArtifact(params StageArtifact[] stages)
         => new(
             Id.New(),
@@ -1707,7 +1775,9 @@ public sealed class MessagingDecisionE2ETests
             [],
             stages);
 
-    private static TriggerBindingArtifact EventTrigger(bool validationEnabled)
+    private static TriggerBindingArtifact EventTrigger(
+        bool validationEnabled,
+        CompensationArtifact? compensation = null)
     {
         var schemaBinding = new SchemaBindingArtifact(
             Id.New(),
@@ -1744,18 +1814,19 @@ public sealed class MessagingDecisionE2ETests
             TriggerType.Event,
             channel,
             true,
-            "Test event trigger");
+            "Test event trigger",
+            compensation);
     }
 
     private static StageArtifact Stage(string key, int order, params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, ExecutionCondition(), tasks, [], []);
+        => new(Id.New(), key, key, order, true, ExecutionCondition(), tasks, [], []);
 
     private static StageArtifact Stage(
         string key,
         int order,
         ExecutionConditionArtifact condition,
         params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, condition, tasks, [], []);
+        => new(Id.New(), key, key, order, true, condition, tasks, [], []);
 
     private static StageArtifact StageWithGraph(
         Id id,
@@ -1764,7 +1835,7 @@ public sealed class MessagingDecisionE2ETests
         IReadOnlyList<ParallelGroupArtifact> parallelGroups,
         IReadOnlyList<BranchRuleArtifact> branchRules,
         params TaskArtifact[] tasks)
-        => new(id, key, key, order, ExecutionCondition(), tasks, parallelGroups, branchRules);
+        => new(id, key, key, order, true, ExecutionCondition(), tasks, parallelGroups, branchRules);
 
     private static TaskArtifact MessagingTask(
         string key,
@@ -1894,6 +1965,12 @@ public sealed class MessagingDecisionE2ETests
     private static TransformationArtifact Transformation()
         => new(EngineType.DSL, new DslTransformationConfigurationArtifact());
 
+    private static TransformationArtifact EnabledTransformation(string dsl = "map compensation")
+        => new(EngineType.DSL, new DslTransformationConfigurationArtifact { Dsl = dsl })
+        {
+            IsEnabled = true
+        };
+
     private static ExecutionConditionArtifact ExecutionCondition()
         => new(EngineType.DSL, new DslConditionConfigurationArtifact(new Expression("true")));
 
@@ -1931,10 +2008,11 @@ public sealed class MessagingDecisionE2ETests
 
     private static CompensationArtifact Compensation(
         string topic,
-        ExecutionConditionArtifact? executionCondition = null)
+        ExecutionConditionArtifact? executionCondition = null,
+        TransformationArtifact? transformation = null)
         => new(
             TaskKind.Messaging,
-            Transformation(),
+            transformation ?? Transformation(),
             executionCondition ?? ExecutionCondition(),
             new MessagingTaskConfigurationArtifact(topic, MessagingVersion, null!),
             null,

@@ -91,12 +91,13 @@ public sealed class OrchestrationVersionArtifactSnapshotBuilder : IOrchestration
             throw new InvalidOperationException($"Orchestration version '{version.Id}' does not have an enabled trigger.");
         }
 
-        if (version.StageDefinitions.Count == 0)
+        var enabledStages = version.StageDefinitions.Where(x => x.IsEnabled).ToArray();
+        if (enabledStages.Length == 0)
         {
-            throw new InvalidOperationException($"Orchestration version '{version.Id}' does not have stages.");
+            throw new InvalidOperationException($"Orchestration version '{version.Id}' does not have enabled stages.");
         }
 
-        foreach (var stage in version.StageDefinitions)
+        foreach (var stage in enabledStages)
         {
             if (!stage.TaskDefinitions.Any(x => x.IsEnabled))
             {

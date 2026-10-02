@@ -14,12 +14,44 @@ public interface IOrchestrationButterMorphDesignerContextParser
     string FormatTaskTransformation(string orchestrationVersionId, string taskDefinitionId);
 
     /// <summary>
+    /// Builds a designer context key for one orchestration task compensation transformation.
+    /// </summary>
+    /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
+    /// <param name="taskDefinitionId">Task definition identifier.</param>
+    /// <returns>Designer context key.</returns>
+    string FormatTaskCompensationTransformation(string orchestrationVersionId, string taskDefinitionId);
+
+    /// <summary>
+    /// Builds a designer context key for one orchestration trigger compensation transformation.
+    /// </summary>
+    /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
+    /// <param name="triggerBindingId">Trigger binding identifier.</param>
+    /// <returns>Designer context key.</returns>
+    string FormatTriggerCompensationTransformation(string orchestrationVersionId, string triggerBindingId);
+
+    /// <summary>
     /// Builds a designer context key for one orchestration task execution condition.
     /// </summary>
     /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
     /// <param name="taskDefinitionId">Task definition identifier.</param>
     /// <returns>Designer context key.</returns>
     string FormatTaskExecutionCondition(string orchestrationVersionId, string taskDefinitionId);
+
+    /// <summary>
+    /// Builds a designer context key for one orchestration task compensation execution condition.
+    /// </summary>
+    /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
+    /// <param name="taskDefinitionId">Task definition identifier.</param>
+    /// <returns>Designer context key.</returns>
+    string FormatTaskCompensationExecutionCondition(string orchestrationVersionId, string taskDefinitionId);
+
+    /// <summary>
+    /// Builds a designer context key for one orchestration trigger compensation execution condition.
+    /// </summary>
+    /// <param name="orchestrationVersionId">Orchestration version identifier.</param>
+    /// <param name="triggerBindingId">Trigger binding identifier.</param>
+    /// <returns>Designer context key.</returns>
+    string FormatTriggerCompensationExecutionCondition(string orchestrationVersionId, string triggerBindingId);
 
     /// <summary>
     /// Builds a designer context key for one orchestration stage execution condition.
@@ -38,12 +70,44 @@ public interface IOrchestrationButterMorphDesignerContextParser
     bool TryParseTaskTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context);
 
     /// <summary>
+    /// Parses a task compensation transformation context key into its orchestration scope.
+    /// </summary>
+    /// <param name="contextKey">Designer context key.</param>
+    /// <param name="context">Parsed context when the operation succeeds.</param>
+    /// <returns>True when the context key belongs to an orchestration task compensation transformation.</returns>
+    bool TryParseTaskCompensationTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context);
+
+    /// <summary>
+    /// Parses a trigger compensation transformation context key into its orchestration scope.
+    /// </summary>
+    /// <param name="contextKey">Designer context key.</param>
+    /// <param name="context">Parsed context when the operation succeeds.</param>
+    /// <returns>True when the context key belongs to an orchestration trigger compensation transformation.</returns>
+    bool TryParseTriggerCompensationTransformation(string contextKey, out OrchestrationButterMorphDesignerContext context);
+
+    /// <summary>
     /// Parses a task execution condition context key into its orchestration scope.
     /// </summary>
     /// <param name="contextKey">Designer context key.</param>
     /// <param name="context">Parsed context when the operation succeeds.</param>
     /// <returns>True when the context key belongs to an orchestration task execution condition.</returns>
     bool TryParseTaskExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context);
+
+    /// <summary>
+    /// Parses a task compensation execution condition context key into its orchestration scope.
+    /// </summary>
+    /// <param name="contextKey">Designer context key.</param>
+    /// <param name="context">Parsed context when the operation succeeds.</param>
+    /// <returns>True when the context key belongs to an orchestration task compensation execution condition.</returns>
+    bool TryParseTaskCompensationExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context);
+
+    /// <summary>
+    /// Parses a trigger compensation execution condition context key into its orchestration scope.
+    /// </summary>
+    /// <param name="contextKey">Designer context key.</param>
+    /// <param name="context">Parsed context when the operation succeeds.</param>
+    /// <returns>True when the context key belongs to an orchestration trigger compensation execution condition.</returns>
+    bool TryParseTriggerCompensationExecutionCondition(string contextKey, out OrchestrationButterMorphDesignerContext context);
 
     /// <summary>
     /// Parses a stage execution condition context key into its orchestration scope.

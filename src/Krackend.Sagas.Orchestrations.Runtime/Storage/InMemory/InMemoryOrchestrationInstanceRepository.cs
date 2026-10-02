@@ -81,7 +81,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 instances.Count(x => x.Status is OrchestrationInstanceStatus.Created or OrchestrationInstanceStatus.Running),
                 instances.Count(x => x.Status == OrchestrationInstanceStatus.Waiting),
                 instances.Count(x => x.CompletedOnUtc >= recentSinceUtc),
-                instances.Count(x => x.FailedOnUtc >= recentSinceUtc),
+                instances.Count(x => x.FailedOnUtc >= recentSinceUtc || x.Status == OrchestrationInstanceStatus.DeadLettered),
                 recentSinceUtc));
         }
     }

@@ -39,6 +39,7 @@ public sealed class CreateStageDefinitionCommandHandler : IRequestHandler<Create
             Name = request.Name,
             Description = request.Description,
             Order = request.Order,
+            IsEnabled = true,
             ExecutionCondition = request.ExecutionCondition,
             HasExecutionCondition = request.ExecutionCondition is not null,
         };
