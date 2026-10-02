@@ -219,6 +219,14 @@ services.Configure<RuntimeExecutionOptions>(options =>
 });
 ```
 
+Custom execution providers can be registered by hosts through the runtime builder:
+
+```csharp
+services
+    .AddKrackendOrchestrationsRuntime()
+    .AddExecutionSandboxProvider<KubernetesExecutionSandboxProvider>();
+```
+
 Recoverable runtime failures:
 
 When a task exhausts its configured retries, times out, or leaves the orchestration unable to advance, the runtime moves the instance into `DeadLettered` when the failure can still be reviewed by an operator. `DeadLettered` is not a broker queue; it is an explicit durable state that says the saga stopped, preserved its context, and can be resumed after the underlying issue is corrected. `Failed` and `Aborted` are reserved for outcomes that should not continue automatically.
