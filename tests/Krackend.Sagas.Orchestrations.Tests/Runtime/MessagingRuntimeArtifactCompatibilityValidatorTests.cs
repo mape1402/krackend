@@ -58,6 +58,17 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenConstructedWithAdapterRegistryOverload_ReturnsSuccess()
+    {
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]));
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(CreateArtifact(), SerializerOptions)!);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenLegacyArtifactOmitsExtensionMetadata_ReturnsSuccess()
     {
         var payload = JsonSerializer.SerializeToNode(CreateArtifact(), SerializerOptions)!;
@@ -346,6 +357,43 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenExternalBundleReferenceIsInvalid_ReturnsExtensionBundleReferenceInvalid()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    string.Empty,
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ExtensionBundleReferenceInvalid");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRequiredBundlesAreBlankOrBuiltIn_ReturnsSuccess()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(string.Empty, string.Empty, Version, string.Empty),
+                new RequiredExtensionBundleArtifact(string.Empty, ExtensionConstants.BuiltInExtensionKey, Version, string.Empty)
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenExternalBundleIsActivated_ReturnsSuccess()
     {
         var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
@@ -383,6 +431,79 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(artifact);
 
         AssertFailure(result, "CompensationMessagingTopicMissing");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationKindIsUnsupported_ReturnsCompensationAdapterNotConfigured()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Http, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "CompensationTaskRuntimeAdapterNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationRetryPolicyIsInvalid_ReturnsRetryMaxRetriesInvalid()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                RetryPolicy = new RetryPolicyArtifact(
+                    -1,
+                    RetryStrategyType.Fixed,
+                    new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                    [],
+                    true)
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "RetryMaxRetriesInvalid");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationTimeoutPolicyIsInvalid_ReturnsTimeoutDurationInvalid()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                TimeoutPolicy = new TimeoutPolicyArtifact(
+                    Duration.FromSeconds(0),
+                    TimeoutBehavior.Fail,
+                    new FailTimeoutBehaviorPolicyArtifact("TIMEOUT"))
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "TimeoutDurationInvalid");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationConditionExpressionIsMissing_ReturnsConditionExpressionMissing()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                ExecutionCondition = EnabledCondition(string.Empty)
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ConditionExpressionMissing");
     }
 
     [Fact]

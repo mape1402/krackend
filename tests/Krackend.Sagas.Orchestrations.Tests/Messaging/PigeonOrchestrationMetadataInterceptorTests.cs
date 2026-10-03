@@ -196,6 +196,21 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         Assert.DoesNotContain(" ", metadata.Items.Keys);
     }
 
+    [Theory]
+    [MemberData(nameof(PropagationMapperTypes))]
+    public void PropagationMappersHandleEmptyContextsAndNullValues(string assemblyName, string typeName)
+    {
+        var mapper = CreatePropagationMapper(assemblyName, typeName);
+        var emptyContext = new ConsumeContext();
+
+        var captured = CapturePropagationMetadata(mapper, emptyContext);
+        var convertedNull = InvokeConvertValue(mapper, null);
+        InvokeMergeDictionary(mapper, new OrchestrationPropagationMetadata(), null);
+
+        Assert.Empty(captured.Items);
+        Assert.Null(convertedNull);
+    }
+
     [Fact]
     public async Task RuntimeConsumeInterceptorReadsMetadataAndClearsMissingExecutionResult()
     {
@@ -409,6 +424,33 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     {
         var method = mapper.GetType().GetMethod("Capture", InstanceFlags)!;
         return (OrchestrationPropagationMetadata)method.Invoke(mapper, [context])!;
+    }
+
+    private static JsonNode? InvokeConvertValue(object mapper, object? value)
+    {
+        var method = mapper.GetType().GetMethod("ConvertValue", InstanceFlags | BindingFlags.Static)!;
+        return (JsonNode?)method.Invoke(null, [value]);
+    }
+
+    private static void InvokeMergeDictionary(
+        object mapper,
+        OrchestrationPropagationMetadata target,
+        IDictionary<string, JsonNode>? source)
+    {
+        var method = mapper.GetType()
+            .GetMethods(InstanceFlags | BindingFlags.Static)
+            .Single(candidate =>
+            {
+                if (candidate.Name != "Merge")
+                {
+                    return false;
+                }
+
+                var parameters = candidate.GetParameters();
+                return parameters.Length == 2 &&
+                    parameters[1].ParameterType == typeof(IDictionary<string, JsonNode>);
+            });
+        method.Invoke(null, [target, source]);
     }
 
     private static Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor CreateConsumeInterceptor(

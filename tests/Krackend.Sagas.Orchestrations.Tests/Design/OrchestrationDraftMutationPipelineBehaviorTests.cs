@@ -55,6 +55,12 @@ public sealed class OrchestrationDraftMutationPipelineBehaviorTests
             new UpdateStageDefinitionCommand(StageId, "stage", "Stage", "", 0, Condition()),
             guard => guard.Received(1).EnsureStageVersionIsDraft(StageId, Arg.Any<CancellationToken>()));
         await AssertBooleanGuarded(
+            new EnableStageDefinitionCommand(StageId),
+            guard => guard.Received(1).EnsureStageVersionIsDraft(StageId, Arg.Any<CancellationToken>()));
+        await AssertBooleanGuarded(
+            new DisableStageDefinitionCommand(StageId),
+            guard => guard.Received(1).EnsureStageVersionIsDraft(StageId, Arg.Any<CancellationToken>()));
+        await AssertBooleanGuarded(
             new DeleteStageDefinitionCommand(StageId),
             guard => guard.Received(1).EnsureStageVersionIsDraft(StageId, Arg.Any<CancellationToken>()));
         await AssertBooleanGuarded(
@@ -71,6 +77,12 @@ public sealed class OrchestrationDraftMutationPipelineBehaviorTests
             guard => guard.Received(1).EnsureTriggerVersionIsDraft(TriggerId, Arg.Any<CancellationToken>()));
         await AssertBooleanGuarded(
             new DisableTriggerBindingCommand(TriggerId),
+            guard => guard.Received(1).EnsureTriggerVersionIsDraft(TriggerId, Arg.Any<CancellationToken>()));
+        await AssertBooleanGuarded(
+            new SetTriggerCompensationExecutionConditionCommand(TriggerId, Condition()),
+            guard => guard.Received(1).EnsureTriggerVersionIsDraft(TriggerId, Arg.Any<CancellationToken>()));
+        await AssertBooleanGuarded(
+            new SetTriggerCompensationTransformationCommand(TriggerId, Transformation()),
             guard => guard.Received(1).EnsureTriggerVersionIsDraft(TriggerId, Arg.Any<CancellationToken>()));
         await AssertBooleanGuarded(
             new UpdateVariableDefinitionCommand(VariableId, "saleId", "Sale Id", "", VariableScope.Instance, VariableValueType.String, "", true, false),
@@ -95,6 +107,12 @@ public sealed class OrchestrationDraftMutationPipelineBehaviorTests
             guard => guard.Received(1).EnsureTaskVersionIsDraft(TaskId, Arg.Any<CancellationToken>()));
         await AssertBooleanGuarded(
             new SetTaskTransformationCommand(TaskId, Transformation()),
+            guard => guard.Received(1).EnsureTaskVersionIsDraft(TaskId, Arg.Any<CancellationToken>()));
+        await AssertBooleanGuarded(
+            new SetTaskCompensationExecutionConditionCommand(TaskId, Condition()),
+            guard => guard.Received(1).EnsureTaskVersionIsDraft(TaskId, Arg.Any<CancellationToken>()));
+        await AssertBooleanGuarded(
+            new SetTaskCompensationTransformationCommand(TaskId, Transformation()),
             guard => guard.Received(1).EnsureTaskVersionIsDraft(TaskId, Arg.Any<CancellationToken>()));
         await AssertBooleanGuarded(
             new UpdateParallelGroupDefinitionCommand(GroupId, "Group", ParallelJoinPolicy.WaitAll, 2),

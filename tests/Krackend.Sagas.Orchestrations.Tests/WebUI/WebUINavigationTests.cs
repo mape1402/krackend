@@ -186,6 +186,35 @@ public sealed class WebUINavigationTests
     }
 
     [Fact]
+    public void ButterMorphThemeMapperIgnoresNullsAndFallsBackWhenColorsAreInvalid()
+    {
+        var mapperType = typeof(ControlPlaneWebUiServices).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.OrchestrationButterMorphThemeMapper",
+            throwOnError: true)!;
+        var mapper = Activator.CreateInstance(mapperType, nonPublic: true)!;
+        var apply = mapperType.GetMethod("Apply")!;
+        var source = new OrchestratorWebUIThemeOptions
+        {
+            Mode = OrchestratorWebUIThemeMode.Light
+        };
+        source.Light.BorderColor = " ";
+        source.Light.SurfaceColor = "#ffffff";
+        source.Light.PrimaryColor = "#zzzzzz";
+        source.Light.SidebarBackgroundColor = "blue";
+        source.Light.SidebarMutedTextColor = "#ffffff";
+        var target = new ButterMorphDesignerThemeOptions();
+
+        apply.Invoke(mapper, [null, target]);
+        apply.Invoke(mapper, [source, null]);
+        apply.Invoke(mapper, [source, target]);
+
+        Assert.Equal(ButterMorphDesignerThemeMode.Light, target.Mode);
+        Assert.Equal(" ", target.Light.BorderColor);
+        Assert.Equal("#zzzzzz", target.Light.StrongBorderColor);
+        Assert.Equal("blue", target.Light.SidebarBorderColor);
+    }
+
+    [Fact]
     public void RuntimeWebUiRegistersConfiguredTheme()
     {
         var services = new ServiceCollection();

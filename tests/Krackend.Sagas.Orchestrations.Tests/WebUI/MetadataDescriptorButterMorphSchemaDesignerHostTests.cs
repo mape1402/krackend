@@ -1,4 +1,5 @@
 using System.Text.Json;
+using global::ButterMorph.Abstractions;
 using global::ButterMorph.SchemaDesign;
 using global::ButterMorph.Web.Razor;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -6,6 +7,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
+using NSubstitute;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -335,6 +337,64 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
         Assert.Contains("Time", names);
         Assert.Contains("TimeSpan", names);
         Assert.Contains(result.MetadataDefinition!.Fields, x => x.Key == "sourceKey");
+    }
+
+    [Fact]
+    public async Task SaveReportsButterMorphBuilderFailuresAndHydratesFallbackIdentity()
+    {
+        var capturedInput = default(PayloadSchemaDesignInput);
+        var hydrator = Substitute.For<IPayloadSchemaDefinitionHydrator>();
+        hydrator.Hydrate(Arg.Any<PayloadSchemaDefinition>()).Returns(new PayloadSchemaDesignInput
+        {
+            Key = " ",
+            Name = "",
+            Version = null
+        });
+        var builder = Substitute.For<IPayloadSchemaBuilder>();
+        builder
+            .Build(
+                Arg.Do<PayloadSchemaDesignInput>(input => capturedInput = input),
+                Arg.Any<IReadOnlyCollection<SchemaTypeCatalogItem>>(),
+                Arg.Any<IReadOnlyCollection<FieldMetadataCatalogItem>>())
+            .Returns(new PayloadSchemaDesignResult
+            {
+                Succeeded = false,
+                JsonSchema = "",
+                Diagnostics =
+                [
+                    new DiagnosticEntry
+                    {
+                        Code = "BM001",
+                        Message = "field schema is invalid",
+                        Path = "$.properties.field",
+                        Severity = "Error"
+                    }
+                ]
+            });
+        var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            new CapturingMetadataDescriptorApplicationService(),
+            hydrator,
+            builder);
+
+        var result = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = "audit_metadata",
+                Name = "",
+                Type = "object"
+            }
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("ButterMorph", result.Message, StringComparison.Ordinal);
+        Assert.Contains(":", result.Message, StringComparison.Ordinal);
+        Assert.NotNull(capturedInput);
+        Assert.Equal("audit_metadata", capturedInput.Key);
+        Assert.Equal("audit_metadata", capturedInput.Name);
+        Assert.Equal("1.0.0", capturedInput.Version);
     }
 
     private sealed class CapturingMetadataDescriptorApplicationService : IMetadataDescriptorApplicationService

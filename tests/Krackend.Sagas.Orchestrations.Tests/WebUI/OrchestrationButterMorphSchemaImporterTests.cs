@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
+using NSubstitute;
 using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
@@ -138,6 +139,104 @@ public sealed class OrchestrationButterMorphSchemaImporterTests
     }
 
     [Fact]
+    public void TryImportUsesBindingIdentityWhenHydratedButterMorphInputOmitsIt()
+    {
+        var capturedInput = default(PayloadSchemaDesignInput);
+        var hydrator = Substitute.For<IPayloadSchemaDefinitionHydrator>();
+        hydrator.Hydrate(Arg.Any<PayloadSchemaDefinition>()).Returns(new PayloadSchemaDesignInput
+        {
+            Key = " ",
+            Version = string.Empty
+        });
+        var builder = Substitute.For<IPayloadSchemaBuilder>();
+        builder
+            .Build(
+                Arg.Do<PayloadSchemaDesignInput>(input => capturedInput = input),
+                Arg.Any<IReadOnlyCollection<SchemaTypeCatalogItem>>(),
+                Arg.Any<IReadOnlyCollection<FieldMetadataCatalogItem>>())
+            .Returns(new PayloadSchemaDesignResult
+            {
+                Succeeded = true,
+                JsonSchema = """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "title": "Discount Stock",
+                  "type": "object",
+                  "properties": {
+                    "SaleId": {
+                      "type": "string"
+                    }
+                  }
+                }
+                """
+            });
+        var importer = new OrchestrationButterMorphSchemaImporter(
+            new JsonSchemaImporter(),
+            hydrator,
+            builder);
+        var binding = CreateBinding(
+            "commands.sales.discount",
+            "ButterMorph",
+            """
+            {
+              "key": "commands.sales.discount",
+              "properties": {
+                "SaleId": {
+                  "type": "string"
+                }
+              }
+            }
+            """);
+
+        var imported = importer.TryImport(binding, out var schema, out var message);
+
+        Assert.True(imported, message);
+        Assert.NotNull(schema);
+        Assert.NotNull(capturedInput);
+        Assert.Equal("commands.sales.discount", capturedInput.Key);
+        Assert.Equal("1.0.0", capturedInput.Version);
+    }
+
+    [Fact]
+    public void TryImportReportsButterMorphPayloadBuilderFailures()
+    {
+        var builder = Substitute.For<IPayloadSchemaBuilder>();
+        builder
+            .Build(
+                Arg.Any<PayloadSchemaDesignInput>(),
+                Arg.Any<IReadOnlyCollection<SchemaTypeCatalogItem>>(),
+                Arg.Any<IReadOnlyCollection<FieldMetadataCatalogItem>>())
+            .Returns(new PayloadSchemaDesignResult
+            {
+                Succeeded = false,
+                JsonSchema = string.Empty
+            });
+        var importer = new OrchestrationButterMorphSchemaImporter(
+            new JsonSchemaImporter(),
+            new PayloadSchemaDefinitionHydrator(),
+            builder);
+        var binding = CreateBinding(
+            "commands.sales.builder.failure",
+            "ButterMorph",
+            """
+            {
+              "key": "commands.sales.builder.failure",
+              "properties": {
+                "SaleId": {
+                  "type": "string"
+                }
+              }
+            }
+            """);
+
+        var imported = importer.TryImport(binding, out var schema, out var message);
+
+        Assert.False(imported);
+        Assert.Null(schema);
+        Assert.Contains("could not be imported by ButterMorph", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void TryImportReportsJsonSchemaDiagnostics()
     {
         var importer = CreateImporter();
@@ -151,6 +250,34 @@ public sealed class OrchestrationButterMorphSchemaImporterTests
         Assert.False(imported);
         Assert.Null(schema);
         Assert.Contains("could not be imported by ButterMorph", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryImportReportsJsonSchemaImporterExceptions()
+    {
+        var jsonImporter = Substitute.For<IJsonSchemaImporter>();
+        jsonImporter
+            .Import(Arg.Any<JsonSchemaImportRequest>())
+            .Returns(_ => throw new InvalidOperationException("import exploded"));
+        var importer = new OrchestrationButterMorphSchemaImporter(
+            jsonImporter,
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+        var binding = CreateBinding(
+            "events.sales.exploded",
+            "JsonSchema",
+            """
+            {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object"
+            }
+            """);
+
+        var imported = importer.TryImport(binding, out var schema, out var message);
+
+        Assert.False(imported);
+        Assert.Null(schema);
+        Assert.Contains("import exploded", message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static OrchestrationButterMorphSchemaImporter CreateImporter()

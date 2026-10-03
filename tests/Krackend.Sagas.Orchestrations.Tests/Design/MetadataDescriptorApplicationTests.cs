@@ -147,6 +147,61 @@ public sealed class MetadataDescriptorApplicationTests
     }
 
     [Fact]
+    public async Task QueryAndDeleteHandlersDelegateToRepositoryAndMapper()
+    {
+        var repository = Substitute.For<IMetadataDescriptorRepository>();
+        var mapper = new MetadataDescriptorApplicationMapper();
+        var descriptorId = Id.New();
+        var descriptor = CreateDescriptor(descriptorId, "customer", "customer-message");
+        repository.GetById(descriptorId, Arg.Any<CancellationToken>()).Returns(descriptor);
+        repository
+            .GetAll(
+                Arg.Any<PagedSettings>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PagedResult<MetadataDescriptor>(2, 3, 5, 2, [descriptor]));
+        repository.Delete(descriptorId, Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var getByIdHandler = new GetMetadataDescriptorByIdQueryHandler(repository, mapper);
+        var getAllHandler = new GetMetadataDescriptorsQueryHandler(repository, mapper);
+        var deleteHandler = new DeleteMetadataDescriptorCommandHandler(repository);
+
+        var byId = await getByIdHandler.Handle(new GetMetadataDescriptorByIdQuery(descriptorId.ToString()), CancellationToken.None);
+        var page = await getAllHandler.Handle(
+            new GetMetadataDescriptorsQuery(
+                new ApplicationPagedSettings
+                {
+                    PageNumber = 2,
+                    PageSize = 2,
+                    Filters = [new ApplicationFilter("Key", "eq", "customer")],
+                    Sorts = [new ApplicationSort("DisplayName", true)]
+                },
+                "customer"),
+            CancellationToken.None);
+        var deleted = await deleteHandler.Handle(new DeleteMetadataDescriptorCommand(descriptorId.ToString()), CancellationToken.None);
+
+        Assert.Equal("customer", byId.Key);
+        Assert.Equal(2, page.PageNumber);
+        Assert.Equal(3, page.TotalPages);
+        Assert.Equal(5, page.TotalRows);
+        Assert.Equal("customer-message", Assert.Single(page.Rows).SourceKey);
+        Assert.True(deleted);
+        await repository.Received(1).GetAll(
+            Arg.Is<PagedSettings>(settings =>
+                settings.PageNumber == 2 &&
+                settings.PageSize == 2 &&
+                settings.Filters.Single().Field == "Key" &&
+                settings.Sorts.Single().Descending),
+            "customer",
+            Arg.Any<CancellationToken>());
+        await repository.Received(1).Delete(descriptorId, Arg.Any<CancellationToken>());
+        Assert.Throws<ArgumentNullException>(() => new GetMetadataDescriptorByIdQueryHandler(null!, mapper));
+        Assert.Throws<ArgumentNullException>(() => new GetMetadataDescriptorByIdQueryHandler(repository, null!));
+        Assert.Throws<ArgumentNullException>(() => new GetMetadataDescriptorsQueryHandler(null!, mapper));
+        Assert.Throws<ArgumentNullException>(() => new GetMetadataDescriptorsQueryHandler(repository, null!));
+        Assert.Throws<ArgumentNullException>(() => new DeleteMetadataDescriptorCommandHandler(null!));
+    }
+
+    [Fact]
     public void SchemaHasherNormalizesHashesAndValidatesJsonObjects()
     {
         var schema = """{ "type": "object" }""";
