@@ -11,6 +11,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfi
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using NSubstitute;
+using System.Reflection;
 using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 
 public sealed class OrchestrationButterMorphCompensationDesignerHostTests
@@ -208,6 +209,138 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
         Assert.Contains("Invalid orchestration transformation context.", invalidLoad.Message);
         Assert.False(invalidSave.Succeeded);
         Assert.Contains("Invalid orchestration transformation context.", invalidSave.Message);
+    }
+
+    [Fact]
+    public async Task TransformationHostReportsDiagnosticsForMissingSnapshotsAndImportFailures()
+    {
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContextService = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var taskApplicationService = Substitute.For<ITaskApplicationService>();
+        var host = new OrchestrationButterMorphDesignerHost(
+            schemaContextService,
+            taskApplicationService,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            parser,
+            new SelectiveSchemaImporter(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["events.sales.reply"] = "source unavailable",
+                ["commands.sales.reserve"] = "target unavailable"
+            }),
+            new OrchestrationButterMorphSourceMetadataFactory());
+
+        schemaContextService.GetForTask(Arg.Any<GetTaskSchemaContextQuery>())
+            .Returns(
+                CreateSchemaContextWithoutTargetBinding(),
+                CreateSchemaContextWithMissingSnapshots(),
+                CreateSchemaContextWithImportFailures());
+        taskApplicationService.GetById(Arg.Any<GetTaskDefinitionByIdQuery>())
+            .Returns(new TaskDefinitionModel { Id = "task-1" });
+
+        var noTarget = await host.Load(new ButterMorphDesignerLoadRequest
+        {
+            ContextKey = parser.FormatTaskTransformation("version-1", "task-1")
+        });
+        var missingSnapshots = await host.Load(new ButterMorphDesignerLoadRequest
+        {
+            ContextKey = parser.FormatTaskTransformation("version-1", "task-1")
+        });
+        var importFailures = await host.Load(new ButterMorphDesignerLoadRequest
+        {
+            ContextKey = parser.FormatTaskTransformation("version-1", "task-1")
+        });
+
+        Assert.Null(noTarget.TargetSchema);
+        Assert.Contains("The current task does not define a request schema target.", noTarget.Message);
+        Assert.Contains("The current task does not have a usable request schema target.", noTarget.Message);
+        Assert.Null(missingSnapshots.TargetSchema);
+        Assert.Contains("Target 'request' does not have a stored schema snapshot", missingSnapshots.Message);
+        Assert.Contains("Source 'metadata' does not have a stored schema snapshot for unknown contract", missingSnapshots.Message);
+        Assert.Contains("Source 'previous' does not have a stored schema snapshot", missingSnapshots.Message);
+        Assert.Null(importFailures.TargetSchema);
+        Assert.Empty(importFailures.SourceSchemas);
+        Assert.Contains("reply: source unavailable", importFailures.Message);
+        Assert.Contains("request: target unavailable", importFailures.Message);
+        Assert.Contains("The current task does not have a usable request schema target.", importFailures.Message);
+    }
+
+    [Fact]
+    public async Task TransformationHostHandlesLoadAndSaveExceptions()
+    {
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContextService = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var host = new OrchestrationButterMorphDesignerHost(
+            schemaContextService,
+            Substitute.For<ITaskApplicationService>(),
+            Substitute.For<ITriggerBindingApplicationService>(),
+            parser,
+            CreateImporter(),
+            new OrchestrationButterMorphSourceMetadataFactory());
+
+        schemaContextService.GetForTask(Arg.Any<GetTaskSchemaContextQuery>())
+            .Returns(Task.FromException<OrchestrationSchemaContext>(new InvalidOperationException("schema offline")));
+
+        var load = await host.Load(new ButterMorphDesignerLoadRequest
+        {
+            ContextKey = parser.FormatTaskTransformation("version-1", "task-1")
+        });
+        var save = await host.Save(new ButterMorphDesignerSaveRequest
+        {
+            ContextKey = parser.FormatTaskTransformation("version-1", "task-1"),
+            DslContent = "map updated"
+        });
+
+        Assert.Equal("schema offline", load.Message);
+        Assert.False(save.Succeeded);
+        Assert.Equal("schema offline", save.Message);
+    }
+
+    [Fact]
+    public async Task TransformationHostSavesBlankDslAsClearedTransformation()
+    {
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContextService = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var taskApplicationService = Substitute.For<ITaskApplicationService>();
+        var host = new OrchestrationButterMorphDesignerHost(
+            schemaContextService,
+            taskApplicationService,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            parser,
+            CreateImporter(),
+            new OrchestrationButterMorphSourceMetadataFactory());
+
+        schemaContextService.GetForTask(Arg.Any<GetTaskSchemaContextQuery>())
+            .Returns(CreateSchemaContextWithBindings());
+        SetTaskTransformationCommand? captured = null;
+        taskApplicationService.SetTransformation(Arg.Do<SetTaskTransformationCommand>(x => captured = x))
+            .Returns(false);
+
+        var result = await host.Save(new ButterMorphDesignerSaveRequest
+        {
+            ContextKey = parser.FormatTaskTransformation("version-1", "task-1"),
+            DslContent = " "
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("Transformation could not be saved.", result.Message);
+        Assert.NotNull(captured);
+        Assert.Equal("task-1", captured!.Id);
+        Assert.Null(captured.Transformation);
+    }
+
+    [Fact]
+    public void TransformationHostBuildsLoadFailureMessages()
+    {
+        var method = typeof(OrchestrationButterMorphDesignerHost).GetMethod(
+            "BuildLoadFailureMessage",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        Assert.Equal(
+            "ButterMorph could not load the orchestration schema context.",
+            method.Invoke(null, [Array.Empty<string>()]));
+        Assert.Equal(
+            $"first{Environment.NewLine}second",
+            method.Invoke(null, [new[] { "first", "first", "second" }]));
     }
 
     [Fact]
@@ -419,6 +552,91 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
                 : null
         };
 
+    private static OrchestrationSchemaContext CreateSchemaContextWithoutTargetBinding()
+        => new()
+        {
+            OrchestrationVersionId = "version-1",
+            OrchestrationVersion = "1.0.0",
+            StageKey = "stage-1",
+            TaskKey = "task-1",
+            Signature = "schema-signature",
+            Sources = [],
+            Target = new OrchestrationSchemaTarget
+            {
+                Alias = "request",
+                StageKey = "stage-1",
+                TaskKey = "task-1"
+            }
+        };
+
+    private static OrchestrationSchemaContext CreateSchemaContextWithMissingSnapshots()
+    {
+        var targetBinding = CreateBinding("commands.sales.reserve", "target-hash");
+        targetBinding.Snapshot = null;
+        var sourceBinding = CreateBinding("events.sales.reply", "source-hash");
+        sourceBinding.Snapshot = null;
+
+        return new OrchestrationSchemaContext
+        {
+            OrchestrationVersionId = "version-1",
+            OrchestrationVersion = "1.0.0",
+            StageKey = "stage-1",
+            TaskKey = "task-1",
+            Signature = "schema-signature",
+            Sources =
+            [
+                new OrchestrationSchemaSource
+                {
+                    Alias = "metadata",
+                    SourceKind = OrchestrationSchemaContextSourceKind.Metadata
+                },
+                new OrchestrationSchemaSource
+                {
+                    Alias = "previous",
+                    SourceKind = OrchestrationSchemaContextSourceKind.TaskResponse,
+                    StageKey = "stage-1",
+                    TaskKey = "task-previous",
+                    SchemaBinding = sourceBinding
+                }
+            ],
+            Target = new OrchestrationSchemaTarget
+            {
+                Alias = "request",
+                StageKey = "stage-1",
+                TaskKey = "task-1",
+                SchemaBinding = targetBinding
+            }
+        };
+    }
+
+    private static OrchestrationSchemaContext CreateSchemaContextWithImportFailures()
+        => new()
+        {
+            OrchestrationVersionId = "version-1",
+            OrchestrationVersion = "1.0.0",
+            StageKey = "stage-1",
+            TaskKey = "task-1",
+            Signature = "schema-signature",
+            Sources =
+            [
+                new OrchestrationSchemaSource
+                {
+                    Alias = "reply",
+                    SourceKind = OrchestrationSchemaContextSourceKind.TaskResponse,
+                    StageKey = "stage-1",
+                    TaskKey = "task-previous",
+                    SchemaBinding = CreateBinding("events.sales.reply", "source-hash")
+                }
+            ],
+            Target = new OrchestrationSchemaTarget
+            {
+                Alias = "request",
+                StageKey = "stage-1",
+                TaskKey = "task-1",
+                SchemaBinding = CreateBinding("commands.sales.reserve", "target-hash")
+            }
+        };
+
     private static OrchestrationButterMorphSchemaImporter CreateImporter()
         => new(
             new JsonSchemaImporter(),
@@ -546,4 +764,29 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
         => command.Id == id &&
             command.ExecutionCondition.Configuration is DslConditionConfiguration configuration &&
             configuration.Expression.ToString() == dsl;
+
+    private sealed class SelectiveSchemaImporter : IOrchestrationButterMorphSchemaImporter
+    {
+        private readonly IReadOnlyDictionary<string, string> _failures;
+
+        public SelectiveSchemaImporter(IReadOnlyDictionary<string, string> failures)
+            => _failures = failures;
+
+        public bool TryImport(
+            SchemaBinding binding,
+            out global::ButterMorph.Abstractions.IStructureSchema schema,
+            out string message)
+        {
+            if (_failures.TryGetValue(binding.ContractKey, out var failureMessage))
+            {
+                schema = null!;
+                message = failureMessage;
+                return false;
+            }
+
+            schema = Substitute.For<global::ButterMorph.Abstractions.IStructureSchema>();
+            message = string.Empty;
+            return true;
+        }
+    }
 }
