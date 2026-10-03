@@ -514,6 +514,78 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
         Assert.Contains("Invalid orchestration execution condition context.", invalidSave.Message);
     }
 
+    [Fact]
+    public async Task ValidationHostReportsSchemaDiagnosticsAndRuntimeFailures()
+    {
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContextService = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var stageApplicationService = Substitute.For<IStageApplicationService>();
+        var taskApplicationService = Substitute.For<ITaskApplicationService>();
+        var triggerBindingApplicationService = Substitute.For<ITriggerBindingApplicationService>();
+        SetTaskCompensationExecutionConditionCommand? capturedClearCondition = null;
+        var host = new OrchestrationButterMorphValidationDesignerHost(
+            schemaContextService,
+            stageApplicationService,
+            taskApplicationService,
+            triggerBindingApplicationService,
+            parser,
+            new SelectiveSchemaImporter(new Dictionary<string, string>
+            {
+                ["events.sales.reply"] = "reply schema could not be imported"
+            }),
+            new OrchestrationButterMorphSourceMetadataFactory());
+
+        var missingSnapshotContext = CreateSchemaContextWithMissingSnapshots();
+        schemaContextService.GetForStage(Arg.Any<GetStageSchemaContextQuery>())
+            .Returns(
+                _ => Task.FromResult(missingSnapshotContext),
+                _ => Task.FromException<OrchestrationSchemaContext>(new InvalidOperationException("schema context is unavailable")));
+        schemaContextService.GetForTask(Arg.Any<GetTaskSchemaContextQuery>())
+            .Returns(CreateSchemaContextWithImportFailures());
+        stageApplicationService.GetById(Arg.Any<GetStageDefinitionByIdQuery>())
+            .Returns(new StageDefinitionModel { Id = "stage-1" });
+        taskApplicationService.GetById(Arg.Any<GetTaskDefinitionByIdQuery>())
+            .Returns(new TaskDefinitionModel { Id = "task-1" });
+        stageApplicationService.SetExecutionCondition(Arg.Any<SetStageExecutionConditionCommand>())
+            .Returns(_ => Task.FromException<bool>(new InvalidOperationException("stage condition is locked")));
+        taskApplicationService
+            .SetCompensationExecutionCondition(Arg.Do<SetTaskCompensationExecutionConditionCommand>(command => capturedClearCondition = command))
+            .Returns(_ => Task.FromResult(true));
+
+        var missingSnapshots = await host.Load(new ButterMorphValidationDesignerLoadRequest
+        {
+            ContextKey = parser.FormatStageExecutionCondition("version-1", "stage-1")
+        });
+        var importFailure = await host.Load(new ButterMorphValidationDesignerLoadRequest
+        {
+            ContextKey = parser.FormatTaskExecutionCondition("version-1", "task-1")
+        });
+        var loadFailure = await host.Load(new ButterMorphValidationDesignerLoadRequest
+        {
+            ContextKey = parser.FormatStageExecutionCondition("version-1", "stage-1")
+        });
+        var saveFailure = await host.Save(new ButterMorphValidationDesignerSaveRequest
+        {
+            ContextKey = parser.FormatStageExecutionCondition("version-1", "stage-1"),
+            DslContent = "stage.ready"
+        });
+        var clearCondition = await host.Save(new ButterMorphValidationDesignerSaveRequest
+        {
+            ContextKey = parser.FormatTaskCompensationExecutionCondition("version-1", "task-1"),
+            DslContent = " "
+        });
+
+        Assert.Contains("unknown contract", missingSnapshots.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("events.sales.reply v1.0.0", missingSnapshots.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reply schema could not be imported", importFailure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema context is unavailable", loadFailure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(saveFailure.Succeeded);
+        Assert.Contains("stage condition is locked", saveFailure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(clearCondition.Succeeded);
+        Assert.NotNull(capturedClearCondition);
+        Assert.Null(capturedClearCondition!.ExecutionCondition);
+    }
+
     private static OrchestrationSchemaContext CreateSchemaContext()
         => new()
         {

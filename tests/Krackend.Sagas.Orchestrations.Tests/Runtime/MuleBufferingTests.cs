@@ -260,6 +260,43 @@ public sealed class MuleBufferingTests
             options.DeduplicationKey);
     }
 
+    [Theory]
+    [InlineData("attempt-1", null, "attempt-1")]
+    [InlineData(null, "instance-1", "instance-1")]
+    public async Task MuleRemoteCommandDispatcher_UsesAttemptOrInstanceDeduplicationFallbacks(
+        string? taskExecutionAttemptId,
+        string orchestrationInstanceId,
+        string expectedDeduplicationKey)
+    {
+        var muleClient = Substitute.For<IMuleClient>();
+        Action<EnqueueOptions>? capturedOptions = null;
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<RemoteCommand>(),
+                Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+        var dispatcher = BuildServiceProvider(
+                muleClient,
+                Substitute.For<IMuleStorage>(),
+                Substitute.For<IMuleSerializer>(),
+                Substitute.For<IMuleCommitNotifier>())
+            .GetRequiredService<IRemoteCommandDispatcher>();
+        var command = new RemoteCommand
+        {
+            OrchestrationInstanceId = orchestrationInstanceId,
+            TaskExecutionAttemptId = taskExecutionAttemptId
+        };
+
+        await dispatcher.DispatchAsync(command, CancellationToken.None);
+
+        var options = new EnqueueOptions();
+        capturedOptions!(options);
+        Assert.Equal(orchestrationInstanceId, options.CorrelationId);
+        Assert.Equal(expectedDeduplicationKey, options.DeduplicationKey);
+    }
+
     [Fact]
     public async Task MuleRemoteCommandDispatcher_WhenCommandIsScheduled_StoresDurableActionAndNotifiesCommit()
     {
@@ -348,6 +385,57 @@ public sealed class MuleBufferingTests
         await WaitUntilAsync(async () =>
             await commitNotifier.Received(2).NotifySavedAsync(
                 storedAction!.Id,
+                MuleSettings.DefaultLane,
+                Arg.Any<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task MuleRemoteCommandDispatcher_WhenScheduledNotificationIsAlreadyDue_RenotifiesImmediately()
+    {
+        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
+        var dispatcher = BuildServiceProvider(
+                Substitute.For<IMuleClient>(),
+                Substitute.For<IMuleStorage>(),
+                Substitute.For<IMuleSerializer>(),
+                commitNotifier)
+            .GetRequiredService<IRemoteCommandDispatcher>();
+        var actionId = Guid.NewGuid();
+        var scheduleMethod = dispatcher.GetType().GetMethod(
+            "ScheduleDueNotification",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+        scheduleMethod.Invoke(dispatcher, [actionId, MuleSettings.DefaultLane, DateTimeOffset.UtcNow.AddSeconds(-1)]);
+
+        await WaitUntilAsync(async () =>
+            await commitNotifier.Received(1).NotifySavedAsync(
+                actionId,
+                MuleSettings.DefaultLane,
+                Arg.Any<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task MuleRemoteCommandDispatcher_WhenScheduledRenotifyFails_SwallowsFailure()
+    {
+        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
+        commitNotifier
+            .NotifySavedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask(Task.FromException(new InvalidOperationException("notifier unavailable"))));
+        var dispatcher = BuildServiceProvider(
+                Substitute.For<IMuleClient>(),
+                Substitute.For<IMuleStorage>(),
+                Substitute.For<IMuleSerializer>(),
+                commitNotifier)
+            .GetRequiredService<IRemoteCommandDispatcher>();
+        var actionId = Guid.NewGuid();
+        var scheduleMethod = dispatcher.GetType().GetMethod(
+            "ScheduleDueNotification",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+        scheduleMethod.Invoke(dispatcher, [actionId, MuleSettings.DefaultLane, DateTimeOffset.UtcNow.AddSeconds(-1)]);
+
+        await WaitUntilAsync(async () =>
+            await commitNotifier.Received(1).NotifySavedAsync(
+                actionId,
                 MuleSettings.DefaultLane,
                 Arg.Any<CancellationToken>()));
     }

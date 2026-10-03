@@ -632,6 +632,48 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task RuntimeExtensionPackageRepositoryUpdatesExistingPackageMetadata()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRuntimeExtensionPackageRepository>();
+        var created = ExtensionPackage(
+            "contoso.shipping",
+            "task.create-label",
+            new SemanticVersion(1, 0, 0),
+            RuntimeExtensionPackageStatus.Activated);
+        await repository.UpsertAsync(created);
+
+        var updated = ExtensionPackage(
+            "contoso.shipping.updated",
+            "task.create-label.updated",
+            new SemanticVersion(1, 1, 0),
+            RuntimeExtensionPackageStatus.Disabled);
+        updated.Id = created.Id;
+        updated.BundleId = "bundle-updated";
+        updated.Sha256 = "DEF456";
+        updated.SizeBytes = 8192;
+        updated.CreatedOnUtc = created.CreatedOnUtc.AddMinutes(-5);
+        updated.UpdatedOnUtc = created.UpdatedOnUtc.AddMinutes(5);
+        updated.ActivatedOnUtc = null;
+        updated.StatusReason = "manual quarantine";
+
+        await repository.UpsertAsync(updated);
+
+        var stored = Assert.Single(await repository.GetAllAsync());
+        Assert.Equal(created.Id, stored.Id);
+        Assert.Equal("bundle-updated", stored.BundleId);
+        Assert.Equal("contoso.shipping.updated", stored.ExtensionKey);
+        Assert.Equal(new SemanticVersion(1, 1, 0), stored.Version);
+        Assert.Equal("DEF456", stored.Sha256);
+        Assert.Equal(8192, stored.SizeBytes);
+        Assert.Equal(RuntimeExtensionPackageStatus.Disabled, stored.Status);
+        Assert.Null(stored.ActivatedOnUtc);
+        Assert.Equal("manual quarantine", stored.StatusReason);
+        Assert.Null(await repository.TryGetActiveAsync("contoso.shipping.updated", new SemanticVersion(1, 1, 0)));
+    }
+
+    [Fact]
     public async Task ExecutionTransitionRepositoryPublishesReactiveEventsForRuntimeTimeline()
     {
         var publisher = new RecordingRuntimeReactiveEventPublisher();

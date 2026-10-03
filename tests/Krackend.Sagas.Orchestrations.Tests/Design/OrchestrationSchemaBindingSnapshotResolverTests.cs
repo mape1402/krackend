@@ -479,6 +479,65 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         await stageRepository.Received(1).GetById(stage.Id, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SchemaContextApplicationServiceDelegatesStageAndCompensationContexts()
+    {
+        var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
+        var stage = version.StageDefinitions.Single();
+        var task = stage.TaskDefinitions.Single();
+        var trigger = version.TriggerBindings.Single();
+        var repository = Substitute.For<IOrchestrationVersionRepository>();
+        var builder = Substitute.For<IOrchestrationSchemaContextBuilder>();
+        repository.GetById(version.Id, Arg.Any<CancellationToken>()).Returns(version);
+        builder
+            .BuildForStage(version, stage.Id, Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationSchemaContext
+            {
+                OrchestrationVersionId = version.Id.ToString(),
+                OrchestrationVersion = version.Version.ToString(),
+                StageKey = stage.Key,
+                TaskKey = string.Empty,
+                Signature = "stage"
+            });
+        builder
+            .BuildForTaskCompensation(version, task.Id, Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationSchemaContext
+            {
+                OrchestrationVersionId = version.Id.ToString(),
+                OrchestrationVersion = version.Version.ToString(),
+                StageKey = stage.Key,
+                TaskKey = task.Key,
+                Signature = "task-compensation"
+            });
+        builder
+            .BuildForTriggerCompensation(version, trigger.Id, Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationSchemaContext
+            {
+                OrchestrationVersionId = version.Id.ToString(),
+                OrchestrationVersion = version.Version.ToString(),
+                StageKey = string.Empty,
+                TaskKey = trigger.Key,
+                Signature = "trigger-compensation"
+            });
+        var service = new OrchestrationSchemaContextApplicationService(repository, builder);
+
+        var stageContext = await service.GetForStage(new GetStageSchemaContextQuery(version.Id.ToString(), stage.Id.ToString()));
+        var taskCompensationContext = await service.GetForTaskCompensation(
+            new GetTaskCompensationSchemaContextQuery(version.Id.ToString(), task.Id.ToString()));
+        var triggerCompensationContext = await service.GetForTriggerCompensation(
+            new GetTriggerCompensationSchemaContextQuery(version.Id.ToString(), trigger.Id.ToString()));
+
+        Assert.Equal("stage", stageContext.Signature);
+        Assert.Equal("task-compensation", taskCompensationContext.Signature);
+        Assert.Equal("trigger-compensation", triggerCompensationContext.Signature);
+        await builder.Received(1).BuildForStage(version, stage.Id, Arg.Any<CancellationToken>());
+        await builder.Received(1).BuildForTaskCompensation(version, task.Id, Arg.Any<CancellationToken>());
+        await builder.Received(1).BuildForTriggerCompensation(version, trigger.Id, Arg.Any<CancellationToken>());
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.GetForStage(null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.GetForTaskCompensation(null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.GetForTriggerCompensation(null!));
+    }
+
     private static OrchestrationVersion CreateVersion(SchemaBinding triggerBinding)
     {
         var versionId = Id.New();
