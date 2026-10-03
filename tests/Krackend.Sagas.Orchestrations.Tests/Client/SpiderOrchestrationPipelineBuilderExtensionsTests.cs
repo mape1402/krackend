@@ -39,6 +39,47 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     }
 
     [Fact]
+    public void RequestRouteBuilderResolvesRoutesFallbacksAndRequiredMatches()
+    {
+        var builder = new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+            .When(
+                static request => request.Id == "sale-1",
+                static request => new { request.Id, Routed = true },
+                "events.sales.created",
+                "")
+            .Otherwise("events.sales.fallback", "2.0.0");
+
+        var matched = builder.Resolve(new PipelineRequest("sale-1"));
+        var fallback = builder.Resolve(new PipelineRequest("other"));
+        var nullAddress = new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+            .Otherwise(" ")
+            .Resolve(new PipelineRequest("anything"));
+
+        Assert.True(matched.Matched);
+        Assert.Contains("\"routed\":true", JsonSerializer.Serialize(matched.Payload), StringComparison.OrdinalIgnoreCase);
+        Assert.True(MatchesTrigger(matched.Options, "events.sales.created", "1.0.0"));
+        Assert.True(fallback.Matched);
+        Assert.True(IsPipelineRequestPayload(fallback.Payload, "other"));
+        Assert.True(MatchesTrigger(fallback.Options, "events.sales.fallback", "2.0.0"));
+        Assert.True(nullAddress.Matched);
+        Assert.Null(nullAddress.Options.TriggerAddress);
+        Assert.False(new OrchestrationTriggerRouteBuilder<PipelineRequest>().Resolve(new PipelineRequest("none")).Matched);
+        Assert.Throws<OrchestrationTriggerRouteMatchException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+                .RequireMatch()
+                .Resolve(new PipelineRequest("none")));
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+                .When((Func<PipelineRequest, bool>)null!, "events.sales.created"));
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+                .When(static _ => true, (Func<PipelineRequest, object>)null!, "events.sales.created"));
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+                .Otherwise((Func<PipelineRequest, object>)null!, "events.sales.created"));
+    }
+
+    [Fact]
     public void ResponsePipelineOverloadsRegisterPipelineHooks()
     {
         var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
@@ -60,6 +101,49 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
 
         Assert.Throws<ArgumentNullException>(() => nullBuilder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.completed")));
         Assert.Throws<ArgumentNullException>(() => builder.UseOrchestration((Action<OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>>)null!));
+    }
+
+    [Fact]
+    public void ResponseRouteBuilderResolvesRoutesFallbacksAndRequiredMatches()
+    {
+        var builder = new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+            .When(
+                static (request, response) => request.Id == "sale-1" && response.Ok,
+                static (request, response) => new { request.Id, response.Ok },
+                "events.sales.completed",
+                "")
+            .Otherwise(static (_, response) => response, "events.sales.fallback", "3.0.0");
+
+        var matched = builder.Resolve(new PipelineRequest("sale-1"), new PipelineResponse(true));
+        var fallback = builder.Resolve(new PipelineRequest("other"), new PipelineResponse(false));
+        var nullAddress = new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+            .Otherwise(" ")
+            .Resolve(new PipelineRequest("anything"), new PipelineResponse(true));
+
+        Assert.True(matched.Matched);
+        Assert.Contains("\"ok\":true", JsonSerializer.Serialize(matched.Payload), StringComparison.OrdinalIgnoreCase);
+        Assert.True(MatchesTrigger(matched.Options, "events.sales.completed", "1.0.0"));
+        Assert.True(fallback.Matched);
+        Assert.Equal(new PipelineResponse(false), fallback.Payload);
+        Assert.True(MatchesTrigger(fallback.Options, "events.sales.fallback", "3.0.0"));
+        Assert.True(nullAddress.Matched);
+        Assert.Null(nullAddress.Options.TriggerAddress);
+        Assert.False(new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+            .Resolve(new PipelineRequest("none"), new PipelineResponse(false))
+            .Matched);
+        Assert.Throws<OrchestrationTriggerRouteMatchException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+                .RequireMatch()
+                .Resolve(new PipelineRequest("none"), new PipelineResponse(false)));
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+                .When((Func<PipelineRequest, PipelineResponse, bool>)null!, "events.sales.completed"));
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+                .When(static (_, _) => true, (Func<PipelineRequest, PipelineResponse, object>)null!, "events.sales.completed"));
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+                .Otherwise((Func<PipelineRequest, PipelineResponse, object>)null!, "events.sales.completed"));
     }
 
     [Fact]
