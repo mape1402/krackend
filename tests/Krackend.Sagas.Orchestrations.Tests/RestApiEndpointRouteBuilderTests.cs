@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CPDesign = Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using CPDistribution = Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+using CPSecurity = Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
 using Krackend.Sagas.Orchestrations.Abstractions;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
@@ -156,6 +158,112 @@ public sealed class RestApiEndpointRouteBuilderTests
         await nodeService.Received(1).GetAll(
             Arg.Is<CPDistribution.ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 5),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ControlPlaneApiHonorsConfiguredPrefixPolicyPagingStatusAndAuthenticatedActors()
+    {
+        var nodeService = Substitute.For<CPDistribution.IRuntimeNodeApplicationService>();
+        var teamService = Substitute.For<CPSecurity.ITeamApplicationService>();
+        var deliveryService = Substitute.For<CPDistribution.IArtifactDeliveryApplicationService>();
+
+        nodeService.GetAll(Arg.Any<CPDistribution.ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
+            .Returns(new CPDistribution.ApplicationPagedResult<CPDistribution.RuntimeNodeModel>
+            {
+                PageNumber = 1,
+                PageSize = 9,
+                TotalRows = 0,
+                TotalPages = 0,
+                Rows = []
+            });
+        nodeService.SetStatus("runtime-1", RuntimeNodeStatus.Suspend, Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        teamService.SetIsActive(Arg.Any<CPSecurity.SetTeamIsActiveCommand>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        deliveryService.Push("target-1", "user-sub", Arg.Any<CancellationToken>())
+            .Returns(new RuntimeArtifactDeliveryResult
+            {
+                Succeeded = true,
+                ReleaseTargetId = "target-1",
+                RuntimeNodeId = "runtime-1",
+                ArtifactId = "artifact-1",
+                Status = "Delivered"
+            });
+
+        await using var app = BuildApp(
+            services =>
+            {
+                services.AddSingleton(nodeService);
+                services.AddSingleton(teamService);
+                services.AddSingleton(deliveryService);
+            },
+            endpoints => endpoints.MapKrackendOrchestrationsControlPlaneApi(options =>
+            {
+                options.RoutePrefix = "/custom/control/";
+                options.AuthorizationPolicy = "global-control-plane";
+                options.DefaultPageSize = 7;
+                options.MaxPageSize = 9;
+            }));
+
+        var healthEndpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(x => x.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(x => string.Equals(x.RoutePattern.RawText, "/custom/control/health", StringComparison.Ordinal));
+        var policyNames = healthEndpoint.Metadata
+            .OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
+            .Select(x => x.Policy)
+            .ToArray();
+
+        var runtimeNodes = await Invoke(
+            app,
+            "GET",
+            "/custom/control/distribution/runtime-nodes",
+            queryString: "?pageNumber=0&pageSize=99");
+        var nullStatus = await Invoke(
+            app,
+            "POST",
+            "/custom/control/distribution/runtime-nodes/{runtimeNodeId}/status",
+            "null",
+            new Dictionary<string, object?> { ["runtimeNodeId"] = "runtime-1" });
+        var updatedStatus = await Invoke(
+            app,
+            "POST",
+            "/custom/control/distribution/runtime-nodes/{runtimeNodeId}/status",
+            JsonSerializer.Serialize(new RuntimeNodeStatusRequest { Status = RuntimeNodeStatus.Suspend }),
+            new Dictionary<string, object?> { ["runtimeNodeId"] = "runtime-1" });
+        var statusByUser = await Invoke(
+            app,
+            "POST",
+            "/custom/control/security/teams/{teamId}/status",
+            JsonSerializer.Serialize(new SetActiveRequest { Actor = "body-actor", IsActive = false }),
+            new Dictionary<string, object?> { ["teamId"] = "team-1" },
+            user: CreateUser(("oid", "user-oid")));
+        var pushedByUser = await Invoke(
+            app,
+            "POST",
+            "/custom/control/distribution/release-targets/{releaseTargetId}/push",
+            JsonSerializer.Serialize(new ActorRequest { Actor = "body-actor" }),
+            new Dictionary<string, object?> { ["releaseTargetId"] = "target-1" },
+            user: CreateUser(("sub", "user-sub")));
+
+        Assert.Contains("global-control-plane", policyNames);
+        Assert.Equal(StatusCodes.Status200OK, runtimeNodes.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, nullStatus.StatusCode);
+        Assert.Equal(StatusCodes.Status204NoContent, updatedStatus.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, statusByUser.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, pushedByUser.StatusCode);
+
+        await nodeService.Received(1).GetAll(
+            Arg.Is<CPDistribution.ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 9),
+            Arg.Any<CancellationToken>());
+        await nodeService.Received(1).SetStatus("runtime-1", RuntimeNodeStatus.Suspend, Arg.Any<CancellationToken>());
+        await teamService.Received(1).SetIsActive(
+            Arg.Is<CPSecurity.SetTeamIsActiveCommand>(x =>
+                x.TeamId == "team-1" &&
+                !x.IsActive &&
+                x.Actor == "user-oid"),
+            Arg.Any<CancellationToken>());
+        await deliveryService.Received(1).Push("target-1", "user-sub", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -671,7 +779,8 @@ public sealed class RestApiEndpointRouteBuilderTests
         string routePattern,
         string body = "",
         Dictionary<string, object?>? routeValues = null,
-        string queryString = "")
+        string queryString = "",
+        ClaimsPrincipal? user = null)
     {
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(x => x.Endpoints)
@@ -687,6 +796,7 @@ public sealed class RestApiEndpointRouteBuilderTests
         httpContext.Request.Method = method;
         httpContext.Request.Path = routePattern.Replace("{", string.Empty, StringComparison.Ordinal).Replace("}", string.Empty, StringComparison.Ordinal);
         httpContext.Request.QueryString = new QueryString(queryString);
+        httpContext.User = user ?? new ClaimsPrincipal(new ClaimsIdentity());
         httpContext.Response.Body = new MemoryStream();
 
         foreach (var pair in routeValues ?? [])
@@ -726,6 +836,11 @@ public sealed class RestApiEndpointRouteBuilderTests
             DeployedOnUtc = DateTime.UtcNow,
             ActivatedOnUtc = DateTime.UtcNow
         };
+
+    private static ClaimsPrincipal CreateUser(params (string Type, string Value)[] claims)
+        => new(new ClaimsIdentity(
+            claims.Select(x => new Claim(x.Type, x.Value)),
+            authenticationType: "test"));
 
     private sealed record EndpointInvocationResult(int StatusCode, string Body);
 
