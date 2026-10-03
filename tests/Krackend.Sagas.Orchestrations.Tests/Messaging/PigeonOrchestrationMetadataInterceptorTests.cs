@@ -6,11 +6,24 @@ using Pigeon.Messaging.Consuming.Dispatching;
 using Pigeon.Messaging.Producing;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 public sealed class PigeonOrchestrationMetadataInterceptorTests
 {
     private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+    public static IEnumerable<object[]> PropagationMapperTypes =>
+    [
+        [
+            "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon",
+            "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.PigeonPropagationMetadataMapper"
+        ],
+        [
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon",
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.PigeonPropagationMetadataMapper"
+        ]
+    ];
 
     [Theory]
     [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor")]
@@ -98,6 +111,89 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         Assert.Equal("corr-1", ((JsonNode)metadata[OrchestrationMetadataConstants.TriggerMetadataKey])!["CorrelationId"]!.GetValue<string>());
         Assert.Equal("req-1", ((JsonNode)metadata["audit.context"])!["requestId"]!.GetValue<string>());
         Assert.Equal("north", ((JsonNode)metadata["security.context"])!["tenant"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [MemberData(nameof(PropagationMapperTypes))]
+    public void PropagationMappersAttachSkipNullEmptyAndReservedMetadata(string assemblyName, string typeName)
+    {
+        var mapper = CreatePropagationMapper(assemblyName, typeName);
+        var context = new PublishContext();
+        var propagationMetadata = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse("""{"CorrelationId":"corr-2"}"""),
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-4"}"""),
+                ["Krackend.Sagas.Orchestrations.Internal"] = JsonValue.Create("reserved")
+            }
+        };
+
+        AttachPropagationMetadata(mapper, context, null);
+        AttachPropagationMetadata(mapper, context, new OrchestrationPropagationMetadata());
+        AttachPropagationMetadata(mapper, context, propagationMetadata);
+
+        var metadata = GetPublishMetadata(context);
+        Assert.False(metadata.ContainsKey(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey));
+        Assert.False(metadata.ContainsKey("Krackend.Sagas.Orchestrations.Internal"));
+        Assert.Equal("corr-2", ((JsonNode)metadata[OrchestrationMetadataConstants.TriggerMetadataKey])!["CorrelationId"]!.GetValue<string>());
+        Assert.Equal("req-4", ((JsonNode)metadata["audit.context"])!["requestId"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [MemberData(nameof(PropagationMapperTypes))]
+    public void PropagationMappersCaptureEnvelopeObjectAndRawMetadata(string assemblyName, string typeName)
+    {
+        var mapper = CreatePropagationMapper(assemblyName, typeName);
+        var context = new ConsumeContext
+        {
+            RawMetadata = new Dictionary<string, string>
+            {
+                ["audit.context"] = """{"requestId":"raw-ignored"}""",
+                ["raw.json"] = """{"fromRaw":true}""",
+                ["raw.text"] = "plain raw",
+                ["Krackend.Sagas.Orchestrations.Raw"] = "reserved",
+                [" "] = "blank"
+            }
+        };
+        using var jsonDocument = JsonDocument.Parse("""{"fromElement":true}""");
+        SetConsumeMetadataItem(
+            context,
+            OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey,
+            new Dictionary<string, JsonNode>
+            {
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"dict-envelope"}""")!,
+                [" "] = JsonValue.Create("blank"),
+                ["Krackend.Sagas.Orchestrations.Envelope"] = JsonValue.Create("reserved")
+            });
+        SetConsumeMetadataItem(context, "object.node", JsonNode.Parse("""{"fromNode":true}""")!);
+        SetConsumeMetadataItem(context, "object.element", jsonDocument.RootElement.Clone());
+        SetConsumeMetadataItem(context, "object.jsonString", """{"fromString":true}""");
+        SetConsumeMetadataItem(context, "object.blankString", " ");
+        SetConsumeMetadataItem(context, "object.text", "hello");
+        SetConsumeMetadataItem(context, "object.serialized", new { Count = 7 });
+        SetConsumeMetadataItem(context, "object.throwing", new ThrowingMetadataValue());
+        SetConsumeMetadataItem(context, OrchestrationMetadataConstants.TriggerMetadataKey, JsonNode.Parse("""{"CorrelationId":"trigger-1"}""")!);
+        SetConsumeMetadataItem(context, "Krackend.Sagas.Orchestrations.Object", new { ignored = true });
+        SetConsumeMetadataItem(context, " ", new { ignored = true });
+
+        var metadata = CapturePropagationMetadata(mapper, context);
+
+        Assert.Equal("dict-envelope", metadata.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.True(metadata.Items["object.node"]!["fromNode"]!.GetValue<bool>());
+        Assert.True(metadata.Items["object.element"]!["fromElement"]!.GetValue<bool>());
+        Assert.True(metadata.Items["object.jsonString"]!["fromString"]!.GetValue<bool>());
+        Assert.Equal(" ", metadata.Items["object.blankString"]!.GetValue<string>());
+        Assert.Equal("hello", metadata.Items["object.text"]!.GetValue<string>());
+        Assert.Equal(7, metadata.Items["object.serialized"]!["count"]!.GetValue<int>());
+        Assert.Equal("fallback", metadata.Items["object.throwing"]!.GetValue<string>());
+        Assert.Equal("trigger-1", metadata.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!["CorrelationId"]!.GetValue<string>());
+        Assert.True(metadata.Items["raw.json"]!["fromRaw"]!.GetValue<bool>());
+        Assert.Equal("plain raw", metadata.Items["raw.text"]!.GetValue<string>());
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Envelope", metadata.Items.Keys);
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Object", metadata.Items.Keys);
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Raw", metadata.Items.Keys);
+        Assert.DoesNotContain(" ", metadata.Items.Keys);
     }
 
     [Fact]
@@ -288,6 +384,33 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
             culture: null)!;
     }
 
+    private static object CreatePropagationMapper(string assemblyName, string typeName)
+    {
+        var assembly = Assembly.Load(assemblyName);
+        var type = assembly.GetType(typeName, throwOnError: true)!;
+        return Activator.CreateInstance(
+            type,
+            InstanceFlags,
+            binder: null,
+            args: [],
+            culture: null)!;
+    }
+
+    private static void AttachPropagationMetadata(
+        object mapper,
+        PublishContext context,
+        OrchestrationPropagationMetadata? metadata)
+    {
+        var method = mapper.GetType().GetMethod("Attach", InstanceFlags)!;
+        method.Invoke(mapper, [context, metadata]);
+    }
+
+    private static OrchestrationPropagationMetadata CapturePropagationMetadata(object mapper, ConsumeContext context)
+    {
+        var method = mapper.GetType().GetMethod("Capture", InstanceFlags)!;
+        return (OrchestrationPropagationMetadata)method.Invoke(mapper, [context])!;
+    }
+
     private static Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor CreateConsumeInterceptor(
         IOrchestrationMessageMetadataSetter messageSetter,
         IOrchestrationExecutionResultMetadataSetter resultSetter,
@@ -376,5 +499,12 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         var field = typeof(ConsumeContext).GetField("_metadata", InstanceFlags)!;
         var metadata = (ConcurrentDictionary<string, object>)field.GetValue(context)!;
         metadata[key] = value;
+    }
+
+    private sealed class ThrowingMetadataValue
+    {
+        public string Broken => throw new InvalidOperationException("boom");
+
+        public override string ToString() => "fallback";
     }
 }
