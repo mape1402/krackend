@@ -171,6 +171,27 @@ public sealed class ExecutionPolicyResolverTests
     }
 
     [Fact]
+    public void ResolveAllowsRequiredSecretsWhenRuntimeNodeDoesNotDeclareSecretInventory()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            RuntimeNodeCapabilities = RuntimeNodeCapabilitiesArtifact.LocalDefaults
+        });
+        var task = TaskArtifactFor("task.secret-open-inventory") with
+        {
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                RequiredSecrets = ["billing-api-key"]
+            }
+        };
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, result.ResolvedPolicy.ProviderKey);
+    }
+
+    [Fact]
     public void ResolveRejectsForbiddenProvider()
     {
         var resolver = CreateResolver(new RuntimeExecutionOptions
@@ -351,6 +372,33 @@ public sealed class ExecutionPolicyResolverTests
         Assert.True(result.Succeeded);
         Assert.Equal("kubernetes", result.ResolvedPolicy.ProviderKey);
         Assert.Equal(ExecutionPolicyScope.Environment, result.ResolvedPolicy.ProviderSource);
+    }
+
+    [Fact]
+    public void ResolveUsesAllowedProviderWhenRuntimeCapabilitiesDoNotDeclareProviderInventory()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = new ExecutionPolicyArtifact
+            {
+                AllowedProviderKeys = ["kubernetes"],
+                ForbiddenProviderKeys = null!,
+                Isolation = ExecutionIsolationRequirement.Recommended,
+                TimeoutSeconds = 45
+            },
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedExecutionModes = [ExecutionConstants.SandboxMode],
+                SupportsNetwork = true
+            }
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.allowed-provider")));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("kubernetes", result.ResolvedPolicy.ProviderKey);
+        Assert.Equal(ExecutionIsolationRequirement.Recommended, result.ResolvedPolicy.Isolation);
+        Assert.Equal(45, result.ResolvedPolicy.TimeoutSeconds);
     }
 
     private static IExecutionPolicyResolver CreateResolver(RuntimeExecutionOptions options)
