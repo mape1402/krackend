@@ -11,6 +11,23 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class OrchestrationButterMorphSchemaImporterTests
 {
     [Fact]
+    public void ConstructorRejectsNullDependencies()
+    {
+        Assert.Throws<ArgumentNullException>(() => new OrchestrationButterMorphSchemaImporter(
+            null!,
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder()));
+        Assert.Throws<ArgumentNullException>(() => new OrchestrationButterMorphSchemaImporter(
+            new JsonSchemaImporter(),
+            null!,
+            new PayloadSchemaBuilder()));
+        Assert.Throws<ArgumentNullException>(() => new OrchestrationButterMorphSchemaImporter(
+            new JsonSchemaImporter(),
+            new PayloadSchemaDefinitionHydrator(),
+            null!));
+    }
+
+    [Fact]
     public void TryImportConvertsButterMorphPayloadSnapshotIntoStructureSchema()
     {
         var importer = CreateImporter();
@@ -74,6 +91,66 @@ public sealed class OrchestrationButterMorphSchemaImporterTests
         Assert.NotNull(schema);
         Assert.Equal("events.sales.sale.created", schema.Key);
         Assert.Contains(schema.Root.Children, child => child.Name == "SaleId");
+    }
+
+    [Fact]
+    public void TryImportRejectsMissingSnapshotsAndEmptySchemaJson()
+    {
+        var importer = CreateImporter();
+        var missingSnapshot = CreateBinding("events.sales.missing", "JsonSchema", "{}");
+        missingSnapshot.Snapshot = null;
+        var emptySchema = CreateBinding("events.sales.empty", "JsonSchema", " ");
+
+        var missingImported = importer.TryImport(missingSnapshot, out var missingSchema, out var missingMessage);
+        var emptyImported = importer.TryImport(emptySchema, out var emptyResult, out var emptyMessage);
+        var nullImported = importer.TryImport(null!, out var nullSchema, out var nullMessage);
+
+        Assert.False(missingImported);
+        Assert.Null(missingSchema);
+        Assert.Contains("resolved snapshot", missingMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.False(emptyImported);
+        Assert.Null(emptyResult);
+        Assert.Contains("does not contain schema JSON", emptyMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.False(nullImported);
+        Assert.Null(nullSchema);
+        Assert.Contains("resolved snapshot", nullMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryImportReportsInvalidButterMorphPayloadDefinitions()
+    {
+        var importer = CreateImporter();
+        var binding = CreateBinding(
+            "commands.sales.invalid",
+            "ButterMorph",
+            """
+            {
+              "key": "commands.sales.invalid",
+              "properties": "not-an-object"
+            }
+            """);
+
+        var imported = importer.TryImport(binding, out var schema, out var message);
+
+        Assert.False(imported);
+        Assert.Null(schema);
+        Assert.Contains("invalid ButterMorph payload definition", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryImportReportsJsonSchemaDiagnostics()
+    {
+        var importer = CreateImporter();
+        var binding = CreateBinding(
+            "events.sales.invalid",
+            "JsonSchema",
+            "{");
+
+        var imported = importer.TryImport(binding, out var schema, out var message);
+
+        Assert.False(imported);
+        Assert.Null(schema);
+        Assert.Contains("could not be imported by ButterMorph", message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static OrchestrationButterMorphSchemaImporter CreateImporter()
