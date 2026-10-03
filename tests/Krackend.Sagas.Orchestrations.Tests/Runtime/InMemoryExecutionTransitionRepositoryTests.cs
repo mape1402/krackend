@@ -165,6 +165,36 @@ public sealed class InMemoryExecutionTransitionRepositoryTests
     }
 
     [Fact]
+    public async Task CreatePublishesReactiveEventWithNullLookupFieldsWhenStageTaskAndArtifactAreMissing()
+    {
+        var publisher = new RecordingRuntimeReactiveEventPublisher();
+        using var provider = CreateProvider(publisher);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var instanceId = Id.New();
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(
+            Instance(instanceId, Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow.AddMinutes(-1)));
+        var repository = services.GetRequiredService<IExecutionTransitionRepository>();
+
+        await repository.Create(new ExecutionTransition
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instanceId,
+            StageExecutionId = Id.New(),
+            TaskExecutionId = Id.New(),
+            TransitionType = "TaskStarted",
+            OccurredOnUtc = DateTime.UtcNow,
+            ProducedBy = "tests"
+        });
+
+        var published = Assert.Single(publisher.Events);
+        Assert.Equal(RuntimeReactiveEventNames.TaskStarted, published.EventName);
+        Assert.Null(published.OrchestrationVersion);
+        Assert.Null(published.StageKey);
+        Assert.Null(published.TaskKey);
+    }
+
+    [Fact]
     public async Task GetTrafficBucketsActiveStartedCompletedAndFailedInstances()
     {
         var publisher = new RecordingRuntimeReactiveEventPublisher();
@@ -218,6 +248,42 @@ public sealed class InMemoryExecutionTransitionRepositoryTests
         Assert.True(traffic.Count >= 4);
         Assert.Contains(traffic, point => point.Active > 0);
         Assert.All(traffic.Zip(traffic.Skip(1)), pair => Assert.Equal(TimeSpan.FromHours(1), pair.Second.BucketUtc - pair.First.BucketUtc));
+    }
+
+    [Fact]
+    public async Task GetTrafficIncludesRecentStoppedCompensatedAndInactiveTerminalVariants()
+    {
+        var publisher = new RecordingRuntimeReactiveEventPublisher();
+        using var provider = CreateProvider(publisher);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var now = DateTime.UtcNow;
+        await SeedArtifact(services, Id.New());
+        var instances = services.GetRequiredService<IOrchestrationInstanceRepository>();
+        await instances.Create(Instance(
+            Id.New(),
+            Id.New(),
+            OrchestrationInstanceStatus.Stopped,
+            now.AddMinutes(-50),
+            stoppedOnUtc: now.AddMinutes(-5)));
+        await instances.Create(Instance(
+            Id.New(),
+            Id.New(),
+            OrchestrationInstanceStatus.Compensated,
+            now.AddMinutes(-45),
+            compensatedOnUtc: now.AddMinutes(-4)));
+        await instances.Create(Instance(
+            Id.New(),
+            Id.New(),
+            OrchestrationInstanceStatus.Failed,
+            now.AddHours(-5),
+            failedOnUtc: now.AddHours(-4)));
+        var repository = services.GetRequiredService<IExecutionTransitionRepository>();
+
+        var traffic = await repository.GetTraffic(now.AddMinutes(-30));
+
+        Assert.True(traffic.Sum(point => point.Active) >= 2);
+        Assert.Equal(0, traffic.Sum(point => point.Failed));
     }
 
     private static ServiceProvider CreateProvider(RecordingRuntimeReactiveEventPublisher publisher)

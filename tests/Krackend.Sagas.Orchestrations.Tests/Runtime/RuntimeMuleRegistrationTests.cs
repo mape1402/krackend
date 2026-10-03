@@ -103,6 +103,72 @@ public sealed class RuntimeMuleRegistrationTests
         Assert.False(standupLane.DrainUntilEmpty);
     }
 
+    [Fact]
+    public void RuntimeMuleArtifactLifecycleConfigurerNormalizesBoundaryValues()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.Configure<Krackend.Sagas.Orchestrations.Runtime.Replication.RuntimeReplicaOptions>(options =>
+        {
+            options.ReplicaId = "replica-c";
+        });
+
+        services
+            .AddKrackendOrchestrationsRuntime()
+            .AddMule(
+                _ => { },
+                options =>
+                {
+                    options.ArtifactLifecycleWorkerCount = 0;
+                    options.ArtifactLifecycleMaxDegreeOfParallelism = -1;
+                    options.ArtifactLifecycleDispatchBatchSize = 0;
+                    options.ArtifactLifecycleDispatchQueueCapacity = -1;
+                    options.ArtifactLifecycleExecutionQueueCapacity = -1;
+                    options.ArtifactLifecycleMaxDrainBatchesPerCycle = 0;
+                    options.ArtifactLifecycleMaxDrainActionsPerCycle = -1;
+                    options.ArtifactLifecycleMaxAttempts = 0;
+                    options.ArtifactLifecycleRetryDelay = TimeSpan.Zero;
+                });
+
+        using var provider = services.BuildServiceProvider();
+        var configurers = provider.GetServices<IConfigureOptions<MuleSettings>>().ToArray();
+        var settings = new MuleSettings
+        {
+            DispatchInterval = TimeSpan.FromSeconds(10)
+        };
+
+        foreach (var configurer in configurers)
+        {
+            configurer.Configure(settings);
+            configurer.Configure(settings);
+        }
+
+        var projectionLane = settings.Lanes[RuntimeArtifactProjectionSchedulerDefaults.Lane];
+        Assert.Equal(TimeSpan.FromSeconds(1), settings.DispatchInterval);
+        Assert.Equal(1, projectionLane.WorkerCount);
+        Assert.Equal(1, projectionLane.MaxDegreeOfParallelism);
+        Assert.Equal(1, projectionLane.DispatchBatchSize);
+        Assert.Equal(0, projectionLane.DispatchQueueCapacity);
+        Assert.Equal(0, projectionLane.ExecutionQueueCapacity);
+        Assert.Equal(int.MaxValue, projectionLane.MaxDrainBatchesPerCycle);
+        Assert.Equal(0, projectionLane.MaxDrainActionsPerCycle);
+        Assert.Equal(int.MaxValue, projectionLane.MaxAttempts);
+        Assert.Equal(TimeSpan.FromSeconds(1), projectionLane.RetryDelay);
+
+        var zeroIntervalSettings = new MuleSettings
+        {
+            DispatchInterval = TimeSpan.Zero
+        };
+        foreach (var configurer in configurers)
+        {
+            configurer.Configure(zeroIntervalSettings);
+        }
+
+        Assert.Equal(TimeSpan.FromSeconds(1), zeroIntervalSettings.DispatchInterval);
+    }
+
     private static void AssertRegistered<TService>(IServiceCollection services)
     {
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(TService));

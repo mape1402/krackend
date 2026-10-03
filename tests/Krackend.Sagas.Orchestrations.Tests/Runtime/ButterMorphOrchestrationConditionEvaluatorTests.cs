@@ -27,6 +27,17 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
 
         Assert.True(result.Succeeded);
         Assert.True(result.ShouldExecute);
+
+        var nullConditionResult = await CreateEvaluator().EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Condition = null,
+            PayloadContext = EmptyPayloadContext(),
+            ElementKey = "reserve-inventory",
+            Phase = "Task"
+        });
+
+        Assert.True(nullConditionResult.Succeeded);
+        Assert.True(nullConditionResult.ShouldExecute);
     }
 
     [Theory]
@@ -59,6 +70,17 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
 
         Assert.False(result.Succeeded);
         Assert.Equal("ConditionConfigurationNotSupported", result.ErrorCode);
+
+        var typedResult = await CreateEvaluator().EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Condition = new ExecutionConditionArtifact(EngineType.DSL, new UnsupportedConditionConfigurationArtifact()) { IsEnabled = true },
+            PayloadContext = EmptyPayloadContext(),
+            ElementKey = "reserve-inventory",
+            Phase = "Task"
+        });
+
+        Assert.False(typedResult.Succeeded);
+        Assert.Contains(nameof(UnsupportedConditionConfigurationArtifact), typedResult.ErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -74,6 +96,7 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
 
         Assert.False(result.Succeeded);
         Assert.Equal("ConditionExpressionMissing", result.ErrorCode);
+
     }
 
     [Fact]
@@ -251,6 +274,14 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
         Assert.True(result.Diagnostics.ContainsKey("exceptionType"));
     }
 
+    [Fact]
+    public void TryReadBooleanRejectsMalformedJsonValues()
+    {
+        Assert.False(InvokeTryReadBoolean(JsonValue.Create("not-a-bool"), out _));
+        Assert.False(InvokeTryReadBoolean(JsonValue.Create(double.NaN)!, out _));
+        Assert.False(InvokeTryReadBoolean(JsonValue.Create(new ThrowingJsonValue())!, out _));
+    }
+
     private static IOrchestrationConditionEvaluator CreateEvaluator()
     {
         var services = new ServiceCollection();
@@ -280,4 +311,22 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
         {
             IsEnabled = true
         };
+
+    private static bool InvokeTryReadBoolean(JsonNode value, out bool result)
+    {
+        var method = typeof(ButterMorphOrchestrationConditionEvaluator).GetMethod(
+            "TryReadBoolean",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        object?[] args = [value, false];
+        var parsed = (bool)method.Invoke(null, args)!;
+        result = (bool)args[1]!;
+        return parsed;
+    }
+
+    private sealed class UnsupportedConditionConfigurationArtifact : IConditionConfigurationArtifact
+    {
+        public EngineType Engine => EngineType.DSL;
+    }
+
+    private sealed class ThrowingJsonValue;
 }

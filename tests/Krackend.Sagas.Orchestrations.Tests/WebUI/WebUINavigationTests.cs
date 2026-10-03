@@ -110,6 +110,35 @@ public sealed class WebUINavigationTests
     }
 
     [Fact]
+    public void ThemeModeAccessorHandlesLightUnknownMissingContextAndConstructorGuards()
+    {
+        var httpContextAccessor = new HttpContextAccessor();
+        var options = Options.Create(new OrchestratorThemeModeCookieOptions());
+        var accessor = new DefaultOrchestratorThemeModeAccessor(httpContextAccessor, options);
+
+        Assert.Equal(OrchestratorWebUIThemeMode.Light, accessor.GetMode(null!));
+        Assert.Equal("light", accessor.GetCssMode(null!));
+
+        httpContextAccessor.HttpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Request.Headers.Cookie = ".Krackend.Orchestrator.ThemeMode=light";
+        Assert.Equal(OrchestratorWebUIThemeMode.Light, accessor.GetMode(new OrchestratorWebUIThemeOptions
+        {
+            Mode = OrchestratorWebUIThemeMode.Dark
+        }));
+
+        httpContextAccessor.HttpContext.Request.Headers.Cookie = ".Krackend.Orchestrator.ThemeMode=other";
+        Assert.Equal(OrchestratorWebUIThemeMode.Dark, accessor.GetMode(new OrchestratorWebUIThemeOptions
+        {
+            Mode = OrchestratorWebUIThemeMode.Dark
+        }));
+        Assert.Throws<ArgumentNullException>(() => new DefaultOrchestratorThemeModeAccessor(null!, options));
+        Assert.Throws<ArgumentNullException>(() => new DefaultOrchestratorThemeModeAccessor(httpContextAccessor, null!));
+        Assert.Throws<ArgumentNullException>(() => new DefaultOrchestratorThemeModeAccessor(
+            httpContextAccessor,
+            Options.Create<OrchestratorThemeModeCookieOptions>(null!)));
+    }
+
+    [Fact]
     public void ControlPlaneWebUiRegistersConfiguredTheme()
     {
         var services = new ServiceCollection();
@@ -248,17 +277,55 @@ public sealed class WebUINavigationTests
         {
             PrimaryColor = "#123456"
         };
+        theme.PrimaryHoverColor = " #abc ";
         theme.Dark.PrimaryColor = "#abcdef";
+        theme.Dark.PrimaryHoverColor = "#12345678";
         theme.Dark.SurfaceColor = "red";
 
         var css = renderer.RenderThemeRules(theme);
+        var defaultCss = renderer.RenderThemeRules(null);
 
         Assert.Contains(":root[data-krackend-theme=\"light\"]", css);
         Assert.Contains(":root[data-krackend-theme=\"dark\"]", css);
         Assert.Contains("--krackend-primary:#123456;", css);
+        Assert.Contains("--krackend-primary-hover:#abc;", css);
         Assert.Contains("--krackend-primary:#abcdef;", css);
+        Assert.Contains("--krackend-primary-hover:#12345678;", css);
         Assert.Contains("--krackend-surface:#171a2f;", css);
+        Assert.Contains("--krackend-primary:#4856d7;", defaultCss);
         Assert.DoesNotContain("red", css);
+    }
+
+    [Fact]
+    public void ThemeOptionsApplyFromCopiesValuesAndKeepsCurrentValuesWhenSourceIsNull()
+    {
+        var target = new OrchestratorWebUIThemeOptions
+        {
+            Mode = OrchestratorWebUIThemeMode.Light,
+            PrimaryColor = "#111111"
+        };
+        var source = new OrchestratorWebUIThemeOptions
+        {
+            Title = "Ops",
+            Subtitle = "Runtime",
+            Mode = OrchestratorWebUIThemeMode.Dark,
+            IconCssClass = "bi-lightning",
+            IconImageUrl = "/logo.svg",
+            PrimaryColor = "#222222"
+        };
+
+        target.ApplyFrom(null);
+        Assert.Equal("#111111", target.PrimaryColor);
+
+        target.ApplyFrom(source);
+
+        Assert.Equal("Ops", target.Title);
+        Assert.Equal("Runtime", target.Subtitle);
+        Assert.Equal(OrchestratorWebUIThemeMode.Dark, target.Mode);
+        Assert.Equal("dark", target.CssMode);
+        Assert.Equal("bi-lightning", target.IconCssClass);
+        Assert.Equal("/logo.svg", target.IconImageUrl);
+        Assert.Equal("#222222", target.PrimaryColor);
     }
 
     [Fact]
@@ -292,6 +359,28 @@ public sealed class WebUINavigationTests
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
         Assert.Equal(19, options.Conventions.Count);
+    }
+
+    [Fact]
+    public void DesignAreaRouteHelpersNormalizePrefixesAndRootAliases()
+    {
+        var configureType = typeof(DesignWebUiServices).GetNestedType(
+            "ConfigureDesignAreaRoutes",
+            System.Reflection.BindingFlags.NonPublic)!;
+        var normalize = configureType.GetMethod(
+            "NormalizePrefix",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var root = configureType.GetMethod(
+            "GetRootPrefix",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+
+        Assert.Equal("admin/design", normalize.Invoke(null, [null]));
+        Assert.Equal("admin/design", normalize.Invoke(null, [" / "]));
+        Assert.Equal("ops/design", normalize.Invoke(null, [" /ops/design/ "]));
+        Assert.Equal("ops", root.Invoke(null, ["ops/design"]));
+        Assert.Equal("ops", root.Invoke(null, ["ops/Design"]));
+        Assert.Equal(string.Empty, root.Invoke(null, ["design"]));
+        Assert.Equal(string.Empty, root.Invoke(null, ["ops/runtime"]));
     }
 
     [Fact]

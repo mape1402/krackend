@@ -83,8 +83,10 @@ public sealed class PolymorphicJsonConverterTests
     public void PolymorphicConvertersRejectInvalidPayloadsAndUnsupportedRuntimeTypes()
     {
         Assert.Equal("null", JsonSerializer.Serialize<TaskConfigurationJsonModel?>(null));
+        Assert.Equal("null", JsonSerializer.Serialize<TaskConfigurationJsonModel>(null!));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize<TaskConfigurationJsonModel>(new TaskConfigurationJsonModel()));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TaskConfigurationJsonModel>("{}"));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TaskConfigurationJsonModel>("""{"$type":" "}"""));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TaskConfigurationJsonModel>("""{"$type":"missing"}"""));
     }
 

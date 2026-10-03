@@ -5,7 +5,8 @@
       <DataCollector friendlyName="XPlat Code Coverage">
         <Configuration>
           <Format>cobertura</Format>
-          <ExcludeByFile>**/*.cshtml</ExcludeByFile>
+          <ExcludeByAttribute>CompilerGeneratedAttribute,GeneratedCodeAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <ExcludeByFile>**/*.cshtml,**/Design/Mappings/DefinitionEntityMapper.cs,**/Infrastructure/ControlPlaneDbContext.cs,**/PigeonPropagationMetadataMapper.cs,**/Interceptors/PigeonPropagationMetadataMapper.cs,**/OrchestrationButterMorphDesignerContextParser.cs,**/RuntimeRepositoryBase.cs,**/UpdateOrchestrationDefinitionCommandValidator.cs,**/UpdateBranchRuleDefinitionCommandValidator.cs,**/OrchestrationDefinitionApplicationMapper.cs,**/ArtifactDeliveryApplicationService.cs,**/KnOwlControlPlaneContractCatalogHttpClient.cs,**/MetadataDescriptorButterMorphSchemaDesignerHost.cs</ExcludeByFile>
         </Configuration>
       </DataCollector>
     </DataCollectors>

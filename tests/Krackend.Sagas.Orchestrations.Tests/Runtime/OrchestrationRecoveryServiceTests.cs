@@ -248,6 +248,32 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Null(transition.TaskExecutionId);
     }
 
+    [Fact]
+    public async Task ReplayRecoverableInstanceUsesInstanceIdWhenSagaIdIsMissingAndCarriesCurrentTask()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(
+            OrchestrationInstanceStatus.Running,
+            currentStageKey: "stage-one",
+            currentTaskKey: "reserve-stock",
+            waitingSinceUtc: DateTime.UtcNow.AddMinutes(-2),
+            errorSummary: "manual replay");
+        instance.SagaId = "";
+        fixture.ArrangeReplay(
+            instance,
+            CreateResolvedArtifact(instance.RuntimeOrchestrationArtifactId, Stage("stage-one", MessagingTask("reserve-stock"))),
+            Array.Empty<StageExecution>(),
+            Array.Empty<TaskExecution>());
+
+        var result = await fixture.Service.ReplayAsync(instance.Id.ToString(), " ");
+
+        Assert.True(result.Succeeded);
+        var forward = Assert.Single(fixture.Forwards);
+        Assert.Equal(instance.Id.ToString(), forward.MessageMetadata.SagaId);
+        Assert.Equal(["reserve-stock"], forward.MessageMetadata.CurrentTasks);
+        Assert.Equal("snapshot", forward.Payload!["value"]!.GetValue<string>());
+    }
+
     private static OrchestrationInstance CreateInstance(
         OrchestrationInstanceStatus status,
         string currentStageKey = "stage-one",

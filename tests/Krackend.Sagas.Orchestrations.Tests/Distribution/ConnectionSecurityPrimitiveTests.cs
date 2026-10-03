@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Security.Core;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using System.Text.Json;
 
@@ -38,6 +39,7 @@ public sealed class ConnectionSecurityPrimitiveTests
     [InlineData("secret", null)]
     [InlineData("", "hash")]
     [InlineData("secret", "")]
+    [InlineData("secret", "pbkdf2-sha256.1000.too-short")]
     [InlineData("secret", "unsupported.1000.salt.hash")]
     [InlineData("secret", "pbkdf2-sha256.not-number.salt.hash")]
     public void Pbkdf2_secret_verify_returns_false_for_missing_or_invalid_hash_parts(
@@ -47,6 +49,23 @@ public sealed class ConnectionSecurityPrimitiveTests
         var hasher = new Pbkdf2ConnectionSecretHasher();
 
         Assert.False(hasher.VerifySecret(secret, storedHash));
+    }
+
+    [Fact]
+    public void External_subject_is_resolved_only_when_provider_and_subject_are_present()
+    {
+        var subject = new KrackendExternalSubject();
+
+        Assert.False(subject.IsResolved);
+
+        subject.Provider = "oidc";
+        Assert.False(subject.IsResolved);
+
+        subject.SubjectId = "user-1";
+        Assert.True(subject.IsResolved);
+
+        subject.Provider = " ";
+        Assert.False(subject.IsResolved);
     }
 
     [Fact]

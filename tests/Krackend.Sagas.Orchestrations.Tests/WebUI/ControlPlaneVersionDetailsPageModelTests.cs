@@ -48,6 +48,128 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public async Task ConstructorRejectsMissingServicesAndUsesFallbackProviderKey()
+    {
+        var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
+        var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
+        var stageService = Substitute.For<IStageApplicationService>();
+        var taskService = Substitute.For<ITaskApplicationService>();
+        var triggerService = Substitute.For<ITriggerBindingApplicationService>();
+        var catalog = Substitute.For<ISchemaContractCatalog>();
+        catalog.SearchAsync(Arg.Any<SchemaContractCatalogSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<SchemaContractCatalogItem>>([]));
+        var options = Options.Create(new OrchestratorDesignWebUIOptions());
+
+        Assert.Equal("orchestrationService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
+            null!,
+            versionService,
+            stageService,
+            taskService,
+            triggerService,
+            catalog,
+            options)).ParamName);
+        Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
+            orchestrationService,
+            null!,
+            stageService,
+            taskService,
+            triggerService,
+            catalog,
+            options)).ParamName);
+        Assert.Equal("stageService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            null!,
+            taskService,
+            triggerService,
+            catalog,
+            options)).ParamName);
+        Assert.Equal("taskService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            stageService,
+            null!,
+            triggerService,
+            catalog,
+            options)).ParamName);
+        Assert.Equal("triggerBindingService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            stageService,
+            taskService,
+            null!,
+            catalog,
+            options)).ParamName);
+        Assert.Equal("schemaContractCatalog", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            stageService,
+            taskService,
+            triggerService,
+            null!,
+            options)).ParamName);
+
+        var nullOptionsPage = new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            stageService,
+            taskService,
+            triggerService,
+            catalog,
+            null!);
+        await nullOptionsPage.OnGetSchemaContractsAsync("Command", null!, 7, CancellationToken.None);
+
+        await catalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request =>
+                request.ProviderKey == "knowl" &&
+                request.ContractKind == SchemaContractKind.Command &&
+                request.SearchText == string.Empty &&
+                request.Take == 7),
+            Arg.Any<CancellationToken>());
+
+        var nullValueOptions = Substitute.For<IOptions<OrchestratorDesignWebUIOptions>>();
+        nullValueOptions.Value.Returns((OrchestratorDesignWebUIOptions)null!);
+        var nullValuePage = new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            stageService,
+            taskService,
+            triggerService,
+            catalog,
+            nullValueOptions);
+        await nullValuePage.OnGetSchemaContractsAsync("Event", "sale", 3, CancellationToken.None);
+
+        await catalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request =>
+                request.ProviderKey == "knowl" &&
+                request.ContractKind == SchemaContractKind.Event &&
+                request.SearchText == "sale" &&
+                request.Take == 3),
+            Arg.Any<CancellationToken>());
+
+        var customProviderPage = new VersionDetailsModel(
+            orchestrationService,
+            versionService,
+            stageService,
+            taskService,
+            triggerService,
+            catalog,
+            Options.Create(new OrchestratorDesignWebUIOptions
+            {
+                DefaultSchemaRegistryProviderKey = " custom-provider "
+            }));
+        await customProviderPage.OnGetSchemaContractsAsync("Event", "sale", 9, CancellationToken.None);
+
+        await catalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request =>
+                request.ProviderKey == "custom-provider" &&
+                request.ContractKind == SchemaContractKind.Event &&
+                request.SearchText == "sale" &&
+                request.Take == 9),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task OnGetReturnsNotFoundWhenVersionCannotBeLoaded()
     {
         var context = CreateContext();
@@ -55,6 +177,19 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             .Returns(Task.FromResult<OrchestrationVersionModel>(null!));
 
         var result = await context.Page.OnGetAsync("orch-1", "missing");
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.False(context.Page.CanEdit);
+    }
+
+    [Fact]
+    public async Task OnGetReturnsNotFoundWhenOrchestrationCannotBeLoaded()
+    {
+        var context = CreateContext();
+        context.OrchestrationService.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrchestrationDefinitionModel>(null!));
+
+        var result = await context.Page.OnGetAsync("missing-orch", "version-1");
 
         Assert.IsType<NotFoundResult>(result);
     }
@@ -239,6 +374,18 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             Arg.Is<UpdateStageDefinitionCommand>(command => command.Id == "stage-late" && command.Order == 1),
             Arg.Any<CancellationToken>());
 
+        var alreadyOrdered = CreateContext();
+        alreadyOrdered.StageService.GetAll(Arg.Any<GetStageDefinitionsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IEnumerable<StageDefinitionModel>>(
+            [
+                CreateStage("stage-0", 0),
+                CreateStage("stage-1", 1)
+            ]));
+        await InvokePrivateTaskAsync(alreadyOrdered.Page, "NormalizeStageOrderAsync", "version-1", CancellationToken.None);
+        await alreadyOrdered.StageService.DidNotReceive().Update(
+            Arg.Any<UpdateStageDefinitionCommand>(),
+            Arg.Any<CancellationToken>());
+
         context.Page.NewStage = new VersionDetailsModel.CreateStageInput
         {
             StageId = "missing-stage",
@@ -404,6 +551,37 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public async Task SchemaContractsEndpointUsesFallbackDisplayNameAndNullSearchText()
+    {
+        var context = CreateContext();
+        context.SchemaContractCatalog.SearchAsync(Arg.Any<SchemaContractCatalogSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<SchemaContractCatalogItem>>(
+            [
+                new SchemaContractCatalogItem
+                {
+                    ProviderKey = "knowl",
+                    ContractId = "event-artifact",
+                    ContractKey = "events.no.display",
+                    ContractVersion = "2.0.0",
+                    ContractKind = SchemaContractKind.Event,
+                    ContentHash = "event-hash",
+                    DisplayName = " "
+                }
+            ]));
+
+        var result = await context.Page.OnGetSchemaContractsAsync(term: null!, cancellationToken: CancellationToken.None);
+
+        var document = SerializeJsonResult(result);
+        var item = document.RootElement.EnumerateArray().Single();
+        Assert.Equal("events.no.display v2.0.0", item.GetProperty("displayName").GetString());
+        await context.SchemaContractCatalog.Received(1).SearchAsync(
+            Arg.Is<SchemaContractCatalogSearchRequest>(request =>
+                request.ContractKind == SchemaContractKind.Event &&
+                request.SearchText == string.Empty),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task TriggerHandlersUseFallbacksAndRedirectWhenEditedTriggerIsMissing()
     {
         var context = CreateContext();
@@ -459,6 +637,240 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public void TriggerEditPayloadAndPrivateBuildersCoverNullAndDefaultBranches()
+    {
+        var emptyPayload = JsonSerializer.SerializeToDocument(InvokePrivateStatic<object>(
+            "BuildTriggerEditPayload",
+            new TriggerBindingModel
+            {
+                Id = "trigger-empty",
+                OrchestrationVersionId = "version-1",
+                Key = null!,
+                TriggerType = TriggerType.Event,
+                Description = null!,
+                TriggerChannel = null!,
+                CompensationDefinition = null
+            }));
+        var partialPayload = JsonSerializer.SerializeToDocument(InvokePrivateStatic<object>(
+            "BuildTriggerEditPayload",
+            new TriggerBindingModel
+            {
+                Id = "trigger-partial",
+                OrchestrationVersionId = "version-1",
+                Key = "trigger.partial",
+                TriggerType = TriggerType.Event,
+                Description = null!,
+                TriggerChannel = new EventTriggerChannel
+                {
+                    Topic = null!,
+                    Version = new SemanticVersion(0, 0, 0),
+                    HasSchemaValidation = true,
+                    SchemaBinding = new SchemaBinding
+                    {
+                        ElementType = ElementType.Orchestration,
+                        ContractId = Id.New(),
+                        ContractKey = "event.partial",
+                        ContractVersion = new SemanticVersion(2, 0, 0),
+                        RegistryProviderId = default,
+                        RegistryProviderKey = "knowl",
+                        StrictMode = false
+                    },
+                    HasValidation = true,
+                    Validation = new ValidationDefinition
+                    {
+                        Engine = EngineType.DSL,
+                        ErrorCode = null!,
+                        Configuration = null!
+                    }
+                },
+                CompensationDefinition = new CompensationDefinition
+                {
+                    CompensationTaskKind = TaskKind.Messaging,
+                    DispatchType = TaskDispatchType.FireAndForget,
+                    HasExecutionCondition = true,
+                    ExecutionCondition = null!,
+                    HasTransformation = true,
+                    Transformation = null!,
+                    Configuration = new MessagingTaskConfiguration
+                    {
+                        Topic = null,
+                        Version = new SemanticVersion(0, 0, 0),
+                        HasSchemaValidation = true,
+                        SchemaBinding = new SchemaBinding
+                        {
+                            ElementType = ElementType.Orchestration,
+                            ContractId = Id.New(),
+                            ContractKey = "command.partial",
+                            ContractVersion = new SemanticVersion(3, 0, 0),
+                            RegistryProviderId = default,
+                            RegistryProviderKey = "knowl",
+                            StrictMode = true
+                        }
+                    }
+                }
+            }));
+        var fullPayload = JsonSerializer.SerializeToDocument(InvokePrivateStatic<object>(
+            "BuildTriggerEditPayload",
+            new TriggerBindingModel
+            {
+                Id = "trigger-full",
+                OrchestrationVersionId = "version-1",
+                Key = "trigger.full",
+                TriggerType = TriggerType.Event,
+                Description = "Full trigger",
+                TriggerChannel = new EventTriggerChannel
+                {
+                    Topic = "events.full",
+                    Version = new SemanticVersion(4, 5, 6),
+                    HasSchemaValidation = true,
+                    SchemaBinding = new SchemaBinding
+                    {
+                        ElementType = ElementType.Orchestration,
+                        ContractId = Id.New(),
+                        ContractKey = "event.full",
+                        ContractVersion = new SemanticVersion(4, 0, 0),
+                        RegistryProviderId = Id.New(),
+                        RegistryProviderKey = "knowl",
+                        StrictMode = true
+                    },
+                    HasValidation = true,
+                    Validation = new ValidationDefinition
+                    {
+                        Engine = EngineType.DSL,
+                        ErrorCode = "EventRejected",
+                        Configuration = new DslValidationConfiguration { Dsl = "$.id != null" }
+                    }
+                },
+                CompensationDefinition = new CompensationDefinition
+                {
+                    CompensationTaskKind = TaskKind.Messaging,
+                    DispatchType = TaskDispatchType.FireAndForget,
+                    HasExecutionCondition = true,
+                    ExecutionCondition = new ExecutionCondition
+                    {
+                        Engine = EngineType.DSL,
+                        Configuration = new DslConditionConfiguration { Expression = new Expression("payload.ok") }
+                    },
+                    HasTransformation = true,
+                    Transformation = new TransformationDefinition
+                    {
+                        Engine = EngineType.DSL,
+                        Configuration = new DslTransformationConfiguration { Dsl = "map undo" }
+                    },
+                    Configuration = new MessagingTaskConfiguration
+                    {
+                        Topic = "commands.full.undo",
+                        Version = new SemanticVersion(7, 8, 9),
+                        HasSchemaValidation = true,
+                        SchemaBinding = new SchemaBinding
+                        {
+                            ElementType = ElementType.Orchestration,
+                            ContractId = Id.New(),
+                            ContractKey = "command.full.undo",
+                            ContractVersion = new SemanticVersion(7, 0, 0),
+                            RegistryProviderId = Id.New(),
+                            RegistryProviderKey = "knowl",
+                            StrictMode = true
+                        }
+                    }
+                }
+            }));
+        var disabledCompensation = InvokePrivateStatic<CompensationDefinition?>(
+            "BuildTriggerCompensationDefinition",
+            new VersionDetailsModel.UpsertTriggerInput { HasCompensation = false },
+            "orch-1",
+            "knowl");
+        var compensationWithoutSchema = InvokePrivateStatic<CompensationDefinition?>(
+            "BuildTriggerCompensationDefinition",
+            new VersionDetailsModel.UpsertTriggerInput
+            {
+                HasCompensation = true,
+                CompensationMessagingTopic = " commands.undo ",
+                CompensationMessagingVersion = "bad",
+                HasCompensationSchemaValidation = false,
+                CompensationSchemaContractKey = "",
+                HasCompensationExecutionCondition = true,
+                CompensationConditionDslExpression = " ",
+                HasCompensationTransformation = true,
+                CompensationTransformationDsl = " "
+            },
+            "orch-1",
+            "knowl");
+        var compensationWithValidationOnlySchema = InvokePrivateStatic<CompensationDefinition?>(
+            "BuildTriggerCompensationDefinition",
+            new VersionDetailsModel.UpsertTriggerInput
+            {
+                HasCompensation = true,
+                CompensationMessagingTopic = " commands.validated ",
+                CompensationMessagingVersion = "3.2.1",
+                HasCompensationSchemaValidation = true,
+                CompensationSchemaContractKey = " commands.validated ",
+                CompensationSchemaContractVersion = "3.2.1",
+                CompensationSchemaStrictMode = true,
+                HasCompensationExecutionCondition = false,
+                HasCompensationTransformation = false
+            },
+            "orch-1",
+            "knowl");
+        var validation = InvokePrivateStatic<ValidationDefinition>("BuildValidation", null!, " ");
+        var condition = InvokePrivateStatic<ExecutionCondition>("BuildExecutionCondition", " ");
+        var resolvedTriggerType = InvokePrivateStatic<TriggerType>("ResolveTriggerType", (TriggerType)999);
+        var emptyProvider = InvokePrivateStatic<string>("NormalizeProviderKey", (object?)null!);
+        var trimmedProvider = InvokePrivateStatic<string>("NormalizeProviderKey", " custom ");
+        var negativeVersion = InvokePrivateStatic<SemanticVersion>(
+            "ParseSemanticVersion",
+            "-1.2.-3",
+            new SemanticVersion(9, 9, 9));
+
+        Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("Key").GetString());
+        Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("Description").GetString());
+        Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("EventTopic").GetString());
+        Assert.Equal("1.0.0", emptyPayload.RootElement.GetProperty("EventVersion").GetString());
+        Assert.False(emptyPayload.RootElement.GetProperty("HasEventSchemaValidation").GetBoolean());
+        Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("EventSchemaRegistryProviderId").GetString());
+        Assert.Equal("TriggerValidationFailed", emptyPayload.RootElement.GetProperty("EventValidationErrorCode").GetString());
+        Assert.False(emptyPayload.RootElement.GetProperty("HasCompensation").GetBoolean());
+        Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("CompensationMessagingTopic").GetString());
+        Assert.Equal("1.0.0", emptyPayload.RootElement.GetProperty("CompensationMessagingVersion").GetString());
+        Assert.Equal("event.partial", partialPayload.RootElement.GetProperty("EventSchemaContractKey").GetString());
+        Assert.Equal(string.Empty, partialPayload.RootElement.GetProperty("EventSchemaRegistryProviderId").GetString());
+        Assert.Equal(string.Empty, partialPayload.RootElement.GetProperty("EventValidationDsl").GetString());
+        Assert.Equal("TriggerValidationFailed", partialPayload.RootElement.GetProperty("EventValidationErrorCode").GetString());
+        Assert.Equal("command.partial", partialPayload.RootElement.GetProperty("CompensationSchemaContractKey").GetString());
+        Assert.Equal(string.Empty, partialPayload.RootElement.GetProperty("CompensationSchemaRegistryProviderId").GetString());
+        Assert.Equal("true", partialPayload.RootElement.GetProperty("CompensationConditionDslExpression").GetString());
+        Assert.Equal(string.Empty, partialPayload.RootElement.GetProperty("CompensationTransformationDsl").GetString());
+        Assert.NotEqual(string.Empty, fullPayload.RootElement.GetProperty("EventSchemaRegistryProviderId").GetString());
+        Assert.Equal("$.id != null", fullPayload.RootElement.GetProperty("EventValidationDsl").GetString());
+        Assert.Equal("EventRejected", fullPayload.RootElement.GetProperty("EventValidationErrorCode").GetString());
+        Assert.NotEqual(string.Empty, fullPayload.RootElement.GetProperty("CompensationSchemaRegistryProviderId").GetString());
+        Assert.Equal("payload.ok", fullPayload.RootElement.GetProperty("CompensationConditionDslExpression").GetString());
+        Assert.Equal("map undo", fullPayload.RootElement.GetProperty("CompensationTransformationDsl").GetString());
+        Assert.Null(disabledCompensation);
+        Assert.NotNull(compensationWithoutSchema);
+        var messaging = Assert.IsType<MessagingTaskConfiguration>(compensationWithoutSchema!.Configuration);
+        Assert.Equal("commands.undo", messaging.Topic);
+        Assert.Equal(new SemanticVersion(1, 0, 0), messaging.Version);
+        Assert.Null(messaging.SchemaBinding);
+        var validationOnlyMessaging = Assert.IsType<MessagingTaskConfiguration>(compensationWithValidationOnlySchema!.Configuration);
+        Assert.NotNull(validationOnlyMessaging.SchemaBinding);
+        Assert.Equal("commands.validated", validationOnlyMessaging.SchemaBinding!.ContractKey);
+        Assert.True(validationOnlyMessaging.SchemaBinding.StrictMode);
+        Assert.True(validationOnlyMessaging.SchemaBinding.IsValidationEnabled);
+        Assert.True(compensationWithoutSchema.HasExecutionCondition);
+        Assert.Equal("true", ((DslConditionConfiguration)compensationWithoutSchema.ExecutionCondition!.Configuration).Expression.ToString());
+        Assert.True(compensationWithoutSchema.HasTransformation);
+        Assert.Null(compensationWithoutSchema.Transformation);
+        Assert.Equal("TriggerValidationFailed", validation.ErrorCode);
+        Assert.Equal(string.Empty, ((DslValidationConfiguration)validation.Configuration).Dsl);
+        Assert.Equal("true", ((DslConditionConfiguration)condition.Configuration).Expression.ToString());
+        Assert.Equal(TriggerType.Event, resolvedTriggerType);
+        Assert.Equal("knowl", emptyProvider);
+        Assert.Equal("custom", trimmedProvider);
+        Assert.Equal(new SemanticVersion(0, 2, 0), negativeVersion);
+    }
+
+    [Fact]
     public void AllowedActionsFollowVersionLifecycle()
     {
         var page = CreateContext().Page;
@@ -494,6 +906,82 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Null(blankTransformation);
         Assert.NotNull(mappedTransformation);
         Assert.IsType<DslTransformationConfiguration>(mappedTransformation!.Configuration);
+    }
+
+    [Fact]
+    public void PrivateValidationHelperMapsNamedAndFallbackValidationMembers()
+    {
+        var page = CreateContext().Page;
+
+        InvokePrivateGenericVoid(page, "ValidateInputModel", typeof(MixedMemberInvalidInput), new MixedMemberInvalidInput(), "MixedModel");
+        InvokePrivateGenericVoid(page, "ValidateInputModel", typeof(NullMemberInvalidInput), new NullMemberInvalidInput(), "NullMemberModel");
+
+        Assert.True(page.ModelState.ContainsKey("MixedModel.Key"));
+        Assert.True(page.ModelState.ContainsKey("MixedModel"));
+        Assert.True(page.ModelState.ContainsKey("NullMemberModel"));
+        Assert.True(page.ModelState.ContainsKey("NullMemberModel.Key"));
+    }
+
+    [Fact]
+    public void PrivateTriggerValidationAndPayloadHelpersCoverRemainingBranches()
+    {
+        var page = CreateContext().Page;
+        page.TriggerInput = new VersionDetailsModel.UpsertTriggerInput
+        {
+            TriggerType = TriggerType.Event.ToString(),
+            EventTopic = " ",
+            HasEventValidation = true,
+            EventValidationDsl = " ",
+            HasCompensation = true,
+            CompensationMessagingTopic = " ",
+            EventSchemaRegistryProviderId = "not-a-ulid"
+        };
+
+        InvokePrivate(page, "ValidateTriggerInput");
+
+        var payload = JsonSerializer.SerializeToDocument(InvokePrivateStatic<object>(
+            "BuildTriggerEditPayload",
+            new TriggerBindingModel
+            {
+                Id = "trigger-human-compensation",
+                Key = null!,
+                Description = null!,
+                TriggerType = TriggerType.Event,
+                TriggerChannel = new EventTriggerChannel
+                {
+                    Topic = null!,
+                    SchemaBinding = new SchemaBinding
+                    {
+                        ElementType = ElementType.Orchestration,
+                        ContractId = Id.New(),
+                        ContractKey = null!,
+                        RegistryProviderId = default
+                    }
+                },
+                CompensationDefinition = new CompensationDefinition
+                {
+                    CompensationTaskKind = TaskKind.HumanApproval,
+                    Configuration = new HumanApprovalTaskConfiguration(),
+                    ExecutionCondition = new ExecutionCondition
+                    {
+                        Engine = EngineType.DSL,
+                        Configuration = null!
+                    },
+                    Transformation = new TransformationDefinition
+                    {
+                        Engine = EngineType.DSL,
+                        Configuration = null!
+                    }
+                }
+            }));
+
+        Assert.True(page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventTopic)));
+        Assert.True(page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventValidationDsl)));
+        Assert.True(page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.CompensationMessagingTopic)));
+        Assert.True(page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventSchemaRegistryProviderId)));
+        Assert.Equal(string.Empty, payload.RootElement.GetProperty("Key").GetString());
+        Assert.Equal(string.Empty, payload.RootElement.GetProperty("EventTopic").GetString());
+        Assert.Equal(string.Empty, payload.RootElement.GetProperty("CompensationMessagingTopic").GetString());
     }
 
     private static TestContext CreateContext()
@@ -592,7 +1080,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             schemaContractCatalog,
             Options.Create(new OrchestratorDesignWebUIOptions { DefaultSchemaRegistryProviderKey = "knowl" }));
 
-        return new TestContext(page, versionService, stageService, triggerService, schemaContractCatalog);
+        return new TestContext(page, orchestrationService, versionService, stageService, triggerService, schemaContractCatalog);
     }
 
     private static OrchestrationDefinitionModel CreateOrchestration()
@@ -719,6 +1207,12 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         method.Invoke(model, args);
     }
 
+    private static void InvokePrivate(VersionDetailsModel model, string methodName, params object?[] args)
+    {
+        var method = typeof(VersionDetailsModel).GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(model, args);
+    }
+
     private static T InvokePrivateStatic<T>(string methodName, params object?[] args)
     {
         var method = typeof(VersionDetailsModel).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -727,6 +1221,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
 
     private sealed record TestContext(
         VersionDetailsModel Page,
+        IOrchestrationApplicationService OrchestrationService,
         IOrchestrationVersionApplicationService VersionService,
         IStageApplicationService StageService,
         ITriggerBindingApplicationService TriggerService,
@@ -737,6 +1232,24 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             yield return new ValidationResult("Model-level validation failed.");
+        }
+    }
+
+    private sealed class MixedMemberInvalidInput : IValidatableObject
+    {
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            yield return new ValidationResult("Named validation failed.", ["", "Key"]);
+            yield return new ValidationResult(null, []);
+        }
+    }
+
+    private sealed class NullMemberInvalidInput : IValidatableObject
+    {
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            yield return new ValidationResult("Null member validation failed.", null);
+            yield return new ValidationResult(null, ["Key"]);
         }
     }
 

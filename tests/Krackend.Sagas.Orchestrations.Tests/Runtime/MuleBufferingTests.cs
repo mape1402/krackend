@@ -51,6 +51,46 @@ public sealed class MuleBufferingTests
     }
 
     [Theory]
+    [InlineData(null, "saga-1", "saga-1", "trigger:artifact-1:saga-1")]
+    [InlineData(null, null, null, null)]
+    public async Task IntakeBufferMule_WhenTriggerCorrelationIsMissing_UsesSagaFallbackOrNoDeduplication(
+        string? correlationId,
+        string? sagaId,
+        string? expectedCorrelationId,
+        string? expectedDeduplicationKey)
+    {
+        var muleClient = Substitute.For<IMuleClient>();
+        Action<EnqueueOptions>? capturedOptions = null;
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<WorkItem>(),
+                Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
+        var workItem = new WorkItem
+        {
+            ArtifactId = "artifact-1",
+            IngressKind = IngressKind.Trigger,
+            MessageMetadata = sagaId is null && correlationId is null
+                ? null
+                : new OrchestrationMessageMetadata
+                {
+                    CorrelationId = correlationId,
+                    SagaId = sagaId
+                }
+        };
+
+        await buffer.EnqueueWorkAsync(workItem, CancellationToken.None);
+
+        var options = new EnqueueOptions();
+        capturedOptions!(options);
+        Assert.Equal(expectedCorrelationId, options.CorrelationId);
+        Assert.Equal(expectedDeduplicationKey, options.DeduplicationKey);
+    }
+
+    [Theory]
     [InlineData("dispatch-1", "task-1", 2, "backchannel:dispatch-1:2")]
     [InlineData("", "task-1", 3, "backchannel:task-1:3")]
     public async Task IntakeBufferMule_WhenWorkItemIsBackchannel_EnqueuesBackchannelActionWithDeduplication(
@@ -139,6 +179,37 @@ public sealed class MuleBufferingTests
         var options = new EnqueueOptions();
         capturedOptions!(options);
         Assert.Null(options.CorrelationId);
+        Assert.Null(options.DeduplicationKey);
+    }
+
+    [Fact]
+    public async Task IntakeBufferMule_WhenBackchannelMetadataHasNoDispatchOrTask_EnqueuesWithoutDeduplication()
+    {
+        var muleClient = Substitute.For<IMuleClient>();
+        Action<EnqueueOptions>? capturedOptions = null;
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<WorkItem>(),
+                Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+        var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
+        var workItem = new WorkItem
+        {
+            ArtifactId = "artifact-1",
+            IngressKind = IngressKind.Backchannel,
+            MessageMetadata = new OrchestrationMessageMetadata
+            {
+                CorrelationId = "correlation-1"
+            }
+        };
+
+        await buffer.EnqueueWorkAsync(workItem, CancellationToken.None);
+
+        var options = new EnqueueOptions();
+        capturedOptions!(options);
+        Assert.Equal("correlation-1", options.CorrelationId);
         Assert.Null(options.DeduplicationKey);
     }
 
@@ -260,8 +331,42 @@ public sealed class MuleBufferingTests
             options.DeduplicationKey);
     }
 
+    [Fact]
+    public void MuleRemoteCommandDispatcher_BuildDeduplicationKeyHandlesTaskFallbackNullSegments()
+    {
+        var dispatcherType = typeof(RemoteCommandDispatchAction).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule.MuleRemoteCommandDispatcher",
+            throwOnError: true)!;
+        var method = dispatcherType.GetMethod(
+            "BuildDeduplicationKey",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var full = (string)method.Invoke(null, [
+            new RemoteCommand
+            {
+                OrchestrationInstanceId = "instance-1",
+                TaskExecutionId = "task-1",
+                TaskKey = "inventories.reserve",
+                RemoteCommandTransport = RemoteCommandTransport.Messaging,
+                SettingsPayload = "payload"
+            }
+        ])!;
+        var sparse = (string)method.Invoke(null, [
+            new RemoteCommand
+            {
+                TaskExecutionId = "task-1",
+                TaskKey = null,
+                RemoteCommandTransport = RemoteCommandTransport.Messaging,
+                SettingsPayload = null
+            }
+        ])!;
+
+        Assert.Equal("instance-1:task-1:inventories.reserve:Messaging:payload", full);
+        Assert.Equal(":task-1::Messaging:", sparse);
+    }
+
     [Theory]
     [InlineData("attempt-1", null, "attempt-1")]
+    [InlineData(" ", "instance-1", "instance-1")]
     [InlineData(null, "instance-1", "instance-1")]
     public async Task MuleRemoteCommandDispatcher_UsesAttemptOrInstanceDeduplicationFallbacks(
         string? taskExecutionAttemptId,

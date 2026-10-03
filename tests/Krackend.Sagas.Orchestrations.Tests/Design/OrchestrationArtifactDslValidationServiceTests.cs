@@ -470,6 +470,44 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
         service.Validate(version);
 
         analyzer.DidNotReceiveWithAnyArgs().Analyze(default!);
+
+        version.StageDefinitions[0].TaskDefinitions[0].Transformation = DslTransformation("target { SaleId: $_metadata.Id }");
+
+        service.Validate(version);
+
+        analyzer.DidNotReceiveWithAnyArgs().Analyze(default!);
+    }
+
+    [Fact]
+    public void ValidateAcceptsBranchRuleDslConditions()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        var document = Substitute.For<ITransformationDocument>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(document);
+        analyzer.Analyze(document).Returns(new SemanticAnalysisResult { Succeeded = true });
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        version.StageDefinitions[0].BranchRules.Add(new BranchRuleDefinition
+        {
+            Id = Id.New(),
+            FromType = ElementType.Stage,
+            FromId = version.StageDefinitions[0].Id,
+            NavigateToType = ElementType.Stage,
+            NavigateToId = Id.New(),
+            Condition = new ExecutionCondition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new DslConditionConfiguration
+                {
+                    Expression = new Expression("payload.ready == true")
+                }
+            }
+        });
+
+        service.Validate(version);
+
+        analyzer.Received(1).Analyze(document);
     }
 
     [Fact]

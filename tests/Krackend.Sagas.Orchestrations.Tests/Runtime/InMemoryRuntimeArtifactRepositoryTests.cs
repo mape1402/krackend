@@ -66,6 +66,34 @@ public sealed class InMemoryRuntimeArtifactRepositoryTests
     }
 
     [Fact]
+    public async Task QueriesThrowWhenArtifactsCannotBeFound()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetById(Id.New()));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            repository.GetByVersion("sales.sale.created", new SemanticVersion(9, 9, 9)));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetActive("missing.definition"));
+    }
+
+    [Fact]
+    public async Task ProjectionStateMethodsIgnoreMissingArtifacts()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
+        var missingId = Id.New();
+
+        await repository.MarkProjectionStarted(missingId, ingressGeneration: 1);
+        await repository.MarkReady(missingId, ingressGeneration: 1);
+        await repository.MarkProjectionFailed(missingId, ingressGeneration: 1, "missing");
+
+        Assert.Empty(await repository.GetAll());
+    }
+
+    [Fact]
     public async Task DeactivateActiveArtifactsRetiresOtherArtifactsAndTheirIngressConfigurations()
     {
         using var provider = CreateProvider();

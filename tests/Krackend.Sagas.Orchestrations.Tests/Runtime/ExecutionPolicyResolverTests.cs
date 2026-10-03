@@ -25,6 +25,33 @@ public sealed class ExecutionPolicyResolverTests
     }
 
     [Fact]
+    public void ConstructorUsesDefaultOptionsWhenOptionsWrapperIsNull()
+    {
+        var resolver = new DefaultExecutionPolicyResolver(null!, CreateRegistry());
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.default-options")));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, result.ResolvedPolicy.ProviderKey);
+    }
+
+    [Fact]
+    public void ResolveRejectsNullRequestAndTask()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions());
+
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!));
+        Assert.Throws<ArgumentNullException>(() => resolver.Resolve(new ExecutionPolicyResolutionRequest
+        {
+            StageKey = "stage-one",
+            Task = null!
+        }));
+        Assert.Throws<ArgumentNullException>(() => new DefaultExecutionPolicyResolver(
+            Options.Create(new RuntimeExecutionOptions()),
+            null!));
+    }
+
+    [Fact]
     public void ResolveLetsTaskPolicyOverrideStageOrchestrationRuntimeAndEnvironmentDefaults()
     {
         var resolver = CreateResolver(new RuntimeExecutionOptions
@@ -112,6 +139,29 @@ public sealed class ExecutionPolicyResolverTests
 
         Assert.False(result.Succeeded);
         Assert.Equal("ExecutionSandboxRequired", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveTreatsBuiltInExtensionKeyWithWhitespaceAsInternal()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = new ExecutionPolicyArtifact
+            {
+                DefaultProviderKey = ExecutionConstants.BuiltInLocalProvider,
+                RequireSandboxForExternalExtensions = true
+            },
+            RuntimeNodeCapabilities = RuntimeNodeCapabilitiesArtifact.LocalDefaults
+        });
+        var task = TaskArtifactFor("task.builtin") with
+        {
+            ExtensionKey = $" {ExtensionConstants.BuiltInExtensionKey} "
+        };
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, result.ResolvedPolicy.ProviderKey);
     }
 
     [Fact]
@@ -401,10 +451,136 @@ public sealed class ExecutionPolicyResolverTests
         Assert.Equal(45, result.ResolvedPolicy.TimeoutSeconds);
     }
 
+    [Fact]
+    public void ResolveTreatsNullPoliciesAndCapabilityCollectionsAsUnconstrained()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = null!,
+            RuntimeNodePolicy = null!,
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = null!,
+                SupportedExecutionModes = null!,
+                AvailableSecrets = null!,
+                SupportsNetwork = true
+            }
+        });
+        var task = TaskArtifactFor("task.null-policy") with
+        {
+            ExecutionPolicy = null!,
+            RuntimeRequirements = null!
+        };
+
+        var result = resolver.Resolve(new ExecutionPolicyResolutionRequest
+        {
+            StageKey = "stage-one",
+            Task = task,
+            OrchestrationPolicy = null!,
+            StagePolicy = null!
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, result.ResolvedPolicy.ProviderKey);
+    }
+
+    [Fact]
+    public void ResolveUsesLocalDefaultsWhenRuntimeCapabilitiesAreNull()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            RuntimeNodeCapabilities = null!
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.null-capabilities")));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, result.ResolvedPolicy.ProviderKey);
+        Assert.Equal(ExecutionConstants.InProcessTrustedMode, result.ResolvedPolicy.ExecutionMode);
+    }
+
+    [Fact]
+    public void ResolveUsesTaskMinimumMemoryWhenPolicyDoesNotDeclareMemory()
+    {
+        var task = TaskArtifactFor("task.min-memory") with
+        {
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                MinMemoryMb = 64
+            }
+        };
+        var resolver = CreateResolver(new RuntimeExecutionOptions());
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(64, result.ResolvedPolicy.MemoryMb);
+    }
+
+    [Fact]
+    public void ResolveFallsBackToBuiltInProviderWhenAllowedProviderIntersectionIsEmpty()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = new ExecutionPolicyArtifact
+            {
+                AllowedProviderKeys = ["kubernetes"]
+            },
+            RuntimeNodePolicy = new ExecutionPolicyArtifact
+            {
+                AllowedProviderKeys = ["remote-worker"]
+            },
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = ["kubernetes", "remote-worker"],
+                SupportedExecutionModes = [ExecutionConstants.SandboxMode, ExecutionConstants.RemoteWorkerMode]
+            }
+        });
+
+        var result = resolver.Resolve(Request(TaskArtifactFor("task.no-provider")));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ExecutionModeNotSupported", result.ErrorCode);
+    }
+
+    [Fact]
+    public void ResolveTrimsForbiddenProvidersAndSecretInventories()
+    {
+        var resolver = CreateResolver(new RuntimeExecutionOptions
+        {
+            EnvironmentPolicy = new ExecutionPolicyArtifact
+            {
+                DefaultProviderKey = ExecutionConstants.BuiltInLocalProvider,
+                ForbiddenProviderKeys = [" ", " kubernetes "]
+            },
+            RuntimeNodeCapabilities = new RuntimeNodeCapabilitiesArtifact
+            {
+                SupportedProviderKeys = [ExecutionConstants.BuiltInLocalProvider],
+                SupportedExecutionModes = [ExecutionConstants.InProcessTrustedMode],
+                AvailableSecrets = [" billing-api-key "]
+            }
+        });
+        var task = TaskArtifactFor("task.secret-trimmed") with
+        {
+            RuntimeRequirements = new ExecutionRuntimeRequirementsArtifact
+            {
+                RequiredSecrets = [" billing-api-key "]
+            }
+        };
+
+        var result = resolver.Resolve(Request(task));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ExecutionConstants.BuiltInLocalProvider, result.ResolvedPolicy.ProviderKey);
+    }
+
     private static IExecutionPolicyResolver CreateResolver(RuntimeExecutionOptions options)
         => new DefaultExecutionPolicyResolver(
             Options.Create(options),
-            new ExecutionSandboxProviderRegistry(
+            CreateRegistry());
+
+    private static ExecutionSandboxProviderRegistry CreateRegistry()
+        => new(
             [
                 new TestExecutionSandboxProvider(
                     ExecutionConstants.BuiltInLocalProvider,
@@ -418,7 +594,7 @@ public sealed class ExecutionPolicyResolverTests
                     "remote-worker",
                     ExecutionConstants.RemoteWorkerMode,
                     isSandbox: true)
-            ]));
+            ]);
 
     private static ExecutionPolicyResolutionRequest Request(
         TaskArtifact task,

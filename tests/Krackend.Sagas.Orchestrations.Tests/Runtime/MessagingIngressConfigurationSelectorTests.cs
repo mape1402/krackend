@@ -26,6 +26,7 @@ public sealed class MessagingIngressConfigurationSelectorTests
 
         Assert.Throws<ArgumentNullException>(() => serializer.Serialize(null!));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize(" "));
+        Assert.Throws<InvalidOperationException>(() => serializer.Deserialize("null"));
     }
 
     [Fact]
@@ -151,6 +152,23 @@ public sealed class MessagingIngressConfigurationSelectorTests
         var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
 
         Assert.Equal("artifact-valid", Assert.Single(selected).ArtifactId);
+    }
+
+    [Fact]
+    public void SelectMatchingUsesArtifactIdWhenDefinitionKeyIsBlank()
+    {
+        var selector = CreateSelector();
+        var configuration = CreateTrigger(
+            "artifact-without-definition",
+            "orders.created",
+            "1.0.0",
+            " ",
+            "1.0.0",
+            DateTime.UtcNow);
+
+        var selected = selector.SelectMatching([configuration], "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-without-definition", Assert.Single(selected).ArtifactId);
     }
 
     private static IMessagingIngressConfigurationSelector CreateSelector()

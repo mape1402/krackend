@@ -267,6 +267,8 @@ public sealed class ControlPlaneConnectionTokenTests
         Assert.NotEqual("runtime-secret", protectedValue);
         Assert.Equal("runtime-secret", protector.Unprotect(protectedValue));
         Assert.NotEmpty(protector.Protect(null!));
+        Assert.ThrowsAny<Exception>(() => new DataProtectionControlPlaneRuntimeNodeSecretProtector(null!));
+        Assert.ThrowsAny<Exception>(() => protector.Unprotect(null!));
     }
 
     private static ControlPlaneConnectionTokenIssuer CreateIssuer(

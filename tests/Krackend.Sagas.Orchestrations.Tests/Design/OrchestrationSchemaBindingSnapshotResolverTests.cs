@@ -298,6 +298,92 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
     }
 
     [Fact]
+    public void PrivateBindingHelpersCoverMismatchAndCommandSnapshotFallbacks()
+    {
+        var commandBinding = CreateBinding("inventories.reserve", SchemaContractKind.Command);
+        commandBinding.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandRequest,
+            ContentHash = "command.request.hash"
+        };
+        var matchingSide = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        matchingSide.RegistryProviderKey = commandBinding.RegistryProviderKey;
+        matchingSide.ContractVersion = commandBinding.ContractVersion;
+        var wrongKey = CreateBinding("inventories.other", SchemaContractKind.CommandRequest);
+        wrongKey.RegistryProviderKey = commandBinding.RegistryProviderKey;
+        wrongKey.ContractVersion = commandBinding.ContractVersion;
+        var wrongVersion = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        wrongVersion.RegistryProviderKey = commandBinding.RegistryProviderKey;
+        wrongVersion.ContractVersion = new SemanticVersion(2, 0, 0);
+        var wrongProvider = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        wrongProvider.RegistryProviderKey = "other";
+        wrongProvider.ContractVersion = commandBinding.ContractVersion;
+
+        var sideBinding = InvokePrivateStatic<SchemaBinding>(
+            "CreateCommandSideBinding",
+            commandBinding,
+            wrongKey,
+            SchemaContractKind.CommandRequest,
+            true,
+            false);
+
+        Assert.Equal("command.request.hash", sideBinding!.Snapshot!.ContentHash);
+        Assert.True(InvokePrivateStatic<bool>(
+            "IsMatchingCommandSideBinding",
+            commandBinding,
+            matchingSide,
+            SchemaContractKind.CommandRequest));
+        Assert.False(InvokePrivateStatic<bool>(
+            "IsMatchingCommandSideBinding",
+            commandBinding,
+            wrongKey,
+            SchemaContractKind.CommandRequest));
+        Assert.False(InvokePrivateStatic<bool>(
+            "IsMatchingCommandSideBinding",
+            commandBinding,
+            wrongVersion,
+            SchemaContractKind.CommandRequest));
+        Assert.False(InvokePrivateStatic<bool>(
+            "IsMatchingCommandSideBinding",
+            commandBinding,
+            wrongProvider,
+            SchemaContractKind.CommandRequest));
+        Assert.False(InvokePrivateStatic<bool>(
+            "IsMatchingCommandSideBinding",
+            commandBinding,
+            null!,
+            SchemaContractKind.CommandRequest));
+
+        var currentBinding = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        currentBinding.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandRequest,
+            RegistryProviderKey = currentBinding.RegistryProviderKey,
+            ContractKey = currentBinding.ContractKey,
+            ContractVersion = currentBinding.ContractVersion.ToString(),
+            ContentHash = "current.hash"
+        };
+        var blankHash = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        blankHash.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContentHash = " "
+        };
+        var wrongSnapshotKind = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        wrongSnapshotKind.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandResponse,
+            RegistryProviderKey = wrongSnapshotKind.RegistryProviderKey,
+            ContractKey = wrongSnapshotKind.ContractKey,
+            ContractVersion = wrongSnapshotKind.ContractVersion.ToString(),
+            ContentHash = "wrong-kind.hash"
+        };
+
+        Assert.True(InvokePrivateStatic<bool>("HasCurrentSnapshot", currentBinding, SchemaContractKind.CommandRequest));
+        Assert.False(InvokePrivateStatic<bool>("HasCurrentSnapshot", blankHash, SchemaContractKind.CommandRequest));
+        Assert.False(InvokePrivateStatic<bool>("HasCurrentSnapshot", wrongSnapshotKind, SchemaContractKind.CommandRequest));
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenCommandReplyIsMissingAndResponseValidationIsDisabled_KeepsRequestSnapshot()
     {
         var version = CreateVersion(CreateBinding("sales.sale.created", SchemaContractKind.Event));
@@ -622,4 +708,12 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
             StrictMode = strictMode,
             IsValidationEnabled = strictMode
         };
+
+    private static T? InvokePrivateStatic<T>(string methodName, params object?[] args)
+    {
+        var method = Assert.Single(typeof(OrchestrationSchemaBindingSnapshotResolver)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+            .Where(candidate => candidate.Name == methodName && candidate.GetParameters().Length == args.Length));
+        return (T?)method.Invoke(null, args);
+    }
 }

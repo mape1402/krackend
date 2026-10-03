@@ -42,6 +42,21 @@ public sealed class DefaultSchemaContractCatalogTests
     }
 
     [Fact]
+    public async Task SearchUsesDefaultTakeWhenRequestedTakeIsNotPositive()
+    {
+        var provider = new RecordingCatalogProvider("knowl", [Item("knowl", "orders.created", "1.0.0")]);
+        var catalog = new DefaultSchemaContractCatalog([provider]);
+
+        var result = await catalog.SearchAsync(new SchemaContractCatalogSearchRequest
+        {
+            Take = 0
+        });
+
+        Assert.Equal("knowl", Assert.Single(result).ProviderKey);
+        Assert.Equal(25, provider.Requests.Single().Take);
+    }
+
+    [Fact]
     public async Task SearchFiltersProvidersCaseInsensitiveAndTrimsKey()
     {
         var knowl = new RecordingCatalogProvider("knowl", [Item("knowl", "orders.created", "1.0.0")]);

@@ -89,6 +89,25 @@ public sealed class EntityFrameworkStorageCustomizationTests
     }
 
     [Fact]
+    public void RuntimeAndControlPlaneStorageInvokeDataProtectionCustomization()
+    {
+        var runtimeConfigured = false;
+        var controlConfigured = false;
+        var runtimeServices = new ServiceCollection();
+        var controlServices = new ServiceCollection();
+
+        runtimeServices.AddOrchestratorRuntimeStorageEntityFramework(
+            options => options.UseInMemoryDatabase(Guid.NewGuid().ToString("N")),
+            storage => storage.ConfigureDataProtection = _ => runtimeConfigured = true);
+        controlServices.AddOrchestratorControlPlaneStorageEntityFramework(
+            options => options.UseInMemoryDatabase(Guid.NewGuid().ToString("N")),
+            storage => storage.ConfigureDataProtection = _ => controlConfigured = true);
+
+        Assert.True(runtimeConfigured);
+        Assert.True(controlConfigured);
+    }
+
+    [Fact]
     public void ControlPlaneStoragePersistsDistributionSecretProtectionKeysInDatabaseByDefault()
     {
         var databaseRoot = new InMemoryDatabaseRoot();

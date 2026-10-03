@@ -82,6 +82,59 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     }
 
     [Theory]
+    [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor", "saga")]
+    [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor", "instance")]
+    [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor", "correlation")]
+    [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor", "task")]
+    [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor", "reply")]
+    [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor", "saga")]
+    [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor", "instance")]
+    [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor", "correlation")]
+    [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor", "task")]
+    [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor", "reply")]
+    public async Task PublishInterceptorsAttachMessageMetadataWhenAnySupportedFieldIsPresent(
+        string assemblyName,
+        string typeName,
+        string field)
+    {
+        var messageMetadata = new OrchestrationMessageMetadata();
+        switch (field)
+        {
+            case "saga":
+                messageMetadata.SagaId = "saga-1";
+                break;
+            case "instance":
+                messageMetadata.OrchestrationInstanceId = "instance-1";
+                break;
+            case "correlation":
+                messageMetadata.CorrelationId = "correlation-1";
+                break;
+            case "task":
+                messageMetadata.TaskExecutionId = "task-1";
+                break;
+            case "reply":
+                messageMetadata.ReplyAddress = new OrchestrationReplyAddress
+                {
+                    Transport = "pigeon",
+                    SettingsPayload = """{"queue":"reply.queue"}"""
+                };
+                break;
+        }
+
+        var messageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        var resultAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
+        messageAccessor.Get().Returns(messageMetadata);
+        resultAccessor.Get().Returns(_ => null!);
+        var interceptor = CreatePublishInterceptor(assemblyName, typeName, messageAccessor, resultAccessor);
+        var context = new PublishContext();
+
+        await interceptor.Intercept(context, CancellationToken.None);
+
+        var metadata = GetPublishMetadata(context);
+        Assert.Same(messageMetadata, metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]);
+    }
+
+    [Theory]
     [InlineData("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors.KrackendPublishInterceptor")]
     [InlineData("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon", "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor")]
     public async Task PublishInterceptorsAttachPropagationMetadataAsIndividualItemsOnly(string assemblyName, string typeName)
@@ -201,14 +254,138 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     public void PropagationMappersHandleEmptyContextsAndNullValues(string assemblyName, string typeName)
     {
         var mapper = CreatePropagationMapper(assemblyName, typeName);
-        var emptyContext = new ConsumeContext();
+        var emptyContext = new ConsumeContext { RawMetadata = null };
+        var nullObjectMetadataContext = new ConsumeContext { RawMetadata = null };
+        var unusualObjectMetadataContext = new ConsumeContext
+        {
+            RawMetadata = new Dictionary<string, string>
+            {
+                ["duplicate"] = "raw-ignored",
+                ["raw-only"] = "raw-kept"
+            }
+        };
+        SetConsumeMetadataStorage(nullObjectMetadataContext, null);
+        SetConsumeMetadataItem(unusualObjectMetadataContext, "", "blank");
+        SetConsumeMetadataItem(unusualObjectMetadataContext, "Krackend.Sagas.Orchestrations.Reserved", "reserved");
+        SetConsumeMetadataItem(unusualObjectMetadataContext, "duplicate", JsonValue.Create("object-kept")!);
+        SetConsumeMetadataItem(unusualObjectMetadataContext, "object-only", "object-kept");
 
         var captured = CapturePropagationMetadata(mapper, emptyContext);
+        var capturedWithoutObjectMetadata = CapturePropagationMetadata(mapper, nullObjectMetadataContext);
+        var capturedUnusualObjectMetadata = CapturePropagationMetadata(mapper, unusualObjectMetadataContext);
         var convertedNull = InvokeConvertValue(mapper, null);
+        var target = new OrchestrationPropagationMetadata();
         InvokeMergeDictionary(mapper, new OrchestrationPropagationMetadata(), null);
+        InvokeMergePropagation(mapper, target, null);
+        InvokeMergeDictionary(mapper, target, new Dictionary<string, JsonNode>
+        {
+            ["nullable"] = null!
+        });
 
         Assert.Empty(captured.Items);
+        Assert.Empty(capturedWithoutObjectMetadata.Items);
+        Assert.Equal("object-kept", capturedUnusualObjectMetadata.Items["duplicate"]!.GetValue<string>());
+        Assert.Equal("object-kept", capturedUnusualObjectMetadata.Items["object-only"]!.GetValue<string>());
+        Assert.Equal("raw-kept", capturedUnusualObjectMetadata.Items["raw-only"]!.GetValue<string>());
+        Assert.DoesNotContain("Krackend.Sagas.Orchestrations.Reserved", capturedUnusualObjectMetadata.Items.Keys);
         Assert.Null(convertedNull);
+        Assert.True(target.Items.ContainsKey("nullable"));
+        Assert.Null(target.Items["nullable"]);
+    }
+
+    [Theory]
+    [MemberData(nameof(PropagationMapperTypes))]
+    public void PropagationMappersAttachNullItemValues(string assemblyName, string typeName)
+    {
+        var mapper = CreatePropagationMapper(assemblyName, typeName);
+        var context = new PublishContext();
+        var propagationMetadata = new OrchestrationPropagationMetadata();
+        propagationMetadata.Items["nullable"] = null!;
+
+        AttachPropagationMetadata(mapper, context, propagationMetadata);
+
+        var metadata = GetPublishMetadata(context);
+        Assert.True(metadata.ContainsKey("nullable"));
+        Assert.Null(metadata["nullable"]);
+    }
+
+    [Fact]
+    public async Task ClientPublishInterceptorAttachesSagaIdAndReplyAddressMetadata()
+    {
+        var resultAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
+
+        foreach (var messageMetadata in new[]
+        {
+            new OrchestrationMessageMetadata { SagaId = "saga-1" },
+            new OrchestrationMessageMetadata { OrchestrationInstanceId = "instance-1" },
+            new OrchestrationMessageMetadata { CorrelationId = "correlation-1" },
+            new OrchestrationMessageMetadata { TaskExecutionId = "task-1" },
+            new OrchestrationMessageMetadata { ReplyAddress = new OrchestrationReplyAddress { Transport = "messaging" } }
+        })
+        {
+            var messageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+            messageAccessor.Get().Returns(messageMetadata);
+            resultAccessor.Get().Returns(_ => null!);
+            var interceptor = CreatePublishInterceptor(
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon",
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor",
+                messageAccessor,
+                resultAccessor);
+            var context = new PublishContext();
+
+            await interceptor.Intercept(context, CancellationToken.None);
+
+            var metadata = GetPublishMetadata(context);
+            Assert.Same(messageMetadata, metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]);
+        }
+
+        var emptyMessageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        emptyMessageAccessor.Get().Returns(_ => null!);
+        resultAccessor.Get().Returns(_ => null!);
+        var emptyInterceptor = CreatePublishInterceptor(
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon",
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor",
+            emptyMessageAccessor,
+            resultAccessor);
+        var emptyContext = new PublishContext();
+
+        await emptyInterceptor.Intercept(emptyContext, CancellationToken.None);
+
+        Assert.Empty(GetPublishMetadata(emptyContext));
+    }
+
+    [Fact]
+    public async Task ClientInterceptorsValidateConstructorArgumentsAndExecutionDelegate()
+    {
+        var messageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        var resultAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
+        var messageSetter = Substitute.For<IOrchestrationMessageMetadataSetter>();
+        var resultSetter = Substitute.For<IOrchestrationExecutionResultMetadataSetter>();
+
+        AssertWrappedArgumentNull(
+            "messageMetadataAccessor",
+            () => CreatePublishInterceptor(
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon",
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor",
+                null!,
+                resultAccessor));
+        AssertWrappedArgumentNull(
+            "resultMetadataAccessor",
+            () => CreatePublishInterceptor(
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon",
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor",
+                messageAccessor,
+                null!));
+        AssertWrappedArgumentNull(
+            "metadataSetter",
+            () => CreateClientConsumeInterceptor(null!, resultSetter));
+        AssertWrappedArgumentNull(
+            "resultMetadataSetter",
+            () => CreateClientConsumeInterceptor(messageSetter, null!));
+
+        var executionInterceptor = CreateClientConsumeExecutionInterceptor(messageSetter, resultSetter);
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await executionInterceptor.InvokeAsync(new ConsumeContext(), null!, CancellationToken.None));
     }
 
     [Fact]
@@ -453,6 +630,34 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         method.Invoke(null, [target, source]);
     }
 
+    private static void InvokeMergePropagation(
+        object mapper,
+        OrchestrationPropagationMetadata target,
+        OrchestrationPropagationMetadata? source)
+    {
+        var method = mapper.GetType()
+            .GetMethods(InstanceFlags | BindingFlags.Static)
+            .Single(candidate =>
+            {
+                if (candidate.Name != "Merge")
+                {
+                    return false;
+                }
+
+                var parameters = candidate.GetParameters();
+                return parameters.Length == 2 &&
+                    parameters[1].ParameterType == typeof(OrchestrationPropagationMetadata);
+            });
+        method.Invoke(null, [target, source]);
+    }
+
+    private static void AssertWrappedArgumentNull(string paramName, Action action)
+    {
+        var exception = Assert.Throws<TargetInvocationException>(action);
+        var argumentException = Assert.IsType<ArgumentNullException>(exception.InnerException);
+        Assert.Equal(paramName, argumentException.ParamName);
+    }
+
     private static Pigeon.Messaging.Consuming.Dispatching.IConsumeInterceptor CreateConsumeInterceptor(
         IOrchestrationMessageMetadataSetter messageSetter,
         IOrchestrationExecutionResultMetadataSetter resultSetter,
@@ -543,10 +748,19 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         metadata[key] = value;
     }
 
+    private static void SetConsumeMetadataStorage(
+        ConsumeContext context,
+        object? value)
+    {
+        var field = typeof(ConsumeContext).GetField("_metadata", InstanceFlags)!;
+        field.SetValue(context, value);
+    }
+
     private sealed class ThrowingMetadataValue
     {
         public string Broken => throw new InvalidOperationException("boom");
 
         public override string ToString() => "fallback";
     }
+
 }

@@ -397,6 +397,52 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
         Assert.Equal("1.0.0", capturedInput.Version);
     }
 
+    [Fact]
+    public async Task SaveUsesDefinitionNameWhenHydratedInputOmitsName()
+    {
+        var capturedInput = default(PayloadSchemaDesignInput);
+        var hydrator = Substitute.For<IPayloadSchemaDefinitionHydrator>();
+        hydrator.Hydrate(Arg.Any<PayloadSchemaDefinition>()).Returns(new PayloadSchemaDesignInput
+        {
+            Key = "audit_metadata",
+            Name = " ",
+            Version = "1.0.0"
+        });
+        var builder = Substitute.For<IPayloadSchemaBuilder>();
+        builder
+            .Build(
+                Arg.Do<PayloadSchemaDesignInput>(input => capturedInput = input),
+                Arg.Any<IReadOnlyCollection<SchemaTypeCatalogItem>>(),
+                Arg.Any<IReadOnlyCollection<FieldMetadataCatalogItem>>())
+            .Returns(new PayloadSchemaDesignResult
+            {
+                Succeeded = true,
+                JsonSchema = """{"type":"object"}"""
+            });
+        var service = new CapturingMetadataDescriptorApplicationService();
+        var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            service,
+            hydrator,
+            builder);
+
+        var result = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = "audit_metadata",
+                Name = "Audit Metadata Display",
+                Type = "object"
+            }
+        });
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.NotNull(capturedInput);
+        Assert.Equal("Audit Metadata Display", capturedInput!.Name);
+        Assert.Equal("Audit Metadata Display", service.LastUpsert!.DisplayName);
+    }
+
     private sealed class CapturingMetadataDescriptorApplicationService : IMetadataDescriptorApplicationService
     {
         public UpsertMetadataDescriptorCommand? LastUpsert { get; private set; }

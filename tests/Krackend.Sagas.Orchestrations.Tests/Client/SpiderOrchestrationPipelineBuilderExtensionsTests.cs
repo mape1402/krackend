@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Client.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Krackend.Sagas.Orchestrations.Client.Routing;
@@ -10,6 +11,8 @@ using Spider.Pipelines.Core;
 using Spider.Pipelines.PostProcessing;
 using Spider.Pipelines.PreProcessing;
 using System.Reflection;
+using System.Text.Json.Nodes;
+using SquirrelBox;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Client;
 
@@ -41,28 +44,41 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     [Fact]
     public void RequestRouteBuilderResolvesRoutesFallbacksAndRequiredMatches()
     {
+        var customAddress = new OrchestrationReplyAddress
+        {
+            Transport = "custom",
+            SettingsPayload = "{}"
+        };
         var builder = new OrchestrationTriggerRouteBuilder<PipelineRequest>()
             .When(
                 static request => request.Id == "sale-1",
                 static request => new { request.Id, Routed = true },
                 "events.sales.created",
                 "")
+            .When(static request => request.Id == "sale-custom", customAddress)
             .Otherwise("events.sales.fallback", "2.0.0");
 
         var matched = builder.Resolve(new PipelineRequest("sale-1"));
+        var custom = builder.Resolve(new PipelineRequest("sale-custom"));
         var fallback = builder.Resolve(new PipelineRequest("other"));
         var nullAddress = new OrchestrationTriggerRouteBuilder<PipelineRequest>()
-            .Otherwise(" ")
+            .Otherwise(customAddress)
             .Resolve(new PipelineRequest("anything"));
 
         Assert.True(matched.Matched);
         Assert.Contains("\"routed\":true", JsonSerializer.Serialize(matched.Payload), StringComparison.OrdinalIgnoreCase);
         Assert.True(MatchesTrigger(matched.Options, "events.sales.created", "1.0.0"));
+        Assert.True(custom.Matched);
+        Assert.Same(customAddress, custom.Options.TriggerAddress);
         Assert.True(fallback.Matched);
         Assert.True(IsPipelineRequestPayload(fallback.Payload, "other"));
         Assert.True(MatchesTrigger(fallback.Options, "events.sales.fallback", "2.0.0"));
         Assert.True(nullAddress.Matched);
-        Assert.Null(nullAddress.Options.TriggerAddress);
+        Assert.Same(customAddress, nullAddress.Options.TriggerAddress);
+        Assert.Null(new OrchestrationTriggerRouteBuilder<PipelineRequest>()
+            .Otherwise(" ")
+            .Resolve(new PipelineRequest("anything"))
+            .Options.TriggerAddress);
         Assert.False(new OrchestrationTriggerRouteBuilder<PipelineRequest>().Resolve(new PipelineRequest("none")).Matched);
         Assert.Throws<OrchestrationTriggerRouteMatchException>(() =>
             new OrchestrationTriggerRouteBuilder<PipelineRequest>()
@@ -106,28 +122,41 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     [Fact]
     public void ResponseRouteBuilderResolvesRoutesFallbacksAndRequiredMatches()
     {
+        var customAddress = new OrchestrationReplyAddress
+        {
+            Transport = "custom",
+            SettingsPayload = "{}"
+        };
         var builder = new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
             .When(
                 static (request, response) => request.Id == "sale-1" && response.Ok,
                 static (request, response) => new { request.Id, response.Ok },
                 "events.sales.completed",
                 "")
+            .When(static (request, _) => request.Id == "sale-custom", customAddress)
             .Otherwise(static (_, response) => response, "events.sales.fallback", "3.0.0");
 
         var matched = builder.Resolve(new PipelineRequest("sale-1"), new PipelineResponse(true));
+        var custom = builder.Resolve(new PipelineRequest("sale-custom"), new PipelineResponse(true));
         var fallback = builder.Resolve(new PipelineRequest("other"), new PipelineResponse(false));
         var nullAddress = new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
-            .Otherwise(" ")
+            .Otherwise(customAddress)
             .Resolve(new PipelineRequest("anything"), new PipelineResponse(true));
 
         Assert.True(matched.Matched);
         Assert.Contains("\"ok\":true", JsonSerializer.Serialize(matched.Payload), StringComparison.OrdinalIgnoreCase);
         Assert.True(MatchesTrigger(matched.Options, "events.sales.completed", "1.0.0"));
+        Assert.True(custom.Matched);
+        Assert.Same(customAddress, custom.Options.TriggerAddress);
         Assert.True(fallback.Matched);
         Assert.Equal(new PipelineResponse(false), fallback.Payload);
         Assert.True(MatchesTrigger(fallback.Options, "events.sales.fallback", "3.0.0"));
         Assert.True(nullAddress.Matched);
-        Assert.Null(nullAddress.Options.TriggerAddress);
+        Assert.Same(customAddress, nullAddress.Options.TriggerAddress);
+        Assert.Null(new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
+            .Otherwise(" ")
+            .Resolve(new PipelineRequest("anything"), new PipelineResponse(true))
+            .Options.TriggerAddress);
         Assert.False(new OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>()
             .Resolve(new PipelineRequest("none"), new PipelineResponse(false))
             .Matched);
@@ -755,6 +784,159 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.IsType<ArgumentNullException>(exception.InnerException);
     }
 
+    [Fact]
+    public void PrivateRestoreDeferredMetadataCoversInboxFallbacksAndReservedKeys()
+    {
+        var inboxAccessor = new TestInboxContextAccessor();
+        var messageMetadata = CreateBackchannelMetadata();
+        var propagationMetadata = new OrchestrationPropagationMetadata();
+        propagationMetadata.Items["tenant"] = JsonValue.Create("north")!;
+        inboxAccessor.Current = new InboxContext(
+            new InboxEntry
+            {
+                Metadata =
+                {
+                    [OrchestrationMetadataConstants.OrchestrationMessageMetadataKey] =
+                        JsonSerializer.Serialize(messageMetadata, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                    [OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+                        JsonSerializer.Serialize(propagationMetadata, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                    ["tenant"] = "south",
+                    ["orderId"] = "42",
+                    ["rawText"] = "hello",
+                    [" "] = "ignored",
+                    [OrchestrationMetadataConstants.TriggerMetadataKey] = """{"trigger":true}""",
+                    ["Krackend.Sagas.Orchestrations.Internal"] = "ignored"
+                }
+            },
+            "test",
+            ownsCompletion: false,
+            previous: null);
+        using var provider = CreateClientProvider(inboxAccessor);
+
+        InvokePrivateStatic("RestoreDeferredMessageMetadata", provider);
+
+        var restoredMessage = provider.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get();
+        var restoredPropagation = provider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get();
+        Assert.NotNull(restoredMessage?.ReplyAddress);
+        Assert.Equal("north", restoredPropagation.Items["tenant"]!.GetValue<string>());
+        Assert.Equal(42, restoredPropagation.Items["orderId"]!.GetValue<int>());
+        Assert.Equal("hello", restoredPropagation.Items["rawText"]!.GetValue<string>());
+        Assert.True(restoredPropagation.Items.ContainsKey(OrchestrationMetadataConstants.TriggerMetadataKey));
+        Assert.False(restoredPropagation.Items.ContainsKey("Krackend.Sagas.Orchestrations.Internal"));
+        Assert.False(restoredPropagation.Items.ContainsKey(" "));
+    }
+
+    [Fact]
+    public void PrivateRestoreDeferredMetadataStopsWhenStateAlreadyExistsOrInboxIsEmpty()
+    {
+        var inboxAccessor = new TestInboxContextAccessor
+        {
+            Current = new InboxContext(new InboxEntry(), "test", ownsCompletion: false, previous: null)
+        };
+        using var provider = CreateClientProvider(inboxAccessor);
+        provider.GetRequiredService<IOrchestrationMessageMetadataSetter>().Set(CreateBackchannelMetadata());
+        var existingPropagation = new OrchestrationPropagationMetadata();
+        existingPropagation.Items["existing"] = JsonValue.Create(true)!;
+        provider.GetRequiredService<IOrchestrationPropagationMetadataSetter>().Set(existingPropagation);
+
+        InvokePrivateStatic("RestoreDeferredMessageMetadata", provider);
+
+        Assert.True(provider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().Items["existing"]!.GetValue<bool>());
+        Assert.NotNull(provider.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get().ReplyAddress);
+
+        using var emptyProvider = CreateClientProvider(new TestInboxContextAccessor());
+        InvokePrivateStatic("RestoreDeferredPropagationMetadata", emptyProvider);
+        Assert.False(emptyProvider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().HasItems);
+
+        using var emptyInboxProvider = CreateClientProvider(new TestInboxContextAccessor
+        {
+            Current = new InboxContext(new InboxEntry(), "test", ownsCompletion: false, previous: null)
+        });
+        InvokePrivateStatic("RestoreDeferredMessageMetadata", emptyInboxProvider);
+        Assert.False(emptyInboxProvider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().HasItems);
+    }
+
+    [Fact]
+    public void PrivateRestoreDeferredMetadataIgnoresInvalidSerializedEnvelopes()
+    {
+        var inboxAccessor = new TestInboxContextAccessor
+        {
+            Current = new InboxContext(
+                new InboxEntry
+                {
+                    Metadata =
+                    {
+                        [OrchestrationMetadataConstants.OrchestrationMessageMetadataKey] = "{}",
+                        [OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] = "{not-json",
+                        ["fallback"] = "not-json"
+                    }
+                },
+                "test",
+                ownsCompletion: false,
+                previous: null)
+        };
+        using var provider = CreateClientProvider(inboxAccessor);
+
+        InvokePrivateStatic("RestoreDeferredMessageMetadata", provider);
+
+        Assert.Null(provider.GetRequiredService<IOrchestrationMessageMetadataAccessor>().Get().ReplyAddress);
+        Assert.Equal("not-json", provider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().Items["fallback"]!.GetValue<string>());
+
+        using var nullEnvelopeProvider = CreateClientProvider(new TestInboxContextAccessor
+        {
+            Current = new InboxContext(
+                new InboxEntry
+                {
+                    Metadata =
+                    {
+                        [OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] = "null"
+                    }
+                },
+                "test",
+                ownsCompletion: false,
+                previous: null)
+        });
+        InvokePrivateStatic("RestoreDeferredPropagationMetadata", nullEnvelopeProvider);
+        Assert.False(nullEnvelopeProvider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().HasItems);
+
+        var nullablePropagation = new OrchestrationPropagationMetadata();
+        nullablePropagation.Items["nullable"] = null!;
+        using var nullableEnvelopeProvider = CreateClientProvider(new TestInboxContextAccessor
+        {
+            Current = new InboxContext(
+                new InboxEntry
+                {
+                    Metadata =
+                    {
+                        [OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+                            JsonSerializer.Serialize(nullablePropagation, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                    }
+                },
+                "test",
+                ownsCompletion: false,
+                previous: null)
+        });
+        InvokePrivateStatic("RestoreDeferredPropagationMetadata", nullableEnvelopeProvider);
+        Assert.True(nullableEnvelopeProvider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().Items.ContainsKey("nullable"));
+
+        using var rawOnlyProvider = CreateClientProvider(new TestInboxContextAccessor
+        {
+            Current = new InboxContext(
+                new InboxEntry
+                {
+                    Metadata =
+                    {
+                        ["rawOnly"] = """{"kept":true}"""
+                    }
+                },
+                "test",
+                ownsCompletion: false,
+                previous: null)
+        });
+        InvokePrivateStatic("RestoreDeferredPropagationMetadata", rawOnlyProvider);
+        Assert.True(rawOnlyProvider.GetRequiredService<IOrchestrationPropagationMetadataAccessor>().Get().Items["rawOnly"]!["kept"]!.GetValue<bool>());
+    }
+
     private static bool MatchesTrigger(OrchestrationOperationOptions options, string topic, string version)
         {
             if (options?.TriggerAddress is null ||
@@ -786,6 +968,31 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
                 SettingsPayload = "{}"
             }
         };
+
+    private static ServiceProvider CreateClientProvider(IInboxContextAccessor inboxAccessor)
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.AddSingleton(inboxAccessor);
+        return services.BuildServiceProvider();
+    }
+
+    private static void InvokePrivateStatic(string methodName, params object?[] args)
+    {
+        var method = Assert.Single(typeof(OrchestrationPipelineBuilderExtensions)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Where(candidate => candidate.Name == methodName && candidate.GetParameters().Length == args.Length));
+        method.Invoke(null, args);
+    }
+
+    private sealed class TestInboxContextAccessor : IInboxContextAccessor
+    {
+        public InboxContext Current { get; set; } = null!;
+
+        public void Prepare()
+        {
+        }
+    }
 
     public sealed record PipelineRequest(string Id);
 

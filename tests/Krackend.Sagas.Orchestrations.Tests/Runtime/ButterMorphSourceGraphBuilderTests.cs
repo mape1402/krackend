@@ -127,4 +127,51 @@ public sealed class ButterMorphSourceGraphBuilderTests
         Assert.Contains("trigger", sources.Keys);
         Assert.Contains("trigger_2", sources.Keys);
     }
+
+    [Fact]
+    public void Build_WhenMetadataStagesAndTasksContainNullOrScalarValues_SkipsInvalidEntries()
+    {
+        var builder = new ButterMorphSourceGraphBuilder(new ButterMorphAliasNameFormatter());
+        var metadata = new JsonObject
+        {
+            ["nullable"] = null,
+            ["valid"] = JsonNode.Parse("""{"tenant":"demo"}""")
+        };
+        var context = new OrchestrationPayloadContext
+        {
+            ContextPayload = JsonNode.Parse(
+                """
+                {
+                  "stages": {
+                    "scalar-stage": "ignored",
+                    "empty-stage": {},
+                    "fulfillment": {
+                      "tasks": {
+                        "scalar-task": "ignored",
+                        "missing-payload": {},
+                        "reserve": {
+                          "request": { "sku": "sku-1" }
+                        }
+                      }
+                    }
+                  },
+                  "variables": null
+                }
+                """)!,
+            TriggerPayload = null!,
+            MetadataPayload = metadata,
+            StageKey = "fulfillment",
+            TaskKey = "reserve"
+        };
+
+        var sources = builder.Build(context);
+
+        Assert.Contains("context", sources.Keys);
+        Assert.Contains("valid", sources.Keys);
+        Assert.DoesNotContain("nullable", sources.Keys);
+        Assert.Contains("requests", sources.Keys);
+        Assert.Contains("responses", sources.Keys);
+        Assert.Contains("stages", sources.Keys);
+        Assert.Contains("variables", sources.Keys);
+    }
 }

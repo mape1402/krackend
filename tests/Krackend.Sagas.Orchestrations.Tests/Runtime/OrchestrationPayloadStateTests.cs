@@ -1,9 +1,14 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using System.Reflection;
+using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using System.Text.Json.Nodes;
 
 public sealed class OrchestrationPayloadStateTests
@@ -22,6 +27,18 @@ public sealed class OrchestrationPayloadStateTests
         Assert.Equal("sale-1", snapshot["trigger"]!["payload"]!["saleId"]!.GetValue<string>());
         Assert.NotNull(snapshot["stages"]);
         Assert.NotNull(snapshot["variables"]);
+    }
+
+    [Fact]
+    public void CreateInitialPayloadAcceptsNullTriggerPayload()
+    {
+        var state = CreatePayloadState();
+
+        var snapshot = Invoke<JsonNode>(state, "CreateInitialPayload", (object?)null);
+
+        Assert.NotNull(snapshot["trigger"]);
+        Assert.True(snapshot.AsObject().ContainsKey("stages"));
+        Assert.True(snapshot.AsObject().ContainsKey("variables"));
     }
 
     [Fact]
@@ -51,6 +68,27 @@ public sealed class OrchestrationPayloadStateTests
 
         Assert.True(legacyPayload["legacy"]!.GetValue<bool>());
         Assert.Equal("signal", signalPayload["saleId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void GetDispatchPayloadReturnsNullWhenInstanceAndSignalAreMissing()
+    {
+        var state = CreatePayloadState();
+
+        var dispatchPayload = Invoke<JsonNode?>(state, "GetDispatchPayload", null!, null!);
+
+        Assert.Null(dispatchPayload);
+    }
+
+    [Fact]
+    public void GetDispatchPayloadReturnsNullWhenTriggerEnvelopeHasNoPayload()
+    {
+        var state = CreatePayloadState();
+        var instance = Instance(JsonNode.Parse("""{"trigger":{},"stages":{},"variables":{}}"""));
+
+        var dispatchPayload = Invoke<JsonNode?>(state, "GetDispatchPayload", instance, JsonNode.Parse("""{"signal":true}""")!);
+
+        Assert.Null(dispatchPayload);
     }
 
     [Fact]
@@ -85,6 +123,155 @@ public sealed class OrchestrationPayloadStateTests
         Assert.True(task["response"]!["reserved"]!.GetValue<bool>());
     }
 
+    [Fact]
+    public void ApplyTaskPayloadsAcceptNullRequestAndResponsePayloads()
+    {
+        var state = CreatePayloadState();
+        var instance = Instance(JsonNode.Parse("""{"trigger":{"payload":{"saleId":"sale-1"}},"stages":{},"variables":{}}"""));
+
+        var withRequest = Invoke<JsonNode>(
+            state,
+            "ApplyTaskRequestPayload",
+            instance,
+            "inventory",
+            "inventories.reserve",
+            null!);
+        instance.SnapshotPayload = withRequest;
+        var withResponse = Invoke<JsonNode>(
+            state,
+            "ApplyCallbackPayload",
+            instance,
+            "inventory",
+            "inventories.reserve",
+            null!);
+
+        var task = withResponse["stages"]!["inventory"]!["tasks"]!["inventories.reserve"]!.AsObject();
+        Assert.True(task.ContainsKey("request"));
+        Assert.True(task.ContainsKey("response"));
+    }
+
+    [Fact]
+    public void ApplyTaskPayloadCreatesStructuredRootWhenSnapshotIsNull()
+    {
+        var state = CreatePayloadState();
+        var instance = Instance();
+
+        var withRequest = Invoke<JsonNode>(
+            state,
+            "ApplyTaskRequestPayload",
+            instance,
+            "inventory",
+            "inventories.reserve",
+            JsonNode.Parse("""{"sku":"sku-1"}""")!);
+
+        Assert.NotNull(withRequest["trigger"]);
+        Assert.Equal("sku-1", withRequest["stages"]!["inventory"]!["tasks"]!["inventories.reserve"]!["request"]!["sku"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ApplyTaskPayloadsAcceptMissingInstance()
+    {
+        var state = CreatePayloadState();
+
+        var withRequest = Invoke<JsonNode>(
+            state,
+            "ApplyTaskRequestPayload",
+            null!,
+            "inventory",
+            "inventories.reserve",
+            JsonNode.Parse("""{"sku":"sku-1"}""")!);
+        var withResponse = Invoke<JsonNode>(
+            state,
+            "ApplyCallbackPayload",
+            null!,
+            "inventory",
+            "inventories.reserve",
+            JsonNode.Parse("""{"reserved":true}""")!);
+
+        Assert.Equal("sku-1", withRequest["stages"]!["inventory"]!["tasks"]!["inventories.reserve"]!["request"]!["sku"]!.GetValue<string>());
+        Assert.True(withResponse["stages"]!["inventory"]!["tasks"]!["inventories.reserve"]!["response"]!["reserved"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void PayloadContextFactoryExtractsStructuredTriggerAndProjectsMetadataBranches()
+    {
+        var instance = Instance(JsonNode.Parse("""{"trigger":{"payload":{"saleId":"sale-1"}},"stages":{},"variables":{}}"""));
+        var propagation = new OrchestrationPropagationMetadata();
+        propagation.Items[OrchestrationMetadataConstants.LegacyTriggerMetadataKey] =
+            JsonNode.Parse("""{"legacy":true}""")!;
+        propagation.Items[OrchestrationMetadataConstants.TriggerMetadataKey] =
+            JsonNode.Parse("""{"current":true}""")!;
+        propagation.Items["alias-source"] = JsonNode.Parse("""{"value":7}""")!;
+        propagation.Items["self-null-source"] = JsonNode.Parse("""{"value":9}""")!;
+        propagation.Items["null-item"] = null!;
+        instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonSerializer.SerializeToNode(propagation)!;
+        var factory = new DefaultOrchestrationPayloadContextFactory();
+
+        var context = factory.Create(
+            instance,
+            "inventory",
+            "reserve",
+            [
+                null!,
+                CreateMetadataDescriptor(string.Empty, "alias-source"),
+                CreateMetadataDescriptor("missing", "missing-source"),
+                CreateMetadataDescriptor("alias-source", string.Empty),
+                CreateMetadataDescriptor("self-null-source", null!),
+                CreateMetadataDescriptor("alias", "alias-source"),
+                CreateMetadataDescriptor("null-alias", "null-item")
+            ]);
+
+        Assert.Equal("sale-1", context.TriggerPayload!["saleId"]!.GetValue<string>());
+        Assert.True(context.MetadataPayload![OrchestrationMetadataConstants.TriggerMetadataKey]!["current"]!.GetValue<bool>());
+        Assert.Null(context.MetadataPayload![OrchestrationMetadataConstants.LegacyTriggerMetadataKey]);
+        Assert.Equal(7, context.MetadataPayload!["alias-source"]!["value"]!.GetValue<int>());
+        Assert.Equal(9, context.MetadataPayload!["self-null-source"]!["value"]!.GetValue<int>());
+        Assert.Equal(7, context.MetadataPayload!["alias"]!["value"]!.GetValue<int>());
+        Assert.True(context.MetadataPayload.AsObject().ContainsKey("null-alias"));
+    }
+
+    [Fact]
+    public void PayloadContextFactoryCoversNullContextAndTryResolveGuardBranches()
+    {
+        var factory = new DefaultOrchestrationPayloadContextFactory();
+        var context = factory.Create(Instance(), "stage", "task");
+        var legacyContext = factory.Create(Instance(JsonNode.Parse("""{"legacy":true}""")), "stage", "task");
+        var explicitMetadataContext = Instance(JsonNode.Parse("""{"trigger":{"payload":{"saleId":"sale-2"}}}"""));
+        var propagation = new OrchestrationPropagationMetadata();
+        propagation.Items["Tenant"] = JsonValue.Create("north")!;
+        explicitMetadataContext.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonSerializer.SerializeToNode(propagation)!;
+        var descriptorContext = factory.Create(
+            explicitMetadataContext,
+            "stage",
+            "task",
+            [CreateMetadataDescriptor("tenant", "tenant")]);
+        var legacyOnlyContext = Instance(JsonNode.Parse("""{"trigger":{"payload":{"saleId":"sale-3"}}}"""));
+        var legacyPropagation = new OrchestrationPropagationMetadata();
+        legacyPropagation.Items[OrchestrationMetadataConstants.LegacyTriggerMetadataKey] =
+            JsonNode.Parse("""{"tenant":"legacy"}""")!;
+        legacyOnlyContext.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonSerializer.SerializeToNode(legacyPropagation)!;
+        var legacyMetadataContext = factory.Create(legacyOnlyContext, "stage", "task");
+
+        Assert.Null(context.ContextPayload);
+        Assert.Null(context.TriggerPayload);
+        Assert.True(legacyContext.TriggerPayload!["legacy"]!.GetValue<bool>());
+        Assert.Equal("north", descriptorContext.MetadataPayload!["tenant"]!.GetValue<string>());
+        Assert.Equal("legacy", legacyMetadataContext.MetadataPayload![OrchestrationMetadataConstants.TriggerMetadataKey]!["tenant"]!.GetValue<string>());
+        Assert.False(InvokeTryResolve(null!, "source", out _));
+        Assert.False(InvokeTryResolve(new Dictionary<string, JsonNode>(), string.Empty, out _));
+        Assert.Throws<TargetInvocationException>(() => InvokeTryResolve(
+            new Dictionary<string, JsonNode>
+            {
+                ["source"] = JsonValue.Create(1)!,
+                ["SOURCE"] = JsonValue.Create(2)!
+            },
+            "Source",
+            out _));
+    }
+
     private static object CreatePayloadState()
     {
         var type = typeof(IOrchestrationTimeoutProcessor).Assembly.GetType(
@@ -103,6 +290,31 @@ public sealed class OrchestrationPayloadStateTests
             ExecutionKey = "sales.sale.created",
             SnapshotPayload = snapshotPayload
         };
+
+    private static MetadataDescriptorArtifact CreateMetadataDescriptor(string key, string sourceKey)
+        => new(
+            Id.New(),
+            key,
+            sourceKey,
+            key,
+            string.Empty,
+            "JsonSchema",
+            """{"type":"object"}""",
+            $"{key}-hash");
+
+    private static bool InvokeTryResolve(
+        IReadOnlyDictionary<string, JsonNode> items,
+        string sourceKey,
+        out JsonNode? value)
+    {
+        var method = typeof(DefaultOrchestrationPayloadContextFactory).GetMethod(
+            "TryResolveMetadataItem",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        object?[] arguments = [items, sourceKey, null];
+        var result = (bool)method.Invoke(null, arguments)!;
+        value = (JsonNode?)arguments[2];
+        return result;
+    }
 
     private static T Invoke<T>(object target, string methodName, params object?[] args)
     {

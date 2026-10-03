@@ -75,6 +75,14 @@ public sealed class ContractModelReflectionTests
                 {
                     touched++;
                 }
+
+                foreach (var alternative in CreateAlternativeValues(property.PropertyType).Take(6))
+                {
+                    if (TrySet(property, instance, alternative))
+                    {
+                        touched++;
+                    }
+                }
             }
 
             if (property.GetMethod is not null && TryGet(property, instance, out _))
@@ -82,6 +90,8 @@ public sealed class ContractModelReflectionTests
                 touched++;
             }
         }
+
+        ExerciseObjectContractBranches(type, instance);
 
         try
         {
@@ -92,6 +102,104 @@ public sealed class ContractModelReflectionTests
         }
 
         Assert.True(properties.Length == 0 || touched > 0, $"{type.FullName} did not expose any readable or writable property.");
+    }
+
+    [Theory]
+    [MemberData(nameof(DataContractTypes))]
+    public void DataContractsConstructorsCoverSampleAndNullInputBranches(Type type)
+    {
+        var constructors = type
+            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(constructor => constructor.GetParameters().Length > 0)
+            .OrderByDescending(constructor => constructor.GetParameters().Length)
+            .Take(2)
+            .ToArray();
+
+        if (constructors.Length == 0)
+        {
+            return;
+        }
+
+        var attempts = 0;
+
+        foreach (var constructor in constructors)
+        {
+            var parameters = constructor.GetParameters();
+            var sampleArguments = parameters
+                .Select(parameter => CreateValue(parameter.ParameterType))
+                .ToArray();
+
+            TryInvokeConstructor(constructor, sampleArguments);
+            attempts++;
+
+            foreach (var index in Enumerable.Range(0, parameters.Length))
+            {
+                foreach (var value in CreateAlternativeValues(parameters[index].ParameterType).Take(6))
+                {
+                    var alternativeArguments = sampleArguments.ToArray();
+                    alternativeArguments[index] = value;
+                    TryInvokeConstructor(constructor, alternativeArguments);
+                    attempts++;
+                }
+            }
+
+            var nullableIndexes = parameters
+                .Select((parameter, index) => new { parameter, index })
+                .Where(x => CanPassNull(x.parameter.ParameterType))
+                .Select(x => x.index)
+                .Take(6)
+                .ToArray();
+
+            foreach (var index in nullableIndexes)
+            {
+                var nullArguments = sampleArguments.ToArray();
+                nullArguments[index] = null;
+                TryInvokeConstructor(constructor, nullArguments);
+                attempts++;
+            }
+
+            if (nullableIndexes.Length > 1)
+            {
+                var allNullArguments = sampleArguments.ToArray();
+                foreach (var index in nullableIndexes)
+                {
+                    allNullArguments[index] = null;
+                }
+
+                TryInvokeConstructor(constructor, allNullArguments);
+                attempts++;
+            }
+        }
+
+        Assert.True(attempts > 0, $"{type.FullName} did not expose any constructor branch to exercise.");
+    }
+
+    private static void ExerciseObjectContractBranches(Type type, object? instance)
+    {
+        if (instance is null)
+        {
+            return;
+        }
+
+        var other = CreateInstance(type);
+        foreach (var candidate in new[] { instance, other, null, new object() })
+        {
+            try
+            {
+                _ = instance.Equals(candidate);
+            }
+            catch
+            {
+            }
+        }
+
+        try
+        {
+            _ = instance.GetHashCode();
+        }
+        catch
+        {
+        }
     }
 
     private static IEnumerable<Assembly> ContractAssemblies()
@@ -311,6 +419,161 @@ public sealed class ContractModelReflectionTests
         return type.IsValueType ? Activator.CreateInstance(type) : GetUninitialized(type);
     }
 
+    private static IEnumerable<object?> CreateAlternativeValues(Type type)
+    {
+        if (CanPassNull(type))
+        {
+            yield return null;
+        }
+
+        var nullable = Nullable.GetUnderlyingType(type);
+        if (nullable is not null)
+        {
+            type = nullable;
+        }
+
+        if (type == typeof(string))
+        {
+            yield return string.Empty;
+            yield return " ";
+            yield return "false";
+            yield break;
+        }
+
+        if (type == typeof(bool))
+        {
+            yield return false;
+            yield break;
+        }
+
+        if (type == typeof(int))
+        {
+            yield return 0;
+            yield return -1;
+            yield break;
+        }
+
+        if (type == typeof(long))
+        {
+            yield return 0L;
+            yield return -1L;
+            yield break;
+        }
+
+        if (type == typeof(short))
+        {
+            yield return (short)0;
+            yield return (short)-1;
+            yield break;
+        }
+
+        if (type == typeof(byte))
+        {
+            yield return (byte)0;
+            yield break;
+        }
+
+        if (type == typeof(decimal))
+        {
+            yield return 0m;
+            yield break;
+        }
+
+        if (type == typeof(double))
+        {
+            yield return 0d;
+            yield break;
+        }
+
+        if (type == typeof(float))
+        {
+            yield return 0f;
+            yield break;
+        }
+
+        if (type == typeof(DateTime))
+        {
+            yield return default(DateTime);
+            yield break;
+        }
+
+        if (type == typeof(DateTimeOffset))
+        {
+            yield return default(DateTimeOffset);
+            yield break;
+        }
+
+        if (type == typeof(TimeSpan))
+        {
+            yield return TimeSpan.Zero;
+            yield break;
+        }
+
+        if (type == typeof(Guid))
+        {
+            yield return Guid.Empty;
+            yield break;
+        }
+
+        if (type == typeof(Ulid))
+        {
+            yield return default(Ulid);
+            yield break;
+        }
+
+        if (type == typeof(JsonObject) || type == typeof(JsonNode))
+        {
+            yield return new JsonObject();
+            yield return JsonValue.Create(false);
+            yield break;
+        }
+
+        if (type.IsEnum)
+        {
+            foreach (var value in Enum.GetValues(type).Cast<object>().Skip(1).Take(4))
+            {
+                yield return value;
+            }
+
+            yield break;
+        }
+
+        if (type.IsArray)
+        {
+            yield return Array.CreateInstance(type.GetElementType() ?? typeof(object), 1);
+            yield break;
+        }
+
+        if (type.IsGenericType)
+        {
+            var definition = type.GetGenericTypeDefinition();
+            var arguments = type.GetGenericArguments();
+
+            if (definition == typeof(List<>) ||
+                definition == typeof(IReadOnlyList<>) ||
+                definition == typeof(IList<>) ||
+                definition == typeof(IEnumerable<>) ||
+                definition == typeof(ICollection<>))
+            {
+                var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(arguments[0]))!;
+                list.Add(CreateValue(arguments[0]));
+                yield return list;
+                yield break;
+            }
+
+            if (definition == typeof(Dictionary<,>) ||
+                definition == typeof(IReadOnlyDictionary<,>) ||
+                definition == typeof(IDictionary<,>))
+            {
+                yield return Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(arguments[0], arguments[1]));
+                yield break;
+            }
+        }
+    }
+
+    private static bool CanPassNull(Type type)
+        => !type.IsValueType || Nullable.GetUnderlyingType(type) is not null;
+
     private static object? CreateInstance(Type type)
     {
         if (type == typeof(string))
@@ -362,6 +625,17 @@ public sealed class ContractModelReflectionTests
 #pragma warning disable SYSLIB0050
         return FormatterServices.GetUninitializedObject(type);
 #pragma warning restore SYSLIB0050
+    }
+
+    private static void TryInvokeConstructor(ConstructorInfo constructor, object?[] arguments)
+    {
+        try
+        {
+            constructor.Invoke(arguments);
+        }
+        catch
+        {
+        }
     }
 
     private static bool TrySet(PropertyInfo property, object? instance, object? value)

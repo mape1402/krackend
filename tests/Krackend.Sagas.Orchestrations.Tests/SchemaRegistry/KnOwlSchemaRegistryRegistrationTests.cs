@@ -50,6 +50,26 @@ public sealed class KnOwlSchemaRegistryRegistrationTests
         Assert.Contains(catalogProviders, catalogProvider => catalogProvider is KnOwlSchemaContractCatalogProvider);
     }
 
+    [Fact]
+    public void AddKrackendKnOwlSchemaRegistryPreservesTrailingSlashAndConfiguredTimeout()
+    {
+        var services = new ServiceCollection();
+
+        services.AddKrackendKnOwlSchemaRegistry(options =>
+        {
+            options.BaseUri = new Uri("https://knowl.local/api/");
+            options.Timeout = TimeSpan.FromSeconds(12);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var catalog = Assert.IsType<KnOwlControlPlaneContractCatalogHttpClient>(
+            provider.GetRequiredService<IKnOwlControlPlaneContractCatalogClient>());
+        var httpClient = GetHttpClient(catalog);
+
+        Assert.Equal(new Uri("https://knowl.local/api/"), httpClient.BaseAddress);
+        Assert.Equal(TimeSpan.FromSeconds(12), httpClient.Timeout);
+    }
+
     private static HttpClient GetHttpClient(KnOwlControlPlaneContractCatalogHttpClient catalog)
     {
         var field = typeof(KnOwlControlPlaneContractCatalogHttpClient)

@@ -144,6 +144,41 @@ public sealed class CompensateInstanceDecisionHandlerTests
         Assert.Equal("InstanceCompensated", transition.TransitionType);
     }
 
+    [Fact]
+    public void PrivateCompensationHelpersHandleFallbacksAndNullDiagnostics()
+    {
+        var instance = CreateInstance();
+        instance.SagaId = " ";
+        var trigger = new TriggerBindingArtifact(
+            Id.New(),
+            TriggerType.Event,
+            new EventTriggerChannelArtifact(null!, "orders.created", new SemanticVersion(1, 0, 0)),
+            true,
+            null!,
+            Compensation("commands.undo"));
+        var metadata = new Dictionary<string, JsonNode>();
+
+        var sagaId = InvokePrivateStatic<string>("GetSagaId", instance);
+        var task = InvokePrivateStatic<TaskArtifact>("CreateTriggerCompensationTask", trigger, "trigger.orders.created");
+        InvokePrivateStatic<object?>("CopyDiagnostics", metadata, null!, "Condition");
+        InvokePrivateStatic<object?>(
+            "CopyDiagnostics",
+            metadata,
+            new Dictionary<string, JsonNode>
+            {
+                ["nullable"] = null!,
+                ["path"] = JsonValue.Create("$.customer")!
+            },
+            "Transformation");
+
+        Assert.Equal(instance.Id.ToString(), sagaId);
+        Assert.NotNull(task);
+        Assert.Equal("trigger.orders.created", task!.Name);
+        Assert.True(metadata.ContainsKey("Transformation.nullable"));
+        Assert.Null(metadata["Transformation.nullable"]);
+        Assert.Equal("$.customer", metadata["Transformation.path"]!.GetValue<string>());
+    }
+
     private static OrchestrationInstance CreateInstance()
         => new()
         {
@@ -264,6 +299,15 @@ public sealed class CompensateInstanceDecisionHandlerTests
 
     private static MessagingTaskConfigurationArtifact MessagingConfiguration(string topic)
         => new(topic, new SemanticVersion(1, 0, 0), null!);
+
+    private static T? InvokePrivateStatic<T>(string methodName, params object?[] arguments)
+    {
+        var method = typeof(CompensateInstanceDecisionHandler).GetMethod(
+            methodName,
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        return (T?)method.Invoke(null, arguments);
+    }
 
     private sealed class CompensationFixture
     {

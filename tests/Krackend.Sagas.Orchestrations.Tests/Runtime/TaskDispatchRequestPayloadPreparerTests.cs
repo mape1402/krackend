@@ -1,5 +1,6 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
+using System.Reflection;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -263,6 +264,141 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
         Assert.Equal("request payload validation", capturedRequest.ValidationDsl);
     }
 
+    [Fact]
+    public async Task PrepareAsyncUsesExplicitPayloadAndHttpSchemaBindingForValidation()
+    {
+        OrchestrationValidationRequest? capturedRequest = null;
+        var validationExecutor = Substitute.For<IOrchestrationValidationExecutor>();
+        validationExecutor.ValidateAsync(
+                Arg.Do<OrchestrationValidationRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(OrchestrationValidationResult.Success());
+        var preparer = CreatePreparer(validationExecutor: validationExecutor);
+        var configuration = CreateHttpConfiguration(validationEnabled: true);
+
+        var result = await preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+        {
+            Instance = CreateInstance(),
+            StageKey = "inventory-reservation",
+            Task = CreateTask(configuration: configuration),
+            Configuration = configuration,
+            Payload = """{"saleId":"explicit-sale"}"""
+        });
+
+        Assert.Equal("explicit-sale", result.Payload!["saleId"]!.GetValue<string>());
+        Assert.NotNull(capturedRequest);
+        Assert.Same(configuration.SchemaBinding, capturedRequest.SchemaBinding);
+        Assert.Equal(string.Empty, capturedRequest.ValidationDsl);
+        Assert.Equal("explicit-sale", capturedRequest.Payload!["saleId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task PrepareAsyncSkipsValidationForConfigurationsWithoutRequestValidation()
+    {
+        var validationExecutor = Substitute.For<IOrchestrationValidationExecutor>();
+        var preparer = CreatePreparer(validationExecutor: validationExecutor);
+        var configuration = new HumanApprovalTaskConfigurationArtifact();
+
+        var result = await preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+        {
+            Instance = CreateInstance(),
+            StageKey = "approval",
+            Task = CreateTask(configuration: configuration),
+            Configuration = configuration
+        });
+
+        Assert.Equal("sale-1", result.Payload!["saleId"]!.GetValue<string>());
+        await validationExecutor
+            .DidNotReceive()
+            .ValidateAsync(Arg.Any<OrchestrationValidationRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PrepareAsyncUsesValidationFallbacksWhenAdapterDoesNotReturnDetails()
+    {
+        var validationExecutor = Substitute.For<IOrchestrationValidationExecutor>();
+            validationExecutor.ValidateAsync(
+                    Arg.Any<OrchestrationValidationRequest>(),
+                    Arg.Any<CancellationToken>())
+            .Returns(OrchestrationValidationResult.Failure(
+                string.Empty,
+                string.Empty,
+                new Dictionary<string, JsonNode>()));
+        var preparer = CreatePreparer(validationExecutor: validationExecutor);
+
+        var exception = await Assert.ThrowsAsync<TaskDispatchPreparationException>(() =>
+            preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+            {
+                Instance = CreateInstance(),
+                StageKey = "inventory-reservation",
+                Task = CreateTask(),
+                MessagingConfiguration = CreateMessagingConfiguration(validationEnabled: true)
+            }));
+
+        Assert.Equal("RequestValidationFailed", exception.ErrorCode);
+        Assert.Equal("Task request validation failed.", exception.Message);
+    }
+
+    [Fact]
+    public async Task PrepareAsyncUsesFallbackTransformationErrorWhenAdapterDoesNotReturnDetails()
+    {
+        var transformationExecutor = Substitute.For<IOrchestrationTransformationExecutor>();
+            transformationExecutor.TransformAsync(
+                    Arg.Any<OrchestrationTransformationRequest>(),
+                    Arg.Any<CancellationToken>())
+            .Returns(OrchestrationTransformationResult.Failure(
+                string.Empty,
+                string.Empty,
+                new Dictionary<string, JsonNode>()));
+        var preparer = CreatePreparer(transformationExecutor: transformationExecutor);
+
+        var exception = await Assert.ThrowsAsync<TaskDispatchPreparationException>(() =>
+            preparer.PrepareAsync(new TaskDispatchRequestPayloadPreparationRequest
+            {
+                Instance = CreateInstance(),
+                StageKey = "inventory-reservation",
+                Task = CreateTask(transformEnabled: true),
+                MessagingConfiguration = CreateMessagingConfiguration()
+            }));
+
+        Assert.Equal("TransformationFailed", exception.ErrorCode);
+        Assert.Equal("Task transformation failed.", exception.Message);
+    }
+
+    [Fact]
+    public void PrivateValidationErrorCodeHelperCoversNullBlankAndConfiguredCodes()
+    {
+        var validation = new ValidationArtifact(EngineType.DSL, new DslValidationConfigurationArtifact())
+        {
+            ErrorCode = "ConfiguredValidationFailed"
+        };
+        var blankValidation = new ValidationArtifact(EngineType.DSL, new DslValidationConfigurationArtifact())
+        {
+            ErrorCode = " "
+        };
+
+        Assert.Equal("AdapterValidationFailed", InvokePreparerPrivateStatic<string>(
+            "GetValidationErrorCode",
+            "AdapterValidationFailed",
+            null!,
+            "FallbackValidationFailed"));
+        Assert.Equal("ConfiguredValidationFailed", InvokePreparerPrivateStatic<string>(
+            "GetValidationErrorCode",
+            "",
+            validation,
+            "FallbackValidationFailed"));
+        Assert.Equal("FallbackValidationFailed", InvokePreparerPrivateStatic<string>(
+            "GetValidationErrorCode",
+            "",
+            blankValidation,
+            "FallbackValidationFailed"));
+        Assert.Equal("FallbackValidationFailed", InvokePreparerPrivateStatic<string>(
+            "GetValidationErrorCode",
+            "",
+            null!,
+            "FallbackValidationFailed"));
+    }
+
     private static DefaultTaskDispatchRequestPayloadPreparer CreatePreparer(
         IOrchestrationTransformationExecutor? transformationExecutor = null,
         IOrchestrationValidationExecutor? validationExecutor = null)
@@ -270,6 +406,17 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
             new DefaultOrchestrationPayloadContextFactory(),
             transformationExecutor ?? Substitute.For<IOrchestrationTransformationExecutor>(),
             validationExecutor ?? Substitute.For<IOrchestrationValidationExecutor>());
+
+    private static T InvokePreparerPrivateStatic<T>(string methodName, params object?[] args)
+    {
+        var method = Assert.Single(typeof(DefaultTaskDispatchRequestPayloadPreparer)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Where(candidate =>
+                candidate.Name == methodName &&
+                candidate.GetParameters().Length == args.Length));
+
+        return (T)method.Invoke(null, args)!;
+    }
 
     private static OrchestrationInstance CreateInstance()
         => new()
@@ -308,7 +455,9 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
         return instance;
     }
 
-    private static TaskArtifact CreateTask(bool transformEnabled = false)
+    private static TaskArtifact CreateTask(
+        bool transformEnabled = false,
+        ITaskConfigurationArtifact? configuration = null)
         => new(
             Id.New(),
             "inventories.reserve",
@@ -323,7 +472,7 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
             {
                 IsEnabled = transformEnabled
             },
-            CreateMessagingConfiguration(),
+            configuration ?? CreateMessagingConfiguration(),
             null,
             null,
             OnErrorPolicy.Stop,
@@ -357,6 +506,28 @@ public sealed class TaskDispatchRequestPayloadPreparerTests
                 ErrorCode = "RequestValidationFailed"
             },
         };
+
+    private static HttpTaskConfigurationArtifact CreateHttpConfiguration(bool validationEnabled = false)
+        => new(
+            new SchemaBindingArtifact(
+                Id.New(),
+                ElementType.Task,
+                Id.New(),
+                Id.New(),
+                "inventories.reserve.http",
+                new SemanticVersion(1, 0, 0),
+                Id.New(),
+                true)
+            {
+                IsValidationEnabled = validationEnabled
+            },
+            "inventory-base-url",
+            "/inventory/reservations",
+            "POST",
+            JsonNode.Parse("""{"x-correlation-id":"${correlationId}"}""")!,
+            JsonNode.Parse("""{"verbose":true}""")!,
+            [200, 201],
+            true);
 
     private static MetadataDescriptorArtifact CreateMetadataDescriptor(string key, string sourceKey)
         => new(

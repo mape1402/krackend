@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentValidation;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
@@ -26,6 +27,43 @@ public sealed class DesignCommandValidatorTests
         Assert.True(update.Validate(UpdateTask()).IsValid);
         Assert.True(create.Validate(CreateTask() with { TimeoutPolicy = null! }).IsValid);
         Assert.True(update.Validate(UpdateTask() with { TimeoutPolicy = null! }).IsValid);
+    }
+
+    [Fact]
+    public void TaskValidatorsAcceptOptionalPipelineSectionsWhenTheyAreOmitted()
+    {
+        var create = new CreateTaskDefinitionCommandValidator();
+        var update = new UpdateTaskDefinitionCommandValidator();
+
+        Assert.True(create.Validate(CreateTask() with
+        {
+            ExecutionCondition = null!,
+            Transformation = null!,
+            RetryPolicy = null!,
+            CompensationDefinition = null!
+        }).IsValid);
+        Assert.True(update.Validate(UpdateTask() with
+        {
+            ExecutionCondition = null!,
+            Transformation = null!,
+            RetryPolicy = null!,
+            CompensationDefinition = null!
+        }).IsValid);
+        Assert.True(create.Validate(CreateTask(retryPolicy: RetryWithoutCodes(maxRetries: 0))).IsValid);
+        Assert.True(update.Validate(UpdateTask(retryPolicy: RetryWithoutCodes(maxRetries: 0))).IsValid);
+    }
+
+    [Fact]
+    public void TaskValidatorsAcceptResponseSchemaValidationWhenDslIsProvided()
+    {
+        var create = new CreateTaskDefinitionCommandValidator();
+        var update = new UpdateTaskDefinitionCommandValidator();
+        var configuration = Messaging("inventories.reserve");
+        configuration.ResponseSchemaBinding = SchemaBindingFor("inventories.reserve.response", validationEnabled: true);
+        configuration.ResponseValidation = DslValidation("$payload.reserved == true");
+
+        Assert.True(create.Validate(CreateTask(configuration: configuration)).IsValid);
+        Assert.True(update.Validate(UpdateTask(configuration: configuration)).IsValid);
     }
 
     [Theory]
@@ -119,6 +157,190 @@ public sealed class DesignCommandValidatorTests
         Assert.True(create.Validate(CreateTask(key: "Inventory.Reserve_Request", configuration: Messaging(topic))).IsValid);
         Assert.True(update.Validate(UpdateTask(key: "Inventory.Reserve_Request", configuration: Messaging(topic))).IsValid);
         Assert.False(create.Validate(CreateTask(key: "inventory-reserve", configuration: Messaging(topic))).IsValid);
+    }
+
+    [Fact]
+    public void DefinitionAndBranchRuleValidatorsRejectInvalidIdentifiers()
+    {
+        var validDefinitionCreate = new CreateOrchestrationDefinitionCommand(
+            "sales.sale.created",
+            "Sale created",
+            ValidId,
+            "Creates a sale saga.",
+            ValidStageId,
+            ["sales"],
+            "tester");
+        var validDefinitionUpdate = new UpdateOrchestrationDefinitionCommand(
+            ValidId,
+            "Sale created",
+            ValidId,
+            "Updates a sale saga.",
+            ValidStageId,
+            ["sales"],
+            "tester");
+        var validBranchCreate = new CreateBranchRuleDefinitionCommand(
+            ElementType.Stage,
+            ValidId,
+            DslCondition("true"),
+            ElementType.Stage,
+            ValidStageId);
+        var validBranchUpdate = new UpdateBranchRuleDefinitionCommand(
+            ValidId,
+            ElementType.Stage,
+            ValidId,
+            DslCondition("true"),
+            ElementType.Stage,
+            ValidStageId);
+
+        Assert.True(new CreateOrchestrationDefinitionCommandValidator().Validate(validDefinitionCreate).IsValid);
+        Assert.True(new UpdateOrchestrationDefinitionCommandValidator().Validate(validDefinitionUpdate).IsValid);
+        Assert.False(new CreateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionCreate with { DomainId = "bad-domain" })
+            .IsValid);
+        Assert.False(new CreateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionCreate with { OwnerTeamId = "bad-team" })
+            .IsValid);
+        Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionUpdate with { DomainId = "bad-domain" })
+            .IsValid);
+        Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionUpdate with { OwnerTeamId = "bad-team" })
+            .IsValid);
+        Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionUpdate with { DomainId = "" })
+            .IsValid);
+        Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionUpdate with { OwnerTeamId = "" })
+            .IsValid);
+        Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionUpdate with { DomainId = null! })
+            .IsValid);
+        Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionUpdate with { OwnerTeamId = null! })
+            .IsValid);
+        Assert.True(new CreateBranchRuleDefinitionCommandValidator().Validate(validBranchCreate).IsValid);
+        Assert.True(new UpdateBranchRuleDefinitionCommandValidator().Validate(validBranchUpdate).IsValid);
+        Assert.False(new CreateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchCreate with { FromId = "bad-from" })
+            .IsValid);
+        Assert.False(new CreateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchCreate with { NavigateToId = "bad-to" })
+            .IsValid);
+        Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchUpdate with { FromId = "bad-from" })
+            .IsValid);
+        Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchUpdate with { NavigateToId = "bad-to" })
+            .IsValid);
+        Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchUpdate with { FromId = "" })
+            .IsValid);
+        Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchUpdate with { NavigateToId = "" })
+            .IsValid);
+        Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchUpdate with { FromId = null! })
+            .IsValid);
+        Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchUpdate with { NavigateToId = null! })
+            .IsValid);
+    }
+
+    [Fact]
+    public void PrivateValidatorHelpersCoverValidationRetryAndTriggerBranchCombinations()
+    {
+        var createTaskType = typeof(CreateTaskDefinitionCommandValidator);
+        var updateTaskType = typeof(UpdateTaskDefinitionCommandValidator);
+        var createTriggerType = typeof(CreateTriggerBindingCommandValidator);
+        var updateTriggerType = typeof(UpdateTriggerBindingCommandValidator);
+        var blankDsl = DslValidation(" ");
+        var pluginEngineValidation = new ValidationDefinition
+        {
+            Engine = EngineType.Plugin,
+            Configuration = new DslValidationConfiguration { Dsl = "payload.ok" }
+        };
+        var unsupportedValidation = new ValidationDefinition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new UnsupportedValidationConfiguration()
+        };
+        var zeroRetryWithoutCodes = RetryWithoutCodes(0);
+        var retryWithBlankCodes = RetryWithoutCodes(2);
+        retryWithBlankCodes.RetryableErrorCodes = [" "];
+        var retryWithCodes = Retry(2);
+        var retryWithNegativeDelay = Retry(2);
+        ((FixedRetryStrategy)retryWithNegativeDelay.Strategy).Delay = Duration.FromSeconds(-1);
+        var retryWithUnsupportedStrategy = Retry(2);
+        retryWithUnsupportedStrategy.StrategyType = RetryStrategyType.Custom;
+
+        foreach (var validatorType in new[] { createTaskType, updateTaskType })
+        {
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", null!, false));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", null!, true));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", blankDsl, false));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", blankDsl, true));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", pluginEngineValidation, true));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", unsupportedValidation, true));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", null!));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", zeroRetryWithoutCodes));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithBlankCodes));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithCodes));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithNegativeDelay));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithUnsupportedStrategy));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", new ExecutionCondition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new UnsupportedConditionConfiguration()
+            }));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedTransformation", new TransformationDefinition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new UnsupportedTransformationConfiguration()
+            }));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedMessagingConfiguration", new UnsupportedTaskConfiguration()));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsRequestValidationEnabled", new MessagingTaskConfiguration
+            {
+                Topic = "inventories.reserve",
+                HasSchemaValidation = true
+            }));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsResponseValidationEnabled", new MessagingTaskConfiguration
+            {
+                Topic = "inventories.reserve",
+                ResponseSchemaBinding = SchemaBindingFor("inventories.reserve.response", validationEnabled: true)
+            }));
+        }
+
+        foreach (var validatorType in new[] { createTriggerType, updateTriggerType })
+        {
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", null!, false));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", null!, true));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", blankDsl, false));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", blankDsl, true));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", pluginEngineValidation, true));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedValidation", unsupportedValidation, true));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedEventChannel", new UnsupportedTriggerChannel()));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedEventChannel", new EventTriggerChannel
+            {
+                Topic = " ",
+                HasSchemaValidation = true
+            }));
+        }
+
+        foreach (var validatorType in new[] { typeof(CreateBranchRuleDefinitionCommandValidator), typeof(UpdateBranchRuleDefinitionCommandValidator) })
+        {
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", null!));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", new ExecutionCondition
+            {
+                Engine = EngineType.Plugin,
+                Configuration = new DslConditionConfiguration { Expression = new Expression("true") }
+            }));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", new ExecutionCondition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new UnsupportedConditionConfiguration()
+            }));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", DslCondition("true")));
+        }
     }
 
     public static IEnumerable<object[]> InvalidTaskCreateCommands()
@@ -341,13 +563,58 @@ public sealed class DesignCommandValidatorTests
             TimeoutPolicy = Timeout(TimeoutBehavior.Reconcile)
         };
 
+    private static SchemaBinding SchemaBindingFor(string contractKey, bool validationEnabled = false)
+        => new()
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Task,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
+            ContractKey = contractKey,
+            ContractVersion = new SemanticVersion(1, 0, 0),
+            RegistryProviderId = Id.New(),
+            IsValidationEnabled = validationEnabled
+        };
+
+    private static T InvokePrivateStatic<T>(Type type, string methodName, params object?[] arguments)
+    {
+        arguments ??= [null];
+        var method = type
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(method => method.Name == methodName && method.GetParameters().Length == arguments.Length);
+
+        return (T)method.Invoke(null, arguments)!;
+    }
+
     private sealed class UnsupportedValidationConfiguration : IValidationConfiguration
     {
         public EngineType Engine => EngineType.DSL;
     }
 
+    private sealed class UnsupportedConditionConfiguration : IConditionConfiguration
+    {
+        public EngineType Engine => EngineType.DSL;
+    }
+
+    private sealed class UnsupportedTransformationConfiguration : ITransformationConfiguration
+    {
+        public EngineType Engine => EngineType.DSL;
+    }
+
+    private sealed class UnsupportedTaskConfiguration : ITaskConfiguration
+    {
+        public TaskKind Kind => TaskKind.Messaging;
+    }
+
     private sealed class UnsupportedTimeoutBehaviorPolicy : ITimeoutBehaviorPolicy
     {
         public TimeoutBehavior Behavior => TimeoutBehavior.Fail;
+    }
+
+    private sealed class UnsupportedTriggerChannel : ITriggerChannel
+    {
+        public TriggerType TriggerType => TriggerType.Event;
+
+        public SchemaBinding SchemaBinding { get; set; } = null!;
     }
 }

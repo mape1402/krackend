@@ -737,10 +737,49 @@ public sealed class ControlPlaneApplicationHandlersTests
             StageDefinitions = [Stage(Id.New(), "stage", 1)],
             VariableDefinitions = [Variable(Id.New(), "one"), Variable(Id.New(), "two")],
         };
+        var sparseDefinition = new OrchestrationDefinition
+        {
+            Id = Id.New(),
+            Key = "empty",
+            Name = "Empty",
+            Description = null,
+            Domain = null!,
+            DomainId = null,
+            DomainDisplayName = "Explicit domain",
+            OwnerTeam = null!,
+            OwnerTeamId = null,
+            OwnerTeamDisplayName = "Explicit team",
+            Tags = [],
+            IsActive = false,
+            CreatedOnUtc = DateTime.UtcNow,
+            CreatedBy = "operator",
+            UpdatedOnUtc = DateTime.UtcNow,
+            UpdatedBy = null
+        };
+        var sparseVersion = new OrchestrationVersion
+        {
+            Id = Id.New(),
+            OrchestrationDefinitionId = definition.Id,
+            Version = new SemanticVersion(3, 0, 0),
+            Status = OrchestrationVersionStatus.Draft,
+            VersionLabel = null,
+            Description = null,
+            Checksum = new Checksum("sparse"),
+            Notes = null,
+            TriggerBindings = null!,
+            StageDefinitions = null!,
+            VariableDefinitions = null!,
+            CreatedOnUtc = DateTime.UtcNow,
+            CreatedBy = "operator",
+            ApprovedBy = null,
+            UpdatedBy = null
+        };
 
         var domainModel = domainMapper.ToModel(domain);
         var definitionModel = definitionMapper.ToModel(definition);
+        var sparseDefinitionModel = definitionMapper.ToModel(sparseDefinition);
         var versionModel = versionMapper.ToModel(version);
+        var sparseVersionModel = versionMapper.ToModel(sparseVersion);
         var pagedDomains = domainMapper.ToPagedModel(new Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage.PagedResult<Domain>(1, 1, 1, 20, [domain]));
         var pagedDefinitions = definitionMapper.ToPagedModel(new DesignPagedResult(2, 3, 5, 10, [definition]));
         var pagedVersions = versionMapper.ToPagedModel(new Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage.PagedResult<OrchestrationVersion>(1, 1, 1, 25, [version]));
@@ -750,10 +789,23 @@ public sealed class ControlPlaneApplicationHandlersTests
         Assert.True(domainModel.IsActive);
         Assert.Equal("sales", definitionModel.DomainDisplayName);
         Assert.Equal("sales-team", definitionModel.OwnerTeamDisplayName);
+        Assert.Equal("Explicit domain", sparseDefinitionModel.DomainDisplayName);
+        Assert.Equal("Explicit team", sparseDefinitionModel.OwnerTeamDisplayName);
+        Assert.Equal(string.Empty, sparseDefinitionModel.Domain);
+        Assert.Equal(string.Empty, sparseDefinitionModel.OwnerTeam);
+        Assert.Equal(string.Empty, sparseDefinitionModel.UpdatedBy);
         Assert.Equal("2.0.0", versionModel.Version);
         Assert.Equal(1, versionModel.TriggerBindingsCount);
         Assert.Equal(1, versionModel.StageDefinitionsCount);
         Assert.Equal(2, versionModel.VariableDefinitionsCount);
+        Assert.Equal(string.Empty, sparseVersionModel.VersionLabel);
+        Assert.Equal(string.Empty, sparseVersionModel.Description);
+        Assert.Equal(string.Empty, sparseVersionModel.Notes);
+        Assert.Equal(0, sparseVersionModel.TriggerBindingsCount);
+        Assert.Equal(0, sparseVersionModel.StageDefinitionsCount);
+        Assert.Equal(0, sparseVersionModel.VariableDefinitionsCount);
+        Assert.Equal(string.Empty, sparseVersionModel.ApprovedBy);
+        Assert.Equal(string.Empty, sparseVersionModel.UpdatedBy);
         Assert.Single(pagedDomains.Rows);
         Assert.Equal(2, pagedDefinitions.PageNumber);
         Assert.Single(pagedDefinitions.Rows);
