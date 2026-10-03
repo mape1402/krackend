@@ -24,9 +24,14 @@ public sealed record TaskDispatchRequestPayloadPreparationRequest
     public required TaskArtifact Task { get; init; }
 
     /// <summary>
+    /// Gets the task configuration used by the runtime adapter.
+    /// </summary>
+    public ITaskConfigurationArtifact Configuration { get; init; }
+
+    /// <summary>
     /// Gets the messaging task configuration.
     /// </summary>
-    public required MessagingTaskConfigurationArtifact MessagingConfiguration { get; init; }
+    public MessagingTaskConfigurationArtifact MessagingConfiguration { get; init; }
 
     /// <summary>
     /// Gets published metadata descriptors used to project incoming metadata into stable aliases.

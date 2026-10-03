@@ -329,6 +329,11 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("ExecutionConditionJson");
 
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -444,6 +449,10 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                 {
                     b.Property<byte[]>("Id")
                         .HasColumnType("binary(16)");
+
+                    b.Property<string>("CompensationDefinition")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("CompensationDefinitionJson");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2048)

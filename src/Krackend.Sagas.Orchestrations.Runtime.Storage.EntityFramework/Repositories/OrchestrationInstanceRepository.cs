@@ -30,6 +30,20 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         => await DbContext.OrchestrationInstances.AsNoTracking().FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
             ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
 
+    public async Task<OrchestrationInstance> TryGetByStartIdempotencyKey(
+        string startIdempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(startIdempotencyKey))
+        {
+            return null;
+        }
+
+        var normalizedKey = startIdempotencyKey.Trim();
+        return await DbContext.OrchestrationInstances.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.StartIdempotencyKey == normalizedKey, cancellationToken);
+    }
+
     public async Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
     {
         var instance = await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
@@ -70,7 +84,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Created || x.Status == OrchestrationInstanceStatus.Running, cancellationToken),
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Waiting, cancellationToken),
             await query.CountAsync(x => x.CompletedOnUtc >= recentSinceUtc, cancellationToken),
-            await query.CountAsync(x => x.FailedOnUtc >= recentSinceUtc, cancellationToken),
+            await query.CountAsync(x => x.FailedOnUtc >= recentSinceUtc || x.Status == OrchestrationInstanceStatus.DeadLettered, cancellationToken),
             recentSinceUtc);
     }
 }

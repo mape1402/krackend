@@ -68,12 +68,16 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
 
         var recent = await repository.GetRecent(take: 2);
         var summary = await repository.GetSummary(since);
+        var promoted = await repository.TryGetByStartIdempotencyKey(created.StartIdempotencyKey);
+        var missing = await repository.TryGetByStartIdempotencyKey("missing-start-key");
 
         Assert.Equal([failed.Id, completed.Id], recent.Select(x => x.Id).ToArray());
         Assert.Equal(2, summary.Active);
         Assert.Equal(1, summary.Waiting);
         Assert.Equal(1, summary.CompletedRecent);
         Assert.Equal(1, summary.FailedRecent);
+        Assert.Equal(created.Id, promoted!.Id);
+        Assert.Null(missing);
     }
 
     [Fact]
@@ -313,6 +317,7 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
             Id = Id.New(),
             RuntimeOrchestrationArtifactId = Id.New(),
             TriggerIntakeId = Id.New(),
+            StartIdempotencyKey = $"start:{Guid.NewGuid():N}",
             OrchestrationDefinitionKey = "sales.sale.created",
             CorrelationId = Id.New().ToString(),
             SagaId = Id.New().ToString(),

@@ -318,6 +318,22 @@ OrchestratorMetadataConstants.MetadataKey // "Orchestrator.Metadata"
 - replaces `IMessagePublisher` with `PigeonMessagePublisher`
 - registers `IMessageConsumerRegistry`
 
+Krackend's Pigeon adapters preserve the normal Pigeon global settings callback and expose the full `IPigeonServiceBuilder` through an additional callback. Use it when the host needs Pigeon features that live outside `GlobalSettingsBuilder`, such as JSON serializer options:
+
+```csharp
+builder.Services
+    .AddKrackendOrchestrationsRuntime()
+    .AddPigeon(
+        builder.Configuration,
+        settings => settings.SetDomain("orders-runtime"),
+        pigeon => pigeon.ConfigureJsonOptions(options =>
+        {
+            options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        }));
+```
+
+The same full-builder overload is available from the Client Pigeon adapter.
+
 Use this package only in hosts that want Pigeon. The runtime core does not require it.
 
 ## Design Module

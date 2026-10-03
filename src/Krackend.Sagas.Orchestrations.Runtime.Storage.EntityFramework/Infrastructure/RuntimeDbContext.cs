@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
@@ -52,6 +53,8 @@ public sealed class RuntimeDbContext : DbContext
 
     public DbSet<RuntimeIngressConfiguration> RuntimeIngressConfigurations => Set<RuntimeIngressConfiguration>();
 
+    public DbSet<RuntimeExtensionPackage> RuntimeExtensionPackages => Set<RuntimeExtensionPackage>();
+
     public DbSet<RuntimeDataProtectionKeyEntity> DataProtectionKeys => Set<RuntimeDataProtectionKeyEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -68,6 +71,7 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureVariables(modelBuilder);
         ConfigureCompensations(modelBuilder);
         ConfigureIngressConfigurations(modelBuilder);
+        ConfigureRuntimeExtensionPackages(modelBuilder);
         ConfigureDataProtectionKeys(modelBuilder);
         modelBuilder.UseMuleModel();
         base.OnModelCreating(modelBuilder);
@@ -147,6 +151,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.TriggerIntakeId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.StartIdempotencyKey).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.SagaId).HasMaxLength(256).IsRequired();
@@ -161,6 +166,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.SnapshotPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.LastUpdatedOnUtc);
+        builder.HasIndex(x => x.StartIdempotencyKey).IsUnique();
         builder.HasIndex(x => x.CorrelationId);
         builder.HasIndex(x => x.SagaId);
     }
@@ -317,5 +323,23 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasIndex(x => new { x.RuntimeOrchestrationArtifactId, x.ConfigurationKey }).IsUnique();
         builder.HasIndex(x => new { x.IsActive, x.IngressTransport, x.IngressKind });
         builder.HasIndex(x => new { x.IsActive, x.RuntimeOrchestrationArtifactId });
+    }
+
+    private static void ConfigureRuntimeExtensionPackages(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<RuntimeExtensionPackage>();
+        builder.ToTable("RuntimeExtensionPackages");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.BundleId).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.ExtensionKey).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Version).HasMaxLength(64).HasConversion(new SemanticVersionConverter()).IsRequired();
+        builder.Property(x => x.Sha256).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.SizeBytes).IsRequired();
+        builder.Property(x => x.Manifest).HasConversion(new RuntimeExtensionManifestConverter()).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.StatusReason).HasMaxLength(4000).IsRequired(false);
+        builder.HasIndex(x => new { x.ExtensionKey, x.Version, x.Status });
+        builder.HasIndex(x => new { x.BundleId, x.ExtensionKey, x.Version }).IsUnique();
     }
 }

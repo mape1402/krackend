@@ -50,6 +50,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         cancellationToken.ThrowIfCancellationRequested();
 
         var stages = (version.StageDefinitions ?? [])
+            .Where(x => x.IsEnabled)
             .OrderBy(x => x.Order)
             .ThenBy(x => x.Key, StringComparer.Ordinal)
             .ToArray();
@@ -98,6 +99,7 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         cancellationToken.ThrowIfCancellationRequested();
 
         var stages = (version.StageDefinitions ?? [])
+            .Where(x => x.IsEnabled)
             .OrderBy(x => x.Order)
             .ThenBy(x => x.Key, StringComparer.Ordinal)
             .ToArray();
@@ -123,6 +125,89 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             Sources = sources,
             Target = null,
             Signature = BuildSignature(sources, null)
+        };
+
+        return context;
+    }
+
+    /// <inheritdoc />
+    public async Task<OrchestrationSchemaContext> BuildForTaskCompensation(
+        OrchestrationVersion version,
+        Id taskDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var stages = GetEnabledStages(version);
+        var targetStage = stages.FirstOrDefault(stage => GetEnabledTasks(stage)
+            .Any(task => task.Id.Equals(taskDefinitionId)));
+
+        if (targetStage is null)
+        {
+            throw new InvalidOperationException($"Task '{taskDefinitionId}' was not found in orchestration version '{version.Id}'.");
+        }
+
+        var targetTask = GetEnabledTasks(targetStage).First(task => task.Id.Equals(taskDefinitionId));
+
+        var sources = new List<OrchestrationSchemaSource>();
+        AddTriggerSources(version, sources);
+        AddTriggerMetadataSource(sources);
+        await AddMetadataSources(sources, cancellationToken);
+        AddTaskSourcesThroughTarget(stages, targetStage, targetTask, sources);
+
+        var target = CreateCompensationTarget(targetStage, targetTask);
+        var context = new OrchestrationSchemaContext
+        {
+            OrchestrationVersionId = version.Id.ToString(),
+            OrchestrationVersion = version.Version.ToString(),
+            StageKey = targetStage.Key,
+            TaskKey = $"{targetTask.Key}.compensation",
+            Sources = sources,
+            Target = target,
+            Signature = BuildSignature(sources, target)
+        };
+
+        return context;
+    }
+
+    /// <inheritdoc />
+    public async Task<OrchestrationSchemaContext> BuildForTriggerCompensation(
+        OrchestrationVersion version,
+        Id triggerBindingId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var trigger = (version.TriggerBindings ?? [])
+            .Where(x => x.IsEnabled)
+            .FirstOrDefault(x => x.Id.Equals(triggerBindingId));
+
+        if (trigger is null)
+        {
+            throw new InvalidOperationException($"Trigger '{triggerBindingId}' was not found in orchestration version '{version.Id}'.");
+        }
+
+        var stages = GetEnabledStages(version);
+        var sources = new List<OrchestrationSchemaSource>();
+        AddTriggerSources(version, sources);
+        AddTriggerMetadataSource(sources);
+        await AddMetadataSources(sources, cancellationToken);
+        AddAllTaskSources(stages, sources);
+
+        var target = CreateCompensationTarget(trigger);
+        var context = new OrchestrationSchemaContext
+        {
+            OrchestrationVersionId = version.Id.ToString(),
+            OrchestrationVersion = version.Version.ToString(),
+            StageKey = "trigger",
+            TaskKey = $"{trigger.Key}.compensation",
+            Sources = sources,
+            Target = target,
+            Signature = BuildSignature(sources, target)
         };
 
         return context;
@@ -211,6 +296,47 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         }
     }
 
+    private static void AddTaskSourcesThroughTarget(
+        IEnumerable<StageDefinition> stages,
+        StageDefinition targetStage,
+        TaskDefinition targetTask,
+        ICollection<OrchestrationSchemaSource> sources)
+    {
+        foreach (var stage in stages)
+        {
+            var reachedTargetStage = ReferenceEquals(stage, targetStage);
+            var tasks = GetEnabledTasks(stage).ToArray();
+            var taskCutoff = reachedTargetStage
+                ? targetTask.Order
+                : int.MaxValue;
+
+            foreach (var task in tasks.Where(task => task.Order <= taskCutoff))
+            {
+                AddTaskRequestSource(stage, task, sources);
+                AddTaskResponseSource(stage, task, sources);
+            }
+
+            if (reachedTargetStage)
+            {
+                return;
+            }
+        }
+    }
+
+    private static void AddAllTaskSources(
+        IEnumerable<StageDefinition> stages,
+        ICollection<OrchestrationSchemaSource> sources)
+    {
+        foreach (var stage in stages)
+        {
+            foreach (var task in GetEnabledTasks(stage))
+            {
+                AddTaskRequestSource(stage, task, sources);
+                AddTaskResponseSource(stage, task, sources);
+            }
+        }
+    }
+
     private static int GetTargetOrderBoundary(IEnumerable<TaskDefinition> tasks, TaskDefinition targetTask)
     {
         if (!targetTask.ParallelGroupId.HasValue)
@@ -230,6 +356,13 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             .Where(x => x.IsEnabled)
             .OrderBy(x => x.Order)
             .ThenBy(x => x.Key, StringComparer.Ordinal);
+
+    private static StageDefinition[] GetEnabledStages(OrchestrationVersion version)
+        => (version.StageDefinitions ?? [])
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Order)
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .ToArray();
 
     private static void AddTaskRequestSource(
         StageDefinition stage,
@@ -280,6 +413,24 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             StageKey = stage.Key,
             TaskKey = task.Key,
             SchemaBinding = GetRequestSchemaBinding(task)
+        };
+
+    private static OrchestrationSchemaTarget CreateCompensationTarget(StageDefinition stage, TaskDefinition task)
+        => new()
+        {
+            Alias = BuildCompensationRequestAlias(task.Key),
+            StageKey = stage.Key,
+            TaskKey = task.Key,
+            SchemaBinding = GetRequestSchemaBinding(task.CompensationDefinition?.Configuration)
+        };
+
+    private static OrchestrationSchemaTarget CreateCompensationTarget(TriggerBinding trigger)
+        => new()
+        {
+            Alias = BuildCompensationRequestAlias(trigger.Key),
+            StageKey = "trigger",
+            TaskKey = trigger.Key,
+            SchemaBinding = GetRequestSchemaBinding(trigger.CompensationDefinition?.Configuration)
         };
 
     private static SchemaBinding CreateTriggerMetadataSchemaBinding()
@@ -383,14 +534,20 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
 
     private static SchemaBinding GetRequestSchemaBinding(TaskDefinition task)
-        => task.Configuration switch
+        => GetRequestSchemaBinding(task.Configuration);
+
+    private static SchemaBinding GetRequestSchemaBinding(ITaskConfiguration configuration)
+        => configuration switch
         {
             MessagingTaskConfiguration messaging => SelectRequestBinding(messaging),
             _ => null
         };
 
     private static SchemaBinding GetResponseSchemaBinding(TaskDefinition task)
-        => task.Configuration switch
+        => GetResponseSchemaBinding(task.Configuration);
+
+    private static SchemaBinding GetResponseSchemaBinding(ITaskConfiguration configuration)
+        => configuration switch
         {
             MessagingTaskConfiguration messaging => messaging.ResponseSchemaBinding,
             _ => null
@@ -426,6 +583,9 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
 
     private static string BuildTaskReplyAlias(string taskKey)
         => SanitizeAlias($"{taskKey}_reply");
+
+    private static string BuildCompensationRequestAlias(string ownerKey)
+        => SanitizeAlias($"{ownerKey}_compensation_request");
 
     private static void AddSource(
         ICollection<OrchestrationSchemaSource> sources,

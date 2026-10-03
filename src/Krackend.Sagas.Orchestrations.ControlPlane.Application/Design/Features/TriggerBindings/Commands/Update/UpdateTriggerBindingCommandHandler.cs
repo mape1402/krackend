@@ -39,6 +39,7 @@ public sealed class UpdateTriggerBindingCommandHandler : IRequestHandler<UpdateT
         current.TriggerChannel = request.TriggerChannel;
         current.IsEnabled = request.IsEnabled;
         current.Description = request.Description;
+        current.CompensationDefinition = request.CompensationDefinition;
 
         if (_schemaBindingSnapshotResolver is not null)
         {

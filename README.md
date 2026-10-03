@@ -157,6 +157,8 @@ Samples:
 - `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample`: Mongo-backed runtime host that uses the MongoDB EF Core provider while keeping Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, Runtime WebUI, and runtime APIs wired through the same orchestration packages.
 - `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample`: Mongo-backed control-plane host that uses the MongoDB EF Core provider with design, distribution, security, WebUI, artifact delivery endpoints, APIs, and seed data.
 
+Runtime samples register the Azure Service Bus Pigeon adapter only when `ConnectionStrings:AzureServiceBus` or `Pigeon:MessageBrokers:AzureServiceBus:ConnectionString` is configured. With the default empty value, the hosts still start for local storage, distribution, and WebUI smoke testing without requiring a broker.
+
 ## Sagas Orchestrations
 
 Krackend Sagas Orchestrations is split into composable libraries so the runtime, control plane, transport adapters, client integrations, and UI modules can evolve independently:
@@ -176,6 +178,8 @@ Orchestrator component keys are internal identifiers and use alphanumeric segmen
 
 Messaging topics are external broker addresses, not orchestrator keys. Event trigger topics, task command topics, and compensation topics are stored as captured after trimming and can follow the naming rules of the selected transport or provider, including dashes, underscores, dots, and uppercase characters.
 
+Enable flags are part of the deployed orchestration shape. Disabled triggers do not start the orchestration, disabled stages are skipped by the runtime, and disabled tasks are not dispatched. This is useful for staged rollouts or temporarily removing a branch from execution without deleting the design history.
+
 Orchestration metadata:
 
 Krackend propagates transversal metadata through transport metadata so business payloads stay focused on business data. Runtime command dispatches include `Krackend.Sagas.Orchestrations.Message.Metadata` for the current runtime backchannel and flat propagated entries such as `Krackend.Sagas.Orchestrations.Trigger.Metadata`, `audit.context`, and `security.context`. The runtime no longer duplicates propagated metadata inside the reserved `Krackend.Sagas.Orchestrations.Propagation.Metadata` envelope when publishing commands; that envelope is only understood as a legacy inbound shape for compatibility.
@@ -185,6 +189,75 @@ Krackend propagates transversal metadata through transport metadata so business 
 Client consumers forward incoming propagation metadata when publishing follow-up messages. Non-reserved metadata entries such as `audit.context` and `security.context` are attached back to the outgoing transport metadata, and `Krackend.Sagas.Orchestrations.Trigger.Metadata` is forwarded as the canonical trigger context. Reserved Krackend metadata keys are not blindly forwarded.
 
 When a client publishes a new trigger through `TriggerAddress`, the outgoing trigger context is produced by `IOrchestrationTriggerMetadataAccessor`. Hosts that want to keep the incoming trigger context in that new trigger publication should have the accessor return that context; otherwise the new trigger publication can replace `Krackend.Sagas.Orchestrations.Trigger.Metadata` with an empty trigger metadata payload.
+
+Runtime trigger promotion is idempotent when a stable start key is available. The Mule adapter maps the durable action deduplication key, or the durable action id when no deduplication key exists, into the runtime start idempotency key. The core runtime also falls back to the trigger metadata idempotency key. Retried trigger actions therefore continue the already-promoted `OrchestrationInstance` instead of creating a second saga instance after a partial start, timeout, or action re-execution. Hosts using Entity Framework runtime storage should apply a migration for the nullable `StartIdempotencyKey` column and its unique non-null index.
+
+Runtime task dispatch is adapter-based. Initial dispatch, retry dispatch, compensation dispatch, and runtime artifact compatibility validation resolve an installed task adapter by `TaskKind` instead of hardcoding the messaging transport in the engine. The built-in runtime registers the Messaging adapter by default; other task kinds must provide and register an `ITaskRuntimeAdapter` before artifacts using that kind can be deployed or dispatched.
+
+Retry policies are explicit error-code allowlists. When `MaxRetries` is greater than zero, `RetryableErrorCodes` must contain at least one non-empty code; an empty list means the runtime will not retry any failure. Runtime callbacks can also set `IsRetryableCandidate = false` to suppress retry even when the reported error code appears in the allowlist.
+
+Execution policies and extension bundles:
+
+Orchestration artifacts use an extension-ready schema. Existing linear artifacts are migrated at runtime to schema v2, which adds built-in capability metadata, required external capabilities, required bundles, and execution policy slots without changing the behavior of existing messaging orchestrations.
+
+The runtime resolves execution policy hierarchically: environment defaults, runtime-node overrides, orchestration overrides, stage overrides, and finally task overrides. The selected policy is validated against runtime node capabilities and stored on task attempt/dispatch metadata as `ResolvedExecutionPolicy`. The default provider is `built-in-local`, so existing tasks continue to execute through the installed in-process task adapters.
+
+External bundles are explicit runtime state. Artifacts that require an external bundle or capability are accepted only when the runtime node has an activated `RuntimeExtensionPackage` with the matching bundle id, extension key, semantic version, checksum when provided, and manifest capability. The in-memory repository is suitable for tests or simple hosts; `Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework` persists activation state in `Runtime.RuntimeExtensionPackages` for durable multi-replica hosts.
+
+That activation state is part of the shared Entity Framework runtime model, so relational hosts and the MongoDB EF provider used by the Mongo runtime sample validate bundles through the same repository contract.
+
+Hosts can configure runtime execution defaults through `Runtime:Execution` or `RuntimeExecutionOptions`:
+
+```csharp
+services.Configure<RuntimeExecutionOptions>(options =>
+{
+    options.EnvironmentPolicy = new ExecutionPolicyArtifact
+    {
+        DefaultProviderKey = ExecutionConstants.BuiltInLocalProvider,
+        AllowedProviderKeys = [ExecutionConstants.BuiltInLocalProvider],
+        RequireSandboxForExternalExtensions = true
+    };
+    options.RuntimeNodeCapabilities = RuntimeNodeCapabilitiesArtifact.LocalDefaults;
+});
+```
+
+Custom execution providers can be registered by hosts through the runtime builder:
+
+```csharp
+services
+    .AddKrackendOrchestrationsRuntime()
+    .AddExecutionSandboxProvider<KubernetesExecutionSandboxProvider>();
+```
+
+Recoverable runtime failures:
+
+When a task exhausts its configured retries, times out, or leaves the orchestration unable to advance, the runtime moves the instance into `DeadLettered` when the failure can still be reviewed by an operator. `DeadLettered` is not a broker queue; it is an explicit durable state that says the saga stopped, preserved its context, and can be resumed after the underlying issue is corrected. `Failed` and `Aborted` are reserved for outcomes that should not continue automatically.
+
+The Runtime API exposes recovery operations under the configured runtime API prefix, `/api/v1/runtime` by default:
+
+```http
+POST /api/v1/runtime/instances/{instanceId}/replay
+Content-Type: application/json
+
+{ "payload": "{...optional replacement payload...}" }
+```
+
+```http
+POST /api/v1/runtime/instances/{instanceId}/abort
+Content-Type: application/json
+
+{ "reason": "External order was cancelled by support." }
+```
+
+Replay finds the latest failed or timed-out task first and dispatches it again through the configured task adapter. If no failed task exists but a stage failed, replay restarts that stage. If neither exists, the runtime re-enters the forward engine with the preserved instance snapshot or the optional replacement payload. Abort marks the instance as `Aborted` and records the operator reason in metadata and transitions.
+
+Late callbacks are accepted conservatively. If an earlier timeout attempt eventually reports success after the instance already moved to `DeadLettered`, the task execution can be completed so idempotent downstream systems can reconcile correctly, while the instance remains in the operator-visible stopped state until replay or abort.
+
+Compensation:
+
+Tasks and event triggers can define compensating tasks. The runtime evaluates the compensation execution condition, applies the compensation transformation, and dispatches the transformed compensation request through the task adapter abstraction. This keeps compensation transport-agnostic and lets messaging, or another installed task kind, own its own dispatch behavior.
+
+ButterMorph compensation contexts include the data that is technically available at that point in the saga. Task compensation can use the trigger payload and metadata, forward task requests and replies up to the task being compensated, the failed task request when available, and previous compensation replies. Trigger compensation can use trigger payload and metadata plus completed forward task data. This lets a compensation step reverse the paired forward task and still emit additional compensating side effects when the design requires them.
 
 Security model:
 
@@ -328,6 +401,32 @@ app.MapOrchestratorRuntimeDistributionEndpoints();
 app.MapKrackendOrchestrationsRuntimeApi();
 app.MapOrchestratorRuntimeReactiveHub();
 ```
+
+Pigeon adapter configuration:
+
+Krackend keeps the regular Pigeon global settings callback and also exposes Pigeon's full `IPigeonServiceBuilder` so hosts can configure serializer options, custom serializers, route interceptors, or other Pigeon features without bypassing the Krackend adapter:
+
+```csharp
+using System.Text.Json;
+
+builder.Services
+    .AddKrackendOrchestrationsRuntime()
+    .AddPigeon(
+        builder.Configuration,
+        settings =>
+        {
+            settings.SetDomain("orders-runtime");
+        },
+        pigeon =>
+        {
+            pigeon.ConfigureJsonOptions(options =>
+            {
+                options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            });
+        });
+```
+
+The same full-builder overload is available for `Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon`.
 
 Minimal control-plane host setup:
 

@@ -94,17 +94,20 @@ builder.Services
     .AddKrackendOrchestrationsRuntime()
     .AddPigeon(builder.Configuration, pigeon =>
     {
-        pigeon.SetTopologyProvisioningMode(
-            TopologyProvisioningMode.OnStartup |
-            TopologyProvisioningMode.OnPublish |
-            TopologyProvisioningMode.OnConsume);
-        pigeon.UseAzureServiceBus(serviceBus =>
+        pigeon.SetTopologyProvisioningMode(string.IsNullOrWhiteSpace(serviceBusConnectionString)
+            ? TopologyProvisioningMode.Manual
+            : TopologyProvisioningMode.OnStartup |
+              TopologyProvisioningMode.OnPublish |
+              TopologyProvisioningMode.OnConsume);
+
+        if (!string.IsNullOrWhiteSpace(serviceBusConnectionString))
         {
-            if (!string.IsNullOrWhiteSpace(serviceBusConnectionString))
+            pigeon.UseAzureServiceBus(serviceBus =>
             {
                 serviceBus.ConnectionString = serviceBusConnectionString;
-            }
-        });
+            });
+        }
+
         pigeon.ConfigureConsumerExecution(execution =>
         {
             execution.MaxConcurrency = null;

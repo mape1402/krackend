@@ -11,6 +11,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" />
@@ -18,6 +19,10 @@
     <PackageReference Include="SquirrelBox" />
     <PackageReference Include="Testcontainers" Version="4.9.0" />
     <PackageReference Include="TurtlePath.Spider" Version="1.6.3" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="MongoDB.EntityFrameworkCore" Version="10.0.4" />
   </ItemGroup>
 
   <ItemGroup>

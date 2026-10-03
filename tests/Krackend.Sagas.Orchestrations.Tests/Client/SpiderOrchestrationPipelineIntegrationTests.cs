@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pelican.Mediator;
 using SquirrelBox;
 using Spider.Pipelines.Core;
+using System.Text.Json.Nodes;
 using System.Text.Json;
 using TurtlePath.Spider;
 
@@ -73,13 +74,22 @@ public sealed class SpiderOrchestrationPipelineIntegrationTests
                 SettingsPayload = """{"topic":"orchestrations.sales.sale.created","version":"1.0.2"}"""
             }
         };
+        var propagationMetadata = new OrchestrationPropagationMetadata();
+        propagationMetadata.Items["tenant"] = JsonValue.Create("north")!;
 
         var inboxEntry = new InboxEntry
         {
             Metadata =
             {
                 [OrchestrationMetadataConstants.OrchestrationMessageMetadataKey] =
-                    JsonSerializer.Serialize(messageMetadata, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                    JsonSerializer.Serialize(messageMetadata, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                [OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+                    JsonSerializer.Serialize(propagationMetadata, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                ["tenant"] = "south",
+                ["orderId"] = "42",
+                ["rawText"] = "hello",
+                ["emptyValue"] = "",
+                ["Krackend.Sagas.Orchestrations.Internal"] = "ignored"
             }
         };
 
@@ -97,6 +107,12 @@ public sealed class SpiderOrchestrationPipelineIntegrationTests
         Assert.Equal(1, publisher.PublishCount);
         Assert.NotNull(publisher.ResultMetadata);
         Assert.True(publisher.ResultMetadata.Succeeded);
+        Assert.NotNull(publisher.PropagationMetadata);
+        Assert.Equal("north", publisher.PropagationMetadata.Items["tenant"]!.GetValue<string>());
+        Assert.Equal(42, publisher.PropagationMetadata.Items["orderId"]!.GetValue<int>());
+        Assert.Equal("hello", publisher.PropagationMetadata.Items["rawText"]!.GetValue<string>());
+        Assert.Equal(string.Empty, publisher.PropagationMetadata.Items["emptyValue"]!.GetValue<string>());
+        Assert.False(publisher.PropagationMetadata.Items.ContainsKey("Krackend.Sagas.Orchestrations.Internal"));
     }
 
     [Fact]

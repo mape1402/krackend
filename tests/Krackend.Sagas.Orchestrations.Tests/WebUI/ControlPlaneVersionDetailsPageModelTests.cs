@@ -1,9 +1,11 @@
+using System.ComponentModel.DataAnnotations;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
@@ -94,6 +96,35 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public async Task TransitionVersionSurfacesInvalidOperationAndGenericErrors()
+    {
+        var invalidOperation = CreateContext();
+        invalidOperation.VersionService.Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("Runtime node credentials are not ready."));
+
+        var invalidOperationResult = await invalidOperation.Page.OnPostTransitionVersionAsync(
+            "orch-1",
+            "version-1",
+            "Deploy",
+            CancellationToken.None);
+
+        var generic = CreateContext();
+        generic.VersionService.Approve(Arg.Any<ApproveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new Exception("hidden"));
+
+        var genericResult = await generic.Page.OnPostTransitionVersionAsync(
+            "orch-1",
+            "version-1",
+            "Approve",
+            CancellationToken.None);
+
+        Assert.IsType<PageResult>(invalidOperationResult);
+        Assert.Equal("Runtime node credentials are not ready.", invalidOperation.Page.ErrorMessage);
+        Assert.IsType<PageResult>(genericResult);
+        Assert.Equal("The operation could not be completed. Review the captured data and try again.", generic.Page.ErrorMessage);
+    }
+
+    [Fact]
     public async Task UpsertStageCreatesUpdatesAndHandlesInvalidInput()
     {
         var context = CreateContext();
@@ -160,6 +191,32 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
 
         await context.StageService.Received(1).Delete(Arg.Any<DeleteStageDefinitionCommand>(), Arg.Any<CancellationToken>());
         await context.StageService.Received().Update(Arg.Is<UpdateStageDefinitionCommand>(x => x.Id == "stage-1" && x.Order == 0), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StageEnabledToggleUsesStageLifecycleCommands()
+    {
+        var context = CreateContext();
+
+        Assert.IsType<BadRequestResult>(await context.Page.OnPostSetStageEnabledAsync(null!));
+        Assert.IsType<BadRequestResult>(await context.Page.OnPostSetStageEnabledAsync(new VersionDetailsModel.SetStageEnabledRequest()));
+        Assert.IsType<JsonResult>(await context.Page.OnPostSetStageEnabledAsync(new VersionDetailsModel.SetStageEnabledRequest
+        {
+            StageId = "stage-1",
+            IsEnabled = true
+        }));
+        Assert.IsType<JsonResult>(await context.Page.OnPostSetStageEnabledAsync(new VersionDetailsModel.SetStageEnabledRequest
+        {
+            StageId = "stage-0",
+            IsEnabled = false
+        }));
+
+        await context.StageService.Received(1).Enable(
+            Arg.Is<EnableStageDefinitionCommand>(command => command.Id == "stage-1"),
+            Arg.Any<CancellationToken>());
+        await context.StageService.Received(1).Disable(
+            Arg.Is<DisableStageDefinitionCommand>(command => command.Id == "stage-0"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -242,6 +299,64 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         };
         Assert.IsType<PageResult>(await invalid.Page.OnPostUpsertTriggerAsync("orch-1", "version-1"));
         Assert.False(invalid.Page.ModelState.IsValid);
+    }
+
+    [Fact]
+    public async Task TriggerValidationCapturesOptionalDslCompensationAndProviderErrors()
+    {
+        var invalid = CreateContext();
+        invalid.Page.TriggerInput = new VersionDetailsModel.UpsertTriggerInput
+        {
+            Key = "sales.sale.created",
+            TriggerType = TriggerType.Event.ToString(),
+            EventTopic = "",
+            HasEventValidation = true,
+            EventValidationDsl = "",
+            HasCompensation = true,
+            CompensationMessagingTopic = "",
+            EventSchemaRegistryProviderId = "not-a-ulid"
+        };
+
+        var result = await invalid.Page.OnPostUpsertTriggerAsync("orch-1", "version-1");
+
+        Assert.IsType<PageResult>(result);
+        Assert.False(invalid.Page.ModelState.IsValid);
+        Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventTopic)));
+        Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventValidationDsl)));
+        Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.CompensationMessagingTopic)));
+        Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventSchemaRegistryProviderId)));
+    }
+
+    [Fact]
+    public async Task TriggerHandlersCreateCompensationDefinitionWithConditionTransformationAndSchema()
+    {
+        var context = CreateContext();
+        context.Page.TriggerInput = new VersionDetailsModel.UpsertTriggerInput
+        {
+            Key = "sales.sale.created",
+            TriggerType = TriggerType.Event.ToString(),
+            EventTopic = "events.sales.sale.created",
+            EventVersion = "1.0.0",
+            HasCompensation = true,
+            CompensationMessagingTopic = "commands.sales.cancel",
+            CompensationMessagingVersion = "1.0.0",
+            HasCompensationSchemaValidation = true,
+            CompensationSchemaContractKey = "commands.sales.cancel",
+            CompensationSchemaContractVersion = "1.0.0",
+            CompensationSchemaRegistryProviderId = "not-a-ulid",
+            CompensationSchemaStrictMode = true,
+            HasCompensationExecutionCondition = true,
+            CompensationConditionDslExpression = "",
+            HasCompensationTransformation = true,
+            CompensationTransformationDsl = "map compensation"
+        };
+
+        var result = await context.Page.OnPostUpsertTriggerAsync("orch-1", "version-1", CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        await context.TriggerService.Received(1).Create(
+            Arg.Is<CreateTriggerBindingCommand>(command => IsExpectedCompensatingTriggerCreateCommand(command)),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -332,7 +447,8 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             true,
             true,
             "not-a-ulid",
-            " provider ");
+            " provider ",
+            SchemaContractKind.Event);
 
         var eventChannel = Assert.IsType<EventTriggerChannel>(fallbackChannel);
         Assert.Equal("events.sales.sale.created", eventChannel.Topic);
@@ -353,6 +469,31 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal(["Deprecate", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
         Assert.Equal(["Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
         Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
+    }
+
+    [Fact]
+    public void PrivateFallbackHelpersHandleModelLevelErrorsAndSemanticVersionEdges()
+    {
+        var page = CreateContext().Page;
+        InvokePrivateGenericVoid(page, "ValidateInputModel", typeof(ModelLevelInvalidInput), new ModelLevelInvalidInput(), "ModelLevel");
+
+        var blankVersion = InvokePrivateStatic<SemanticVersion>(
+            "ParseSemanticVersion",
+            "",
+            new SemanticVersion(9, 9, 9));
+        var invalidVersion = InvokePrivateStatic<SemanticVersion>(
+            "ParseSemanticVersion",
+            "x.y.z",
+            new SemanticVersion(8, 8, 8));
+        var blankTransformation = InvokePrivateStatic<TransformationDefinition?>("BuildTransformation", " ");
+        var mappedTransformation = InvokePrivateStatic<TransformationDefinition?>("BuildTransformation", "map payload");
+
+        Assert.True(page.ModelState.ContainsKey("ModelLevel"));
+        Assert.Equal("9.9.9", blankVersion.ToString());
+        Assert.Equal("8.8.8", invalidVersion.ToString());
+        Assert.Null(blankTransformation);
+        Assert.NotNull(mappedTransformation);
+        Assert.IsType<DslTransformationConfiguration>(mappedTransformation!.Configuration);
     }
 
     private static TestContext CreateContext()
@@ -395,6 +536,10 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         stageService.Update(Arg.Any<UpdateStageDefinitionCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
         stageService.Delete(Arg.Any<DeleteStageDefinitionCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+        stageService.Enable(Arg.Any<EnableStageDefinitionCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+        stageService.Disable(Arg.Any<DisableStageDefinitionCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
         stageService.SetExecutionCondition(Arg.Any<SetStageExecutionConditionCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
@@ -533,10 +678,45 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
                channel.SchemaBinding.RegistryProviderKey == "knowl";
     }
 
+    private static bool IsExpectedCompensatingTriggerCreateCommand(CreateTriggerBindingCommand command)
+    {
+        var compensation = command.CompensationDefinition;
+        var configuration = compensation?.Configuration as MessagingTaskConfiguration;
+        var condition = compensation?.ExecutionCondition?.Configuration as DslConditionConfiguration;
+        var transformation = compensation?.Transformation?.Configuration as DslTransformationConfiguration;
+
+        return compensation is not null &&
+               compensation.CompensationTaskKind == TaskKind.Messaging &&
+               compensation.DispatchType == TaskDispatchType.FireAndForget &&
+               configuration is not null &&
+               configuration.Topic == "commands.sales.cancel" &&
+               configuration.Version.ToString() == "1.0.0" &&
+               configuration.HasSchemaValidation &&
+               configuration.SchemaBinding is not null &&
+               configuration.SchemaBinding.ContractKey == "commands.sales.cancel" &&
+               configuration.SchemaBinding.ContractVersion.ToString() == "1.0.0" &&
+               configuration.SchemaBinding.ContractKind == SchemaContractKind.Command &&
+               configuration.SchemaBinding.StrictMode &&
+               compensation.HasExecutionCondition &&
+               condition is not null &&
+               condition.Expression.ToString() == "true" &&
+               compensation.HasTransformation &&
+               transformation is not null &&
+               transformation.Dsl == "map compensation";
+    }
+
     private static Task InvokePrivateTaskAsync(VersionDetailsModel model, string methodName, params object?[] args)
     {
         var method = typeof(VersionDetailsModel).GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)!;
         return (Task)method.Invoke(model, args)!;
+    }
+
+    private static void InvokePrivateGenericVoid(VersionDetailsModel model, string methodName, Type genericType, params object?[] args)
+    {
+        var method = typeof(VersionDetailsModel)
+            .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .MakeGenericMethod(genericType);
+        method.Invoke(model, args);
     }
 
     private static T InvokePrivateStatic<T>(string methodName, params object?[] args)
@@ -551,6 +731,14 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         IStageApplicationService StageService,
         ITriggerBindingApplicationService TriggerService,
         ISchemaContractCatalog SchemaContractCatalog);
+
+    private sealed class ModelLevelInvalidInput : IValidatableObject
+    {
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            yield return new ValidationResult("Model-level validation failed.");
+        }
+    }
 
     private static JsonDocument SerializeJsonResult(IActionResult result)
     {

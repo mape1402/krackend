@@ -58,6 +58,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             result = await ApplyResponseValidationAsync(instance, stage, task, result, responsePayload, cancellationToken);
             var succeeded = result.Succeeded;
             var errorMessage = result.ErrorMessage;
+            var previousTaskStatus = task.Status;
+            var previousAttemptStatus = attempt.Status;
 
             dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
             dispatch.AcknowledgedOnUtc = succeeded ? now : null;
@@ -66,10 +68,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             task.Status = succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
             task.CompletedOnUtc = succeeded ? now : null;
             task.FailedOnUtc = succeeded ? null : now;
+            task.TimedOutOnUtc = succeeded ? null : task.TimedOutOnUtc;
             task.WaitingSinceUtc = null;
             attempt.Status = succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
             attempt.CompletedOnUtc = succeeded ? now : null;
             attempt.FailedOnUtc = succeeded ? null : now;
+            attempt.TimedOutOnUtc = succeeded ? null : attempt.TimedOutOnUtc;
             attempt.WaitingSinceUtc = null;
             attempt.ResponsePayload = responsePayload?.DeepClone();
             attempt.ErrorCode = succeeded ? null : result.ErrorCode;
@@ -104,7 +108,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 TaskExecutionId = task.Id,
                 TaskExecutionAttemptId = attempt.Id,
                 TransitionType = succeeded ? "TaskCallbackCompleted" : "TaskCallbackFailed",
-                FromStatus = TaskExecutionStatus.WaitingResponse.ToString(),
+                FromStatus = previousAttemptStatus == TaskExecutionStatus.WaitingResponse
+                    ? previousTaskStatus.ToString()
+                    : $"{previousTaskStatus}/{previousAttemptStatus}",
                 ToStatus = task.Status.ToString(),
                 OccurredOnUtc = now,
                 Message = succeeded

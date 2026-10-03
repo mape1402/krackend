@@ -11,6 +11,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.2.0] - 2026-10-02
+
+- ### Added
+
+  - Added extension-ready orchestration artifacts with schema versioning, required capability declarations, required bundle declarations, and migration of legacy artifacts to the current schema at runtime.
+  - Added runtime execution policies with environment, runtime-node, orchestration, stage, and task overrides, plus runtime node capability checks and resolved execution policy snapshots on attempts and dispatches.
+  - Added sandbox provider abstractions with the current `built-in-local` provider preserving existing in-process dispatch behavior while leaving the runtime ready for isolated providers such as Kubernetes-backed workers.
+  - Added public runtime sandbox provider registration so hosts can plug external execution adapters without depending on runtime internals.
+  - Added runtime extension package activation tracking with in-memory and Entity Framework repositories, including SQL Server sample migrations for durable `RuntimeExtensionPackages` storage.
+  - Added a MongoDB EF provider regression test for the runtime extension package model used by the Mongo runtime sample.
+
+- ### Changed
+
+  - Changed runtime dispatch to resolve execution policy before dispatch and route work through the selected execution provider while keeping the default behavior compatible with existing messaging tasks.
+  - Changed runtime artifact compatibility validation to reject external bundles/capabilities unless the runtime node has the matching activated package and manifest capability.
+  - Changed runtime sample hosts to register Azure Service Bus only when a connection string is configured, so local storage and WebUI smoke tests can run with the default empty sample configuration.
+
+------
+
+## [v4.1.0] - 2026-10-02
+
+- ### Added
+
+  - Added recoverable runtime lifecycle support with `DeadLettered` and `Aborted` instance statuses, plus Runtime API endpoints to replay recoverable instances from the failed task/stage or abort them after operator review.
+  - Added trigger compensation definitions so event triggers can participate in the compensation flow, including validation, artifact snapshots, design persistence, Runtime dispatch, and WebUI capture.
+  - Added ButterMorph designer support for compensation execution conditions and transformations on tasks and triggers, with context sources for trigger payload, metadata, forward task requests/replies, and previous compensation replies available at the point of compensation.
+  - Added stage enablement to design storage, artifacts, runtime execution, and recovery so disabled stages are skipped consistently after deployment.
+  - Added Runtime compensation dispatch through the task adapter abstraction so compensation uses the same transport-agnostic path as initial dispatch and retry.
+  - Added SQL Server sample migrations for trigger compensation and stage enablement.
+
+- ### Changed
+
+  - Changed exhausted retry and timeout handling to move recoverable orchestration instances into `DeadLettered` instead of treating every exhausted failure as a final unrecoverable failure.
+  - Changed retry semantics so configured retries require explicit `RetryableErrorCodes`; when no retry codes are configured, the runtime does not retry the failure.
+  - Updated Mongo Runtime sample assembly naming to avoid Windows path-length failures while keeping the original namespace.
+
+- ### Fixed
+
+  - Fixed late task success callbacks after a timeout/retry/dead-letter transition so idempotent downstream systems can still report the successful attempt without creating a duplicate saga or corrupting the dead-lettered instance state.
+  - Fixed compensation request dispatch so execution conditions and transformations run before publishing the compensating command payload.
+  - Fixed Runtime artifact compatibility validation to include trigger compensation.
+
+------
+
+## [v4.0.4] - 2026-10-01
+
+- ### Added
+
+  - Added Pigeon service builder callbacks to the Runtime and Client Pigeon adapters so hosts can configure the full Pigeon surface, including JSON serializer options such as `JsonSerializerOptions.PropertyNamingPolicy`.
+  - Added runtime task adapter resolution for dispatch, retry, compensation, and artifact compatibility validation, with Messaging registered as the default adapter.
+
+- ### Fixed
+
+  - Fixed runtime trigger promotion so Mule durable action retries and trigger idempotency metadata reuse the already-promoted orchestration instance instead of creating duplicate saga instances after partial start failures or action re-execution, with Entity Framework storage persisting the start idempotency key.
+  - Fixed runtime retry dispatch so it is transport-agnostic, uses the same adapter path as initial dispatch, and no longer assumes every retryable task is a messaging task.
+  - Fixed retry policy semantics so retries only occur for explicitly configured `RetryableErrorCodes`; empty retry-code lists do not retry, and `IsRetryableCandidate = false` suppresses retry even when the error code matches.
+
+------
+
 ## [v4.0.3] - 2026-10-01
 
 - ### Added

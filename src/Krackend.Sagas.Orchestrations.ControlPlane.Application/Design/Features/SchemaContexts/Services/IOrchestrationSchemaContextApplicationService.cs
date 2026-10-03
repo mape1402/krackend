@@ -24,4 +24,24 @@ public interface IOrchestrationSchemaContextApplicationService
     Task<OrchestrationSchemaContext> GetForStage(
         GetStageSchemaContextQuery query,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the schema context available before the requested task compensation is dispatched.
+    /// </summary>
+    /// <param name="query">Schema context query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The source and target schema context for the task compensation.</returns>
+    Task<OrchestrationSchemaContext> GetForTaskCompensation(
+        GetTaskCompensationSchemaContextQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the schema context available before the requested trigger compensation is dispatched.
+    /// </summary>
+    /// <param name="query">Schema context query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The source and target schema context for trigger compensation.</returns>
+    Task<OrchestrationSchemaContext> GetForTriggerCompensation(
+        GetTriggerCompensationSchemaContextQuery query,
+        CancellationToken cancellationToken = default);
 }

@@ -14,6 +14,10 @@ public interface IOrchestrationInstanceRepository
 
     Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default);
 
+    Task<OrchestrationInstance> TryGetByStartIdempotencyKey(
+        string startIdempotencyKey,
+        CancellationToken cancellationToken = default);
+
     Task<OrchestrationInstanceLease> TryAcquireLease(
         Id instanceId,
         string leaseId,

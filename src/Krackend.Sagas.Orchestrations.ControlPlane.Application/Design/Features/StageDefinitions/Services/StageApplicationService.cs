@@ -41,6 +41,28 @@ public sealed class StageApplicationService : IStageApplicationService
     }
 
     /// <summary>
+    /// Enables a resource.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    public Task<bool> Enable(EnableStageDefinitionCommand command, CancellationToken cancellationToken = default)
+    {
+        return _mediator.Send(command, cancellationToken);
+    }
+
+    /// <summary>
+    /// Disables a resource.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    public Task<bool> Disable(DisableStageDefinitionCommand command, CancellationToken cancellationToken = default)
+    {
+        return _mediator.Send(command, cancellationToken);
+    }
+
+    /// <summary>
     /// Updates only execution condition of one stage.
     /// </summary>
     /// <param name="command">Command to execute.</param>

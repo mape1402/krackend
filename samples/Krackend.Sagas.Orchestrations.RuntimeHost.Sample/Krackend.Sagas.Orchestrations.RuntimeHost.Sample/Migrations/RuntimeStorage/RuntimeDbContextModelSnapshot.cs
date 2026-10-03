@@ -315,6 +315,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<string>("SnapshotPayload")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("StartIdempotencyKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<DateTime>("StartedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -340,6 +344,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("LastUpdatedOnUtc");
 
                     b.HasIndex("SagaId");
+
+                    b.HasIndex("StartIdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[StartIdempotencyKey] IS NOT NULL");
 
                     b.ToTable("OrchestrationInstances", "Runtime");
                 });
@@ -854,6 +862,66 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("Status");
 
                     b.ToTable("RuntimeDesignNodes", "Runtime");
+                });
+
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.Runtime.Extensions.RuntimeExtensionPackage", b =>
+                {
+                    b.Property<byte[]>("Id")
+                        .HasColumnType("binary(16)");
+
+                    b.Property<DateTime?>("ActivatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("BundleId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("CreatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ExtensionKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Manifest")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BundleId", "ExtensionKey", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("ExtensionKey", "Version", "Status");
+
+                    b.ToTable("RuntimeExtensionPackages", "Runtime");
                 });
 
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.Runtime.Ingress.RuntimeIngressConfiguration", b =>

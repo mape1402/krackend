@@ -42,6 +42,12 @@ public sealed class OrchestrationDraftMutationPipelineBehavior<TRequest, TRespon
             case UpdateStageDefinitionCommand command:
                 await _editGuard.EnsureStageVersionIsDraft(command.Id, cancellationToken);
                 break;
+            case EnableStageDefinitionCommand command:
+                await _editGuard.EnsureStageVersionIsDraft(command.Id, cancellationToken);
+                break;
+            case DisableStageDefinitionCommand command:
+                await _editGuard.EnsureStageVersionIsDraft(command.Id, cancellationToken);
+                break;
             case DeleteStageDefinitionCommand command:
                 await _editGuard.EnsureStageVersionIsDraft(command.Id, cancellationToken);
                 break;
@@ -61,6 +67,12 @@ public sealed class OrchestrationDraftMutationPipelineBehavior<TRequest, TRespon
                 await _editGuard.EnsureTriggerVersionIsDraft(command.Id, cancellationToken);
                 break;
             case DisableTriggerBindingCommand command:
+                await _editGuard.EnsureTriggerVersionIsDraft(command.Id, cancellationToken);
+                break;
+            case SetTriggerCompensationExecutionConditionCommand command:
+                await _editGuard.EnsureTriggerVersionIsDraft(command.Id, cancellationToken);
+                break;
+            case SetTriggerCompensationTransformationCommand command:
                 await _editGuard.EnsureTriggerVersionIsDraft(command.Id, cancellationToken);
                 break;
             case CreateVariableDefinitionCommand command:
@@ -91,6 +103,12 @@ public sealed class OrchestrationDraftMutationPipelineBehavior<TRequest, TRespon
                 await _editGuard.EnsureTaskVersionIsDraft(command.Id, cancellationToken);
                 break;
             case SetTaskTransformationCommand command:
+                await _editGuard.EnsureTaskVersionIsDraft(command.Id, cancellationToken);
+                break;
+            case SetTaskCompensationExecutionConditionCommand command:
+                await _editGuard.EnsureTaskVersionIsDraft(command.Id, cancellationToken);
+                break;
+            case SetTaskCompensationTransformationCommand command:
                 await _editGuard.EnsureTaskVersionIsDraft(command.Id, cancellationToken);
                 break;
             case CreateParallelGroupDefinitionCommand command:

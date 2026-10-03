@@ -3,8 +3,14 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Extensions;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 
 public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
@@ -47,6 +53,93 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     public async Task ValidateAsync_WhenArtifactUsesSupportedMessagingShape_ReturnsSuccess()
     {
         var result = await ValidateAsync(CreateArtifact());
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenConstructedWithAdapterRegistryOverload_ReturnsSuccess()
+    {
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]));
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(CreateArtifact(), SerializerOptions)!);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenLegacyArtifactOmitsExtensionMetadata_ReturnsSuccess()
+    {
+        var payload = JsonSerializer.SerializeToNode(CreateArtifact(), SerializerOptions)!;
+        payload.AsObject().Remove("artifactSchemaVersion");
+        payload.AsObject().Remove("requiredCapabilities");
+        var task = payload["stageDefinitions"]![0]!["taskDefinitions"]![0]!.AsObject();
+        task.Remove("extensionKey");
+        task.Remove("capabilityKey");
+        task.Remove("capabilityVersion");
+        task.Remove("runtimeRequirements");
+        task.Remove("executionPolicy");
+
+        var result = await new MessagingRuntimeArtifactCompatibilityValidator().ValidateAsync(payload);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityIsRequired_ReturnsExtensionCapabilityNotConfigured()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    new SemanticVersion(2, 1, 0),
+                    "Task")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ExtensionCapabilityNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityPackageIsActivated_ReturnsSuccess()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        await repository.UpsertAsync(ExternalPackage("contoso.billing", "task.send-invoice", new SemanticVersion(2, 1, 0)));
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    new SemanticVersion(2, 1, 0),
+                    "Task")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
 
         Assert.True(result.Succeeded, result.ErrorMessage);
     }
@@ -198,6 +291,222 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationIsValid_ReturnsSuccess()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityIsNotDeclaredByPackage_ReturnsExtensionCapabilityNotConfigured()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        await repository.UpsertAsync(ExternalPackage("contoso.billing", "task.other", new SemanticVersion(2, 1, 0)));
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    new SemanticVersion(2, 1, 0),
+                    "Task")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
+
+        AssertFailure(result, "ExtensionCapabilityNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalBundleIsRequiredButNotActivated_ReturnsExtensionBundleNotActivated()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    "bundle-contoso-billing-2.1.0",
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ExtensionBundleNotActivated");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalBundleReferenceIsInvalid_ReturnsExtensionBundleReferenceInvalid()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    string.Empty,
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ExtensionBundleReferenceInvalid");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRequiredBundlesAreBlankOrBuiltIn_ReturnsSuccess()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(string.Empty, string.Empty, Version, string.Empty),
+                new RequiredExtensionBundleArtifact(string.Empty, ExtensionConstants.BuiltInExtensionKey, Version, string.Empty)
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalBundleIsActivated_ReturnsSuccess()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        await repository.UpsertAsync(ExternalPackage("contoso.billing", "task.send-invoice", new SemanticVersion(2, 1, 0)));
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    "bundle-contoso.billing-2.1.0",
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationTopicIsMissing_ReturnsCompensationMessagingTopicMissing()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation(string.Empty, TaskKind.Messaging, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "CompensationMessagingTopicMissing");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationKindIsUnsupported_ReturnsCompensationAdapterNotConfigured()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Http, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "CompensationTaskRuntimeAdapterNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationRetryPolicyIsInvalid_ReturnsRetryMaxRetriesInvalid()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                RetryPolicy = new RetryPolicyArtifact(
+                    -1,
+                    RetryStrategyType.Fixed,
+                    new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                    [],
+                    true)
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "RetryMaxRetriesInvalid");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationTimeoutPolicyIsInvalid_ReturnsTimeoutDurationInvalid()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                TimeoutPolicy = new TimeoutPolicyArtifact(
+                    Duration.FromSeconds(0),
+                    TimeoutBehavior.Fail,
+                    new FailTimeoutBehaviorPolicyArtifact("TIMEOUT"))
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "TimeoutDurationInvalid");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationConditionExpressionIsMissing_ReturnsConditionExpressionMissing()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                ExecutionCondition = EnabledCondition(string.Empty)
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ConditionExpressionMissing");
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenStageConditionUsesUnsupportedEngine_ReturnsConditionEngineNotSupported()
     {
         var artifact = CreateArtifact(stages:
@@ -217,7 +526,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
 
         var result = await ValidateAsync(artifact);
 
-        AssertFailure(result, "TaskKindNotSupported");
+        AssertFailure(result, "TaskRuntimeAdapterNotConfigured");
     }
 
     [Fact]
@@ -295,6 +604,25 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(artifact);
 
         AssertFailure(result, "RetryStrategyNotSupported");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRetryPolicyHasRetriesWithoutErrorCodes_ReturnsRetryableErrorCodesMissing()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            RetryPolicy = new RetryPolicyArtifact(
+                1,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                [],
+                true)
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "RetryableErrorCodesMissing");
     }
 
     [Fact]
@@ -426,7 +754,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
 
         var result = await ValidateAsync(artifact);
 
-        AssertFailure(result, "CompensationTaskKindNotSupported");
+        AssertFailure(result, "CompensationTaskRuntimeAdapterNotConfigured");
     }
 
     [Fact]
@@ -642,6 +970,41 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         return await new MessagingRuntimeArtifactCompatibilityValidator().ValidateAsync(payload);
     }
 
+    private static RuntimeExtensionPackage ExternalPackage(
+        string extensionKey,
+        string capabilityKey,
+        SemanticVersion version)
+        => new()
+        {
+            Id = Id.New(),
+            BundleId = $"bundle-{extensionKey}-{version}",
+            ExtensionKey = extensionKey,
+            Version = version,
+            Sha256 = "bundle-sha",
+            SizeBytes = 1024,
+            Status = RuntimeExtensionPackageStatus.Activated,
+            CreatedOnUtc = DateTime.UtcNow,
+            UpdatedOnUtc = DateTime.UtcNow,
+            ActivatedOnUtc = DateTime.UtcNow,
+            Manifest = new KrackendExtensionManifest(
+                new ExtensionKey(extensionKey),
+                version,
+                extensionKey,
+                "Contoso",
+                ExtensionLoadMode.ExternalAssembly,
+                ExtensionTrustLevel.PublisherTrusted)
+            {
+                Capabilities =
+                [
+                    new ExtensionCapabilityDescriptor(
+                        new CapabilityKey(capabilityKey),
+                        version,
+                        "Task",
+                        capabilityKey)
+                ]
+            }
+        };
+
     private static void AssertFailure(RuntimeArtifactCompatibilityValidationResult result, string errorCode)
     {
         Assert.False(result.Succeeded);
@@ -674,6 +1037,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
             key,
             key,
             order,
+            true,
             condition ?? DisabledCondition(),
             tasks ?? [],
             [],

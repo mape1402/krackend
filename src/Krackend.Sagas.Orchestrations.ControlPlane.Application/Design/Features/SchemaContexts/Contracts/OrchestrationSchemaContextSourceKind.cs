@@ -33,5 +33,15 @@ public enum OrchestrationSchemaContextSourceKind
     /// <summary>
     /// Source comes from Krackend trigger metadata.
     /// </summary>
-    TriggerMetadata = 6
+    TriggerMetadata = 6,
+
+    /// <summary>
+    /// Source comes from a previous compensation request.
+    /// </summary>
+    CompensationRequest = 7,
+
+    /// <summary>
+    /// Source comes from a previous compensation response.
+    /// </summary>
+    CompensationResponse = 8
 }

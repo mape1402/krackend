@@ -955,6 +955,110 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
     }
 
     [Fact]
+    public async Task TaskAndTriggerRepositoriesSetDefaultCompensationPipelines()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var definitionRepository = services.GetRequiredService<IOrchestrationDefinitionRepository>();
+        var versionRepository = services.GetRequiredService<IOrchestrationVersionRepository>();
+        var stageRepository = services.GetRequiredService<IStageRepository>();
+        var taskRepository = services.GetRequiredService<ITaskRepository>();
+        var triggerRepository = services.GetRequiredService<ITriggerBindingRepository>();
+
+        var definition = new OrchestrationDefinition
+        {
+            Id = Id.New(),
+            Key = "returns.requested",
+            Name = "Return Requested",
+            Domain = "returns",
+            DomainId = Id.New(),
+            CreatedOnUtc = DateTime.UtcNow,
+            CreatedBy = "tests",
+            IsActive = true,
+        };
+        await definitionRepository.Create(definition);
+
+        var version = Version(definition.Id, 7);
+        await versionRepository.Create(version);
+
+        var stage = new StageDefinition
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = version.Id,
+            Key = "returns",
+            Name = "Returns",
+            Order = 1,
+        };
+        await stageRepository.Create(stage);
+
+        var task = new TaskDefinition
+        {
+            Id = Id.New(),
+            StageDefinitionId = stage.Id,
+            Key = "returns.reserve-credit",
+            Name = "Reserve credit",
+            Order = 1,
+            Kind = TaskKind.Messaging,
+            ExecutionMode = TaskExecutionMode.Sequential,
+            Configuration = new MessagingTaskConfiguration
+            {
+                Topic = "returns.reserve-credit",
+                Version = new SemanticVersion(1, 0, 0),
+            },
+            DispatchType = TaskDispatchType.FireAndWaitCallback,
+            IsEnabled = true,
+        };
+        await taskRepository.Create(task);
+
+        var trigger = new TriggerBinding
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = version.Id,
+            Key = "return-requested",
+            TriggerType = TriggerType.Event,
+            IsEnabled = true,
+            TriggerChannel = new EventTriggerChannel
+            {
+                Topic = "events.returns.requested",
+                Version = new SemanticVersion(1, 0, 0),
+            }
+        };
+        await triggerRepository.Create(trigger);
+
+        await taskRepository.SetCompensationExecutionCondition(task.Id, DslCondition("$tasks['returns.reserve-credit'].Failed"));
+        await taskRepository.SetCompensationTransformation(task.Id, DslTransformation("map task compensation"));
+        await triggerRepository.SetCompensationExecutionCondition(trigger.Id, DslCondition("$trigger.Source == 'web'"));
+        await triggerRepository.SetCompensationTransformation(trigger.Id, DslTransformation("map trigger compensation"));
+
+        var persistedTask = await taskRepository.GetById(task.Id);
+        var persistedTrigger = await triggerRepository.GetById(trigger.Id);
+
+        Assert.True(persistedTask.CompensationDefinition.HasExecutionCondition);
+        Assert.True(persistedTask.CompensationDefinition.HasTransformation);
+        Assert.Equal(TaskKind.Messaging, persistedTask.CompensationDefinition.CompensationTaskKind);
+        Assert.Equal(TaskDispatchType.FireAndForget, persistedTask.CompensationDefinition.DispatchType);
+        Assert.Equal(string.Empty, Assert.IsType<MessagingTaskConfiguration>(persistedTask.CompensationDefinition.Configuration).Topic);
+        Assert.True(persistedTrigger.CompensationDefinition.HasExecutionCondition);
+        Assert.True(persistedTrigger.CompensationDefinition.HasTransformation);
+        Assert.Equal(TaskKind.Messaging, persistedTrigger.CompensationDefinition.CompensationTaskKind);
+        Assert.Equal(TaskDispatchType.FireAndForget, persistedTrigger.CompensationDefinition.DispatchType);
+        Assert.Equal(string.Empty, Assert.IsType<MessagingTaskConfiguration>(persistedTrigger.CompensationDefinition.Configuration).Topic);
+
+        await taskRepository.SetCompensationExecutionCondition(task.Id, null!);
+        await taskRepository.SetCompensationTransformation(task.Id, null!);
+        await triggerRepository.SetCompensationExecutionCondition(trigger.Id, null!);
+        await triggerRepository.SetCompensationTransformation(trigger.Id, null!);
+
+        persistedTask = await taskRepository.GetById(task.Id);
+        persistedTrigger = await triggerRepository.GetById(trigger.Id);
+        Assert.False(persistedTask.CompensationDefinition.HasExecutionCondition);
+        Assert.False(persistedTask.CompensationDefinition.HasTransformation);
+        Assert.False(persistedTrigger.CompensationDefinition.HasExecutionCondition);
+        Assert.False(persistedTrigger.CompensationDefinition.HasTransformation);
+    }
+
+    [Fact]
     public async Task DesignRepositoriesUpdateStagesVersionsTriggersAndReadCollections()
     {
         await using var provider = CreateProvider();

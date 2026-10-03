@@ -36,5 +36,9 @@ public sealed class TriggerBindingModel
     /// Gets or sets the description.
     /// </summary>
     public string Description { get; set; } = string.Empty;
-}
 
+    /// <summary>
+    /// Gets or sets the compensation definition for the trigger.
+    /// </summary>
+    public CompensationDefinition CompensationDefinition { get; set; }
+}

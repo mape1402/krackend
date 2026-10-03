@@ -10,4 +10,5 @@ public sealed record TriggerBindingArtifact(
     TriggerType TriggerType,
     ITriggerChannelArtifact TriggerChannel,
     bool IsEnabled,
-    string Description = "");
+    string Description = "",
+    CompensationArtifact Compensation = null);

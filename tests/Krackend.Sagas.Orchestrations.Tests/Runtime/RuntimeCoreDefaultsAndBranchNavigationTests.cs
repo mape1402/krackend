@@ -271,6 +271,7 @@ public sealed class RuntimeCoreDefaultsAndBranchNavigationTests
             key,
             key,
             order,
+            true,
             null!,
             [],
             [],

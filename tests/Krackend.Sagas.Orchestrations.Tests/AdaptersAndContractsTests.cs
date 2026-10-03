@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Client.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Krackend.Sagas.Orchestrations.Contracts.Events;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Pigeon.Messaging;
 using Pigeon.Messaging.Contracts;
 using Pigeon.Messaging.Producing;
 using Spider.Pipelines.Core;
@@ -160,6 +162,8 @@ public sealed class AdaptersAndContractsTests
             Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, null!, _ => { }));
         Assert.Throws<ArgumentNullException>(() =>
             Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, configuration, null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, configuration, _ => { }, null!));
 
         var returned = Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder);
         var configured = Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(
@@ -184,6 +188,28 @@ public sealed class AdaptersAndContractsTests
     }
 
     [Fact]
+    public void ClientPigeonExtensionExposesPigeonServiceBuilderConfiguration()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddKrackendOrchestrationsClient();
+        var configuration = CreatePigeonConfiguration();
+
+        Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(
+            builder,
+            configuration,
+            _ => { },
+            pigeon => pigeon.ConfigureJsonOptions(options =>
+                options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase));
+
+        using var provider = services.BuildServiceProvider();
+        var serializer = provider.GetRequiredService<ISerializer>();
+        var json = serializer.Serialize(new PigeonJsonOptionsProbe("ready"));
+
+        Assert.Contains("\"sampleValue\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"SampleValue\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RuntimePigeonExtensionRegistersMessagingAdaptersAndValidatesArguments()
     {
         KrackendOrchestrationsRuntimeBuilder nullBuilder = null!;
@@ -203,12 +229,61 @@ public sealed class AdaptersAndContractsTests
             Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, null!, _ => { }));
         Assert.Throws<ArgumentNullException>(() =>
             Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, configuration, null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, configuration, _ => { }, null!));
 
         var returned = Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, configuration);
 
         Assert.Same(builder, returned);
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IMessagingDispatchAdapter));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging.IMessagingIngressAdapter));
+    }
+
+    [Fact]
+    public void RuntimeBuilderRegistersExternalExecutionSandboxProvider()
+    {
+        KrackendOrchestrationsRuntimeBuilder nullBuilder = null!;
+        var services = new ServiceCollection();
+        var builder = services.AddKrackendOrchestrationsRuntime();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            Krackend.Sagas.Orchestrations.Runtime.DependencyInjection.ServiceCollectionExtensions
+                .AddExecutionSandboxProvider<ContractExecutionSandboxProvider>(nullBuilder));
+
+        var returned = builder.AddExecutionSandboxProvider<ContractExecutionSandboxProvider>();
+
+        Assert.Same(builder, returned);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IExecutionSandboxProvider) &&
+            descriptor.ImplementationType == typeof(ContractExecutionSandboxProvider));
+
+        using var provider = services.BuildServiceProvider();
+        var executionProviders = provider.GetServices<IExecutionSandboxProvider>().ToArray();
+
+        Assert.Contains(executionProviders, executionProvider =>
+            executionProvider.ProviderKey == ContractExecutionSandboxProvider.Provider);
+    }
+
+    [Fact]
+    public void RuntimePigeonExtensionExposesPigeonServiceBuilderConfiguration()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddKrackendOrchestrationsRuntime();
+        var configuration = CreatePigeonConfiguration();
+
+        Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(
+            builder,
+            configuration,
+            _ => { },
+            pigeon => pigeon.ConfigureJsonOptions(options =>
+                options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase));
+
+        using var provider = services.BuildServiceProvider();
+        var serializer = provider.GetRequiredService<ISerializer>();
+        var json = serializer.Serialize(new PigeonJsonOptionsProbe("ready"));
+
+        Assert.Contains("\"sampleValue\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"SampleValue\"", json, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -331,6 +406,15 @@ public sealed class AdaptersAndContractsTests
             culture: null)!;
     }
 
+    private static IConfiguration CreatePigeonConfiguration()
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Pigeon:Domain"] = "Krackend.Tests",
+                ["Pigeon:MessageBrokers:RabbitMq:Url"] = "amqp://guest:guest@localhost:5672"
+            })
+            .Build();
+
     private sealed class RecordingProducer : IProducer
     {
         public object? Payload { get; private set; }
@@ -404,4 +488,20 @@ public sealed class AdaptersAndContractsTests
     public sealed record TestRequest(string Id);
 
     public sealed record TestResponse(bool Ok);
+
+    private sealed record PigeonJsonOptionsProbe(string SampleValue);
+
+    private sealed class ContractExecutionSandboxProvider : IExecutionSandboxProvider
+    {
+        public const string Provider = "contract-sandbox";
+
+        public string ProviderKey => Provider;
+
+        public string ExecutionMode => "sandbox";
+
+        public bool IsSandbox => true;
+
+        public Task DispatchAsync(ExecutionEnvelope envelope, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
 }

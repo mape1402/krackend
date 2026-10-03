@@ -62,6 +62,22 @@ public interface ITaskApplicationService
     Task<bool> SetTransformation(SetTaskTransformationCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only compensation execution condition of one task.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> SetCompensationExecutionCondition(SetTaskCompensationExecutionConditionCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates only compensation transformation of one task.
+    /// </summary>
+    /// <param name="command">Command to execute.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <returns>True when the operation completes successfully.</returns>
+    Task<bool> SetCompensationTransformation(SetTaskCompensationTransformationCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets resources that match the query.
     /// </summary>
     /// <param name="query">Query to execute.</param>

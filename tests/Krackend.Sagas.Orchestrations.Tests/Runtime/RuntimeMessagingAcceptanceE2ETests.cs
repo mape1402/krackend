@@ -340,14 +340,14 @@ public sealed class RuntimeMessagingAcceptanceE2ETests
     }
 
     private static StageArtifact Stage(string key, int order, params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, DisabledCondition(), tasks, [], []);
+        => new(Id.New(), key, key, order, true, DisabledCondition(), tasks, [], []);
 
     private static StageArtifact StageWithGraph(
         string key,
         int order,
         IReadOnlyList<ParallelGroupArtifact> parallelGroups,
         params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, DisabledCondition(), tasks, parallelGroups, []);
+        => new(Id.New(), key, key, order, true, DisabledCondition(), tasks, parallelGroups, []);
 
     private static TaskArtifact MessagingTask(
         string key,

@@ -38,6 +38,14 @@ public enum OrchestrationInstanceStatus
     /// </summary>
     CompletedWithErrors,
     /// <summary>
+    /// Represents a recoverable failure waiting for operator action.
+    /// </summary>
+    DeadLettered,
+    /// <summary>
+    /// Represents an operator-aborted instance.
+    /// </summary>
+    Aborted,
+    /// <summary>
     /// Represents failed.
     /// </summary>
     Failed

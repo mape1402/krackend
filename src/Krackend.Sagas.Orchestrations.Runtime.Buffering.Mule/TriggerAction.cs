@@ -29,12 +29,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             {
                 ArtifactId = workItem.ArtifactId,
                 MessageMetadata = workItem.MessageMetadata,
+                StartIdempotencyKey = BuildStartIdempotencyKey(context.Action),
                 PropagationMetadata = workItem.PropagationMetadata,
                 IngressTransport = workItem.IngressTransport,
                 Payload = workItem.Payload
             };
 
             await _sagaEngine.StartOrchestrationAsync(intent, cancellationToken);
+        }
+
+        private static string? BuildStartIdempotencyKey(DurableAction action)
+        {
+            if (action is null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(action.DeduplicationKey))
+            {
+                return $"mule:{action.Key}:{action.DeduplicationKey.Trim()}";
+            }
+
+            var actionId = action.Id.ToString();
+            return string.IsNullOrWhiteSpace(actionId)
+                ? null
+                : $"mule:{action.Key}:{actionId}";
         }
     }
 }

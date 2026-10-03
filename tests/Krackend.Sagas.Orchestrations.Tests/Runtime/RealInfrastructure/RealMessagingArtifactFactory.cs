@@ -74,7 +74,7 @@ internal static class RealMessagingArtifactFactory
         string key,
         int order,
         params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, DisabledCondition(), tasks, [], []);
+        => new(Id.New(), key, key, order, true, DisabledCondition(), tasks, [], []);
 
     public static StageArtifact StageWithGraph(
         string key,
@@ -82,7 +82,7 @@ internal static class RealMessagingArtifactFactory
         IReadOnlyList<ParallelGroupArtifact> parallelGroups,
         IReadOnlyList<BranchRuleArtifact> branchRules,
         params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, DisabledCondition(), tasks, parallelGroups, branchRules);
+        => new(Id.New(), key, key, order, true, DisabledCondition(), tasks, parallelGroups, branchRules);
 
     public static StageArtifact StageWithGraph(
         Id id,
@@ -91,7 +91,7 @@ internal static class RealMessagingArtifactFactory
         IReadOnlyList<ParallelGroupArtifact> parallelGroups,
         IReadOnlyList<BranchRuleArtifact> branchRules,
         params TaskArtifact[] tasks)
-        => new(id, key, key, order, DisabledCondition(), tasks, parallelGroups, branchRules);
+        => new(id, key, key, order, true, DisabledCondition(), tasks, parallelGroups, branchRules);
 
     public static TaskArtifact MessagingTask(
         string key,

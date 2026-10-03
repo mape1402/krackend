@@ -217,6 +217,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                     "sale-fulfillment",
                     "Sale fulfillment",
                     1,
+                    true,
                     DisabledCondition(),
                     [
                         BuildMessagingTask(
@@ -251,6 +252,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                 "inventory-reservation",
                 "Inventory reservation",
                 1,
+                true,
                 DisabledCondition(),
                 [
                     BuildMessagingTask(
@@ -271,6 +273,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                 "payment-capture",
                 "Payment capture",
                 2,
+                true,
                 DisabledCondition(),
                 [
                     BuildMessagingTask(
@@ -291,6 +294,7 @@ public sealed class HappyPathOrchestrationSeeder : IHappyPathOrchestrationSeeder
                 "sale-completion",
                 "Sale completion",
                 3,
+                true,
                 DisabledCondition(),
                 [
                     BuildMessagingTask(

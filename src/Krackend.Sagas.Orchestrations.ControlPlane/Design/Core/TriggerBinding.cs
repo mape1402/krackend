@@ -38,6 +38,11 @@ public sealed class TriggerBinding
     public bool IsEnabled { get; set; }
 
     /// <summary>
+    /// Gets or sets compensation definition executed after task compensations.
+    /// </summary>
+    public CompensationDefinition CompensationDefinition { get; set; }
+
+    /// <summary>
     /// Gets or sets description.
     /// </summary>
     public string Description { get; set; } = string.Empty;

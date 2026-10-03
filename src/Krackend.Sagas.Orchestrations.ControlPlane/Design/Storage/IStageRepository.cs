@@ -23,6 +23,14 @@ public interface IStageRepository
     Task Update(StageDefinition stageDefinition, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates only enabled state of one stage definition.
+    /// </summary>
+    /// <param name="stageDefinitionId">Identifier of the stage definition.</param>
+    /// <param name="isEnabled">Whether the stage should participate in artifacts and runtime execution.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task SetIsEnabled(Id stageDefinitionId, bool isEnabled, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates only execution condition of one stage definition.
     /// </summary>
     /// <param name="stageDefinitionId">Identifier of the stage definition.</param>

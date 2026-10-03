@@ -360,7 +360,7 @@ public sealed class RuntimeArtifactDeploymentServiceTests
 
         Assert.False(result.Accepted);
         Assert.Equal("Rejected", result.Status);
-        Assert.Contains("TaskKindNotSupported", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("TaskRuntimeAdapterNotConfigured", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(scheduler.Requests);
         Assert.Empty(repository.Artifacts);
     }
@@ -705,14 +705,14 @@ public sealed class RuntimeArtifactDeploymentServiceTests
             stages ?? []);
 
     private static StageArtifact Stage(string key, int order, params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, DisabledCondition(), tasks, [], []);
+        => new(Id.New(), key, key, order, true, DisabledCondition(), tasks, [], []);
 
     private static StageArtifact StageWithCondition(
         string key,
         int order,
         ExecutionConditionArtifact condition,
         params TaskArtifact[] tasks)
-        => new(Id.New(), key, key, order, condition, tasks, [], []);
+        => new(Id.New(), key, key, order, true, condition, tasks, [], []);
 
     private static TaskArtifact MessagingTask(
         string key,

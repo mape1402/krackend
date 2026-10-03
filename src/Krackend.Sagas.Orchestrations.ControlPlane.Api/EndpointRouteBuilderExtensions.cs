@@ -310,6 +310,10 @@ public static class EndpointRouteBuilderExtensions
             => Results.Ok(await service.GetById(new CPDesign.GetStageDefinitionByIdQuery(stageId), cancellationToken)));
         writeGroup.MapPut("/design/stages/{stageId}", async (string stageId, CPDesign.UpdateStageDefinitionCommand command, [FromServices] CPDesign.IStageApplicationService service, CancellationToken cancellationToken)
             => ApiEndpointResults.Ok(await service.Update(command with { Id = string.IsNullOrWhiteSpace(command.Id) ? stageId : command.Id }, cancellationToken)));
+        writeGroup.MapPost("/design/stages/{stageId}/enable", async (string stageId, [FromServices] CPDesign.IStageApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Enable(new CPDesign.EnableStageDefinitionCommand(stageId), cancellationToken)));
+        writeGroup.MapPost("/design/stages/{stageId}/disable", async (string stageId, [FromServices] CPDesign.IStageApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Disable(new CPDesign.DisableStageDefinitionCommand(stageId), cancellationToken)));
         writeGroup.MapDelete("/design/stages/{stageId}", async (string stageId, [FromServices] CPDesign.IStageApplicationService service, CancellationToken cancellationToken)
             => ApiEndpointResults.NoContentOrNotFound(await service.Delete(new CPDesign.DeleteStageDefinitionCommand(stageId), cancellationToken), "Stage was not deleted."));
     }

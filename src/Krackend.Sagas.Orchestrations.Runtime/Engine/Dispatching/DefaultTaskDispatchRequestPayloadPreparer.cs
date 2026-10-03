@@ -39,7 +39,9 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Instance);
         ArgumentNullException.ThrowIfNull(request.Task);
-        ArgumentNullException.ThrowIfNull(request.MessagingConfiguration);
+
+        var configuration = request.Configuration ?? request.MessagingConfiguration ?? request.Task.Configuration;
+        ArgumentNullException.ThrowIfNull(configuration);
 
         var payloadContext = _payloadContextFactory.Create(
             request.Instance,
@@ -71,8 +73,8 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
             requestPayload = transformResult.Payload?.DeepClone();
         }
 
-        var validationBinding = GetRequestValidationBinding(request.MessagingConfiguration);
-        var validation = request.MessagingConfiguration.RequestValidation;
+        var validationBinding = GetRequestValidationBinding(configuration);
+        var validation = GetRequestValidation(configuration);
         if (ShouldValidate(validationBinding, validation))
         {
             var validationResult = await _validationExecutor.ValidateAsync(
@@ -101,8 +103,20 @@ public sealed class DefaultTaskDispatchRequestPayloadPreparer : ITaskDispatchReq
         };
     }
 
-    private static SchemaBindingArtifact GetRequestValidationBinding(MessagingTaskConfigurationArtifact configuration)
-        => configuration.RequestSchemaBinding ?? configuration.SchemaBinding;
+    private static SchemaBindingArtifact GetRequestValidationBinding(ITaskConfigurationArtifact configuration)
+        => configuration switch
+        {
+            MessagingTaskConfigurationArtifact messaging => messaging.RequestSchemaBinding ?? messaging.SchemaBinding,
+            HttpTaskConfigurationArtifact http => http.SchemaBinding,
+            _ => null
+        };
+
+    private static ValidationArtifact GetRequestValidation(ITaskConfigurationArtifact configuration)
+        => configuration switch
+        {
+            MessagingTaskConfigurationArtifact messaging => messaging.RequestValidation,
+            _ => null
+        };
 
     private static bool ShouldValidate(SchemaBindingArtifact schemaBinding, ValidationArtifact validation)
         => schemaBinding?.IsValidationEnabled == true || validation?.IsEnabled == true;

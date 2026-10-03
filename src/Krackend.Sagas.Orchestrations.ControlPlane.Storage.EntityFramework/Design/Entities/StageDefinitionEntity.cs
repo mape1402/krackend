@@ -33,6 +33,10 @@ public sealed class StageDefinitionEntity
     /// </summary>
     public string Description { get; set; }
     /// <summary>
+    /// Gets or sets IsEnabled.
+    /// </summary>
+    public bool IsEnabled { get; set; } = true;
+    /// <summary>
     /// Gets or sets ExecutionCondition.
     /// </summary>
     public ExecutionConditionJsonModel ExecutionCondition { get; set; } = new();

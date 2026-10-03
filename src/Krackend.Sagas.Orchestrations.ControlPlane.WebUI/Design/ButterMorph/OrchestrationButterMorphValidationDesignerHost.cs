@@ -15,6 +15,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
     private readonly IOrchestrationSchemaContextApplicationService _schemaContextService;
     private readonly IStageApplicationService _stageApplicationService;
     private readonly ITaskApplicationService _taskApplicationService;
+    private readonly ITriggerBindingApplicationService _triggerBindingApplicationService;
     private readonly IOrchestrationButterMorphDesignerContextParser _contextParser;
     private readonly IOrchestrationButterMorphSchemaImporter _schemaImporter;
     private readonly IOrchestrationButterMorphSourceMetadataFactory _sourceMetadataFactory;
@@ -25,6 +26,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
     /// <param name="schemaContextService">Schema context application service.</param>
     /// <param name="stageApplicationService">Stage application service.</param>
     /// <param name="taskApplicationService">Task application service.</param>
+    /// <param name="triggerBindingApplicationService">Trigger binding application service.</param>
     /// <param name="contextParser">Designer context parser.</param>
     /// <param name="schemaImporter">Schema importer.</param>
     /// <param name="sourceMetadataFactory">Source metadata factory.</param>
@@ -32,6 +34,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         IOrchestrationSchemaContextApplicationService schemaContextService,
         IStageApplicationService stageApplicationService,
         ITaskApplicationService taskApplicationService,
+        ITriggerBindingApplicationService triggerBindingApplicationService,
         IOrchestrationButterMorphDesignerContextParser contextParser,
         IOrchestrationButterMorphSchemaImporter schemaImporter,
         IOrchestrationButterMorphSourceMetadataFactory sourceMetadataFactory)
@@ -39,6 +42,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         _schemaContextService = schemaContextService ?? throw new ArgumentNullException(nameof(schemaContextService));
         _stageApplicationService = stageApplicationService ?? throw new ArgumentNullException(nameof(stageApplicationService));
         _taskApplicationService = taskApplicationService ?? throw new ArgumentNullException(nameof(taskApplicationService));
+        _triggerBindingApplicationService = triggerBindingApplicationService ?? throw new ArgumentNullException(nameof(triggerBindingApplicationService));
         _contextParser = contextParser ?? throw new ArgumentNullException(nameof(contextParser));
         _schemaImporter = schemaImporter ?? throw new ArgumentNullException(nameof(schemaImporter));
         _sourceMetadataFactory = sourceMetadataFactory ?? throw new ArgumentNullException(nameof(sourceMetadataFactory));
@@ -57,6 +61,16 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
             if (_contextParser.TryParseTaskExecutionCondition(request.ContextKey, out var taskContext))
             {
                 return await LoadTaskCondition(taskContext);
+            }
+
+            if (_contextParser.TryParseTaskCompensationExecutionCondition(request.ContextKey, out var taskCompensationContext))
+            {
+                return await LoadTaskCompensationCondition(taskCompensationContext);
+            }
+
+            if (_contextParser.TryParseTriggerCompensationExecutionCondition(request.ContextKey, out var triggerCompensationContext))
+            {
+                return await LoadTriggerCompensationCondition(triggerCompensationContext);
             }
 
             return CreateLoadFailure("Invalid orchestration execution condition context.");
@@ -80,6 +94,16 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
             if (_contextParser.TryParseTaskExecutionCondition(request.ContextKey, out var taskContext))
             {
                 return await SaveTaskCondition(request, taskContext);
+            }
+
+            if (_contextParser.TryParseTaskCompensationExecutionCondition(request.ContextKey, out var taskCompensationContext))
+            {
+                return await SaveTaskCompensationCondition(request, taskCompensationContext);
+            }
+
+            if (_contextParser.TryParseTriggerCompensationExecutionCondition(request.ContextKey, out var triggerCompensationContext))
+            {
+                return await SaveTriggerCompensationCondition(request, triggerCompensationContext);
             }
 
             return CreateSaveFailure("Invalid orchestration execution condition context.");
@@ -117,6 +141,36 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
             schemaContext,
             task?.HasExecutionCondition == true
                 ? (task.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
+                : string.Empty);
+    }
+
+    private async Task<ButterMorphValidationDesignerLoadResult> LoadTaskCompensationCondition(
+        OrchestrationButterMorphDesignerContext designerContext)
+    {
+        var schemaContext = await _schemaContextService.GetForTaskCompensation(new GetTaskCompensationSchemaContextQuery(
+            designerContext.OrchestrationVersionId,
+            designerContext.TaskDefinitionId));
+        var task = await _taskApplicationService.GetById(new GetTaskDefinitionByIdQuery(designerContext.TaskDefinitionId));
+
+        return LoadCondition(
+            schemaContext,
+            task?.CompensationDefinition?.HasExecutionCondition == true
+                ? (task.CompensationDefinition.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
+                : string.Empty);
+    }
+
+    private async Task<ButterMorphValidationDesignerLoadResult> LoadTriggerCompensationCondition(
+        OrchestrationButterMorphDesignerContext designerContext)
+    {
+        var schemaContext = await _schemaContextService.GetForTriggerCompensation(new GetTriggerCompensationSchemaContextQuery(
+            designerContext.OrchestrationVersionId,
+            designerContext.TriggerBindingId));
+        var trigger = await _triggerBindingApplicationService.GetById(new GetTriggerBindingByIdQuery(designerContext.TriggerBindingId));
+
+        return LoadCondition(
+            schemaContext,
+            trigger?.CompensationDefinition?.HasExecutionCondition == true
+                ? (trigger.CompensationDefinition.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
                 : string.Empty);
     }
 
@@ -166,6 +220,38 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         {
             Succeeded = updated,
             Message = updated ? "Task execution condition saved." : "Task execution condition could not be saved."
+        };
+    }
+
+    private async Task<ButterMorphValidationDesignerSaveResult> SaveTaskCompensationCondition(
+        ButterMorphValidationDesignerSaveRequest request,
+        OrchestrationButterMorphDesignerContext designerContext)
+    {
+        var updated = await _taskApplicationService.SetCompensationExecutionCondition(
+            new SetTaskCompensationExecutionConditionCommand(
+                designerContext.TaskDefinitionId,
+                CreateCondition(request.DslContent)));
+
+        return new ButterMorphValidationDesignerSaveResult
+        {
+            Succeeded = updated,
+            Message = updated ? "Task compensation condition saved." : "Task compensation condition could not be saved."
+        };
+    }
+
+    private async Task<ButterMorphValidationDesignerSaveResult> SaveTriggerCompensationCondition(
+        ButterMorphValidationDesignerSaveRequest request,
+        OrchestrationButterMorphDesignerContext designerContext)
+    {
+        var updated = await _triggerBindingApplicationService.SetCompensationExecutionCondition(
+            new SetTriggerCompensationExecutionConditionCommand(
+                designerContext.TriggerBindingId,
+                CreateCondition(request.DslContent)));
+
+        return new ButterMorphValidationDesignerSaveResult
+        {
+            Succeeded = updated,
+            Message = updated ? "Trigger compensation condition saved." : "Trigger compensation condition could not be saved."
         };
     }
 

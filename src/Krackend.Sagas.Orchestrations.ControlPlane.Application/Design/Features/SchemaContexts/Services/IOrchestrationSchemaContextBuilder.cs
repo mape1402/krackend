@@ -31,4 +31,28 @@ public interface IOrchestrationSchemaContextBuilder
         OrchestrationVersion version,
         Id stageDefinitionId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the schema context available before a task compensation action is dispatched.
+    /// </summary>
+    /// <param name="version">Complete orchestration version snapshot.</param>
+    /// <param name="taskDefinitionId">Forward task identifier that owns the compensation.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The source and target schema context for the task compensation.</returns>
+    Task<OrchestrationSchemaContext> BuildForTaskCompensation(
+        OrchestrationVersion version,
+        Id taskDefinitionId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the schema context available before trigger compensation is dispatched.
+    /// </summary>
+    /// <param name="version">Complete orchestration version snapshot.</param>
+    /// <param name="triggerBindingId">Trigger binding identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The source and target schema context for trigger compensation.</returns>
+    Task<OrchestrationSchemaContext> BuildForTriggerCompensation(
+        OrchestrationVersion version,
+        Id triggerBindingId,
+        CancellationToken cancellationToken = default);
 }

@@ -81,7 +81,9 @@ public sealed class CreateTaskDefinitionCommandValidator : AbstractValidator<Cre
             retryPolicy.MaxRetries >= 0 &&
             retryPolicy.StrategyType == RetryStrategyType.Fixed &&
             retryPolicy.Strategy is FixedRetryStrategy fixedRetry &&
-            fixedRetry.Delay.Value >= TimeSpan.Zero;
+            fixedRetry.Delay.Value >= TimeSpan.Zero &&
+            (retryPolicy.MaxRetries == 0 ||
+                retryPolicy.RetryableErrorCodes?.Any(code => !string.IsNullOrWhiteSpace(code)) == true);
 
     private static bool IsSupportedTimeoutPolicy(TimeoutPolicy timeoutPolicy)
     {
