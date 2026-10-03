@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using NSubstitute;
 
@@ -79,6 +80,94 @@ public sealed class ControlPlaneApplicationQueryHandlersTests
         Assert.Equal(task.Id.ToString(), Assert.Single(all).Id);
         Assert.Equal(parallelGroupId.ToString(), single.ParallelGroupId);
         Assert.Equal(TaskDispatchType.FireAndWaitCallback, single.DispatchType);
+    }
+
+    [Fact]
+    public void DefinitionMappersNormalizeOptionalNullFields()
+    {
+        var versionId = Id.New();
+        var stageId = Id.New();
+        var definition = new OrchestrationDefinition
+        {
+            Id = Id.New(),
+            Key = "orders.created",
+            Name = "Orders Created",
+            Description = null,
+            Domain = "orders",
+            DomainId = null,
+            DomainDisplayName = " ",
+            OwnerTeam = "fulfillment",
+            OwnerTeamId = null,
+            OwnerTeamDisplayName = null,
+            Tags = [],
+            IsActive = true,
+            CreatedOnUtc = DateTime.UtcNow,
+            CreatedBy = "operator",
+            UpdatedBy = null
+        };
+        var task = new TaskDefinition
+        {
+            Id = Id.New(),
+            StageDefinitionId = stageId,
+            Key = "orders.reserve",
+            Name = "Reserve",
+            Notes = null,
+            Order = 1,
+            Kind = TaskKind.Messaging,
+            ExecutionMode = TaskExecutionMode.Sequential,
+            ParallelGroupId = null,
+            DispatchType = TaskDispatchType.FireAndForget,
+            Configuration = new MessagingTaskConfiguration { Topic = "orders.reserve" }
+        };
+        var variable = new VariableDefinition
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = versionId,
+            Key = "region",
+            DisplayName = null,
+            Description = null,
+            DefaultValue = null,
+            Scope = VariableScope.Definition,
+            ValueType = VariableValueType.String
+        };
+        var trigger = new TriggerBinding
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = versionId,
+            Key = null,
+            TriggerType = TriggerType.Event,
+            TriggerChannel = new EventTriggerChannel { Topic = "orders.created" },
+            IsEnabled = false,
+            Description = null
+        };
+        var group = new ParallelGroupDefinition
+        {
+            Id = Id.New(),
+            StageDefinitionId = stageId,
+            Name = null,
+            JoinPolicy = ParallelJoinPolicy.WaitAll
+        };
+
+        var definitionModel = new OrchestrationDefinitionApplicationMapper().ToModel(definition);
+        var taskModel = new TaskDefinitionApplicationMapper().ToModel(task);
+        var variableModel = new VariableDefinitionApplicationMapper().ToModel(variable);
+        var triggerModel = new TriggerBindingApplicationMapper().ToModel(trigger);
+        var groupModel = new ParallelGroupDefinitionApplicationMapper().ToModel(group);
+
+        Assert.Equal(string.Empty, definitionModel.Description);
+        Assert.Equal(string.Empty, definitionModel.DomainId);
+        Assert.Equal("orders", definitionModel.DomainDisplayName);
+        Assert.Equal(string.Empty, definitionModel.OwnerTeamId);
+        Assert.Equal("fulfillment", definitionModel.OwnerTeamDisplayName);
+        Assert.Equal(string.Empty, definitionModel.UpdatedBy);
+        Assert.Equal(string.Empty, taskModel.Notes);
+        Assert.Equal(string.Empty, taskModel.ParallelGroupId);
+        Assert.Equal(string.Empty, variableModel.DisplayName);
+        Assert.Equal(string.Empty, variableModel.Description);
+        Assert.Equal(string.Empty, variableModel.DefaultValue);
+        Assert.Equal(string.Empty, triggerModel.Key);
+        Assert.Equal(string.Empty, triggerModel.Description);
+        Assert.Equal(string.Empty, groupModel.Name);
     }
 
     [Fact]

@@ -40,6 +40,15 @@ public sealed class ButterMorphOrchestrationValidationExecutorTests
         });
 
         Assert.True(result.Succeeded);
+
+        var noSchemaResult = await executor.ValidateAsync(new()
+        {
+            Phase = "Request",
+            Payload = null,
+            SchemaBinding = null
+        });
+
+        Assert.True(noSchemaResult.Succeeded);
     }
 
     [Fact]
@@ -173,6 +182,49 @@ public sealed class ButterMorphOrchestrationValidationExecutorTests
             ReferenceEquals(request.Sources, sources) &&
             ReferenceEquals(request.SourceGraph, contextGraph) &&
             request.PayloadAlias == "context"));
+
+        var blankAliasResult = await executor.ValidateAsync(new OrchestrationValidationRequest
+        {
+            Phase = "TaskEntry",
+            PayloadContext = new OrchestrationPayloadContext
+            {
+                ContextPayload = JsonNode.Parse("""{"trigger":{"payload":{"saleId":"sale-1"}}}"""),
+                TriggerPayload = JsonNode.Parse("""{"saleId":"sale-1"}"""),
+                StageKey = "fulfillment",
+                TaskKey = "inventory_reservation"
+            },
+            PayloadAlias = " ",
+            ValidationDsl = "validate task"
+        });
+
+        Assert.True(blankAliasResult.Succeeded);
+        engine.Received(2).Validate(Arg.Is<ValidationRequest>(request =>
+            request.PayloadAlias == "context" &&
+            ReferenceEquals(request.SourceGraph, contextGraph)));
+    }
+
+    [Fact]
+    public async Task ValidateAsyncUsesEmptyJsonPayloadWhenPayloadAndContextAreMissing()
+    {
+        var engine = Substitute.For<IButterMorphEngine>();
+        var parser = Substitute.For<IDslParser>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(new DslDocument());
+        engine.Validate(Arg.Any<ValidationRequest>()).Returns(new ValidationResult { IsValid = true });
+        var executor = new ButterMorphOrchestrationValidationExecutor(
+            engine,
+            parser,
+            new ButterMorphDiagnosticMetadataMapper(),
+            Substitute.For<IButterMorphSourceGraphBuilder>());
+
+        var result = await executor.ValidateAsync(new OrchestrationValidationRequest
+        {
+            Phase = "Request",
+            Payload = null,
+            ValidationDsl = "validate request"
+        });
+
+        Assert.True(result.Succeeded);
+        engine.Received(1).Validate(Arg.Any<ValidationRequest>());
     }
 
     private static ButterMorphOrchestrationValidationExecutor CreateExecutor()

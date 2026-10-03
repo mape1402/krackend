@@ -198,6 +198,57 @@ public sealed class OrchestrationButterMorphSchemaImporterTests
     }
 
     [Fact]
+    public void TryImportUsesSnapshotContractKeyWhenBindingKeyIsBlank()
+    {
+        var capturedRequest = default(JsonSchemaImportRequest);
+        var jsonImporter = Substitute.For<IJsonSchemaImporter>();
+        jsonImporter
+            .Import(Arg.Do<JsonSchemaImportRequest>(request => capturedRequest = request))
+            .Returns(new JsonSchemaConversionResult
+            {
+                Succeeded = false
+            });
+        var importer = new OrchestrationButterMorphSchemaImporter(
+            jsonImporter,
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+        var binding = CreateBinding(
+            "events.sales.snapshot-key",
+            "JsonSchema",
+            """
+            {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object"
+            }
+            """);
+        binding.ContractKey = " ";
+
+        var imported = importer.TryImport(binding, out var schema, out _);
+
+        Assert.False(imported);
+        Assert.Null(schema);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("events.sales.snapshot-key", capturedRequest!.Name);
+    }
+
+    [Fact]
+    public void PrivateButterMorphDefinitionBuilderRejectsNullDefinitionPayloads()
+    {
+        var importer = CreateImporter();
+        var binding = CreateBinding("commands.sales.null", "ButterMorph", "null");
+        var method = typeof(OrchestrationButterMorphSchemaImporter).GetMethod(
+            "TryBuildJsonSchemaFromButterMorphDefinition",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        object?[] args = [binding, "null", string.Empty, string.Empty];
+
+        var built = (bool)method.Invoke(importer, args)!;
+
+        Assert.False(built);
+        Assert.Equal(string.Empty, args[2]);
+        Assert.Contains("empty ButterMorph payload definition", (string)args[3]!);
+    }
+
+    [Fact]
     public void TryImportReportsButterMorphPayloadBuilderFailures()
     {
         var builder = Substitute.For<IPayloadSchemaBuilder>();

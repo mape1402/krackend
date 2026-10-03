@@ -59,4 +59,64 @@ public sealed class RemoteCommandMetadataBuilderTests
 
         Assert.Equal("req-before", metadata["audit.context"]!["requestId"]!.GetValue<string>());
     }
+
+    [Fact]
+    public void Build_HandlesEmptyInputsReservedKeysAndReplyAddressMetadata()
+    {
+        var empty = RemoteCommandMetadataBuilder.Build(null!, null!);
+        var messageOnly = RemoteCommandMetadataBuilder.Build(
+            new OrchestrationMessageMetadata
+            {
+                ReplyAddress = new OrchestrationReplyAddress
+                {
+                    Transport = "messaging",
+                    SettingsPayload = "{}"
+                }
+            },
+            new OrchestrationPropagationMetadata
+            {
+                Items =
+                {
+                    [" "] = JsonValue.Create("blank")!,
+                    [OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] = JsonValue.Create("reserved")!,
+                    [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse("""{"traceId":"trace-1"}""")!,
+                    ["audit.context"] = null!
+                }
+            });
+
+        Assert.Empty(empty);
+        Assert.True(messageOnly.ContainsKey(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey));
+        Assert.Equal("messaging", messageOnly[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]!["replyAddress"]!["transport"]!.GetValue<string>());
+        Assert.False(messageOnly.ContainsKey(" "));
+        Assert.False(messageOnly.ContainsKey(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey));
+        Assert.Equal("trace-1", messageOnly[OrchestrationMetadataConstants.TriggerMetadataKey]!["traceId"]!.GetValue<string>());
+        Assert.True(messageOnly.ContainsKey("audit.context"));
+        Assert.Null(messageOnly["audit.context"]);
+        Assert.False(RemoteCommandMetadataBuilder.IsReserved(null!));
+        Assert.False(RemoteCommandMetadataBuilder.IsReserved(string.Empty));
+        Assert.False(RemoteCommandMetadataBuilder.IsReserved(OrchestrationMetadataConstants.TriggerMetadataKey));
+        Assert.True(RemoteCommandMetadataBuilder.IsReserved(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey));
+    }
+
+    [Fact]
+    public void Build_IncludesMessageEnvelopeWhenAnyMessageMetadataFieldIsPresent()
+    {
+        var cases = new[]
+        {
+            new OrchestrationMessageMetadata { OrchestrationInstanceId = "instance-1" },
+            new OrchestrationMessageMetadata { CurrentStage = "stage-1" },
+            new OrchestrationMessageMetadata { CurrentTasks = ["task-1"] },
+            new OrchestrationMessageMetadata { CorrelationId = "corr-1" },
+            new OrchestrationMessageMetadata { TaskExecutionId = "task-execution-1" },
+            new OrchestrationMessageMetadata { DispatchId = "dispatch-1" },
+            new OrchestrationMessageMetadata { Attempt = 1 }
+        };
+
+        foreach (var message in cases)
+        {
+            var metadata = RemoteCommandMetadataBuilder.Build(message, null!);
+
+            Assert.True(metadata.ContainsKey(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey));
+        }
+    }
 }

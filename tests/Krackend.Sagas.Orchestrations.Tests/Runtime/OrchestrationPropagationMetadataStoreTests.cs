@@ -84,6 +84,13 @@ public sealed class OrchestrationPropagationMetadataStoreTests
         var loaded = store.Load(instance);
 
         Assert.False(loaded.HasItems);
+
+        instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonValue.Create("not-an-envelope")!;
+
+        var scalar = store.Load(instance);
+
+        Assert.False(scalar.HasItems);
     }
 
     private static OrchestrationInstance CreateInstance()

@@ -1,3 +1,4 @@
+using System.Reflection;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
@@ -247,6 +248,24 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         Assert.IsType<PageResult>(result);
         Assert.Contains("cannot be published", page.ErrorMessage, StringComparison.Ordinal);
         Assert.Contains("stage:inventories:task:discountstock:transformation", page.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DetailsFriendlyErrorMessageHandlesKnownAndUnknownExceptions()
+    {
+        var method = typeof(OrchestrationDetailsPageModel).GetMethod(
+            "ToFriendlyErrorMessage",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        var dsl = (string)method.Invoke(null, [new OrchestrationArtifactDslValidationException("stage:one", "invalid")])!;
+        var invalid = (string)method.Invoke(null, [new InvalidOperationException("specific failure")])!;
+        var blankInvalid = (string)method.Invoke(null, [new InvalidOperationException("")])!;
+        var unknown = (string)method.Invoke(null, [new Exception("hidden")])!;
+
+        Assert.Contains("stage:one", dsl, StringComparison.Ordinal);
+        Assert.Equal("specific failure", invalid);
+        Assert.Contains("could not be completed", blankInvalid, StringComparison.Ordinal);
+        Assert.Contains("could not be completed", unknown, StringComparison.Ordinal);
     }
 
     [Fact]

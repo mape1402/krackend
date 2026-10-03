@@ -13,6 +13,33 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class RuntimeDiagnosticsReaderTests
 {
     [Fact]
+    public void InstanceRowModelBuildsLabelsWithAndWithoutVersion()
+    {
+        var started = DateTime.UtcNow.AddMinutes(-10);
+        var versioned = new InstanceRowModel(
+            "instance-1",
+            "orders",
+            "1.0.0",
+            "corr-1",
+            "saga-1",
+            "execution-1",
+            "Running",
+            "status-running",
+            "stage",
+            "task",
+            started,
+            DateTime.UtcNow,
+            null,
+            null,
+            null,
+            string.Empty);
+        var unversioned = versioned with { OrchestrationVersion = " " };
+
+        Assert.Equal("orders v1.0.0", versioned.OrchestrationLabel);
+        Assert.Equal("orders", unversioned.OrchestrationLabel);
+    }
+
+    [Fact]
     public async Task GetDetail_ReturnsCompleteTraceWithFunctionalAndTechnicalTimelines()
     {
         var store = RuntimeDiagnosticsStore.Create();
@@ -105,6 +132,20 @@ public sealed class RuntimeDiagnosticsReaderTests
         Assert.Single(detail.Stages);
         Assert.Single(detail.Tasks);
         Assert.True(Assert.Single(detail.Tasks).HasExecution);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenArtifactStageDefinitionsAreNull_ReturnsExecutedTraceWithoutConfiguredStages()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Artifact.ArtifactPayload["stageDefinitions"] = null;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        Assert.Single(detail.Stages);
+        Assert.Single(detail.Tasks);
+        Assert.True(Assert.Single(detail.Stages).HasExecution);
     }
 
     [Fact]
@@ -211,6 +252,65 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
+    public async Task GetDetail_WhenDispatchMetadataIsEmptyAndPropagationIsMissing_UsesRuntimeFallbackMetadata()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Instance.SagaId = string.Empty;
+        store.Instance.Metadata.Clear();
+        store.Dispatch.Metadata = null!;
+        store.Dispatch.CorrelationId = string.Empty;
+        store.Task.CorrelationId = string.Empty;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var dispatchMetadata = Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch.Metadata;
+        Assert.Contains($"\"sagaId\": \"{store.Instance.Id}\"", dispatchMetadata);
+        Assert.Contains("\"correlationId\": \"corr-123\"", dispatchMetadata);
+        Assert.Contains("\"currentTasks\": [", dispatchMetadata);
+        Assert.DoesNotContain(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey, dispatchMetadata);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenPropagationMetadataEntryIsNull_UsesRuntimeFallbackMetadata()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Dispatch.Metadata = null!;
+        store.Instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] = null!;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var dispatchMetadata = Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch.Metadata;
+        Assert.Contains(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey, dispatchMetadata);
+        Assert.DoesNotContain(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey, dispatchMetadata);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenTransitionsAndCompensationsReferenceMissingExecutions_LeavesKeysEmpty()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        var missingTaskId = Id.New();
+        store.Compensation.SourceTaskExecutionId = missingTaskId;
+        store.OlderTransition.StageExecutionId = null;
+        store.OlderTransition.TaskExecutionId = null;
+        store.OlderTransition.TaskExecutionAttemptId = null;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var transition = detail.Transitions.Single(x => x.Id == store.OlderTransition.Id.ToString());
+        Assert.Null(transition.StageExecutionId);
+        Assert.Null(transition.StageKey);
+        Assert.Null(transition.TaskExecutionId);
+        Assert.Null(transition.TaskKey);
+        Assert.Null(transition.TaskExecutionAttemptId);
+        var compensation = Assert.Single(detail.Compensations);
+        Assert.Equal(missingTaskId.ToString(), compensation.SourceTaskExecutionId);
+        Assert.Null(compensation.SourceTaskKey);
+    }
+
+    [Fact]
     public void PropagationMetadataDeserializersHandleFallbackItemsAndInvalidNodes()
     {
         var envelopeMethod = typeof(RuntimeDiagnosticsReader).GetMethod(
@@ -220,16 +320,91 @@ public sealed class RuntimeDiagnosticsReaderTests
             "TryDeserializePropagationItems",
             BindingFlags.Static | BindingFlags.NonPublic)!;
         var malformedEnvelope = JsonNode.Parse("""{"items":[1]}""")!;
+        var nullEnvelope = JsonNode.Parse("""{"items":null}""")!;
         var itemDictionary = JsonNode.Parse("""{"audit.context":{"requestId":"req-items"}}""")!;
+        var itemDictionaryWithNull = JsonNode.Parse("""{"audit.context":null}""")!;
         var invalidItems = JsonNode.Parse("""[1]""")!;
+        var loadPropagationMethod = typeof(RuntimeDiagnosticsReader).GetMethod(
+            "LoadPropagationMetadata",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var instanceWithInvalidPropagation = RuntimeDiagnosticsStore.Create().Instance;
+        instanceWithInvalidPropagation.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonNode.Parse("""[1]""")!;
 
         var envelope = envelopeMethod.Invoke(null, [malformedEnvelope]);
+        var envelopeWithNullItems = envelopeMethod.Invoke(null, [nullEnvelope]);
         var items = (OrchestrationPropagationMetadata)itemsMethod.Invoke(null, [itemDictionary])!;
+        var itemsWithNull = (OrchestrationPropagationMetadata)itemsMethod.Invoke(null, [itemDictionaryWithNull])!;
         var invalid = itemsMethod.Invoke(null, [invalidItems]);
+        var loadedFromNullInstance = (OrchestrationPropagationMetadata)loadPropagationMethod.Invoke(null, [null])!;
+        var loadedFromInvalidNode = (OrchestrationPropagationMetadata)loadPropagationMethod.Invoke(null, [instanceWithInvalidPropagation])!;
 
         Assert.Null(envelope);
+        Assert.Null(envelopeWithNullItems);
         Assert.Equal("req-items", items.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.True(itemsWithNull.Items.ContainsKey("audit.context"));
+        Assert.Null(itemsWithNull.Items["audit.context"]);
         Assert.Null(invalid);
+        Assert.False(loadedFromNullInstance.HasItems);
+        Assert.False(loadedFromInvalidNode.HasItems);
+    }
+
+    [Fact]
+    public void ArtifactMetadataBuildersHandleOptionalCollectionsAndTaskOptions()
+    {
+        var stageMethod = typeof(RuntimeDiagnosticsReader).GetMethod(
+            "BuildStageArtifactMetadata",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var taskMethod = typeof(RuntimeDiagnosticsReader).GetMethod(
+            "BuildTaskArtifactMetadata",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var configuration = new MessagingTaskConfigurationArtifact(
+            "orders.reserve",
+            new SemanticVersion(1, 0, 0),
+            null);
+        var task = new TaskArtifact(
+            Id.New(),
+            "reserve",
+            "Reserve inventory",
+            1,
+            string.Empty,
+            TaskKind.Messaging,
+            TaskExecutionMode.Sequential,
+            null,
+            null,
+            null,
+            configuration,
+            null,
+            null,
+            OnErrorPolicy.Stop,
+            null,
+            TaskDispatchType.FireAndForget,
+            false);
+        var stage = new StageArtifact(
+            Id.New(),
+            "reserve-stock",
+            "Reserve stock",
+            1,
+            false,
+            null,
+            null!,
+            null!,
+            null!,
+            string.Empty);
+
+        var stageMetadata = (JsonNode)stageMethod.Invoke(null, [stage])!;
+        var taskMetadata = (JsonNode)taskMethod.Invoke(null, [task])!;
+
+        Assert.Equal(0, stageMetadata["TaskCount"]!.GetValue<int>());
+        Assert.Equal(0, stageMetadata["ParallelGroupCount"]!.GetValue<int>());
+        Assert.Equal(0, stageMetadata["BranchRuleCount"]!.GetValue<int>());
+        Assert.False(stageMetadata["HasExecutionCondition"]!.GetValue<bool>());
+        Assert.False(taskMetadata["AwaitResponse"]!.GetValue<bool>());
+        Assert.False(taskMetadata["HasExecutionCondition"]!.GetValue<bool>());
+        Assert.False(taskMetadata["HasTransformation"]!.GetValue<bool>());
+        Assert.False(taskMetadata["HasRetryPolicy"]!.GetValue<bool>());
+        Assert.False(taskMetadata["HasTimeoutPolicy"]!.GetValue<bool>());
+        Assert.False(taskMetadata["HasCompensation"]!.GetValue<bool>());
     }
 
     [Theory]
@@ -247,11 +422,22 @@ public sealed class RuntimeDiagnosticsReaderTests
 
     [Theory]
     [InlineData("Created", "od-status-inactive")]
+    [InlineData("Pending", "od-status-inactive")]
+    [InlineData("Skipped", "od-status-inactive")]
+    [InlineData("Stopped", "od-status-inactive")]
     [InlineData("Running", "od-status-running")]
     [InlineData("Retrying", "od-status-warning")]
+    [InlineData("CompletedWithErrors", "od-status-warning")]
+    [InlineData("DeadLettered", "od-status-warning")]
+    [InlineData("Waiting", "od-status-waiting")]
     [InlineData("WaitingResponse", "od-status-waiting")]
+    [InlineData("Compensating", "od-status-waiting")]
     [InlineData("Completed", "od-status-active")]
+    [InlineData("Compensated", "od-status-active")]
     [InlineData("Failed", "od-status-danger")]
+    [InlineData("TimedOut", "od-status-danger")]
+    [InlineData("Cancelled", "od-status-danger")]
+    [InlineData("Aborted", "od-status-danger")]
     [InlineData("anything-else", "od-status-inactive")]
     public void StatusClass_MapsRuntimeStatuses(string status, string expectedClass)
         => Assert.Equal(expectedClass, RuntimeDiagnosticsReader.StatusClass(status));

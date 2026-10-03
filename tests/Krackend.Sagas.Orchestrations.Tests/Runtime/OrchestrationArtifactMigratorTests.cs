@@ -1,5 +1,6 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
@@ -73,6 +74,155 @@ public sealed class OrchestrationArtifactMigratorTests
         Assert.Equal("Task", required.Kind);
     }
 
+    [Fact]
+    public void MigratorNormalizesSparseArtifactsCapabilitiesAndCompensation()
+    {
+        var migrator = new DefaultOrchestrationArtifactMigrator();
+        var nullCollections = CreateArtifact() with
+        {
+            ExecutionPolicy = null!,
+            RequiredCapabilities = null!,
+            StageDefinitions = null!,
+            TriggerBindings = null!
+        };
+
+        var migratedNullCollections = migrator.Migrate(nullCollections);
+
+        Assert.Empty(migratedNullCollections.StageDefinitions);
+        Assert.Empty(migratedNullCollections.RequiredCapabilities);
+        Assert.Equal(ExecutionPolicyArtifact.Empty, migratedNullCollections.ExecutionPolicy);
+
+        var compensation = new CompensationArtifact(
+            TaskKind.Http,
+            DisabledTransformation(),
+            DisabledCondition(),
+            HttpConfiguration(),
+            null!,
+            null!,
+            TaskDispatchType.FireAndForget);
+        var customTask = MessagingTask("send.invoice") with
+        {
+            ExtensionKey = " custom.ext ",
+            CapabilityKey = " task.custom ",
+            CapabilityVersion = "bad.version",
+            Compensation = compensation,
+            ExecutionPolicy = null!,
+            RuntimeRequirements = null!
+        };
+        var httpTask = Task("http.customer", TaskKind.Http, HttpConfiguration());
+        var pluginTask = Task("plugin.credit", TaskKind.Plugin, new PluginTaskConfigurationArtifact(Id.New()));
+        var humanTask = Task("approval.manual", TaskKind.HumanApproval, new HumanApprovalTaskConfigurationArtifact());
+        var nullTaskStage = Stage(MessagingTask("ignored")) with { TaskDefinitions = null! };
+        var artifact = CreateArtifact(customTask) with
+        {
+            TriggerBindings = [EventTrigger() with { IsEnabled = false }],
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(" ", "cap", Version, "Invalid"),
+                new RequiredCapabilityArtifact("ext", " ", Version, "Invalid"),
+                new RequiredCapabilityArtifact("kept.ext", "kept.cap", new SemanticVersion(9, 0, 0), "Existing")
+            ],
+            StageDefinitions =
+            [
+                Stage(customTask) with { ExecutionPolicy = null!, TaskDefinitions = [customTask, httpTask, pluginTask, humanTask] },
+                nullTaskStage
+            ]
+        };
+
+        var migrated = migrator.Migrate(artifact);
+        var migratedCustomTask = migrated.StageDefinitions[0].TaskDefinitions[0];
+
+        Assert.Equal("custom.ext", migratedCustomTask.ExtensionKey);
+        Assert.Equal("task.custom", migratedCustomTask.CapabilityKey);
+        Assert.Equal("bad.version", migratedCustomTask.CapabilityVersion);
+        Assert.Equal(ExecutionPolicyArtifact.Empty, migratedCustomTask.ExecutionPolicy);
+        Assert.Equal(ExecutionRuntimeRequirementsArtifact.Empty, migratedCustomTask.RuntimeRequirements);
+        Assert.Contains(migrated.RequiredCapabilities, capability =>
+            capability.ExtensionKey == "kept.ext" &&
+            capability.CapabilityKey == "kept.cap" &&
+            capability.Version.Equals(new SemanticVersion(9, 0, 0)));
+        Assert.Contains(migrated.RequiredCapabilities, capability =>
+            capability.ExtensionKey == "custom.ext" &&
+            capability.CapabilityKey == "task.custom" &&
+            capability.Version.Equals(Version));
+        Assert.Contains(migrated.RequiredCapabilities, capability =>
+            capability.Kind == "Compensation" &&
+            capability.CapabilityKey == BuiltInCapabilityKeys.HttpTask);
+        Assert.Contains(migrated.RequiredCapabilities, capability => capability.CapabilityKey == BuiltInCapabilityKeys.PluginTask);
+        Assert.Contains(migrated.RequiredCapabilities, capability => capability.CapabilityKey == BuiltInCapabilityKeys.HumanApprovalTask);
+        Assert.DoesNotContain(migrated.RequiredCapabilities, capability => capability.CapabilityKey == BuiltInCapabilityKeys.EventTrigger);
+    }
+
+    [Fact]
+    public void PrivateHelpersCoverParsingFallbackAndBlankCapabilityBranches()
+    {
+        Assert.Throws<ArgumentNullException>(() => new DefaultOrchestrationArtifactMigrator().Migrate(null!));
+        Assert.Equal(BuiltInCapabilityKeys.HttpTask, InvokePrivate<string>(
+            "ResolveBuiltInTaskCapability",
+            [typeof(TaskKind)],
+            [TaskKind.Http]));
+        Assert.Equal(BuiltInCapabilityKeys.PluginTask, InvokePrivate<string>(
+            "ResolveBuiltInTaskCapability",
+            [typeof(TaskKind)],
+            [TaskKind.Plugin]));
+        Assert.Equal(BuiltInCapabilityKeys.HumanApprovalTask, InvokePrivate<string>(
+            "ResolveBuiltInTaskCapability",
+            [typeof(TaskKind)],
+            [TaskKind.HumanApproval]));
+        Assert.Equal("task.999", InvokePrivate<string>(
+            "ResolveBuiltInTaskCapability",
+            [typeof(TaskKind)],
+            [(TaskKind)999]));
+        Assert.Null(InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], [null]));
+        Assert.Null(InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], [" "]));
+        Assert.Null(InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], ["1.2"]));
+        Assert.Null(InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], ["x.2.3"]));
+        Assert.Null(InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], ["1.x.3"]));
+        Assert.Null(InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], ["1.2.x"]));
+        Assert.Equal(new SemanticVersion(1, 2, 3), InvokePrivate<SemanticVersion?>("TryParseVersion", [typeof(string)], ["1.2.3"]));
+
+        var capabilities = new Dictionary<string, RequiredCapabilityArtifact>(StringComparer.OrdinalIgnoreCase);
+        InvokePrivate<object?>(
+            "AddCapability",
+            [typeof(IDictionary<string, RequiredCapabilityArtifact>), typeof(string), typeof(string), typeof(SemanticVersion), typeof(string)],
+            [capabilities, " ", "cap", Version, "Task"]);
+        InvokePrivate<object?>(
+            "AddCapability",
+            [typeof(IDictionary<string, RequiredCapabilityArtifact>), typeof(string), typeof(string), typeof(SemanticVersion), typeof(string)],
+            [capabilities, "ext", " ", Version, "Task"]);
+        InvokePrivate<object?>(
+            "AddCapability",
+            [typeof(IDictionary<string, RequiredCapabilityArtifact>), typeof(string), typeof(string), typeof(SemanticVersion), typeof(string)],
+            [capabilities, " ext ", " cap ", Version, "Task"]);
+
+        var capability = Assert.Single(capabilities.Values);
+        Assert.Equal("ext", capability.ExtensionKey);
+        Assert.Equal("cap", capability.CapabilityKey);
+
+        var rawTask = MessagingTask("raw") with
+        {
+            ExtensionKey = " ",
+            CapabilityKey = " ",
+            CapabilityVersion = null!
+        };
+        var rawCapabilities = InvokePrivate<IReadOnlyList<RequiredCapabilityArtifact>>(
+            "MergeRequiredCapabilities",
+            [typeof(OrchestrationArtifact), typeof(IReadOnlyCollection<StageArtifact>), typeof(IReadOnlyCollection<TriggerBindingArtifact>)],
+            [
+                CreateArtifact(rawTask),
+                new[]
+                {
+                    Stage(rawTask) with { TaskDefinitions = [rawTask] },
+                    Stage(MessagingTask("empty")) with { TaskDefinitions = null! }
+                },
+                Array.Empty<TriggerBindingArtifact>()
+            ]);
+
+        Assert.Contains(rawCapabilities, candidate =>
+            candidate.ExtensionKey == ExtensionConstants.BuiltInExtensionKey &&
+            candidate.CapabilityKey == BuiltInCapabilityKeys.MessagingTask);
+    }
+
     private static OrchestrationArtifact CreateArtifact(TaskArtifact? task = null)
         => new(
             Id.New(),
@@ -136,6 +286,25 @@ public sealed class OrchestrationArtifactMigratorTests
             TaskDispatchType.FireAndWaitCallback,
             true);
 
+    private static TaskArtifact Task(string key, TaskKind kind, ITaskConfigurationArtifact configuration)
+        => MessagingTask(key) with
+        {
+            Kind = kind,
+            Configuration = configuration,
+            DispatchType = TaskDispatchType.FireAndForget
+        };
+
+    private static HttpTaskConfigurationArtifact HttpConfiguration()
+        => new(
+            null!,
+            "api",
+            "/customers",
+            "POST",
+            new JsonObject(),
+            new JsonObject(),
+            [200],
+            true);
+
     private static ExecutionConditionArtifact DisabledCondition()
         => new(EngineType.DSL, new DslConditionConfigurationArtifact(new Expression(string.Empty)))
         {
@@ -147,5 +316,19 @@ public sealed class OrchestrationArtifactMigratorTests
         {
             IsEnabled = false
         };
-}
 
+    private static TResult InvokePrivate<TResult>(
+        string methodName,
+        Type[] parameterTypes,
+        object?[] arguments)
+    {
+        var method = typeof(DefaultOrchestrationArtifactMigrator)
+            .GetMethod(
+                methodName,
+                BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: parameterTypes,
+                modifiers: null)!;
+        return (TResult)method.Invoke(null, arguments)!;
+    }
+}

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -201,18 +202,19 @@ public sealed class RestApiEndpointRouteBuilderTests
             {
                 options.RoutePrefix = "/custom/control/";
                 options.AuthorizationPolicy = "global-control-plane";
+                options.Authorization.ReadPolicy = "control-read";
+                options.Authorization.DesignWritePolicy = "control-design-write";
+                options.Authorization.ReleaseExecutePolicy = "control-release-execute";
+                options.Authorization.SecurityManagePolicy = "control-security-manage";
                 options.DefaultPageSize = 7;
                 options.MaxPageSize = 9;
             }));
 
-        var healthEndpoint = ((IEndpointRouteBuilder)app).DataSources
-            .SelectMany(x => x.Endpoints)
-            .OfType<RouteEndpoint>()
-            .Single(x => string.Equals(x.RoutePattern.RawText, "/custom/control/health", StringComparison.Ordinal));
-        var policyNames = healthEndpoint.Metadata
-            .OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
-            .Select(x => x.Policy)
-            .ToArray();
+        var policyNames = GetAuthorizationPolicies(app, "/custom/control/health");
+        var readPolicies = GetAuthorizationPolicies(app, "/custom/control/design/orchestrations");
+        var writePolicies = GetAuthorizationPolicies(app, "/custom/control/design/orchestrations", "POST");
+        var releasePolicies = GetAuthorizationPolicies(app, "/custom/control/distribution/runtime-nodes/{runtimeNodeId}/validate", "POST");
+        var securityManagePolicies = GetAuthorizationPolicies(app, "/custom/control/security/teams", "POST");
 
         var runtimeNodes = await Invoke(
             app,
@@ -247,6 +249,10 @@ public sealed class RestApiEndpointRouteBuilderTests
             user: CreateUser(("sub", "user-sub")));
 
         Assert.Contains("global-control-plane", policyNames);
+        Assert.Contains("control-read", readPolicies);
+        Assert.Contains("control-design-write", writePolicies);
+        Assert.Contains("control-release-execute", releasePolicies);
+        Assert.Contains("control-security-manage", securityManagePolicies);
         Assert.Equal(StatusCodes.Status200OK, runtimeNodes.StatusCode);
         Assert.Equal(StatusCodes.Status400BadRequest, nullStatus.StatusCode);
         Assert.Equal(StatusCodes.Status204NoContent, updatedStatus.StatusCode);
@@ -264,6 +270,96 @@ public sealed class RestApiEndpointRouteBuilderTests
                 x.Actor == "user-oid"),
             Arg.Any<CancellationToken>());
         await deliveryService.Received(1).Push("target-1", "user-sub", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void ControlPlaneApiPrivateHelpersNormalizePagingActorsAndPrefixes()
+    {
+        var options = new ControlPlaneRestApiOptions
+        {
+            DefaultPageSize = 12,
+            MaxPageSize = 20
+        };
+
+        var securityPaged = InvokeControlPlanePrivate<CPSecurity.ApplicationPagedSettings>(
+            "SecurityPaged",
+            [typeof(ControlPlaneRestApiOptions), typeof(int), typeof(int)],
+            [options, 0, 0]);
+        var clampedSecurityPaged = InvokeControlPlanePrivate<CPSecurity.ApplicationPagedSettings>(
+            "SecurityPaged",
+            [typeof(ControlPlaneRestApiOptions), typeof(int), typeof(int)],
+            [options, 4, 99]);
+
+        Assert.Equal(1, securityPaged.PageNumber);
+        Assert.Equal(12, securityPaged.PageSize);
+        Assert.Equal(4, clampedSecurityPaged.PageNumber);
+        Assert.Equal(20, clampedSecurityPaged.PageSize);
+        Assert.Equal("api", InvokeControlPlanePrivate<string>("NormalizeActor", [typeof(ActorRequest)], [null]));
+        Assert.Equal("api", InvokeControlPlanePrivate<string>("NormalizeActor", [typeof(ActorRequest)], [new ActorRequest { Actor = " " }]));
+        Assert.Equal("mario", InvokeControlPlanePrivate<string>("NormalizeActor", [typeof(ActorRequest)], [new ActorRequest { Actor = "mario" }]));
+        Assert.Equal("api", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [null, new ClaimsPrincipal(new ClaimsIdentity())]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, new ClaimsPrincipal(new ClaimsIdentity())]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, null]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, new ClaimsPrincipal()]));
+        Assert.Equal("name-id", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, CreateUser((ClaimTypes.NameIdentifier, "name-id"))]));
+        Assert.Equal("sub-id", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, CreateUser(("sub", "sub-id"))]));
+        Assert.Equal("identity-name", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, CreateUser((ClaimTypes.Name, "identity-name"))]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(SetActiveRequest), typeof(ClaimsPrincipal)],
+            [new SetActiveRequest { Actor = "body-actor" }, CreateUser(("oid", " "))]));
+        Assert.Equal("name-id", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [new ActorRequest { Actor = "body-actor" }, CreateUser((ClaimTypes.NameIdentifier, "name-id"))]));
+        Assert.Equal("sub-id", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [new ActorRequest { Actor = "body-actor" }, CreateUser(("sub", "sub-id"))]));
+        Assert.Equal("identity-name", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [new ActorRequest { Actor = "body-actor" }, CreateUser((ClaimTypes.Name, "identity-name"))]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [new ActorRequest { Actor = "body-actor" }, CreateUser(("oid", " "))]));
+        Assert.Equal("api", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [null, new ClaimsPrincipal(new ClaimsIdentity())]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [new ActorRequest { Actor = "body-actor" }, null]));
+        Assert.Equal("body-actor", InvokeControlPlanePrivate<string>(
+            "NormalizeActor",
+            [typeof(ActorRequest), typeof(ClaimsPrincipal)],
+            [new ActorRequest { Actor = "body-actor" }, new ClaimsPrincipal()]));
+        Assert.Equal("/api/v1/control-plane", InvokeControlPlanePrivate<string>("NormalizePrefix", [typeof(string)], [null]));
+        Assert.Equal("/api/v1/control-plane", InvokeControlPlanePrivate<string>("NormalizePrefix", [typeof(string)], [" "]));
+        Assert.Equal("/custom/control", InvokeControlPlanePrivate<string>("NormalizePrefix", [typeof(string)], ["/custom/control/"]));
     }
 
     [Fact]
@@ -764,6 +860,82 @@ public sealed class RestApiEndpointRouteBuilderTests
         await pullService.Received(1).ApplyAsync("cp", "target-1", Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public void RuntimeApiPrivateHelpersNormalizePoliciesDesignNodesAndSearch()
+    {
+        using var app = BuildApp(
+            _ => { },
+            endpoints => endpoints.MapKrackendOrchestrationsRuntimeApi(options =>
+            {
+                options.RoutePrefix = "/runtime/custom/";
+                options.AuthorizationPolicy = "runtime-global";
+                options.Authorization.ReadPolicy = "runtime-read";
+                options.Authorization.InstancesReadPolicy = "runtime-instances";
+                options.Authorization.ManagePolicy = "runtime-manage";
+                options.Authorization.ArtifactApplyPolicy = "runtime-apply";
+            }));
+        var explicitId = Id.New();
+        var explicitNode = InvokeRuntimePrivate<RuntimeDesignNode>(
+            "ToDesignNode",
+            [typeof(UpsertRuntimeDesignNodeRequest)],
+            [new UpsertRuntimeDesignNodeRequest(
+                explicitId.ToString(),
+                null!,
+                null!,
+                null!,
+                null!,
+                DistributionConnectionMode.HybridSync,
+                120,
+                20,
+                30,
+                null!)]);
+        var defaultNode = InvokeRuntimePrivate<RuntimeDesignNode>(
+            "ToDesignNode",
+            [typeof(UpsertRuntimeDesignNodeRequest)],
+            [new UpsertRuntimeDesignNodeRequest(
+                "not-an-id",
+                " key ",
+                " name ",
+                " http://runtime/ ",
+                " remote ",
+                DistributionConnectionMode.RuntimeFetchesFromDesign,
+                0,
+                0,
+                0,
+                " description ")]);
+        var artifact = CreateArtifact(RuntimeOrchestrationArtifactStatus.Ready, isActive: true);
+
+        Assert.Contains("runtime-global", GetAuthorizationPolicies(app, "/runtime/custom/health"));
+        Assert.Contains("runtime-read", GetAuthorizationPolicies(app, "/runtime/custom/artifacts"));
+        Assert.Contains("runtime-instances", GetAuthorizationPolicies(app, "/runtime/custom/instances/summary"));
+        Assert.Contains("runtime-manage", GetAuthorizationPolicies(app, "/runtime/custom/design-nodes", "POST"));
+        Assert.Contains("runtime-apply", GetAuthorizationPolicies(app, "/runtime/custom/artifacts/{artifactId}/standup", "POST"));
+        Assert.Equal("/api/v1/runtime", InvokeRuntimePrivate<string>("NormalizePrefix", [typeof(string)], [null]));
+        Assert.Equal("/api/v1/runtime", InvokeRuntimePrivate<string>("NormalizePrefix", [typeof(string)], [" "]));
+        Assert.Equal("/ops/runtime", InvokeRuntimePrivate<string>("NormalizePrefix", [typeof(string)], ["/ops/runtime/"]));
+        Assert.Equal(25, InvokeRuntimePrivate<int>("NormalizePageSize", [typeof(RuntimeRestApiOptions), typeof(int)], [new RuntimeRestApiOptions { DefaultPageSize = 25, MaxPageSize = 100 }, 0]));
+        Assert.Equal(100, InvokeRuntimePrivate<int>("NormalizePageSize", [typeof(RuntimeRestApiOptions), typeof(int)], [new RuntimeRestApiOptions { DefaultPageSize = 25, MaxPageSize = 100 }, 999]));
+        Assert.Equal(5, InvokeRuntimePrivate<int>("NormalizePageSize", [typeof(RuntimeRestApiOptions), typeof(int)], [new RuntimeRestApiOptions { DefaultPageSize = 25, MaxPageSize = 100 }, 5]));
+        Assert.Equal(explicitId, explicitNode.Id);
+        Assert.Equal(string.Empty, explicitNode.Key);
+        Assert.Equal(string.Empty, explicitNode.EndpointBaseUri);
+        Assert.Equal(120, explicitNode.AccessTokenTtlSeconds);
+        Assert.NotEqual(default, defaultNode.Id);
+        Assert.Equal("key", defaultNode.Key);
+        Assert.Equal("http://runtime", defaultNode.EndpointBaseUri);
+        Assert.Equal(86_400, defaultNode.AccessTokenTtlSeconds);
+        Assert.Equal(300, defaultNode.TokenRefreshSkewSeconds);
+        Assert.Equal(300, defaultNode.TokenValidationCacheTtlSeconds);
+        Assert.True(InvokeRuntimePrivate<bool>("MatchesArtifact", [typeof(RuntimeOrchestrationArtifact), typeof(string)], [artifact, " "]));
+        Assert.True(InvokeRuntimePrivate<bool>("MatchesArtifact", [typeof(RuntimeOrchestrationArtifact), typeof(string)], [artifact, artifact.Id.ToString()[..8]]));
+        Assert.True(InvokeRuntimePrivate<bool>("MatchesArtifact", [typeof(RuntimeOrchestrationArtifact), typeof(string)], [artifact, "SALES"]));
+        Assert.True(InvokeRuntimePrivate<bool>("MatchesArtifact", [typeof(RuntimeOrchestrationArtifact), typeof(string)], [artifact, "1.0.0"]));
+        Assert.True(InvokeRuntimePrivate<bool>("MatchesArtifact", [typeof(RuntimeOrchestrationArtifact), typeof(string)], [artifact, "checksum"]));
+        Assert.False(InvokeRuntimePrivate<bool>("MatchesArtifact", [typeof(RuntimeOrchestrationArtifact), typeof(string)], [artifact, "missing"]));
+        Assert.False(InvokeRuntimePrivate<bool>("Contains", [typeof(string), typeof(string)], [null, "value"]));
+        Assert.True(InvokeRuntimePrivate<bool>("Contains", [typeof(string), typeof(string)], [" runtime ", "time"]));
+    }
+
     private static WebApplication BuildApp(Action<IServiceCollection> configureServices, Action<IEndpointRouteBuilder> map)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development" });
@@ -841,6 +1013,48 @@ public sealed class RestApiEndpointRouteBuilderTests
         => new(new ClaimsIdentity(
             claims.Select(x => new Claim(x.Type, x.Value)),
             authenticationType: "test"));
+
+    private static string?[] GetAuthorizationPolicies(WebApplication app, string routePattern, string method = "GET")
+        => ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(x => x.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(x =>
+                string.Equals(x.RoutePattern.RawText, routePattern, StringComparison.Ordinal) &&
+                (x.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods.Contains(method, StringComparer.OrdinalIgnoreCase) ?? true))
+            .Metadata
+            .OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
+            .Select(x => x.Policy)
+            .ToArray();
+
+    private static TResult InvokeControlPlanePrivate<TResult>(
+        string methodName,
+        Type[] parameterTypes,
+        object?[] arguments)
+    {
+        var method = typeof(Krackend.Sagas.Orchestrations.ControlPlane.Api.EndpointRouteBuilderExtensions)
+            .GetMethod(
+                methodName,
+                BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: parameterTypes,
+                modifiers: null)!;
+        return (TResult)method.Invoke(null, arguments)!;
+    }
+
+    private static TResult InvokeRuntimePrivate<TResult>(
+        string methodName,
+        Type[] parameterTypes,
+        object?[] arguments)
+    {
+        var method = typeof(Krackend.Sagas.Orchestrations.Runtime.Api.EndpointRouteBuilderExtensions)
+            .GetMethod(
+                methodName,
+                BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: parameterTypes,
+                modifiers: null)!;
+        return (TResult)method.Invoke(null, arguments)!;
+    }
 
     private sealed record EndpointInvocationResult(int StatusCode, string Body);
 

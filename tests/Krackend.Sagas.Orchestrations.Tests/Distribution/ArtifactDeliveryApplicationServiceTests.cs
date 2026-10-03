@@ -210,6 +210,20 @@ public sealed class ArtifactDeliveryApplicationServiceTests
     }
 
     [Fact]
+    public async Task GetPendingForPullSkipsPushScheduledTargetsWhenNodeIsNotHybrid()
+    {
+        var state = CreateState(DistributionMode.RuntimeFetchesFromDesign);
+        state.Target.Status = ReleaseTargetStatus.PushScheduled;
+        var service = CreateService(state);
+
+        var pending = await service.GetPendingForPull(state.Node.Id.ToString());
+
+        Assert.Empty(pending);
+        Assert.Equal(ReleaseTargetStatus.PushScheduled, state.Target.Status);
+        Assert.Null(state.Target.AvailableAtUtc);
+    }
+
+    [Fact]
     public async Task GetForPullRejectsTargetsThatAreNotAvailableForPull()
     {
         var state = CreateState(DistributionMode.RuntimeFetchesFromDesign);
@@ -265,6 +279,112 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         Assert.Null(InvokePrivateStatic<string>("ExtractRuntimeError", " "));
         Assert.Equal("runtime failed", InvokePrivateStatic<string>("ExtractRuntimeError", "\r\n runtime failed \n details"));
         Assert.Equal(new string('x', 500), InvokePrivateStatic<string>("ExtractRuntimeError", new string('x', 510)));
+        Assert.Null(InvokePrivateStatic<string>("ExtractRuntimeError", "\r\n\t\r\n"));
+        Assert.Null(InvokePrivateStatic<string>("ExtractRuntimeError", " \n runtime failed"));
+    }
+
+    [Theory]
+    [InlineData("""{"Key":"pascal-root"}""", "fallback", "pascal-root")]
+    [InlineData("""{"key":"lower-key"}""", "fallback", "lower-key")]
+    [InlineData("""{"orchestrationDefinitionKey":"camel-key"}""", "fallback", "camel-key")]
+    [InlineData("""{"OrchestrationDefinitionKey":"pascal-key"}""", "fallback", "pascal-key")]
+    [InlineData("""{"orchestrationDefinitionId":"camel-id"}""", "fallback", "camel-id")]
+    [InlineData("""{"OrchestrationDefinitionId":"pascal-id"}""", "fallback", "pascal-id")]
+    [InlineData("""{}""", "fallback", "fallback")]
+    [InlineData("null", "fallback", "fallback")]
+    public void PackageHelpersExtractDefinitionKeysFromSupportedPayloadShapes(
+        string payload,
+        string fallback,
+        string expected)
+    {
+        var key = InvokePrivateStatic<string>("ExtractOrchestrationDefinitionKey", payload, fallback);
+
+        Assert.Equal(expected, key);
+    }
+
+    [Fact]
+    public void PackageHelpersRejectMissingDefinitionKeyWhenFallbackIsBlank()
+    {
+        var exception = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+            InvokePrivateStatic<string>("ExtractOrchestrationDefinitionKey", """{}""", null!));
+
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Equal(
+            "Artifact payload does not contain orchestration definition key.",
+            exception.InnerException!.Message);
+    }
+
+    [Theory]
+    [InlineData("""{"key":"orders.created"}""", "orders.created")]
+    [InlineData("""{"orchestrationDefinitionKey":"orders.updated"}""", "orders.updated")]
+    [InlineData("""{"OrchestrationDefinitionId":"orders.deleted"}""", "orders.deleted")]
+    [InlineData("""{}""", "fallback.definition")]
+    public void PackageHelpersExtractDefinitionKeyFromSupportedPayloadShapes(string payload, string expected)
+    {
+        var key = InvokePrivateStatic<string>("ExtractOrchestrationDefinitionKey", payload, "fallback.definition");
+
+        Assert.Equal(expected, key);
+    }
+
+    [Fact]
+    public void PackageHelpersReadRuntimeDeploymentResponsesAndErrorsDefensively()
+    {
+        var blankResponse = InvokePrivateStatic<RuntimeArtifactDeploymentResult?>("TryReadDeploymentResponse", " ");
+        var textResponse = InvokePrivateStatic<RuntimeArtifactDeploymentResult?>("TryReadDeploymentResponse", "accepted");
+        var invalidJsonResponse = InvokePrivateStatic<RuntimeArtifactDeploymentResult?>("TryReadDeploymentResponse", """{"accepted":""");
+        var jsonResponse = InvokePrivateStatic<RuntimeArtifactDeploymentResult?>(
+            "TryReadDeploymentResponse",
+            """{"accepted":true,"runtimeArtifactId":"runtime-1","status":"Ready"}""");
+        var blankError = InvokePrivateStatic<string?>("ExtractRuntimeError", " ");
+        var multilineError = InvokePrivateStatic<string?>("ExtractRuntimeError", "\r\n first line \n second line");
+        var longError = InvokePrivateStatic<string?>("ExtractRuntimeError", new string('x', 520));
+
+        Assert.Null(blankResponse);
+        Assert.Null(textResponse);
+        Assert.Null(invalidJsonResponse);
+        Assert.True(jsonResponse!.Accepted);
+        Assert.Equal("runtime-1", jsonResponse.RuntimeArtifactId);
+        Assert.Null(blankError);
+        Assert.Equal("first line", multilineError);
+        Assert.Equal(500, longError!.Length);
+    }
+
+    [Fact]
+    public void PackageHelpersResolvePullAvailabilityByTargetStatusAndRuntimeMode()
+    {
+        var pullNode = RuntimeNode(DistributionMode.RuntimeFetchesFromDesign);
+        var hybridNode = RuntimeNode(DistributionMode.HybridSync);
+        var target = new ReleaseTarget { Status = ReleaseTargetStatus.AvailableForPull };
+
+        Assert.True(InvokePrivateStatic<bool>("IsTargetAvailableForPull", pullNode, target));
+
+        target.Status = ReleaseTargetStatus.Pending;
+        Assert.True(InvokePrivateStatic<bool>("IsTargetAvailableForPull", pullNode, target));
+
+        target.Status = ReleaseTargetStatus.PushScheduled;
+        Assert.False(InvokePrivateStatic<bool>("IsTargetAvailableForPull", pullNode, target));
+        Assert.True(InvokePrivateStatic<bool>("IsTargetAvailableForPull", hybridNode, target));
+
+        target.Status = ReleaseTargetStatus.Failed;
+        Assert.False(InvokePrivateStatic<bool>("IsTargetAvailableForPull", hybridNode, target));
+    }
+
+    [Fact]
+    public void PackageHelpersBuildCustomDeployUrisAndReadyStateAliases()
+    {
+        var node = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
+        node.EndpointBaseUri = "https://runtime.local/";
+        node.EndpointApiPath = "/custom/deploy/";
+
+        var uri = InvokePrivateStatic<Uri>("BuildDeployUri", node);
+        var ready = InvokePrivateStatic<bool>("IsRuntimeReady", "Activated");
+        var mixedCaseReady = InvokePrivateStatic<bool>("IsRuntimeReady", "rEaDy");
+        var notReady = InvokePrivateStatic<bool>("IsRuntimeReady", "Pending");
+
+        Assert.Equal(new Uri("https://runtime.local/custom/deploy"), uri);
+        Assert.True(ready);
+        Assert.True(mixedCaseReady);
+        Assert.False(notReady);
     }
 
     private static T? InvokePrivateStatic<T>(string methodName, params object[] arguments)

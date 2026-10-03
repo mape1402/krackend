@@ -69,6 +69,8 @@ public sealed class ControlPlaneRuntimeNodeTests
 
         await service.SetStatus(id, RuntimeNodeStatus.Suspend);
         await service.SetStatus(id, RuntimeNodeStatus.Pending);
+        await service.SetStatus(id, RuntimeNodeStatus.Suspend);
+        await service.SetStatus(id, RuntimeNodeStatus.Enabled);
         await service.Delete(id);
 
         Assert.True(updated.IsDeleted);
@@ -149,9 +151,18 @@ public sealed class ControlPlaneRuntimeNodeTests
         second.Name = "Beta Runtime";
         second.Code = "beta";
         await repository.Create(second);
+        var orphanEnvironment = RuntimeNode(DistributionMode.RuntimeFetchesFromDesign);
+        orphanEnvironment.Name = "Gamma Runtime";
+        orphanEnvironment.Code = "gamma";
+        orphanEnvironment.EnvironmentId = Id.New();
+        orphanEnvironment.InboundClientId = string.Empty;
+        await repository.Create(orphanEnvironment);
 
         var page = await repository.GetAll(new PagedSettings(1, 10, [], []));
         Assert.Equal(["Alpha Runtime", "Beta Runtime"], page.Rows.Select(x => x.Name));
+        var orphan = MapRuntimeNodeEntityWithoutEnvironment(orphanEnvironment);
+        Assert.Equal(string.Empty, orphan.EnvironmentName);
+        Assert.Equal(string.Empty, orphan.EnvironmentCode);
 
         await repository.SoftDelete(node.Id);
         Assert.Null(await repository.GetByCode("alpha"));
@@ -210,6 +221,36 @@ public sealed class ControlPlaneRuntimeNodeTests
             RegisteredAtUtc = DateTime.UtcNow,
             LastUpdatedAtUtc = DateTime.UtcNow
         };
+
+    private static RuntimeNode MapRuntimeNodeEntityWithoutEnvironment(RuntimeNode runtimeNode)
+    {
+        var mapperType = typeof(Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Repositories.RuntimeNodeRepository);
+        var entityType = typeof(Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.RuntimeNodeEntity);
+        var map = mapperType.GetMethod(
+            "Map",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic,
+            binder: null,
+            types: [entityType],
+            modifiers: null)!;
+        var entity = new Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities.RuntimeNodeEntity
+        {
+            Id = runtimeNode.Id,
+            Name = runtimeNode.Name,
+            Code = runtimeNode.Code,
+            EnvironmentId = runtimeNode.EnvironmentId,
+            DistributionMode = runtimeNode.DistributionMode,
+            EndpointBaseUri = runtimeNode.EndpointBaseUri,
+            EndpointApiPath = runtimeNode.EndpointApiPath,
+            Status = runtimeNode.Status,
+            IsEnabled = runtimeNode.IsEnabled,
+            IsDeleted = runtimeNode.IsDeleted,
+            Description = runtimeNode.Description,
+            RegisteredAtUtc = runtimeNode.RegisteredAtUtc,
+            LastUpdatedAtUtc = runtimeNode.LastUpdatedAtUtc
+        };
+
+        return (RuntimeNode)map.Invoke(null, [entity])!;
+    }
 
     private sealed class RecordingRuntimeNodeRepository : IRuntimeNodeRepository
     {

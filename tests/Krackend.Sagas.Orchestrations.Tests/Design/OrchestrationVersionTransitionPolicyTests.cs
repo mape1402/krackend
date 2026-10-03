@@ -40,4 +40,15 @@ public sealed class OrchestrationVersionTransitionPolicyTests
         Assert.False(policy.CanTransition(from, to));
         Assert.Throws<InvalidOperationException>(() => policy.EnsureCanTransition(from, to));
     }
+
+    [Fact]
+    public void UnknownLifecycleStatesHaveNoAllowedTransitions()
+    {
+        var policy = new OrchestrationVersionTransitionPolicy();
+        var unknown = (OrchestrationVersionStatus)999;
+
+        Assert.False(policy.CanTransition(unknown, OrchestrationVersionStatus.Draft));
+        Assert.Empty(policy.GetAllowedTargets(unknown));
+        Assert.Throws<InvalidOperationException>(() => policy.EnsureCanTransition(unknown, OrchestrationVersionStatus.Draft));
+    }
 }

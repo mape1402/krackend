@@ -67,6 +67,27 @@ public sealed class ArtifactDeliveryEndpointAuthenticatorTests
     }
 
     [Fact]
+    public async Task ControlPlaneAuthenticatorTreatsMissingPathAsArtifactRead()
+    {
+        var validator = Substitute.For<IControlPlaneConnectionTokenValidator>();
+        IReadOnlyCollection<ArtifactDeliveryScope>? scopes = null;
+        validator.ValidateAsync(
+                Arg.Any<string>(),
+                "runtime-1",
+                Arg.Do<IReadOnlyCollection<ArtifactDeliveryScope>>(value => scopes = value),
+                Arg.Any<CancellationToken>())
+            .Returns(ConnectionTokenValidationResult.Success(new ConnectionTokenPrincipal()));
+        var authenticator = new ArtifactDeliveryEndpointAuthenticator(validator);
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+
+        var result = await authenticator.AuthenticateRuntimeNodeAsync(context.Request, "runtime-1", "{}");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal([ArtifactDeliveryScope.ArtifactRead], scopes);
+    }
+
+    [Fact]
     public async Task RuntimeAuthenticatorRequiresArtifactPushScopeAndReturnsNodeKey()
     {
         var validator = Substitute.For<IRuntimeConnectionTokenValidator>();

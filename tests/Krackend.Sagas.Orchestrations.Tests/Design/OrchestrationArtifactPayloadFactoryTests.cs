@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
@@ -119,6 +121,175 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Equal("JsonSchema", descriptor["SchemaFormat"]!.GetValue<string>());
         Assert.Equal("audit-hash", descriptor["ContentHash"]!.GetValue<string>());
         Assert.Contains("userId", descriptor["SchemaJson"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePayloadJson_UsesMetadataAndSnapshotFallbacksForSparseDesignData()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+        version.MetadataDescriptors = null!;
+
+        var payloadWithoutMetadata = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        Assert.Empty(JsonNode.Parse(payloadWithoutMetadata)!["MetadataDescriptors"]!.AsArray());
+
+        var task = version.StageDefinitions[0].TaskDefinitions[0];
+        var requestBinding = CreateSchemaBinding(ElementType.Task, task.Id, "inventory.reserve.request");
+        requestBinding.Snapshot = new Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandRequest,
+            RegistryProviderId = " ",
+            RegistryProviderKey = " ",
+            ContractId = " ",
+            ContractKey = " ",
+            ContractVersion = " ",
+            SchemaJson = """{"type":"object","fallback":true}""",
+            ContentHash = "request-fallback-hash"
+        };
+        var responseBinding = CreateSchemaBinding(ElementType.Task, task.Id, "inventory.reserve.response", SchemaContractKind.CommandResponse);
+        responseBinding.Snapshot = null!;
+        responseBinding.IsValidationEnabled = true;
+        task.Configuration = new MessagingTaskConfiguration
+        {
+            Topic = "inventory.reserve",
+            Version = new SemanticVersion(1, 0, 0),
+            RequestSchemaBinding = requestBinding,
+            ResponseSchemaBinding = responseBinding
+        };
+        version.MetadataDescriptors =
+        [
+            new MetadataDescriptor
+            {
+                Id = Id.New(),
+                Key = "audit",
+                SourceKey = " ",
+                DisplayName = "Audit",
+                Description = "Audit metadata.",
+                SchemaJson = "{}",
+                ContentHash = "audit-hash",
+                CreatedOnUtc = DateTime.UtcNow
+            }
+        ];
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var artifact = JsonNode.Parse(payloadJson)!.AsObject();
+        var metadata = artifact["MetadataDescriptors"]!.AsArray()[0]!.AsObject();
+        var configuration = artifact["StageDefinitions"]!.AsArray()[0]!["TaskDefinitions"]!.AsArray()[0]!["Configuration"]!.AsObject();
+        var requestSnapshot = configuration["RequestSchemaBinding"]!["Snapshot"]!.AsObject();
+
+        Assert.Equal("audit", metadata["SourceKey"]!.GetValue<string>());
+        Assert.Equal(requestBinding.RegistryProviderId.ToString(), requestSnapshot["RegistryProviderId"]!.GetValue<string>());
+        Assert.Equal(requestBinding.RegistryProviderKey, requestSnapshot["RegistryProviderKey"]!.GetValue<string>());
+        Assert.Equal(requestBinding.ContractId.ToString(), requestSnapshot["ContractId"]!.GetValue<string>());
+        Assert.Equal(requestBinding.ContractKey, requestSnapshot["ContractKey"]!.GetValue<string>());
+        Assert.Equal(requestBinding.ContractVersion.ToString(), requestSnapshot["ContractVersion"]!.GetValue<string>());
+        Assert.Null(configuration["ResponseSchemaBinding"]!["Snapshot"]);
+        Assert.True(configuration["ResponseValidation"]!["IsEnabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void PrivateSchemaBindingHelpersCoverNullCommandAndSnapshotBranches()
+    {
+        var commandRequestBinding = CreateSchemaBinding(ElementType.Task, Id.New(), "inventory.reserve", SchemaContractKind.Command);
+        commandRequestBinding.Snapshot = new Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandRequest,
+            SchemaJson = """{"type":"object","request":true}"""
+        };
+        var commandResponseBinding = CreateSchemaBinding(ElementType.Task, Id.New(), "inventory.reserve", SchemaContractKind.Command);
+        commandResponseBinding.Snapshot = new Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandResponse,
+            ContentHash = "response-hash"
+        };
+        var blankSnapshotBinding = CreateSchemaBinding(ElementType.Task, Id.New(), " ", SchemaContractKind.CommandRequest);
+        blankSnapshotBinding.Snapshot = new Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot
+        {
+            SchemaJson = " ",
+            ContentHash = " "
+        };
+        var referenceOnlyBinding = CreateSchemaBinding(ElementType.Task, Id.New(), "inventory.reserve.reference", SchemaContractKind.CommandRequest);
+        referenceOnlyBinding.Snapshot = null!;
+        var commandWithoutSnapshot = CreateSchemaBinding(ElementType.Task, Id.New(), "inventory.reserve", SchemaContractKind.Command);
+        commandWithoutSnapshot.Snapshot = null!;
+
+        var fallbackArtifact = InvokeFactoryPrivate<SchemaBindingArtifact>(
+            "MapSchemaBinding",
+            [typeof(SchemaBinding), typeof(bool)],
+            [null, true]);
+        var fallbackSnapshot = InvokeFactoryPrivate<SchemaContractSnapshotArtifact>(
+            "MapSnapshot",
+            [typeof(SchemaBinding), typeof(SchemaContractKind)],
+            [null, SchemaContractKind.Unspecified]);
+        var unspecifiedSnapshot = InvokeFactoryPrivate<SchemaContractSnapshotArtifact>(
+            "MapSnapshot",
+            [typeof(SchemaBinding), typeof(SchemaContractKind)],
+            [commandRequestBinding, SchemaContractKind.Unspecified]);
+        var requestBinding = InvokeFactoryPrivate<SchemaBinding>(
+            "GetRequestSchemaBinding",
+            [typeof(MessagingTaskConfiguration)],
+            [new MessagingTaskConfiguration
+            {
+                Topic = "inventory.reserve",
+                Version = new SemanticVersion(1, 0, 0),
+                SchemaBinding = commandRequestBinding
+            }]);
+        var responseBinding = InvokeFactoryPrivate<SchemaBinding>(
+            "GetResponseSchemaBinding",
+            [typeof(MessagingTaskConfiguration)],
+            [new MessagingTaskConfiguration
+            {
+                Topic = "inventory.reserve",
+                Version = new SemanticVersion(1, 0, 0),
+                SchemaBinding = commandResponseBinding
+            }]);
+        var requestReferenceBinding = InvokeFactoryPrivate<SchemaBinding>(
+            "GetRequestSchemaBinding",
+            [typeof(MessagingTaskConfiguration)],
+            [new MessagingTaskConfiguration
+            {
+                Topic = "inventory.reserve",
+                Version = new SemanticVersion(1, 0, 0),
+                RequestSchemaBinding = referenceOnlyBinding
+            }]);
+        var commandSideWithoutSnapshot = InvokeFactoryPrivate<SchemaBinding>(
+            "CreateCommandSideBinding",
+            [typeof(SchemaBinding), typeof(SchemaContractKind)],
+            [commandWithoutSnapshot, SchemaContractKind.CommandRequest]);
+        var nullTriggerException = Assert.Throws<TargetInvocationException>(() =>
+            InvokeFactoryPrivate<object>(
+                "MapTriggerChannel",
+                [typeof(ITriggerChannel)],
+                [null]));
+        var unsupportedTriggerException = Assert.Throws<TargetInvocationException>(() =>
+            InvokeFactoryPrivate<object>(
+                "MapTriggerChannel",
+                [typeof(ITriggerChannel)],
+                [new UnsupportedTriggerChannel()]));
+
+        Assert.False(fallbackArtifact.IsValidationEnabled);
+        Assert.Equal(SchemaContractKind.Unspecified, fallbackArtifact.ContractKind);
+        Assert.Null(fallbackSnapshot);
+        Assert.Equal(SchemaContractKind.CommandRequest, unspecifiedSnapshot.ContractKind);
+        Assert.Null(InvokeFactoryPrivate<SchemaBinding>("GetRequestSchemaBinding", [typeof(MessagingTaskConfiguration)], [null]));
+        Assert.Null(InvokeFactoryPrivate<SchemaBinding>("GetResponseSchemaBinding", [typeof(MessagingTaskConfiguration)], [null]));
+        Assert.Null(InvokeFactoryPrivate<SchemaBinding>(
+            "CreateCommandSideBinding",
+            [typeof(SchemaBinding), typeof(SchemaContractKind)],
+            [null, SchemaContractKind.CommandRequest]));
+        Assert.False(InvokeFactoryPrivate<bool>("IsRequestValidationEnabled", [typeof(MessagingTaskConfiguration)], [null]));
+        Assert.False(InvokeFactoryPrivate<bool>("IsResponseValidationEnabled", [typeof(MessagingTaskConfiguration)], [null]));
+        Assert.False(InvokeFactoryPrivate<bool>("HasUsableSnapshot", [typeof(SchemaBinding)], [null]));
+        Assert.False(InvokeFactoryPrivate<bool>("HasUsableSnapshot", [typeof(SchemaBinding)], [blankSnapshotBinding]));
+        Assert.False(InvokeFactoryPrivate<bool>("IsUsableBindingReference", [typeof(SchemaBinding)], [blankSnapshotBinding]));
+        Assert.Equal(SchemaContractKind.CommandRequest, requestBinding.ContractKind);
+        Assert.Equal(SchemaContractKind.CommandRequest, requestBinding.Snapshot.ContractKind);
+        Assert.Same(referenceOnlyBinding, requestReferenceBinding);
+        Assert.Equal(SchemaContractKind.CommandResponse, responseBinding.ContractKind);
+        Assert.Equal(SchemaContractKind.CommandResponse, responseBinding.Snapshot.ContractKind);
+        Assert.Null(commandSideWithoutSnapshot.Snapshot);
+        Assert.IsType<NullReferenceException>(nullTriggerException.InnerException);
+        Assert.IsType<InvalidOperationException>(unsupportedTriggerException.InnerException);
     }
 
     [Fact]
@@ -687,6 +858,21 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                 ResolvedAtUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z")
             }
         };
+
+    private static TResult InvokeFactoryPrivate<TResult>(
+        string methodName,
+        Type[] parameterTypes,
+        object?[] arguments)
+    {
+        var method = typeof(OrchestrationArtifactPayloadFactory)
+            .GetMethod(
+                methodName,
+                BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: parameterTypes,
+                modifiers: null)!;
+        return (TResult)method.Invoke(null, arguments)!;
+    }
 
     private sealed class UnsupportedTriggerChannel : ITriggerChannel
     {

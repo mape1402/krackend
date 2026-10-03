@@ -188,6 +188,34 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
     }
 
     [Fact]
+    public async Task GetLatestAsync_WhenCommandRequestIsRequestedWithNullTopic_UsesEmptyCommandRoute()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """
+            {
+              "commandKey": "",
+              "version": "1.0.0",
+              "requestArtifact": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "artifactType": 1,
+                "topic": "",
+                "versionNumber": "1.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "request-hash",
+                "sourceStatus": "Deployed"
+              }
+            }
+            """));
+        var client = CreateClient(handler);
+
+        var result = await client.GetLatestAsync(ContractArtifactType.CommandRequest, null!);
+
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Equal("/contracts/commands//latest", handler.RequestUri.AbsolutePath);
+        Assert.Equal(ContractArtifactType.CommandRequest, result.Contract.ArtifactType);
+    }
+
+    [Fact]
     public async Task GetLatestCommandAsync_UsesKnOwlLatestCommandRoute()
     {
         var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
@@ -241,6 +269,44 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
 
         Assert.Equal(KnOwlContractCatalogStatus.NotFound, result.Status);
         Assert.Contains("CommandReply", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetExactAsync_WhenCommandReplyIsRequested_UsesKnOwlCommandRouteAndReturnsReplyArtifact()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """
+            {
+              "commandKey": "shipments.dispatch",
+              "version": "3.0.0",
+              "requestArtifact": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "artifactType": 1,
+                "topic": "shipments.dispatch",
+                "versionNumber": "3.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "request-hash",
+                "sourceStatus": "Deployed"
+              },
+              "replyArtifact": {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "artifactType": 2,
+                "topic": "shipments.dispatch",
+                "versionNumber": "3.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "reply-hash",
+                "sourceStatus": "Deployed"
+              }
+            }
+            """));
+        var client = CreateClient(handler);
+
+        var result = await client.GetExactAsync(ContractArtifactType.CommandReply, "shipments.dispatch", "3.0.0");
+
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Equal("/contracts/commands/shipments.dispatch/versions/3.0.0", handler.RequestUri.AbsolutePath);
+        Assert.Equal(ContractArtifactType.CommandReply, result.Contract.ArtifactType);
+        Assert.Equal("reply-hash", result.Contract.ContentHash);
     }
 
     [Fact]

@@ -73,6 +73,35 @@ public sealed class EntityFrameworkKrackendSubjectRepositoryTests
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.SetEnabled("missing", false));
     }
 
+    [Fact]
+    public async Task SubjectRepositoryNormalizesNullFieldsAndNullLookupArguments()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(connection);
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<KrackendSecurityDbContext>();
+        await dbContext.Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IKrackendSubjectRepository>();
+
+        await repository.Upsert(new KrackendSubject
+        {
+            Provider = null!,
+            SubjectId = null!,
+            DisplayName = null!,
+            Email = null!,
+            IsEnabled = true
+        });
+
+        var stored = await repository.GetByExternalSubject(null!, null!);
+        var page = await repository.GetAll(-1, -1, " ");
+
+        Assert.NotNull(stored);
+        Assert.Equal(string.Empty, stored.Provider);
+        Assert.Equal(string.Empty, stored.SubjectId);
+        Assert.Single(page.Rows);
+    }
+
     private static ServiceProvider CreateProvider(SqliteConnection connection)
     {
         var services = new ServiceCollection();

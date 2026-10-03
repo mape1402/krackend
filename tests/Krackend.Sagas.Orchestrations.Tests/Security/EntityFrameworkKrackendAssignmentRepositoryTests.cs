@@ -59,6 +59,33 @@ public sealed class EntityFrameworkKrackendAssignmentRepositoryTests
     }
 
     [Fact]
+    public async Task PermissionAssignmentRepositoryNormalizesNullFieldsAndNullLookupArguments()
+    {
+        await using var provider = CreateProvider("permission-null");
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IKrackendPermissionAssignmentRepository>();
+
+        await repository.Upsert(new KrackendPermissionAssignment
+        {
+            Provider = null!,
+            SubjectId = null!,
+            Permission = null!,
+            ScopeType = null!,
+            ScopeId = null!,
+            Source = null!,
+            IsEnabled = true
+        });
+
+        var assignments = await repository.GetForSubject(null!, null!);
+
+        var assignment = Assert.Single(assignments);
+        Assert.Equal(string.Empty, assignment.Provider);
+        Assert.Equal(string.Empty, assignment.SubjectId);
+        Assert.Equal(string.Empty, assignment.Permission);
+        Assert.Equal(string.Empty, assignment.Source);
+    }
+
+    [Fact]
     public async Task RoleAssignmentRepositoryNormalizesUpdatesQueriesAndRemovesAssignments()
     {
         await using var provider = CreateProvider("role");
@@ -109,6 +136,33 @@ public sealed class EntityFrameworkKrackendAssignmentRepositoryTests
     }
 
     [Fact]
+    public async Task RoleAssignmentRepositoryNormalizesNullFieldsAndNullLookupArguments()
+    {
+        await using var provider = CreateProvider("role-null");
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IKrackendRoleAssignmentRepository>();
+
+        await repository.Upsert(new KrackendRoleAssignment
+        {
+            Provider = null!,
+            SubjectId = null!,
+            Role = null!,
+            ScopeType = null!,
+            ScopeId = null!,
+            Source = null!,
+            IsEnabled = true
+        });
+
+        var assignments = await repository.GetForSubject(null!, null!);
+
+        var assignment = Assert.Single(assignments);
+        Assert.Equal(string.Empty, assignment.Provider);
+        Assert.Equal(string.Empty, assignment.SubjectId);
+        Assert.Equal(string.Empty, assignment.Role);
+        Assert.Equal(string.Empty, assignment.Source);
+    }
+
+    [Fact]
     public async Task ExternalGroupRoleAssignmentRepositoryNormalizesUpdatesQueriesAndRemovesAssignments()
     {
         await using var provider = CreateProvider("external-group");
@@ -156,6 +210,34 @@ public sealed class EntityFrameworkKrackendAssignmentRepositoryTests
         await repository.Remove(assignment.Id);
 
         Assert.Empty(await repository.GetAll());
+    }
+
+    [Fact]
+    public async Task ExternalGroupRoleAssignmentRepositoryNormalizesNullFieldsAndNullLookupArguments()
+    {
+        await using var provider = CreateProvider("external-group-null");
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IKrackendExternalGroupRoleAssignmentRepository>();
+
+        await repository.Upsert(new KrackendExternalGroupRoleAssignment
+        {
+            Provider = null!,
+            ExternalGroupId = null!,
+            Role = null!,
+            ScopeType = null!,
+            ScopeId = null!,
+            Source = null!,
+            IsEnabled = true
+        });
+
+        var assignments = await repository.GetForGroups(null!, [null!, " "]);
+
+        Assert.Empty(assignments);
+        var stored = Assert.Single(await repository.GetAll());
+        Assert.Equal(string.Empty, stored.Provider);
+        Assert.Equal(string.Empty, stored.ExternalGroupId);
+        Assert.Equal(string.Empty, stored.Role);
+        Assert.Equal(string.Empty, stored.Source);
     }
 
     private static ServiceProvider CreateProvider(string name)

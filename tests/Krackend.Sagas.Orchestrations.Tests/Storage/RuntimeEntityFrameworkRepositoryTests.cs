@@ -829,6 +829,32 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Contains(traffic, point => point.Active >= 3);
     }
 
+    [Fact]
+    public async Task ExecutionTransitionRepositoryBuildsMinuteTrafficBucketsForRecentWindows()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var artifactRepository = services.GetRequiredService<IRuntimeArtifactRepository>();
+        var instanceRepository = services.GetRequiredService<IOrchestrationInstanceRepository>();
+        var transitionRepository = services.GetRequiredService<IExecutionTransitionRepository>();
+        var now = DateTime.UtcNow;
+        var artifact = RuntimeArtifact(new SemanticVersion(4, 1, 1), RuntimeOrchestrationArtifactStatus.Ready);
+        await artifactRepository.Upsert(artifact);
+        var running = Instance(artifact.Id, OrchestrationInstanceStatus.Running, now.AddMinutes(-20));
+        var completed = Instance(artifact.Id, OrchestrationInstanceStatus.Completed, now.AddMinutes(-18));
+        completed.CompletedOnUtc = now.AddMinutes(-3);
+        await instanceRepository.Create(running);
+        await instanceRepository.Create(completed);
+
+        var traffic = await transitionRepository.GetTraffic(now.AddMinutes(-30));
+
+        Assert.True(traffic.Count >= 2);
+        Assert.All(traffic.Zip(traffic.Skip(1)), pair => Assert.Equal(TimeSpan.FromMinutes(1), pair.Second.BucketUtc - pair.First.BucketUtc));
+        Assert.Contains(traffic, point => point.Completed > 0);
+        Assert.Contains(traffic, point => point.Active > 0);
+    }
+
     private static ServiceProvider CreateProvider(
         IRuntimeReactiveEventPublisher? publisher = null,
         Action<DbContextOptionsBuilder>? configureDbContext = null)
@@ -987,4 +1013,5 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             return Task.CompletedTask;
         }
     }
+
 }

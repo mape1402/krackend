@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Dispatch;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Intake;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
@@ -198,6 +199,29 @@ public sealed class RuntimeSmallComponentBehaviorTests
     }
 
     [Fact]
+    public void RuntimeMessageMetadataAccessorReturnsDefaultsAndStoredValues()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        using var provider = services.BuildServiceProvider();
+        var accessor = provider.GetRequiredService<IOrchestrationMessageMetadataAccessor>();
+        var setter = provider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+
+        Assert.NotNull(accessor.Get());
+        Assert.Null(accessor.Get().SagaId);
+
+        setter.Set(new OrchestrationMessageMetadata { SagaId = "saga-1" });
+
+        Assert.Equal("saga-1", accessor.Get().SagaId);
+
+        setter.Set(null!);
+
+        Assert.NotNull(accessor.Get());
+        Assert.Null(accessor.Get().SagaId);
+    }
+
+    [Fact]
     public void TriggerIntakeBufferResultAndLeaseExposeAcceptedRejectedAndGuardedState()
     {
         var itemId = Id.New();
@@ -267,10 +291,22 @@ public sealed class RuntimeSmallComponentBehaviorTests
             ReplicaId = " Replica A/01 ",
             StandupLanePrefix = " Stand Up Lane "
         });
+        var fallbackIdentity = CreateReplicaIdentity(new RuntimeReplicaOptions
+        {
+            ReplicaId = "///",
+            StandupLanePrefix = "lane"
+        });
 
         Assert.Equal("replica-a-01", identity.ReplicaId);
         Assert.StartsWith("replica-a-01-", identity.ReplicaBootId, StringComparison.Ordinal);
         Assert.Equal("stand-up-lane:replica-a-01", identity.LocalStandupLane);
+        Assert.Equal("runtime-replica", fallbackIdentity.ReplicaId);
+        Assert.Equal("lane:runtime-replica", fallbackIdentity.LocalStandupLane);
+        Assert.Throws<TargetInvocationException>(() => Activator.CreateInstance(
+            typeof(IRuntimeReplicaIdentity).Assembly.GetType(
+                "Krackend.Sagas.Orchestrations.Runtime.Replication.DefaultRuntimeReplicaIdentity",
+                throwOnError: true)!,
+            [null!]));
     }
 
     [Fact]
@@ -369,6 +405,18 @@ public sealed class RuntimeSmallComponentBehaviorTests
                 IsEnabled = true
             }
         });
+        var nullConfigurationCondition = await condition.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Phase = "Task",
+            ElementKey = "task",
+            PayloadContext = payloadContext,
+            Condition = new ExecutionConditionArtifact(
+                EngineType.DSL,
+                null!)
+            {
+                IsEnabled = true
+            }
+        });
         var missingExpression = await condition.EvaluateAsync(new OrchestrationConditionEvaluationRequest
         {
             Phase = "Task",
@@ -381,11 +429,35 @@ public sealed class RuntimeSmallComponentBehaviorTests
                 IsEnabled = true
             }
         });
+        var nullCondition = await condition.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Phase = "Task",
+            ElementKey = "task",
+            PayloadContext = payloadContext,
+            Condition = null
+        });
+        var literalCondition = await condition.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Phase = "Task",
+            ElementKey = "task",
+            PayloadContext = payloadContext,
+            Condition = new ExecutionConditionArtifact(
+                EngineType.DSL,
+                new DslConditionConfigurationArtifact(new Expression("false")))
+            {
+                IsEnabled = true
+            }
+        });
 
         Assert.Equal("ValidationAdapterNotConfigured", validationResult.ErrorCode);
         Assert.Equal("TransformationAdapterNotConfigured", transformationResult.ErrorCode);
         Assert.Equal("ConditionConfigurationNotSupported", unsupportedCondition.ErrorCode);
+        Assert.Equal("ConditionConfigurationNotSupported", nullConfigurationCondition.ErrorCode);
         Assert.Equal("ConditionExpressionMissing", missingExpression.ErrorCode);
+        Assert.True(nullCondition.Succeeded);
+        Assert.True(nullCondition.ShouldExecute);
+        Assert.True(literalCondition.Succeeded);
+        Assert.False(literalCondition.ShouldExecute);
         await Assert.ThrowsAsync<ArgumentNullException>(() => validation.ValidateAsync(null!));
         await Assert.ThrowsAsync<ArgumentNullException>(() => transformation.TransformAsync(null!));
         await Assert.ThrowsAsync<ArgumentNullException>(() => condition.EvaluateAsync(null!));
@@ -642,6 +714,23 @@ public sealed class RuntimeSmallComponentBehaviorTests
     }
 
     [Fact]
+    public void TimeoutBackgroundServiceRejectsNullConstructorDependencies()
+    {
+        var serviceType = typeof(IOrchestrationTimeoutProcessor).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts.OrchestrationTimeoutBackgroundService",
+            throwOnError: true)!;
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+        var options = new StaticOptionsMonitor<OrchestrationTimeoutOptions>(new OrchestrationTimeoutOptions());
+        var logger = Activator.CreateInstance(typeof(ReflectionLogger<>).MakeGenericType(serviceType));
+
+        Assert.Equal("scopeFactory", InvokeConstructorAndUnwrap(serviceType, null!, options, logger).ParamName);
+        Assert.Equal("options", InvokeConstructorAndUnwrap(serviceType, scopeFactory, null!, logger).ParamName);
+        Assert.Equal("logger", InvokeConstructorAndUnwrap(serviceType, scopeFactory, options, null!).ParamName);
+    }
+
+    [Fact]
     public async Task TimeoutBackgroundServiceExecuteLoopProcessesWhenEnabled()
     {
         var processor = new SignalingTimeoutProcessor();
@@ -815,6 +904,17 @@ public sealed class RuntimeSmallComponentBehaviorTests
             scopeFactory,
             new StaticOptionsMonitor<OrchestrationTimeoutOptions>(options ?? new OrchestrationTimeoutOptions()),
             logger)!;
+    }
+
+    private static ArgumentNullException InvokeConstructorAndUnwrap(
+        Type serviceType,
+        IServiceScopeFactory? scopeFactory,
+        IOptionsMonitor<OrchestrationTimeoutOptions>? options,
+        object? logger)
+    {
+        var exception = Assert.Throws<TargetInvocationException>(() =>
+            Activator.CreateInstance(serviceType, scopeFactory, options, logger));
+        return Assert.IsType<ArgumentNullException>(exception.InnerException);
     }
 
     private static IOrchestrationTimeoutProcessor CreateTimeoutProcessor(

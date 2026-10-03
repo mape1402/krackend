@@ -18,6 +18,27 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class PigeonIngressAdapterTests
 {
     [Fact]
+    public void ConstructorRejectsNullIngressSelectorAndLogger()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var selector = Substitute.For<IMessagingIngressConfigurationSelector>();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", throwOnError: true)!;
+        var registry = CreateRegistry(assembly);
+        var logger = CreateLogger(adapterType);
+
+        var selectorException = Assert.Throws<ArgumentNullException>(() => InvokeAdapterConstructor(
+            adapterType,
+            [consuming, registry, null!, logger]));
+        var loggerException = Assert.Throws<ArgumentNullException>(() => InvokeAdapterConstructor(
+            adapterType,
+            [consuming, registry, selector, null!]));
+
+        Assert.Equal("ingressSelector", selectorException.ParamName);
+        Assert.Equal("logger", loggerException.ParamName);
+    }
+
+    [Fact]
     public async Task ConnectRegistersPigeonConsumerAndEnqueuesMatchingIngressWork()
     {
         var consuming = new RecordingConsumingConfigurator();
@@ -164,13 +185,8 @@ public sealed class PigeonIngressAdapterTests
     {
         var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
         var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", throwOnError: true)!;
-        var registry = Activator.CreateInstance(
-            assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressConsumerRegistry", throwOnError: true)!,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null,
-            args: [],
-            culture: null)!;
-        var logger = Activator.CreateInstance(typeof(NullLogger<>).MakeGenericType(adapterType));
+        var registry = CreateRegistry(assembly);
+        var logger = CreateLogger(adapterType);
 
         return (IMessagingIngressAdapter)Activator.CreateInstance(
             adapterType,
@@ -178,6 +194,34 @@ public sealed class PigeonIngressAdapterTests
             binder: null,
             args: [consuming, registry, selector, logger],
             culture: null)!;
+    }
+
+    private static object CreateRegistry(Assembly assembly)
+        => Activator.CreateInstance(
+            assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressConsumerRegistry", throwOnError: true)!,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            args: [],
+            culture: null)!;
+
+    private static object? CreateLogger(Type adapterType)
+        => Activator.CreateInstance(typeof(NullLogger<>).MakeGenericType(adapterType));
+
+    private static void InvokeAdapterConstructor(Type adapterType, object?[] args)
+    {
+        try
+        {
+            Activator.CreateInstance(
+                adapterType,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                binder: null,
+                args: args,
+                culture: null);
+        }
+        catch (TargetInvocationException exception) when (exception.InnerException is not null)
+        {
+            throw exception.InnerException;
+        }
     }
 
     private static ServiceProvider CreateProvider(

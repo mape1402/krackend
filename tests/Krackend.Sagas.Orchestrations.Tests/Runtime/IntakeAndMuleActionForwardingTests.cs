@@ -37,6 +37,27 @@ public sealed class IntakeAndMuleActionForwardingTests
     }
 
     [Fact]
+    public async Task TriggerActionFallsBackToActionIdWhenDeduplicationKeyIsBlank()
+    {
+        var engine = Substitute.For<ISagaEngine>();
+        var action = new TriggerAction(engine);
+        var workItem = WorkItem();
+        var context = Context("TriggerSaga", workItem);
+        context.Action.DeduplicationKey = " ";
+        var method = typeof(TriggerAction).GetMethod(
+            "BuildStartIdempotencyKey",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+
+        await action.ExecuteAsync(context, CancellationToken.None);
+
+        await engine.Received(1).StartOrchestrationAsync(
+            Arg.Is<StartIntent>(intent =>
+                intent.StartIdempotencyKey == $"mule:TriggerSaga:{context.Action.Id}"),
+            Arg.Any<CancellationToken>());
+        Assert.Null(method.Invoke(null, [null]));
+    }
+
+    [Fact]
     public async Task BackchannelActionForwardsExecutionResultMetadataWithPayload()
     {
         var engine = Substitute.For<ISagaEngine>();

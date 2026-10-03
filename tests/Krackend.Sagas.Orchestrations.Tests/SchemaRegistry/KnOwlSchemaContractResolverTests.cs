@@ -11,6 +11,25 @@ namespace Krackend.Sagas.Orchestrations.Tests.SchemaRegistry;
 public sealed class KnOwlSchemaContractResolverTests
 {
     [Fact]
+    public void ConstructorRejectsNullDependencies()
+    {
+        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+
+        Assert.Throws<ArgumentNullException>(() => new KnOwlSchemaContractResolver(null!, catalog));
+        Assert.Throws<ArgumentNullException>(() => new KnOwlSchemaContractResolver(Options.Create(new KnOwlSchemaRegistryOptions()), null!));
+    }
+
+    [Fact]
+    public void ProviderKeyUsesDefaultForBlankOptionsAndConfiguredValueOtherwise()
+    {
+        var defaultResolver = CreateResolver(options => options.ProviderKey = " ");
+        var configuredResolver = CreateResolver(options => options.ProviderKey = "knowl-team-a");
+
+        Assert.Equal("knowl", defaultResolver.ProviderKey);
+        Assert.Equal("knowl-team-a", configuredResolver.ProviderKey);
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenAdapterIsDisabled_ReturnsNotConfigured()
     {
         var resolver = CreateResolver(options => options.Enabled = false);
@@ -60,6 +79,27 @@ public sealed class KnOwlSchemaContractResolverTests
 
         Assert.Equal(SchemaContractResolutionStatus.Invalid, result.Status);
         Assert.Contains("not supported", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenRequestOrReferenceIsMissing_ThrowsOrReturnsInvalid()
+    {
+        var resolver = CreateResolver(options =>
+        {
+            options.Enabled = true;
+            options.BaseUri = new Uri("https://knowl-control-plane.local");
+        });
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => resolver.ResolveAsync(null!));
+
+        var result = await resolver.ResolveAsync(new SchemaContractResolutionRequest
+        {
+            Reference = null,
+            RequireRemoteResolution = true
+        });
+
+        Assert.Equal(SchemaContractResolutionStatus.Invalid, result.Status);
+        Assert.Contains("key", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -275,6 +315,37 @@ public sealed class KnOwlSchemaContractResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenVersionIsZeroZeroZero_UsesLatestEndpointWhenAllowed()
+    {
+        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        catalog.GetLatestAsync(ContractArtifactType.Event, "sales.sale.created", Arg.Any<CancellationToken>())
+            .Returns(KnOwlContractCatalogResult.Found(new ContractArtifact
+            {
+                Id = Guid.NewGuid(),
+                ArtifactType = ContractArtifactType.Event,
+                Topic = "sales.sale.created",
+                VersionNumber = "1.3.0",
+                PayloadSchemaJson = "{\"type\":\"object\"}",
+                ContentHash = "latest-zero-schema-hash",
+                SourceStatus = "Deployed"
+            }));
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+                options.AllowLatestVersionResolution = true;
+            },
+            catalog);
+
+        var result = await resolver.ResolveAsync(CreateRequest(contractVersion: "0.0.0"));
+
+        Assert.Equal(SchemaContractResolutionStatus.Resolved, result.Status);
+        Assert.Equal("1.3.0", result.Snapshot.Reference.ContractVersion);
+        await catalog.Received(1).GetLatestAsync(ContractArtifactType.Event, "sales.sale.created", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenContractIsNotDeployed_ReturnsInvalid()
     {
         var resolver = CreateResolver(
@@ -324,6 +395,58 @@ public sealed class KnOwlSchemaContractResolverTests
 
         Assert.Equal(SchemaContractResolutionStatus.Invalid, result.Status);
         Assert.Contains("payload schema", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenContractOmitsOptionalFields_UsesReferenceAndOptionFallbacks()
+    {
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+                options.ProviderKey = "knowl-custom";
+                options.SchemaFormat = "JsonSchema";
+            },
+            KnOwlContractCatalogResult.Found(new ContractArtifact
+            {
+                Id = Guid.Empty,
+                ArtifactType = ContractArtifactType.Event,
+                Topic = " ",
+                VersionNumber = null!,
+                PayloadSchemaJson = "{\"type\":\"object\"}",
+                ContentHash = null!,
+                SourceStatus = null!
+            }));
+
+        var result = await resolver.ResolveAsync(CreateRequest());
+
+        Assert.Equal(SchemaContractResolutionStatus.Resolved, result.Status);
+        Assert.Equal("knowl-custom", result.Snapshot.Reference.ProviderKey);
+        Assert.Empty(result.Snapshot.Reference.ContractId);
+        Assert.Equal("sales.sale.created", result.Snapshot.Reference.ContractKey);
+        Assert.Equal("1.0.0", result.Snapshot.Reference.ContractVersion);
+        Assert.Equal("JsonSchema", result.Snapshot.SchemaFormat);
+        Assert.Empty(result.Snapshot.ContentHash);
+        Assert.Empty(result.Snapshot.SourceArtifactId);
+        Assert.Equal("knowl-custom", result.Snapshot.ResolvedBy);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_WhenCatalogReturnsUnknownFailureStatus_MapsToUnavailable()
+    {
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+            },
+            KnOwlContractCatalogResult.Failed((KnOwlContractCatalogStatus)999, "unknown status"));
+
+        var result = await resolver.ResolveAsync(CreateRequest());
+
+        Assert.Equal(SchemaContractResolutionStatus.Unavailable, result.Status);
+        Assert.Equal("unknown status", result.Message);
     }
 
     private static KnOwlSchemaContractResolver CreateResolver(Action<KnOwlSchemaRegistryOptions> configure)

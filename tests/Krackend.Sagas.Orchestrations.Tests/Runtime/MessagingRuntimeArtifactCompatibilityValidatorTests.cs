@@ -1,5 +1,6 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
@@ -66,6 +67,18 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(CreateArtifact(), SerializerOptions)!);
 
         Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public void ConstructorGuardsRequiredCollaborators()
+    {
+        var adapterRegistry = new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]);
+        var migrator = new DefaultOrchestrationArtifactMigrator();
+
+        Assert.Throws<ArgumentNullException>(() => new MessagingRuntimeArtifactCompatibilityValidator(null!, migrator));
+        Assert.Throws<ArgumentNullException>(() => new MessagingRuntimeArtifactCompatibilityValidator(adapterRegistry, null!));
+        Assert.Throws<ArgumentNullException>(() => new MessagingRuntimeArtifactCompatibilityValidator(null!, migrator, null));
+        Assert.Throws<ArgumentNullException>(() => new MessagingRuntimeArtifactCompatibilityValidator(adapterRegistry, null!, null));
     }
 
     [Fact]
@@ -140,6 +153,23 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
             repository);
 
         var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRequiredCapabilitiesAreBlankOrBuiltIn_ReturnsSuccess()
+    {
+        var artifact = CreateArtifact() with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(string.Empty, "ignored", Version, "Task"),
+                new RequiredCapabilityArtifact(ExtensionConstants.BuiltInExtensionKey, "messaging", Version, "Task")
+            ]
+        };
+
+        var result = await ValidateAsync(artifact);
 
         Assert.True(result.Succeeded, result.ErrorMessage);
     }
@@ -295,6 +325,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     {
         var trigger = EventTrigger("events.sales.sale.created") with
         {
+            Description = "Reverse the trigger side effects",
             Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget)
         };
         var artifact = CreateArtifact(triggers: [trigger]);
@@ -334,6 +365,57 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
 
         AssertFailure(result, "ExtensionCapabilityNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityKindIsLooseOrDescriptorKindIsBlank_ReturnsSuccess()
+    {
+        foreach (var artifactAndPackage in new[]
+                 {
+                     CreateExternalCapabilityScenario(requiredKind: string.Empty, descriptorKind: "Task"),
+                     CreateExternalCapabilityScenario(requiredKind: "Task", descriptorKind: string.Empty)
+                 })
+        {
+            var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+            await repository.UpsertAsync(artifactAndPackage.Package);
+            var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+                new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+                new DefaultOrchestrationArtifactMigrator(),
+                repository);
+
+            var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifactAndPackage.Artifact, SerializerOptions)!);
+
+            Assert.True(result.Succeeded, result.ErrorMessage);
+        }
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenExternalCapabilityPackageIsInactiveOrManifestIsSparse_ReturnsExtensionCapabilityNotConfigured()
+    {
+        var inactive = CreateExternalCapabilityScenario(requiredKind: "Task", descriptorKind: "Task");
+        inactive.Package.Status = RuntimeExtensionPackageStatus.Disabled;
+        var missingManifest = CreateExternalCapabilityScenario(requiredKind: "Task", descriptorKind: "Task");
+        missingManifest.Package.Manifest = null!;
+        var missingCapabilities = CreateExternalCapabilityScenario(requiredKind: "Task", descriptorKind: "Task");
+        missingCapabilities.Package.Manifest = ExternalManifest(
+            "contoso.billing",
+            new SemanticVersion(2, 1, 0),
+            capabilities: null);
+        var scenarios = new[] { inactive, missingManifest, missingCapabilities };
+
+        foreach (var scenario in scenarios)
+        {
+            var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+            await repository.UpsertAsync(scenario.Package);
+            var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+                new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+                new DefaultOrchestrationArtifactMigrator(),
+                repository);
+
+            var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(scenario.Artifact, SerializerOptions)!);
+
+            AssertFailure(result, "ExtensionCapabilityNotConfigured");
+        }
     }
 
     [Fact]
@@ -420,6 +502,34 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenExternalBundleRepositoryHasNoActiveMatch_ReturnsExtensionBundleNotActivated()
+    {
+        var repository = new InMemoryRuntimeExtensionPackageRepository(new InMemoryRuntimeStore());
+        var package = ExternalPackage("contoso.billing", "task.send-invoice", new SemanticVersion(2, 1, 0));
+        package.BundleId = "different-bundle";
+        await repository.UpsertAsync(package);
+        var artifact = CreateArtifact() with
+        {
+            RequiredBundles =
+            [
+                new RequiredExtensionBundleArtifact(
+                    "bundle-contoso.billing-2.1.0",
+                    "contoso.billing",
+                    new SemanticVersion(2, 1, 0),
+                    "bundle-sha")
+            ]
+        };
+        var validator = new MessagingRuntimeArtifactCompatibilityValidator(
+            new TaskRuntimeAdapterRegistry([new MessagingTaskRuntimeAdapter()]),
+            new DefaultOrchestrationArtifactMigrator(),
+            repository);
+
+        var result = await validator.ValidateAsync(JsonSerializer.SerializeToNode(artifact, SerializerOptions)!);
+
+        AssertFailure(result, "ExtensionBundleNotActivated");
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenTriggerCompensationTopicIsMissing_ReturnsCompensationMessagingTopicMissing()
     {
         var trigger = EventTrigger("events.sales.sale.created") with
@@ -431,6 +541,38 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(artifact);
 
         AssertFailure(result, "CompensationMessagingTopicMissing");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationConfigurationIsMissing_ReturnsSuccess()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                Configuration = null!
+            }
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTriggerCompensationDescriptionIsNull_ReturnsSuccess()
+    {
+        var trigger = EventTrigger("events.sales.sale.created") with
+        {
+            Description = null!,
+            Compensation = Compensation("commands.sales.trigger.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget)
+        };
+        var artifact = CreateArtifact(triggers: [trigger]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
     }
 
     [Fact]
@@ -626,6 +768,82 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenRetryPolicyHasZeroRetriesWithoutErrorCodes_ReturnsSuccess()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            RetryPolicy = new RetryPolicyArtifact(
+                0,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                [],
+                true)
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRetryPolicyHasRetriesAndExplicitErrorCodes_ReturnsSuccess()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            RetryPolicy = new RetryPolicyArtifact(
+                1,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                ["TransientMessagingError"],
+                true)
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRetryPolicyHasOnlyBlankErrorCodes_ReturnsRetryableErrorCodesMissing()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            RetryPolicy = new RetryPolicyArtifact(
+                1,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                [" ", "\t"],
+                true)
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "RetryableErrorCodesMissing");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRetryPolicyHasNullErrorCodes_ReturnsRetryableErrorCodesMissing()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            RetryPolicy = new RetryPolicyArtifact(
+                1,
+                RetryStrategyType.Fixed,
+                new FixedRetryStrategyArtifact(Duration.FromSeconds(1)),
+                null!,
+                true)
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "RetryableErrorCodesMissing");
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenTimeoutIsZero_ReturnsTimeoutDurationInvalid()
     {
         var task = MessagingTask("task-one") with
@@ -744,6 +962,22 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenRequestSchemaValidationHasNoDsl_ReturnsValidationDslMissing()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            Configuration = MessagingConfiguration(
+                "commands.sales.sale.reserve",
+                requestBinding: SchemaBinding(validationEnabled: true))
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        AssertFailure(result, "ValidationDslMissing");
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenCompensationKindIsUnsupported_ReturnsCompensationTaskKindNotSupported()
     {
         var task = MessagingTask("task-one") with
@@ -755,6 +989,23 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         var result = await ValidateAsync(artifact);
 
         AssertFailure(result, "CompensationTaskRuntimeAdapterNotConfigured");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenTaskCompensationConfigurationIsMissing_ReturnsSuccess()
+    {
+        var task = MessagingTask("task-one") with
+        {
+            Compensation = Compensation("commands.sales.undo", TaskKind.Messaging, TaskDispatchType.FireAndForget) with
+            {
+                Configuration = null!
+            }
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
     }
 
     [Fact]
@@ -937,6 +1188,38 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WhenBranchNavigatesForwardWithCondition_ReturnsSuccess()
+    {
+        var stageOne = Stage("stage-one", 1);
+        var stageTwo = Stage("stage-two", 2);
+        var artifact = CreateArtifact(stages:
+        [
+            stageOne with
+            {
+                BranchRules = [BranchRule(ElementType.Stage, stageOne.Id, ElementType.Stage, stageTwo.Id)]
+            },
+            stageTwo
+        ]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenStageBranchesAreNull_ReturnsSuccess()
+    {
+        var artifact = CreateArtifact(stages:
+        [
+            Stage("stage-one", 1) with { BranchRules = null! }
+        ]);
+
+        var result = await ValidateAsync(artifact);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task ValidateAsync_WhenBranchConditionExpressionIsMissing_ReturnsConditionExpressionMissing()
     {
         var stageOne = Stage("stage-one", 1);
@@ -964,6 +1247,52 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         AssertFailure(result, "ConditionExpressionMissing");
     }
 
+    [Fact]
+    public void PrivateValidationHelpersCoverNonMessagingAndNullOptionalBranches()
+    {
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateRequestValidation",
+            new HumanApprovalTaskConfigurationArtifact(),
+            "task 'approval' request").Succeeded);
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateResponseValidation",
+            new HumanApprovalTaskConfigurationArtifact(),
+            "task 'approval' response").Succeeded);
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateCondition",
+            null!,
+            "owner").Succeeded);
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateTransformation",
+            null!,
+            "owner").Succeeded);
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateValidation",
+            new ValidationArtifact(EngineType.DSL, new DslValidationConfigurationArtifact { Dsl = "ignored" })
+            {
+                IsEnabled = false
+            },
+            null!,
+            "owner").Succeeded);
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateValidation",
+            null!,
+            SchemaBinding(validationEnabled: false),
+            "owner").Succeeded);
+        Assert.True(InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+            "ValidateValidation",
+            DslValidation("validate"),
+            SchemaBinding(validationEnabled: false),
+            "owner").Succeeded);
+        AssertFailure(
+            InvokePrivate<RuntimeArtifactCompatibilityValidationResult>(
+                "ValidateValidation",
+                DslValidation(string.Empty),
+                SchemaBinding(validationEnabled: false),
+                "owner"),
+            "ValidationDslMissing");
+    }
+
     private static async Task<RuntimeArtifactCompatibilityValidationResult> ValidateAsync(OrchestrationArtifact artifact)
     {
         var payload = JsonSerializer.SerializeToNode(artifact, SerializerOptions)!;
@@ -986,29 +1315,82 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
             CreatedOnUtc = DateTime.UtcNow,
             UpdatedOnUtc = DateTime.UtcNow,
             ActivatedOnUtc = DateTime.UtcNow,
-            Manifest = new KrackendExtensionManifest(
-                new ExtensionKey(extensionKey),
-                version,
+            Manifest = ExternalManifest(
                 extensionKey,
-                "Contoso",
-                ExtensionLoadMode.ExternalAssembly,
-                ExtensionTrustLevel.PublisherTrusted)
-            {
-                Capabilities =
+                version,
                 [
                     new ExtensionCapabilityDescriptor(
                         new CapabilityKey(capabilityKey),
                         version,
                         "Task",
                         capabilityKey)
-                ]
-            }
+                ])
+        };
+
+    private static (OrchestrationArtifact Artifact, RuntimeExtensionPackage Package) CreateExternalCapabilityScenario(
+        string requiredKind,
+        string descriptorKind)
+    {
+        var version = new SemanticVersion(2, 1, 0);
+        var task = MessagingTask("task-one") with
+        {
+            ExtensionKey = "contoso.billing",
+            CapabilityKey = "task.send-invoice",
+            CapabilityVersion = "2.1.0"
+        };
+        var artifact = CreateArtifact(stages: [Stage("stage-one", 1, tasks: [task])]) with
+        {
+            RequiredCapabilities =
+            [
+                new RequiredCapabilityArtifact(
+                    "contoso.billing",
+                    "task.send-invoice",
+                    version,
+                    requiredKind)
+            ]
+        };
+        var package = ExternalPackage("contoso.billing", "task.send-invoice", version);
+        package.Manifest = ExternalManifest(
+            "contoso.billing",
+            version,
+            [
+                new ExtensionCapabilityDescriptor(
+                    new CapabilityKey("task.send-invoice"),
+                    version,
+                    descriptorKind,
+                    "task.send-invoice")
+            ]);
+
+        return (artifact, package);
+    }
+
+    private static KrackendExtensionManifest ExternalManifest(
+        string extensionKey,
+        SemanticVersion version,
+        IReadOnlyCollection<ExtensionCapabilityDescriptor>? capabilities)
+        => new(
+            new ExtensionKey(extensionKey),
+            version,
+            extensionKey,
+            "Contoso",
+            ExtensionLoadMode.ExternalAssembly,
+            ExtensionTrustLevel.PublisherTrusted)
+        {
+            Capabilities = capabilities?.ToArray()!
         };
 
     private static void AssertFailure(RuntimeArtifactCompatibilityValidationResult result, string errorCode)
     {
         Assert.False(result.Succeeded);
         Assert.Equal(errorCode, result.ErrorCode);
+    }
+
+    private static TResult InvokePrivate<TResult>(string methodName, params object?[] arguments)
+    {
+        var method = typeof(MessagingRuntimeArtifactCompatibilityValidator).GetMethod(
+            methodName,
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        return (TResult)method.Invoke(null, arguments)!;
     }
 
     private static OrchestrationArtifact CreateArtifact(

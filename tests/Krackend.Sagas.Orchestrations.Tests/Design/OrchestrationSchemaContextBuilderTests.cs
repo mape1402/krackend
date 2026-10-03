@@ -66,6 +66,45 @@ public sealed class OrchestrationSchemaContextBuilderTests
     }
 
     [Fact]
+    public async Task BuildForTask_AddsStableAliasesForDuplicateAndSymbolOnlyMetadataDescriptors()
+    {
+        var version = CreateVersion();
+        var repository = Substitute.For<IMetadataDescriptorRepository>();
+        repository.GetAllDescriptors(Arg.Any<CancellationToken>()).Returns(
+        [
+            MetadataDescriptor("audit-metadata"),
+            MetadataDescriptor("audit.metadata"),
+            MetadataDescriptor("!!!")
+        ]);
+        var builder = new OrchestrationSchemaContextBuilder(repository);
+
+        var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[0].Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "audit_metadata");
+        Assert.Contains(context.Sources, x => x.Alias == "audit_metadata_2");
+        Assert.Contains(context.Sources, x => x.Alias == "payload");
+    }
+
+    [Fact]
+    public async Task BuildForTask_ThrowsWhenMetadataDescriptorHasNoSchemaJson()
+    {
+        var version = CreateVersion();
+        var repository = Substitute.For<IMetadataDescriptorRepository>();
+        var descriptor = MetadataDescriptor("audit_metadata");
+        descriptor.SchemaJson = " ";
+        repository.GetAllDescriptors(Arg.Any<CancellationToken>()).Returns(
+        [
+            descriptor
+        ]);
+        var builder = new OrchestrationSchemaContextBuilder(repository);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[0].Id));
+
+        Assert.Contains("does not contain a valid schema snapshot", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task BuildForTask_ExposesPreviousSequentialTaskRequestsAndResponses()
     {
         var version = CreateVersion();
@@ -177,7 +216,7 @@ public sealed class OrchestrationSchemaContextBuilderTests
     public async Task BuildForTask_AllowsMissingTriggerAndMissingBindings()
     {
         var version = CreateVersion();
-        version.TriggerBindings.Clear();
+        version.TriggerBindings = null!;
         version.StageDefinitions[0].TaskDefinitions[0].Configuration = new PluginTaskConfiguration { PluginId = Id.New() };
         var target = version.StageDefinitions[0].TaskDefinitions[1];
         var targetConfiguration = (MessagingTaskConfiguration)target.Configuration;
@@ -197,6 +236,104 @@ public sealed class OrchestrationSchemaContextBuilderTests
     }
 
     [Fact]
+    public async Task BuildForStage_AllowsNullTaskCollectionsOnPreviousStages()
+    {
+        var version = CreateVersion();
+        version.StageDefinitions[0].TaskDefinitions = null!;
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForStage(version, version.StageDefinitions[1].Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        Assert.DoesNotContain(context.Sources, x => x.SourceKind is OrchestrationSchemaContextSourceKind.TaskRequest);
+    }
+
+    [Fact]
+    public async Task BuildForTaskCompensation_AllowsMissingCompensationBindingAndPreviousStages()
+    {
+        var version = CreateVersion();
+        var secondStageTask = version.StageDefinitions[1].TaskDefinitions[0];
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTaskCompensation(version, secondStageTask.Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.Equal("close_sale_compensation_request", context.Target.Alias);
+        Assert.Null(context.Target.SchemaBinding);
+    }
+
+    [Fact]
+    public async Task BuildForTriggerCompensation_AllowsMissingCompensationBinding()
+    {
+        var version = CreateVersion();
+        var trigger = version.TriggerBindings.Single();
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTriggerCompensation(version, trigger.Id);
+
+        Assert.Equal("sale_created_compensation_request", context.Target.Alias);
+        Assert.Null(context.Target.SchemaBinding);
+    }
+
+    [Fact]
+    public async Task BuildForTask_UsesReferenceOnlyRequestBindingWhenNoSnapshotFallbackExists()
+    {
+        var version = CreateVersion();
+        var target = version.StageDefinitions[0].TaskDefinitions[0];
+        var messaging = (MessagingTaskConfiguration)target.Configuration;
+        messaging.RequestSchemaBinding = BindingWithoutSnapshot(
+            "commands.reserve_inventory.reference-only",
+            SchemaContractKind.CommandRequest);
+        messaging.SchemaBinding = null;
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, target.Id);
+
+        Assert.Equal("commands.reserve_inventory.reference-only", context.Target.SchemaBinding.ContractKey);
+    }
+
+    [Fact]
+    public async Task BuildForTask_UsesDigitSafeAliases()
+    {
+        var version = CreateVersion();
+        version.StageDefinitions[0].TaskDefinitions[0].Key = "123-reserve";
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, version.StageDefinitions[0].TaskDefinitions[1].Id);
+
+        Assert.Contains(context.Sources, x => x.Alias == "p_123_reserve");
+    }
+
+    [Fact]
+    public async Task BuildForTaskCompensation_ThrowsWhenStagesAreMissing()
+    {
+        var version = CreateVersion();
+        version.StageDefinitions = null!;
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            builder.BuildForTaskCompensation(version, Id.New()));
+
+        Assert.Contains("was not found", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PrivateTaskSourceHelperAllowsTargetStageOutsideRoadmap()
+    {
+        var version = CreateVersion();
+        var sources = new List<OrchestrationSchemaSource>();
+
+        InvokePrivateStaticVoid(
+            "AddTaskSourcesThroughTarget",
+            version.StageDefinitions,
+            new StageDefinition { Id = Id.New(), Key = "external", Name = "External", IsEnabled = true },
+            Task(Id.New(), "external-task", 1),
+            sources);
+
+        Assert.NotEmpty(sources);
+    }
+
+    [Fact]
     public async Task BuildForTask_UsesSchemaBindingSnapshotWhenRequestBindingHasNoSnapshot()
     {
         var version = CreateVersion();
@@ -210,6 +347,27 @@ public sealed class OrchestrationSchemaContextBuilderTests
         var context = await builder.BuildForTask(version, target.Id);
 
         Assert.Equal("commands.reserve_inventory.hash", context.Target.SchemaBinding.Snapshot!.ContentHash);
+    }
+
+    [Fact]
+    public async Task BuildForTask_TreatsContentHashOnlySnapshotsAsUsable()
+    {
+        var version = CreateVersion();
+        var target = version.StageDefinitions[0].TaskDefinitions[0];
+        var messaging = (MessagingTaskConfiguration)target.Configuration;
+        messaging.RequestSchemaBinding = BindingWithContentHashOnlySnapshot(
+            "commands.reserve_inventory.hash-only",
+            SchemaContractKind.CommandRequest);
+        messaging.SchemaBinding = BindingWithoutSnapshot(
+            "commands.reserve_inventory.fallback",
+            SchemaContractKind.CommandRequest);
+
+        var builder = new OrchestrationSchemaContextBuilder();
+
+        var context = await builder.BuildForTask(version, target.Id);
+
+        Assert.Equal("commands.reserve_inventory.hash-only", context.Target.SchemaBinding.ContractKey);
+        Assert.Equal("commands.reserve_inventory.hash-only.hash", context.Target.SchemaBinding.Snapshot!.ContentHash);
     }
 
     [Fact]
@@ -513,6 +671,28 @@ public sealed class OrchestrationSchemaContextBuilderTests
             IsValidationEnabled = false
         };
 
+    private static SchemaBinding BindingWithContentHashOnlySnapshot(string key, SchemaContractKind kind)
+        => new()
+        {
+            Id = Id.New(),
+            ElementType = ElementType.Task,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
+            ContractKey = key,
+            ContractVersion = new SemanticVersion(1, 0, 0),
+            ContractKind = kind,
+            RegistryProviderId = Id.New(),
+            RegistryProviderKey = "atlas",
+            IsValidationEnabled = true,
+            Snapshot = new ControlPlaneSchemaContractSnapshot
+            {
+                ContractKind = kind,
+                ContentHash = $"{key}.hash",
+                SchemaJson = string.Empty,
+                ResolvedAtUtc = DateTimeOffset.UtcNow
+            }
+        };
+
     private static MetadataDescriptor MetadataDescriptor(string key, string? sourceKey = null)
         => new()
         {
@@ -524,4 +704,13 @@ public sealed class OrchestrationSchemaContextBuilderTests
             ContentHash = $"{key}-hash",
             CreatedOnUtc = DateTime.UtcNow
         };
+
+    private static void InvokePrivateStaticVoid(string methodName, params object[] arguments)
+    {
+        var method = typeof(OrchestrationSchemaContextBuilder).GetMethod(
+            methodName,
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        method.Invoke(null, arguments);
+    }
 }

@@ -1,15 +1,21 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Transport;
 using Krackend.Sagas.Orchestrations.Client.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Client.Errors;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Krackend.Sagas.Orchestrations.Contracts.Events;
+using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Execution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
+using Krackend.Sagas.Orchestrations.Security.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -18,11 +24,234 @@ using Pigeon.Messaging;
 using Pigeon.Messaging.Contracts;
 using Pigeon.Messaging.Producing;
 using Spider.Pipelines.Core;
+using KrackendId = Krackend.Sagas.Orchestrations.Abstractions.Primitives.Id;
 
 namespace Krackend.Sagas.Orchestrations.Tests;
 
 public sealed class AdaptersAndContractsTests
 {
+    [Fact]
+    public void ExtensionPrimitiveKeysRenderNullValuesAsEmptyStrings()
+    {
+        Assert.Equal(string.Empty, new ExtensionKey(null!).ToString());
+        Assert.Equal(string.Empty, new CapabilityKey(null!).ToString());
+        Assert.Equal(string.Empty, new TaskTypeKey(null!).ToString());
+        Assert.Equal(string.Empty, new TriggerTypeKey(null!).ToString());
+        Assert.Equal(string.Empty, new NodeTypeKey(null!).ToString());
+        Assert.Equal(string.Empty, new ExtensionBundleId(null!).ToString());
+        Assert.Equal("contoso.billing", new ExtensionKey("contoso.billing").ToString());
+        Assert.Equal("task.invoice", new TaskTypeKey("task.invoice").ToString());
+        Assert.Equal("trigger.invoice", new TriggerTypeKey("trigger.invoice").ToString());
+        Assert.Equal("node.choice", new NodeTypeKey("node.choice").ToString());
+        Assert.Equal("bundle-1", new ExtensionBundleId("bundle-1").ToString());
+    }
+
+    [Fact]
+    public void ClientExceptionErrorMappingMatchesAssignableTypesAndOptionalPredicates()
+    {
+        var mapping = new OrchestrationClientExceptionErrorMapping(
+            typeof(InvalidOperationException),
+            "InvalidOperation",
+            exception => exception.Message.Contains("retry", StringComparison.OrdinalIgnoreCase),
+            isRetryableCandidate: true);
+        var baseMapping = new OrchestrationClientExceptionErrorMapping(typeof(Exception), "AnyException");
+
+        Assert.True(mapping.Matches(new InvalidOperationException("please retry")));
+        Assert.False(mapping.Matches(new InvalidOperationException("terminal")));
+        Assert.False(mapping.Matches(new ArgumentException("retry")));
+        Assert.False(mapping.Matches(null!));
+        Assert.True(baseMapping.Matches(new InvalidOperationException("derived")));
+        Assert.True(mapping.IsRetryableCandidate);
+        Assert.Throws<ArgumentNullException>(() => new OrchestrationClientExceptionErrorMapping(null!, "Error"));
+        Assert.Throws<ArgumentException>(() => new OrchestrationClientExceptionErrorMapping(typeof(Exception), " "));
+    }
+
+    [Fact]
+    public void KrackendPagedResultMaterializesRowsAndTreatsNullAsEmpty()
+    {
+        var populated = new KrackendPagedResult<string>(2, 4, 7, 3, ["a", "b"]);
+        var empty = new KrackendPagedResult<string>(1, 1, 0, 10, null!);
+
+        Assert.Equal(2, populated.PageNumber);
+        Assert.Equal(4, populated.TotalPages);
+        Assert.Equal(7, populated.TotalRows);
+        Assert.Equal(3, populated.PageSize);
+        Assert.Equal(["a", "b"], populated.Rows);
+        Assert.Empty(empty.Rows);
+    }
+
+    [Fact]
+    public void RuntimeIngressIdempotencyBuildsExplicitTriggerLegacyAndResponseKeys()
+    {
+        var explicitKey = RuntimeIngressIdempotency.Build(new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            OrchestrationName = "sales.sale.created",
+            IdempotencyKey = " explicit-key "
+        });
+        var metadataKey = RuntimeIngressIdempotency.Build(new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            OrchestrationName = "sales.sale.created",
+            Metadata =
+            {
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    IdempotencyKey = "metadata-key"
+                }.ToJson()
+            }
+        });
+        var legacyTriggerKey = RuntimeIngressIdempotency.Build(new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            OrchestrationName = " sales.sale.created ",
+            OrchestrationVersion = " 1.0.0 ",
+            CorrelationId = " ",
+            Source = new RuntimeTransportDescriptor { MessageId = " " },
+            Metadata =
+            {
+                [OrchestrationMetadataConstants.LegacyTriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    EventId = " event-1 ",
+                    CorrelationId = " corr-1 "
+                }.ToJson()
+            }
+        });
+        var defaultTriggerKey = RuntimeIngressIdempotency.Build(new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Trigger,
+            OrchestrationName = "sales.sale.created",
+            Source = null!,
+            Metadata = null!
+        });
+        var responseKey = RuntimeIngressIdempotency.Build(new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.TaskResponse,
+            OrchestrationName = "sales.sale.created",
+            OrchestrationInstanceId = " instance-1 ",
+            DispatchId = " dispatch-1 ",
+            TaskExecutionId = " task-1 ",
+            Attempt = 2,
+            Source = null!
+        });
+
+        Assert.Equal(" explicit-key ", explicitKey);
+        Assert.Equal("metadata-key", metadataKey);
+        Assert.Equal("trigger|sales.sale.created|1.0.0|event-1|corr-1", legacyTriggerKey);
+        Assert.Equal("trigger|sales.sale.created|-|-|-", defaultTriggerKey);
+        Assert.Equal("response|instance-1|dispatch-1|task-1|2|-", responseKey);
+        Assert.Throws<ArgumentNullException>(() => RuntimeIngressIdempotency.Build(null!));
+        Assert.Throws<InvalidOperationException>(() => RuntimeIngressIdempotency.Build(new RuntimeIngressEnvelope
+        {
+            Kind = RuntimeIngressKind.Unknown,
+            OrchestrationName = "sales.sale.created"
+        }));
+    }
+
+    [Fact]
+    public void PropagationAndTriggerMetadataHandleNullCloneAndJsonFallbacks()
+    {
+        var nullItems = new OrchestrationPropagationMetadata { Items = null! };
+        var populated = new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["json"] = JsonNode.Parse("""{"ok":true}""")!,
+                ["nullable"] = null!
+            }
+        };
+        var clone = populated.Clone();
+        var nonObjectTrigger = OrchestrationTriggerMetadata.FromJson(JsonValue.Create("not-an-object")!);
+        var parsedTrigger = OrchestrationTriggerMetadata.FromJson(new JsonObject
+        {
+            ["CorrelationId"] = "corr-1",
+            ["TraceId"] = null,
+            ["EventId"] = JsonValue.Create(42),
+            ["EventType"] = "event.created"
+        });
+        parsedTrigger.AggregateId = "agg-1";
+        parsedTrigger.AggregateType = " ";
+
+        Assert.False(nullItems.HasItems);
+        Assert.Empty(nullItems.Clone().Items);
+        Assert.True(populated.HasItems);
+        Assert.NotSame(populated.Items["json"], clone.Items["json"]);
+        Assert.True(clone.Items["json"]!["ok"]!.GetValue<bool>());
+        Assert.True(clone.Items.ContainsKey("nullable"));
+        Assert.Null(nonObjectTrigger.CorrelationId);
+        Assert.Equal("corr-1", parsedTrigger.CorrelationId);
+        Assert.Equal(string.Empty, parsedTrigger.TraceId);
+        Assert.Equal("42", parsedTrigger.EventId);
+        Assert.Equal("event.created", parsedTrigger.EventType);
+        var json = parsedTrigger.ToJson();
+        Assert.Equal("agg-1", json["AggregateId"]!.GetValue<string>());
+        Assert.False(json.ContainsKey("AggregateType"));
+    }
+
+    [Fact]
+    public void ClientPropagationMetadataAccessorClonesSetsNullAndClearsValues()
+    {
+        var accessorType = typeof(KrackendOrchestrationsClientBuilder).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Client.Metadata.DefaultOrchestrationPropagationMetadataAccessor",
+            throwOnError: true)!;
+        var accessor = Activator.CreateInstance(accessorType)!;
+        var reader = (IOrchestrationPropagationMetadataAccessor)accessor;
+        var writer = (IOrchestrationPropagationMetadataSetter)accessor;
+        var metadata = new OrchestrationPropagationMetadata();
+        metadata.Items["tenant"] = JsonNode.Parse("""{"id":"north"}""")!;
+
+        writer.Set(metadata);
+        metadata.Items["tenant"]!["id"] = "changed";
+
+        Assert.Equal("north", reader.Get().Items["tenant"]!["id"]!.GetValue<string>());
+
+        writer.Set(null!);
+        Assert.Empty(reader.Get().Items);
+
+        writer.Set(new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["trace"] = JsonValue.Create("trace-1")!
+            }
+        });
+        writer.Clear();
+
+        Assert.Empty(reader.Get().Items);
+    }
+
+    [Fact]
+    public void IdComparisonAndInternalTriggerRoutesCoverGuardBranches()
+    {
+        var id = KrackendId.New();
+        var address = new OrchestrationReplyAddress();
+        var clientAssembly = typeof(KrackendOrchestrationsClientBuilder).Assembly;
+        var requestRouteType = clientAssembly
+            .GetType("Krackend.Sagas.Orchestrations.Client.Routing.OrchestrationTriggerRoute`1", throwOnError: true)!
+            .MakeGenericType(typeof(TestRequest));
+        var responseRouteType = clientAssembly
+            .GetType("Krackend.Sagas.Orchestrations.Client.Routing.OrchestrationTriggerRoute`2", throwOnError: true)!
+            .MakeGenericType(typeof(TestRequest), typeof(TestResponse));
+        Func<TestRequest, bool> requestPredicate = static request => !string.IsNullOrWhiteSpace(request.Id);
+        Func<TestRequest, object> requestTransform = static request => new { request.Id };
+        Func<TestRequest, TestResponse, bool> responsePredicate = static (_, response) => response.Ok;
+        Func<TestRequest, TestResponse, object> responseTransform = static (request, response) => new { request.Id, response.Ok };
+
+        var requestRoute = Activator.CreateInstance(requestRouteType, requestPredicate, requestTransform, address)!;
+        var responseRoute = Activator.CreateInstance(responseRouteType, responsePredicate, responseTransform, address)!;
+
+        Assert.Equal(0, id.CompareTo(id));
+        Assert.Equal(0, id.CompareTo((object)id));
+        Assert.Equal(1, id.CompareTo(null));
+        Assert.Throws<ArgumentException>(() => id.CompareTo("not-an-id"));
+        Assert.Same(address, requestRouteType.GetProperty("Address")!.GetValue(requestRoute));
+        Assert.Same(address, responseRouteType.GetProperty("Address")!.GetValue(responseRoute));
+        AssertWrappedArgumentNull("predicate", () => Activator.CreateInstance(requestRouteType, null!, requestTransform, address));
+        AssertWrappedArgumentNull("transform", () => Activator.CreateInstance(requestRouteType, requestPredicate, null!, address));
+        AssertWrappedArgumentNull("predicate", () => Activator.CreateInstance(responseRouteType, null!, responseTransform, address));
+        AssertWrappedArgumentNull("transform", () => Activator.CreateInstance(responseRouteType, responsePredicate, null!, address));
+    }
+
     [Fact]
     public void ContractsCarryVersionLifecycleEventData()
     {
@@ -114,6 +343,65 @@ public sealed class AdaptersAndContractsTests
     }
 
     [Fact]
+    public async Task ClientPigeonPublisherValidatesConstructorArgumentsAndHandlesNullPayloadWithoutResultMetadata()
+    {
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var producer = new RecordingProducer();
+        var serializer = CreateInternal(
+            assembly,
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.DefaultMessagingReplyAddressSettingsSerializer");
+        var resultMetadataAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
+        resultMetadataAccessor.Get().Returns(_ => null!);
+
+        AssertWrappedArgumentNull(
+            "producer",
+            () => CreateInternal(
+                assembly,
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.PigeonOrchestrationClientPublisher",
+                null!,
+                serializer,
+                resultMetadataAccessor));
+        AssertWrappedArgumentNull(
+            "settingsSerializer",
+            () => CreateInternal(
+                assembly,
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.PigeonOrchestrationClientPublisher",
+                producer,
+                null!,
+                resultMetadataAccessor));
+        AssertWrappedArgumentNull(
+            "resultMetadataAccessor",
+            () => CreateInternal(
+                assembly,
+                "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.PigeonOrchestrationClientPublisher",
+                producer,
+                serializer,
+                null!));
+
+        var publisher = (IOrchestrationClientPublisher)CreateInternal(
+            assembly,
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.PigeonOrchestrationClientPublisher",
+            producer,
+            serializer,
+            resultMetadataAccessor);
+        var address = new OrchestrationReplyAddress
+        {
+            Transport = OrchestrationTransportNames.Messaging,
+            SettingsPayload = JsonSerializer.Serialize(new MessagingReplyAddressSettings
+            {
+                Topic = "orchestrations.sales.null",
+                Version = "1.0.0"
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+        };
+
+        await publisher.PublishAsync(null!, address);
+
+        Assert.IsType<System.Text.Json.Nodes.JsonObject>(producer.Payload);
+        Assert.Equal("orchestrations.sales.null", producer.Topic);
+        resultMetadataAccessor.Received(1).Get();
+    }
+
+    [Fact]
     public async Task RuntimePigeonDispatchAdapterParsesPayloadAndPublishes()
     {
         var producer = new RecordingProducer();
@@ -185,6 +473,17 @@ public sealed class AdaptersAndContractsTests
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType.Name == "IPublishInterceptor" &&
             descriptor.ImplementationType?.Name == "KrackendClientPublishInterceptor");
+    }
+
+    [Fact]
+    public void ClientCoreExtensionValidatesServiceCollectionAndConfigureCallback()
+    {
+        IServiceCollection services = null!;
+
+        Assert.Throws<ArgumentNullException>(() => services.AddKrackendOrchestrationsClient());
+
+        services = new ServiceCollection();
+        Assert.Throws<ArgumentNullException>(() => services.AddKrackendOrchestrationsClient(null!));
     }
 
     [Fact]
@@ -404,6 +703,13 @@ public sealed class AdaptersAndContractsTests
             binder: null,
             args: args,
             culture: null)!;
+    }
+
+    private static void AssertWrappedArgumentNull(string paramName, Action action)
+    {
+        var exception = Assert.Throws<TargetInvocationException>(action);
+        var argumentException = Assert.IsType<ArgumentNullException>(exception.InnerException);
+        Assert.Equal(paramName, argumentException.ParamName);
     }
 
     private static IConfiguration CreatePigeonConfiguration()
