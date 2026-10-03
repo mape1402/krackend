@@ -185,6 +185,16 @@ public sealed class RestApiEndpointRouteBuilderTests
 
         var summary = await Invoke(app, "GET", "/api/v1/runtime/instances/summary");
         var artifacts = await Invoke(app, "GET", "/api/v1/runtime/artifacts", queryString: "?search=sales");
+        var artifactDetail = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/artifacts/{artifactId}",
+            routeValues: new Dictionary<string, object?> { ["artifactId"] = artifact.Id.ToString() });
+        var invalidArtifactDetail = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/artifacts/{artifactId}",
+            routeValues: new Dictionary<string, object?> { ["artifactId"] = "not-an-id" });
         var standup = await Invoke(
             app,
             "POST",
@@ -193,7 +203,10 @@ public sealed class RestApiEndpointRouteBuilderTests
 
         Assert.Equal(StatusCodes.Status200OK, summary.StatusCode);
         Assert.Equal(StatusCodes.Status200OK, artifacts.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, artifactDetail.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, invalidArtifactDetail.StatusCode);
         Assert.Contains("sales.sale.created", artifacts.Body, StringComparison.Ordinal);
+        Assert.Contains("sales.sale.created", artifactDetail.Body, StringComparison.Ordinal);
         Assert.Equal(StatusCodes.Status202Accepted, standup.StatusCode);
 
         await notifier.Received(1).NotifyReadyAsync(
@@ -285,6 +298,82 @@ public sealed class RestApiEndpointRouteBuilderTests
     }
 
     [Fact]
+    public async Task RuntimeApiMapsSnapshotDetailAndRejectedRecoveryResults()
+    {
+        var diagnostics = Substitute.For<IRuntimeDiagnosticsReader>();
+        var recovery = Substitute.For<IOrchestrationRecoveryService>();
+        var now = DateTime.UtcNow;
+        var row = new InstanceRowModel(
+            "instance-1",
+            "sales.sale.created",
+            "1.0.0",
+            "corr-1",
+            "saga-1",
+            "exec-1",
+            "Running",
+            "od-status-active",
+            "stage-1",
+            "task-1",
+            now.AddMinutes(-5),
+            now,
+            null,
+            null,
+            null,
+            string.Empty);
+        var summary = new RuntimeSummaryModel(1, 0, 0, 0, 0, 0, now.AddMinutes(-1), now.AddHours(-1));
+
+        diagnostics.GetSnapshot(Arg.Any<CancellationToken>())
+            .Returns(new RuntimeDashboardSnapshotModel(summary, [row], [], []));
+        diagnostics.GetDetail("instance-1", Arg.Any<CancellationToken>())
+            .Returns(new InstanceDetailModel(row, [], [], [], "{}", "{}", [], [], []));
+        recovery.ReplayAsync("instance-1", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(OrchestrationRecoveryResult.Rejected("instance-1", "Completed", "Already terminal."));
+        recovery.AbortAsync("instance-2", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(OrchestrationRecoveryResult.Rejected("instance-2", "Running", "Abort denied."));
+
+        await using var app = BuildApp(
+            services =>
+            {
+                services.AddSingleton(diagnostics);
+                services.AddSingleton(recovery);
+            },
+            endpoints => endpoints.MapKrackendOrchestrationsRuntimeApi());
+
+        var snapshot = await Invoke(app, "GET", "/api/v1/runtime/instances/snapshot");
+        var detail = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/instances/{instanceId}",
+            routeValues: new Dictionary<string, object?> { ["instanceId"] = "instance-1" });
+        var missingInstanceId = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/instances/{instanceId}",
+            routeValues: new Dictionary<string, object?> { ["instanceId"] = " " });
+        var rejectedReplay = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/instances/{instanceId}/replay",
+            "{\"payload\":\"{}\"}",
+            new Dictionary<string, object?> { ["instanceId"] = "instance-1" });
+        var rejectedAbort = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/instances/{instanceId}/abort",
+            "{\"reason\":\"nope\"}",
+            new Dictionary<string, object?> { ["instanceId"] = "instance-2" });
+
+        Assert.Equal(StatusCodes.Status200OK, snapshot.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, detail.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, missingInstanceId.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, rejectedReplay.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, rejectedAbort.StatusCode);
+        Assert.Contains("instance-1", snapshot.Body, StringComparison.Ordinal);
+        Assert.Contains("Already terminal.", rejectedReplay.Body, StringComparison.Ordinal);
+        Assert.Contains("Abort denied.", rejectedAbort.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RuntimeApiMapsIngressesAndDesignNodes()
     {
         var ingressRepository = Substitute.For<IRuntimeIngressConfigurationRepository>();
@@ -315,7 +404,9 @@ public sealed class RestApiEndpointRouteBuilderTests
         };
 
         ingressRepository.GetActiveByArtifactIdAsync(artifactId, Arg.Any<CancellationToken>()).Returns([ingress]);
+        ingressRepository.ReadActiveAsync(0, 5, Arg.Any<CancellationToken>()).Returns([ingress]);
         designNodeRepository.GetAllAsync(Arg.Any<CancellationToken>()).Returns([node]);
+        designNodeRepository.GetByIdAsync(node.Id, Arg.Any<CancellationToken>()).Returns(node);
 
         await using var app = BuildApp(
             services =>
@@ -323,15 +414,246 @@ public sealed class RestApiEndpointRouteBuilderTests
                 services.AddSingleton(ingressRepository);
                 services.AddSingleton(designNodeRepository);
             },
-            endpoints => endpoints.MapKrackendOrchestrationsRuntimeApi());
+            endpoints => endpoints.MapKrackendOrchestrationsRuntimeApi(options =>
+            {
+                options.DefaultPageSize = 3;
+                options.MaxPageSize = 5;
+            }));
 
         var ingresses = await Invoke(app, "GET", "/api/v1/runtime/ingresses", queryString: $"?artifactId={artifactId}");
+        var pagedIngresses = await Invoke(app, "GET", "/api/v1/runtime/ingresses", queryString: "?skip=-5&take=999");
+        var invalidIngressArtifact = await Invoke(app, "GET", "/api/v1/runtime/ingresses", queryString: "?artifactId=bad-id");
         var designNodes = await Invoke(app, "GET", "/api/v1/runtime/design-nodes");
+        var designNode = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/design-nodes/{designNodeId}",
+            routeValues: new Dictionary<string, object?> { ["designNodeId"] = node.Id.ToString() });
+        var invalidDesignNode = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/design-nodes/{designNodeId}",
+            routeValues: new Dictionary<string, object?> { ["designNodeId"] = "bad-id" });
 
         Assert.Equal(StatusCodes.Status200OK, ingresses.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, pagedIngresses.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, invalidIngressArtifact.StatusCode);
         Assert.Contains("sales.sale.created:trigger", ingresses.Body, StringComparison.Ordinal);
         Assert.Equal(StatusCodes.Status200OK, designNodes.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, designNode.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, invalidDesignNode.StatusCode);
         Assert.Contains("design", designNodes.Body, StringComparison.Ordinal);
+        Assert.Contains("Design", designNode.Body, StringComparison.Ordinal);
+        await ingressRepository.Received(1).ReadActiveAsync(0, 5, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RuntimeApiMapsDesignNodeWriteCredentialAndManualPullEndpoints()
+    {
+        var designNodeRepository = Substitute.For<IRuntimeDesignNodeRepository>();
+        var connectionService = Substitute.For<IRuntimeDesignNodeConnectionService>();
+        var pullService = Substitute.For<IControlPlaneArtifactPullService>();
+        var designNodeId = Id.New();
+        RuntimeDesignNode? createdNode = null;
+        RuntimeDesignNode? updatedNode = null;
+
+        designNodeRepository.UpsertAsync(Arg.Do<RuntimeDesignNode>(node =>
+        {
+            if (node.Id == designNodeId)
+            {
+                updatedNode = node;
+            }
+            else
+            {
+                createdNode = node;
+            }
+        }), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        connectionService.GenerateCredentialPackageAsync(designNodeId.ToString(), "http://runtime", Arg.Any<CancellationToken>())
+            .Returns(new RuntimeDesignNodeCredentialPackageModel { Json = "{\"clientId\":\"runtime\"}", Base64 = "abc123" });
+        connectionService.ValidateConnectionAsync(designNodeId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new RuntimeDesignNodeConnectionValidationModel { Succeeded = true, Message = "Connected" });
+        pullService.GetSources().Returns(
+        [
+            new ControlPlaneDistributionSource
+            {
+                Key = "cp",
+                Name = "Control Plane",
+                EndpointBaseUri = "http://control-plane",
+                RemoteRuntimeNodeId = "runtime-1",
+                ClientId = "client",
+                ProtectedSecret = "secret",
+                KeyId = "key",
+                RequestedScopes = "artifact:read"
+            }
+        ]);
+        pullService.GetPendingAsync("cp", Arg.Any<CancellationToken>()).Returns(
+        [
+            new RuntimeArtifactDeliveryPackage
+            {
+                ReleaseTargetId = "target-1",
+                ArtifactId = "artifact-1",
+                ArtifactType = "orchestration-version-snapshot",
+                SchemaVersion = "1",
+                OrchestrationDefinitionId = "definition-1",
+                OrchestrationVersionId = "version-1",
+                OrchestrationDefinitionKey = "sales.sale.created",
+                Version = "1.0.0",
+                Checksum = "checksum",
+                PayloadJson = "{}",
+                CorrelationId = "corr-1",
+                PromotedBy = "api",
+                PromotedOnUtc = DateTime.UtcNow
+            }
+        ]);
+        pullService.ApplyAsync("cp", "target-1", Arg.Any<CancellationToken>())
+            .Returns(new RuntimeArtifactDeploymentResult
+            {
+                Accepted = true,
+                RuntimeArtifactId = "runtime-artifact-1",
+                Status = "Ready",
+                Message = "Applied"
+            });
+
+        await using var app = BuildApp(
+            services =>
+            {
+                services.AddSingleton(designNodeRepository);
+                services.AddSingleton(connectionService);
+                services.AddSingleton(pullService);
+            },
+            endpoints => endpoints.MapKrackendOrchestrationsRuntimeApi());
+
+        var createBody = JsonSerializer.Serialize(new UpsertRuntimeDesignNodeRequest(
+            string.Empty,
+            " design ",
+            " Design Node ",
+            " http://runtime/ ",
+            " runtime-1 ",
+            DistributionConnectionMode.HybridSync,
+            0,
+            0,
+            0,
+            " sample "));
+        var updateBody = JsonSerializer.Serialize(new UpsertRuntimeDesignNodeRequest(
+            designNodeId.ToString(),
+            "design-updated",
+            "Design Updated",
+            "http://runtime-updated/",
+            "runtime-2",
+            DistributionConnectionMode.RuntimeFetchesFromDesign,
+            120,
+            20,
+            30,
+            "updated"));
+
+        var created = await Invoke(app, "POST", "/api/v1/runtime/design-nodes", createBody);
+        var updated = await Invoke(
+            app,
+            "PUT",
+            "/api/v1/runtime/design-nodes/{designNodeId}",
+            updateBody,
+            new Dictionary<string, object?> { ["designNodeId"] = designNodeId.ToString() });
+        var invalidUpdate = await Invoke(
+            app,
+            "PUT",
+            "/api/v1/runtime/design-nodes/{designNodeId}",
+            updateBody,
+            new Dictionary<string, object?> { ["designNodeId"] = "bad-id" });
+        var status = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/{designNodeId}/status",
+            JsonSerializer.Serialize(new RuntimeDesignNodeStatusRequest(RuntimeDesignNodeStatus.Enabled)),
+            new Dictionary<string, object?> { ["designNodeId"] = designNodeId.ToString() });
+        var invalidStatus = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/{designNodeId}/status",
+            JsonSerializer.Serialize(new RuntimeDesignNodeStatusRequest(RuntimeDesignNodeStatus.Enabled)),
+            new Dictionary<string, object?> { ["designNodeId"] = "bad-id" });
+        var enabled = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/{designNodeId}/enabled",
+            JsonSerializer.Serialize(new RuntimeDesignNodeEnabledRequest(false)),
+            new Dictionary<string, object?> { ["designNodeId"] = designNodeId.ToString() });
+        var invalidEnabled = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/{designNodeId}/enabled",
+            JsonSerializer.Serialize(new RuntimeDesignNodeEnabledRequest(false)),
+            new Dictionary<string, object?> { ["designNodeId"] = "bad-id" });
+        var generated = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/{designNodeId}/credentials/generate",
+            JsonSerializer.Serialize(new Krackend.Sagas.Orchestrations.Runtime.Api.CredentialIssuerRequest("http://runtime")),
+            new Dictionary<string, object?> { ["designNodeId"] = designNodeId.ToString() });
+        var imported = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/credentials/import",
+            JsonSerializer.Serialize(new ImportRuntimeDesignNodeCredentialPackageInput
+            {
+                DesignNodeId = designNodeId.ToString(),
+                Package = "abc123"
+            }));
+        var validation = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/design-nodes/{designNodeId}/validate",
+            routeValues: new Dictionary<string, object?> { ["designNodeId"] = designNodeId.ToString() });
+        var sources = await Invoke(app, "GET", "/api/v1/runtime/control-planes");
+        var pending = await Invoke(
+            app,
+            "GET",
+            "/api/v1/runtime/control-planes/{sourceKey}/artifacts/pending",
+            routeValues: new Dictionary<string, object?> { ["sourceKey"] = "cp" });
+        var applied = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/control-planes/{sourceKey}/artifacts/{releaseTargetId}/apply",
+            routeValues: new Dictionary<string, object?> { ["sourceKey"] = "cp", ["releaseTargetId"] = "target-1" });
+
+        Assert.Equal(StatusCodes.Status201Created, created.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, updated.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, invalidUpdate.StatusCode);
+        Assert.Equal(StatusCodes.Status204NoContent, status.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, invalidStatus.StatusCode);
+        Assert.Equal(StatusCodes.Status204NoContent, enabled.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, invalidEnabled.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, generated.StatusCode);
+        Assert.Equal(StatusCodes.Status204NoContent, imported.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, validation.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, sources.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, pending.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, applied.StatusCode);
+        Assert.NotNull(createdNode);
+        Assert.Equal("design", createdNode.Key);
+        Assert.Equal("Design Node", createdNode.Name);
+        Assert.Equal("http://runtime", createdNode.EndpointBaseUri);
+        Assert.Equal("runtime-1", createdNode.RemoteRuntimeNodeId);
+        Assert.Equal(86_400, createdNode.AccessTokenTtlSeconds);
+        Assert.Equal(300, createdNode.TokenRefreshSkewSeconds);
+        Assert.Equal(300, createdNode.TokenValidationCacheTtlSeconds);
+        Assert.NotNull(updatedNode);
+        Assert.Equal(designNodeId, updatedNode.Id);
+        Assert.Equal("design-updated", updatedNode.Key);
+        Assert.Contains("abc123", generated.Body, StringComparison.Ordinal);
+        Assert.Contains("Connected", validation.Body, StringComparison.Ordinal);
+        Assert.Contains("Control Plane", sources.Body, StringComparison.Ordinal);
+        Assert.Contains("sales.sale.created", pending.Body, StringComparison.Ordinal);
+        Assert.Contains("Applied", applied.Body, StringComparison.Ordinal);
+
+        await designNodeRepository.Received(1).SetStatusAsync(designNodeId, RuntimeDesignNodeStatus.Enabled, Arg.Any<CancellationToken>());
+        await designNodeRepository.Received(1).SetEnabledAsync(designNodeId, false, Arg.Any<CancellationToken>());
+        await connectionService.Received(1).ImportCredentialPackageAsync(
+            Arg.Is<ImportRuntimeDesignNodeCredentialPackageInput>(x =>
+                x.DesignNodeId == designNodeId.ToString() &&
+                x.Package == "abc123"),
+            Arg.Any<CancellationToken>());
+        await pullService.Received(1).GetPendingAsync("cp", Arg.Any<CancellationToken>());
+        await pullService.Received(1).ApplyAsync("cp", "target-1", Arg.Any<CancellationToken>());
     }
 
     private static WebApplication BuildApp(Action<IServiceCollection> configureServices, Action<IEndpointRouteBuilder> map)
