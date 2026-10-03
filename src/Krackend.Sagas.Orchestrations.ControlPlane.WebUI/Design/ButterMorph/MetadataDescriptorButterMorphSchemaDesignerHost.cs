@@ -239,7 +239,7 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHost : IButterMor
             descriptorId = new Id(Ulid.Parse(value));
             return true;
         }
-        catch (FormatException)
+        catch (Exception exception) when (exception is FormatException or ArgumentException)
         {
             return false;
         }

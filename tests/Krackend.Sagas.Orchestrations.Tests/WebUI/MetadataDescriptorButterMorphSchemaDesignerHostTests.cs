@@ -12,6 +12,31 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
 {
     [Fact]
+    public void ConstructorRejectsNullDependencies()
+    {
+        Assert.Throws<ArgumentNullException>(() => new MetadataDescriptorButterMorphSchemaDesignerHost(
+            null!,
+            new CapturingMetadataDescriptorApplicationService(),
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder()));
+        Assert.Throws<ArgumentNullException>(() => new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            null!,
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder()));
+        Assert.Throws<ArgumentNullException>(() => new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            new CapturingMetadataDescriptorApplicationService(),
+            null!,
+            new PayloadSchemaBuilder()));
+        Assert.Throws<ArgumentNullException>(() => new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            new CapturingMetadataDescriptorApplicationService(),
+            new PayloadSchemaDefinitionHydrator(),
+            null!));
+    }
+
+    [Fact]
     public async Task SaveCreatesMetadataDescriptorFromButterMorphPayloadSchema()
     {
         var service = new CapturingMetadataDescriptorApplicationService();
@@ -53,6 +78,68 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
         Assert.Equal("Audit metadata", command.DisplayName);
         Assert.Contains("\"trace_id\"", command.SchemaJson);
         Assert.Contains("\"type\"", command.SchemaJson);
+    }
+
+    [Fact]
+    public async Task SaveUsesSourceKeyFallbacksFromNullAndNumericMetadata()
+    {
+        var service = new CapturingMetadataDescriptorApplicationService();
+        var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            service,
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+
+        using var nullSourceKey = JsonDocument.Parse("null");
+        using var numberSourceKey = JsonDocument.Parse("123");
+        using var fieldSchema = JsonDocument.Parse("""{"type":"string"}""");
+
+        var nullResult = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = "audit_metadata",
+                Name = "",
+                Type = "object",
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["trace_id"] = fieldSchema.RootElement.Clone()
+                },
+                Metadata = new Dictionary<string, JsonElement>
+                {
+                    ["sourceKey"] = nullSourceKey.RootElement.Clone()
+                }
+            }
+        });
+        var nullCommand = service.LastUpsert!;
+
+        var numericResult = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = "numeric_metadata",
+                Name = "",
+                Type = "object",
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["trace_id"] = fieldSchema.RootElement.Clone()
+                },
+                Metadata = new Dictionary<string, JsonElement>
+                {
+                    ["sourceKey"] = numberSourceKey.RootElement.Clone()
+                }
+            }
+        });
+        var numericCommand = service.LastUpsert!;
+
+        Assert.True(nullResult.Succeeded, nullResult.Message);
+        Assert.Equal("audit_metadata", nullCommand.SourceKey);
+        Assert.Equal("audit_metadata", nullCommand.DisplayName);
+        Assert.True(numericResult.Succeeded, numericResult.Message);
+        Assert.Equal("123", numericCommand.SourceKey);
+        Assert.Equal("numeric_metadata", numericCommand.DisplayName);
     }
 
     [Fact]
@@ -102,6 +189,41 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
     }
 
     [Fact]
+    public async Task LoadExistingDescriptorUsesDescriptorFallbacksAndReportsMissingDescriptors()
+    {
+        var descriptor = new MetadataDescriptor
+        {
+            Id = Id.New(),
+            Key = "audit_metadata",
+            SourceKey = "",
+            DisplayName = "Audit metadata",
+            Description = null,
+            SchemaJson = "",
+            ContentHash = "original",
+            CreatedOnUtc = DateTime.UtcNow,
+        };
+        var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new SingleMetadataDescriptorRepository(descriptor),
+            new CapturingMetadataDescriptorApplicationService(),
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+        var missingHost = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            new CapturingMetadataDescriptorApplicationService(),
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+
+        var loaded = await host.Load(new ButterMorphPayloadSchemaDesignerLoadRequest { ContextKey = $"metadata:{descriptor.Id}" });
+        var missing = await missingHost.Load(new ButterMorphPayloadSchemaDesignerLoadRequest { ContextKey = $"metadata:{Id.New()}" });
+
+        Assert.Equal("audit_metadata", loaded.Key);
+        Assert.Equal("Audit metadata", loaded.Name);
+        Assert.Equal("audit_metadata", loaded.Metadata["sourceKey"]);
+        Assert.Contains("additionalProperties", loaded.JsonSchema, StringComparison.Ordinal);
+        Assert.Contains("not found", missing.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SaveRejectsMetadataKeysWithHyphen()
     {
         var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
@@ -124,6 +246,76 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
 
         Assert.False(result.Succeeded);
         Assert.Contains("underscores", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAndSaveRejectInvalidContextsAndDefinitions()
+    {
+        var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            new CapturingMetadataDescriptorApplicationService(),
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+
+        var nullLoad = await host.Load(null!);
+        var emptyContextLoad = await host.Load(new ButterMorphPayloadSchemaDesignerLoadRequest { ContextKey = "metadata:" });
+        var invalidIdLoad = await host.Load(new ButterMorphPayloadSchemaDesignerLoadRequest { ContextKey = "metadata:not-a-ulid" });
+        var invalidSave = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest { ContextKey = "invalid" });
+        var nullDefinition = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = null!
+        });
+        var blankKey = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = " ",
+                Type = "object"
+            }
+        });
+        var missingDescriptor = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = $"metadata:{Id.New()}",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = "audit_metadata",
+                Type = "object"
+            }
+        });
+
+        Assert.Contains("invalid", nullLoad.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("invalid", emptyContextLoad.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("invalid", invalidIdLoad.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("invalid", invalidSave.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("did not produce", nullDefinition.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("required", blankKey.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not found", missingDescriptor.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SaveReportsApplicationServiceFailures()
+    {
+        var host = new MetadataDescriptorButterMorphSchemaDesignerHost(
+            new EmptyMetadataDescriptorRepository(),
+            new ThrowingMetadataDescriptorApplicationService(),
+            new PayloadSchemaDefinitionHydrator(),
+            new PayloadSchemaBuilder());
+
+        var result = await host.Save(new ButterMorphPayloadSchemaDesignerSaveRequest
+        {
+            ContextKey = "metadata:new",
+            Definition = new PayloadSchemaDefinition
+            {
+                Key = "audit_metadata",
+                Name = "Audit metadata",
+                Type = "object"
+            }
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("Metadata key already exists.", result.Message);
     }
 
     [Fact]
@@ -157,6 +349,21 @@ public sealed class MetadataDescriptorButterMorphSchemaDesignerHostTests
 
         public Task<bool> Delete(DeleteMetadataDescriptorCommand command, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
+
+        public Task<MetadataDescriptorModel> GetById(GetMetadataDescriptorByIdQuery query, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ApplicationPagedResult<MetadataDescriptorModel>> GetAll(GetMetadataDescriptorsQuery query, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingMetadataDescriptorApplicationService : IMetadataDescriptorApplicationService
+    {
+        public Task<string> Upsert(UpsertMetadataDescriptorCommand command, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Metadata key already exists.");
+
+        public Task<bool> Delete(DeleteMetadataDescriptorCommand command, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
 
         public Task<MetadataDescriptorModel> GetById(GetMetadataDescriptorByIdQuery query, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
