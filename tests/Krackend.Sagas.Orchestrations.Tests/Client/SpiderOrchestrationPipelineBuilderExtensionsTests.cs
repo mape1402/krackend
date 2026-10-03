@@ -29,6 +29,16 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     }
 
     [Fact]
+    public void RequestPipelineRoutingRejectsNullArguments()
+    {
+        IPipelineBuilder<PipelineRequest> nullBuilder = null!;
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest>>();
+
+        Assert.Throws<ArgumentNullException>(() => nullBuilder.UseOrchestration(routes => routes.When(static _ => true, "events.sales.created")));
+        Assert.Throws<ArgumentNullException>(() => builder.UseOrchestration((Action<OrchestrationTriggerRouteBuilder<PipelineRequest>>)null!));
+    }
+
+    [Fact]
     public void ResponsePipelineOverloadsRegisterPipelineHooks()
     {
         var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
@@ -40,6 +50,16 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(builder, builder.UseOrchestration(static response => new { response.Ok }));
         Assert.Same(builder, builder.UseOrchestration(static response => new { response.Ok }, "events.sales.completed"));
         Assert.Same(builder, builder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.completed")));
+    }
+
+    [Fact]
+    public void ResponsePipelineRoutingRejectsNullArguments()
+    {
+        IPipelineBuilder<PipelineRequest, PipelineResponse> nullBuilder = null!;
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+
+        Assert.Throws<ArgumentNullException>(() => nullBuilder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.completed")));
+        Assert.Throws<ArgumentNullException>(() => builder.UseOrchestration((Action<OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>>)null!));
     }
 
     [Fact]
@@ -156,6 +176,47 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     }
 
     [Fact]
+    public async Task RequestPipelineRoutingReportsFailureAndCompletesWhenBackchannelExists()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportFailureAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Exception>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var metadataAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        metadataAccessor.Get().Returns(CreateBackchannelMetadata());
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .AddSingleton(metadataAccessor)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest>>();
+        Action<IPostProcessConfiguration<PipelineRequest>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest>>>(action => configurePost = action))
+            .Returns(builder);
+        var exception = new InvalidOperationException("routed failure");
+        var context = new Context<PipelineRequest>(new PipelineRequest("sale-route-failed"), provider, CancellationToken.None);
+        context.SetException(exception);
+
+        builder.UseOrchestration(routes => routes.When(static _ => true, "events.sales.routed"));
+        FailurePostProcessDelegate<PipelineRequest> failureDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest>>();
+        post.OnFailure(Arg.Do<FailurePostProcessDelegate<PipelineRequest>>(handler => failureDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+        await failureDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportFailureAsync(
+            typeof(PipelineRequest),
+            exception,
+            Arg.Is<OrchestrationOperationOptions>(options => HasNoTrigger(options)),
+            Arg.Any<CancellationToken>());
+        client.Received(1).Close();
+    }
+
+    [Fact]
     public async Task ResponsePipelineReportsTransformedResponsePayload()
     {
         var client = Substitute.For<IOrchestrationOperationClient>();
@@ -242,6 +303,47 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     }
 
     [Fact]
+    public async Task ResponsePipelineReportsFailureAndCompletesWhenBackchannelExists()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportFailureAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Exception>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var metadataAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        metadataAccessor.Get().Returns(CreateBackchannelMetadata());
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .AddSingleton(metadataAccessor)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var exception = new ApplicationException("response failed with backchannel");
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-4b"), provider, CancellationToken.None);
+        context.SetException(exception);
+
+        builder.UseOrchestration<PipelineRequest, PipelineResponse>("events.sales.failed", "4.0.0");
+        FailurePostProcessDelegate<PipelineRequest> failureDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        post.OnFailure(Arg.Do<FailurePostProcessDelegate<PipelineRequest>>(handler => failureDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+        await failureDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportFailureAsync(
+            typeof(PipelineRequest),
+            exception,
+            Arg.Is<OrchestrationOperationOptions>(options => MatchesTrigger(options, "events.sales.failed", "4.0.0")),
+            Arg.Any<CancellationToken>());
+        client.Received(1).Close();
+    }
+
+    [Fact]
     public async Task RequestPipelineRoutingPublishesFirstMatchingRouteWithDefaultPayload()
     {
         var client = Substitute.For<IOrchestrationOperationClient>();
@@ -285,6 +387,47 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
             null,
             Arg.Is<object>(payload => IsPipelineRequestPayload(payload, "sale-route-1")),
             Arg.Is<OrchestrationOperationOptions>(options => MatchesTrigger(options, "events.sales.routed", "1.0.0")),
+            Arg.Any<CancellationToken>());
+        client.Received(1).Close();
+    }
+
+    [Fact]
+    public async Task ResponsePipelineRoutingReportsFailureAndCompletesWhenBackchannelExists()
+    {
+        var client = Substitute.For<IOrchestrationOperationClient>();
+        client.ReportFailureAsync(
+                Arg.Any<Type>(),
+                Arg.Any<Exception>(),
+                Arg.Any<OrchestrationOperationOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var metadataAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        metadataAccessor.Get().Returns(CreateBackchannelMetadata());
+        var provider = new ServiceCollection()
+            .AddSingleton(client)
+            .AddSingleton(metadataAccessor)
+            .BuildServiceProvider();
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>> configurePost = null!;
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Do<Action<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>>(action => configurePost = action))
+            .Returns(builder);
+        var exception = new ApplicationException("routed response failed");
+        var context = new Context<PipelineRequest, PipelineResponse>(new PipelineRequest("sale-route-failed-response"), provider, CancellationToken.None);
+        context.SetException(exception);
+
+        builder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.routed"));
+        FailurePostProcessDelegate<PipelineRequest> failureDelegate = null!;
+        var post = Substitute.For<IPostProcessConfiguration<PipelineRequest, PipelineResponse>>();
+        post.OnFailure(Arg.Do<FailurePostProcessDelegate<PipelineRequest>>(handler => failureDelegate = handler))
+            .Returns(post);
+        configurePost(post);
+        await failureDelegate(context, new PostProcessArguments());
+
+        await client.Received(1).ReportFailureAsync(
+            typeof(PipelineRequest),
+            exception,
+            Arg.Is<OrchestrationOperationOptions>(options => HasNoTrigger(options)),
             Arg.Any<CancellationToken>());
         client.Received(1).Close();
     }
@@ -549,6 +692,16 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
 
     private static bool IsPipelineRequestPayload(object payload, string id)
         => payload is PipelineRequest request && request.Id == id;
+
+    private static OrchestrationMessageMetadata CreateBackchannelMetadata()
+        => new()
+        {
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "{}"
+            }
+        };
 
     public sealed record PipelineRequest(string Id);
 
