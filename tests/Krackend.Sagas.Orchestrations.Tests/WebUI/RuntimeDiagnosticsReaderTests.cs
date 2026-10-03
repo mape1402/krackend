@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using System.Reflection;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -207,6 +208,28 @@ public sealed class RuntimeDiagnosticsReaderTests
         Assert.Contains("\"requestId\": \"req-123\"", dispatchMetadata);
         Assert.Contains("\"currentStage\": \"reserve-stock\"", dispatchMetadata);
         Assert.Contains("\"attempt\": 1", dispatchMetadata);
+    }
+
+    [Fact]
+    public void PropagationMetadataDeserializersHandleFallbackItemsAndInvalidNodes()
+    {
+        var envelopeMethod = typeof(RuntimeDiagnosticsReader).GetMethod(
+            "TryDeserializePropagationEnvelope",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var itemsMethod = typeof(RuntimeDiagnosticsReader).GetMethod(
+            "TryDeserializePropagationItems",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var malformedEnvelope = JsonNode.Parse("""{"items":[1]}""")!;
+        var itemDictionary = JsonNode.Parse("""{"audit.context":{"requestId":"req-items"}}""")!;
+        var invalidItems = JsonNode.Parse("""[1]""")!;
+
+        var envelope = envelopeMethod.Invoke(null, [malformedEnvelope]);
+        var items = (OrchestrationPropagationMetadata)itemsMethod.Invoke(null, [itemDictionary])!;
+        var invalid = itemsMethod.Invoke(null, [invalidItems]);
+
+        Assert.Null(envelope);
+        Assert.Equal("req-items", items.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Null(invalid);
     }
 
     [Theory]

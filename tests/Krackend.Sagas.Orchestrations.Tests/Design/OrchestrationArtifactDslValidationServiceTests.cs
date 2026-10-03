@@ -235,6 +235,42 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
     }
 
     [Fact]
+    public void ValidateThrowsWhenValidationDslIsNotAValidationDocument()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(Substitute.For<ITransformationDocument>());
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        var messaging = (MessagingTaskConfiguration)version.StageDefinitions[0].TaskDefinitions[0].Configuration;
+        messaging.HasRequestValidation = true;
+        messaging.RequestValidation = DslValidation("validate { assert source.saleId != null }");
+
+        var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
+
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:request-validation", exception.Path);
+        Assert.Contains("not a validation document", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateWrapsValidationParserExceptionsWithDiagnostics()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(_ => throw new InvalidOperationException("broken validation"));
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        var messaging = (MessagingTaskConfiguration)version.StageDefinitions[0].TaskDefinitions[0].Configuration;
+        messaging.HasResponseValidation = true;
+        messaging.ResponseValidation = DslValidation("validate { assert source.reserved == true }");
+
+        var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
+
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:response-validation", exception.Path);
+        Assert.Contains("broken validation", exception.DiagnosticsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ValidateThrowsWhenCompensationTransformationHasNoDsl()
     {
         var service = CreateService();
@@ -463,6 +499,57 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
         Assert.Contains("target", parsedDefinition!.Content, StringComparison.Ordinal);
         Assert.Contains("Result: payload.total > 0", parsedDefinition.Content, StringComparison.Ordinal);
         analyzer.Received(1).Analyze(document);
+    }
+
+    [Fact]
+    public void ValidateParsesValidationDslConditionsWithoutSemanticAnalysis()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        IDslDefinition? parsedDefinition = null;
+        parser.Parse(Arg.Do<IDslDefinition>(definition => parsedDefinition = definition))
+            .Returns(Substitute.For<IDslDocument>());
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        version.StageDefinitions[0].HasExecutionCondition = true;
+        version.StageDefinitions[0].ExecutionCondition = new ExecutionCondition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslConditionConfiguration
+            {
+                Expression = new Expression("validate { assert source.ready == true }")
+            }
+        };
+
+        service.Validate(version);
+
+        Assert.NotNull(parsedDefinition);
+        Assert.StartsWith("validate", parsedDefinition!.Content, StringComparison.OrdinalIgnoreCase);
+        analyzer.DidNotReceiveWithAnyArgs().Analyze(default!);
+    }
+
+    [Fact]
+    public void ValidateWrapsValidationDslConditionParserExceptions()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(_ => throw new InvalidOperationException("bad condition"));
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        version.StageDefinitions[0].HasExecutionCondition = true;
+        version.StageDefinitions[0].ExecutionCondition = new ExecutionCondition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslConditionConfiguration
+            {
+                Expression = new Expression("validate { assert source.ready == true }")
+            }
+        };
+
+        var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
+
+        Assert.Equal("stage:fulfillment:condition", exception.Path);
+        Assert.Contains("bad condition", exception.DiagnosticsJson, StringComparison.Ordinal);
     }
 
     [Fact]
