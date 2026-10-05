@@ -6,6 +6,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 
 public sealed class IndexModel : PageModel
 {
+    private const int PageSize = 200;
+    private const int MaxPageReads = 50;
+
     private readonly IDistributionEnvironmentApplicationService _service;
 
     public IndexModel(IDistributionEnvironmentApplicationService service)
@@ -20,8 +23,22 @@ public sealed class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        var result = await _service.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }, cancellationToken);
-        Rows = result.Rows;
+        var rows = new List<DistributionEnvironmentModel>();
+        var pageNumber = 1;
+        var totalPages = 1;
+
+        do
+        {
+            var result = await _service.GetAll(
+                new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize },
+                cancellationToken);
+            rows.AddRange(result.Rows);
+            totalPages = Math.Max(result.TotalPages, 1);
+            pageNumber++;
+        }
+        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
+
+        Rows = rows.ToArray();
     }
 
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)

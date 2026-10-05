@@ -239,7 +239,7 @@ main.container {
 
 .od-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 320px));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
     gap: 0.75rem;
     align-items: stretch;
 }
@@ -256,6 +256,19 @@ main.container {
     gap: 0.45rem;
     transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.12s ease;
     width: 100%;
+    height: 100%;
+}
+
+.od-infinite-scroll-status {
+    margin-top: 1rem;
+    color: var(--od-muted);
+    font-size: 0.82rem;
+    text-align: center;
+}
+
+.od-infinite-scroll-sentinel {
+    width: 100%;
+    height: 1px;
 }
 
 .od-item-card:hover {
@@ -333,7 +346,7 @@ main.container {
 }
 
 .od-metadata-grid {
-    grid-template-columns: repeat(auto-fill, minmax(190px, 240px));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
     align-items: start;
     gap: 0.5rem;
 }
@@ -546,7 +559,7 @@ main.container {
 }
 
 .od-runtime-node-grid {
-    grid-template-columns: repeat(auto-fill, minmax(320px, 390px));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
 }
 
 .od-runtime-node-card {
@@ -1549,7 +1562,7 @@ main.container {
     }
 
     .od-grid {
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
     }
 
     .od-pipeline-item {

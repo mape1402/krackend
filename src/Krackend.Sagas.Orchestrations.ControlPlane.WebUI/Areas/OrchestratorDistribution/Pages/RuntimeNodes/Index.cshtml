@@ -21,8 +21,12 @@
 }
 else
 {
-    <section class="od-list-shell">
-        <div class="od-grid od-runtime-node-grid">
+    <section class="od-list-shell" data-od-infinite-list>
+        <div class="od-grid od-runtime-node-grid"
+             data-od-infinite-grid
+             data-od-infinite-label="runtime nodes"
+             data-od-infinite-initial-count="18"
+             data-od-infinite-batch-size="18">
             @foreach (var item in Model.Rows)
             {
                 var statusClass = RuntimeNodeStatusClass(item.Status);
@@ -31,7 +35,7 @@ else
                 var credentialReadiness = CredentialReadinessLabel(item);
                 var endpointReadiness = EndpointReadinessLabel(item);
 
-                <article class="od-item-card od-runtime-node-card"
+                <article class="od-item-card od-runtime-node-card od-infinite-item"
                          data-runtime-node="true"
                          data-id="@item.Id"
                          data-name="@item.Name"
@@ -140,6 +144,10 @@ else
                 </article>
             }
         </div>
+        <div class="od-infinite-scroll-status" data-od-infinite-status>
+            Showing <span data-od-infinite-count>@Math.Min(18, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> runtime nodes
+        </div>
+        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
     </section>
 }
 

@@ -2,9 +2,14 @@
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
 @{
     ViewData["Title"] = "Releases";
+    var isOrchestrationSelected = !string.IsNullOrWhiteSpace(Model.OrchestrationId);
+    var catalogRows = Model.Orchestrations
+        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
     var releaseRows = Model.Rows
         .OrderByDescending(x => x.CreatedAtUtc)
         .ToArray();
+    var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
     var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
     var runtimeNodesById = Model.RuntimeNodes.ToDictionary(x => x.Id, StringComparer.Ordinal);
 
@@ -93,37 +98,56 @@
 <div class="od-page-head">
     <div>
         <h1 class="od-page-title">
-            @(string.IsNullOrWhiteSpace(Model.OrchestrationId)
+            @(!isOrchestrationSelected
                 ? "Releases"
-                : $"Releases - {Model.SelectedOrchestration?.Name}")
+                : $"Releases - {selectedOrchestrationName}")
         </h1>
-        <p class="od-page-subtitle">Select an orchestration to view and create releases.</p>
+        <p class="od-page-subtitle">
+            @(!isOrchestrationSelected
+                ? "Select an orchestration to view and create releases."
+                : "Releases created for the selected orchestration.")
+        </p>
     </div>
     <div class="d-flex gap-2">
-        @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        @if (isOrchestrationSelected)
+        {
+            <a class="btn btn-outline-secondary"
+               asp-area="OrchestratorDistribution"
+               asp-page="/Promotions/Index">
+                All orchestrations
+            </a>
+        }
+        @if (isOrchestrationSelected)
         {
             <button type="button" class="btn btn-outline-secondary" id="openRuntimeNodesModalButton">Allowed Nodes</button>
         }
-        @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        @if (isOrchestrationSelected)
         {
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createReleaseModal">Create release</button>
         }
     </div>
 </div>
 
-<section class="od-release-split">
-    <aside class="od-list-shell od-release-left">
-        @if (!Model.Orchestrations.Any())
-        {
+@if (!isOrchestrationSelected)
+{
+    @if (!catalogRows.Any())
+    {
+        <section class="od-panel">
             <p class="od-empty">No orchestrations available in distribution mirror.</p>
-        }
-        else
-        {
-            <div class="od-vertical-cards">
-                @foreach (var orchestration in Model.Orchestrations.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+        </section>
+    }
+    else
+    {
+        <section class="od-list-shell" data-od-infinite-list>
+            <div class="od-grid"
+                 data-od-infinite-grid
+                 data-od-infinite-label="orchestrations"
+                 data-od-infinite-initial-count="24"
+                 data-od-infinite-batch-size="24">
+                @foreach (var orchestration in catalogRows)
                 {
-                    var isSelected = string.Equals(Model.OrchestrationId, orchestration.Id, StringComparison.Ordinal);
-                    <a class="od-item-card od-orch-card text-decoration-none @(isSelected ? "od-selected" : string.Empty)"
+                    var summary = Model.GetSummary(orchestration.Id);
+                    <a class="od-item-card od-orch-card od-infinite-item text-decoration-none"
                        asp-area="OrchestratorDistribution"
                        asp-page="/Promotions/Index"
                        asp-route-orchestrationId="@orchestration.Id">
@@ -136,34 +160,54 @@
                                 @(orchestration.IsActive ? "Active" : "Inactive")
                             </span>
                         </div>
+                        <div class="od-chip-row">
+                            <span class="od-meta-chip">Releases: @summary.ReleaseCount</span>
+                            @if (summary.LatestCreatedAtUtc.HasValue)
+                            {
+                                <span class="od-meta-chip">Latest: @summary.LatestCreatedAtUtc.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                            }
+                        </div>
                     </a>
                 }
             </div>
-        }
-    </aside>
+            <div class="od-infinite-scroll-status" data-od-infinite-status>
+                Showing <span data-od-infinite-count>@Math.Min(24, catalogRows.Length)</span> of <span data-od-infinite-total>@catalogRows.Length</span> orchestrations
+            </div>
+            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
+        </section>
+    }
+}
+else
+{
+    <section class="od-list-shell" data-od-infinite-list>
+        <div class="od-section-head od-release-detail-headline">
+            <div>
+                <h2 class="od-section-title">Created releases</h2>
+                <p class="od-item-meta">@releaseRows.Length release(s) found</p>
+            </div>
+        </div>
 
-    <div class="od-list-shell od-release-right">
-        @if (string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        @if (!releaseRows.Any())
         {
-            <p class="od-empty">Select a pipeline to view its releases.</p>
-        }
-        else if (!releaseRows.Any())
-        {
-            <div class="od-empty-state">
+            <section class="od-panel od-empty-state">
                 <p class="od-empty">No releases found for this orchestration.</p>
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createReleaseModal">
                     Create release
                 </button>
-            </div>
+            </section>
         }
         else
         {
-            <div class="od-release-board">
+            <div class="od-release-board"
+                 data-od-infinite-grid
+                 data-od-infinite-label="releases"
+                 data-od-infinite-initial-count="24"
+                 data-od-infinite-batch-size="24">
                 @foreach (var item in releaseRows)
                 {
                     var artifact = Model.Artifacts.FirstOrDefault(x => x.Id == item.ArtifactId);
                     var releaseStatus = ResolveReleaseStatus(item);
-                    <article class="od-release-row">
+                    <article class="od-release-row od-infinite-item">
                         <div class="od-release-row-main">
                             <div class="od-release-row-head">
                                 <span class="od-status @ReleaseStatusClass(releaseStatus)">@DisplayStageStatus(releaseStatus)</span>
@@ -235,9 +279,13 @@
                     </article>
                 }
             </div>
+            <div class="od-infinite-scroll-status" data-od-infinite-status>
+                Showing <span data-od-infinite-count>@Math.Min(24, releaseRows.Length)</span> of <span data-od-infinite-total>@releaseRows.Length</span> releases
+            </div>
+            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
         }
-    </div>
-</section>
+    </section>
+}
 
 @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
 {
@@ -648,39 +696,8 @@
     padding: 0.75rem 0.9rem;
 }
 
-.od-selected {
-    border-color: var(--od-primary) !important;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--od-primary) 22%, transparent);
-}
-
-.od-release-split {
-    display: grid;
-    grid-template-columns: 320px minmax(0, 1fr);
-    gap: 0.9rem;
-    align-items: stretch;
-    min-height: calc(100vh - 190px);
-    height: calc(100vh - 190px);
-}
-
-.od-release-left,
-.od-release-right {
-    border: 1px solid var(--od-border);
-    border-radius: 0.65rem;
-    padding: 0.55rem;
-    min-height: 100%;
-    height: 100%;
-    overflow: auto;
-}
-
-.od-release-left {
-    background: color-mix(in srgb, var(--od-surface-2) 78%, var(--od-surface));
-    border-right: 2px solid var(--od-border);
-    max-height: 100%;
-}
-
-.od-release-right {
-    background: color-mix(in srgb, var(--od-surface-2) 72%, var(--od-surface));
-    min-height: 100%;
+.od-release-detail-headline {
+    margin-top: 0.2rem;
 }
 
 .od-empty-state {
@@ -1040,23 +1057,6 @@
 }
 
 @@media (max-width: 991.98px) {
-    .od-release-split {
-        grid-template-columns: 1fr;
-        height: auto;
-        min-height: auto;
-    }
-
-    .od-release-left {
-        max-height: none;
-        min-height: auto;
-        height: auto;
-        border-right: 1px solid var(--od-border);
-    }
-    .od-release-right {
-        min-height: auto;
-        height: auto;
-    }
-
     .od-release-detail-head {
         flex-direction: column;
     }

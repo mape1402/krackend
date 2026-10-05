@@ -8,6 +8,12 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 
 public sealed class IndexModel : PageModel
 {
+    private const int ReleasePageSize = 100;
+    private const int ArtifactPageSize = 300;
+    private const int RuntimeNodePageSize = 200;
+    private const int ReleaseTargetPageSize = 1000;
+    private const int MaxPageReads = 50;
+
     private readonly IReleaseApplicationService _promotionService;
     private readonly IReleaseTargetApplicationService _releaseTargetService;
     private readonly IArtifactApplicationService _artifactService;
@@ -40,10 +46,18 @@ public sealed class IndexModel : PageModel
         new Dictionary<string, ReleaseTargetModel>(StringComparer.Ordinal);
     public IReadOnlyDictionary<string, IReadOnlyCollection<string>> AllowedNodeIdsByOrchestrationId { get; private set; } =
         new Dictionary<string, IReadOnlyCollection<string>>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, ReleaseOrchestrationSummary> ReleaseSummaryByOrchestrationId { get; private set; } =
+        new Dictionary<string, ReleaseOrchestrationSummary>(StringComparer.Ordinal);
     [BindProperty(SupportsGet = true)] public string OrchestrationId { get; set; } = string.Empty;
-    public OrchestrationPolicyDefinitionModel SelectedOrchestration { get; private set; }
+    public OrchestrationPolicyDefinitionModel SelectedOrchestration { get; private set; } = null!;
     [BindProperty] public ReleaseInput Input { get; set; } = new();
     [BindProperty] public AllowedNodesInput AllowedNodes { get; set; } = new();
+
+    public ReleaseOrchestrationSummary GetSummary(string orchestrationId)
+        => !string.IsNullOrWhiteSpace(orchestrationId) &&
+           ReleaseSummaryByOrchestrationId.TryGetValue(orchestrationId, out var summary)
+            ? summary
+            : ReleaseOrchestrationSummary.Empty;
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
@@ -61,8 +75,9 @@ public sealed class IndexModel : PageModel
             return RedirectToPage();
         }
 
-        var selectedArtifact = (await _artifactService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 400 }, cancellationToken))
-            .Rows
+        var selectedArtifact = (await LoadAll(
+                settings => _artifactService.GetAll(settings, cancellationToken),
+                ArtifactPageSize))
             .FirstOrDefault(x => string.Equals(x.Id, Input.ArtifactId, StringComparison.Ordinal));
         if (selectedArtifact is null || !string.Equals(selectedArtifact.OrchestrationDefinitionId, Input.OrchestrationDefinitionId, StringComparison.Ordinal))
         {
@@ -162,9 +177,21 @@ public sealed class IndexModel : PageModel
 
     private async Task LoadPageData(CancellationToken cancellationToken)
     {
-        var allRows = (await _promotionService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 100 }, cancellationToken)).Rows;
+        var allRows = await LoadAll(
+            settings => _promotionService.GetAll(settings, cancellationToken),
+            ReleasePageSize);
         Orchestrations = await _policyService.GetOrchestrations(cancellationToken);
-        Artifacts = (await _artifactService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 300 }, cancellationToken)).Rows;
+        Artifacts = await LoadAll(
+            settings => _artifactService.GetAll(settings, cancellationToken),
+            ArtifactPageSize);
+        ReleaseSummaryByOrchestrationId = allRows
+            .Where(x => !string.IsNullOrWhiteSpace(x.OrchestrationDefinitionId))
+            .GroupBy(x => x.OrchestrationDefinitionId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => new ReleaseOrchestrationSummary(g.Count(), g.Max(x => x.CreatedAtUtc)),
+                StringComparer.Ordinal);
+
         if (string.IsNullOrWhiteSpace(OrchestrationId))
         {
             Rows = Array.Empty<ReleaseModel>();
@@ -181,12 +208,15 @@ public sealed class IndexModel : PageModel
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ToArray();
         }
-        RuntimeNodes = (await _runtimeService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }, cancellationToken))
-            .Rows
+        RuntimeNodes = (await LoadAll(
+                settings => _runtimeService.GetAll(settings, cancellationToken),
+                RuntimeNodePageSize))
             .Where(x => !x.IsDeleted && string.Equals(x.Status, RuntimeNodeStatus.Enabled.ToString(), StringComparison.Ordinal))
             .ToArray();
         var releaseIds = Rows.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
-        var releaseTargets = (await _releaseTargetService.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 1000 }, cancellationToken)).Rows
+        var releaseTargets = (await LoadAll(
+                settings => _releaseTargetService.GetAll(settings, cancellationToken),
+                ReleaseTargetPageSize))
             .Where(x => !string.IsNullOrWhiteSpace(x.ReleaseId) && releaseIds.Contains(x.ReleaseId))
             .ToArray();
         ReleaseTargetByReleaseAndNode = releaseTargets
@@ -202,6 +232,30 @@ public sealed class IndexModel : PageModel
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         AllowedNodeIdsByOrchestrationId = await _policyService.GetByOrchestrationIds(orchestrationIds, cancellationToken);
+    }
+
+    private static async Task<TModel[]> LoadAll<TModel>(
+        Func<ApplicationPagedSettings, Task<ApplicationPagedResult<TModel>>> loadPage,
+        int pageSize)
+    {
+        var rows = new List<TModel>();
+        var pageNumber = 1;
+        var totalPages = 1;
+
+        do
+        {
+            var result = await loadPage(new ApplicationPagedSettings
+            {
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            });
+            rows.AddRange(result.Rows);
+            totalPages = Math.Max(result.TotalPages, 1);
+            pageNumber++;
+        }
+        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
+
+        return rows.ToArray();
     }
 
     public sealed class ReleaseInput
@@ -220,5 +274,9 @@ public sealed class IndexModel : PageModel
         public string[] RuntimeNodeIds { get; set; } = Array.Empty<string>();
         public string UpdatedBy { get; set; } = "web-ui";
     }
-}
 
+    public sealed record ReleaseOrchestrationSummary(int ReleaseCount, DateTime? LatestCreatedAtUtc)
+    {
+        public static ReleaseOrchestrationSummary Empty { get; } = new(0, null);
+    }
+}

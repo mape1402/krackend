@@ -2,35 +2,59 @@
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel
 @{
     ViewData["Title"] = "Artifacts";
+    var isOrchestrationSelected = !string.IsNullOrWhiteSpace(Model.OrchestrationId);
+    var catalogRows = Model.Orchestrations
+        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
     var artifactRows = Model.Rows
         .OrderByDescending(x => x.CreatedAtUtc)
         .ToArray();
+    var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
 }
 
 <div class="od-page-head">
     <div>
         <h1 class="od-page-title">
-            @(string.IsNullOrWhiteSpace(Model.OrchestrationId)
+            @(!isOrchestrationSelected
                 ? "Artifacts"
-                : $"Artifacts - {Model.SelectedOrchestration?.Name}")
+                : $"Artifacts - {selectedOrchestrationName}")
         </h1>
-        <p class="od-page-subtitle">Select an orchestration to view its artifacts.</p>
+        <p class="od-page-subtitle">
+            @(!isOrchestrationSelected
+                ? "Select an orchestration to view deployed artifacts."
+                : "Artifacts already deployed for the selected orchestration.")
+        </p>
     </div>
+    @if (isOrchestrationSelected)
+    {
+        <a class="btn btn-outline-secondary"
+           asp-area="OrchestratorDistribution"
+           asp-page="/ArtifactReleases/Index">
+            All orchestrations
+        </a>
+    }
 </div>
 
-<section class="od-release-split">
-    <aside class="od-list-shell od-release-left">
-        @if (!Model.Orchestrations.Any())
-        {
+@if (!isOrchestrationSelected)
+{
+    @if (!catalogRows.Any())
+    {
+        <section class="od-panel">
             <p class="od-empty">No orchestrations available in distribution mirror.</p>
-        }
-        else
-        {
-            <div class="od-grid">
-                @foreach (var orchestration in Model.Orchestrations.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+        </section>
+    }
+    else
+    {
+        <section class="od-list-shell" data-od-infinite-list>
+            <div class="od-grid"
+                 data-od-infinite-grid
+                 data-od-infinite-label="orchestrations"
+                 data-od-infinite-initial-count="24"
+                 data-od-infinite-batch-size="24">
+                @foreach (var orchestration in catalogRows)
                 {
-                    var isSelected = string.Equals(Model.OrchestrationId, orchestration.Id, StringComparison.Ordinal);
-                    <a class="od-item-card od-orch-card text-decoration-none @(isSelected ? "od-selected" : string.Empty)"
+                    var summary = Model.GetSummary(orchestration.Id);
+                    <a class="od-item-card od-orch-card od-infinite-item text-decoration-none"
                        asp-area="OrchestratorDistribution"
                        asp-page="/ArtifactReleases/Index"
                        asp-route-orchestrationId="@orchestration.Id">
@@ -43,27 +67,49 @@
                                 @(orchestration.IsActive ? "Active" : "Inactive")
                             </span>
                         </div>
+                        <div class="od-chip-row">
+                            <span class="od-meta-chip">Artifacts: @summary.ArtifactCount</span>
+                            @if (summary.LatestCreatedAtUtc.HasValue)
+                            {
+                                <span class="od-meta-chip">Latest: @summary.LatestCreatedAtUtc.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                            }
+                        </div>
                     </a>
                 }
             </div>
-        }
-    </aside>
+            <div class="od-infinite-scroll-status" data-od-infinite-status>
+                Showing <span data-od-infinite-count>@Math.Min(24, catalogRows.Length)</span> of <span data-od-infinite-total>@catalogRows.Length</span> orchestrations
+            </div>
+            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
+        </section>
+    }
+}
+else
+{
+    <section class="od-list-shell" data-od-infinite-list>
+        <div class="od-section-head od-release-detail-headline">
+            <div>
+                <h2 class="od-section-title">Deployed artifacts</h2>
+                <p class="od-item-meta">@artifactRows.Length artifact(s) found</p>
+            </div>
+        </div>
 
-    <div class="od-list-shell od-release-right">
-        @if (string.IsNullOrWhiteSpace(Model.OrchestrationId))
+        @if (!artifactRows.Any())
         {
-            <p class="od-empty">Select an orchestration to view its artifacts.</p>
-        }
-        else if (!artifactRows.Any())
-        {
-            <p class="od-empty">No artifacts found for this orchestration.</p>
+            <section class="od-panel">
+                <p class="od-empty">No artifacts found for this orchestration.</p>
+            </section>
         }
         else
         {
-            <div class="od-release-board">
+            <div class="od-release-board"
+                 data-od-infinite-grid
+                 data-od-infinite-label="artifacts"
+                 data-od-infinite-initial-count="30"
+                 data-od-infinite-batch-size="30">
                 @foreach (var item in artifactRows)
                 {
-                    <article class="od-release-row"
+                    <article class="od-release-row od-infinite-item"
                              data-display-name="@item.OrchestrationDisplayName"
                              data-version-id="@item.OrchestrationVersionId"
                              data-version-label="@item.VersionLabel"
@@ -99,9 +145,13 @@
                     </article>
                 }
             </div>
+            <div class="od-infinite-scroll-status" data-od-infinite-status>
+                Showing <span data-od-infinite-count>@Math.Min(30, artifactRows.Length)</span> of <span data-od-infinite-total>@artifactRows.Length</span> artifacts
+            </div>
+            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
         }
-    </div>
-</section>
+    </section>
+}
 
 <div class="modal fade" id="artifactDetailsModal" tabindex="-1" aria-labelledby="artifactDetailsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -274,39 +324,8 @@
     color: var(--od-text);
 }
 
-.od-selected {
-    border-color: var(--od-primary) !important;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--od-primary) 22%, transparent);
-}
-
-.od-release-split {
-    display: grid;
-    grid-template-columns: 320px minmax(0, 1fr);
-    gap: 0.9rem;
-    align-items: stretch;
-    min-height: calc(100vh - 190px);
-    height: calc(100vh - 190px);
-}
-
-.od-release-left,
-.od-release-right {
-    border: 1px solid var(--od-border);
-    border-radius: 0.65rem;
-    padding: 0.55rem;
-    min-height: 100%;
-    height: 100%;
-    overflow: auto;
-}
-
-.od-release-left {
-    background: color-mix(in srgb, var(--od-surface-2) 78%, var(--od-surface));
-    border-right: 2px solid var(--od-border);
-    max-height: 100%;
-}
-
-.od-release-right {
-    background: color-mix(in srgb, var(--od-surface-2) 72%, var(--od-surface));
-    min-height: 100%;
+.od-release-detail-headline {
+    margin-top: 0.2rem;
 }
 
 .od-release-id {
@@ -373,24 +392,6 @@
 }
 
 @@media (max-width: 991.98px) {
-    .od-release-split {
-        grid-template-columns: 1fr;
-        height: auto;
-        min-height: auto;
-    }
-
-    .od-release-left {
-        max-height: none;
-        min-height: auto;
-        height: auto;
-        border-right: 1px solid var(--od-border);
-    }
-
-    .od-release-right {
-        min-height: auto;
-        height: auto;
-    }
-
     .od-release-row {
         grid-template-columns: 1fr;
     }

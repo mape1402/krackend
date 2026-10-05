@@ -10,6 +10,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.Orches
 /// </summary>
 public sealed class IndexModel : PageModel
 {
+    private const int PageSize = 200;
+    private const int MaxPageReads = 50;
+
     private readonly ITeamApplicationService _service;
 
     /// <summary>
@@ -174,8 +177,21 @@ public sealed class IndexModel : PageModel
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        Rows = (await _service.GetAll(new GetTeamsQuery(
-            new ApplicationPagedSettings { PageNumber = 1, PageSize = 200 }), cancellationToken)).Rows.ToArray();
+        var rows = new List<TeamModel>();
+        var pageNumber = 1;
+        var totalPages = 1;
+
+        do
+        {
+            var result = await _service.GetAll(new GetTeamsQuery(
+                new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize }), cancellationToken);
+            rows.AddRange(result.Rows);
+            totalPages = Math.Max(result.TotalPages, 1);
+            pageNumber++;
+        }
+        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
+
+        Rows = rows.ToArray();
 
         if (!string.IsNullOrWhiteSpace(TeamId))
         {
