@@ -102,14 +102,14 @@ else
         }
         else
         {
-            <div class="od-release-board"
+            <div class="od-grid od-distribution-detail-grid"
                  data-od-infinite-grid
                  data-od-infinite-label="artifacts"
                  data-od-infinite-initial-count="30"
                  data-od-infinite-batch-size="30">
                 @foreach (var item in artifactRows)
                 {
-                    <article class="od-release-row od-infinite-item"
+                    <article class="od-item-card od-artifact-detail-card od-infinite-item"
                              data-display-name="@item.OrchestrationDisplayName"
                              data-version-id="@item.OrchestrationVersionId"
                              data-version-label="@item.VersionLabel"
@@ -118,17 +118,22 @@ else
                              data-checksum="@item.Checksum"
                              data-created-at="@item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")"
                              data-payload="@item.Payload">
-                        <div class="od-release-row-main">
-                            <div class="od-release-row-head">
-                                <span class="od-status od-status-active">@item.ArtifactType</span>
+                        <div class="od-item-top">
+                            <div>
+                                <h2 class="od-item-title">Version @item.VersionNumber</h2>
                                 <p class="od-item-meta od-release-id">@item.Id</p>
                             </div>
-                            <div class="od-chip-row">
-                                <span class="od-meta-chip">Version: @item.VersionNumber - @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "Unlabeled" : item.VersionLabel)</span>
-                                <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
-                            </div>
+                            <span class="od-status od-status-active">@item.ArtifactType</span>
                         </div>
-                        <div class="od-release-row-actions">
+                        <div class="od-chip-row">
+                            <span class="od-meta-chip">Label: @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "Unlabeled" : item.VersionLabel)</span>
+                            <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                        </div>
+                        <div class="od-detail-kv">
+                            <span>Checksum</span>
+                            <strong>@item.Checksum</strong>
+                        </div>
+                        <div class="od-card-actions">
                             <button type="button"
                                     class="btn btn-sm od-release-details-btn js-open-artifact-details"
                                     data-display-name="@item.OrchestrationDisplayName"
@@ -332,47 +337,48 @@ else
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1.2;
-    white-space: nowrap;
-    overflow: visible;
-    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
     max-width: none;
 }
 
-.od-release-board {
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
+.od-distribution-detail-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
 }
 
-.od-release-row {
-    border: 1px solid var(--od-border);
-    border-radius: 0.75rem;
-    background: var(--od-surface);
-    padding: 1.15rem 1rem;
+.od-artifact-detail-card {
+    min-height: 180px;
+}
+
+.od-detail-kv {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 1.1rem;
-    align-items: center;
+    gap: 0.2rem;
+    margin-top: auto;
+    padding-top: 0.35rem;
+    font-size: 0.74rem;
 }
 
-.od-release-row-main {
-    min-width: 0;
+.od-detail-kv span {
+    color: var(--od-muted);
+    font-weight: 650;
 }
 
-.od-release-row-head {
+.od-detail-kv strong {
+    color: var(--od-text);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.od-card-actions {
     display: flex;
-    justify-content: flex-start;
-    gap: 0.9rem;
     align-items: center;
-    margin-bottom: 0.45rem;
-}
-
-.od-release-row-actions {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    align-self: end;
-    padding-left: 0.45rem;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
 }
 
 .od-release-details-btn {
@@ -391,14 +397,5 @@ else
     color: var(--od-text);
 }
 
-@@media (max-width: 991.98px) {
-    .od-release-row {
-        grid-template-columns: 1fr;
-    }
-
-    .od-release-row-actions {
-        justify-content: flex-end;
-    }
-}
 </style>
 }

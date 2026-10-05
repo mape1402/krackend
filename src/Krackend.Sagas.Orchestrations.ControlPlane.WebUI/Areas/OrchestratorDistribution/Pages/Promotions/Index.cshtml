@@ -38,6 +38,19 @@
         };
     }
 
+    string StageBadgeClass(string status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "pending" or "availableforpull" => "od-stage-badge-warning",
+            "inprogress" or "pushscheduled" => "od-stage-badge-info",
+            "delivered" or "acknowledged" or "activated" => "od-stage-badge-success",
+            "failed" or "cancelled" => "od-stage-badge-danger",
+            _ => "od-stage-badge-neutral"
+        };
+    }
+
     bool IsActivated(string status)
         => string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
 
@@ -198,7 +211,7 @@ else
         }
         else
         {
-            <div class="od-release-board"
+            <div class="od-grid od-distribution-detail-grid od-release-detail-grid"
                  data-od-infinite-grid
                  data-od-infinite-label="releases"
                  data-od-infinite-initial-count="24"
@@ -207,69 +220,19 @@ else
                 {
                     var artifact = Model.Artifacts.FirstOrDefault(x => x.Id == item.ArtifactId);
                     var releaseStatus = ResolveReleaseStatus(item);
-                    <article class="od-release-row od-infinite-item">
-                        <div class="od-release-row-main">
-                            <div class="od-release-row-head">
-                                <span class="od-status @ReleaseStatusClass(releaseStatus)">@DisplayStageStatus(releaseStatus)</span>
+                    <article class="od-item-card od-release-detail-card od-infinite-item">
+                        <div class="od-item-top">
+                            <div>
+                                <h2 class="od-item-title">Release</h2>
                                 <p class="od-item-meta od-release-id">@item.Id</p>
                             </div>
-                            <div class="od-chip-row">
-                                <span class="od-meta-chip">Artifact: @(artifact is null ? "No artifact linked" : $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}")</span>
-                                <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
-                            </div>
-                            <div class="od-release-stages">
-                                @foreach (var target in item.Targets.OrderBy(x => x.CreatedAtUtc))
-                                {
-                                    var nodeName = target.RuntimeNodeId;
-                                    var nodeCode = "Unknown code";
-                                    var nodeMode = "Unknown mode";
-                                    if (runtimeNodesById.TryGetValue(target.RuntimeNodeId, out var runtimeNode))
-                                    {
-                                        nodeName = runtimeNode.Name;
-                                        nodeCode = runtimeNode.Code;
-                                        nodeMode = runtimeNode.DistributionMode;
-                                    }
-                                    Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{item.Id}|{target.RuntimeNodeId}", out var releaseTarget);
-                                    var targetStatus = releaseTarget?.Status ?? target.Status;
-                                    var canPushTarget = IsDesignPushMode(nodeMode);
-                                    var canPullTarget = IsRuntimePullMode(nodeMode);
-                                    var displayNodeMode = DisplayDistributionMode(nodeMode);
-                                    var isActivated = IsActivated(targetStatus);
-                                    <div class="od-release-stage">
-                                        <div class="od-release-stage-name">@nodeName</div>
-                                        <div class="od-release-stage-meta">@nodeCode - @displayNodeMode</div>
-                                        <div class="od-release-stage-status">@DisplayStageStatus(targetStatus)</div>
-                                        @if (canPushTarget && releaseTarget is not null && !isActivated)
-                                        {
-                                            <form method="post"
-                                                  asp-page-handler="Push"
-                                                  class="mt-2"
-                                                  data-confirm="true"
-                                                  data-confirm-title="Promote artifact"
-                                                  data-confirm-message="Push this artifact to @nodeName?"
-                                                  data-confirm-accept="Push"
-                                                  data-confirm-type="warning"
-                                                  data-orchestrator-busy="true"
-                                                  data-busy-title="Promoting artifact"
-                                                  data-busy-message="Distribution is sending the artifact to the selected runtime node.">
-                                                <input type="hidden" name="releaseTargetId" value="@releaseTarget.Id" />
-                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                                <button type="submit" class="btn btn-sm btn-primary w-100">Push</button>
-                                            </form>
-                                        }
-                                        else if (isActivated)
-                                        {
-                                            <div class="od-release-stage-note">Promoted</div>
-                                        }
-                                        else if (canPullTarget)
-                                        {
-                                            <div class="od-release-stage-note">Pull from runtime</div>
-                                        }
-                                    </div>
-                                }
-                            </div>
+                            <span class="od-status @ReleaseStatusClass(releaseStatus)">@DisplayStageStatus(releaseStatus)</span>
                         </div>
-                        <div class="od-release-row-actions">
+                        <div class="od-chip-row">
+                            <span class="od-meta-chip">Artifact: @(artifact is null ? "No artifact linked" : $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}")</span>
+                            <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                        </div>
+                        <div class="od-card-actions">
                             <button type="button"
                                     class="btn btn-sm od-release-details-btn js-open-release-details"
                                     data-release-id="@item.Id">
@@ -425,7 +388,80 @@ else
                         <span class="od-meta-chip" id="releaseDetailsCreated"></span>
                     </div>
                 </div>
-                <div class="od-stage-grid" id="releaseDetailsTargets"></div>
+                <div id="releaseDetailsTargets">
+                    @foreach (var release in releaseRows)
+                    {
+                        <div class="od-stage-grid js-release-detail-targets d-none"
+                             data-release-id="@release.Id">
+                            @foreach (var target in release.Targets.OrderBy(x => x.CreatedAtUtc))
+                            {
+                                var nodeName = target.RuntimeNodeId;
+                                var nodeCode = "Unknown code";
+                                var nodeMode = "Unknown mode";
+                                var nodeEnvironment = "Unknown environment";
+                                if (runtimeNodesById.TryGetValue(target.RuntimeNodeId, out var runtimeNode))
+                                {
+                                    nodeName = runtimeNode.Name;
+                                    nodeCode = runtimeNode.Code;
+                                    nodeMode = runtimeNode.DistributionMode;
+                                    nodeEnvironment = runtimeNode.EnvironmentName;
+                                }
+
+                                Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{release.Id}|{target.RuntimeNodeId}", out var releaseTarget);
+                                var targetStatus = releaseTarget?.Status ?? target.Status;
+                                var canPushTarget = IsDesignPushMode(nodeMode);
+                                var canPullTarget = IsRuntimePullMode(nodeMode);
+                                var displayNodeMode = DisplayDistributionMode(nodeMode);
+                                var isActivated = IsActivated(targetStatus);
+
+                                <article class="od-stage-card">
+                                    <div class="od-stage-card-head">
+                                        <div>
+                                            <h6 class="od-stage-card-title">@nodeName</h6>
+                                            <p class="od-stage-card-meta">@nodeCode - @nodeEnvironment</p>
+                                        </div>
+                                        <span class="od-stage-badge @StageBadgeClass(targetStatus)">@DisplayStageStatus(targetStatus)</span>
+                                    </div>
+                                    <div class="od-stage-card-body">
+                                        <div class="od-stage-kv"><span>Mode</span><strong>@displayNodeMode</strong></div>
+                                    </div>
+                                    <div class="od-stage-card-foot">
+                                        @if (canPushTarget && releaseTarget is not null && !isActivated)
+                                        {
+                                            <form method="post"
+                                                  asp-page-handler="Push"
+                                                  class="od-stage-push-form"
+                                                  data-confirm="true"
+                                                  data-confirm-title="Promote artifact"
+                                                  data-confirm-message="Push this artifact to @nodeName?"
+                                                  data-confirm-accept="Push"
+                                                  data-confirm-type="warning"
+                                                  data-orchestrator-busy="true"
+                                                  data-busy-title="Promoting artifact"
+                                                  data-busy-message="Distribution is sending the artifact to the selected runtime node.">
+                                                <input type="hidden" name="releaseTargetId" value="@releaseTarget.Id" />
+                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                                <button type="submit" class="btn btn-sm btn-primary">Push</button>
+                                            </form>
+                                        }
+                                        else if (isActivated)
+                                        {
+                                            <span class="od-stage-note">Promoted</span>
+                                        }
+                                        else if (canPullTarget)
+                                        {
+                                            <span class="od-stage-note">Pull by Runtime</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="od-stage-note">No manual action</span>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
@@ -455,6 +491,7 @@ else
     const releaseDetailsArtifactElement = document.getElementById('releaseDetailsArtifact');
     const releaseDetailsCreatedElement = document.getElementById('releaseDetailsCreated');
     const releaseDetailButtons = Array.from(document.querySelectorAll('.js-open-release-details'));
+    const releaseDetailTargetGroups = Array.from(document.querySelectorAll('.js-release-detail-targets'));
 
     if (!window.bootstrap?.Modal) {
         return;
@@ -466,12 +503,9 @@ else
     const selectedOrchestrationId = '@Model.OrchestrationId';
     const releases = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Rows, jsonOptions));
     const artifacts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Artifacts, jsonOptions));
-    const runtimeNodes = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.RuntimeNodes, jsonOptions));
-    const releaseTargetsByReleaseAndNode = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.ReleaseTargetByReleaseAndNode, jsonOptions));
 
     const getSelectedOrchestrationId = () => selectedOrchestrationId;
     const artifactById = new Map(artifacts.map(x => [x.id, x]));
-    const runtimeNodeById = new Map(runtimeNodes.map(x => [x.id, x]));
     const releaseById = new Map(releases.map(x => [x.id, x]));
 
     const updateNodeVisibility = () => {
@@ -549,66 +583,6 @@ else
         return true;
     };
 
-    const escapeHtml = (value) => {
-        return (value ?? '').toString()
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    };
-
-    const getStatusVariant = (status) => {
-        const s = (status || '').toLowerCase();
-        if (s === 'pending' || s === 'availableforpull') return 'warning';
-        if (s === 'inprogress' || s === 'pushscheduled') return 'info';
-        if (s === 'delivered' || s === 'acknowledged' || s === 'activated') return 'success';
-        if (s === 'failed' || s === 'cancelled') return 'danger';
-        return 'neutral';
-    };
-
-    const getDisplayStatus = (status) => {
-        const s = (status || '').toLowerCase();
-        if (s === 'inprogress' || s === 'pushscheduled') return 'Queued';
-        if (s === 'availableforpull') return 'Pending';
-        return status || 'Pending';
-    };
-
-    const isFinalStatus = (status) => {
-        const s = (status || '').toLowerCase();
-        return s === 'delivered' || s === 'acknowledged' || s === 'activated' || s === 'failed' || s === 'cancelled';
-    };
-
-    const canPush = (mode, status) => {
-        const modeValue = (mode || '').toLowerCase();
-        const isPushMode = modeValue === 'designpublishestoruntime' ||
-            modeValue === 'hybridsync' ||
-            modeValue === 'push' ||
-            modeValue === 'hybrid';
-        return isPushMode;
-    };
-
-    const canPull = mode => {
-        const modeValue = (mode || '').toLowerCase();
-        return modeValue === 'runtimefetchesfromdesign' ||
-            modeValue === 'hybridsync' ||
-            modeValue === 'pull' ||
-            modeValue === 'hybrid';
-    };
-
-    const getDistributionModeLabel = mode => {
-        switch (mode) {
-            case 'DesignPublishesToRuntime':
-                return 'Design publishes releases';
-            case 'RuntimeFetchesFromDesign':
-                return 'Runtime imports releases';
-            case 'HybridSync':
-                return 'Both directions';
-            default:
-                return mode || 'Unknown mode';
-        }
-    };
-
     const showReleaseDetails = (releaseId) => {
         if (!releaseDetailsModal || !releaseDetailsTargetsElement || !releaseById.has(releaseId)) {
             return;
@@ -621,51 +595,9 @@ else
         releaseDetailsArtifactElement.textContent = `Artifact: ${artifact ? `${artifact.versionNumber} - ${artifact.versionLabel || 'Unlabeled'}` : 'No artifact linked'}`;
         releaseDetailsCreatedElement.textContent = `Created: ${release.createdAtUtc?.replace('T', ' ').slice(0, 16) || ''}`;
 
-        const targets = Array.isArray(release.targets) ? [...release.targets] : [];
-        targets.sort((a, b) => {
-            const aFinal = isFinalStatus(a.status);
-            const bFinal = isFinalStatus(b.status);
-            if (aFinal !== bFinal) {
-                return aFinal ? 1 : -1;
-            }
-            return (a.createdAtUtc || '').localeCompare(b.createdAtUtc || '');
+        releaseDetailTargetGroups.forEach(group => {
+            group.classList.toggle('d-none', group.getAttribute('data-release-id') !== release.id);
         });
-
-        releaseDetailsTargetsElement.innerHTML = targets.map(target => {
-            const node = runtimeNodeById.get(target.runtimeNodeId);
-            const mode = node?.distributionMode || 'Unknown mode';
-            const releaseTarget = releaseTargetsByReleaseAndNode[`${release.id}|${target.runtimeNodeId}`];
-            const actualStatus = releaseTarget?.status || target.status;
-            const statusVariant = getStatusVariant(actualStatus);
-            const displayStatus = getDisplayStatus(actualStatus);
-            const pushAllowed = canPush(mode, actualStatus);
-            const pullAllowed = canPull(mode);
-            const modeLabel = getDistributionModeLabel(mode);
-
-            return `
-                <article class="od-stage-card">
-                    <div class="od-stage-card-head">
-                        <div>
-                            <h6 class="od-stage-card-title">${escapeHtml(node?.name || target.runtimeNodeId)}</h6>
-                            <p class="od-stage-card-meta">${escapeHtml(node ? `${node.code} - ${node.environmentName}` : target.runtimeNodeId)}</p>
-                        </div>
-                        <span class="od-stage-badge od-stage-badge-${statusVariant}">${escapeHtml(displayStatus)}</span>
-                    </div>
-                    <div class="od-stage-card-body">
-                        <div class="od-stage-kv"><span>Mode</span><strong>${escapeHtml(modeLabel)}</strong></div>
-                    </div>
-                    <div class="od-stage-card-foot">
-                        ${pushAllowed && pullAllowed
-                            ? `<span class="od-stage-note">Push from board or pull by Runtime</span>`
-                            : pushAllowed
-                                ? `<span class="od-stage-note">Push from release board</span>`
-                                : pullAllowed
-                                    ? `<span class="od-stage-note">Pull by Runtime</span>`
-                                    : `<span class="od-stage-note">No manual action</span>`}
-                    </div>
-                </article>
-            `;
-        }).join('');
 
         releaseDetailsModal.show();
     };
@@ -717,63 +649,39 @@ else
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1.2;
-    white-space: nowrap;
-    overflow: visible;
-    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
     max-width: none;
 }
 
-.od-release-card {
-    min-height: 0 !important;
-    padding: 0.62rem 0.7rem;
+.od-distribution-detail-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
 }
 
-.od-release-action-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 0.35rem;
+.od-release-detail-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 390px), 1fr));
 }
 
-.od-release-board {
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
+.od-release-detail-card {
+    min-height: 170px;
 }
 
-.od-release-row {
-    border: 1px solid var(--od-border);
-    border-radius: 0.75rem;
-    background: var(--od-surface);
-    padding: 0.9rem 0.85rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.95rem;
-    align-items: center;
-}
-
-.od-release-row-head {
-    display: flex;
-    justify-content: flex-start;
-    gap: 0.8rem;
-    align-items: center;
-    margin-bottom: 0.25rem;
-}
-
-.od-release-row-actions {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    align-self: end;
-    padding-left: 0.35rem;
-}
-
-.od-release-row .od-status {
+.od-release-detail-card .od-status {
     align-self: center;
     white-space: nowrap;
     font-size: 0.74rem;
     padding: 0.18rem 0.62rem;
     border-radius: 999px;
+}
+
+.od-card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: auto;
 }
 
 .od-status-queued {
@@ -794,52 +702,6 @@ else
     color: var(--od-danger-text);
 }
 
-.od-release-stages {
-    margin-top: 0.8rem;
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 0.65rem;
-    overflow-x: auto;
-    padding-bottom: 0.2rem;
-    scrollbar-width: thin;
-}
-
-.od-release-stage {
-    flex: 0 0 168px;
-    width: 168px;
-    padding: 0.62rem 0.65rem;
-    border: 1px solid var(--od-border);
-    border-radius: 0.6rem;
-    background: var(--od-surface-2);
-}
-
-.od-release-stage-name {
-    font-size: 0.84rem;
-    font-weight: 650;
-    color: var(--od-text);
-    line-height: 1.3;
-}
-
-.od-release-stage-meta {
-    margin-top: 0.22rem;
-    font-size: 0.73rem;
-    color: var(--od-muted);
-}
-
-.od-release-stage-status {
-    margin-top: 0.38rem;
-    font-size: 0.74rem;
-    color: var(--od-text);
-    font-weight: 600;
-}
-
-.od-release-stage-note {
-    margin-top: 0.5rem;
-    font-size: 0.72rem;
-    color: var(--od-muted);
-    font-weight: 600;
-}
-
 .od-release-details-btn {
     border: 1px solid var(--od-border);
     background: var(--od-surface-2);
@@ -854,18 +716,6 @@ else
     background: color-mix(in srgb, var(--od-primary) 14%, var(--od-surface));
     border-color: var(--od-primary);
     color: var(--od-text);
-}
-
-.od-release-stage-status-queued {
-    color: var(--od-warning-text);
-}
-
-.od-release-stage-status-success {
-    color: var(--od-success-text);
-}
-
-.od-release-stage-status-failed {
-    color: var(--od-danger-text);
 }
 
 .od-stage-picker {
@@ -949,7 +799,8 @@ else
 
 .od-stage-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 240px));
+    justify-content: start;
     gap: 0.7rem;
 }
 
@@ -1011,6 +862,15 @@ else
     align-items: center;
 }
 
+.od-stage-push-form {
+    margin: 0;
+    width: 100%;
+}
+
+.od-stage-push-form .btn {
+    width: 100%;
+}
+
 .od-stage-note {
     font-size: 0.75rem;
     color: var(--od-muted);
@@ -1059,14 +919,6 @@ else
 @@media (max-width: 991.98px) {
     .od-release-detail-head {
         flex-direction: column;
-    }
-
-    .od-release-row {
-        grid-template-columns: 1fr;
-    }
-
-    .od-release-row-actions {
-        justify-content: flex-end;
     }
 }
 </style>
