@@ -457,6 +457,10 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
     });
 
     pipeline.addEventListener('click', event => {
+        if (event.target.closest('a, button, input, select, textarea, label, .form-check')) {
+            return;
+        }
+
         if (event.target.closest('.js-stage-execution-btn')) {
             return;
         }
@@ -751,9 +755,14 @@ window.addEventListener('message', event => {
         hasCompensationTransformation: 'HasCompensationTransformation',
         compensationTransformationDsl: 'CompensationTransformationDsl',
     };
+    const fieldIdOverrides = {
+        HasCompensation: 'hasTriggerCompensation',
+        HasCompensationExecutionCondition: 'hasTriggerCompensationExecutionCondition',
+        HasCompensationTransformation: 'hasTriggerCompensationTransformation',
+    };
 
     function setInputValue(propertyName, value) {
-        const element = document.getElementById(`TriggerInput_${propertyName}`);
+        const element = document.getElementById(fieldIdOverrides[propertyName] ?? `TriggerInput_${propertyName}`);
         if (!element) {
             return;
         }
@@ -761,10 +770,12 @@ window.addEventListener('message', event => {
         const type = (element.getAttribute('type') || '').toLowerCase();
         if (type === 'checkbox') {
             element.checked = value === true || value === 'true' || value === 1;
+            element.dispatchEvent(new Event('change', { bubbles: true }));
             return;
         }
 
         element.value = value ?? '';
+        element.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     function applyPayload(payload) {

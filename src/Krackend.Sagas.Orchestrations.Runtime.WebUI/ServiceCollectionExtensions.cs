@@ -38,6 +38,8 @@ public static class ServiceCollectionExtensions
         var options = new OrchestratorRuntimeWebUIOptions();
         configureOptions(options);
 
+        services.AddRazorPages()
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
         services.AddOrchestratorWebUIShell(theme => theme.ApplyFrom(options.Theme));
         services.AddSignalR();
         services.Configure<OrchestratorRuntimeWebUIOptions>(registered => registered.ApplyFrom(options));

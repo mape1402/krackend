@@ -31,6 +31,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<OrchestratorSecurityWebUIOptions> configureOptions)
     {
+        services.AddRazorPages()
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
         services.AddOrchestratorWebUIShell();
         services.Configure(configureOptions);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureSecurityAreaRoutes>());

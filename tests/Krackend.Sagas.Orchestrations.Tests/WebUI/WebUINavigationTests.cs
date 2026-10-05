@@ -11,8 +11,10 @@ using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using global::ButterMorph.Web.Razor;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -358,7 +360,35 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(19, options.Conventions.Count);
+        Assert.Equal(20, options.Conventions.Count);
+    }
+
+    [Fact]
+    public async Task RuntimeWebUiMapsRuntimeRazorPageRoutesWhenRegisteredByExtension()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = "Development"
+        });
+
+        builder.Services.AddLogging();
+        builder.Services.AddScoped<IRuntimeDiagnosticsReader, NoopRuntimeDiagnosticsReader>();
+        RuntimeWebUiServices.AddOrchestratorRuntimeWebUI(builder.Services, options => options.RoutePrefix = "runtime");
+
+        await using var app = builder.Build();
+
+        app.MapRazorPages();
+
+        var routes = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(dataSource => dataSource.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("runtime", routes);
+        Assert.Contains("runtime/instances", routes);
+        Assert.Contains("runtime/artifacts", routes);
+        Assert.Contains("runtime/design-nodes", routes);
     }
 
     [Fact]
@@ -467,5 +497,50 @@ public sealed class WebUINavigationTests
         Assert.Equal(area, item.Area);
         Assert.Equal(page, item.Page);
         Assert.Equal(order, item.Order);
+    }
+
+    private sealed class NoopRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
+    {
+        public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
+        {
+            var summary = EmptySummary();
+            return Task.FromResult(new RuntimeDashboardSnapshotModel(summary, [], [], []));
+        }
+
+        public Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default)
+        {
+            var summary = EmptySummary();
+            return Task.FromResult(new RuntimeDashboardSummaryModel(summary, [], []));
+        }
+
+        public Task<InstanceDetailModel> GetDetail(string instanceId, CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            var row = new InstanceRowModel(
+                instanceId,
+                "noop",
+                "1.0.0",
+                "noop",
+                "noop",
+                "noop",
+                "Completed",
+                "od-status-active",
+                null,
+                null,
+                now,
+                now,
+                null,
+                now,
+                null,
+                string.Empty);
+
+            return Task.FromResult(new InstanceDetailModel(row, [], [], [], "{}", "{}", [], [], []));
+        }
+
+        private static RuntimeSummaryModel EmptySummary()
+        {
+            var now = DateTime.UtcNow;
+            return new RuntimeSummaryModel(0, 0, 0, 0, 0, 0, now.AddMinutes(-1), now.AddHours(-1));
+        }
     }
 }

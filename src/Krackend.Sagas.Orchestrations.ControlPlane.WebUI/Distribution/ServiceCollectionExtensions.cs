@@ -15,6 +15,8 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddOrchestratorDistributionWebUI(this IServiceCollection services, Action<OrchestratorDistributionWebUIOptions> configureOptions)
     {
+        services.AddRazorPages()
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
         services.AddOrchestratorWebUIShell();
         services.Configure(configureOptions);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureDistributionAreaRoutes>());

@@ -34,6 +34,8 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configureTheme));
         }
 
+        services.AddRazorPages()
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
         services.TryAddSingleton<OrchestratorNavigationRegistry>();
         services.TryAddSingleton<IOrchestratorThemeCssRenderer, DefaultOrchestratorThemeCssRenderer>();
         services.TryAddScoped<IOrchestratorThemeModeAccessor, DefaultOrchestratorThemeModeAccessor>();
