@@ -30,6 +30,8 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configureOptions));
         }
 
+        services.AddRazorPages()
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
         services.AddOrchestratorWebUIShell();
         services.Configure(configureOptions);
         services.AddButterMorph();
