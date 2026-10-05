@@ -17,6 +17,9 @@ public sealed class ControlPlaneArtifactsPageModelTests
         Assert.Single(page.Orchestrations);
         Assert.Empty(page.Rows);
         Assert.Null(page.SelectedOrchestration);
+        Assert.Equal(2, page.GetSummary("sales.sale.created").ArtifactCount);
+        Assert.NotNull(page.GetSummary("sales.sale.created").LatestCreatedAtUtc);
+        Assert.Equal(0, page.GetSummary("missing").ArtifactCount);
     }
 
     [Fact]
@@ -28,7 +31,7 @@ public sealed class ControlPlaneArtifactsPageModelTests
 
         await page.OnGetAsync(CancellationToken.None);
 
-        Assert.Equal("Sales Sale Created", page.SelectedOrchestration.Name);
+        Assert.Equal("Sales Sale Created", page.SelectedOrchestration!.Name);
         Assert.Equal(["artifact-new", "artifact-old"], page.Rows.Select(x => x.Id).ToArray());
         Assert.All(page.Rows, artifact => Assert.Equal("sales.sale.created", artifact.OrchestrationDefinitionId));
     }

@@ -28,9 +28,12 @@ public sealed class ControlPlaneReleasesPageModelTests
         Assert.Equal("artifact-sales", page.SelectedArtifacts.Single().Id);
         Assert.Single(page.RuntimeNodes);
         Assert.Equal("runtime-enabled", page.RuntimeNodes.Single().Id);
-        Assert.Equal("Sales Sale Created", page.SelectedOrchestration.Name);
+        Assert.Equal("Sales Sale Created", page.SelectedOrchestration!.Name);
         Assert.True(page.ReleaseTargetByReleaseAndNode.ContainsKey("release-sales|runtime-enabled"));
         Assert.Equal(["runtime-enabled"], page.AllowedNodeIdsByOrchestrationId["sales.sale.created"]);
+        Assert.Equal(1, page.GetSummary("sales.sale.created").ReleaseCount);
+        Assert.NotNull(page.GetSummary("sales.sale.created").LatestCreatedAtUtc);
+        Assert.Equal(0, page.GetSummary("missing").ReleaseCount);
     }
 
     [Fact]

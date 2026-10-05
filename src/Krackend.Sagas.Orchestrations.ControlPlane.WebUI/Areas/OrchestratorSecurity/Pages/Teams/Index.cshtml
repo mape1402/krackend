@@ -20,12 +20,16 @@
 }
 else
 {
-    <section class="od-list-shell">
-        <div class="od-grid">
+    <section class="od-list-shell" data-od-infinite-list>
+        <div class="od-grid"
+             data-od-infinite-grid
+             data-od-infinite-label="teams"
+             data-od-infinite-initial-count="24"
+             data-od-infinite-batch-size="24">
             @foreach (var item in Model.Rows.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
                 var statusClass = item.IsActive ? "od-status od-status-active" : "od-status od-status-inactive";
-                <article class="od-item-card">
+                <article class="od-item-card od-infinite-item">
                     <div class="od-item-top">
                         <div>
                             <h2 class="od-item-title">@item.DisplayName</h2>
@@ -74,6 +78,10 @@ else
                 </article>
             }
         </div>
+        <div class="od-infinite-scroll-status" data-od-infinite-status>
+            Showing <span data-od-infinite-count>@Math.Min(24, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> teams
+        </div>
+        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
     </section>
 }
 

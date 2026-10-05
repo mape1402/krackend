@@ -20,11 +20,15 @@
 }
 else
 {
-    <section class="od-list-shell">
-        <div class="od-grid">
+    <section class="od-list-shell" data-od-infinite-list>
+        <div class="od-grid"
+             data-od-infinite-grid
+             data-od-infinite-label="environments"
+             data-od-infinite-initial-count="24"
+             data-od-infinite-batch-size="24">
             @foreach (var item in Model.Rows)
             {
-                <article class="od-item-card"
+                <article class="od-item-card od-infinite-item"
                          data-environment="true"
                          data-id="@item.Id"
                          data-name="@item.Name"
@@ -46,6 +50,10 @@ else
                 </article>
             }
         </div>
+        <div class="od-infinite-scroll-status" data-od-infinite-status>
+            Showing <span data-od-infinite-count>@Math.Min(24, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> environments
+        </div>
+        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
     </section>
 }
 

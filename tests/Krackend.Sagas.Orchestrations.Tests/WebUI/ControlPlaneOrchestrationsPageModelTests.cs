@@ -26,9 +26,16 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
 
         await page.OnGetAsync(0, CancellationToken.None);
 
-        Assert.Equal(2, page.PageNumber);
-        Assert.Equal(4, page.TotalPages);
+        Assert.Equal(1, page.PageNumber);
+        Assert.Equal(1, page.TotalPages);
+        Assert.Equal(20, page.InitialVisibleCount);
+        Assert.Equal(20, page.InfiniteScrollBatchSize);
         Assert.Single(page.Rows);
+        await fixture.OrchestrationService.Received(1).GetAll(
+            Arg.Is<GetOrchestrationDefinitionsQuery>(query =>
+                query.Settings.PageNumber == 1 &&
+                query.Settings.PageSize == 120),
+            Arg.Any<CancellationToken>());
 
         fixture.OrchestrationService
             .GetAll(Arg.Any<GetOrchestrationDefinitionsQuery>(), Arg.Any<CancellationToken>())
@@ -304,7 +311,7 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
     }
 
     private static DesignPagedResult DefinitionsPage(params OrchestrationDefinitionModel[] rows)
-        => new(2, 4, rows.Length, 12, rows);
+        => new(1, 1, rows.Length, 120, rows);
 
     private static VersionPagedResult VersionsPage(params OrchestrationVersionModel[] rows)
         => new(1, 1, rows.Length, 200, rows);

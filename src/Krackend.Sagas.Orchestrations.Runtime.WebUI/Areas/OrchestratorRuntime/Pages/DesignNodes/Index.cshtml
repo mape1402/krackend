@@ -27,8 +27,12 @@
 }
 else
 {
-    <section class="od-list-shell">
-        <div class="od-grid od-design-node-grid">
+    <section class="od-list-shell" data-od-infinite-list>
+        <div class="od-grid od-design-node-grid"
+             data-od-infinite-grid
+             data-od-infinite-label="design nodes"
+             data-od-infinite-initial-count="18"
+             data-od-infinite-batch-size="18">
             @foreach (var node in Model.DesignNodes)
             {
                 var statusClass = DesignNodeStatusClass(node.Status);
@@ -38,7 +42,7 @@ else
                 var canCheckConnection = CanCheckConnection(node);
                 var canReviewReleases = CanReviewReleases(node);
 
-                <article class="od-item-card od-design-node-card"
+                <article class="od-item-card od-design-node-card od-infinite-item"
                          data-design-node="true"
                          data-id="@node.Id"
                          data-key="@node.Key"
@@ -142,6 +146,10 @@ else
                 </article>
             }
         </div>
+        <div class="od-infinite-scroll-status" data-od-infinite-status>
+            Showing <span data-od-infinite-count>@Math.Min(18, Model.DesignNodes.Count)</span> of <span data-od-infinite-total>@Model.DesignNodes.Count</span> design nodes
+        </div>
+        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
     </section>
 }
 

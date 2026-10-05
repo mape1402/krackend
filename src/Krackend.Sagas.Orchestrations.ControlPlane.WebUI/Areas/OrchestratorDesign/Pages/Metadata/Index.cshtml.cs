@@ -9,6 +9,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class IndexModel : PageModel
 {
+    private const int PageSize = 500;
+    private const int MaxPageReads = 50;
+
     private readonly IMetadataDescriptorApplicationService _service;
 
     /// <summary>
@@ -31,9 +34,22 @@ public sealed class IndexModel : PageModel
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        Rows = (await _service.GetAll(
-            new GetMetadataDescriptorsQuery(new ApplicationPagedSettings { PageNumber = 1, PageSize = 500 }),
-            cancellationToken)).Rows.ToArray();
+        var rows = new List<MetadataDescriptorModel>();
+        var pageNumber = 1;
+        var totalPages = 1;
+
+        do
+        {
+            var result = await _service.GetAll(
+                new GetMetadataDescriptorsQuery(new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize }),
+                cancellationToken);
+            rows.AddRange(result.Rows);
+            totalPages = Math.Max(result.TotalPages, 1);
+            pageNumber++;
+        }
+        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
+
+        Rows = rows.ToArray();
     }
 
     /// <summary>

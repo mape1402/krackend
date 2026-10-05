@@ -13,6 +13,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class IndexModel : PageModel
 {
+    private const int OrchestrationPageSize = 120;
+    private const int MaxPageReads = 50;
+
     private readonly IOrchestrationApplicationService _orchestrationService;
     private readonly IDomainApplicationService _domainService;
     private readonly ITeamApplicationService _teamService;
@@ -47,6 +50,16 @@ public sealed class IndexModel : PageModel
     public int TotalPages { get; private set; } = 1;
 
     /// <summary>
+    /// Gets the number of cards initially visible before infinite scroll reveals more.
+    /// </summary>
+    public int InitialVisibleCount { get; private set; } = 20;
+
+    /// <summary>
+    /// Gets the number of cards revealed by each infinite-scroll step.
+    /// </summary>
+    public int InfiniteScrollBatchSize { get; private set; } = 20;
+
+    /// <summary>
     /// Gets or sets new orchestration input values.
     /// </summary>
     [BindProperty]
@@ -64,7 +77,7 @@ public sealed class IndexModel : PageModel
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task OnGetAsync(int pageNumber = 1, CancellationToken cancellationToken = default)
     {
-        await LoadPageAsync(pageNumber, cancellationToken);
+        await LoadPageAsync(cancellationToken);
     }
 
     /// <summary>
@@ -76,7 +89,7 @@ public sealed class IndexModel : PageModel
     {
         if (!ModelState.IsValid)
         {
-            await LoadPageAsync(PageNumber, cancellationToken);
+            await LoadPageAsync(cancellationToken);
             return Page();
         }
 
@@ -186,24 +199,34 @@ public sealed class IndexModel : PageModel
         return new JsonResult(rows);
     }
 
-    private async Task LoadPageAsync(int pageNumber, CancellationToken cancellationToken)
+    private async Task LoadPageAsync(CancellationToken cancellationToken)
     {
-        PageNumber = pageNumber <= 0 ? 1 : pageNumber;
-
         try
         {
-            var result = await _orchestrationService.GetAll(
-                new GetOrchestrationDefinitionsQuery(
-                    new DesignPagedSettings
-                    {
-                        PageNumber = PageNumber,
-                        PageSize = 12
-                    }),
-                cancellationToken);
+            var rows = new List<OrchestrationDefinitionModel>();
+            var pageNumber = 1;
+            var totalPages = 1;
 
-            Rows = result.Rows.ToArray();
-            TotalPages = result.TotalPages <= 0 ? 1 : result.TotalPages;
-            PageNumber = result.PageNumber <= 0 ? 1 : result.PageNumber;
+            do
+            {
+                var result = await _orchestrationService.GetAll(
+                    new GetOrchestrationDefinitionsQuery(
+                        new DesignPagedSettings
+                        {
+                            PageNumber = pageNumber,
+                            PageSize = OrchestrationPageSize
+                        }),
+                    cancellationToken);
+
+                rows.AddRange(result.Rows);
+                totalPages = result.TotalPages <= 0 ? 1 : result.TotalPages;
+                pageNumber++;
+            }
+            while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
+
+            Rows = rows.ToArray();
+            TotalPages = 1;
+            PageNumber = 1;
         }
         catch (Exception ex)
         {
