@@ -643,16 +643,10 @@
                                     </div>
                                 </div>
                                 <div id="compensationExecutionConditionSection" class="row g-2">
+                                    <input asp-for="NewTask.CompensationConditionEngine" type="hidden" />
+                                    <input asp-for="NewTask.CompensationConditionDslExpression" type="hidden" />
                                     <div class="col-12">
                                         <button type="button" class="btn btn-outline-secondary btn-sm" id="openCompensationConditionDesignerButton">Open ButterMorph condition</button>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label asp-for="NewTask.CompensationConditionEngine" class="form-label">Condition engine</label>
-                                        <select asp-for="NewTask.CompensationConditionEngine" class="form-select" asp-items="Model.EngineTypes"></select>
-                                    </div>
-                                    <div class="col-md-9">
-                                        <label asp-for="NewTask.CompensationConditionDslExpression" class="form-label">Condition DSL expression</label>
-                                        <input asp-for="NewTask.CompensationConditionDslExpression" class="form-control" />
                                     </div>
                                 </div>
 
@@ -664,16 +658,10 @@
                                     </div>
                                 </div>
                                 <div id="compensationTransformationSection" class="row g-2">
+                                    <input asp-for="NewTask.CompensationTransformationEngine" type="hidden" />
+                                    <input asp-for="NewTask.CompensationTransformationDsl" type="hidden" />
                                     <div class="col-12">
                                         <button type="button" class="btn btn-outline-secondary btn-sm" id="openCompensationTransformationDesignerButton">Open ButterMorph transformation</button>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label asp-for="NewTask.CompensationTransformationEngine" class="form-label">Transformation engine</label>
-                                        <select asp-for="NewTask.CompensationTransformationEngine" class="form-select" asp-items="Model.EngineTypes"></select>
-                                    </div>
-                                    <div class="col-md-9">
-                                        <label asp-for="NewTask.CompensationTransformationDsl" class="form-label">Transformation DSL</label>
-                                        <textarea asp-for="NewTask.CompensationTransformationDsl" class="form-control" rows="3"></textarea>
                                     </div>
                                 </div>
 
