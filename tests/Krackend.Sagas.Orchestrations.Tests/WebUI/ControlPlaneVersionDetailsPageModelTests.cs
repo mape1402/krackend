@@ -4,6 +4,8 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
@@ -461,7 +463,8 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             EventValidationDsl = "",
             HasCompensation = true,
             CompensationMessagingTopic = "",
-            EventSchemaRegistryProviderId = "not-a-ulid"
+            EventSchemaRegistryProviderId = "not-a-ulid",
+            CompensationSchemaRegistryProviderId = "also-not-a-ulid"
         };
 
         var result = await invalid.Page.OnPostUpsertTriggerAsync("orch-1", "version-1");
@@ -472,6 +475,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventValidationDsl)));
         Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.CompensationMessagingTopic)));
         Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.EventSchemaRegistryProviderId)));
+        Assert.True(invalid.Page.ModelState.ContainsKey(nameof(VersionDetailsModel.UpsertTriggerInput.CompensationSchemaRegistryProviderId)));
     }
 
     [Fact]
@@ -485,17 +489,31 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             EventTopic = "events.sales.sale.created",
             EventVersion = "1.0.0",
             HasCompensation = true,
+            CompensationOnErrorPolicy = OnErrorPolicy.Continue.ToString(),
             CompensationMessagingTopic = "commands.sales.cancel",
             CompensationMessagingVersion = "1.0.0",
             HasCompensationSchemaValidation = true,
             CompensationSchemaContractKey = "commands.sales.cancel",
             CompensationSchemaContractVersion = "1.0.0",
-            CompensationSchemaRegistryProviderId = "not-a-ulid",
+            CompensationSchemaRegistryProviderId = "01JMJGBJ0R7WFN9QBG3CCBEVM1",
             CompensationSchemaStrictMode = true,
             HasCompensationExecutionCondition = true,
             CompensationConditionDslExpression = "",
             HasCompensationTransformation = true,
-            CompensationTransformationDsl = "map compensation"
+            CompensationTransformationDsl = "map compensation",
+            HasCompensationRetryPolicy = true,
+            CompensationRetryMaxRetries = 2,
+            CompensationRetryDelaySeconds = 4,
+            CompensationRetryableErrorCodes = "TEMP,LOCKED",
+            CompensationRetryStopOnNonRetryableError = true,
+            HasCompensationTimeoutPolicy = true,
+            CompensationTimeoutSeconds = 45,
+            CompensationTimeoutBehavior = TimeoutBehavior.Reconcile.ToString(),
+            CompensationTimeoutAction = OrchestrationActionOnTimeout.Block.ToString(),
+            CompensationTimeoutReconcileRetries = 3,
+            CompensationTimeoutReconcileDelaySeconds = 8,
+            CompensationTimeoutReconcileRetryableErrorCodes = "TIMEOUT",
+            CompensationTimeoutReconcileStopOnNonRetryableError = true
         };
 
         var result = await context.Page.OnPostUpsertTriggerAsync("orch-1", "version-1", CancellationToken.None);
@@ -503,6 +521,68 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.IsType<RedirectToPageResult>(result);
         await context.TriggerService.Received(1).Create(
             Arg.Is<CreateTriggerBindingCommand>(command => IsExpectedCompensatingTriggerCreateCommand(command)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UpsertTriggerPreservesButterMorphCompensationDefinitionsWhenEditingPolicies()
+    {
+        var context = CreateContext();
+        var existing = CreateTrigger();
+        existing.Id = "trigger-preserve";
+        existing.CompensationDefinition = new CompensationDefinition
+        {
+            CompensationTaskKind = TaskKind.Messaging,
+            DispatchType = TaskDispatchType.FireAndForget,
+            OnErrorPolicy = OnErrorPolicy.Stop,
+            HasExecutionCondition = true,
+            ExecutionCondition = new ExecutionCondition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new DslConditionConfiguration { Expression = new Expression("payload.canUndo") }
+            },
+            HasTransformation = true,
+            Transformation = new TransformationDefinition
+            {
+                Engine = EngineType.DSL,
+                Configuration = new DslTransformationConfiguration { Dsl = "map existing compensation" }
+            },
+            Configuration = new MessagingTaskConfiguration
+            {
+                Topic = "commands.old.undo",
+                Version = new SemanticVersion(1, 0, 0)
+            }
+        };
+        context.TriggerService.GetById(
+                Arg.Is<GetTriggerBindingByIdQuery>(query => query.Id == "trigger-preserve"),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(existing));
+        context.Page.TriggerInput = new VersionDetailsModel.UpsertTriggerInput
+        {
+            TriggerId = "trigger-preserve",
+            Key = "sales.sale.created",
+            TriggerType = TriggerType.Event.ToString(),
+            EventTopic = "events.sales.sale.created",
+            EventVersion = "1.0.0",
+            HasCompensation = true,
+            CompensationOnErrorPolicy = OnErrorPolicy.Continue.ToString(),
+            CompensationMessagingTopic = "commands.sales.cancel",
+            CompensationMessagingVersion = "1.0.0",
+            HasCompensationExecutionCondition = true,
+            CompensationConditionDslExpression = "posted value must not win",
+            HasCompensationTransformation = true,
+            CompensationTransformationDsl = "posted transform must not win",
+            HasCompensationRetryPolicy = true,
+            CompensationRetryMaxRetries = 1,
+            CompensationRetryDelaySeconds = 2,
+            CompensationRetryableErrorCodes = "TEMP"
+        };
+
+        var result = await context.Page.OnPostUpsertTriggerAsync("orch-1", "version-1", CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        await context.TriggerService.Received(1).Update(
+            Arg.Is<UpdateTriggerBindingCommand>(command => IsExpectedPreservedCompensationUpdate(command)),
             Arg.Any<CancellationToken>());
     }
 
@@ -787,6 +867,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
                 HasCompensation = true,
                 CompensationMessagingTopic = " commands.undo ",
                 CompensationMessagingVersion = "bad",
+                CompensationOnErrorPolicy = OnErrorPolicy.StopAndCompensate.ToString(),
                 HasCompensationSchemaValidation = false,
                 CompensationSchemaContractKey = "",
                 HasCompensationExecutionCondition = true,
@@ -803,6 +884,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
                 HasCompensation = true,
                 CompensationMessagingTopic = " commands.validated ",
                 CompensationMessagingVersion = "3.2.1",
+                CompensationOnErrorPolicy = OnErrorPolicy.Continue.ToString(),
                 HasCompensationSchemaValidation = true,
                 CompensationSchemaContractKey = " commands.validated ",
                 CompensationSchemaContractVersion = "3.2.1",
@@ -830,6 +912,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("EventSchemaRegistryProviderId").GetString());
         Assert.Equal("TriggerValidationFailed", emptyPayload.RootElement.GetProperty("EventValidationErrorCode").GetString());
         Assert.False(emptyPayload.RootElement.GetProperty("HasCompensation").GetBoolean());
+        Assert.Equal(OnErrorPolicy.Stop.ToString(), emptyPayload.RootElement.GetProperty("CompensationOnErrorPolicy").GetString());
         Assert.Equal(string.Empty, emptyPayload.RootElement.GetProperty("CompensationMessagingTopic").GetString());
         Assert.Equal("1.0.0", emptyPayload.RootElement.GetProperty("CompensationMessagingVersion").GetString());
         Assert.Equal("event.partial", partialPayload.RootElement.GetProperty("EventSchemaContractKey").GetString());
@@ -852,15 +935,18 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("commands.undo", messaging.Topic);
         Assert.Equal(new SemanticVersion(1, 0, 0), messaging.Version);
         Assert.Null(messaging.SchemaBinding);
+        Assert.Equal(OnErrorPolicy.Stop, compensationWithoutSchema.OnErrorPolicy);
         var validationOnlyMessaging = Assert.IsType<MessagingTaskConfiguration>(compensationWithValidationOnlySchema!.Configuration);
         Assert.NotNull(validationOnlyMessaging.SchemaBinding);
+        Assert.Equal(OnErrorPolicy.Continue, compensationWithValidationOnlySchema.OnErrorPolicy);
         Assert.Equal("commands.validated", validationOnlyMessaging.SchemaBinding!.ContractKey);
         Assert.True(validationOnlyMessaging.SchemaBinding.StrictMode);
         Assert.True(validationOnlyMessaging.SchemaBinding.IsValidationEnabled);
         Assert.True(compensationWithoutSchema.HasExecutionCondition);
         Assert.Equal("true", ((DslConditionConfiguration)compensationWithoutSchema.ExecutionCondition!.Configuration).Expression.ToString());
         Assert.True(compensationWithoutSchema.HasTransformation);
-        Assert.Null(compensationWithoutSchema.Transformation);
+        Assert.NotNull(compensationWithoutSchema.Transformation);
+        Assert.Equal(string.Empty, ((DslTransformationConfiguration)compensationWithoutSchema.Transformation!.Configuration).Dsl);
         Assert.Equal("TriggerValidationFailed", validation.ErrorCode);
         Assert.Equal(string.Empty, ((DslValidationConfiguration)validation.Configuration).Dsl);
         Assert.Equal("true", ((DslConditionConfiguration)condition.Configuration).Expression.ToString());
@@ -1172,10 +1258,14 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var configuration = compensation?.Configuration as MessagingTaskConfiguration;
         var condition = compensation?.ExecutionCondition?.Configuration as DslConditionConfiguration;
         var transformation = compensation?.Transformation?.Configuration as DslTransformationConfiguration;
+        var retry = compensation?.RetryPolicy;
+        var timeout = compensation?.TimeoutPolicy;
+        var reconcile = timeout?.TimeoutBehaviorPolicy as ReconcileTimeoutBehaviorPolicy;
 
         return compensation is not null &&
                compensation.CompensationTaskKind == TaskKind.Messaging &&
                compensation.DispatchType == TaskDispatchType.FireAndForget &&
+               compensation.OnErrorPolicy == OnErrorPolicy.Continue &&
                configuration is not null &&
                configuration.Topic == "commands.sales.cancel" &&
                configuration.Version.ToString() == "1.0.0" &&
@@ -1190,7 +1280,37 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
                condition.Expression.ToString() == "true" &&
                compensation.HasTransformation &&
                transformation is not null &&
-               transformation.Dsl == "map compensation";
+               transformation.Dsl == string.Empty &&
+               retry is not null &&
+               retry.MaxRetries == 2 &&
+               retry.RetryableErrorCodes.SequenceEqual(["TEMP", "LOCKED"]) &&
+               retry.StopOnNonRetryableError &&
+               (retry.Strategy as FixedRetryStrategy)?.Delay.Value.TotalSeconds == 4 &&
+               timeout is not null &&
+               timeout.Timeout.Value.TotalSeconds == 45 &&
+               timeout.TimeoutBehavior == TimeoutBehavior.Reconcile &&
+               reconcile is not null &&
+               reconcile.RetryPolicy is not null &&
+               reconcile.RetryPolicy.MaxRetries == 3 &&
+               reconcile.RetryPolicy.RetryableErrorCodes.SequenceEqual(["TIMEOUT"]) &&
+               reconcile.RetryPolicy.StopOnNonRetryableError &&
+               (reconcile.RetryPolicy.Strategy as FixedRetryStrategy)?.Delay.Value.TotalSeconds == 8;
+    }
+
+    private static bool IsExpectedPreservedCompensationUpdate(UpdateTriggerBindingCommand command)
+    {
+        var compensation = command.CompensationDefinition;
+        var condition = compensation?.ExecutionCondition?.Configuration as DslConditionConfiguration;
+        var transformation = compensation?.Transformation?.Configuration as DslTransformationConfiguration;
+
+        return compensation is not null &&
+               compensation.HasExecutionCondition &&
+               condition?.Expression.ToString() == "payload.canUndo" &&
+               compensation.HasTransformation &&
+               transformation?.Dsl == "map existing compensation" &&
+               compensation.OnErrorPolicy == OnErrorPolicy.Continue &&
+               compensation.RetryPolicy is not null &&
+               compensation.RetryPolicy.MaxRetries == 1;
     }
 
     private static Task InvokePrivateTaskAsync(VersionDetailsModel model, string methodName, params object?[] args)
@@ -1215,7 +1335,9 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
 
     private static T InvokePrivateStatic<T>(string methodName, params object?[] args)
     {
-        var method = typeof(VersionDetailsModel).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic)!;
+        var method = typeof(VersionDetailsModel)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Single(x => x.Name == methodName && x.GetParameters().Length == args.Length);
         return (T)method.Invoke(null, args)!;
     }
 

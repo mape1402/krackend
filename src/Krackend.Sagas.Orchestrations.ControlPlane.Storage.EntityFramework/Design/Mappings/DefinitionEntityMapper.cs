@@ -867,6 +867,7 @@ internal static class DefinitionEntityMapper
             RetryPolicy = ToOptionalJson(source.RetryPolicy),
             TimeoutPolicy = ToOptionalJson(source.TimeoutPolicy),
             DispatchType = source.DispatchType,
+            OnErrorPolicy = ResolveCompensationOnErrorPolicy(source.OnErrorPolicy),
         };
 
     /// <summary>
@@ -890,7 +891,11 @@ internal static class DefinitionEntityMapper
             RetryPolicy = ToOptionalModel(source?.RetryPolicy),
             TimeoutPolicy = ToOptionalModel(source?.TimeoutPolicy),
             DispatchType = source?.DispatchType ?? TaskDispatchType.FireAndForget,
+            OnErrorPolicy = ResolveCompensationOnErrorPolicy(source?.OnErrorPolicy ?? OnErrorPolicy.Stop),
         };
+
+    private static OnErrorPolicy ResolveCompensationOnErrorPolicy(OnErrorPolicy requested)
+        => requested == OnErrorPolicy.Continue ? OnErrorPolicy.Continue : OnErrorPolicy.Stop;
 
     /// <summary>
     /// Executes ToOptionalModel.

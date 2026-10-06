@@ -46,4 +46,9 @@ public sealed class CompensationDefinitionJsonModel
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TaskDispatchType DispatchType { get; set; }
+    /// <summary>
+    /// Gets or sets OnErrorPolicy.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public OnErrorPolicy OnErrorPolicy { get; set; } = OnErrorPolicy.Stop;
 }

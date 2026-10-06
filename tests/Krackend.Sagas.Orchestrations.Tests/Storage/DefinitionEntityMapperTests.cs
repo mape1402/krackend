@@ -73,7 +73,8 @@ public sealed class DefinitionEntityMapperTests
         {
             CompensationTaskKind = TaskKind.Plugin,
             Configuration = new PluginTaskConfiguration { PluginId = pluginId },
-            DispatchType = TaskDispatchType.FireAndForget
+            DispatchType = TaskDispatchType.FireAndForget,
+            OnErrorPolicy = OnErrorPolicy.Continue
         };
         var compensatedTask = CreateTask(
             stageId,
@@ -85,6 +86,7 @@ public sealed class DefinitionEntityMapperTests
 
         Assert.NotNull(compensatedRoundTrip.CompensationDefinition);
         Assert.IsType<PluginTaskConfiguration>(compensatedRoundTrip.CompensationDefinition!.Configuration);
+        Assert.Equal(OnErrorPolicy.Continue, compensatedRoundTrip.CompensationDefinition.OnErrorPolicy);
         Assert.Null(compensatedRoundTrip.CompensationDefinition.RetryPolicy);
         Assert.Null(compensatedRoundTrip.CompensationDefinition.TimeoutPolicy);
     }

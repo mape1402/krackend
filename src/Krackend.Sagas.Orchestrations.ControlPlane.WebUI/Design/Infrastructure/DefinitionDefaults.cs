@@ -122,7 +122,8 @@ internal static class DefinitionDefaults
             TimeoutPolicy = CreateTimeoutPolicy(),
             DispatchType = kind == TaskKind.Messaging
                 ? TaskDispatchType.FireAndForget
-                : TaskDispatchType.FireAndWait
+                : TaskDispatchType.FireAndWait,
+            OnErrorPolicy = OnErrorPolicy.Stop
         };
     }
 }

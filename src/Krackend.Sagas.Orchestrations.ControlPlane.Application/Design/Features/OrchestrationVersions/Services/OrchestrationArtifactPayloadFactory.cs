@@ -155,7 +155,11 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             MapTaskConfiguration(compensation.Configuration),
             MapRetryPolicy(compensation.RetryPolicy),
             MapTimeoutPolicy(compensation.TimeoutPolicy),
-            compensation.DispatchType);
+            compensation.DispatchType,
+            ResolveCompensationOnErrorPolicy(compensation.OnErrorPolicy));
+
+    private static OnErrorPolicy ResolveCompensationOnErrorPolicy(OnErrorPolicy requested)
+        => requested == OnErrorPolicy.Continue ? OnErrorPolicy.Continue : OnErrorPolicy.Stop;
 
     private static ExecutionConditionArtifact MapCondition(ExecutionCondition condition, bool isEnabled)
     {

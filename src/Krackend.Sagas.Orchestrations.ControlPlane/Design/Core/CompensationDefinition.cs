@@ -51,4 +51,9 @@ public sealed class CompensationDefinition
     /// Gets or sets dispatch type.
     /// </summary>
     public TaskDispatchType DispatchType { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the compensation flow behaves when this compensation task fails.
+    /// </summary>
+    public OnErrorPolicy OnErrorPolicy { get; set; } = OnErrorPolicy.Stop;
 }

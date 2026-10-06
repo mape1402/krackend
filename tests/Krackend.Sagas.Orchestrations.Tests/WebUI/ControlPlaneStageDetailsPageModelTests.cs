@@ -59,6 +59,9 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Contains(TaskDispatchType.FireAndWaitCallback.ToString(), model.DispatchTypes.Select(x => x.Value));
         Assert.Equal([TaskDispatchType.FireAndForget.ToString()], model.CompensationDispatchTypes.Select(x => x.Value).ToArray());
         Assert.Contains(OnErrorPolicy.StopAndCompensate.ToString(), model.OnErrorPolicies.Select(x => x.Value));
+        Assert.Equal(
+            [OnErrorPolicy.Stop.ToString(), OnErrorPolicy.Continue.ToString()],
+            model.CompensationOnErrorPolicies.Select(x => x.Value).ToArray());
         Assert.Equal([EngineType.DSL.ToString()], model.EngineTypes.Select(x => x.Value).ToArray());
         Assert.Equal([RetryStrategyType.Fixed.ToString()], model.RetryStrategyTypes.Select(x => x.Value).ToArray());
         Assert.Contains(TimeoutBehavior.Reconcile.ToString(), model.TimeoutBehaviors.Select(x => x.Value));
@@ -1101,6 +1104,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
             {
                 CompensationKind = TaskKind.Http.ToString(),
                 CompensationDispatchType = TaskDispatchType.FireAndWaitCallback.ToString(),
+                CompensationOnErrorPolicy = OnErrorPolicy.StopAndCompensate.ToString(),
                 CompensationMessagingTopic = "undo.topic",
                 HasCompensationExecutionCondition = false,
                 HasCompensationTransformation = false,
@@ -1203,6 +1207,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Equal("TIMEOUT", ((FailTimeoutBehaviorPolicy)failTimeout.TimeoutBehaviorPolicy).ErrorCode);
         Assert.Equal(TaskKind.Messaging, compensation.CompensationTaskKind);
         Assert.Equal(TaskDispatchType.FireAndForget, compensation.DispatchType);
+        Assert.Equal(OnErrorPolicy.Stop, compensation.OnErrorPolicy);
         Assert.Null(compensation.RetryPolicy);
         Assert.Equal(TaskDispatchType.FireAndWaitCallback, dispatchType);
         Assert.Equal(TaskDispatchType.FireAndForget, compensationDispatchType);
@@ -1741,6 +1746,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
             TimeoutReconcileRetryableErrorCodes = "TIMEOUT",
             HasCompensation = true,
             CompensationKind = TaskKind.Messaging.ToString(),
+            CompensationOnErrorPolicy = OnErrorPolicy.Continue.ToString(),
             CompensationMessagingTopic = "Inventories.Release-Undo_v1",
             CompensationMessagingVersion = "1.2.3",
             HasCompensationMessagingSchemaValidation = true,
@@ -1780,6 +1786,7 @@ public sealed class ControlPlaneStageDetailsPageModelTests
         Assert.Equal("Inventories.Release-Undo_v1", Assert.IsType<MessagingTaskConfiguration>(captured.CompensationDefinition!.Configuration).Topic);
         Assert.True(captured.CompensationDefinition.HasExecutionCondition);
         Assert.True(captured.CompensationDefinition.HasTransformation);
+        Assert.Equal(OnErrorPolicy.Continue, captured.CompensationDefinition.OnErrorPolicy);
         Assert.Equal(1, captured.CompensationDefinition.RetryPolicy!.MaxRetries);
     }
 

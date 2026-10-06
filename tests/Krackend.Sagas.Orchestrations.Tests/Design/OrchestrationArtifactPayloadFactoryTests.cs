@@ -70,6 +70,7 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         Assert.Equal((int)TimeoutBehavior.Reconcile, task["TimeoutPolicy"]!["TimeoutBehavior"]!.GetValue<int>());
 
         Assert.Equal((int)TaskKind.Messaging, compensation["CompensationTaskKind"]!.GetValue<int>());
+        Assert.Equal((int)OnErrorPolicy.Continue, compensation["OnErrorPolicy"]!.GetValue<int>());
         Assert.True(compensation["ExecutionCondition"]!["IsEnabled"]!.GetValue<bool>());
         Assert.Equal("outputs.reserveStock.reserved == true", compensation["ExecutionCondition"]!["Configuration"]!["Expression"]!["Value"]!.GetValue<string>());
         Assert.True(compensation["Transformation"]!["IsEnabled"]!.GetValue<bool>());
@@ -606,7 +607,8 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
                                 },
                                 RetryPolicy = RetryPolicy(2),
                                 TimeoutPolicy = FailTimeoutPolicy(),
-                                DispatchType = TaskDispatchType.FireAndWaitCallback
+                                DispatchType = TaskDispatchType.FireAndWaitCallback,
+                                OnErrorPolicy = OnErrorPolicy.Continue
                             },
                             DispatchType = TaskDispatchType.FireAndWaitCallback,
                             IsEnabled = true

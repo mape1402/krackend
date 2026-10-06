@@ -103,7 +103,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                         Kind = taskArtifact.Compensation.CompensationTaskKind,
                         Transformation = taskArtifact.Compensation.Transformation,
                         Configuration = taskArtifact.Compensation.Configuration,
-                        DispatchType = taskArtifact.Compensation.DispatchType
+                        DispatchType = taskArtifact.Compensation.DispatchType,
+                        OnErrorPolicy = ResolveCompensationOnErrorPolicy(taskArtifact.Compensation.OnErrorPolicy)
                     },
                     taskArtifact.Compensation,
                     "Task",
@@ -236,8 +237,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     sourceTaskExecutionId,
                     compensation,
                     condition,
+                    IsTerminalCompensationFailure(compensationArtifact),
                     cancellationToken);
-                return false;
+                return ShouldContinueAfterCompensationFailure(compensationArtifact);
             }
 
             if (!condition.ShouldExecute)
@@ -261,8 +263,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     compensation,
                     new InvalidOperationException($"No runtime task adapter is configured for compensation task kind '{compensationArtifact.CompensationTaskKind}'."),
                     "CompensationTaskRuntimeAdapterNotConfigured",
+                    IsTerminalCompensationFailure(compensationArtifact),
                     cancellationToken);
-                return false;
+                return ShouldContinueAfterCompensationFailure(compensationArtifact);
             }
 
             var payloadPreparation = await PrepareCompensationPayloadAsync(
@@ -279,8 +282,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     sourceTaskExecutionId,
                     compensation,
                     payloadPreparation,
+                    IsTerminalCompensationFailure(compensationArtifact),
                     cancellationToken);
-                return false;
+                return ShouldContinueAfterCompensationFailure(compensationArtifact);
             }
 
             compensation.RequestPayload = payloadPreparation.Payload?.DeepClone();
@@ -333,8 +337,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     compensation,
                     exception,
                     "CompensationDispatchFailed",
+                    IsTerminalCompensationFailure(compensationArtifact),
                     cancellationToken);
-                return false;
+                return ShouldContinueAfterCompensationFailure(compensationArtifact);
             }
 
             compensation.Status = "Completed";
@@ -402,10 +407,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 trigger.Compensation.Configuration,
                 trigger.Compensation.RetryPolicy,
                 trigger.Compensation.TimeoutPolicy,
-                OnErrorPolicy.Stop,
+                ResolveCompensationOnErrorPolicy(trigger.Compensation.OnErrorPolicy),
                 trigger.Compensation,
                 trigger.Compensation.DispatchType,
                 true);
+
+        private static OnErrorPolicy ResolveCompensationOnErrorPolicy(OnErrorPolicy requested)
+            => requested == OnErrorPolicy.Continue ? OnErrorPolicy.Continue : OnErrorPolicy.Stop;
+
+        private static bool IsTerminalCompensationFailure(CompensationArtifact compensation)
+            => ResolveCompensationOnErrorPolicy(compensation.OnErrorPolicy) == OnErrorPolicy.Stop;
+
+        private static bool ShouldContinueAfterCompensationFailure(CompensationArtifact compensation)
+            => !IsTerminalCompensationFailure(compensation);
 
         private static JsonNode ParsePayload(string payload)
             => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
@@ -416,6 +430,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             Id? sourceTaskExecutionId,
             CompensationExecution compensation,
             OrchestrationConditionEvaluationResult condition,
+            bool terminalFailure,
             CancellationToken cancellationToken)
         {
             compensation.Status = "Failed";
@@ -425,14 +440,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             compensation.Metadata["ConditionErrorMessage"] = JsonValue.Create(condition.ErrorMessage);
             CopyDiagnostics(compensation.Metadata, condition.Diagnostics);
 
-            instance.Status = OrchestrationInstanceStatus.Failed;
-            instance.FailedOnUtc = compensation.FailedOnUtc;
-            instance.ErrorSummary = condition.ErrorMessage;
-            instance.LastUpdatedOnUtc = compensation.FailedOnUtc.Value;
-            instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
+            if (terminalFailure)
+            {
+                instance.Status = OrchestrationInstanceStatus.Failed;
+                instance.FailedOnUtc = compensation.FailedOnUtc;
+                instance.ErrorSummary = condition.ErrorMessage;
+                instance.LastUpdatedOnUtc = compensation.FailedOnUtc.Value;
+                instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
+            }
 
             await _compensationRepository.Update(compensation, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
+            if (terminalFailure)
+            {
+                await _instanceRepository.Update(instance, cancellationToken);
+            }
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),
@@ -483,6 +504,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             CompensationExecution compensation,
             Exception exception,
             string errorCode,
+            bool terminalFailure,
             CancellationToken cancellationToken)
         {
             var failedOnUtc = DateTime.UtcNow;
@@ -492,14 +514,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             compensation.Metadata["ExecutionErrorCode"] = JsonValue.Create(errorCode);
             compensation.Metadata["ExecutionErrorMessage"] = JsonValue.Create(exception.Message);
 
-            instance.Status = OrchestrationInstanceStatus.Failed;
-            instance.FailedOnUtc = failedOnUtc;
-            instance.ErrorSummary = exception.Message;
-            instance.LastUpdatedOnUtc = failedOnUtc;
-            instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
+            if (terminalFailure)
+            {
+                instance.Status = OrchestrationInstanceStatus.Failed;
+                instance.FailedOnUtc = failedOnUtc;
+                instance.ErrorSummary = exception.Message;
+                instance.LastUpdatedOnUtc = failedOnUtc;
+                instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
+            }
 
             await _compensationRepository.Update(compensation, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
+            if (terminalFailure)
+            {
+                await _instanceRepository.Update(instance, cancellationToken);
+            }
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),
@@ -521,6 +549,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             Id? sourceTaskExecutionId,
             CompensationExecution compensation,
             CompensationPayloadPreparationResult preparation,
+            bool terminalFailure,
             CancellationToken cancellationToken)
         {
             var failedOnUtc = DateTime.UtcNow;
@@ -531,14 +560,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             compensation.Metadata["TransformationErrorMessage"] = JsonValue.Create(preparation.ErrorMessage);
             CopyDiagnostics(compensation.Metadata, preparation.Diagnostics, "Transformation");
 
-            instance.Status = OrchestrationInstanceStatus.Failed;
-            instance.FailedOnUtc = failedOnUtc;
-            instance.ErrorSummary = preparation.ErrorMessage;
-            instance.LastUpdatedOnUtc = failedOnUtc;
-            instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
+            if (terminalFailure)
+            {
+                instance.Status = OrchestrationInstanceStatus.Failed;
+                instance.FailedOnUtc = failedOnUtc;
+                instance.ErrorSummary = preparation.ErrorMessage;
+                instance.LastUpdatedOnUtc = failedOnUtc;
+                instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
+            }
 
             await _compensationRepository.Update(compensation, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
+            if (terminalFailure)
+            {
+                await _instanceRepository.Update(instance, cancellationToken);
+            }
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),
