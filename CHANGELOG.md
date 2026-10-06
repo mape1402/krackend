@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v4.2.1] - 2026-10-06
+
+- ### Added
+
+  - Added compensation on-error policy capture for compensating tasks, allowing compensation steps to stop or continue without enabling nested compensation from compensation.
+
+- ### Changed
+
+  - Changed trigger compensation ButterMorph contexts to expose only runtime-guaranteed inputs: the selected event trigger payload, trigger metadata, and transversal metadata. Forward task request/reply history is no longer exposed because those steps may not have executed when trigger compensation runs.
+  - Changed task and trigger compensation editing so execution conditions and transformations open ButterMorph directly instead of showing unused source selectors or raw DSL text boxes.
+  - Changed trigger compensation editing to use a dedicated tab with the full compensating task configuration surface, including timeout policy, retry policy, and on-error policy.
+  - Changed Control Plane catalog pages to use fixed-size responsive cards with infinite scroll instead of manual pagination controls, reducing blank space and card resizing across orchestration, domain, metadata, environment, runtime node, team, artifact, and release lists.
+  - Changed Distribution artifacts and releases to use orchestration-first card views, with artifacts/releases shown as card detail lists after selecting an orchestration.
+  - Changed release details so runtime-node status and push actions live in the details dialog instead of expanding inside the release card.
+  - Changed the theme mode switcher into a single icon-and-text button across the shared shell, Control Plane areas, and Runtime WebUI.
+
+- ### Fixed
+
+  - Fixed WebUI registration and compensation editing flows so ButterMorph designer contexts continue to resolve after the compensation UI changes.
+  - Fixed release and artifact detail layouts so they follow the same card pattern as the rest of the Control Plane UI.
+
+------
+
 ## [v4.2.0] - 2026-10-02
 
 - ### Added
