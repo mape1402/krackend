@@ -438,21 +438,42 @@ public sealed class OrchestrationSchemaContextBuilderTests
     }
 
     [Fact]
-    public async Task BuildForTriggerCompensation_ExposesTriggerMetadataAndAllForwardTaskSources()
+    public async Task BuildForTriggerCompensation_ExposesOnlyRuntimeGuaranteedSources()
     {
         var version = CreateVersion();
-        var trigger = version.TriggerBindings.Single();
+        version.TriggerBindings.Insert(0, new TriggerBinding
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = version.Id,
+            Key = "account-created",
+            TriggerType = TriggerType.Event,
+            IsEnabled = true,
+            TriggerChannel = new EventTriggerChannel
+            {
+                Topic = "events.accounts.account.created",
+                Version = new SemanticVersion(1, 0, 0),
+                HasSchemaValidation = true,
+                SchemaBinding = Binding("accounts.account.created", SchemaContractKind.Event)
+            }
+        });
+        var trigger = version.TriggerBindings.Single(x => x.Key == "sale-created");
         trigger.CompensationDefinition = Compensation("sale-created.undo");
-        var builder = new OrchestrationSchemaContextBuilder();
+        var repository = Substitute.For<IMetadataDescriptorRepository>();
+        repository.GetAllDescriptors(Arg.Any<CancellationToken>()).Returns([MetadataDescriptor("support_metadata")]);
+        var builder = new OrchestrationSchemaContextBuilder(repository);
 
         var context = await builder.BuildForTriggerCompensation(version, trigger.Id);
 
-        Assert.Contains(context.Sources, x => x.Alias == "trigger");
+        var triggerSource = Assert.Single(context.Sources, x => x.Alias == "trigger");
+        Assert.Equal("sales.sale.created", triggerSource.SchemaBinding.ContractKey);
         Assert.Contains(context.Sources, x => x.Alias == TriggerMetadataAlias);
-        Assert.Contains(context.Sources, x => x.Alias == "reserve_inventory");
-        Assert.Contains(context.Sources, x => x.Alias == "audit_sale_reply");
-        Assert.Contains(context.Sources, x => x.Alias == "close_sale");
-        Assert.Contains(context.Sources, x => x.Alias == "close_sale_reply");
+        Assert.Contains(context.Sources, x => x.Alias == "support_metadata");
+        Assert.DoesNotContain(context.Sources, x => x.SourceKind == OrchestrationSchemaContextSourceKind.TaskRequest);
+        Assert.DoesNotContain(context.Sources, x => x.SourceKind == OrchestrationSchemaContextSourceKind.TaskResponse);
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "reserve_inventory");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "audit_sale_reply");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "close_sale");
+        Assert.DoesNotContain(context.Sources, x => x.Alias == "close_sale_reply");
         Assert.Equal("sale_created_compensation_request", context.Target.Alias);
         Assert.Equal("sale-created.undo.request", context.Target.SchemaBinding.ContractKey);
     }

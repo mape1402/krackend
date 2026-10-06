@@ -191,12 +191,10 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             throw new InvalidOperationException($"Trigger '{triggerBindingId}' was not found in orchestration version '{version.Id}'.");
         }
 
-        var stages = GetEnabledStages(version);
         var sources = new List<OrchestrationSchemaSource>();
-        AddTriggerSources(version, sources);
+        AddTriggerSource(trigger, sources);
         AddTriggerMetadataSource(sources);
         await AddMetadataSources(sources, cancellationToken);
-        AddAllTaskSources(stages, sources);
 
         var target = CreateCompensationTarget(trigger);
         var context = new OrchestrationSchemaContext
@@ -252,6 +250,11 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .FirstOrDefault(x => x.TriggerChannel is EventTriggerChannel);
 
+        AddTriggerSource(trigger, sources);
+    }
+
+    private static void AddTriggerSource(TriggerBinding trigger, ICollection<OrchestrationSchemaSource> sources)
+    {
         if (trigger?.TriggerChannel is not EventTriggerChannel eventChannel ||
             !IsUsableBindingReference(eventChannel.SchemaBinding))
         {
@@ -319,20 +322,6 @@ public sealed class OrchestrationSchemaContextBuilder : IOrchestrationSchemaCont
             if (reachedTargetStage)
             {
                 return;
-            }
-        }
-    }
-
-    private static void AddAllTaskSources(
-        IEnumerable<StageDefinition> stages,
-        ICollection<OrchestrationSchemaSource> sources)
-    {
-        foreach (var stage in stages)
-        {
-            foreach (var task in GetEnabledTasks(stage))
-            {
-                AddTaskRequestSource(stage, task, sources);
-                AddTaskResponseSource(stage, task, sources);
             }
         }
     }
