@@ -257,7 +257,9 @@ Compensation:
 
 Tasks and event triggers can define compensating tasks. The runtime evaluates the compensation execution condition, applies the compensation transformation, and dispatches the transformed compensation request through the task adapter abstraction. This keeps compensation transport-agnostic and lets messaging, or another installed task kind, own its own dispatch behavior.
 
-ButterMorph compensation contexts include the data that is technically available at that point in the saga. Task compensation can use the trigger payload and metadata, forward task requests and replies up to the task being compensated, the failed task request when available, and previous compensation replies. Trigger compensation can use trigger payload and metadata plus completed forward task data. This lets a compensation step reverse the paired forward task and still emit additional compensating side effects when the design requires them.
+ButterMorph compensation contexts include the data that is technically available at that point in the saga. Task compensation can use the trigger payload and metadata, forward task requests and replies up to the task being compensated, the failed task request when available, and previous compensation replies. Trigger compensation intentionally exposes only the selected event trigger payload, trigger metadata, and transversal metadata, because forward tasks may never have executed when trigger compensation runs. This lets a compensation step reverse the paired forward task and still emit additional compensating side effects when the design requires them.
+
+The Control Plane WebUI opens ButterMorph directly for compensation execution conditions and transformations. Trigger compensation is edited in its own tab with the same task configuration surface used by regular tasks, including timeout, retry, and on-error policy settings.
 
 Security model:
 
