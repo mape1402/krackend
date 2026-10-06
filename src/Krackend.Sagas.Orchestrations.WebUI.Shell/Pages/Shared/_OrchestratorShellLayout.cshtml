@@ -14,7 +14,7 @@
     var iconImageUrl = string.IsNullOrWhiteSpace(theme.IconImageUrl) ? string.Empty : theme.IconImageUrl.Trim();
     var cssMode = ThemeModeAccessor.GetCssMode(theme);
     var nextCssMode = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
-    var themeModeText = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
+    var themeModeText = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark";
     var themeToggleLabel = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "Switch to light mode" : "Switch to dark mode";
     var themeToggleIcon = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "bi-sun" : "bi-moon";
     var returnUrl = $"{Context.Request.PathBase}{Context.Request.Path}{Context.Request.QueryString}";
@@ -143,12 +143,12 @@
                     <span class="topbar-title">@pageTitle</span>
                 </div>
                 <div class="topbar-right">
-                    <span class="theme-mode-label">@themeModeText</span>
                     <form class="theme-mode-form" method="post" asp-area="OrchestratorShell" asp-page="/Theme">
                         <input type="hidden" name="mode" value="@nextCssMode" />
                         <input type="hidden" name="returnUrl" value="@returnUrl" />
                         <button class="theme-mode-toggle" type="submit" title="@themeToggleLabel" aria-label="@themeToggleLabel">
                             <i class="bi @themeToggleIcon"></i>
+                            <span>@themeModeText</span>
                         </button>
                     </form>
                 </div>
