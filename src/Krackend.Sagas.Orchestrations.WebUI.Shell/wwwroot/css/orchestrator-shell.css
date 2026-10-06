@@ -274,27 +274,27 @@ body {
     margin: 0;
 }
 
-.theme-mode-label {
-    color: var(--topbar-muted);
-    font-size: 0.78rem;
-    font-weight: 600;
-    line-height: 1;
-}
-
 .theme-mode-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
+    gap: 0.38rem;
+    min-width: 78px;
     height: 34px;
-    padding: 0;
+    padding: 0 0.7rem;
     border: 1px solid var(--topbar-border);
     border-radius: var(--radius-sm);
     background: var(--krackend-subtle-bg, #f8f9ff);
     color: var(--topbar-muted);
-    font-size: 1rem;
+    font-size: 0.78rem;
+    font-weight: 600;
     line-height: 1;
     cursor: pointer;
+}
+
+.theme-mode-toggle i {
+    font-size: 1rem;
+    line-height: 1;
 }
 
 .theme-mode-toggle:hover,

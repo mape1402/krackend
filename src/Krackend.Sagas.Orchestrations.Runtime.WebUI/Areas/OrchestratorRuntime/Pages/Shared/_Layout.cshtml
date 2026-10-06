@@ -7,7 +7,7 @@
     var theme = ThemeOptions.Value;
     var cssMode = ThemeModeAccessor.GetCssMode(theme);
     var nextCssMode = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
-    var themeModeText = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
+    var themeModeText = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark";
     var themeToggleLabel = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "Switch to light mode" : "Switch to dark mode";
     var themeToggleIcon = string.Equals(cssMode, "dark", StringComparison.OrdinalIgnoreCase) ? "bi-sun" : "bi-moon";
     var returnUrl = $"{Context.Request.PathBase}{Context.Request.Path}{Context.Request.QueryString}";
@@ -28,9 +28,9 @@
         .rt-brand-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: 1.2rem; }
         .rt-brand { font-weight: 700; font-size: 1.05rem; }
         .rt-theme-control { display: inline-flex; align-items: center; gap: .45rem; }
-        .rt-theme-label { color: var(--krackend-sidebar-muted, #a4abc9); font-size: .75rem; font-weight: 700; line-height: 1; }
         .rt-theme-form { margin: 0; }
-        .rt-theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid color-mix(in srgb, var(--krackend-sidebar-text, #e9eef8) 18%, transparent); border-radius: .45rem; background: color-mix(in srgb, var(--krackend-sidebar-text, #e9eef8) 8%, transparent); color: var(--krackend-sidebar-text, #e9eef8); line-height: 1; cursor: pointer; }
+        .rt-theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-width: 76px; height: 32px; padding: 0 .65rem; border: 1px solid color-mix(in srgb, var(--krackend-sidebar-text, #e9eef8) 18%, transparent); border-radius: .45rem; background: color-mix(in srgb, var(--krackend-sidebar-text, #e9eef8) 8%, transparent); color: var(--krackend-sidebar-text, #e9eef8); font-size: .75rem; font-weight: 700; line-height: 1; cursor: pointer; }
+        .rt-theme-toggle i { font-size: 1rem; line-height: 1; }
         .rt-theme-toggle:hover, .rt-theme-toggle:focus-visible { background: var(--krackend-primary, #4856d7); border-color: var(--krackend-primary, #4856d7); color: #fff; }
         .rt-nav a { color: var(--krackend-sidebar-text, #d9e2f2); display: block; text-decoration: none; padding: .55rem .65rem; border-radius: .45rem; }
         .rt-nav a:hover, .rt-nav a.active { background: color-mix(in srgb, var(--krackend-sidebar-text, #e9eef8) 14%, transparent); color: #fff; }
@@ -59,12 +59,12 @@
             <div class="rt-brand-row">
                 <div class="rt-brand">Runtime</div>
                 <div class="rt-theme-control">
-                    <span class="rt-theme-label">@themeModeText</span>
                     <form class="rt-theme-form" method="post" asp-area="OrchestratorShell" asp-page="/Theme">
                         <input type="hidden" name="mode" value="@nextCssMode" />
                         <input type="hidden" name="returnUrl" value="@returnUrl" />
                         <button class="rt-theme-toggle" type="submit" title="@themeToggleLabel" aria-label="@themeToggleLabel">
                             <i class="bi @themeToggleIcon"></i>
+                            <span>@themeModeText</span>
                         </button>
                     </form>
                 </div>
