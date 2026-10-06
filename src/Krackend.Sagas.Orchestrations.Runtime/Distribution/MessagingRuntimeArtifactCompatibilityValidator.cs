@@ -264,7 +264,7 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
             trigger.Compensation.Configuration,
             trigger.Compensation.RetryPolicy,
             trigger.Compensation.TimeoutPolicy,
-            OnErrorPolicy.Stop,
+            ResolveCompensationOnErrorPolicy(trigger.Compensation.OnErrorPolicy),
             trigger.Compensation,
             trigger.Compensation.DispatchType,
             true);
@@ -494,6 +494,9 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
             (string.IsNullOrWhiteSpace(capability.Kind) ||
                 string.IsNullOrWhiteSpace(descriptor.Kind) ||
                 string.Equals(descriptor.Kind, capability.Kind, StringComparison.OrdinalIgnoreCase))) == true;
+
+    private static OnErrorPolicy ResolveCompensationOnErrorPolicy(OnErrorPolicy requested)
+        => requested == OnErrorPolicy.Continue ? OnErrorPolicy.Continue : OnErrorPolicy.Stop;
 
     private static RuntimeArtifactCompatibilityValidationResult ValidateRequestValidation(
         ITaskConfigurationArtifact configuration,

@@ -134,5 +134,6 @@ public sealed class TriggerBindingRepository : ITriggerBindingRepository
             CompensationTaskKind = TaskKind.Messaging,
             Configuration = new MessagingTaskConfiguration { Topic = string.Empty },
             DispatchType = TaskDispatchType.FireAndForget,
+            OnErrorPolicy = OnErrorPolicy.Stop,
         };
 }

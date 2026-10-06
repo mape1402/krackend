@@ -88,6 +88,9 @@ public sealed class DetailsModel : PageModel
 
     public IEnumerable<SelectListItem> OnErrorPolicies => Enum.GetValues<OnErrorPolicy>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
+    public IEnumerable<SelectListItem> CompensationOnErrorPolicies =>
+        new[] { OnErrorPolicy.Stop, OnErrorPolicy.Continue }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
     public IEnumerable<SelectListItem> EngineTypes => new[] { EngineType.DSL }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public IEnumerable<SelectListItem> RetryStrategyTypes => new[] { RetryStrategyType.Fixed }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
@@ -884,6 +887,7 @@ public sealed class DetailsModel : PageModel
             ["HasCompensation"] = task.CompensationDefinition is not null,
             ["CompensationKind"] = task.CompensationDefinition?.CompensationTaskKind.ToString() ?? TaskKind.Messaging.ToString(),
             ["CompensationDispatchType"] = task.CompensationDefinition?.DispatchType.ToString() ?? TaskDispatchType.FireAndForget.ToString(),
+            ["CompensationOnErrorPolicy"] = ResolveCompensationOnErrorPolicy(task.CompensationDefinition?.OnErrorPolicy ?? OnErrorPolicy.Stop).ToString(),
             ["HasCompensationExecutionCondition"] = task.CompensationDefinition?.HasExecutionCondition ?? false,
             ["CompensationConditionEngine"] = task.CompensationDefinition?.ExecutionCondition?.Engine.ToString() ?? EngineType.DSL.ToString(),
             ["CompensationConditionDslExpression"] = (task.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
@@ -1486,6 +1490,7 @@ public sealed class DetailsModel : PageModel
 
         var compensation = DefinitionDefaults.CreateCompensationDefinition(compensationKind);
         compensation.DispatchType = compensationDispatchType;
+        compensation.OnErrorPolicy = ResolveCompensationOnErrorPolicy(ParseEnum(input.CompensationOnErrorPolicy, OnErrorPolicy.Stop));
         compensation.ExecutionCondition = input.HasCompensationExecutionCondition
             ? BuildExecutionCondition(input.CompensationConditionEngine, input.CompensationConditionDslExpression)
             : null;
@@ -1531,6 +1536,9 @@ public sealed class DetailsModel : PageModel
         var allowed = GetAllowedCompensationDispatchTypes(kind);
         return allowed.Contains(requested) ? requested : allowed[0];
     }
+
+    private static OnErrorPolicy ResolveCompensationOnErrorPolicy(OnErrorPolicy requested)
+        => requested == OnErrorPolicy.Continue ? OnErrorPolicy.Continue : OnErrorPolicy.Stop;
 
     private static TaskKind ResolveTaskKind(TaskKind requested)
         => requested == TaskKind.Messaging ? requested : TaskKind.Messaging;
@@ -1835,6 +1843,9 @@ public sealed class DetailsModel : PageModel
 
         [Required]
         public string CompensationDispatchType { get; set; } = TaskDispatchType.FireAndForget.ToString();
+
+        [Required]
+        public string CompensationOnErrorPolicy { get; set; } = Krackend.Sagas.Orchestrations.Abstractions.Primitives.OnErrorPolicy.Stop.ToString();
 
         [Required]
         public string CompensationConditionEngine { get; set; } = EngineType.DSL.ToString();

@@ -6,6 +6,8 @@ using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurations;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
@@ -73,6 +75,21 @@ public sealed class DetailsModel : PageModel
 
     public IEnumerable<SelectListItem> TriggerTypes =>
         new[] { TriggerType.Event }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> CompensationTaskKinds =>
+        new[] { TaskKind.Messaging }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> CompensationDispatchTypes =>
+        new[] { TaskDispatchType.FireAndForget }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> CompensationOnErrorPolicies =>
+        new[] { OnErrorPolicy.Stop, OnErrorPolicy.Continue }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> RetryStrategyTypes => new[] { RetryStrategyType.Fixed }.Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> TimeoutBehaviors => Enum.GetValues<TimeoutBehavior>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
+
+    public IEnumerable<SelectListItem> TimeoutActions => Enum.GetValues<OrchestrationActionOnTimeout>().Select(x => new SelectListItem(x.ToString(), x.ToString()));
 
     public string ErrorMessage { get; private set; } = string.Empty;
 
@@ -295,7 +312,11 @@ public sealed class DetailsModel : PageModel
         var triggerType = ResolveTriggerType(ParseEnum(TriggerInput.TriggerType, TriggerType.Event));
         var triggerChannel = BuildTriggerChannel(triggerType, TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
         var description = TriggerInput.Description ?? string.Empty;
-        var compensation = BuildTriggerCompensationDefinition(TriggerInput, orchestrationId, _defaultSchemaRegistryProviderKey);
+        var compensation = BuildTriggerCompensationDefinition(
+            TriggerInput,
+            orchestrationId,
+            _defaultSchemaRegistryProviderKey,
+            existingTrigger?.CompensationDefinition);
 
         if (existingTrigger is not null)
         {
@@ -507,10 +528,43 @@ public sealed class DetailsModel : PageModel
             ModelState.AddModelError(nameof(TriggerInput.CompensationMessagingTopic), "Capture the compensation topic.");
         }
 
+        if (TriggerInput.HasCompensation && TriggerInput.HasCompensationRetryPolicy)
+        {
+            ValidateRetryPolicy(
+                nameof(TriggerInput.CompensationRetryMaxRetries),
+                TriggerInput.CompensationRetryMaxRetries,
+                nameof(TriggerInput.CompensationRetryDelaySeconds),
+                TriggerInput.CompensationRetryDelaySeconds,
+                nameof(TriggerInput.CompensationRetryableErrorCodes),
+                TriggerInput.CompensationRetryableErrorCodes);
+        }
+
+        if (TriggerInput.HasCompensation && TriggerInput.HasCompensationTimeoutPolicy)
+        {
+            ValidateTimeoutPolicy(
+                nameof(TriggerInput.CompensationTimeoutSeconds),
+                TriggerInput.CompensationTimeoutSeconds,
+                TriggerInput.CompensationTimeoutBehavior,
+                nameof(TriggerInput.CompensationTimeoutWaitSeconds),
+                TriggerInput.CompensationTimeoutWaitSeconds,
+                nameof(TriggerInput.CompensationTimeoutReconcileRetries),
+                TriggerInput.CompensationTimeoutReconcileRetries,
+                nameof(TriggerInput.CompensationTimeoutReconcileDelaySeconds),
+                TriggerInput.CompensationTimeoutReconcileDelaySeconds,
+                nameof(TriggerInput.CompensationTimeoutReconcileRetryableErrorCodes),
+                TriggerInput.CompensationTimeoutReconcileRetryableErrorCodes);
+        }
+
         if (!string.IsNullOrWhiteSpace(TriggerInput.EventSchemaRegistryProviderId) &&
             !Ulid.TryParse(TriggerInput.EventSchemaRegistryProviderId, out _))
         {
             ModelState.AddModelError(nameof(TriggerInput.EventSchemaRegistryProviderId), "Capture a valid schema registry provider id.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(TriggerInput.CompensationSchemaRegistryProviderId) &&
+            !Ulid.TryParse(TriggerInput.CompensationSchemaRegistryProviderId, out _))
+        {
+            ModelState.AddModelError(nameof(TriggerInput.CompensationSchemaRegistryProviderId), "Capture a valid schema registry provider id.");
         }
     }
 
@@ -561,6 +615,9 @@ public sealed class DetailsModel : PageModel
             EventValidationDsl = (eventChannel?.Validation?.Configuration as DslValidationConfiguration)?.Dsl ?? string.Empty,
             EventValidationErrorCode = eventChannel?.Validation?.ErrorCode ?? "TriggerValidationFailed",
             HasCompensation = trigger.CompensationDefinition is not null,
+            CompensationKind = trigger.CompensationDefinition?.CompensationTaskKind.ToString() ?? TaskKind.Messaging.ToString(),
+            CompensationDispatchType = trigger.CompensationDefinition?.DispatchType.ToString() ?? TaskDispatchType.FireAndForget.ToString(),
+            CompensationOnErrorPolicy = ResolveCompensationOnErrorPolicy(trigger.CompensationDefinition?.OnErrorPolicy ?? OnErrorPolicy.Stop).ToString(),
             CompensationMessagingTopic = compensationMessaging?.Topic ?? string.Empty,
             CompensationMessagingVersion = compensationMessaging?.Version.ToString() ?? "1.0.0",
             HasCompensationSchemaValidation = compensationMessaging?.HasSchemaValidation ?? false,
@@ -572,6 +629,23 @@ public sealed class DetailsModel : PageModel
             CompensationConditionDslExpression = (trigger.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? "true",
             HasCompensationTransformation = trigger.CompensationDefinition?.HasTransformation ?? false,
             CompensationTransformationDsl = (trigger.CompensationDefinition?.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty,
+            HasCompensationRetryPolicy = trigger.CompensationDefinition?.RetryPolicy is not null,
+            CompensationRetryStrategyType = trigger.CompensationDefinition?.RetryPolicy?.StrategyType.ToString() ?? RetryStrategyType.Fixed.ToString(),
+            CompensationRetryMaxRetries = trigger.CompensationDefinition?.RetryPolicy?.MaxRetries ?? 0,
+            CompensationRetryDelaySeconds = (trigger.CompensationDefinition?.RetryPolicy?.Strategy as FixedRetryStrategy)?.Delay.Value.TotalSeconds ?? 1d,
+            CompensationRetryableErrorCodes = string.Join(',', trigger.CompensationDefinition?.RetryPolicy?.RetryableErrorCodes ?? new List<string>()),
+            CompensationRetryStopOnNonRetryableError = trigger.CompensationDefinition?.RetryPolicy?.StopOnNonRetryableError ?? false,
+            HasCompensationTimeoutPolicy = trigger.CompensationDefinition?.TimeoutPolicy is not null,
+            CompensationTimeoutSeconds = trigger.CompensationDefinition?.TimeoutPolicy?.Timeout.Value.TotalSeconds ?? 30d,
+            CompensationTimeoutBehavior = trigger.CompensationDefinition?.TimeoutPolicy?.TimeoutBehavior.ToString() ?? TimeoutBehavior.Fail.ToString(),
+            CompensationTimeoutAction = ResolveTimeoutAction(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutFailErrorCode = ResolveTimeoutFailErrorCode(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutWaitSeconds = ResolveTimeoutWaitSeconds(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutReconcileRetryStrategyType = ResolveTimeoutReconcileRetryStrategyType(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutReconcileRetries = ResolveTimeoutReconcileRetries(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutReconcileDelaySeconds = ResolveTimeoutReconcileDelaySeconds(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutReconcileRetryableErrorCodes = ResolveTimeoutReconcileRetryableErrorCodes(trigger.CompensationDefinition?.TimeoutPolicy),
+            CompensationTimeoutReconcileStopOnNonRetryableError = ResolveTimeoutReconcileStopOnNonRetryableError(trigger.CompensationDefinition?.TimeoutPolicy),
         };
     }
 
@@ -628,43 +702,73 @@ public sealed class DetailsModel : PageModel
         UpsertTriggerInput input,
         string orchestrationId,
         string defaultSchemaRegistryProviderKey)
+        => BuildTriggerCompensationDefinition(input, orchestrationId, defaultSchemaRegistryProviderKey, null);
+
+    private static CompensationDefinition BuildTriggerCompensationDefinition(
+        UpsertTriggerInput input,
+        string orchestrationId,
+        string defaultSchemaRegistryProviderKey,
+        CompensationDefinition existingCompensation)
     {
         if (!input.HasCompensation)
         {
             return null;
         }
 
+        var compensationKind = ResolveCompensationTaskKind(ParseEnum(input.CompensationKind, TaskKind.Messaging));
+        var compensationDispatchType = ResolveCompensationDispatchType(compensationKind, ParseEnum(input.CompensationDispatchType, TaskDispatchType.FireAndForget));
         var hasSchemaBinding = !string.IsNullOrWhiteSpace(input.CompensationSchemaContractKey);
-        return new CompensationDefinition
+        var compensation = DefinitionDefaults.CreateCompensationDefinition(compensationKind);
+        compensation.DispatchType = compensationDispatchType;
+        compensation.OnErrorPolicy = ResolveCompensationOnErrorPolicy(ParseEnum(input.CompensationOnErrorPolicy, OnErrorPolicy.Stop));
+        compensation.Configuration = new MessagingTaskConfiguration
         {
-            CompensationTaskKind = TaskKind.Messaging,
-            DispatchType = TaskDispatchType.FireAndForget,
-            Configuration = new MessagingTaskConfiguration
-            {
-                Topic = input.CompensationMessagingTopic.Trim(),
-                Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
-                HasSchemaValidation = input.HasCompensationSchemaValidation,
-                SchemaBinding = hasSchemaBinding
-                    ? CreateSchemaBinding(
-                        input.CompensationSchemaContractKey,
-                        input.CompensationSchemaContractVersion,
-                        input.CompensationSchemaRegistryProviderId,
-                        input.CompensationSchemaStrictMode,
-                        input.HasCompensationSchemaValidation,
-                        orchestrationId,
-                        defaultSchemaRegistryProviderKey,
-                        SchemaContractKind.Command)
-                    : null,
-            },
-            HasExecutionCondition = input.HasCompensationExecutionCondition,
-            ExecutionCondition = input.HasCompensationExecutionCondition
-                ? BuildExecutionCondition(input.CompensationConditionDslExpression)
-                : null,
-            HasTransformation = input.HasCompensationTransformation,
-            Transformation = input.HasCompensationTransformation
-                ? BuildTransformation(input.CompensationTransformationDsl)
+            Topic = input.CompensationMessagingTopic.Trim(),
+            Version = ParseSemanticVersion(input.CompensationMessagingVersion, new SemanticVersion(1, 0, 0)),
+            HasSchemaValidation = input.HasCompensationSchemaValidation,
+            SchemaBinding = hasSchemaBinding
+                ? CreateSchemaBinding(
+                    input.CompensationSchemaContractKey,
+                    input.CompensationSchemaContractVersion,
+                    input.CompensationSchemaRegistryProviderId,
+                    input.CompensationSchemaStrictMode,
+                    input.HasCompensationSchemaValidation,
+                    orchestrationId,
+                    defaultSchemaRegistryProviderKey,
+                    SchemaContractKind.Command)
                 : null,
         };
+        compensation.HasExecutionCondition = input.HasCompensationExecutionCondition;
+        compensation.ExecutionCondition = input.HasCompensationExecutionCondition
+            ? existingCompensation?.ExecutionCondition ?? DefinitionDefaults.CreateExecutionCondition()
+            : null;
+        compensation.HasTransformation = input.HasCompensationTransformation;
+        compensation.Transformation = input.HasCompensationTransformation
+            ? existingCompensation?.Transformation ?? DefinitionDefaults.CreateTransformationDefinition()
+            : null;
+        compensation.RetryPolicy = input.HasCompensationRetryPolicy
+            ? BuildRetryPolicy(
+                input.CompensationRetryStrategyType,
+                input.CompensationRetryMaxRetries,
+                input.CompensationRetryDelaySeconds,
+                input.CompensationRetryableErrorCodes,
+                input.CompensationRetryStopOnNonRetryableError)
+            : null;
+        compensation.TimeoutPolicy = input.HasCompensationTimeoutPolicy
+            ? BuildTimeoutPolicy(
+                input.CompensationTimeoutSeconds,
+                input.CompensationTimeoutBehavior,
+                input.CompensationTimeoutFailErrorCode,
+                input.CompensationTimeoutWaitSeconds,
+                input.CompensationTimeoutAction,
+                input.CompensationTimeoutReconcileRetryStrategyType,
+                input.CompensationTimeoutReconcileRetries,
+                input.CompensationTimeoutReconcileDelaySeconds,
+                input.CompensationTimeoutReconcileRetryableErrorCodes,
+                input.CompensationTimeoutReconcileStopOnNonRetryableError)
+            : null;
+
+        return compensation;
     }
 
     private static ExecutionCondition BuildExecutionCondition(string expression)
@@ -691,6 +795,204 @@ public sealed class DetailsModel : PageModel
                     SemanticDiagnosticsJson = "{}"
                 }
             };
+
+    private void ValidateRetryPolicy(
+        string retriesField,
+        int retries,
+        string delayField,
+        double delaySeconds,
+        string retryableErrorCodesField,
+        string retryableErrorCodes)
+    {
+        if (retries < 0)
+        {
+            ModelState.AddModelError(retriesField, "Retries cannot be negative.");
+        }
+
+        if (delaySeconds < 0)
+        {
+            ModelState.AddModelError(delayField, "Delay cannot be negative.");
+        }
+
+        if (retries > 0 && !ParseStringList(retryableErrorCodes).Any())
+        {
+            ModelState.AddModelError(retryableErrorCodesField, "Capture at least one retryable error code.");
+        }
+    }
+
+    private void ValidateTimeoutPolicy(
+        string timeoutField,
+        double timeoutSeconds,
+        string timeoutBehavior,
+        string waitField,
+        double waitSeconds,
+        string reconcileRetriesField,
+        int reconcileRetries,
+        string reconcileDelayField,
+        double reconcileDelaySeconds,
+        string reconcileRetryableErrorCodesField,
+        string reconcileRetryableErrorCodes)
+    {
+        if (timeoutSeconds <= 0)
+        {
+            ModelState.AddModelError(timeoutField, "Timeout must be greater than zero.");
+        }
+
+        if (waitSeconds <= 0)
+        {
+            ModelState.AddModelError(waitField, "Wait time must be greater than zero.");
+        }
+
+        if (reconcileRetries < 0)
+        {
+            ModelState.AddModelError(reconcileRetriesField, "Reconcile retries cannot be negative.");
+        }
+
+        if (reconcileDelaySeconds < 0)
+        {
+            ModelState.AddModelError(reconcileDelayField, "Reconcile delay cannot be negative.");
+        }
+
+        if (ParseEnum(timeoutBehavior, TimeoutBehavior.Fail) == TimeoutBehavior.Reconcile &&
+            reconcileRetries > 0 &&
+            !ParseStringList(reconcileRetryableErrorCodes).Any())
+        {
+            ModelState.AddModelError(reconcileRetryableErrorCodesField, "Capture at least one reconcile retryable error code.");
+        }
+    }
+
+    private static RetryPolicy BuildRetryPolicy(
+        string strategyType,
+        int maxRetries,
+        double fixedDelaySeconds,
+        string retryableErrorCodes,
+        bool stopOnNonRetryableError)
+    {
+        var requestedStrategy = ParseEnum(strategyType, RetryStrategyType.Fixed);
+
+        return new RetryPolicy
+        {
+            MaxRetries = Math.Max(0, maxRetries),
+            StrategyType = requestedStrategy == RetryStrategyType.Fixed ? requestedStrategy : RetryStrategyType.Fixed,
+            Strategy = new FixedRetryStrategy
+            {
+                Delay = Duration.FromSeconds(Math.Max(0, fixedDelaySeconds))
+            },
+            RetryableErrorCodes = ParseStringList(retryableErrorCodes),
+            StopOnNonRetryableError = stopOnNonRetryableError
+        };
+    }
+
+    private static TimeoutPolicy BuildTimeoutPolicy(
+        double timeoutSeconds,
+        string timeoutBehavior,
+        string failErrorCode,
+        double waitSeconds,
+        string timeoutAction,
+        string reconcileRetryStrategyType,
+        int reconcileRetries,
+        double reconcileDelaySeconds,
+        string reconcileRetryableErrorCodes,
+        bool reconcileStopOnNonRetryableError)
+    {
+        var behavior = ParseEnum(timeoutBehavior, TimeoutBehavior.Fail);
+        var action = ParseEnum(timeoutAction, OrchestrationActionOnTimeout.Block);
+
+        return behavior switch
+        {
+            TimeoutBehavior.Wait => new TimeoutPolicy
+            {
+                Timeout = Duration.FromSeconds(Math.Max(1, timeoutSeconds)),
+                TimeoutBehavior = behavior,
+                TimeoutBehaviorPolicy = new WaitTimeoutBehaviorPolicy
+                {
+                    OrchestrationAction = action,
+                    WaitingTime = Duration.FromSeconds(Math.Max(1, waitSeconds))
+                }
+            },
+            TimeoutBehavior.Reconcile => new TimeoutPolicy
+            {
+                Timeout = Duration.FromSeconds(Math.Max(1, timeoutSeconds)),
+                TimeoutBehavior = behavior,
+                TimeoutBehaviorPolicy = new ReconcileTimeoutBehaviorPolicy
+                {
+                    OrchestrationAction = action,
+                    RetryPolicy = BuildRetryPolicy(
+                        reconcileRetryStrategyType,
+                        reconcileRetries,
+                        reconcileDelaySeconds,
+                        reconcileRetryableErrorCodes,
+                        reconcileStopOnNonRetryableError)
+                }
+            },
+            _ => new TimeoutPolicy
+            {
+                Timeout = Duration.FromSeconds(Math.Max(1, timeoutSeconds)),
+                TimeoutBehavior = TimeoutBehavior.Fail,
+                TimeoutBehaviorPolicy = new FailTimeoutBehaviorPolicy
+                {
+                    ErrorCode = string.IsNullOrWhiteSpace(failErrorCode) ? "TIMEOUT" : failErrorCode
+                }
+            }
+        };
+    }
+
+    private static TaskKind ResolveCompensationTaskKind(TaskKind requested)
+        => requested == TaskKind.Messaging ? requested : TaskKind.Messaging;
+
+    private static TaskDispatchType ResolveCompensationDispatchType(TaskKind kind, TaskDispatchType requested)
+    {
+        var allowed = kind == TaskKind.Messaging
+            ? new[] { TaskDispatchType.FireAndForget }
+            : new[] { TaskDispatchType.FireAndForget };
+
+        return allowed.Contains(requested) ? requested : allowed[0];
+    }
+
+    private static OnErrorPolicy ResolveCompensationOnErrorPolicy(OnErrorPolicy requested)
+        => requested == OnErrorPolicy.Continue ? OnErrorPolicy.Continue : OnErrorPolicy.Stop;
+
+    private static string ResolveTimeoutAction(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy switch
+        {
+            WaitTimeoutBehaviorPolicy wait => wait.OrchestrationAction.ToString(),
+            ReconcileTimeoutBehaviorPolicy reconcile => reconcile.OrchestrationAction.ToString(),
+            _ => OrchestrationActionOnTimeout.Block.ToString()
+        };
+
+    private static string ResolveTimeoutFailErrorCode(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is FailTimeoutBehaviorPolicy fail && !string.IsNullOrWhiteSpace(fail.ErrorCode)
+            ? fail.ErrorCode
+            : "TIMEOUT";
+
+    private static double ResolveTimeoutWaitSeconds(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is WaitTimeoutBehaviorPolicy wait
+            ? wait.WaitingTime.Value.TotalSeconds
+            : 15d;
+
+    private static string ResolveTimeoutReconcileRetryStrategyType(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicy reconcile
+            ? reconcile.RetryPolicy?.StrategyType.ToString() ?? RetryStrategyType.Fixed.ToString()
+            : RetryStrategyType.Fixed.ToString();
+
+    private static int ResolveTimeoutReconcileRetries(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicy reconcile
+            ? reconcile.RetryPolicy?.MaxRetries ?? 0
+            : 3;
+
+    private static double ResolveTimeoutReconcileDelaySeconds(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicy reconcile
+            ? (reconcile.RetryPolicy?.Strategy as FixedRetryStrategy)?.Delay.Value.TotalSeconds ?? 5d
+            : 5d;
+
+    private static string ResolveTimeoutReconcileRetryableErrorCodes(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicy reconcile
+            ? string.Join(',', reconcile.RetryPolicy?.RetryableErrorCodes ?? new List<string>())
+            : string.Empty;
+
+    private static bool ResolveTimeoutReconcileStopOnNonRetryableError(TimeoutPolicy timeoutPolicy)
+        => timeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicy reconcile &&
+           (reconcile.RetryPolicy?.StopOnNonRetryableError ?? false);
 
     private static SchemaBinding CreateSchemaBinding(
         string contractKey,
@@ -758,6 +1060,16 @@ public sealed class DetailsModel : PageModel
             : Id.New();
     }
 
+    private static List<string> ParseStringList(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? new List<string>()
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+    }
+
     public sealed class CreateStageInput
     {
         public string StageId { get; set; } = string.Empty;
@@ -811,6 +1123,15 @@ public sealed class DetailsModel : PageModel
 
         public bool HasCompensation { get; set; }
 
+        [Required]
+        public string CompensationKind { get; set; } = TaskKind.Messaging.ToString();
+
+        [Required]
+        public string CompensationDispatchType { get; set; } = TaskDispatchType.FireAndForget.ToString();
+
+        [Required]
+        public string CompensationOnErrorPolicy { get; set; } = OnErrorPolicy.Stop.ToString();
+
         [MaxLength(512)]
         public string CompensationMessagingTopic { get; set; } = string.Empty;
 
@@ -835,6 +1156,44 @@ public sealed class DetailsModel : PageModel
         public bool HasCompensationTransformation { get; set; }
 
         public string CompensationTransformationDsl { get; set; } = string.Empty;
+
+        public bool HasCompensationRetryPolicy { get; set; }
+
+        [Required]
+        public string CompensationRetryStrategyType { get; set; } = RetryStrategyType.Fixed.ToString();
+
+        public int CompensationRetryMaxRetries { get; set; } = 0;
+
+        public double CompensationRetryDelaySeconds { get; set; } = 1;
+
+        public string CompensationRetryableErrorCodes { get; set; } = string.Empty;
+
+        public bool CompensationRetryStopOnNonRetryableError { get; set; }
+
+        public bool HasCompensationTimeoutPolicy { get; set; }
+
+        public double CompensationTimeoutSeconds { get; set; } = 30;
+
+        [Required]
+        public string CompensationTimeoutBehavior { get; set; } = TimeoutBehavior.Fail.ToString();
+
+        public string CompensationTimeoutFailErrorCode { get; set; } = "TIMEOUT";
+
+        public double CompensationTimeoutWaitSeconds { get; set; } = 15;
+
+        [Required]
+        public string CompensationTimeoutAction { get; set; } = OrchestrationActionOnTimeout.Block.ToString();
+
+        [Required]
+        public string CompensationTimeoutReconcileRetryStrategyType { get; set; } = RetryStrategyType.Fixed.ToString();
+
+        public int CompensationTimeoutReconcileRetries { get; set; } = 3;
+
+        public double CompensationTimeoutReconcileDelaySeconds { get; set; } = 5;
+
+        public string CompensationTimeoutReconcileRetryableErrorCodes { get; set; } = string.Empty;
+
+        public bool CompensationTimeoutReconcileStopOnNonRetryableError { get; set; }
     }
 
     /// <summary>

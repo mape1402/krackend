@@ -222,5 +222,6 @@ public sealed class TaskRepository : ITaskRepository
             CompensationTaskKind = TaskKind.Messaging,
             Configuration = new MessagingTaskConfiguration { Topic = string.Empty },
             DispatchType = TaskDispatchType.FireAndForget,
+            OnErrorPolicy = OnErrorPolicy.Stop,
         };
 }

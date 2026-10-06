@@ -221,7 +221,7 @@
 </div>
 
 <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <form method="post" asp-page-handler="UpsertTrigger" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving trigger" data-busy-message="Design is validating and storing the trigger binding.">
                 <div class="modal-header">
@@ -233,113 +233,234 @@
                     <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
                     <input asp-for="TriggerInput.TriggerId" type="hidden" id="triggerModalTriggerId" />
 
-                    <div class="mb-2">
-                        <label asp-for="TriggerInput.Key" class="form-label">Key</label>
-                        <input asp-for="TriggerInput.Key" class="form-control" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="TriggerInput.TriggerType" class="form-label">Trigger type</label>
-                        <select asp-for="TriggerInput.TriggerType" class="form-select" asp-items="Model.TriggerTypes" id="triggerTypeSelector"></select>
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="TriggerInput.Description" class="form-label">Description</label>
-                        <textarea asp-for="TriggerInput.Description" class="form-control" rows="2"></textarea>
-                    </div>
+                    <ul class="nav nav-tabs mb-3" id="triggerTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="trigger-general-tab" data-bs-toggle="tab" data-bs-target="#trigger-general-pane" type="button" role="tab" aria-controls="trigger-general-pane" aria-selected="true">Trigger</button>
+                        </li>
+                        <li class="nav-item" role="presentation" id="trigger-compensation-tab-item">
+                            <button class="nav-link" id="trigger-compensation-tab" data-bs-toggle="tab" data-bs-target="#trigger-compensation-pane" type="button" role="tab" aria-controls="trigger-compensation-pane" aria-selected="false">Compensation task</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="triggerTabsContent">
+                        <div class="tab-pane fade show active" id="trigger-general-pane" role="tabpanel" aria-labelledby="trigger-general-tab" tabindex="0">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <label asp-for="TriggerInput.Key" class="form-label">Key</label>
+                                    <input asp-for="TriggerInput.Key" class="form-control" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label asp-for="TriggerInput.TriggerType" class="form-label">Trigger type</label>
+                                    <select asp-for="TriggerInput.TriggerType" class="form-select" asp-items="Model.TriggerTypes" id="triggerTypeSelector"></select>
+                                </div>
+                                <div class="col-md-5">
+                                    <label asp-for="TriggerInput.Description" class="form-label">Description</label>
+                                    <input asp-for="TriggerInput.Description" class="form-control" />
+                                </div>
+                            </div>
 
-                    <div class="trigger-config-block" data-trigger-type="Event">
-                        <hr />
-                        <h6 class="mb-2">Event channel</h6>
-                        <div class="row g-2">
-                            <div class="col-md-7">
-                                <label asp-for="TriggerInput.EventTopic" class="form-label">Topic</label>
-                                <input asp-for="TriggerInput.EventTopic" class="form-control" />
+                            <div class="trigger-config-block" data-trigger-type="Event">
+                                <hr />
+                                <h6 class="mb-2">Event channel</h6>
+                                <div class="row g-2">
+                                    <div class="col-md-7">
+                                        <label asp-for="TriggerInput.EventTopic" class="form-label">Topic</label>
+                                        <input asp-for="TriggerInput.EventTopic" class="form-control" />
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label asp-for="TriggerInput.EventVersion" class="form-label">Version</label>
+                                        <input asp-for="TriggerInput.EventVersion" class="form-control" data-orchestrator-version="true" />
+                                    </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <input asp-for="TriggerInput.HasEventSchemaValidation" type="hidden" />
+                                    <div class="col-md-6">
+                                        <label asp-for="TriggerInput.EventSchemaContractKey" class="form-label">Contract key</label>
+                                        <input asp-for="TriggerInput.EventSchemaContractKey"
+                                               class="form-control"
+                                               data-schema-contract-key="true"
+                                               data-schema-contract-kind="Event"
+                                               data-schema-version-target="TriggerInput_EventSchemaContractVersion" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label asp-for="TriggerInput.EventSchemaContractVersion" class="form-label">Contract version</label>
+                                        <input asp-for="TriggerInput.EventSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
+                                    </div>
+                                    <input asp-for="TriggerInput.EventSchemaRegistryProviderId" type="hidden" />
+                                    <input asp-for="TriggerInput.EventSchemaStrictMode" type="hidden" />
+                                    <input asp-for="TriggerInput.HasEventValidation" type="hidden" />
+                                    <input asp-for="TriggerInput.EventValidationErrorCode" type="hidden" />
+                                    <input asp-for="TriggerInput.EventValidationDsl" type="hidden" />
+                                </div>
                             </div>
-                            <div class="col-md-5">
-                                <label asp-for="TriggerInput.EventVersion" class="form-label">Version</label>
-                                <input asp-for="TriggerInput.EventVersion" class="form-control" data-orchestrator-version="true" />
-                            </div>
-                            <div class="col-12"><hr class="my-2" /></div>
-                            <div class="col-12">
-                                <h6 class="mb-2">Schema binding</h6>
-                            </div>
-                            <input type="hidden" name="TriggerInput.HasEventSchemaValidation" value="false" />
-                            <div class="col-md-6">
-                                <label asp-for="TriggerInput.EventSchemaContractKey" class="form-label">Contract key</label>
-                                <input asp-for="TriggerInput.EventSchemaContractKey"
-                                       class="form-control"
-                                       data-schema-contract-key="true"
-                                       data-schema-contract-kind="Event"
-                                       data-schema-version-target="TriggerInput_EventSchemaContractVersion" />
-                            </div>
-                            <div class="col-md-6">
-                                <label asp-for="TriggerInput.EventSchemaContractVersion" class="form-label">Contract version</label>
-                                <input asp-for="TriggerInput.EventSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
-                            </div>
-                            <input asp-for="TriggerInput.EventSchemaRegistryProviderId" type="hidden" />
-                            <input type="hidden" name="TriggerInput.EventSchemaStrictMode" value="false" />
-                            <input type="hidden" name="TriggerInput.HasEventValidation" value="false" />
-                            <input type="hidden" name="TriggerInput.EventValidationErrorCode" value="TriggerValidationFailed" />
-                            <input type="hidden" name="TriggerInput.EventValidationDsl" value="" />
-                        </div>
-                    </div>
 
-                    <hr />
-                    <div class="form-check form-switch mb-2">
-                        <input asp-for="TriggerInput.HasCompensation" class="form-check-input" id="hasTriggerCompensation" />
-                        <label asp-for="TriggerInput.HasCompensation" class="form-check-label">Enable trigger compensation</label>
-                    </div>
-                    <div class="row g-2" id="triggerCompensationSection">
-                        <div class="col-md-7">
-                            <label asp-for="TriggerInput.CompensationMessagingTopic" class="form-label">Compensation topic</label>
-                            <input asp-for="TriggerInput.CompensationMessagingTopic" class="form-control" />
-                        </div>
-                        <div class="col-md-5">
-                            <label asp-for="TriggerInput.CompensationMessagingVersion" class="form-label">Version</label>
-                            <input asp-for="TriggerInput.CompensationMessagingVersion" class="form-control" data-orchestrator-version="true" />
-                        </div>
-                        <div class="col-md-8">
-                            <label asp-for="TriggerInput.CompensationSchemaContractKey" class="form-label">Command key</label>
-                            <input asp-for="TriggerInput.CompensationSchemaContractKey"
-                                   class="form-control"
-                                   data-schema-contract-key="true"
-                                   data-schema-contract-kind="Command"
-                                   data-schema-version-target="TriggerInput_CompensationSchemaContractVersion" />
-                        </div>
-                        <div class="col-md-4">
-                            <label asp-for="TriggerInput.CompensationSchemaContractVersion" class="form-label">Command version</label>
-                            <input asp-for="TriggerInput.CompensationSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
-                        </div>
-                        <input asp-for="TriggerInput.CompensationSchemaRegistryProviderId" type="hidden" />
-                        <input type="hidden" name="TriggerInput.CompensationSchemaStrictMode" value="false" />
-                        <input type="hidden" name="TriggerInput.HasCompensationSchemaValidation" value="false" />
-                        <div class="col-12"><hr class="my-2" /></div>
-                        <div class="col-12">
-                            <div class="form-check form-switch">
-                                <input asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-input" id="hasTriggerCompensationExecutionCondition" />
-                                <label asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-label">Enable execution condition</label>
+                            <div id="triggerUnsupportedTypeWarning" class="alert alert-warning mt-3 d-none mb-0">
+                                Selected trigger type does not define specific channel fields yet.
                             </div>
-                        </div>
-                        <div class="col-12" id="triggerCompensationConditionSection">
-                            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="openTriggerCompensationConditionDesignerButton">Open ButterMorph condition</button>
-                            <label asp-for="TriggerInput.CompensationConditionDslExpression" class="form-label">Condition DSL expression</label>
-                            <input asp-for="TriggerInput.CompensationConditionDslExpression" class="form-control" />
-                        </div>
-                        <div class="col-12"><hr class="my-2" /></div>
-                        <div class="col-12">
-                            <div class="form-check form-switch">
-                                <input asp-for="TriggerInput.HasCompensationTransformation" class="form-check-input" id="hasTriggerCompensationTransformation" />
-                                <label asp-for="TriggerInput.HasCompensationTransformation" class="form-check-label">Enable transformation</label>
-                            </div>
-                        </div>
-                        <div class="col-12" id="triggerCompensationTransformationSection">
-                            <button type="button" class="btn btn-outline-secondary btn-sm mb-2" id="openTriggerCompensationTransformationDesignerButton">Open ButterMorph transformation</button>
-                            <label asp-for="TriggerInput.CompensationTransformationDsl" class="form-label">Transformation DSL</label>
-                            <textarea asp-for="TriggerInput.CompensationTransformationDsl" class="form-control" rows="3"></textarea>
-                        </div>
-                    </div>
 
-                    <div id="triggerUnsupportedTypeWarning" class="alert alert-warning mt-3 d-none mb-0">
-                        Selected trigger type does not define specific channel fields yet.
+                            <hr />
+                            <div class="form-check form-switch mb-0">
+                                <input asp-for="TriggerInput.HasCompensation" class="form-check-input" id="hasTriggerCompensation" />
+                                <label asp-for="TriggerInput.HasCompensation" class="form-check-label">Enable trigger compensation</label>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade" id="trigger-compensation-pane" role="tabpanel" aria-labelledby="trigger-compensation-tab" tabindex="0">
+                            <input asp-for="TriggerInput.CompensationConditionDslExpression" type="hidden" />
+                            <input asp-for="TriggerInput.CompensationTransformationDsl" type="hidden" />
+                            <div id="triggerCompensationSection">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationKind" class="form-label">Task type</label>
+                                        <select asp-for="TriggerInput.CompensationKind" class="form-select" asp-items="Model.CompensationTaskKinds" id="triggerCompensationKindSelector"></select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationDispatchType" class="form-label">Dispatch type</label>
+                                        <select asp-for="TriggerInput.CompensationDispatchType" class="form-select" asp-items="Model.CompensationDispatchTypes" id="triggerCompensationDispatchTypeSelector"></select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationOnErrorPolicy" class="form-label">On error policy</label>
+                                        <select asp-for="TriggerInput.CompensationOnErrorPolicy" class="form-select" asp-items="Model.CompensationOnErrorPolicies"></select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="TriggerInput.CompensationMessagingTopic" class="form-label">Topic</label>
+                                        <input asp-for="TriggerInput.CompensationMessagingTopic" class="form-control" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationMessagingVersion" class="form-label">Version</label>
+                                        <input asp-for="TriggerInput.CompensationMessagingVersion" class="form-control" data-orchestrator-version="true" />
+                                    </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label asp-for="TriggerInput.CompensationSchemaContractKey" class="form-label">Command key</label>
+                                        <input asp-for="TriggerInput.CompensationSchemaContractKey"
+                                               class="form-control"
+                                               data-schema-contract-key="true"
+                                               data-schema-contract-kind="Command"
+                                               data-schema-version-target="TriggerInput_CompensationSchemaContractVersion" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="TriggerInput.CompensationSchemaContractVersion" class="form-label">Command version</label>
+                                        <input asp-for="TriggerInput.CompensationSchemaContractVersion" class="form-control" data-orchestrator-version="true" />
+                                    </div>
+                                    <input asp-for="TriggerInput.CompensationSchemaRegistryProviderId" type="hidden" />
+                                    <input asp-for="TriggerInput.CompensationSchemaStrictMode" type="hidden" />
+                                    <input asp-for="TriggerInput.HasCompensationSchemaValidation" type="hidden" />
+
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-input" id="hasTriggerCompensationExecutionCondition" />
+                                            <label asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-label">Enable execution condition</label>
+                                        </div>
+                                        <div id="triggerCompensationConditionSection" class="mt-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="openTriggerCompensationConditionDesignerButton">Open ButterMorph condition</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationTransformation" class="form-check-input" id="hasTriggerCompensationTransformation" />
+                                            <label asp-for="TriggerInput.HasCompensationTransformation" class="form-check-label">Enable transformation</label>
+                                        </div>
+                                        <div id="triggerCompensationTransformationSection" class="mt-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="openTriggerCompensationTransformationDesignerButton">Open ButterMorph transformation</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-md-12">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationRetryPolicy" class="form-check-input" id="hasTriggerCompensationRetryPolicy" />
+                                            <label asp-for="TriggerInput.HasCompensationRetryPolicy" class="form-check-label">Enable retry policy</label>
+                                        </div>
+                                    </div>
+                                    <div id="triggerCompensationRetrySection" class="row g-2">
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationRetryStrategyType" class="form-label">Retry strategy</label>
+                                            <select asp-for="TriggerInput.CompensationRetryStrategyType" class="form-select" asp-items="Model.RetryStrategyTypes" id="triggerCompensationRetryStrategySelector"></select>
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-retry-strategy-block" data-trigger-comp-retry="Fixed">
+                                            <label asp-for="TriggerInput.CompensationRetryDelaySeconds" class="form-label">Retry delay (sec)</label>
+                                            <input asp-for="TriggerInput.CompensationRetryDelaySeconds" class="form-control" type="number" min="0" step="0.1" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationRetryMaxRetries" class="form-label">Retries</label>
+                                            <input asp-for="TriggerInput.CompensationRetryMaxRetries" class="form-control" type="number" min="0" />
+                                        </div>
+                                        <div class="col-md-12">
+                                            <label asp-for="TriggerInput.CompensationRetryableErrorCodes" class="form-label">Retry errors</label>
+                                            <input asp-for="TriggerInput.CompensationRetryableErrorCodes" type="hidden" id="triggerCompensationRetryErrorCodesHidden" />
+                                            <div class="od-chip-editor" data-chip-editor-for="triggerCompensationRetryErrorCodesHidden">
+                                                <div class="od-chip-list"></div>
+                                                <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-12 form-check mt-2 ms-2">
+                                            <input asp-for="TriggerInput.CompensationRetryStopOnNonRetryableError" class="form-check-input" />
+                                            <label asp-for="TriggerInput.CompensationRetryStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-md-12">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationTimeoutPolicy" class="form-check-input" id="hasTriggerCompensationTimeoutPolicy" />
+                                            <label asp-for="TriggerInput.HasCompensationTimeoutPolicy" class="form-check-label">Enable timeout policy</label>
+                                        </div>
+                                    </div>
+                                    <div id="triggerCompensationTimeoutSection" class="row g-2">
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationTimeoutSeconds" class="form-label">Timeout (sec)</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutSeconds" class="form-control" type="number" min="1" step="0.1" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationTimeoutBehavior" class="form-label">Timeout behavior</label>
+                                            <select asp-for="TriggerInput.CompensationTimeoutBehavior" class="form-select" asp-items="Model.TimeoutBehaviors" id="triggerCompensationTimeoutBehaviorSelector"></select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationTimeoutAction" class="form-label">Action on timeout</label>
+                                            <select asp-for="TriggerInput.CompensationTimeoutAction" class="form-select" asp-items="Model.TimeoutActions"></select>
+                                        </div>
+                                        <div class="col-md-6 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Fail">
+                                            <label asp-for="TriggerInput.CompensationTimeoutFailErrorCode" class="form-label">Fail error code</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutFailErrorCode" class="form-control" />
+                                        </div>
+                                        <div class="col-md-6 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Wait">
+                                            <label asp-for="TriggerInput.CompensationTimeoutWaitSeconds" class="form-label">Wait seconds</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutWaitSeconds" class="form-control" type="number" min="1" step="0.1" />
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileRetryStrategyType" class="form-label">Reconcile retry strategy</label>
+                                            <select asp-for="TriggerInput.CompensationTimeoutReconcileRetryStrategyType" class="form-select" asp-items="Model.RetryStrategyTypes" id="triggerCompensationTimeoutReconcileRetryStrategySelector"></select>
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileRetries" class="form-label">Reconcile retries</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileRetries" class="form-control" type="number" min="0" />
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-timeout-behavior-block trigger-compensation-timeout-reconcile-strategy-block" data-trigger-comp-timeout="Reconcile" data-trigger-comp-timeout-reconcile-retry="Fixed">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileDelaySeconds" class="form-label">Reconcile delay (sec)</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileDelaySeconds" class="form-control" type="number" min="0" step="0.1" />
+                                        </div>
+                                        <div class="col-md-12 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileRetryableErrorCodes" class="form-label">Reconcile retry errors</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileRetryableErrorCodes" type="hidden" id="triggerCompensationTimeoutReconcileRetryableErrorCodesHidden" />
+                                            <div class="od-chip-editor" data-chip-editor-for="triggerCompensationTimeoutReconcileRetryableErrorCodesHidden">
+                                                <div class="od-chip-list"></div>
+                                                <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-12 form-check mt-2 ms-2 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileStopOnNonRetryableError" class="form-check-input" />
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -689,6 +810,13 @@ window.addEventListener('message', event => {
     const triggerSubmitButton = document.getElementById('triggerModalSubmitButton');
     const triggerIdInput = document.getElementById('triggerModalTriggerId');
     const unsupportedWarning = document.getElementById('triggerUnsupportedTypeWarning');
+    const generalTabButton = document.getElementById('trigger-general-tab');
+    const compensationTabButton = document.getElementById('trigger-compensation-tab');
+    const compensationTabItem = document.getElementById('trigger-compensation-tab-item');
+    const compensationTabPane = document.getElementById('trigger-compensation-pane');
+    const compensationRetrySelector = document.getElementById('triggerCompensationRetryStrategySelector');
+    const compensationTimeoutSelector = document.getElementById('triggerCompensationTimeoutBehaviorSelector');
+    const compensationTimeoutReconcileRetrySelector = document.getElementById('triggerCompensationTimeoutReconcileRetryStrategySelector');
     const triggerForm = triggerModalElement?.querySelector('form');
     const canEdit = orchestrationVersionCanEdit;
     if (!triggerTypeSelector || !triggerModalElement || !triggerModalTitle || !triggerSubmitButton || !triggerIdInput) {
@@ -715,6 +843,9 @@ window.addEventListener('message', event => {
         EventValidationDsl: '',
         EventValidationErrorCode: 'TriggerValidationFailed',
         HasCompensation: false,
+        CompensationKind: 'Messaging',
+        CompensationDispatchType: 'FireAndForget',
+        CompensationOnErrorPolicy: 'Stop',
         CompensationMessagingTopic: '',
         CompensationMessagingVersion: '1.0.0',
         HasCompensationSchemaValidation: false,
@@ -726,6 +857,23 @@ window.addEventListener('message', event => {
         CompensationConditionDslExpression: 'true',
         HasCompensationTransformation: false,
         CompensationTransformationDsl: '',
+        HasCompensationRetryPolicy: false,
+        CompensationRetryStrategyType: 'Fixed',
+        CompensationRetryMaxRetries: 0,
+        CompensationRetryDelaySeconds: 1,
+        CompensationRetryableErrorCodes: '',
+        CompensationRetryStopOnNonRetryableError: false,
+        HasCompensationTimeoutPolicy: false,
+        CompensationTimeoutSeconds: 30,
+        CompensationTimeoutBehavior: 'Fail',
+        CompensationTimeoutFailErrorCode: 'TIMEOUT',
+        CompensationTimeoutWaitSeconds: 15,
+        CompensationTimeoutAction: 'Block',
+        CompensationTimeoutReconcileRetryStrategyType: 'Fixed',
+        CompensationTimeoutReconcileRetries: 3,
+        CompensationTimeoutReconcileDelaySeconds: 5,
+        CompensationTimeoutReconcileRetryableErrorCodes: '',
+        CompensationTimeoutReconcileStopOnNonRetryableError: false,
     };
     const payloadFieldAliases = {
         triggerId: 'TriggerId',
@@ -743,6 +891,9 @@ window.addEventListener('message', event => {
         eventValidationDsl: 'EventValidationDsl',
         eventValidationErrorCode: 'EventValidationErrorCode',
         hasCompensation: 'HasCompensation',
+        compensationKind: 'CompensationKind',
+        compensationDispatchType: 'CompensationDispatchType',
+        compensationOnErrorPolicy: 'CompensationOnErrorPolicy',
         compensationMessagingTopic: 'CompensationMessagingTopic',
         compensationMessagingVersion: 'CompensationMessagingVersion',
         hasCompensationSchemaValidation: 'HasCompensationSchemaValidation',
@@ -754,11 +905,37 @@ window.addEventListener('message', event => {
         compensationConditionDslExpression: 'CompensationConditionDslExpression',
         hasCompensationTransformation: 'HasCompensationTransformation',
         compensationTransformationDsl: 'CompensationTransformationDsl',
+        hasCompensationRetryPolicy: 'HasCompensationRetryPolicy',
+        compensationRetryStrategyType: 'CompensationRetryStrategyType',
+        compensationRetryMaxRetries: 'CompensationRetryMaxRetries',
+        compensationRetryDelaySeconds: 'CompensationRetryDelaySeconds',
+        compensationRetryableErrorCodes: 'CompensationRetryableErrorCodes',
+        compensationRetryStopOnNonRetryableError: 'CompensationRetryStopOnNonRetryableError',
+        hasCompensationTimeoutPolicy: 'HasCompensationTimeoutPolicy',
+        compensationTimeoutSeconds: 'CompensationTimeoutSeconds',
+        compensationTimeoutBehavior: 'CompensationTimeoutBehavior',
+        compensationTimeoutFailErrorCode: 'CompensationTimeoutFailErrorCode',
+        compensationTimeoutWaitSeconds: 'CompensationTimeoutWaitSeconds',
+        compensationTimeoutAction: 'CompensationTimeoutAction',
+        compensationTimeoutReconcileRetryStrategyType: 'CompensationTimeoutReconcileRetryStrategyType',
+        compensationTimeoutReconcileRetries: 'CompensationTimeoutReconcileRetries',
+        compensationTimeoutReconcileDelaySeconds: 'CompensationTimeoutReconcileDelaySeconds',
+        compensationTimeoutReconcileRetryableErrorCodes: 'CompensationTimeoutReconcileRetryableErrorCodes',
+        compensationTimeoutReconcileStopOnNonRetryableError: 'CompensationTimeoutReconcileStopOnNonRetryableError',
     };
     const fieldIdOverrides = {
         HasCompensation: 'hasTriggerCompensation',
+        CompensationKind: 'triggerCompensationKindSelector',
+        CompensationDispatchType: 'triggerCompensationDispatchTypeSelector',
         HasCompensationExecutionCondition: 'hasTriggerCompensationExecutionCondition',
         HasCompensationTransformation: 'hasTriggerCompensationTransformation',
+        HasCompensationRetryPolicy: 'hasTriggerCompensationRetryPolicy',
+        HasCompensationTimeoutPolicy: 'hasTriggerCompensationTimeoutPolicy',
+        CompensationRetryStrategyType: 'triggerCompensationRetryStrategySelector',
+        CompensationRetryableErrorCodes: 'triggerCompensationRetryErrorCodesHidden',
+        CompensationTimeoutBehavior: 'triggerCompensationTimeoutBehaviorSelector',
+        CompensationTimeoutReconcileRetryStrategyType: 'triggerCompensationTimeoutReconcileRetryStrategySelector',
+        CompensationTimeoutReconcileRetryableErrorCodes: 'triggerCompensationTimeoutReconcileRetryableErrorCodesHidden',
     };
 
     function setInputValue(propertyName, value) {
@@ -788,6 +965,14 @@ window.addEventListener('message', event => {
         triggerIdInput.value = payload?.triggerId || payload?.TriggerId || '';
         refreshTriggerType();
         refreshTriggerCompensation();
+
+        triggerModalElement.querySelectorAll('.od-chip-editor[data-chip-editor-for]').forEach(editor => {
+            const targetId = editor.getAttribute('data-chip-editor-for');
+            const hidden = targetId ? document.getElementById(targetId) : null;
+            if (hidden) {
+                hidden.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
     }
 
     function refreshTriggerType() {
@@ -813,9 +998,24 @@ window.addEventListener('message', event => {
         const conditionSection = document.getElementById('triggerCompensationConditionSection');
         const hasTransformation = document.getElementById('hasTriggerCompensationTransformation');
         const transformationSection = document.getElementById('triggerCompensationTransformationSection');
+        const hasRetry = document.getElementById('hasTriggerCompensationRetryPolicy');
+        const retrySection = document.getElementById('triggerCompensationRetrySection');
+        const hasTimeout = document.getElementById('hasTriggerCompensationTimeoutPolicy');
+        const timeoutSection = document.getElementById('triggerCompensationTimeoutSection');
+        const compensationEnabled = !!hasCompensation?.checked;
 
-        if (section && hasCompensation) {
-            section.classList.toggle('d-none', !hasCompensation.checked);
+        if (section) {
+            section.classList.toggle('d-none', !compensationEnabled);
+        }
+
+        if (compensationTabItem && compensationTabButton) {
+            compensationTabButton.disabled = !compensationEnabled;
+            compensationTabButton.setAttribute('aria-disabled', (!compensationEnabled).toString());
+            compensationTabItem.classList.toggle('d-none', !compensationEnabled);
+        }
+
+        if (!compensationEnabled && compensationTabPane?.classList.contains('active') && generalTabButton && window.bootstrap?.Tab) {
+            window.bootstrap.Tab.getOrCreateInstance(generalTabButton).show();
         }
 
         if (conditionSection && hasCondition) {
@@ -825,6 +1025,150 @@ window.addEventListener('message', event => {
         if (transformationSection && hasTransformation) {
             transformationSection.classList.toggle('d-none', !hasTransformation.checked);
         }
+
+        if (retrySection && hasRetry) {
+            retrySection.classList.toggle('d-none', !hasRetry.checked);
+        }
+
+        if (timeoutSection && hasTimeout) {
+            timeoutSection.classList.toggle('d-none', !hasTimeout.checked);
+        }
+
+        refreshTriggerCompensationRetryFields();
+        refreshTriggerCompensationTimeout();
+    }
+
+    function toggleBySelector(selector, blockSelector, attributeName) {
+        if (!selector) {
+            return;
+        }
+
+        const selected = selector.value;
+        document.querySelectorAll(blockSelector).forEach(element => {
+            element.classList.toggle('d-none', element.getAttribute(attributeName) !== selected);
+        });
+    }
+
+    function refreshTriggerCompensationRetryFields() {
+        toggleBySelector(compensationRetrySelector, '.trigger-compensation-retry-strategy-block', 'data-trigger-comp-retry');
+    }
+
+    function refreshTriggerCompensationTimeout() {
+        toggleBySelector(compensationTimeoutSelector, '.trigger-compensation-timeout-behavior-block', 'data-trigger-comp-timeout');
+        refreshTriggerCompensationTimeoutReconcileRetryFields();
+    }
+
+    function refreshTriggerCompensationTimeoutReconcileRetryFields() {
+        toggleBySelector(
+            compensationTimeoutReconcileRetrySelector,
+            '.trigger-compensation-timeout-reconcile-strategy-block',
+            'data-trigger-comp-timeout-reconcile-retry');
+    }
+
+    function initializeTriggerChipEditors() {
+        triggerModalElement.querySelectorAll('.od-chip-editor[data-chip-editor-for]').forEach(editor => {
+            const targetId = editor.getAttribute('data-chip-editor-for');
+            const hiddenInput = targetId ? document.getElementById(targetId) : null;
+            const list = editor.querySelector('.od-chip-list');
+            const input = editor.querySelector('.od-chip-input');
+            if (!hiddenInput || !list || !input) {
+                return;
+            }
+
+            const values = new Set();
+
+            function loadFromHidden() {
+                values.clear();
+                (hiddenInput.value || '')
+                    .split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0)
+                    .forEach(x => values.add(x));
+            }
+
+            function syncHidden() {
+                hiddenInput.value = Array.from(values).join(',');
+            }
+
+            function render() {
+                list.innerHTML = '';
+
+                values.forEach(value => {
+                    const chip = document.createElement('span');
+                    chip.className = 'od-input-chip';
+
+                    const label = document.createElement('span');
+                    label.textContent = value;
+                    chip.appendChild(label);
+
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'od-chip-remove';
+                    remove.setAttribute('aria-label', `Remove ${value}`);
+                    remove.textContent = '×';
+                    remove.disabled = !canEdit;
+                    remove.classList.toggle('d-none', !canEdit);
+                    remove.addEventListener('click', () => {
+                        if (!canEdit) {
+                            return;
+                        }
+
+                        values.delete(value);
+                        syncHidden();
+                        render();
+                    });
+
+                    chip.appendChild(remove);
+                    list.appendChild(chip);
+                });
+            }
+
+            function addFromInput() {
+                const pieces = (input.value || '')
+                    .split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0);
+
+                if (pieces.length === 0) {
+                    input.value = '';
+                    return;
+                }
+
+                pieces.forEach(piece => values.add(piece));
+                input.value = '';
+                syncHidden();
+                render();
+            }
+
+            input.addEventListener('keydown', event => {
+                if (!canEdit) {
+                    event.preventDefault();
+                    return;
+                }
+
+                if (event.key === 'Enter' || event.key === ',') {
+                    event.preventDefault();
+                    addFromInput();
+                }
+            });
+
+            input.addEventListener('blur', () => {
+                if (canEdit) {
+                    addFromInput();
+                }
+            });
+
+            hiddenInput.addEventListener('change', () => {
+                loadFromHidden();
+                render();
+            });
+
+            loadFromHidden();
+            syncHidden();
+            render();
+            input.readOnly = !canEdit;
+            input.disabled = !canEdit;
+        });
     }
 
     function notifyMissingTrigger() {
@@ -876,6 +1220,11 @@ window.addEventListener('message', event => {
     document.getElementById('hasTriggerCompensation')?.addEventListener('change', refreshTriggerCompensation);
     document.getElementById('hasTriggerCompensationExecutionCondition')?.addEventListener('change', refreshTriggerCompensation);
     document.getElementById('hasTriggerCompensationTransformation')?.addEventListener('change', refreshTriggerCompensation);
+    document.getElementById('hasTriggerCompensationRetryPolicy')?.addEventListener('change', refreshTriggerCompensation);
+    document.getElementById('hasTriggerCompensationTimeoutPolicy')?.addEventListener('change', refreshTriggerCompensation);
+    compensationRetrySelector?.addEventListener('change', refreshTriggerCompensationRetryFields);
+    compensationTimeoutSelector?.addEventListener('change', refreshTriggerCompensationTimeout);
+    compensationTimeoutReconcileRetrySelector?.addEventListener('change', refreshTriggerCompensationTimeoutReconcileRetryFields);
     document.getElementById('openTriggerCompensationConditionDesignerButton')?.addEventListener('click', () => openTriggerButterMorph('condition'));
     document.getElementById('openTriggerCompensationTransformationDesignerButton')?.addEventListener('click', () => openTriggerButterMorph('transformation'));
 
@@ -917,6 +1266,7 @@ window.addEventListener('message', event => {
 
     refreshTriggerType();
     refreshTriggerCompensation();
+    initializeTriggerChipEditors();
 })();
 
 (() => {

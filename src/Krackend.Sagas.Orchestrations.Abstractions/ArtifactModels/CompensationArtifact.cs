@@ -12,4 +12,5 @@ public sealed record CompensationArtifact(
     ITaskConfigurationArtifact Configuration,
     RetryPolicyArtifact RetryPolicy,
     TimeoutPolicyArtifact TimeoutPolicy,
-    TaskDispatchType DispatchType);
+    TaskDispatchType DispatchType,
+    OnErrorPolicy OnErrorPolicy = OnErrorPolicy.Stop);

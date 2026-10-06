@@ -538,13 +538,17 @@
                                 Compensation belongs to this forward task after it completes. It runs later only when a downstream failure starts compensation.
                             </div>
                             <div class="row g-2" id="compensationSection">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label asp-for="NewTask.CompensationKind" class="form-label">Compensation task type</label>
                                     <select asp-for="NewTask.CompensationKind" class="form-select" asp-items="Model.TaskKinds" id="compensationKindSelector"></select>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label asp-for="NewTask.CompensationDispatchType" class="form-label">Dispatch type</label>
                                     <select asp-for="NewTask.CompensationDispatchType" class="form-select" asp-items="Model.CompensationDispatchTypes" id="compensationDispatchTypeSelector"></select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label asp-for="NewTask.CompensationOnErrorPolicy" class="form-label">On error policy</label>
+                                    <select asp-for="NewTask.CompensationOnErrorPolicy" class="form-select" asp-items="Model.CompensationOnErrorPolicies"></select>
                                 </div>
                                 <div class="col-md-12">
                                     <h6 class="mb-2 mt-1">Compensation task configuration</h6>
@@ -1576,6 +1580,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         CompensationMessagingSchemaStrictMode: false,
         CompensationPluginId: '',
         CompensationDispatchType: 'FireAndForget',
+        CompensationOnErrorPolicy: 'Stop',
         CompensationConditionEngine: 'DSL',
         CompensationConditionDslExpression: 'true',
         CompensationTransformationEngine: 'DSL',

@@ -93,6 +93,61 @@ public sealed class CompensateInstanceDecisionHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsyncContinuesCompensationWhenOnErrorPolicyAllowsContinue()
+    {
+        var fixture = new CompensationFixture();
+        fixture.AdapterRegistry.Adapter = new RecordingTaskRuntimeAdapter();
+        fixture.TransformationExecutor
+            .TransformAsync(Arg.Any<OrchestrationTransformationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(OrchestrationTransformationResult.Failure(
+                "TransformFailed",
+                "Transform failed.",
+                new Dictionary<string, JsonNode>())));
+        var instance = CreateInstance();
+        var stage = StageExecution(instance.Id);
+        var failedCompensationTask = CompletedTask(
+            instance.Id,
+            stage.Id,
+            "task-two",
+            DateTime.UtcNow.AddMinutes(-1));
+        var nextCompensationTask = CompletedTask(
+            instance.Id,
+            stage.Id,
+            "task-one",
+            DateTime.UtcNow.AddMinutes(-2));
+
+        fixture.Arrange(instance, [nextCompensationTask, failedCompensationTask], [stage], CreateResolvedArtifact(
+            instance.RuntimeOrchestrationArtifactId,
+            Stage(
+                "stage-one",
+                MessagingTask("task-one") with
+                {
+                    Compensation = Compensation("commands.undo.one")
+                },
+                MessagingTask("task-two") with
+                {
+                    Compensation = Compensation(
+                        "commands.undo.two",
+                        new TransformationArtifact(EngineType.DSL, null!) { IsEnabled = true },
+                        OnErrorPolicy.Continue)
+                })));
+
+        await fixture.Handler.HandleAsync(new CompensateInstanceDecision(
+            instance.Id,
+            instance.RuntimeOrchestrationArtifactId.ToString(),
+            """{"value":"fallback"}"""));
+
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, instance.Status);
+        Assert.False(instance.Metadata.ContainsKey("Compensation.TerminalFailure"));
+        Assert.Contains(fixture.CreatedCompensations, compensation => compensation.Status == "Failed");
+        Assert.Contains(fixture.CreatedCompensations, compensation => compensation.Status == "Completed");
+        Assert.Single(fixture.RemoteCommands);
+        Assert.Contains(fixture.Transitions, transition => transition.TransitionType == "CompensationTransformationFailed");
+        Assert.Contains(fixture.Transitions, transition => transition.TransitionType == "CompensationCompleted");
+        Assert.Contains(fixture.Transitions, transition => transition.TransitionType == "InstanceCompensated");
+    }
+
+    [Fact]
     public async Task HandleAsyncFallsBackToKindWhenAdapterCannotResolveCompensationDestination()
     {
         var fixture = new CompensationFixture();
@@ -155,7 +210,7 @@ public sealed class CompensateInstanceDecisionHandlerTests
             new EventTriggerChannelArtifact(null!, "orders.created", new SemanticVersion(1, 0, 0)),
             true,
             null!,
-            Compensation("commands.undo"));
+            Compensation("commands.undo", onErrorPolicy: OnErrorPolicy.Continue));
         var metadata = new Dictionary<string, JsonNode>();
 
         var sagaId = InvokePrivateStatic<string>("GetSagaId", instance);
@@ -174,6 +229,7 @@ public sealed class CompensateInstanceDecisionHandlerTests
         Assert.Equal(instance.Id.ToString(), sagaId);
         Assert.NotNull(task);
         Assert.Equal("trigger.orders.created", task!.Name);
+        Assert.Equal(OnErrorPolicy.Continue, task.OnErrorPolicy);
         Assert.True(metadata.ContainsKey("Transformation.nullable"));
         Assert.Null(metadata["Transformation.nullable"]);
         Assert.Equal("$.customer", metadata["Transformation.path"]!.GetValue<string>());
@@ -210,7 +266,11 @@ public sealed class CompensateInstanceDecisionHandlerTests
             CompletedOnUtc = DateTime.UtcNow.AddMinutes(-2)
         };
 
-    private static TaskExecution CompletedTask(Id instanceId, Id stageExecutionId, string taskKey)
+    private static TaskExecution CompletedTask(
+        Id instanceId,
+        Id stageExecutionId,
+        string taskKey,
+        DateTime? completedOnUtc = null)
         => new()
         {
             Id = Id.New(),
@@ -219,7 +279,7 @@ public sealed class CompensateInstanceDecisionHandlerTests
             TaskKey = taskKey,
             TaskKind = TaskKind.Messaging,
             Status = TaskExecutionStatus.Completed,
-            CompletedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            CompletedOnUtc = completedOnUtc ?? DateTime.UtcNow.AddMinutes(-1),
             LastAttemptNumber = 1,
             CorrelationId = "task-correlation"
         };
@@ -287,7 +347,8 @@ public sealed class CompensateInstanceDecisionHandlerTests
 
     private static CompensationArtifact Compensation(
         string topic,
-        TransformationArtifact? transformation = null)
+        TransformationArtifact? transformation = null,
+        OnErrorPolicy onErrorPolicy = OnErrorPolicy.Stop)
         => new(
             TaskKind.Messaging,
             transformation,
@@ -295,7 +356,8 @@ public sealed class CompensateInstanceDecisionHandlerTests
             MessagingConfiguration(topic),
             null!,
             null!,
-            TaskDispatchType.FireAndForget);
+            TaskDispatchType.FireAndForget,
+            onErrorPolicy);
 
     private static MessagingTaskConfigurationArtifact MessagingConfiguration(string topic)
         => new(topic, new SemanticVersion(1, 0, 0), null!);
