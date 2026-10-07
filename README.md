@@ -5,6 +5,8 @@ Modular backend building blocks for .NET services.
 [![Build](https://github.com/mape1402/krackend/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/build-and-release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+![Krackend orchestration banner](assets/krackend-readme-hero.png)
+
 ## Packages
 
 Event sourcing packages:
