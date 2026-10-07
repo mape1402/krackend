@@ -25,6 +25,15 @@ public static class OrchestrationServiceBridgeExtensions
         => bridge.Attach<TRequest>(pipeline => pipeline.UseOrchestration(topic, version));
 
     /// <summary>
+    /// Publishes a trigger event.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest> EmitEvent<TRequest>(
+        this IServiceBridge<IMediator> bridge,
+        string topic,
+        string version = "1.0.0")
+        => bridge.Attach<TRequest>(pipeline => pipeline.EmitEvent(topic, version));
+
+    /// <summary>
     /// Responds to the orchestration backchannel using a transformed request payload.
     /// </summary>
     public static IServiceBridge<IMediator, TRequest> UseOrchestration<TRequest>(
@@ -43,12 +52,30 @@ public static class OrchestrationServiceBridgeExtensions
         => bridge.Attach<TRequest>(pipeline => pipeline.UseOrchestration(transform, topic, version));
 
     /// <summary>
+    /// Publishes a transformed trigger event.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest> EmitEvent<TRequest>(
+        this IServiceBridge<IMediator> bridge,
+        Func<TRequest, object> transform,
+        string topic,
+        string version = "1.0.0")
+        => bridge.Attach<TRequest>(pipeline => pipeline.EmitEvent(transform, topic, version));
+
+    /// <summary>
     /// Publishes a trigger event selected by routing when metadata is not present.
     /// </summary>
     public static IServiceBridge<IMediator, TRequest> UseOrchestration<TRequest>(
         this IServiceBridge<IMediator> bridge,
         Action<OrchestrationTriggerRouteBuilder<TRequest>> routing)
         => bridge.Attach<TRequest>(pipeline => pipeline.UseOrchestration(routing));
+
+    /// <summary>
+    /// Publishes a trigger event selected by routing.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest> EmitEvent<TRequest>(
+        this IServiceBridge<IMediator> bridge,
+        Action<OrchestrationTriggerRouteBuilder<TRequest>> routing)
+        => bridge.Attach<TRequest>(pipeline => pipeline.EmitEvent(routing));
 
     /// <summary>
     /// Responds to the orchestration backchannel when metadata is present.
@@ -65,6 +92,15 @@ public static class OrchestrationServiceBridgeExtensions
         string topic,
         string version = "1.0.0")
         => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.UseOrchestration(topic, version));
+
+    /// <summary>
+    /// Publishes a trigger event.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest, TResponse> EmitEvent<TRequest, TResponse>(
+        this IServiceBridge<IMediator> bridge,
+        string topic,
+        string version = "1.0.0")
+        => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.EmitEvent(topic, version));
 
     /// <summary>
     /// Responds to the orchestration backchannel using a transformed response payload.
@@ -85,6 +121,16 @@ public static class OrchestrationServiceBridgeExtensions
         => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.UseOrchestration(transform, topic, version));
 
     /// <summary>
+    /// Publishes a transformed trigger event.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest, TResponse> EmitEvent<TRequest, TResponse>(
+        this IServiceBridge<IMediator> bridge,
+        Func<TResponse, object> transform,
+        string topic,
+        string version = "1.0.0")
+        => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.EmitEvent(transform, topic, version));
+
+    /// <summary>
     /// Responds to the orchestration backchannel using a transformed request and response payload.
     /// </summary>
     public static IServiceBridge<IMediator, TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
@@ -103,10 +149,28 @@ public static class OrchestrationServiceBridgeExtensions
         => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.UseOrchestration(transform, topic, version));
 
     /// <summary>
+    /// Publishes a transformed trigger event.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest, TResponse> EmitEvent<TRequest, TResponse>(
+        this IServiceBridge<IMediator> bridge,
+        Func<TRequest, TResponse, object> transform,
+        string topic,
+        string version = "1.0.0")
+        => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.EmitEvent(transform, topic, version));
+
+    /// <summary>
     /// Publishes a trigger event selected by routing when metadata is not present.
     /// </summary>
     public static IServiceBridge<IMediator, TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
         this IServiceBridge<IMediator> bridge,
         Action<OrchestrationTriggerRouteBuilder<TRequest, TResponse>> routing)
         => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.UseOrchestration(routing));
+
+    /// <summary>
+    /// Publishes a trigger event selected by routing.
+    /// </summary>
+    public static IServiceBridge<IMediator, TRequest, TResponse> EmitEvent<TRequest, TResponse>(
+        this IServiceBridge<IMediator> bridge,
+        Action<OrchestrationTriggerRouteBuilder<TRequest, TResponse>> routing)
+        => bridge.Attach<TRequest, TResponse>(pipeline => pipeline.EmitEvent(routing));
 }

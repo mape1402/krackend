@@ -22,7 +22,7 @@ public static class OrchestrationPipelineBuilderExtensions
     /// </summary>
     public static IPipelineBuilder<TRequest> UseOrchestration<TRequest>(
         this IPipelineBuilder<TRequest> builder)
-        => builder.UseOrchestration<TRequest>(static request => request);
+        => AttachRequestOrchestration(builder, static request => request, null, "1.0.0");
 
     /// <summary>
     /// Publishes a trigger event when metadata is not present.
@@ -31,7 +31,16 @@ public static class OrchestrationPipelineBuilderExtensions
         this IPipelineBuilder<TRequest> builder,
         string topic,
         string version = "1.0.0")
-        => builder.UseOrchestration<TRequest>(static request => request, topic, version);
+        => AttachRequestOrchestration(builder, static request => request, topic, version);
+
+    /// <summary>
+    /// Publishes a trigger event.
+    /// </summary>
+    public static IPipelineBuilder<TRequest> EmitEvent<TRequest>(
+        this IPipelineBuilder<TRequest> builder,
+        string topic,
+        string version = "1.0.0")
+        => AttachRequestOrchestration(builder, static request => request, topic, version);
 
     /// <summary>
     /// Responds to the orchestration backchannel using a transformed request payload.
@@ -39,7 +48,7 @@ public static class OrchestrationPipelineBuilderExtensions
     public static IPipelineBuilder<TRequest> UseOrchestration<TRequest>(
         this IPipelineBuilder<TRequest> builder,
         Func<TRequest, object> transform)
-        => builder.UseOrchestration(transform, null, "1.0.0");
+        => AttachRequestOrchestration(builder, transform, null, "1.0.0");
 
     /// <summary>
     /// Publishes a transformed trigger event when metadata is not present.
@@ -49,6 +58,23 @@ public static class OrchestrationPipelineBuilderExtensions
         Func<TRequest, object> transform,
         string topic,
         string version = "1.0.0")
+        => AttachRequestOrchestration(builder, transform, topic, version);
+
+    /// <summary>
+    /// Publishes a transformed trigger event.
+    /// </summary>
+    public static IPipelineBuilder<TRequest> EmitEvent<TRequest>(
+        this IPipelineBuilder<TRequest> builder,
+        Func<TRequest, object> transform,
+        string topic,
+        string version = "1.0.0")
+        => AttachRequestOrchestration(builder, transform, topic, version);
+
+    private static IPipelineBuilder<TRequest> AttachRequestOrchestration<TRequest>(
+        IPipelineBuilder<TRequest> builder,
+        Func<TRequest, object> transform,
+        string topic,
+        string version)
     {
         if (builder is null)
         {
@@ -139,11 +165,33 @@ public static class OrchestrationPipelineBuilderExtensions
 
         var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest>();
         routing(routeBuilder);
-        return builder.UseOrchestration(routeBuilder);
+        return AttachRequestRouting(builder, routeBuilder);
     }
 
-    private static IPipelineBuilder<TRequest> UseOrchestration<TRequest>(
+    /// <summary>
+    /// Publishes a trigger event selected by routing.
+    /// </summary>
+    public static IPipelineBuilder<TRequest> EmitEvent<TRequest>(
         this IPipelineBuilder<TRequest> builder,
+        Action<OrchestrationTriggerRouteBuilder<TRequest>> routing)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (routing is null)
+        {
+            throw new ArgumentNullException(nameof(routing));
+        }
+
+        var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest>();
+        routing(routeBuilder);
+        return AttachRequestRouting(builder, routeBuilder);
+    }
+
+    private static IPipelineBuilder<TRequest> AttachRequestRouting<TRequest>(
+        IPipelineBuilder<TRequest> builder,
         OrchestrationTriggerRouteBuilder<TRequest> routing)
     {
         builder.OnPreProcess(preProcess =>
@@ -216,7 +264,12 @@ public static class OrchestrationPipelineBuilderExtensions
     /// </summary>
     public static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
         this IPipelineBuilder<TRequest, TResponse> builder)
-        => builder.UseOrchestration<TRequest, TResponse>(static response => response);
+        => AttachResponseOrchestration<TRequest, TResponse, Func<TResponse, object>>(
+            builder,
+            static (_, response, transformer) => transformer(response),
+            static response => response,
+            null,
+            "1.0.0");
 
     /// <summary>
     /// Publishes a trigger event when metadata is not present.
@@ -225,7 +278,26 @@ public static class OrchestrationPipelineBuilderExtensions
         this IPipelineBuilder<TRequest, TResponse> builder,
         string topic,
         string version = "1.0.0")
-        => builder.UseOrchestration<TRequest, TResponse>(static response => response, topic, version);
+        => AttachResponseOrchestration<TRequest, TResponse, Func<TResponse, object>>(
+            builder,
+            static (_, response, transformer) => transformer(response),
+            static response => response,
+            topic,
+            version);
+
+    /// <summary>
+    /// Publishes a trigger event.
+    /// </summary>
+    public static IPipelineBuilder<TRequest, TResponse> EmitEvent<TRequest, TResponse>(
+        this IPipelineBuilder<TRequest, TResponse> builder,
+        string topic,
+        string version = "1.0.0")
+        => AttachResponseOrchestration<TRequest, TResponse, Func<TResponse, object>>(
+            builder,
+            static (_, response, transformer) => transformer(response),
+            static response => response,
+            topic,
+            version);
 
     /// <summary>
     /// Responds to the orchestration backchannel using a transformed response payload.
@@ -233,7 +305,12 @@ public static class OrchestrationPipelineBuilderExtensions
     public static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
         this IPipelineBuilder<TRequest, TResponse> builder,
         Func<TResponse, object> transform)
-        => builder.UseOrchestration(static (_, response, transformer) => transformer(response), transform, null, "1.0.0");
+        => AttachResponseOrchestration(
+            builder,
+            static (_, response, transformer) => transformer(response),
+            transform,
+            null,
+            "1.0.0");
 
     /// <summary>
     /// Publishes a transformed trigger event when metadata is not present.
@@ -243,7 +320,27 @@ public static class OrchestrationPipelineBuilderExtensions
         Func<TResponse, object> transform,
         string topic,
         string version = "1.0.0")
-        => builder.UseOrchestration(static (_, response, transformer) => transformer(response), transform, topic, version);
+        => AttachResponseOrchestration(
+            builder,
+            static (_, response, transformer) => transformer(response),
+            transform,
+            topic,
+            version);
+
+    /// <summary>
+    /// Publishes a transformed trigger event.
+    /// </summary>
+    public static IPipelineBuilder<TRequest, TResponse> EmitEvent<TRequest, TResponse>(
+        this IPipelineBuilder<TRequest, TResponse> builder,
+        Func<TResponse, object> transform,
+        string topic,
+        string version = "1.0.0")
+        => AttachResponseOrchestration(
+            builder,
+            static (_, response, transformer) => transformer(response),
+            transform,
+            topic,
+            version);
 
     /// <summary>
     /// Responds to the orchestration backchannel using a transformed request and response payload.
@@ -251,7 +348,12 @@ public static class OrchestrationPipelineBuilderExtensions
     public static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
         this IPipelineBuilder<TRequest, TResponse> builder,
         Func<TRequest, TResponse, object> transform)
-        => builder.UseOrchestration(transform, null, "1.0.0");
+        => AttachResponseOrchestration<TRequest, TResponse, Func<TRequest, TResponse, object>>(
+            builder,
+            static (request, response, transformer) => transformer(request, response),
+            transform,
+            null,
+            "1.0.0");
 
     /// <summary>
     /// Publishes a transformed trigger event when metadata is not present.
@@ -261,14 +363,30 @@ public static class OrchestrationPipelineBuilderExtensions
         Func<TRequest, TResponse, object> transform,
         string topic,
         string version = "1.0.0")
-        => builder.UseOrchestration<TRequest, TResponse, Func<TRequest, TResponse, object>>(
+        => AttachResponseOrchestration<TRequest, TResponse, Func<TRequest, TResponse, object>>(
+            builder,
             static (request, response, transformer) => transformer(request, response),
             transform,
             topic,
             version);
 
-    private static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse, TTransform>(
+    /// <summary>
+    /// Publishes a transformed trigger event.
+    /// </summary>
+    public static IPipelineBuilder<TRequest, TResponse> EmitEvent<TRequest, TResponse>(
         this IPipelineBuilder<TRequest, TResponse> builder,
+        Func<TRequest, TResponse, object> transform,
+        string topic,
+        string version = "1.0.0")
+        => AttachResponseOrchestration<TRequest, TResponse, Func<TRequest, TResponse, object>>(
+            builder,
+            static (request, response, transformer) => transformer(request, response),
+            transform,
+            topic,
+            version);
+
+    private static IPipelineBuilder<TRequest, TResponse> AttachResponseOrchestration<TRequest, TResponse, TTransform>(
+        IPipelineBuilder<TRequest, TResponse> builder,
         Func<TRequest, TResponse, TTransform, object> transform,
         TTransform transformer,
         string topic,
@@ -368,11 +486,33 @@ public static class OrchestrationPipelineBuilderExtensions
 
         var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest, TResponse>();
         routing(routeBuilder);
-        return builder.UseOrchestration(routeBuilder);
+        return AttachResponseRouting(builder, routeBuilder);
     }
 
-    private static IPipelineBuilder<TRequest, TResponse> UseOrchestration<TRequest, TResponse>(
+    /// <summary>
+    /// Publishes a trigger event selected by routing.
+    /// </summary>
+    public static IPipelineBuilder<TRequest, TResponse> EmitEvent<TRequest, TResponse>(
         this IPipelineBuilder<TRequest, TResponse> builder,
+        Action<OrchestrationTriggerRouteBuilder<TRequest, TResponse>> routing)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (routing is null)
+        {
+            throw new ArgumentNullException(nameof(routing));
+        }
+
+        var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest, TResponse>();
+        routing(routeBuilder);
+        return AttachResponseRouting(builder, routeBuilder);
+    }
+
+    private static IPipelineBuilder<TRequest, TResponse> AttachResponseRouting<TRequest, TResponse>(
+        IPipelineBuilder<TRequest, TResponse> builder,
         OrchestrationTriggerRouteBuilder<TRequest, TResponse> routing)
     {
         builder.OnPreProcess(preProcess =>

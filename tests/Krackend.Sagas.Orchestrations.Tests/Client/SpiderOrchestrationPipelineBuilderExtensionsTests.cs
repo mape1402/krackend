@@ -29,6 +29,9 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(builder, builder.UseOrchestration("events.sales.created", " "));
         Assert.Same(builder, builder.UseOrchestration(static request => new { request.Id }));
         Assert.Same(builder, builder.UseOrchestration(routes => routes.When(static _ => true, "events.sales.created")));
+        Assert.Same(builder, builder.EmitEvent("events.sales.created", " "));
+        Assert.Same(builder, builder.EmitEvent(static request => new { request.Id }, "events.sales.created"));
+        Assert.Same(builder, builder.EmitEvent(routes => routes.When(static _ => true, "events.sales.created")));
     }
 
     [Fact]
@@ -39,6 +42,21 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
 
         Assert.Throws<ArgumentNullException>(() => nullBuilder.UseOrchestration(routes => routes.When(static _ => true, "events.sales.created")));
         Assert.Throws<ArgumentNullException>(() => builder.UseOrchestration((Action<OrchestrationTriggerRouteBuilder<PipelineRequest>>)null!));
+        Assert.Throws<ArgumentNullException>(() => nullBuilder.EmitEvent(routes => routes.When(static _ => true, "events.sales.created")));
+        Assert.Throws<ArgumentNullException>(() => builder.EmitEvent((Action<OrchestrationTriggerRouteBuilder<PipelineRequest>>)null!));
+    }
+
+    [Fact]
+    public void RequestPipelineCanComposeEmitEventAndUseOrchestrationHooks()
+    {
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest>>();
+        builder.OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+        builder.OnPostProcess(Arg.Any<Action<IPostProcessConfiguration<PipelineRequest>>>()).Returns(builder);
+
+        Assert.Same(builder, builder.EmitEvent("events.sales.created").UseOrchestration());
+
+        builder.Received(2).OnPreProcess(Arg.Any<Action<IPreProcessConfiguration<PipelineRequest>>>());
+        builder.Received(2).OnPostProcess(Arg.Any<Action<IPostProcessConfiguration<PipelineRequest>>>());
     }
 
     [Fact]
@@ -107,6 +125,10 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(builder, builder.UseOrchestration(static response => new { response.Ok }));
         Assert.Same(builder, builder.UseOrchestration(static response => new { response.Ok }, "events.sales.completed"));
         Assert.Same(builder, builder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.completed")));
+        Assert.Same(builder, builder.EmitEvent("events.sales.completed", " "));
+        Assert.Same(builder, builder.EmitEvent(static response => new { response.Ok }, "events.sales.completed"));
+        Assert.Same(builder, builder.EmitEvent(static (request, response) => new { request.Id, response.Ok }, "events.sales.completed"));
+        Assert.Same(builder, builder.EmitEvent(routes => routes.When(static (_, _) => true, "events.sales.completed")));
     }
 
     [Fact]
@@ -117,6 +139,8 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
 
         Assert.Throws<ArgumentNullException>(() => nullBuilder.UseOrchestration(routes => routes.When(static (_, _) => true, "events.sales.completed")));
         Assert.Throws<ArgumentNullException>(() => builder.UseOrchestration((Action<OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>>)null!));
+        Assert.Throws<ArgumentNullException>(() => nullBuilder.EmitEvent(routes => routes.When(static (_, _) => true, "events.sales.completed")));
+        Assert.Throws<ArgumentNullException>(() => builder.EmitEvent((Action<OrchestrationTriggerRouteBuilder<PipelineRequest, PipelineResponse>>)null!));
     }
 
     [Fact]
@@ -189,6 +213,9 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>(static request => new { request.Id }));
         Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>(static request => new { request.Id }, "events.sales.created"));
         Assert.Same(requestBridge, bridge.UseOrchestration<PipelineRequest>(routes => routes.When(static _ => true, "events.sales.created")));
+        Assert.Same(requestBridge, bridge.EmitEvent<PipelineRequest>("events.sales.created"));
+        Assert.Same(requestBridge, bridge.EmitEvent<PipelineRequest>(static request => new { request.Id }, "events.sales.created"));
+        Assert.Same(requestBridge, bridge.EmitEvent<PipelineRequest>(routes => routes.When(static _ => true, "events.sales.created")));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>());
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>("events.sales.completed"));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static response => new { response.Ok }));
@@ -196,6 +223,10 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static (request, response) => new { request.Id, response.Ok }));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(static (request, response) => new { request.Id, response.Ok }, "events.sales.completed"));
         Assert.Same(responseBridge, bridge.UseOrchestration<PipelineRequest, PipelineResponse>(routes => routes.When(static (_, _) => true, "events.sales.completed")));
+        Assert.Same(responseBridge, bridge.EmitEvent<PipelineRequest, PipelineResponse>("events.sales.completed"));
+        Assert.Same(responseBridge, bridge.EmitEvent<PipelineRequest, PipelineResponse>(static response => new { response.Ok }, "events.sales.completed"));
+        Assert.Same(responseBridge, bridge.EmitEvent<PipelineRequest, PipelineResponse>(static (request, response) => new { request.Id, response.Ok }, "events.sales.completed"));
+        Assert.Same(responseBridge, bridge.EmitEvent<PipelineRequest, PipelineResponse>(routes => routes.When(static (_, _) => true, "events.sales.completed")));
     }
 
     [Fact]
@@ -768,7 +799,7 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
         var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
         var method = typeof(OrchestrationPipelineBuilderExtensions)
             .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
-            .Single(method => method.Name == "UseOrchestration" && method.GetGenericArguments().Length == 3)
+            .Single(method => method.Name == "AttachResponseOrchestration" && method.GetGenericArguments().Length == 3)
             .MakeGenericMethod(typeof(PipelineRequest), typeof(PipelineResponse), typeof(Func<PipelineResponse, object>));
 
         var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(
