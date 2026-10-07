@@ -4,6 +4,9 @@ Modular backend building blocks for .NET services.
 
 [![Build](https://github.com/mape1402/krackend/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/mape1402/krackend/actions/workflows/build-and-release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![NuGet Package](https://img.shields.io/nuget/v/Krackend.Sagas.Orchestrations.Runtime.svg?label=package)](https://www.nuget.org/packages/Krackend.Sagas.Orchestrations.Runtime)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Krackend.Sagas.Orchestrations.Runtime.svg?label=downloads)](https://www.nuget.org/packages/Krackend.Sagas.Orchestrations.Runtime)
+[![Branch Coverage](https://img.shields.io/badge/branch%20coverage-99.04%25-brightgreen.svg)](#sagas-orchestrations)
 
 ![Krackend orchestration banner](assets/krackend-readme-hero.png)
 
