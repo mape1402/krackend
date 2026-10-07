@@ -63,6 +63,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            if (IsCompensationTerminal(instance.Status))
+            {
+                return;
+            }
+
             var completedTasks = (await _taskRepository.GetByInstanceId(decision.InstanceId, cancellationToken))
                 .Where(x => x.Status == TaskExecutionStatus.Completed)
                 .OrderByDescending(x => x.CompletedOnUtc)
@@ -201,6 +206,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var adapter = _adapterRegistry.TryGet(compensationArtifact.CompensationTaskKind, out var resolvedAdapter)
                 ? resolvedAdapter
                 : null;
+            var compensationTaskKey = ResolveCompensationTaskKey(adapter, compensationArtifact);
+            if (await CompensationAlreadyExistsAsync(instance.Id, sourceTaskExecutionId, compensationTaskKey, cancellationToken))
+            {
+                return true;
+            }
+
             var payloadContext = _payloadContextFactory.Create(
                 instance,
                 stageKey,
@@ -220,7 +231,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 Id = Id.New(),
                 OrchestrationInstanceId = instance.Id,
                 SourceTaskExecutionId = sourceTaskExecutionId,
-                CompensationTaskKey = ResolveCompensationTaskKey(adapter, compensationArtifact),
+                CompensationTaskKey = compensationTaskKey,
                 Status = "Running",
                 StartedOnUtc = DateTime.UtcNow,
                 RequestPayload = ParsePayload(fallbackPayload)
@@ -420,6 +431,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         private static bool ShouldContinueAfterCompensationFailure(CompensationArtifact compensation)
             => !IsTerminalCompensationFailure(compensation);
+
+        private async Task<bool> CompensationAlreadyExistsAsync(
+            Id instanceId,
+            Id sourceTaskExecutionId,
+            string compensationTaskKey,
+            CancellationToken cancellationToken)
+            => (await _compensationRepository.GetByInstanceId(instanceId, cancellationToken))
+                .Any(compensation =>
+                    compensation.SourceTaskExecutionId == sourceTaskExecutionId &&
+                    string.Equals(
+                        compensation.CompensationTaskKey,
+                        compensationTaskKey,
+                        StringComparison.OrdinalIgnoreCase));
+
+        private static bool IsCompensationTerminal(OrchestrationInstanceStatus status)
+            => status is OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Compensating
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Aborted
+                or OrchestrationInstanceStatus.Stopped;
 
         private static JsonNode ParsePayload(string payload)
             => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);

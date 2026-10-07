@@ -1,6 +1,8 @@
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.Logging;
 
@@ -12,17 +14,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
         private readonly IPromoter _promoter;
         private readonly IDecisionControl _decisionControl;
         private readonly IDecisionExecutor _decisionExecutor;
+        private readonly IOrchestrationInstanceCoordinator _coordinator;
         private readonly ILogger<SagaEngine> _logger;
 
         public SagaEngine(
             IPromoter promoter,
             IDecisionControl decisionControl,
             IDecisionExecutor decisionExecutor,
+            IOrchestrationInstanceCoordinator coordinator,
             ILogger<SagaEngine> logger)
         {
             _promoter = promoter ?? throw new ArgumentNullException(nameof(promoter));
             _decisionControl = decisionControl ?? throw new ArgumentNullException(nameof(decisionControl));
             _decisionExecutor = decisionExecutor ?? throw new ArgumentNullException(nameof(decisionExecutor));
+            _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -60,11 +65,35 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 Payload = intent.Payload
             };
 
-            await InternalOrchestrateAsync(forwardIntent, cancellationToken);
+            await CoordinateOrchestrationAsync(
+                ParseInstanceId(promotionResult.InstanceId),
+                forwardIntent,
+                cancellationToken);
         }
 
         public Task OrchestrateAsync(ForwardIntent intent, CancellationToken cancellationToken = default)
-            => InternalOrchestrateAsync(intent, cancellationToken);
+        {
+            var instanceId = TryResolveInstanceId(intent.MessageMetadata);
+            return instanceId.HasValue
+                ? CoordinateOrchestrationAsync(instanceId.Value, intent, cancellationToken)
+                : InternalOrchestrateAsync(intent, cancellationToken);
+        }
+
+        private async Task CoordinateOrchestrationAsync(
+            Id instanceId,
+            ForwardIntent intent,
+            CancellationToken cancellationToken)
+        {
+            var acquired = await _coordinator.TryExecuteAsync(
+                instanceId,
+                token => InternalOrchestrateAsync(intent, token),
+                cancellationToken);
+
+            if (!acquired)
+            {
+                throw new OrchestrationInstanceLeaseUnavailableException(instanceId);
+            }
+        }
 
         private async Task InternalOrchestrateAsync(ForwardIntent intent, CancellationToken cancellationToken = default)
         {
@@ -116,5 +145,26 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                     CorrelationId = metadata.CorrelationId,
                     ReplyAddress = metadata.ReplyAddress
                 };
+
+        private static Id ParseInstanceId(string value)
+        {
+            if (!Ulid.TryParse(value, out var parsed))
+            {
+                throw new InvalidOperationException($"Orchestration instance id '{value}' is invalid.");
+            }
+
+            return new Id(parsed);
+        }
+
+        private static Id? TryResolveInstanceId(OrchestrationMessageMetadata metadata)
+        {
+            if (string.IsNullOrWhiteSpace(metadata?.OrchestrationInstanceId) ||
+                !Ulid.TryParse(metadata.OrchestrationInstanceId, out var parsed))
+            {
+                return null;
+            }
+
+            return new Id(parsed);
+        }
     }
 }

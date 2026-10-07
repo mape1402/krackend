@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
@@ -1058,6 +1059,192 @@ public sealed class RemoteCommandDispatchActionTests
             CancellationToken.None);
 
         await sagaEngine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenRuntimeDispatchStateExists_RunsThroughInstanceCoordinator()
+    {
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            RuntimeOrchestrationArtifactId = Id.New(),
+            OrchestrationDefinitionKey = "sales.sale.created",
+            CorrelationId = Id.New().ToString(),
+            SagaId = Id.New().ToString(),
+            ExecutionKey = "sales.sale.created",
+            Status = OrchestrationInstanceStatus.Running,
+            StartedOnUtc = DateTime.UtcNow,
+            LastUpdatedOnUtc = DateTime.UtcNow
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "notifications.send",
+            Status = TaskExecutionStatus.Running
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Running
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "FireAndForget",
+            DispatchStatus = "Enqueued"
+        };
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
+        var provider = services.BuildServiceProvider();
+        var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
+        var taskRepository = Substitute.For<ITaskExecutionRepository>();
+        var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
+        instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
+        dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        var coordinator = new RecordingOrchestrationInstanceCoordinator(true);
+        var action = new RemoteCommandDispatchAction(
+            provider,
+            Substitute.For<IOrchestrationMessageMetadataSetter>(),
+            instanceRepository,
+            taskRepository,
+            attemptRepository,
+            dispatchRepository,
+            Substitute.For<IExecutionTransitionRepository>(),
+            new DefaultMuleTerminalFailureMarker(),
+            coordinator: coordinator);
+
+        await action.ExecuteAsync(
+            CreateContext(provider, instance, task, attempt, dispatch, awaitResponse: false),
+            CancellationToken.None);
+
+        Assert.True(coordinator.OperationRan);
+        Assert.Equal(instance.Id, Assert.Single(coordinator.InstanceIds));
+        Assert.Equal("Completed", dispatch.DispatchStatus);
+        await executor.Received(1).ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenInstanceCoordinatorRejectsLease_DoesNotPublishCommand()
+    {
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            RuntimeOrchestrationArtifactId = Id.New(),
+            OrchestrationDefinitionKey = "sales.sale.created",
+            CorrelationId = Id.New().ToString(),
+            SagaId = Id.New().ToString(),
+            ExecutionKey = "sales.sale.created",
+            Status = OrchestrationInstanceStatus.Running,
+            StartedOnUtc = DateTime.UtcNow,
+            LastUpdatedOnUtc = DateTime.UtcNow
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "notifications.send",
+            Status = TaskExecutionStatus.Running
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Running
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "FireAndForget",
+            DispatchStatus = "Enqueued"
+        };
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
+        var provider = services.BuildServiceProvider();
+        var action = new RemoteCommandDispatchAction(
+            provider,
+            Substitute.For<IOrchestrationMessageMetadataSetter>(),
+            Substitute.For<IOrchestrationInstanceRepository>(),
+            Substitute.For<ITaskExecutionRepository>(),
+            Substitute.For<ITaskExecutionAttemptRepository>(),
+            Substitute.For<ITaskDispatchRepository>(),
+            Substitute.For<IExecutionTransitionRepository>(),
+            new DefaultMuleTerminalFailureMarker(),
+            coordinator: new RecordingOrchestrationInstanceCoordinator(false));
+
+        var exception = await Assert.ThrowsAsync<OrchestrationInstanceLeaseUnavailableException>(
+            async () => await action.ExecuteAsync(
+                CreateContext(provider, instance, task, attempt, dispatch, awaitResponse: false),
+                CancellationToken.None));
+
+        Assert.Equal(instance.Id, exception.InstanceId);
+        Assert.Equal("Enqueued", dispatch.DispatchStatus);
+        Assert.Equal(TaskExecutionStatus.Running, task.Status);
+        await executor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default);
+    }
+
+    private static MuleActionContext<RemoteCommand> CreateContext(
+        IServiceProvider provider,
+        OrchestrationInstance instance,
+        TaskExecution task,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        bool awaitResponse)
+        => new(
+            new DurableAction
+            {
+                Key = ActionKey.From("RemoteCommandDispatch"),
+                Lane = "default",
+                CorrelationId = instance.CorrelationId,
+                DeduplicationKey = dispatch.Id.ToString(),
+                Status = DurableActionStatus.Pending
+            },
+            provider,
+            new RemoteCommand
+            {
+                RemoteCommandTransport = RemoteCommandTransport.Messaging,
+                Payload = "{}",
+                OrchestrationInstanceId = instance.Id.ToString(),
+                StageExecutionId = task.StageExecutionId.ToString(),
+                TaskExecutionId = task.Id.ToString(),
+                TaskExecutionAttemptId = attempt.Id.ToString(),
+                DispatchId = dispatch.Id.ToString(),
+                AwaitResponse = awaitResponse
+            });
+
+    private sealed class RecordingOrchestrationInstanceCoordinator(bool acquire) : IOrchestrationInstanceCoordinator
+    {
+        public List<Id> InstanceIds { get; } = new();
+
+        public bool OperationRan { get; private set; }
+
+        public async Task<bool> TryExecuteAsync(
+            Id instanceId,
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default)
+        {
+            InstanceIds.Add(instanceId);
+            if (!acquire)
+            {
+                return false;
+            }
+
+            await operation(cancellationToken);
+            OperationRan = true;
+            return true;
+        }
     }
 
 }

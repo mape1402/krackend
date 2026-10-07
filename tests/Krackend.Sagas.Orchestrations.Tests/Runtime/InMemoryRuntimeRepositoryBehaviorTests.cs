@@ -5,11 +5,109 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
+using System.Reflection;
 
 public sealed class InMemoryRuntimeRepositoryBehaviorTests
 {
+    [Fact]
+    public async Task OrchestrationInstanceCoordinatorSkipsOperationWhenAnotherRuntimeNodeOwnsLease()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var coordinator = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>();
+        var instance = Instance(OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        var now = DateTime.UtcNow;
+        var externalLease = await repository.TryAcquireLease(
+            instance.Id,
+            "runtime-node-2",
+            now,
+            now.AddMinutes(1));
+        var ran = false;
+
+        var acquired = await coordinator.TryExecuteAsync(
+            instance.Id,
+            _ =>
+            {
+                ran = true;
+                return Task.CompletedTask;
+            });
+
+        Assert.NotNull(externalLease);
+        Assert.False(acquired);
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public async Task OrchestrationInstanceCoordinatorAllowsNestedSameInstanceWorkAndReleasesLease()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var coordinator = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>();
+        var instance = Instance(OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        var outerRan = false;
+        var nestedRan = false;
+
+        var acquired = await coordinator.TryExecuteAsync(
+            instance.Id,
+            async token =>
+            {
+                outerRan = true;
+                var nestedAcquired = await coordinator.TryExecuteAsync(
+                    instance.Id,
+                    _ =>
+                    {
+                        nestedRan = true;
+                        return Task.CompletedTask;
+                    },
+                    token);
+                Assert.True(nestedAcquired);
+            });
+
+        var persisted = await repository.GetById(instance.Id);
+        Assert.True(acquired);
+        Assert.True(outerRan);
+        Assert.True(nestedRan);
+        Assert.Null(persisted.ActiveLeaseId);
+        Assert.Null(persisted.ActiveLeaseExpiresOnUtc);
+    }
+
+    [Fact]
+    public async Task RuntimeStorageUnitOfWorkUsesNoopInMemoryTransactions()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IRuntimeStorageUnitOfWork>();
+
+        using (unitOfWork.DeferAutoSave())
+        {
+            Assert.True(unitOfWork.AutoSaveChanges);
+        }
+
+        await unitOfWork.SaveChanges();
+        await using var transaction = await unitOfWork.BeginTransactionAsync();
+        await transaction.CommitAsync();
+    }
+
+    [Fact]
+    public void OrchestrationInstanceCoordinatorPopIsSafeWhenNoLeaseScopeIsHeld()
+    {
+        var method = typeof(IOrchestrationInstanceCoordinator)
+            .Assembly
+            .GetType(
+                "Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination.DefaultOrchestrationInstanceCoordinator",
+                throwOnError: true)!
+            .GetMethod("Pop", BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        method.Invoke(null, [Id.New()]);
+    }
+
     [Fact]
     public async Task OrchestrationInstanceRepositoryAcquiresExpiresAndReleasesLeases()
     {
@@ -24,6 +122,11 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
             "lease-1",
             DateTime.UtcNow,
             DateTime.UtcNow.AddMinutes(1));
+        var staleUpdate = Instance(OrchestrationInstanceStatus.Waiting, DateTime.UtcNow.AddMinutes(-4));
+        staleUpdate.Id = instance.Id;
+        await repository.Update(staleUpdate);
+        Assert.Equal("lease-1", (await repository.GetById(instance.Id)).ActiveLeaseId);
+
         var blockedLease = await repository.TryAcquireLease(
             instance.Id,
             "lease-2",
@@ -36,15 +139,17 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
             DateTime.UtcNow.AddMinutes(3));
 
         await repository.ReleaseLease(instance.Id, "lease-2");
-        Assert.Equal("lease-3", instance.ActiveLeaseId);
+        var persisted = await repository.GetById(instance.Id);
+        Assert.Equal("lease-3", persisted.ActiveLeaseId);
 
         await repository.ReleaseLease(instance.Id, "lease-3");
+        persisted = await repository.GetById(instance.Id);
 
         Assert.NotNull(firstLease);
         Assert.Null(blockedLease);
         Assert.NotNull(expiredLease);
-        Assert.Null(instance.ActiveLeaseId);
-        Assert.Null(instance.ActiveLeaseExpiresOnUtc);
+        Assert.Null(persisted.ActiveLeaseId);
+        Assert.Null(persisted.ActiveLeaseExpiresOnUtc);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetById(Id.New()));
     }
 

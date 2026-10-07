@@ -35,6 +35,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var stage = await _stageRepository.GetById(decision.StageExecutionId, cancellationToken);
+            if (IsTerminal(instance.Status) || stage.Status != StageExecutionStatus.Running)
+            {
+                return;
+            }
+
             var branchNavigation = await _branchNavigator.ResolveAsync(
                 new OrchestrationBranchNavigationRequest
                 {
@@ -213,5 +218,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 metadata[$"Branch.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
         }
+
+        private static bool IsTerminal(OrchestrationInstanceStatus status)
+            => status is OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.DeadLettered
+                or OrchestrationInstanceStatus.Compensating
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Aborted
+                or OrchestrationInstanceStatus.Stopped;
     }
 }

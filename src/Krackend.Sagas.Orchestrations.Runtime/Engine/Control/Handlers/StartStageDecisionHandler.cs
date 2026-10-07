@@ -38,6 +38,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            if (IsTerminal(instance.Status) || await StageAlreadyExistsAsync(instance.Id, decision.Stage.Key, cancellationToken))
+            {
+                return;
+            }
+
             var payloadContext = _payloadContextFactory.Create(
                 instance,
                 decision.Stage.Key,
@@ -244,5 +249,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ? value.GetValue<string>()
                 : value.ToJsonString();
         }
+
+        private async Task<bool> StageAlreadyExistsAsync(
+            Id instanceId,
+            string stageKey,
+            CancellationToken cancellationToken)
+            => (await _stageRepository.GetByInstanceId(instanceId, cancellationToken))
+                .Any(stage => string.Equals(stage.StageKey, stageKey, StringComparison.OrdinalIgnoreCase));
+
+        private static bool IsTerminal(OrchestrationInstanceStatus status)
+            => status is OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.DeadLettered
+                or OrchestrationInstanceStatus.Compensating
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Aborted
+                or OrchestrationInstanceStatus.Stopped;
     }
 }

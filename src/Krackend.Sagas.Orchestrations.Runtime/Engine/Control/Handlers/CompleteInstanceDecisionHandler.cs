@@ -22,6 +22,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
+            if (IsTerminal(instance.Status))
+            {
+                return;
+            }
+
+            var previousStatus = instance.Status;
             instance.Status = OrchestrationInstanceStatus.Completed;
             instance.CompletedOnUtc = now;
             instance.LastUpdatedOnUtc = now;
@@ -33,12 +39,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 Id = Id.New(),
                 OrchestrationInstanceId = instance.Id,
                 TransitionType = "InstanceCompleted",
-                FromStatus = OrchestrationInstanceStatus.Running.ToString(),
+                FromStatus = previousStatus.ToString(),
                 ToStatus = OrchestrationInstanceStatus.Completed.ToString(),
                 OccurredOnUtc = now,
                 Message = "Orchestration instance completed.",
                 ProducedBy = nameof(CompleteInstanceDecisionHandler)
             }, cancellationToken);
         }
+
+        private static bool IsTerminal(OrchestrationInstanceStatus status)
+            => status is OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.DeadLettered
+                or OrchestrationInstanceStatus.Compensating
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Aborted
+                or OrchestrationInstanceStatus.Stopped;
     }
 }

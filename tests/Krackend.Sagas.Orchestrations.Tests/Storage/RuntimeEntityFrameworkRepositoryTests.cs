@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.IO;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
 using Krackend.Sagas.Orchestrations.Abstractions.Extensions;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -58,6 +59,10 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             "lease-1",
             now,
             now.AddMinutes(5));
+        instance.Status = OrchestrationInstanceStatus.Waiting;
+        await instanceRepository.Update(instance);
+        Assert.Equal("lease-1", (await instanceRepository.GetById(instance.Id)).ActiveLeaseId);
+
         var blocked = await instanceRepository.TryAcquireLease(
             instance.Id,
             "lease-2",
@@ -322,6 +327,92 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var summary = await instanceRepository.GetSummary(now.AddMinutes(-2));
         Assert.Equal(1, summary.CompletedRecent);
         Assert.Empty((await instanceRepository.GetRecent(1)).Where(x => x.Status != OrchestrationInstanceStatus.Completed));
+    }
+
+    [Fact]
+    public async Task OrchestrationInstanceRepositoryAcquiresLeaseAtomicallyAcrossRelationalScopes()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"krackend-runtime-lease-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateProvider(
+                configureDbContext: options => options.UseSqlite($"Data Source={databasePath}"));
+            using (var setupScope = provider.CreateScope())
+            {
+                var dbContext = setupScope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+                await dbContext.Database.EnsureCreatedAsync();
+
+                var artifactRepository = setupScope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
+                var instanceRepository = setupScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+                var artifact = RuntimeArtifact(new SemanticVersion(9, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
+                await artifactRepository.Upsert(artifact);
+                await instanceRepository.Create(Instance(
+                    artifact.Id,
+                    OrchestrationInstanceStatus.Running,
+                    DateTime.UtcNow.AddMinutes(-1)));
+            }
+
+            Id instanceId;
+            using (var readScope = provider.CreateScope())
+            {
+                instanceId = (await readScope.ServiceProvider
+                    .GetRequiredService<IOrchestrationInstanceRepository>()
+                    .GetRecent(1))
+                    .Single()
+                    .Id;
+            }
+
+            var now = DateTime.UtcNow;
+            var acquireTasks = Enumerable.Range(1, 8)
+                .Select(async index =>
+                {
+                    using var acquireScope = provider.CreateScope();
+                    var repository = acquireScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+                    return await repository.TryAcquireLease(
+                        instanceId,
+                        $"lease-{index}",
+                        now,
+                        now.AddMinutes(1));
+                })
+                .ToArray();
+
+            var leases = await Task.WhenAll(acquireTasks);
+            var winner = Assert.Single(leases.OfType<OrchestrationInstanceLease>());
+
+            using var verifyScope = provider.CreateScope();
+            var verifyRepository = verifyScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+            var renewed = await verifyRepository.TryAcquireLease(
+                instanceId,
+                winner.LeaseId,
+                now.AddSeconds(10),
+                now.AddMinutes(2));
+            var blocked = await verifyRepository.TryAcquireLease(
+                instanceId,
+                "late-runtime-node",
+                now.AddSeconds(20),
+                now.AddMinutes(3));
+            var persisted = await verifyRepository.GetById(instanceId);
+
+            Assert.NotNull(renewed);
+            Assert.Null(blocked);
+            Assert.Equal(winner.LeaseId, persisted.ActiveLeaseId);
+            Assert.True(persisted.ActiveLeaseExpiresOnUtc.HasValue);
+            Assert.True(persisted.ActiveLeaseExpiresOnUtc.Value >= now.AddMinutes(2).AddSeconds(-1));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databasePath))
+            {
+                try
+                {
+                    File.Delete(databasePath);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
     }
 
     [Fact]

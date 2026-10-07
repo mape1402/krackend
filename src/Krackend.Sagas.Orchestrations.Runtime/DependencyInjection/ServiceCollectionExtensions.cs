@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
@@ -102,7 +103,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.AddOptions<RuntimeGossipOptions>().BindConfiguration("Runtime:Gossip");
             services.AddOptions<RuntimeExecutionOptions>().BindConfiguration("Runtime:Execution");
             services.AddOptions<OrchestrationTimeoutOptions>().BindConfiguration("Runtime:Timeouts");
+            services.AddOptions<OrchestrationCoordinationOptions>().BindConfiguration("Runtime:Coordination");
             services.TryAddSingleton<IRuntimeReplicaIdentity, DefaultRuntimeReplicaIdentity>();
+            services.TryAddScoped<IOrchestrationInstanceCoordinator, DefaultOrchestrationInstanceCoordinator>();
             services.TryAddScoped<IRuntimeArtifactProjectionScheduler, ImmediateRuntimeArtifactProjectionScheduler>();
             services.TryAddScoped<IRuntimeIngressStandupScheduler, ImmediateRuntimeIngressStandupScheduler>();
             services.TryAddScoped<IRuntimeArtifactReadyGossipHandler, RuntimeArtifactReadyGossipHandler>();

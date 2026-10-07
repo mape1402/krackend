@@ -72,6 +72,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasIndex("OrchestrationInstanceId");
 
+                    b.HasIndex("OrchestrationInstanceId", "SourceTaskExecutionId", "CompensationTaskKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CompensationExecutions_Instance_SourceTask_CompensationTask");
+
                     b.ToTable("CompensationExecutions", "Runtime");
                 });
 

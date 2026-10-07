@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -24,6 +25,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     private readonly IExecutionTransitionRepository _transitionRepository;
     private readonly IRuntimeArtifactResolver _artifactResolver;
     private readonly ISagaEngine _sagaEngine;
+    private readonly IOrchestrationInstanceCoordinator _coordinator;
 
     public DefaultOrchestrationTimeoutProcessor(
         IOrchestrationInstanceRepository instanceRepository,
@@ -33,7 +35,8 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         ITaskDispatchRepository dispatchRepository,
         IExecutionTransitionRepository transitionRepository,
         IRuntimeArtifactResolver artifactResolver,
-        ISagaEngine sagaEngine)
+        ISagaEngine sagaEngine,
+        IOrchestrationInstanceCoordinator coordinator)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -43,6 +46,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
         _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
     }
 
     public async Task<int> ProcessDueTimeoutsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
@@ -62,6 +66,23 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     }
 
     private async Task<bool> TryProcessTaskAsync(
+        TaskExecution waitingTask,
+        DateTime utcNow,
+        CancellationToken cancellationToken)
+    {
+        var processed = false;
+        var acquired = await _coordinator.TryExecuteAsync(
+            waitingTask.OrchestrationInstanceId,
+            async token =>
+            {
+                processed = await TryProcessTaskCoreAsync(waitingTask, utcNow, token);
+            },
+            cancellationToken);
+
+        return acquired && processed;
+    }
+
+    private async Task<bool> TryProcessTaskCoreAsync(
         TaskExecution waitingTask,
         DateTime utcNow,
         CancellationToken cancellationToken)
@@ -119,6 +140,11 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         var dispatch = attempt.DispatchId.HasValue
             ? await _dispatchRepository.TryGetById(attempt.DispatchId.Value, cancellationToken)
             : null;
+        if (dispatch?.SentOnUtc is null)
+        {
+            return false;
+        }
+
         var errorCode = ResolveTimeoutErrorCode(timeoutPolicy);
         var errorMessage = $"Task '{task.TaskKey}' timed out after waiting {timeoutPolicy.Timeout.Value}.";
 
