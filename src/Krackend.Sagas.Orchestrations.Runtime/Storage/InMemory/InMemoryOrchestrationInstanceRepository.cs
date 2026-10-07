@@ -21,6 +21,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
         {
+            if (_store.Instances.TryGetValue(instance.Id, out var current) && !ReferenceEquals(current, instance))
+            {
+                lock (current)
+                {
+                    instance.ActiveLeaseId = current.ActiveLeaseId;
+                    instance.ActiveLeaseExpiresOnUtc = current.ActiveLeaseExpiresOnUtc;
+                }
+            }
+
             _store.Instances[instance.Id] = instance;
             return Task.CompletedTask;
         }
@@ -47,22 +56,33 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         public Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
         {
             var instance = _store.Instances[instanceId];
-            if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) && instance.ActiveLeaseExpiresOnUtc > nowUtc)
+            lock (instance)
             {
-                return Task.FromResult<OrchestrationInstanceLease>(null);
-            }
+                if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) &&
+                    !string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal) &&
+                    instance.ActiveLeaseExpiresOnUtc > nowUtc)
+                {
+                    return Task.FromResult<OrchestrationInstanceLease>(null);
+                }
 
-            instance.ActiveLeaseId = leaseId;
-            instance.ActiveLeaseExpiresOnUtc = expiresOnUtc;
-            return Task.FromResult(new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc));
+                instance.ActiveLeaseId = leaseId;
+                instance.ActiveLeaseExpiresOnUtc = expiresOnUtc;
+                return Task.FromResult(new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc));
+            }
         }
 
         public Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
         {
-            if (_store.Instances.TryGetValue(instanceId, out var instance) && instance.ActiveLeaseId == leaseId)
+            if (_store.Instances.TryGetValue(instanceId, out var instance))
             {
-                instance.ActiveLeaseId = null;
-                instance.ActiveLeaseExpiresOnUtc = null;
+                lock (instance)
+                {
+                    if (instance.ActiveLeaseId == leaseId)
+                    {
+                        instance.ActiveLeaseId = null;
+                        instance.ActiveLeaseExpiresOnUtc = null;
+                    }
+                }
             }
 
             return Task.CompletedTask;

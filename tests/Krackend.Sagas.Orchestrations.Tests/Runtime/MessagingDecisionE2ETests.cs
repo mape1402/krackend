@@ -10,6 +10,7 @@ using Krackend.Sagas.Orchestrations.Client.Operations;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
@@ -512,6 +513,39 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineDoesNotCreateDuplicateCompensationsWhenFailureCallbackIsRepeated()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask(
+                "task.completed.once",
+                1,
+                compensation: Compensation("task.completed.once.undo"))),
+            Stage("stage-two", 2, MessagingTask(
+                "task.failing.once",
+                1,
+                onErrorPolicy: OnErrorPolicy.StopAndCompensate))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-compensation-idempotent");
+
+        var completedCommand = harness.Dispatcher.Commands.Single();
+        await harness.ForwardAsync(completedCommand, BusinessPayload("completed-response"), Success());
+
+        var failingCommand = harness.Dispatcher.Commands[1];
+        await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "requires compensation"));
+        await harness.ForwardAsync(failingCommand, null, Failure("PermanentFailure", "duplicate failure callback"));
+
+        var instance = await harness.GetInstanceAsync(completedCommand);
+        var compensations = await harness.GetCompensationsAsync(completedCommand);
+        var transitions = await harness.GetTransitionsAsync(completedCommand);
+
+        Assert.Equal(OrchestrationInstanceStatus.Compensated, instance.Status);
+        Assert.Single(compensations);
+        Assert.Equal(1, harness.Dispatcher.Commands.Count(command =>
+            command.SettingsPayload.Contains("task.completed.once.undo", StringComparison.Ordinal)));
+        Assert.Equal(1, transitions.Count(transition => transition.TransitionType == "CompensationCompleted"));
+    }
+
+    [Fact]
     public async Task EngineCompensatesWhenClientMapsExceptionToPermanentErrorCode()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
@@ -690,6 +724,64 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineRejectsCallbackWhenAnotherRuntimeNodeOwnsTheInstanceLease()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.lease.guard", 1))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-callback-lease");
+
+        var command = harness.Dispatcher.Commands.Single();
+        var instanceId = IdFrom(command.OrchestrationInstanceId);
+        var instanceRepository = harness.GetRequiredService<IOrchestrationInstanceRepository>();
+        var lease = await instanceRepository.TryAcquireLease(
+            instanceId,
+            "other-runtime-node",
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddMinutes(1));
+
+        Assert.NotNull(lease);
+        await Assert.ThrowsAsync<OrchestrationInstanceLeaseUnavailableException>(() =>
+            harness.ForwardAsync(command, BusinessPayload("blocked-response"), Success()));
+
+        var blockedTask = await harness.GetTaskAsync(command);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, blockedTask.Status);
+
+        await instanceRepository.ReleaseLease(instanceId, "other-runtime-node");
+        await harness.ForwardAsync(command, BusinessPayload("released-response"), Success());
+
+        var instance = await harness.GetInstanceAsync(command);
+        Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
+    }
+
+    [Fact]
+    public async Task EngineAppliesOnlyOneCallbackWhenMultipleRuntimeNodesRaceSameReply()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.concurrent.reply", 1))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-concurrent-reply");
+
+        var command = harness.Dispatcher.Commands.Single();
+        var replies = Enumerable
+            .Range(0, 12)
+            .Select(index => CompleteReplyIgnoringLeaseContentionAsync(harness, command, index))
+            .ToArray();
+
+        await Task.WhenAll(replies);
+
+        var instance = await harness.GetInstanceAsync(command);
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+        var transitions = await harness.GetTransitionsAsync(command);
+
+        Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Completed, task.Status);
+        Assert.Equal(TaskExecutionStatus.Completed, attempt.Status);
+        Assert.Single(transitions.Where(transition => transition.TransitionType == "TaskCallbackCompleted"));
+    }
+
+    [Fact]
     public async Task EngineRetriesDispatchFailureUsingPersistedAttemptErrorCode()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
@@ -713,6 +805,23 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
         Assert.Equal("CommandDispatchFailed", attempts[0].ErrorCode);
         Assert.Equal(TaskExecutionStatus.Completed, attempts[1].Status);
+    }
+
+    private static async Task CompleteReplyIgnoringLeaseContentionAsync(
+        MessagingEngineHarness harness,
+        RemoteCommand command,
+        int index)
+    {
+        try
+        {
+            await harness.ForwardAsync(
+                command,
+                BusinessPayload($"concurrent-response-{index}"),
+                Success());
+        }
+        catch (OrchestrationInstanceLeaseUnavailableException)
+        {
+        }
     }
 
     [Fact]
@@ -1054,6 +1163,45 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task TimeoutProcessorSkipsTaskWhenAnotherRuntimeNodeOwnsTheInstanceLease()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask(
+                "task.timeout.lease.guard",
+                1,
+                timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(1), "TIMEOUT")))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-timeout-lease");
+
+        var command = harness.Dispatcher.Commands.Single();
+        var task = await harness.GetTaskAsync(command);
+        var instanceId = IdFrom(command.OrchestrationInstanceId);
+        var instanceRepository = harness.GetRequiredService<IOrchestrationInstanceRepository>();
+        var lease = await instanceRepository.TryAcquireLease(
+            instanceId,
+            "timer-on-other-runtime-node",
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddMinutes(1));
+        var processor = harness.GetRequiredService<IOrchestrationTimeoutProcessor>();
+        var dueOnUtc = task.WaitingSinceUtc!.Value.AddSeconds(2);
+
+        var blocked = await processor.ProcessDueTimeoutsAsync(dueOnUtc);
+        task = await harness.GetTaskAsync(command);
+
+        Assert.NotNull(lease);
+        Assert.Equal(0, blocked);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
+
+        await instanceRepository.ReleaseLease(instanceId, "timer-on-other-runtime-node");
+
+        var processed = await processor.ProcessDueTimeoutsAsync(dueOnUtc);
+        task = await harness.GetTaskAsync(command);
+
+        Assert.Equal(1, processed);
+        Assert.Equal(TaskExecutionStatus.TimedOut, task.Status);
+    }
+
+    [Fact]
     public async Task TimeoutProcessorRetriesTimedOutTaskWhenTimeoutErrorCodeIsRetryable()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
@@ -1086,6 +1234,51 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal("TIMEOUT", attempts[0].ErrorCode);
         Assert.Equal(TaskExecutionStatus.Completed, attempts[1].Status);
         Assert.Contains(transitions, transition => transition.TransitionType == "TaskTimedOut");
+    }
+
+    [Fact]
+    public async Task EngineIgnoresStaleLateSuccessFromTimedOutAttemptAfterRetryWasDispatched()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask(
+                "task.timeout.stale.callback",
+                1,
+                retryPolicy: RetryPolicy(1, "TIMEOUT"),
+                timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(1), "TIMEOUT")))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-stale-timeout-callback");
+
+        var firstCommand = harness.Dispatcher.Commands.Single();
+        var firstTask = await harness.GetTaskAsync(firstCommand);
+        var processor = harness.GetRequiredService<IOrchestrationTimeoutProcessor>();
+        await processor.ProcessDueTimeoutsAsync(firstTask.WaitingSinceUtc!.Value.AddSeconds(2));
+
+        var retryCommand = harness.Dispatcher.Commands[1];
+        await harness.ForwardAsync(firstCommand, BusinessPayload("late-first-attempt"), Success());
+
+        var taskAfterLateCallback = await harness.GetTaskAsync(firstCommand);
+        var attemptsAfterLateCallback = (await harness.GetAttemptsAsync(firstCommand))
+            .OrderBy(x => x.AttemptNumber)
+            .ToArray();
+        var transitionsAfterLateCallback = await harness.GetTransitionsAsync(firstCommand);
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, taskAfterLateCallback.Status);
+        Assert.Equal(TaskExecutionStatus.TimedOut, attemptsAfterLateCallback[0].Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, attemptsAfterLateCallback[1].Status);
+        Assert.DoesNotContain(
+            transitionsAfterLateCallback,
+            transition =>
+                transition.TransitionType == "TaskCallbackCompleted" &&
+                transition.TaskExecutionAttemptId == attemptsAfterLateCallback[0].Id);
+
+        await harness.ForwardAsync(retryCommand, BusinessPayload("retry-response"), Success());
+
+        var instance = await harness.GetInstanceAsync(firstCommand);
+        var attempts = (await harness.GetAttemptsAsync(firstCommand)).OrderBy(x => x.AttemptNumber).ToArray();
+
+        Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
+        Assert.Equal(TaskExecutionStatus.TimedOut, attempts[0].Status);
+        Assert.Equal(TaskExecutionStatus.Completed, attempts[1].Status);
     }
 
     [Fact]

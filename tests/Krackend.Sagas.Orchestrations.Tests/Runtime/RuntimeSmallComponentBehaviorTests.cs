@@ -16,9 +16,12 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Engine;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Branching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
@@ -42,6 +45,46 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 public sealed class RuntimeSmallComponentBehaviorTests
 {
+    [Fact]
+    public void SmallRuntimeAndDesignValueObjectsExposeExpectedDefaults()
+    {
+        var retry = new FixedRetryStrategy { Delay = Duration.FromSeconds(7) };
+        var decisionType = typeof(ISagaEngine).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions.ForwardDecision",
+            throwOnError: true)!;
+        var decision = (IDecision)Activator.CreateInstance(decisionType)!;
+        var accessorType = typeof(ISagaEngine).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts.DefaultResolvedOrchestrationArtifactAccessor",
+            throwOnError: true)!;
+        var accessor = Activator.CreateInstance(accessorType)!;
+        var orchestrationArtifact = BuildOrchestrationArtifact(TaskArtifact());
+        var artifact = new ResolvedOrchestrationArtifact
+        {
+            Artifact = orchestrationArtifact,
+            RuntimeArtifact = new RuntimeOrchestrationArtifact
+            {
+                Id = Id.New(),
+                OrchestrationDefinitionKey = orchestrationArtifact.Key,
+                ArtifactType = "orchestration",
+                SourceOrchestrationVersionId = orchestrationArtifact.OrchestrationVersionId,
+                Version = orchestrationArtifact.Version,
+                ArtifactChecksum = orchestrationArtifact.Checksum,
+                ArtifactPayload = JsonSerializer.SerializeToNode(orchestrationArtifact)!,
+                Status = RuntimeOrchestrationArtifactStatus.Ready,
+                IsActive = true,
+                DeployedOnUtc = DateTime.UtcNow
+            }
+        };
+
+        accessorType.GetMethod("Set")!.Invoke(accessor, [artifact]);
+        var resolved = accessorType.GetMethod("Get")!.Invoke(accessor, []);
+
+        Assert.Equal(RetryStrategyType.Fixed, retry.Type);
+        Assert.Equal(Duration.FromSeconds(7), retry.Delay);
+        Assert.Equal("forward", decision.Kind);
+        Assert.Same(artifact, resolved);
+    }
+
     [Fact]
     public async Task InvokeRemoteCommandActionDispatchesContextAsRemoteCommand()
     {

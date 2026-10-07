@@ -590,7 +590,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         {
             if (!IsSuccessfulCallback(result) ||
                 task.Status == TaskExecutionStatus.Completed ||
-                task.Status == TaskExecutionStatus.Compensated)
+                task.Status == TaskExecutionStatus.Compensated ||
+                task.LastAttemptNumber > attempt.AttemptNumber)
             {
                 return false;
             }

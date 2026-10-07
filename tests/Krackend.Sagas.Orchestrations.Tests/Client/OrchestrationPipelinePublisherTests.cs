@@ -3,6 +3,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Client;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Client.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
 using Krackend.Sagas.Orchestrations.Tests.Client.Support;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,40 @@ using NSubstitute;
 
 public sealed class OrchestrationPipelinePublisherTests
 {
+    [Fact]
+    public async Task DefaultClientPublisherFailsExplicitlyWhenNoTransportPublisherIsConfigured()
+    {
+        var publisherType = typeof(OrchestrationOperationOptions).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Client.Publishing.DefaultOrchestrationClientPublisher",
+            throwOnError: true)!;
+        var publisher = (IOrchestrationClientPublisher)Activator.CreateInstance(publisherType)!;
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            publisher.PublishAsync(new { ok = true }, new OrchestrationReplyAddress(), CancellationToken.None));
+
+        Assert.Contains("No orchestration client publisher", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientBuilderRegistersAccessorAndRejectsInvalidConfiguration()
+    {
+        var services = new ServiceCollection();
+        var builder = new KrackendOrchestrationsClientBuilder(services);
+
+        var returned = builder
+            .UseTriggerMetadataAccessor<StaticTriggerMetadataAccessor>()
+            .MapException<InvalidOperationException>("InvalidOperation", true)
+            .MapException<ArgumentException>("ArgumentError", exception => exception.ParamName == "value", false);
+
+        Assert.Same(builder, returned);
+        Assert.Same(services, builder.Services);
+        Assert.Throws<ArgumentNullException>(() => new KrackendOrchestrationsClientBuilder(null!));
+        Assert.Throws<ArgumentNullException>(() => builder.ConfigureErrorMapping(null!));
+        using var provider = services.BuildServiceProvider();
+        Assert.IsType<StaticTriggerMetadataAccessor>(
+            provider.GetRequiredService<IOrchestrationTriggerMetadataAccessor>());
+    }
+
     [Fact]
     public async Task PublishSuccessAsync_WithTriggerDestination_PublishesTriggerMetadataAndRestoresPreviousScope()
     {
@@ -265,5 +300,11 @@ public sealed class OrchestrationPipelinePublisherTests
             types: parameterTypes,
             modifiers: null)!;
         return (TResult)method.Invoke(instance, arguments)!;
+    }
+
+    private sealed class StaticTriggerMetadataAccessor : IOrchestrationTriggerMetadataAccessor
+    {
+        public ValueTask<OrchestrationTriggerMetadata> GetAsync(CancellationToken cancellationToken = default)
+            => new(new OrchestrationTriggerMetadata { CorrelationId = "static-correlation" });
     }
 }

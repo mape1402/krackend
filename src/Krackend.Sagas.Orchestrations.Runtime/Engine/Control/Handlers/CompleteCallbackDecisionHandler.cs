@@ -57,6 +57,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var responsePayload = ResolveResponsePayload(decision.Payload, result);
             result = await ApplyResponseValidationAsync(instance, stage, task, result, responsePayload, cancellationToken);
             var succeeded = result.Succeeded;
+            if (!CanApplyCallback(instance, task, attempt, dispatch, succeeded))
+            {
+                return;
+            }
+
             var errorMessage = result.ErrorMessage;
             var previousTaskStatus = task.Status;
             var previousAttemptStatus = attempt.Status;
@@ -120,6 +125,55 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ProducedBy = nameof(CompleteCallbackDecisionHandler)
             }, cancellationToken);
         }
+
+        private static bool CanApplyCallback(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            bool succeeded)
+        {
+            if (IsHardTerminal(instance.Status) ||
+                task.OrchestrationInstanceId != instance.Id ||
+                attempt.TaskExecutionId != task.Id ||
+                dispatch.TaskExecutionAttemptId != attempt.Id)
+            {
+                return false;
+            }
+
+            if (task.Status == TaskExecutionStatus.WaitingResponse &&
+                attempt.Status == TaskExecutionStatus.WaitingResponse &&
+                string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return succeeded &&
+                task.Status is not (TaskExecutionStatus.Completed or TaskExecutionStatus.Compensated) &&
+                task.LastAttemptNumber <= attempt.AttemptNumber &&
+                instance.Status is OrchestrationInstanceStatus.Failed
+                    or OrchestrationInstanceStatus.DeadLettered
+                    or OrchestrationInstanceStatus.Running
+                    or OrchestrationInstanceStatus.Waiting &&
+                (attempt.Status is TaskExecutionStatus.WaitingResponse
+                    or TaskExecutionStatus.TimedOut
+                    or TaskExecutionStatus.Failed ||
+                    IsFinishedDispatch(dispatch.DispatchStatus));
+        }
+
+        private static bool IsHardTerminal(OrchestrationInstanceStatus status)
+            => status is OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Stopped
+                or OrchestrationInstanceStatus.Compensating
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Aborted;
+
+        private static bool IsFinishedDispatch(string status)
+            => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
 
         private static JsonNode ResolveResponsePayload(
             string payload,

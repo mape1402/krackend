@@ -23,6 +23,9 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     {
         DetachLocalTrackedEntity(DbContext.OrchestrationInstances, instance);
         DbContext.OrchestrationInstances.Update(instance);
+        var entry = DbContext.Entry(instance);
+        entry.Property(x => x.ActiveLeaseId).IsModified = false;
+        entry.Property(x => x.ActiveLeaseExpiresOnUtc).IsModified = false;
         await SaveChanges(cancellationToken);
     }
 
@@ -46,10 +49,43 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
     {
+        if (DbContext.Database.IsRelational())
+        {
+            var affected = await DbContext.OrchestrationInstances
+                .Where(x =>
+                    x.Id == instanceId &&
+                    (x.ActiveLeaseId == null ||
+                     x.ActiveLeaseId == string.Empty ||
+                     x.ActiveLeaseId == leaseId ||
+                     x.ActiveLeaseExpiresOnUtc == null ||
+                     x.ActiveLeaseExpiresOnUtc <= nowUtc))
+                .ExecuteUpdateAsync(updates => updates
+                    .SetProperty(x => x.ActiveLeaseId, leaseId)
+                    .SetProperty(x => x.ActiveLeaseExpiresOnUtc, expiresOnUtc),
+                    cancellationToken);
+
+            if (affected == 1)
+            {
+                return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
+            }
+
+            var exists = await DbContext.OrchestrationInstances
+                .AsNoTracking()
+                .AnyAsync(x => x.Id == instanceId, cancellationToken);
+            if (!exists)
+            {
+                throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
+            }
+
+            return null;
+        }
+
         var instance = await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
             ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
 
-        if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) && instance.ActiveLeaseExpiresOnUtc > nowUtc)
+        if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) &&
+            !string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal) &&
+            instance.ActiveLeaseExpiresOnUtc > nowUtc)
         {
             return null;
         }
@@ -62,6 +98,17 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
     {
+        if (DbContext.Database.IsRelational())
+        {
+            await DbContext.OrchestrationInstances
+                .Where(x => x.Id == instanceId && x.ActiveLeaseId == leaseId)
+                .ExecuteUpdateAsync(updates => updates
+                    .SetProperty(x => x.ActiveLeaseId, (string)null)
+                    .SetProperty(x => x.ActiveLeaseExpiresOnUtc, (DateTime?)null),
+                    cancellationToken);
+            return;
+        }
+
         var instance = await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken);
         if (instance is not null && instance.ActiveLeaseId == leaseId)
         {

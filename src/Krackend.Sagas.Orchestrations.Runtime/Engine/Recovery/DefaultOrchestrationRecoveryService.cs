@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
@@ -22,6 +23,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     private readonly IRuntimeArtifactResolver _artifactResolver;
     private readonly ITaskAttemptDispatcher _taskAttemptDispatcher;
     private readonly ISagaEngine _sagaEngine;
+    private readonly IOrchestrationInstanceCoordinator _coordinator;
 
     public DefaultOrchestrationRecoveryService(
         IOrchestrationInstanceRepository instanceRepository,
@@ -30,7 +32,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         IExecutionTransitionRepository transitionRepository,
         IRuntimeArtifactResolver artifactResolver,
         ITaskAttemptDispatcher taskAttemptDispatcher,
-        ISagaEngine sagaEngine)
+        ISagaEngine sagaEngine,
+        IOrchestrationInstanceCoordinator coordinator = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -39,6 +42,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
         _taskAttemptDispatcher = taskAttemptDispatcher ?? throw new ArgumentNullException(nameof(taskAttemptDispatcher));
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
+        _coordinator = coordinator ?? PassthroughOrchestrationInstanceCoordinator.Instance;
     }
 
     public async Task<OrchestrationRecoveryResult> ReplayAsync(
@@ -51,6 +55,25 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             return OrchestrationRecoveryResult.Rejected(instanceId, string.Empty, "Instance id is invalid.");
         }
 
+        OrchestrationRecoveryResult result = null;
+        var acquired = await _coordinator.TryExecuteAsync(
+            parsedInstanceId,
+            async token => result = await ReplayCoreAsync(parsedInstanceId, payload, token),
+            cancellationToken);
+
+        return acquired
+            ? result
+            : OrchestrationRecoveryResult.Rejected(
+                parsedInstanceId.ToString(),
+                string.Empty,
+                $"Instance '{parsedInstanceId}' is being processed by another runtime node.");
+    }
+
+    private async Task<OrchestrationRecoveryResult> ReplayCoreAsync(
+        Id parsedInstanceId,
+        string payload,
+        CancellationToken cancellationToken)
+    {
         var now = DateTime.UtcNow;
         var instance = await _instanceRepository.GetById(parsedInstanceId, cancellationToken);
         if (!IsRecoverable(instance.Status))
@@ -129,6 +152,25 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             return OrchestrationRecoveryResult.Rejected(instanceId, string.Empty, "Instance id is invalid.");
         }
 
+        OrchestrationRecoveryResult result = null;
+        var acquired = await _coordinator.TryExecuteAsync(
+            parsedInstanceId,
+            async token => result = await AbortCoreAsync(parsedInstanceId, reason, token),
+            cancellationToken);
+
+        return acquired
+            ? result
+            : OrchestrationRecoveryResult.Rejected(
+                parsedInstanceId.ToString(),
+                string.Empty,
+                $"Instance '{parsedInstanceId}' is being processed by another runtime node.");
+    }
+
+    private async Task<OrchestrationRecoveryResult> AbortCoreAsync(
+        Id parsedInstanceId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
         var now = DateTime.UtcNow;
         var instance = await _instanceRepository.GetById(parsedInstanceId, cancellationToken);
         if (IsFinal(instance.Status))
@@ -341,5 +383,19 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         }
 
         return false;
+    }
+
+    private sealed class PassthroughOrchestrationInstanceCoordinator : IOrchestrationInstanceCoordinator
+    {
+        public static readonly PassthroughOrchestrationInstanceCoordinator Instance = new();
+
+        public async Task<bool> TryExecuteAsync(
+            Id instanceId,
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default)
+        {
+            await operation(cancellationToken);
+            return true;
+        }
     }
 }

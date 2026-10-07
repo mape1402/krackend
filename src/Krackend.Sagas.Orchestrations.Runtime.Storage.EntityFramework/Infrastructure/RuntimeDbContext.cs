@@ -307,6 +307,10 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.ErrorMessage).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.OrchestrationInstanceId);
+        builder
+            .HasIndex(x => new { x.OrchestrationInstanceId, x.SourceTaskExecutionId, x.CompensationTaskKey })
+            .IsUnique()
+            .HasDatabaseName("IX_CompensationExecutions_Instance_SourceTask_CompensationTask");
     }
 
     private static void ConfigureIngressConfigurations(ModelBuilder modelBuilder)
