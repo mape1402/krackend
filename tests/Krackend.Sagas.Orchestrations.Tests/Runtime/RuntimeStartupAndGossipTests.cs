@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.Fakes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,14 @@ public sealed class RuntimeStartupAndGossipTests
         var artifactRepository = Substitute.For<IRuntimeArtifactRepository>();
         var standupScheduler = Substitute.For<IRuntimeIngressStandupScheduler>();
         var ingressRegistry = Substitute.For<IIngressRegistry>();
+        var stateController = Substitute.For<IRuntimeOperationalStateController>();
+        var admissionController = Substitute.For<IRuntimeAdmissionController>();
+        stateController.EvaluateAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new RuntimeOperationalSnapshot(
+                RuntimeOperationalState.Healthy,
+                DateTime.UtcNow,
+                Array.Empty<RuntimeDependencyProbeResult>())));
+        admissionController.CanAccept(RuntimeAdmissionOperation.IngressStandup).Returns(true);
         artifactRepository.GetReady(Arg.Any<CancellationToken>()).Returns(artifacts);
         var services = new ServiceCollection();
         services.AddSingleton(artifactRepository);
@@ -36,7 +45,9 @@ public sealed class RuntimeStartupAndGossipTests
         var service = new RuntimeReadyArtifactStartupService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             ingressRegistry,
-            new TestRuntimeReplicaIdentity { ReplicaId = "replica-x" });
+            new TestRuntimeReplicaIdentity { ReplicaId = "replica-x" },
+            stateController,
+            admissionController);
 
         await service.StartAsync(CancellationToken.None);
         await service.StopAsync(CancellationToken.None);

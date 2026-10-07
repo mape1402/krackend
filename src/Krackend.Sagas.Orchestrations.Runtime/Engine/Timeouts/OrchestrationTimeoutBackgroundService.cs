@@ -1,3 +1,4 @@
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,13 @@ internal sealed class OrchestrationTimeoutBackgroundService : BackgroundService
         try
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
+            var admission = scope.ServiceProvider.GetService<IRuntimeAdmissionController>();
+            if (admission is not null &&
+                !admission.CanAccept(RuntimeAdmissionOperation.TimeoutProcessing))
+            {
+                return;
+            }
+
             var processor = scope.ServiceProvider.GetRequiredService<IOrchestrationTimeoutProcessor>();
             await processor.ProcessDueTimeoutsAsync(DateTime.UtcNow, cancellationToken);
         }

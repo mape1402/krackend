@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Mule;
 
@@ -27,6 +28,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IMuleTerminalFailureMarker _terminalFailureMarker;
         private readonly IOrchestrationInstanceCoordinator? _coordinator;
+        private readonly IRuntimeAdmissionController? _admissionController;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RemoteCommandDispatchAction"/> class.
@@ -41,7 +43,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             IExecutionTransitionRepository transitionRepository,
             IMuleTerminalFailureMarker terminalFailureMarker,
             IOrchestrationPropagationMetadataSetter? propagationMetadataSetter = null,
-            IOrchestrationInstanceCoordinator? coordinator = null)
+            IOrchestrationInstanceCoordinator? coordinator = null,
+            IRuntimeAdmissionController? admissionController = null)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _messageMetadataSetter = messageMetadataSetter ?? throw new ArgumentNullException(nameof(messageMetadataSetter));
@@ -53,6 +56,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _terminalFailureMarker = terminalFailureMarker ?? throw new ArgumentNullException(nameof(terminalFailureMarker));
             _coordinator = coordinator;
+            _admissionController = admissionController;
         }
 
         /// <summary>
@@ -61,6 +65,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         public async ValueTask ExecuteAsync(MuleActionContext<RemoteCommand> context, CancellationToken cancellationToken)
         {
             var command = context.Payload ?? throw new InvalidOperationException("Remote command payload cannot be empty.");
+            if (_admissionController is not null)
+            {
+                await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.Dispatch, cancellationToken);
+            }
 
             if (HasRuntimeDispatchState(command) && _coordinator is not null)
             {

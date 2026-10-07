@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
+using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Concurrent;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
@@ -7,19 +8,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IRuntimeIngressLocalState _localState;
+        private readonly IRuntimeAdmissionController _admissionController;
 
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, IngressConnectorRegistration>> _connectors = new();
 
         public IngressRegistry(
             IServiceScopeFactory scopeFactory,
-            IRuntimeIngressLocalState localState)
+            IRuntimeIngressLocalState localState,
+            IRuntimeAdmissionController admissionController)
         {
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _localState = localState ?? throw new ArgumentNullException(nameof(localState));
+            _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
         }
 
         public async Task StandUpAllAsync(CancellationToken cancellationToken = default)
         {
+            await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.IngressStandup, cancellationToken);
+
             using var scope = _scopeFactory.CreateScope();
             using var reader = scope.ServiceProvider.GetRequiredService<IGetAllIngressConfigurationsAccessor>();
 
@@ -32,9 +38,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             while (dataset.HasMoreItems);
         }
 
-
         public async Task StandUpOneAsync(string artifactId, long ingressGeneration, CancellationToken cancellationToken = default)
         {
+            await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.IngressStandup, cancellationToken);
+
             if (_localState.IsApplied(artifactId, ingressGeneration))
             {
                 return;

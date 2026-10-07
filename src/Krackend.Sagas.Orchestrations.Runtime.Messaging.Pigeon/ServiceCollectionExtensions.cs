@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.Interceptors;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,6 +78,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             configurePigeon(pigeonBuilder);
 
             builder.Services.TryAddSingleton<IPigeonIngressConsumerRegistry, PigeonIngressConsumerRegistry>();
+            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IRuntimeDegradationHandler, PigeonRuntimeDegradationHandler>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingIngressAdapter, PigeonIngressAdapter>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingDispatchAdapter, PigeonDispatchAdapter>());
 

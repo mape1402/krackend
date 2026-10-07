@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using System.Globalization;
 using System.Text.Json.Nodes;
 
@@ -26,6 +27,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     private readonly IRuntimeArtifactResolver _artifactResolver;
     private readonly ISagaEngine _sagaEngine;
     private readonly IOrchestrationInstanceCoordinator _coordinator;
+    private readonly IRuntimeAdmissionController _admissionController;
 
     public DefaultOrchestrationTimeoutProcessor(
         IOrchestrationInstanceRepository instanceRepository,
@@ -36,7 +38,8 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         IExecutionTransitionRepository transitionRepository,
         IRuntimeArtifactResolver artifactResolver,
         ISagaEngine sagaEngine,
-        IOrchestrationInstanceCoordinator coordinator)
+        IOrchestrationInstanceCoordinator coordinator,
+        IRuntimeAdmissionController admissionController)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -47,10 +50,13 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
     }
 
     public async Task<int> ProcessDueTimeoutsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
     {
+        await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
+
         var waitingTasks = await _taskRepository.GetWaitingResponseOlderThan(utcNow, cancellationToken);
         var processed = 0;
 
