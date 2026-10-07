@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v5.1.0] - 2026-10-07
+
+- ### Added
+
+  - Added runtime operational monitoring with dependency probes, admission control, and adapter-facing degradation handlers so hosts can react consistently when runtime dependencies become unavailable.
+  - Added durable runtime reconciliation that processes due timeouts and advances recoverable orchestration instances from persisted state after transient failures or orchestrator restarts.
+  - Added Entity Framework and in-memory primary-persistence probes, plus Redis gossip dependency probing so Redis failures degrade the runtime without replacing the durable store as the source of truth.
+  - Added Pigeon runtime degradation handling so messaging ingress can translate runtime closed/degraded states without coupling the engine to a specific transport.
+
+- ### Changed
+
+  - Changed runtime ingress, startup, timeout processing, callback handling, and dispatch paths to respect runtime admission decisions before accepting or advancing work.
+  - Changed Redis gossip registration to treat Redis as an optional runtime dependency while keeping the primary database as the critical dependency.
+  - Increased orchestration branch coverage above 99% with focused unit coverage for runtime disaster recovery, callback decision branches, and Control Plane retry/timeout policy builders.
+
+- ### Fixed
+
+  - Fixed multi-instance recovery gaps where timeouts, callbacks, startup projection, and reconciliation could advance work while the runtime should be closed or recovering.
+
+------
+
 ## [v5.0.0] - 2026-10-06
 
 - ### Added

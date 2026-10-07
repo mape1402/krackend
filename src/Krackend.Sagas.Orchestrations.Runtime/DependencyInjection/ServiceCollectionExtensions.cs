@@ -26,7 +26,9 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Runtime.Replication;
+using Krackend.Sagas.Orchestrations.Runtime.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.Extensions.Caching.Distributed;
@@ -63,6 +65,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IMessagingIngressConfigurationSelector, DefaultMessagingIngressConfigurationSelector>();
             services.TryAddScoped<IMessagingIngressAdapter, DefaultMessagingAdapter>();
             services.TryAddScoped<IIntakeBuffer, DefaultIntakeBuffer>();
+            services.AddOptions<RuntimeOperationalOptions>().BindConfiguration("Runtime:Operations");
+            services.AddOptions<RuntimeReconciliationOptions>().BindConfiguration("Runtime:Reconciliation");
+            services.TryAddSingleton<IRuntimeOperationalStateController, DefaultRuntimeOperationalStateController>();
+            services.TryAddSingleton<IRuntimeOperationalStateProvider>(provider =>
+                provider.GetRequiredService<IRuntimeOperationalStateController>());
+            services.TryAddSingleton<IRuntimeAdmissionController, DefaultRuntimeAdmissionController>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IRuntimeDependencyProbe, InMemoryRuntimePrimaryPersistenceProbe>());
+            services.TryAddScoped<IOrchestrationRuntimeReconciler, DefaultOrchestrationRuntimeReconciler>();
             services.TryAddScoped<ISagaEngine, SagaEngine>();
             services.TryAddScoped<IPromoter, Promoter>();
             services.TryAddScoped<ITriggerPayloadValidator, DefaultTriggerPayloadValidator>();
@@ -161,6 +171,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.AddKeyedScoped<IIngressConector, MessagingIngressConnector>(IngressTransport.Messaging);
             services.AddKeyedScoped<IIngressConector, DefaultHttpIngressConnector>(IngressTransport.Http);
             services.AddKeyedScoped<IRemoteCommandExecutor, MessagingRemoteCommandExecutor>(RemoteCommandTransport.Messaging);
+            services.AddHostedService<RuntimeOperationalMonitorBackgroundService>();
+            services.AddHostedService<RuntimeReconciliationBackgroundService>();
             services.AddHostedService<OrchestrationTimeoutBackgroundService>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeReadyArtifactStartupService>());
 

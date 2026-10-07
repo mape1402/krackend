@@ -34,6 +34,16 @@ public interface IOrchestrationInstanceRepository
         int take = 50,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets non-terminal orchestration instances that can be reconciled after startup or failover.
+    /// </summary>
+    /// <param name="take">Maximum instances to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recoverable orchestration instances ordered by oldest update first.</returns>
+    Task<IReadOnlyCollection<OrchestrationInstance>> GetRecoverable(
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
     Task<RuntimeInstanceSummary> GetSummary(
         DateTime recentSinceUtc,
         CancellationToken cancellationToken = default);

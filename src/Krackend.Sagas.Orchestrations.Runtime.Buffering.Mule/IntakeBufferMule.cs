@@ -1,3 +1,4 @@
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.Logging;
 using Mule;
 using Mule.Dispatching;
@@ -7,13 +8,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
     internal class IntakeBufferMule : IIntakeBuffer
     {
         private readonly IMuleClient _muleClient;
+        private readonly IRuntimeAdmissionController _admissionController;
         private readonly ILogger<IntakeBufferMule> _logger;
 
         public IntakeBufferMule(
             IMuleClient muleClient,
+            IRuntimeAdmissionController admissionController,
             ILogger<IntakeBufferMule> logger)
         {
             _muleClient = muleClient ?? throw new ArgumentNullException(nameof(muleClient));
+            _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -23,6 +27,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             {
                 throw new ArgumentNullException(nameof(workItem));
             }
+
+            await _admissionController.EnsureAcceptedAsync(
+                workItem.IngressKind == Ingress.IngressKind.Backchannel
+                    ? RuntimeAdmissionOperation.BackchannelIntake
+                    : RuntimeAdmissionOperation.TriggerIntake,
+                cancellationToken);
 
             switch (workItem.IngressKind)
             {

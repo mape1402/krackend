@@ -94,6 +94,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .Take(take)
                 .ToArray());
 
+        public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecoverable(int take = 100, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(_store.Instances.Values
+                .Where(static x => !IsTerminal(x.Status))
+                .OrderBy(static x => x.LastUpdatedOnUtc)
+                .Take(take)
+                .ToArray());
+
         public Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default)
         {
             var instances = _store.Instances.Values.ToArray();
@@ -104,5 +111,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 instances.Count(x => x.FailedOnUtc >= recentSinceUtc || x.Status == OrchestrationInstanceStatus.DeadLettered),
                 recentSinceUtc));
         }
+
+        private static bool IsTerminal(OrchestrationInstanceStatus status)
+            => status is OrchestrationInstanceStatus.Stopped
+                or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.Completed
+                or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.DeadLettered
+                or OrchestrationInstanceStatus.Aborted
+                or OrchestrationInstanceStatus.Failed;
     }
 }

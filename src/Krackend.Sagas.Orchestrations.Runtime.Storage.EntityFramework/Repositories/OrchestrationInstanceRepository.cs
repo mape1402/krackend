@@ -124,6 +124,20 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .Take(take)
             .ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecoverable(int take = 100, CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x =>
+                x.Status != OrchestrationInstanceStatus.Stopped &&
+                x.Status != OrchestrationInstanceStatus.Compensated &&
+                x.Status != OrchestrationInstanceStatus.Completed &&
+                x.Status != OrchestrationInstanceStatus.CompletedWithErrors &&
+                x.Status != OrchestrationInstanceStatus.DeadLettered &&
+                x.Status != OrchestrationInstanceStatus.Aborted &&
+                x.Status != OrchestrationInstanceStatus.Failed)
+            .OrderBy(x => x.LastUpdatedOnUtc)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+
     public async Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default)
     {
         var query = DbContext.OrchestrationInstances.AsNoTracking();

@@ -253,6 +253,30 @@ Replay finds the latest failed or timed-out task first and dispatches it again t
 
 Late callbacks are accepted conservatively. If an earlier timeout attempt eventually reports success after the instance already moved to `DeadLettered`, the task execution can be completed so idempotent downstream systems can reconcile correctly, while the instance remains in the operator-visible stopped state until replay or abort.
 
+Runtime operations and disaster recovery:
+
+The runtime evaluates registered dependency probes and exposes an admission controller before accepting ingress, callbacks, dispatch, timeout processing, startup projection, recovery, and reconciliation work. Primary persistence is a critical dependency: if the main database is unavailable, the runtime moves to `Closed` and stops accepting new work so brokers can retain messages or upstream systems can retry through their own outbox/retry strategy. Optional dependencies such as Redis gossip degrade the runtime instead of closing it; the durable database remains the source of truth.
+
+Transport and infrastructure adapters receive operational state changes through `IRuntimeDegradationHandler`. The engine stays transport-agnostic and the adapter decides how to pause, resume, nack, defer, or log according to the selected protocol. The built-in Pigeon adapter listens for closed/reopened states without hardcoding broker behavior into the runtime engine.
+
+Runtime reconciliation runs in the background and can also be invoked through `IOrchestrationRuntimeReconciler`. It processes due timeouts, reloads recoverable instances from durable storage, and re-enters the saga engine with preserved message metadata and snapshot payloads. This is the recovery path after orchestrator restarts, transient process crashes, or missed in-memory timers.
+
+```json
+{
+  "Runtime": {
+    "Operations": {
+      "Enabled": true,
+      "ScanIntervalSeconds": 5
+    },
+    "Reconciliation": {
+      "Enabled": true,
+      "ScanIntervalSeconds": 15,
+      "BatchSize": 100
+    }
+  }
+}
+```
+
 Compensation:
 
 Tasks and event triggers can define compensating tasks. The runtime evaluates the compensation execution condition, applies the compensation transformation, and dispatches the transformed compensation request through the task adapter abstraction. This keeps compensation transport-agnostic and lets messaging, or another installed task kind, own its own dispatch behavior.

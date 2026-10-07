@@ -15,7 +15,11 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
     [Fact]
     public async Task OrchestrationInstanceCoordinatorSkipsOperationWhenAnotherRuntimeNodeOwnsLease()
     {
-        using var provider = CreateProvider();
+        using var provider = CreateProvider(options =>
+        {
+            options.LeaseUnavailableWaitMilliseconds = 1;
+            options.LeaseUnavailableRetryDelayMilliseconds = 1;
+        });
         using var scope = provider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
         var coordinator = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>();
@@ -40,6 +44,47 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         Assert.NotNull(externalLease);
         Assert.False(acquired);
         Assert.False(ran);
+    }
+
+    [Fact]
+    public async Task OrchestrationInstanceCoordinatorWaitsBrieflyForContendedLease()
+    {
+        using var provider = CreateProvider(options =>
+        {
+            options.LeaseUnavailableWaitMilliseconds = 1000;
+            options.LeaseUnavailableRetryDelayMilliseconds = 10;
+        });
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var coordinator = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>();
+        var instance = Instance(OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        var now = DateTime.UtcNow;
+        var externalLease = await repository.TryAcquireLease(
+            instance.Id,
+            "runtime-node-2",
+            now,
+            now.AddMinutes(1));
+        var ran = false;
+
+        var acquiredTask = coordinator.TryExecuteAsync(
+            instance.Id,
+            _ =>
+            {
+                ran = true;
+                return Task.CompletedTask;
+            });
+
+        await Task.Delay(50);
+        await repository.ReleaseLease(instance.Id, "runtime-node-2");
+        var acquired = await acquiredTask.WaitAsync(TimeSpan.FromSeconds(2));
+        var persisted = await repository.GetById(instance.Id);
+
+        Assert.NotNull(externalLease);
+        Assert.True(acquired);
+        Assert.True(ran);
+        Assert.Null(persisted.ActiveLeaseId);
+        Assert.Null(persisted.ActiveLeaseExpiresOnUtc);
     }
 
     [Fact]
@@ -404,11 +449,16 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         await Assert.ThrowsAsync<KeyNotFoundException>(() => attemptRepository.GetByDispatchId(Id.New()));
     }
 
-    private static ServiceProvider CreateProvider()
+    private static ServiceProvider CreateProvider(Action<OrchestrationCoordinationOptions>? configureCoordination = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
+        if (configureCoordination is not null)
+        {
+            services.Configure(configureCoordination);
+        }
+
         return services.BuildServiceProvider();
     }
 

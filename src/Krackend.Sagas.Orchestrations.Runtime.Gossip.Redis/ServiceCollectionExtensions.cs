@@ -1,5 +1,7 @@
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
+using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.Operations;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -34,6 +36,8 @@ public static class ServiceCollectionExtensions
         });
 
         builder.Services.TryAddSingleton<IRedisRuntimeGossipConnectionFactory, RedisRuntimeGossipConnectionFactory>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IRuntimeDependencyProbe, RedisRuntimeGossipDependencyProbe>());
         builder.Services.Replace(
             ServiceDescriptor.Singleton<IRuntimeArtifactReadyGossipPublisher, RedisRuntimeArtifactReadyGossipPublisher>());
         builder.Services.TryAddEnumerable(

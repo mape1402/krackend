@@ -38,24 +38,14 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
 
         var leaseId = $"runtime:{Id.New()}";
         var leaseDuration = ResolveLeaseDuration(_options);
-        var now = DateTime.UtcNow;
-        OrchestrationInstanceLease lease;
-        try
-        {
-            lease = await _instanceRepository.TryAcquireLease(
-                instanceId,
-                leaseId,
-                now,
-                now.Add(leaseDuration),
-                cancellationToken);
-        }
-        catch (KeyNotFoundException)
+        var acquisition = await TryAcquireLeaseAsync(instanceId, leaseId, leaseDuration, cancellationToken);
+        if (acquisition.InstanceMissing)
         {
             await operation(cancellationToken);
             return true;
         }
 
-        if (lease is null)
+        if (acquisition.Lease is null)
         {
             return false;
         }
@@ -83,6 +73,41 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
             }
 
             await _instanceRepository.ReleaseLease(instanceId, leaseId, CancellationToken.None);
+        }
+    }
+
+    private async Task<(bool InstanceMissing, OrchestrationInstanceLease Lease)> TryAcquireLeaseAsync(
+        Id instanceId,
+        string leaseId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken)
+    {
+        var waitWindow = ResolveLeaseUnavailableWait(_options);
+        var retryDelay = ResolveLeaseUnavailableRetryDelay(_options);
+        var deadline = DateTime.UtcNow.Add(waitWindow);
+
+        while (true)
+        {
+            var now = DateTime.UtcNow;
+            try
+            {
+                var lease = await _instanceRepository.TryAcquireLease(
+                    instanceId,
+                    leaseId,
+                    now,
+                    now.Add(leaseDuration),
+                    cancellationToken);
+                if (lease is not null || now >= deadline)
+                {
+                    return (false, lease);
+                }
+            }
+            catch (KeyNotFoundException)
+            {
+                return (true, null);
+            }
+
+            await Task.Delay(retryDelay, cancellationToken);
         }
     }
 
@@ -160,4 +185,10 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
 
     private static TimeSpan ResolveLeaseDuration(OrchestrationCoordinationOptions options)
         => TimeSpan.FromSeconds(Math.Max(1, options.LeaseDurationSeconds));
+
+    private static TimeSpan ResolveLeaseUnavailableWait(OrchestrationCoordinationOptions options)
+        => TimeSpan.FromMilliseconds(Math.Max(0, options.LeaseUnavailableWaitMilliseconds));
+
+    private static TimeSpan ResolveLeaseUnavailableRetryDelay(OrchestrationCoordinationOptions options)
+        => TimeSpan.FromMilliseconds(Math.Max(1, options.LeaseUnavailableRetryDelayMilliseconds));
 }

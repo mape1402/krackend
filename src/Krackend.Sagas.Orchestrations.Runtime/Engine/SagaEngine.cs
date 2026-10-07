@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
+using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
         private readonly IDecisionControl _decisionControl;
         private readonly IDecisionExecutor _decisionExecutor;
         private readonly IOrchestrationInstanceCoordinator _coordinator;
+        private readonly IRuntimeAdmissionController _admissionController;
         private readonly ILogger<SagaEngine> _logger;
 
         public SagaEngine(
@@ -22,17 +24,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
             IDecisionControl decisionControl,
             IDecisionExecutor decisionExecutor,
             IOrchestrationInstanceCoordinator coordinator,
+            IRuntimeAdmissionController admissionController,
             ILogger<SagaEngine> logger)
         {
             _promoter = promoter ?? throw new ArgumentNullException(nameof(promoter));
             _decisionControl = decisionControl ?? throw new ArgumentNullException(nameof(decisionControl));
             _decisionExecutor = decisionExecutor ?? throw new ArgumentNullException(nameof(decisionExecutor));
             _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+            _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task StartOrchestrationAsync(StartIntent intent, CancellationToken cancellationToken = default)
         {
+            await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TriggerIntake, cancellationToken);
+
             var promotionRequest = new PromotionRequest
             {
                 ArtifactId = intent.ArtifactId,
@@ -71,12 +77,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine
                 cancellationToken);
         }
 
-        public Task OrchestrateAsync(ForwardIntent intent, CancellationToken cancellationToken = default)
+        public async Task OrchestrateAsync(ForwardIntent intent, CancellationToken cancellationToken = default)
         {
+            await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.OrchestrationExecution, cancellationToken);
+
             var instanceId = TryResolveInstanceId(intent.MessageMetadata);
-            return instanceId.HasValue
-                ? CoordinateOrchestrationAsync(instanceId.Value, intent, cancellationToken)
-                : InternalOrchestrateAsync(intent, cancellationToken);
+            if (instanceId.HasValue)
+            {
+                await CoordinateOrchestrationAsync(instanceId.Value, intent, cancellationToken);
+                return;
+            }
+
+            await InternalOrchestrateAsync(intent, cancellationToken);
         }
 
         private async Task CoordinateOrchestrationAsync(

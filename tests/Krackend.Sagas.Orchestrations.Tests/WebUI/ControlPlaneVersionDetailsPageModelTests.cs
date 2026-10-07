@@ -1070,6 +1070,318 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal(string.Empty, payload.RootElement.GetProperty("CompensationMessagingTopic").GetString());
     }
 
+    [Fact]
+    public void BuildTriggerEditPayloadIncludesFullCompensationPoliciesAndSchemaBindings()
+    {
+        var eventRegistryProviderId = new Id(Ulid.Parse("01JMJGBJ0R7WFN9QBG3CCBEVM1"));
+        var compensationRegistryProviderId = new Id(Ulid.Parse("01JMJGBJ0R7WFN9QBG3CCBEVM2"));
+        var trigger = new TriggerBindingModel
+        {
+            Id = "trigger-full",
+            Key = "sales.sale.created",
+            Description = "Sale trigger",
+            TriggerType = TriggerType.Event,
+            TriggerChannel = new EventTriggerChannel
+            {
+                Topic = "events.sales.sale.created",
+                Version = new SemanticVersion(2, 1, 0),
+                HasSchemaValidation = true,
+                HasValidation = true,
+                Validation = new ValidationDefinition
+                {
+                    Engine = EngineType.DSL,
+                    ErrorCode = "SaleInvalid",
+                    Configuration = new DslValidationConfiguration { Dsl = "$payload.saleId != null" }
+                },
+                SchemaBinding = new SchemaBinding
+                {
+                    ElementType = ElementType.Orchestration,
+                    ContractId = Id.New(),
+                    ContractKey = "events.sales.sale.created",
+                    ContractVersion = new SemanticVersion(2, 1, 0),
+                    RegistryProviderId = eventRegistryProviderId,
+                    StrictMode = true
+                }
+            },
+            CompensationDefinition = new CompensationDefinition
+            {
+                CompensationTaskKind = TaskKind.Messaging,
+                DispatchType = TaskDispatchType.FireAndForget,
+                OnErrorPolicy = OnErrorPolicy.Continue,
+                HasExecutionCondition = true,
+                ExecutionCondition = new ExecutionCondition
+                {
+                    Engine = EngineType.DSL,
+                    Configuration = new DslConditionConfiguration { Expression = new Expression("payload.canUndo") }
+                },
+                HasTransformation = true,
+                Transformation = new TransformationDefinition
+                {
+                    Engine = EngineType.DSL,
+                    Configuration = new DslTransformationConfiguration { Dsl = "map compensation" }
+                },
+                Configuration = new MessagingTaskConfiguration
+                {
+                    Topic = "commands.sales.cancel",
+                    Version = new SemanticVersion(3, 2, 1),
+                    HasSchemaValidation = true,
+                    SchemaBinding = new SchemaBinding
+                    {
+                        ElementType = ElementType.Orchestration,
+                        ContractId = Id.New(),
+                        ContractKey = "commands.sales.cancel",
+                        ContractVersion = new SemanticVersion(3, 2, 1),
+                        RegistryProviderId = compensationRegistryProviderId,
+                        StrictMode = true
+                    }
+                },
+                RetryPolicy = new RetryPolicy
+                {
+                    StrategyType = RetryStrategyType.Fixed,
+                    MaxRetries = 4,
+                    RetryableErrorCodes = ["TEMP", "LOCKED"],
+                    StopOnNonRetryableError = true,
+                    Strategy = new FixedRetryStrategy { Delay = Duration.FromSeconds(7) }
+                },
+                TimeoutPolicy = new TimeoutPolicy
+                {
+                    Timeout = Duration.FromSeconds(45),
+                    TimeoutBehavior = TimeoutBehavior.Reconcile,
+                    TimeoutBehaviorPolicy = new ReconcileTimeoutBehaviorPolicy
+                    {
+                        OrchestrationAction = OrchestrationActionOnTimeout.Block,
+                        RetryPolicy = new RetryPolicy
+                        {
+                            StrategyType = RetryStrategyType.Fixed,
+                            MaxRetries = 2,
+                            RetryableErrorCodes = ["TIMEOUT"],
+                            StopOnNonRetryableError = true,
+                            Strategy = new FixedRetryStrategy { Delay = Duration.FromSeconds(9) }
+                        }
+                    }
+                }
+            }
+        };
+
+        using var payload = JsonSerializer.SerializeToDocument(InvokePrivateStatic<object>(
+            "BuildTriggerEditPayload",
+            trigger));
+        var root = payload.RootElement;
+
+        Assert.Equal("sales.sale.created", root.GetProperty("Key").GetString());
+        Assert.Equal("events.sales.sale.created", root.GetProperty("EventTopic").GetString());
+        Assert.Equal("2.1.0", root.GetProperty("EventVersion").GetString());
+        Assert.True(root.GetProperty("HasEventSchemaValidation").GetBoolean());
+        Assert.Equal(eventRegistryProviderId.ToString(), root.GetProperty("EventSchemaRegistryProviderId").GetString());
+        Assert.True(root.GetProperty("EventSchemaStrictMode").GetBoolean());
+        Assert.True(root.GetProperty("HasEventValidation").GetBoolean());
+        Assert.Equal("$payload.saleId != null", root.GetProperty("EventValidationDsl").GetString());
+        Assert.True(root.GetProperty("HasCompensation").GetBoolean());
+        Assert.Equal("commands.sales.cancel", root.GetProperty("CompensationMessagingTopic").GetString());
+        Assert.Equal("3.2.1", root.GetProperty("CompensationMessagingVersion").GetString());
+        Assert.True(root.GetProperty("HasCompensationSchemaValidation").GetBoolean());
+        Assert.Equal(compensationRegistryProviderId.ToString(), root.GetProperty("CompensationSchemaRegistryProviderId").GetString());
+        Assert.True(root.GetProperty("CompensationSchemaStrictMode").GetBoolean());
+        Assert.True(root.GetProperty("HasCompensationExecutionCondition").GetBoolean());
+        Assert.Equal("payload.canUndo", root.GetProperty("CompensationConditionDslExpression").GetString());
+        Assert.True(root.GetProperty("HasCompensationTransformation").GetBoolean());
+        Assert.Equal("map compensation", root.GetProperty("CompensationTransformationDsl").GetString());
+        Assert.True(root.GetProperty("HasCompensationRetryPolicy").GetBoolean());
+        Assert.Equal(4, root.GetProperty("CompensationRetryMaxRetries").GetInt32());
+        Assert.Equal("TEMP,LOCKED", root.GetProperty("CompensationRetryableErrorCodes").GetString());
+        Assert.True(root.GetProperty("HasCompensationTimeoutPolicy").GetBoolean());
+        Assert.Equal(45d, root.GetProperty("CompensationTimeoutSeconds").GetDouble());
+        Assert.Equal("Reconcile", root.GetProperty("CompensationTimeoutBehavior").GetString());
+        Assert.Equal("Block", root.GetProperty("CompensationTimeoutAction").GetString());
+        Assert.Equal(2, root.GetProperty("CompensationTimeoutReconcileRetries").GetInt32());
+        Assert.Equal("TIMEOUT", root.GetProperty("CompensationTimeoutReconcileRetryableErrorCodes").GetString());
+    }
+
+    [Fact]
+    public void PrivatePolicyValidationAndBuildersCoverRetryAndTimeoutBranches()
+    {
+        var page = CreateContext().Page;
+
+        InvokePrivate(
+            page,
+            "ValidateRetryPolicy",
+            "RetryCount",
+            -1,
+            "RetryDelay",
+            -1d,
+            "RetryCodes",
+            "");
+        InvokePrivate(
+            page,
+            "ValidateRetryPolicy",
+            "RetryCountWithMissingCodes",
+            2,
+            "RetryDelayValid",
+            1d,
+            "MissingRetryCodes",
+            "");
+        InvokePrivate(
+            page,
+            "ValidateTimeoutPolicy",
+            "TimeoutSeconds",
+            0d,
+            TimeoutBehavior.Reconcile.ToString(),
+            "WaitSeconds",
+            0d,
+            "ReconcileRetries",
+            -1,
+            "ReconcileDelay",
+            -1d,
+            "ReconcileCodes",
+            "");
+        InvokePrivate(
+            page,
+            "ValidateTimeoutPolicy",
+            "TimeoutSecondsValid",
+            5d,
+            TimeoutBehavior.Reconcile.ToString(),
+            "WaitSecondsValid",
+            1d,
+            "ReconcileRetriesMissingCodes",
+            2,
+            "ReconcileDelayValid",
+            1d,
+            "MissingReconcileCodes",
+            "");
+
+        var waitTimeout = InvokePrivateStatic<TimeoutPolicy>(
+            "BuildTimeoutPolicy",
+            0d,
+            TimeoutBehavior.Wait.ToString(),
+            "",
+            0d,
+            OrchestrationActionOnTimeout.Continue.ToString(),
+            RetryStrategyType.Exponential.ToString(),
+            -1,
+            -5d,
+            "",
+            true);
+        var reconcileTimeout = InvokePrivateStatic<TimeoutPolicy>(
+            "BuildTimeoutPolicy",
+            6d,
+            TimeoutBehavior.Reconcile.ToString(),
+            "",
+            1d,
+            OrchestrationActionOnTimeout.Block.ToString(),
+            RetryStrategyType.Exponential.ToString(),
+            3,
+            4d,
+            "TEMP,LOCKED",
+            true);
+        var failTimeout = InvokePrivateStatic<TimeoutPolicy>(
+            "BuildTimeoutPolicy",
+            0d,
+            "Unknown",
+            " ",
+            1d,
+            "Unknown",
+            RetryStrategyType.Fixed.ToString(),
+            1,
+            1d,
+            "TEMP",
+            false);
+
+        Assert.True(page.ModelState.ContainsKey("RetryCount"));
+        Assert.True(page.ModelState.ContainsKey("RetryDelay"));
+        Assert.True(page.ModelState.ContainsKey("MissingRetryCodes"));
+        Assert.True(page.ModelState.ContainsKey("TimeoutSeconds"));
+        Assert.True(page.ModelState.ContainsKey("WaitSeconds"));
+        Assert.True(page.ModelState.ContainsKey("ReconcileRetries"));
+        Assert.True(page.ModelState.ContainsKey("ReconcileDelay"));
+        Assert.True(page.ModelState.ContainsKey("MissingReconcileCodes"));
+        Assert.Equal(TimeoutBehavior.Wait, waitTimeout.TimeoutBehavior);
+        Assert.Equal(1d, waitTimeout.Timeout.Value.TotalSeconds);
+        Assert.Equal(OrchestrationActionOnTimeout.Continue, ((WaitTimeoutBehaviorPolicy)waitTimeout.TimeoutBehaviorPolicy).OrchestrationAction);
+        Assert.Equal(1d, ((WaitTimeoutBehaviorPolicy)waitTimeout.TimeoutBehaviorPolicy).WaitingTime.Value.TotalSeconds);
+        Assert.Equal(TimeoutBehavior.Reconcile, reconcileTimeout.TimeoutBehavior);
+        var reconcile = Assert.IsType<ReconcileTimeoutBehaviorPolicy>(reconcileTimeout.TimeoutBehaviorPolicy);
+        Assert.Equal(OrchestrationActionOnTimeout.Block, reconcile.OrchestrationAction);
+        Assert.Equal(RetryStrategyType.Fixed, reconcile.RetryPolicy!.StrategyType);
+        Assert.Equal(3, reconcile.RetryPolicy.MaxRetries);
+        Assert.Equal(["TEMP", "LOCKED"], reconcile.RetryPolicy.RetryableErrorCodes);
+        Assert.True(reconcile.RetryPolicy.StopOnNonRetryableError);
+        Assert.Equal(TimeoutBehavior.Fail, failTimeout.TimeoutBehavior);
+        Assert.Equal("TIMEOUT", ((FailTimeoutBehaviorPolicy)failTimeout.TimeoutBehaviorPolicy).ErrorCode);
+    }
+
+    [Fact]
+    public void PrivateTimeoutResolversCoverPolicyFallbackBranches()
+    {
+        var waitPolicy = new TimeoutPolicy
+        {
+            TimeoutBehavior = TimeoutBehavior.Wait,
+            TimeoutBehaviorPolicy = new WaitTimeoutBehaviorPolicy
+            {
+                OrchestrationAction = OrchestrationActionOnTimeout.Continue,
+                WaitingTime = Duration.FromSeconds(22)
+            }
+        };
+        var failPolicy = new TimeoutPolicy
+        {
+            TimeoutBehavior = TimeoutBehavior.Fail,
+            TimeoutBehaviorPolicy = new FailTimeoutBehaviorPolicy
+            {
+                ErrorCode = "PaymentTimeout"
+            }
+        };
+        var reconcileWithoutRetry = new TimeoutPolicy
+        {
+            TimeoutBehavior = TimeoutBehavior.Reconcile,
+            TimeoutBehaviorPolicy = new ReconcileTimeoutBehaviorPolicy
+            {
+                OrchestrationAction = OrchestrationActionOnTimeout.Continue,
+                RetryPolicy = null
+            }
+        };
+        var reconcileWithNonFixedRetry = new TimeoutPolicy
+        {
+            TimeoutBehavior = TimeoutBehavior.Reconcile,
+            TimeoutBehaviorPolicy = new ReconcileTimeoutBehaviorPolicy
+            {
+                OrchestrationAction = OrchestrationActionOnTimeout.Block,
+                RetryPolicy = new RetryPolicy
+                {
+                    StrategyType = RetryStrategyType.Exponential,
+                    MaxRetries = 0,
+                    RetryableErrorCodes = [],
+                    Strategy = null!,
+                    StopOnNonRetryableError = false
+                }
+            }
+        };
+
+        Assert.Equal(
+            OrchestrationActionOnTimeout.Continue.ToString(),
+            InvokePrivateStatic<string>("ResolveTimeoutAction", waitPolicy));
+        Assert.Equal(
+            OrchestrationActionOnTimeout.Continue.ToString(),
+            InvokePrivateStatic<string>("ResolveTimeoutAction", reconcileWithoutRetry));
+        Assert.Equal(
+            OrchestrationActionOnTimeout.Block.ToString(),
+            InvokePrivateStatic<string>("ResolveTimeoutAction", (object?)null));
+        Assert.Equal("PaymentTimeout", InvokePrivateStatic<string>("ResolveTimeoutFailErrorCode", failPolicy));
+        Assert.Equal("TIMEOUT", InvokePrivateStatic<string>("ResolveTimeoutFailErrorCode", (object?)null));
+        Assert.Equal(22d, InvokePrivateStatic<double>("ResolveTimeoutWaitSeconds", waitPolicy));
+        Assert.Equal(15d, InvokePrivateStatic<double>("ResolveTimeoutWaitSeconds", (object?)null));
+        Assert.Equal(
+            RetryStrategyType.Fixed.ToString(),
+            InvokePrivateStatic<string>("ResolveTimeoutReconcileRetryStrategyType", reconcileWithoutRetry));
+        Assert.Equal(
+            RetryStrategyType.Exponential.ToString(),
+            InvokePrivateStatic<string>("ResolveTimeoutReconcileRetryStrategyType", reconcileWithNonFixedRetry));
+        Assert.Equal(0, InvokePrivateStatic<int>("ResolveTimeoutReconcileRetries", reconcileWithoutRetry));
+        Assert.Equal(3, InvokePrivateStatic<int>("ResolveTimeoutReconcileRetries", (object?)null));
+        Assert.Equal(5d, InvokePrivateStatic<double>("ResolveTimeoutReconcileDelaySeconds", reconcileWithoutRetry));
+        Assert.Equal(5d, InvokePrivateStatic<double>("ResolveTimeoutReconcileDelaySeconds", reconcileWithNonFixedRetry));
+        Assert.Equal(string.Empty, InvokePrivateStatic<string>("ResolveTimeoutReconcileRetryableErrorCodes", reconcileWithoutRetry));
+        Assert.False(InvokePrivateStatic<bool>("ResolveTimeoutReconcileStopOnNonRetryableError", reconcileWithoutRetry));
+    }
+
     private static TestContext CreateContext()
     {
         var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
