@@ -171,11 +171,26 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.ControlPlane*` captures orchestration definitions, versions, releases, runtime nodes, credentials, and artifact delivery.
 - `Krackend.Sagas.Orchestrations.Runtime*` consumes immutable artifacts, projects ingress configuration, runs durable Mule-backed work, dispatches transport-agnostic commands, tracks instances, and exposes runtime diagnostics.
 - `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
-- The Spider client extension supports inline and deferred consumer execution. For deferred SquirrelBox consumers, orchestration metadata is restored from the inbox entry so success and failure callbacks still reach the runtime backchannel without wrapping or mutating the business payload.
+- The Spider client extension supports inline and deferred consumer execution. `EmitEvent` publishes new orchestration trigger events, while `UseOrchestration` keeps the service connected to an existing saga backchannel. Both can be composed in the same pipeline, allowing a consumer to emit one or more events and still report success or failure to the orchestration that invoked it. For deferred SquirrelBox consumers, orchestration metadata is restored from the inbox entry so success and failure callbacks still reach the runtime backchannel without wrapping or mutating the business payload.
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 - `Krackend.Sagas.Orchestrations.Security*` keeps authentication in the host and adds provider-agnostic orchestration authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
+
+Spider event publishing:
+
+Use `EmitEvent` when a service should publish an orchestration trigger event without reporting that publication as a saga reply. Keep `UseOrchestration` on the same pipeline when the service is also handling a command from an existing saga and must answer the runtime backchannel.
+
+```csharp
+app.MapPost("/sales", async (CreateSaleRequest request, ISaleService sales) =>
+{
+    await sales.CreateAsync(request);
+})
+.EmitEvent(request => new SaleCreated(request.SaleId), "events.sales.sale.created")
+.UseOrchestration();
+```
+
+`EmitEvent` uses the same routing pattern as `UseOrchestration`, including conditional routes and optional payload transforms. Multiple `EmitEvent` registrations can run before the final `UseOrchestration` hook when a service needs to raise follow-up business events and still complete the command that the saga sent.
 
 Design validation:
 
@@ -193,7 +208,7 @@ Krackend propagates transversal metadata through transport metadata so business 
 
 Client consumers forward incoming propagation metadata when publishing follow-up messages. Non-reserved metadata entries such as `audit.context` and `security.context` are attached back to the outgoing transport metadata, and `Krackend.Sagas.Orchestrations.Trigger.Metadata` is forwarded as the canonical trigger context. Reserved Krackend metadata keys are not blindly forwarded.
 
-When a client publishes a new trigger through `TriggerAddress`, the outgoing trigger context is produced by `IOrchestrationTriggerMetadataAccessor`. Hosts that want to keep the incoming trigger context in that new trigger publication should have the accessor return that context; otherwise the new trigger publication can replace `Krackend.Sagas.Orchestrations.Trigger.Metadata` with an empty trigger metadata payload.
+When a client publishes a new trigger through `EmitEvent`, the outgoing trigger context is produced by `IOrchestrationTriggerMetadataAccessor`. That event receives a fresh `Krackend.Sagas.Orchestrations.Trigger.Metadata` entry for the new trigger publication. If the service was already executing inside a saga, the previous orchestration trace context is preserved separately under `Krackend.Sagas.Orchestrations.Origin.Metadata` so the new event can be traced back to the saga that emitted it without making the old saga correlation id the principal trigger correlation id of the new event.
 
 Runtime trigger promotion is idempotent when a stable start key is available. The Mule adapter maps the durable action deduplication key, or the durable action id when no deduplication key exists, into the runtime start idempotency key. The core runtime also falls back to the trigger metadata idempotency key. Retried trigger actions therefore continue the already-promoted `OrchestrationInstance` instead of creating a second saga instance after a partial start, timeout, or action re-execution. Hosts using Entity Framework runtime storage should apply a migration for the nullable `StartIdempotencyKey` column and its unique non-null index.
 

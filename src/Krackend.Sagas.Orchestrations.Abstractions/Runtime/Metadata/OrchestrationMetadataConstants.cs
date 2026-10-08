@@ -26,6 +26,11 @@ public static class OrchestrationMetadataConstants
     public const string TriggerMetadataKey = "Krackend.Sagas.Orchestrations.Trigger.Metadata";
 
     /// <summary>
+    /// Gets the propagation metadata key used to carry the non-controlling origin trace.
+    /// </summary>
+    public const string OriginMetadataKey = "Krackend.Sagas.Orchestrations.Origin.Metadata";
+
+    /// <summary>
     /// Gets the legacy propagation metadata key used to carry the trigger metadata contract.
     /// </summary>
     public const string LegacyTriggerMetadataKey = "trigger_metadata";

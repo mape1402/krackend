@@ -40,7 +40,7 @@ public static class OrchestrationPipelineBuilderExtensions
         this IPipelineBuilder<TRequest> builder,
         string topic,
         string version = "1.0.0")
-        => AttachRequestOrchestration(builder, static request => request, topic, version);
+        => AttachRequestEvent(builder, static request => request, topic, version);
 
     /// <summary>
     /// Responds to the orchestration backchannel using a transformed request payload.
@@ -68,7 +68,42 @@ public static class OrchestrationPipelineBuilderExtensions
         Func<TRequest, object> transform,
         string topic,
         string version = "1.0.0")
-        => AttachRequestOrchestration(builder, transform, topic, version);
+        => AttachRequestEvent(builder, transform, topic, version);
+
+    private static IPipelineBuilder<TRequest> AttachRequestEvent<TRequest>(
+        IPipelineBuilder<TRequest> builder,
+        Func<TRequest, object> transform,
+        string topic,
+        string version)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (transform is null)
+        {
+            throw new ArgumentNullException(nameof(transform));
+        }
+
+        var options = CreateMessagingOptions(topic, version);
+
+        builder.OnPostProcess(postProcess =>
+        {
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                await context.Services.GetRequiredService<IOrchestrationOperationClient>().EmitEventAsync(
+                    typeof(TRequest),
+                    null,
+                    transform(context.Request),
+                    options,
+                    context.CancellationToken);
+            });
+        });
+
+        return builder;
+    }
 
     private static IPipelineBuilder<TRequest> AttachRequestOrchestration<TRequest>(
         IPipelineBuilder<TRequest> builder,
@@ -168,6 +203,28 @@ public static class OrchestrationPipelineBuilderExtensions
         return AttachRequestRouting(builder, routeBuilder);
     }
 
+    private static IPipelineBuilder<TRequest> AttachRequestEventRouting<TRequest>(
+        IPipelineBuilder<TRequest> builder,
+        OrchestrationTriggerRouteBuilder<TRequest> routing)
+    {
+        builder.OnPostProcess(postProcess =>
+        {
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                var result = routing.Resolve(context.Request);
+                await context.Services.GetRequiredService<IOrchestrationOperationClient>().EmitEventAsync(
+                    typeof(TRequest),
+                    null,
+                    result.Payload,
+                    result.Options,
+                    context.CancellationToken);
+            });
+        });
+
+        return builder;
+    }
+
     /// <summary>
     /// Publishes a trigger event selected by routing.
     /// </summary>
@@ -187,7 +244,7 @@ public static class OrchestrationPipelineBuilderExtensions
 
         var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest>();
         routing(routeBuilder);
-        return AttachRequestRouting(builder, routeBuilder);
+        return AttachRequestEventRouting(builder, routeBuilder);
     }
 
     private static IPipelineBuilder<TRequest> AttachRequestRouting<TRequest>(
@@ -292,7 +349,7 @@ public static class OrchestrationPipelineBuilderExtensions
         this IPipelineBuilder<TRequest, TResponse> builder,
         string topic,
         string version = "1.0.0")
-        => AttachResponseOrchestration<TRequest, TResponse, Func<TResponse, object>>(
+        => AttachResponseEvent<TRequest, TResponse, Func<TResponse, object>>(
             builder,
             static (_, response, transformer) => transformer(response),
             static response => response,
@@ -335,7 +392,7 @@ public static class OrchestrationPipelineBuilderExtensions
         Func<TResponse, object> transform,
         string topic,
         string version = "1.0.0")
-        => AttachResponseOrchestration(
+        => AttachResponseEvent(
             builder,
             static (_, response, transformer) => transformer(response),
             transform,
@@ -378,12 +435,53 @@ public static class OrchestrationPipelineBuilderExtensions
         Func<TRequest, TResponse, object> transform,
         string topic,
         string version = "1.0.0")
-        => AttachResponseOrchestration<TRequest, TResponse, Func<TRequest, TResponse, object>>(
+        => AttachResponseEvent<TRequest, TResponse, Func<TRequest, TResponse, object>>(
             builder,
             static (request, response, transformer) => transformer(request, response),
             transform,
             topic,
             version);
+
+    private static IPipelineBuilder<TRequest, TResponse> AttachResponseEvent<TRequest, TResponse, TTransform>(
+        IPipelineBuilder<TRequest, TResponse> builder,
+        Func<TRequest, TResponse, TTransform, object> transform,
+        TTransform transformer,
+        string topic,
+        string version)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException(nameof(builder));
+        }
+
+        if (transform is null)
+        {
+            throw new ArgumentNullException(nameof(transform));
+        }
+
+        if (transformer is null)
+        {
+            throw new ArgumentNullException(nameof(transformer));
+        }
+
+        var options = CreateMessagingOptions(topic, version);
+
+        builder.OnPostProcess(postProcess =>
+        {
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                await context.Services.GetRequiredService<IOrchestrationOperationClient>().EmitEventAsync(
+                    typeof(TRequest),
+                    typeof(TResponse),
+                    transform(context.Request, context.Response, transformer),
+                    options,
+                    context.CancellationToken);
+            });
+        });
+
+        return builder;
+    }
 
     private static IPipelineBuilder<TRequest, TResponse> AttachResponseOrchestration<TRequest, TResponse, TTransform>(
         IPipelineBuilder<TRequest, TResponse> builder,
@@ -489,6 +587,28 @@ public static class OrchestrationPipelineBuilderExtensions
         return AttachResponseRouting(builder, routeBuilder);
     }
 
+    private static IPipelineBuilder<TRequest, TResponse> AttachResponseEventRouting<TRequest, TResponse>(
+        IPipelineBuilder<TRequest, TResponse> builder,
+        OrchestrationTriggerRouteBuilder<TRequest, TResponse> routing)
+    {
+        builder.OnPostProcess(postProcess =>
+        {
+            postProcess.OnSuccess(async (context, _) =>
+            {
+                RestoreDeferredMessageMetadata(context.Services);
+                var result = routing.Resolve(context.Request, context.Response);
+                await context.Services.GetRequiredService<IOrchestrationOperationClient>().EmitEventAsync(
+                    typeof(TRequest),
+                    typeof(TResponse),
+                    result.Payload,
+                    result.Options,
+                    context.CancellationToken);
+            });
+        });
+
+        return builder;
+    }
+
     /// <summary>
     /// Publishes a trigger event selected by routing.
     /// </summary>
@@ -508,7 +628,7 @@ public static class OrchestrationPipelineBuilderExtensions
 
         var routeBuilder = new OrchestrationTriggerRouteBuilder<TRequest, TResponse>();
         routing(routeBuilder);
-        return AttachResponseRouting(builder, routeBuilder);
+        return AttachResponseEventRouting(builder, routeBuilder);
     }
 
     private static IPipelineBuilder<TRequest, TResponse> AttachResponseRouting<TRequest, TResponse>(

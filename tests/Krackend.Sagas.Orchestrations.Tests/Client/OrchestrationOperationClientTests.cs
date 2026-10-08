@@ -363,6 +363,171 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task EmitEventAsync_WhenBackchannelExists_PublishesEventMetadataAndOriginTraceWithoutReplying()
+    {
+        var triggerMetadata = new OrchestrationTriggerMetadata
+        {
+            EventId = "event-emitted-1",
+            EventType = "events.inventory.adjusted",
+            IdempotencyKey = "event-emitted-1"
+        };
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationTriggerMetadataAccessor>(
+            _ => new StaticTriggerMetadataAccessor(triggerMetadata)));
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var metadataSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationMessageMetadataSetter>();
+        metadataSetter.Set(new OrchestrationMessageMetadata
+        {
+            SagaId = "saga-1",
+            OrchestrationInstanceId = "instance-1",
+            CurrentStage = "fulfillment",
+            CurrentTasks = ["reserve_inventory"],
+            CorrelationId = "corr-1",
+            TaskExecutionId = "task-1",
+            DispatchId = "dispatch-1",
+            Attempt = 3,
+            ReplyAddress = new OrchestrationReplyAddress
+            {
+                Transport = OrchestrationTransportNames.Messaging,
+                SettingsPayload = "reply-address"
+            }
+        });
+        var propagationSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationPropagationMetadataSetter>();
+        propagationSetter.Set(new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1"}"""),
+                [OrchestrationMetadataConstants.TriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    CorrelationId = "corr-1",
+                    TraceId = "trace-1",
+                    EventId = "event-root"
+                }.ToJson()
+            }
+        });
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var payload = JsonNode.Parse("""{"stock":"normal"}""");
+
+        await client.EmitEventAsync(
+            typeof(ReserveInventoryRequest),
+            typeof(ReserveInventoryResponse),
+            payload!,
+            new OrchestrationOperationOptions
+            {
+                TriggerAddress = new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = """{"topic":"events.inventory.adjusted","version":"1.0.0"}"""
+                }
+            });
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Null(publisher.ResultMetadata);
+        Assert.NotNull(publisher.MessageMetadata);
+        Assert.Null(publisher.MessageMetadata.ReplyAddress);
+        Assert.Null(publisher.MessageMetadata.SagaId);
+        Assert.Equal("corr-1", publisher.MessageMetadata.CorrelationId);
+        Assert.NotNull(publisher.PropagationMetadata);
+        Assert.Equal("req-1", publisher.PropagationMetadata.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        var publishedTrigger = publisher.PropagationMetadata.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!;
+        Assert.Equal("event-emitted-1", publishedTrigger[nameof(OrchestrationTriggerMetadata.EventId)]!.GetValue<string>());
+        Assert.Equal("events.inventory.adjusted", publishedTrigger[nameof(OrchestrationTriggerMetadata.EventType)]!.GetValue<string>());
+        Assert.Equal("event-root", publishedTrigger[nameof(OrchestrationTriggerMetadata.CausationId)]!.GetValue<string>());
+        var origin = publisher.PropagationMetadata.Items[OrchestrationMetadataConstants.OriginMetadataKey]!;
+        Assert.Equal("saga-1", origin[nameof(OrchestrationOriginMetadata.SagaId)]!.GetValue<string>());
+        Assert.Equal("instance-1", origin[nameof(OrchestrationOriginMetadata.OrchestrationInstanceId)]!.GetValue<string>());
+        Assert.Equal("trace-1", origin[nameof(OrchestrationOriginMetadata.TraceId)]!.GetValue<string>());
+        Assert.Equal("reserve_inventory", origin[nameof(OrchestrationOriginMetadata.TaskKeys)]![0]!.GetValue<string>());
+        Assert.Equal(3, origin[nameof(OrchestrationOriginMetadata.Attempt)]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task EmitEventAsync_WithDefaultTriggerMetadata_UsesLegacyTriggerAndMessagingTopic()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var propagationSetter = scope.ServiceProvider.GetRequiredService<IOrchestrationPropagationMetadataSetter>();
+        propagationSetter.Set(new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-legacy"}"""),
+                [OrchestrationMetadataConstants.LegacyTriggerMetadataKey] = new OrchestrationTriggerMetadata
+                {
+                    CorrelationId = "legacy-correlation",
+                    TraceId = "legacy-trace",
+                    EventId = "legacy-event"
+                }.ToJson()
+            }
+        });
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+
+        await client.EmitEventAsync(
+            typeof(ReserveInventoryRequest),
+            typeof(ReserveInventoryResponse),
+            new { ok = true },
+            new OrchestrationOperationOptions
+            {
+                TriggerAddress = new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = """{"topic":"events.inventory.stock.adjusted","version":"1.0.0"}"""
+                }
+            });
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        var trigger = publisher.PropagationMetadata!.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!;
+        var eventId = trigger[nameof(OrchestrationTriggerMetadata.EventId)]!.GetValue<string>();
+        Assert.True(Ulid.TryParse(eventId, out _));
+        Assert.Equal("legacy-correlation", trigger[nameof(OrchestrationTriggerMetadata.CorrelationId)]!.GetValue<string>());
+        Assert.Equal("legacy-trace", trigger[nameof(OrchestrationTriggerMetadata.TraceId)]!.GetValue<string>());
+        Assert.Equal("legacy-event", trigger[nameof(OrchestrationTriggerMetadata.CausationId)]!.GetValue<string>());
+        Assert.Equal("events.inventory.stock.adjusted", trigger[nameof(OrchestrationTriggerMetadata.EventType)]!.GetValue<string>());
+        Assert.Equal(eventId, trigger[nameof(OrchestrationTriggerMetadata.IdempotencyKey)]!.GetValue<string>());
+        Assert.False(publisher.PropagationMetadata.Items.ContainsKey(OrchestrationMetadataConstants.LegacyTriggerMetadataKey));
+        Assert.False(publisher.PropagationMetadata.Items.ContainsKey(OrchestrationMetadataConstants.OriginMetadataKey));
+        Assert.Equal("req-legacy", publisher.PropagationMetadata.Items["audit.context"]!["requestId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task EmitEventAsync_WithInvalidTriggerAddressSettings_PublishesWithoutTopicEventType()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+
+        await client.EmitEventAsync(
+            typeof(ReserveInventoryRequest),
+            typeof(ReserveInventoryResponse),
+            new { ok = true },
+            new OrchestrationOperationOptions
+            {
+                TriggerAddress = new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = "not-json"
+                }
+            });
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        var trigger = publisher.PropagationMetadata!.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!;
+        Assert.True(Ulid.TryParse(trigger[nameof(OrchestrationTriggerMetadata.EventId)]!.GetValue<string>(), out _));
+        Assert.False(trigger.AsObject().ContainsKey(nameof(OrchestrationTriggerMetadata.EventType)));
+        Assert.NotNull(publisher.Payload);
+    }
+
+    [Fact]
     public async Task ReportSuccessAsyncPublishesBusinessPayloadWithoutWrappingExecutionMetadata()
     {
         var services = new ServiceCollection();

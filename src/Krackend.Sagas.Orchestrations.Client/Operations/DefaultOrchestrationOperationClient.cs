@@ -68,4 +68,28 @@ internal sealed class DefaultOrchestrationOperationClient : IOrchestrationOperat
             exception,
             options ?? new OrchestrationOperationOptions(),
             cancellationToken);
+
+    public Task EmitEventAsync<TRequest, TResponse>(
+        object payload,
+        OrchestrationOperationOptions options = null,
+        CancellationToken cancellationToken = default)
+        => EmitEventAsync(
+            typeof(TRequest),
+            typeof(TResponse),
+            payload,
+            options,
+            cancellationToken);
+
+    public Task EmitEventAsync(
+        Type requestType,
+        Type responseType,
+        object payload,
+        OrchestrationOperationOptions options,
+        CancellationToken cancellationToken = default)
+        => _pipelinePublisher.PublishEventAsync(
+            requestType,
+            responseType,
+            payload,
+            options ?? new OrchestrationOperationOptions(),
+            cancellationToken);
 }

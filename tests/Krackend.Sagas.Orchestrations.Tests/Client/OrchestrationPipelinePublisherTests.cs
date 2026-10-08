@@ -101,10 +101,18 @@ public sealed class OrchestrationPipelinePublisherTests
         var message = Assert.Single(publisher.Messages);
         Assert.Same(triggerAddress, message.Address);
         Assert.Equal("trigger-correlation", message.MessageMetadata!.CorrelationId);
-        Assert.Equal("saga-1", message.MessageMetadata.SagaId);
-        Assert.Equal(2, message.MessageMetadata.Attempt);
+        Assert.Null(message.MessageMetadata.SagaId);
+        Assert.Null(message.MessageMetadata.OrchestrationInstanceId);
+        Assert.Null(message.MessageMetadata.ReplyAddress);
+        Assert.Equal(0, message.MessageMetadata.Attempt);
         Assert.Equal("kept", message.PropagationMetadata!.Items["existing"]!.GetValue<string>());
         Assert.Equal("event-1", message.PropagationMetadata.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!["EventId"]!.GetValue<string>());
+        var origin = message.PropagationMetadata.Items[OrchestrationMetadataConstants.OriginMetadataKey]!;
+        Assert.Equal("saga-1", origin[nameof(OrchestrationOriginMetadata.SagaId)]!.GetValue<string>());
+        Assert.Equal("instance-1", origin[nameof(OrchestrationOriginMetadata.OrchestrationInstanceId)]!.GetValue<string>());
+        Assert.Equal("stage-1", origin[nameof(OrchestrationOriginMetadata.StageKey)]!.GetValue<string>());
+        Assert.Equal("task-1", origin[nameof(OrchestrationOriginMetadata.TaskKeys)]![0]!.GetValue<string>());
+        Assert.Equal(2, origin[nameof(OrchestrationOriginMetadata.Attempt)]!.GetValue<int>());
         Assert.Equal("previous-correlation", messageAccessor.Get().CorrelationId);
         Assert.Equal("kept", propagationAccessor.Get().Items["existing"]!.GetValue<string>());
     }
@@ -175,37 +183,12 @@ public sealed class OrchestrationPipelinePublisherTests
     {
         using var scope = CreateScope();
         var pipeline = GetPipelinePublisher(scope.ServiceProvider);
-        var message = InvokePipelinePrivate<OrchestrationMessageMetadata>(
-            "CreateTriggerMessageMetadata",
-            [typeof(OrchestrationMessageMetadata), typeof(OrchestrationTriggerMetadata)],
-            [null, null]);
-        var propagation = InvokePipelinePrivate<OrchestrationPropagationMetadata>(
-            "CreateTriggerPropagationMetadata",
-            [typeof(OrchestrationPropagationMetadata), typeof(OrchestrationTriggerMetadata)],
-            [null, null]);
-        var triggerPayload = InvokePipelinePrivate<JsonNode>(
-            "CreateTriggerMetadataPayload",
-            [typeof(OrchestrationTriggerMetadata)],
-            [null]);
-        var firstValue = InvokePipelinePrivate<string>(
-            "FirstNonEmpty",
-            [typeof(string[])],
-            [new[] { " ", null, "value" }]);
-        var noValue = InvokePipelinePrivate<string>(
-            "FirstNonEmpty",
-            [typeof(string[])],
-            [new[] { " ", null }]);
 
         Assert.False(InvokePipelinePrivateInstance<bool>(
             pipeline,
             "HasReplyAddress",
             [typeof(OrchestrationMessageMetadata)],
             [null]));
-        Assert.Equal(0, message.Attempt);
-        Assert.True(propagation.Items.ContainsKey(OrchestrationMetadataConstants.TriggerMetadataKey));
-        Assert.Empty(triggerPayload.AsObject());
-        Assert.Equal("value", firstValue);
-        Assert.Null(noValue);
         AssertConstructorGuards(scope.ServiceProvider);
     }
 
@@ -269,22 +252,6 @@ public sealed class OrchestrationPipelinePublisherTests
             var exception = Assert.Throws<TargetInvocationException>(() => constructor.Invoke(candidate));
             Assert.IsType<ArgumentNullException>(exception.InnerException);
         }
-    }
-
-    private static TResult InvokePipelinePrivate<TResult>(
-        string methodName,
-        Type[] parameterTypes,
-        object?[] arguments)
-    {
-        var publisherType = typeof(OrchestrationOperationOptions).Assembly.GetType(
-            "Krackend.Sagas.Orchestrations.Client.Publishing.DefaultOrchestrationPipelinePublisher")!;
-        var method = publisherType.GetMethod(
-            methodName,
-            BindingFlags.NonPublic | BindingFlags.Static,
-            binder: null,
-            types: parameterTypes,
-            modifiers: null)!;
-        return (TResult)method.Invoke(null, arguments)!;
     }
 
     private static TResult InvokePipelinePrivateInstance<TResult>(
