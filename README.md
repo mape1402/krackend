@@ -8,7 +8,7 @@
 
 ![Krackend orchestration banner](assets/krackend-readme-hero.png)
 
-Modular backend building blocks for .NET services.
+Modular backend building blocks for .NET services and orchestration runtimes.
 
 ## Packages
 
