@@ -322,9 +322,25 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        await using var scope = Services.CreateAsyncScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
-        return await query(dbContext);
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(1);
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                await using var scope = Services.CreateAsyncScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+                return await query(dbContext);
+            }
+            catch (Exception exception) when (IsTransientDatabaseAvailabilityFailure(exception))
+            {
+                lastError = exception;
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+        }
+
+        throw new TimeoutException("Runtime test database did not become available for query execution.", lastError);
     }
 
     public async Task<RuntimeOrchestrationArtifact> WaitForArtifactReadyAsync(string artifactId)
