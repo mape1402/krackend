@@ -12,6 +12,8 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 ## Packages
 
+Install only the packages required by the host role you are building.
+
 Event sourcing packages:
 
 ```bash
