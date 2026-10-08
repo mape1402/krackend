@@ -14,6 +14,7 @@ public sealed class RemoteCommandMetadataBuilderTests
             Items =
             {
                 [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse("""{"CorrelationId":"corr-1"}""")!,
+                [OrchestrationMetadataConstants.OriginMetadataKey] = JsonNode.Parse("""{"SagaId":"saga-origin"}""")!,
                 ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1"}""")!,
                 ["security.context"] = JsonNode.Parse("""{"tenant":"north"}""")!,
                 [OrchestrationMetadataConstants.OrchestrationPayloadWasNullMetadataKey] = JsonValue.Create(true)!
@@ -37,6 +38,7 @@ public sealed class RemoteCommandMetadataBuilderTests
             "corr-1",
             metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]!["correlationId"]!.GetValue<string>());
         Assert.Equal("corr-1", metadata[OrchestrationMetadataConstants.TriggerMetadataKey]!["CorrelationId"]!.GetValue<string>());
+        Assert.Equal("saga-origin", metadata[OrchestrationMetadataConstants.OriginMetadataKey]!["SagaId"]!.GetValue<string>());
         Assert.Equal("req-1", metadata["audit.context"]!["requestId"]!.GetValue<string>());
         Assert.Equal("north", metadata["security.context"]!["tenant"]!.GetValue<string>());
         Assert.False(metadata.ContainsKey(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey));
@@ -95,6 +97,7 @@ public sealed class RemoteCommandMetadataBuilderTests
         Assert.False(RemoteCommandMetadataBuilder.IsReserved(null!));
         Assert.False(RemoteCommandMetadataBuilder.IsReserved(string.Empty));
         Assert.False(RemoteCommandMetadataBuilder.IsReserved(OrchestrationMetadataConstants.TriggerMetadataKey));
+        Assert.False(RemoteCommandMetadataBuilder.IsReserved(OrchestrationMetadataConstants.OriginMetadataKey));
         Assert.True(RemoteCommandMetadataBuilder.IsReserved(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey));
     }
 

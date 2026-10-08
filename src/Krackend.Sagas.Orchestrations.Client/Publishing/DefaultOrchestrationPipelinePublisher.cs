@@ -13,6 +13,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
     private readonly IOrchestrationTriggerMetadataAccessor _triggerMetadataAccessor;
     private readonly IOrchestrationExecutionResultMetadataSetter _resultMetadataSetter;
     private readonly IOrchestrationExecutionResultMetadataFactory _resultMetadataFactory;
+    private readonly IOrchestrationMessageMetadataComposer _metadataComposer;
     private readonly IOrchestrationPayloadSerializer _payloadSerializer;
     private readonly IOrchestrationClientPublisher _publisher;
 
@@ -24,6 +25,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         IOrchestrationTriggerMetadataAccessor triggerMetadataAccessor,
         IOrchestrationExecutionResultMetadataSetter resultMetadataSetter,
         IOrchestrationExecutionResultMetadataFactory resultMetadataFactory,
+        IOrchestrationMessageMetadataComposer metadataComposer,
         IOrchestrationPayloadSerializer payloadSerializer,
         IOrchestrationClientPublisher publisher)
     {
@@ -34,6 +36,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         _triggerMetadataAccessor = triggerMetadataAccessor ?? throw new ArgumentNullException(nameof(triggerMetadataAccessor));
         _resultMetadataSetter = resultMetadataSetter ?? throw new ArgumentNullException(nameof(resultMetadataSetter));
         _resultMetadataFactory = resultMetadataFactory ?? throw new ArgumentNullException(nameof(resultMetadataFactory));
+        _metadataComposer = metadataComposer ?? throw new ArgumentNullException(nameof(metadataComposer));
         _payloadSerializer = payloadSerializer ?? throw new ArgumentNullException(nameof(payloadSerializer));
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
     }
@@ -65,7 +68,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
 
         if (options?.HasTriggerDestination == true)
         {
-            await PublishTriggerAsync(businessPayload, options.TriggerAddress, cancellationToken);
+            await PublishEventPayloadAsync(businessPayload, options.TriggerAddress, cancellationToken);
         }
     }
 
@@ -92,12 +95,28 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         }
     }
 
+    public async Task PublishEventAsync(
+        Type requestType,
+        Type responseType,
+        object payload,
+        OrchestrationOperationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        if (options?.HasTriggerDestination != true)
+        {
+            return;
+        }
+
+        var businessPayload = _payloadSerializer.ToJsonNode(payload);
+        await PublishEventPayloadAsync(businessPayload, options.TriggerAddress, cancellationToken);
+    }
+
     private bool HasReplyAddress(OrchestrationMessageMetadata metadata)
         => metadata?.ReplyAddress is not null
            && !string.IsNullOrWhiteSpace(metadata.ReplyAddress.Transport)
            && !string.IsNullOrWhiteSpace(metadata.ReplyAddress.SettingsPayload);
 
-    private async Task PublishTriggerAsync(
+    private async Task PublishEventPayloadAsync(
         JsonNode businessPayload,
         OrchestrationReplyAddress triggerAddress,
         CancellationToken cancellationToken)
@@ -109,8 +128,16 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
 
         try
         {
-            _messageMetadataSetter.Set(CreateTriggerMessageMetadata(previousMessageMetadata, triggerMetadata));
-            _propagationMetadataSetter.Set(CreateTriggerPropagationMetadata(previousPropagationMetadata, triggerMetadata));
+            _messageMetadataSetter.Set(_metadataComposer.ComposeEventMessageMetadata(
+                previousMessageMetadata,
+                previousPropagationMetadata,
+                triggerMetadata,
+                triggerAddress));
+            _propagationMetadataSetter.Set(_metadataComposer.ComposeEventPropagationMetadata(
+                previousMessageMetadata,
+                previousPropagationMetadata,
+                triggerMetadata,
+                triggerAddress));
             await _publisher.PublishAsync(businessPayload, triggerAddress, cancellationToken);
         }
         finally
@@ -120,34 +147,4 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         }
     }
 
-    private static OrchestrationMessageMetadata CreateTriggerMessageMetadata(
-        OrchestrationMessageMetadata previous,
-        OrchestrationTriggerMetadata triggerMetadata)
-        => new()
-        {
-            SagaId = previous?.SagaId,
-            OrchestrationInstanceId = previous?.OrchestrationInstanceId,
-            CurrentStage = previous?.CurrentStage,
-            CurrentTasks = previous?.CurrentTasks,
-            CorrelationId = FirstNonEmpty(triggerMetadata?.CorrelationId, previous?.CorrelationId),
-            TaskExecutionId = previous?.TaskExecutionId,
-            DispatchId = previous?.DispatchId,
-            Attempt = previous?.Attempt ?? 0,
-            ReplyAddress = previous?.ReplyAddress
-        };
-
-    private static OrchestrationPropagationMetadata CreateTriggerPropagationMetadata(
-        OrchestrationPropagationMetadata previous,
-        OrchestrationTriggerMetadata triggerMetadata)
-    {
-        var metadata = previous?.Clone() ?? new OrchestrationPropagationMetadata();
-        metadata.Items[OrchestrationMetadataConstants.TriggerMetadataKey] = CreateTriggerMetadataPayload(triggerMetadata);
-        return metadata;
-    }
-
-    private static JsonNode CreateTriggerMetadataPayload(OrchestrationTriggerMetadata metadata)
-        => metadata?.ToJson() ?? new JsonObject();
-
-    private static string FirstNonEmpty(params string[] values)
-        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 }

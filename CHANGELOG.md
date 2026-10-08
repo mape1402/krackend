@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v5.1.1] - 2026-10-07
+
+- ### Added
+
+  - Added Spider `EmitEvent` pipeline extensions for publishing orchestration trigger events with the same routing surface as `UseOrchestration`, while preserving `UseOrchestration` for saga replies and backward compatibility.
+
+- ### Changed
+
+  - Changed client event publication metadata so new emitted events receive fresh `Krackend.Sagas.Orchestrations.Trigger.Metadata` while preserving incoming saga trace context under `Krackend.Sagas.Orchestrations.Origin.Metadata`.
+  - Changed Pigeon client/runtime metadata propagation to carry the new origin metadata entry alongside trigger and transversal metadata without duplicating propagation envelopes.
+
+- ### Fixed
+
+  - Fixed composed client pipelines so services can emit one or more events and still reply to an existing orchestration through `UseOrchestration` in the same Spider consumer flow.
+
+------
+
 ## [v5.1.0] - 2026-10-07
 
 - ### Added

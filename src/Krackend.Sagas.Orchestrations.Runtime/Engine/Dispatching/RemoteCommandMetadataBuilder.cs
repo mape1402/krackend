@@ -53,9 +53,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
         /// <param name="key">Metadata key.</param>
         /// <returns><c>true</c> when the key is reserved for Krackend.</returns>
         public static bool IsReserved(string key)
-            => !string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal) &&
+            => !IsAllowedKrackendPropagationKey(key) &&
                 !string.IsNullOrWhiteSpace(key) &&
                 key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal);
+
+        private static bool IsAllowedKrackendPropagationKey(string key)
+            => string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal) ||
+                string.Equals(key, OrchestrationMetadataConstants.OriginMetadataKey, StringComparison.Ordinal);
 
         private static bool HasMessageMetadata(OrchestrationMessageMetadata metadata)
             => !string.IsNullOrWhiteSpace(metadata?.SagaId)

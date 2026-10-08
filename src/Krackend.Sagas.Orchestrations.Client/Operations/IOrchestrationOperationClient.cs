@@ -80,4 +80,34 @@ public interface IOrchestrationOperationClient
         Exception exception,
         OrchestrationOperationOptions options,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Emits a new orchestration event without replying to the current SAGA backchannel.
+    /// </summary>
+    /// <typeparam name="TRequest">CLR request type handled by the operation.</typeparam>
+    /// <typeparam name="TResponse">CLR response type returned by the operation.</typeparam>
+    /// <param name="payload">Business event payload to send to the destination.</param>
+    /// <param name="options">Orchestration operation options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that represents the asynchronous emit operation.</returns>
+    Task EmitEventAsync<TRequest, TResponse>(
+        object payload,
+        OrchestrationOperationOptions options = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Emits a new orchestration event without replying to the current SAGA backchannel.
+    /// </summary>
+    /// <param name="requestType">CLR request type handled by the operation.</param>
+    /// <param name="responseType">CLR response type returned by the operation.</param>
+    /// <param name="payload">Business event payload to send to the destination.</param>
+    /// <param name="options">Orchestration operation options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that represents the asynchronous emit operation.</returns>
+    Task EmitEventAsync(
+        Type requestType,
+        Type responseType,
+        object payload,
+        OrchestrationOperationOptions options,
+        CancellationToken cancellationToken = default);
 }

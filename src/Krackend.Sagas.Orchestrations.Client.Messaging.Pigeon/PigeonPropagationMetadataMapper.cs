@@ -176,6 +176,10 @@ internal sealed class PigeonPropagationMetadataMapper
     }
 
     private static bool IsReserved(string key)
-        => !string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal) &&
+        => !IsAllowedKrackendPropagationKey(key) &&
             key.StartsWith("Krackend.Sagas.Orchestrations.", StringComparison.Ordinal);
+
+    private static bool IsAllowedKrackendPropagationKey(string key)
+        => string.Equals(key, OrchestrationMetadataConstants.TriggerMetadataKey, StringComparison.Ordinal) ||
+           string.Equals(key, OrchestrationMetadataConstants.OriginMetadataKey, StringComparison.Ordinal);
 }

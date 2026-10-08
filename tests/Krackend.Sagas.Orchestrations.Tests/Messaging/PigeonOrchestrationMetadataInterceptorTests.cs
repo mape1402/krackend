@@ -144,6 +144,7 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
             Items =
             {
                 [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse("""{"CorrelationId":"corr-1"}"""),
+                [OrchestrationMetadataConstants.OriginMetadataKey] = JsonNode.Parse("""{"SagaId":"saga-1"}"""),
                 ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1","attempt":2}"""),
                 ["security.context"] = JsonNode.Parse("""{"tenant":"north"}""")
             }
@@ -162,6 +163,7 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         var metadata = GetPublishMetadata(context);
         Assert.False(metadata.ContainsKey(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey));
         Assert.Equal("corr-1", ((JsonNode)metadata[OrchestrationMetadataConstants.TriggerMetadataKey])!["CorrelationId"]!.GetValue<string>());
+        Assert.Equal("saga-1", ((JsonNode)metadata[OrchestrationMetadataConstants.OriginMetadataKey])!["SagaId"]!.GetValue<string>());
         Assert.Equal("req-1", ((JsonNode)metadata["audit.context"])!["requestId"]!.GetValue<string>());
         Assert.Equal("north", ((JsonNode)metadata["security.context"])!["tenant"]!.GetValue<string>());
     }
@@ -177,6 +179,7 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
             Items =
             {
                 [OrchestrationMetadataConstants.TriggerMetadataKey] = JsonNode.Parse("""{"CorrelationId":"corr-2"}"""),
+                [OrchestrationMetadataConstants.OriginMetadataKey] = JsonNode.Parse("""{"SagaId":"saga-2"}"""),
                 ["audit.context"] = JsonNode.Parse("""{"requestId":"req-4"}"""),
                 ["Krackend.Sagas.Orchestrations.Internal"] = JsonValue.Create("reserved")
             }
@@ -190,6 +193,7 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         Assert.False(metadata.ContainsKey(OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey));
         Assert.False(metadata.ContainsKey("Krackend.Sagas.Orchestrations.Internal"));
         Assert.Equal("corr-2", ((JsonNode)metadata[OrchestrationMetadataConstants.TriggerMetadataKey])!["CorrelationId"]!.GetValue<string>());
+        Assert.Equal("saga-2", ((JsonNode)metadata[OrchestrationMetadataConstants.OriginMetadataKey])!["SagaId"]!.GetValue<string>());
         Assert.Equal("req-4", ((JsonNode)metadata["audit.context"])!["requestId"]!.GetValue<string>());
     }
 
@@ -216,6 +220,7 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
             new Dictionary<string, JsonNode>
             {
                 ["audit.context"] = JsonNode.Parse("""{"requestId":"dict-envelope"}""")!,
+                [OrchestrationMetadataConstants.OriginMetadataKey] = JsonNode.Parse("""{"SagaId":"saga-envelope"}""")!,
                 [" "] = JsonValue.Create("blank"),
                 ["Krackend.Sagas.Orchestrations.Envelope"] = JsonValue.Create("reserved")
             });
@@ -233,6 +238,7 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         var metadata = CapturePropagationMetadata(mapper, context);
 
         Assert.Equal("dict-envelope", metadata.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Equal("saga-envelope", metadata.Items[OrchestrationMetadataConstants.OriginMetadataKey]!["SagaId"]!.GetValue<string>());
         Assert.True(metadata.Items["object.node"]!["fromNode"]!.GetValue<bool>());
         Assert.True(metadata.Items["object.element"]!["fromElement"]!.GetValue<bool>());
         Assert.True(metadata.Items["object.jsonString"]!["fromString"]!.GetValue<bool>());

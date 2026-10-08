@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IOrchestrationOperationClient, DefaultOrchestrationOperationClient>();
         services.TryAddScoped<IOrchestrationOperationExecutionContext, DefaultOrchestrationOperationExecutionContext>();
         services.TryAddScoped<IOrchestrationExecutionResultMetadataFactory, DefaultOrchestrationExecutionResultMetadataFactory>();
+        services.TryAddScoped<IOrchestrationMessageMetadataComposer, DefaultOrchestrationMessageMetadataComposer>();
         services.TryAddScoped<IOrchestrationPipelinePublisher, DefaultOrchestrationPipelinePublisher>();
         services.TryAddSingleton<IOrchestrationPayloadSerializer, DefaultOrchestrationPayloadSerializer>();
         services.TryAddSingleton<IOrchestrationExceptionErrorCodeMapper, DefaultOrchestrationExceptionErrorCodeMapper>();
