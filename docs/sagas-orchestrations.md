@@ -24,10 +24,7 @@ For the complete start-to-finish Orchestrator walkthrough, including all major m
 | `Krackend.Sagas.Orchestrations.Messaging.Abstractions` | Broker-neutral message publisher/consumer contracts and scoped orchestration metadata context. | No |
 | `Krackend.Sagas.Orchestrations.Messaging.Pigeon` | Optional Pigeon adapter for the messaging facade. Adds Pigeon publish/consume metadata interceptors. | No |
 | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | Razor Pages UI for runtime artifacts and live orchestration diagnostics. Adds runtime UI routes, SignalR reactive publishing, and navigation. | No |
-| `Krackend.Sagas.Orchestrations.Security` | Control-plane security domain: teams and team members. | No |
-| `Krackend.Sagas.Orchestrations.Security.Interaction` | Security services, commands, queries, validators, and team membership operations. | No |
-| `Krackend.Sagas.Orchestrations.Security.Storage.SqlServer` | EF Core SQL Server adapter for Security repositories. | No |
-| `Krackend.Sagas.Orchestrations.Security.WebUI` | Razor Pages UI for Security teams. Adds routes and navigation. | No |
+| `Krackend.Sagas.Orchestrations.WolfAuth` | Optional WebUI authentication gate and login/logout shell over host-owned WolfAuth/ASP.NET Core authentication. | No |
 | `Krackend.Sagas.Orchestrations.Web` | Runtime host minimal API endpoints and runtime artifact pull/deployment/engine interaction services. | No |
 | `Krackend.Sagas.Orchestrations.WebUI.Shell` | Shared Razor UI shell, static assets, and navigation registry. | No |
 
@@ -186,14 +183,13 @@ Pigeon registration throws `ArgumentNullException` when configuration or configu
 | `AddOrchestratorDistributionWebUI(Action<OrchestratorDistributionWebUIOptions>)` | `Krackend.Sagas.Orchestrations.Distribution.WebUI` | Same as above, with custom route prefix. |
 | `MapOrchestratorArtifactDeliveryEndpoints()` | `Krackend.Sagas.Orchestrations.Distribution.Interaction` | Push, pull-pending, and ack endpoints used by runtime nodes. |
 
-### Security
+### Authentication Integration
 
 | Function | Package | What it registers |
 | --- | --- | --- |
-| `AddOrchestratorSecurityInteraction()` | `Krackend.Sagas.Orchestrations.Security.Interaction` | Pelican handlers, FluentValidation validators, validation pipeline behavior, and `ITeamInteractionService`. |
-| `AddOrchestratorSecurityStorageSqlServer(Action<DbContextOptionsBuilder>)` | `Krackend.Sagas.Orchestrations.Security.Storage.SqlServer` | `SecurityStorageDbContext`, `ITeamRepository`, and `ITeamMemberRepository`. |
-| `AddOrchestratorSecurityWebUI()` | `Krackend.Sagas.Orchestrations.Security.WebUI` | Security Razor Pages route conventions and Security navigation contributor. |
-| `AddOrchestratorSecurityWebUI(Action<OrchestratorSecurityWebUIOptions>)` | `Krackend.Sagas.Orchestrations.Security.WebUI` | Same as above, with custom route prefix. |
+| `UseWolfAuth(Action<KrackendWolfAuthOptions>?)` | `Krackend.Sagas.Orchestrations.WolfAuth` | Registers the Krackend WolfAuth marker, shared-shell authentication marker, and authenticated-user fallback policy. The host still configures authentication schemes. |
+| `UseKrackendWolfAuthLoginGate()` | `Krackend.Sagas.Orchestrations.WolfAuth` | Redirects anonymous browser GET requests to Krackend's login shell when the integration is enabled. |
+| `MapKrackendWolfAuthEndpoints()` | `Krackend.Sagas.Orchestrations.WolfAuth` | Maps login, challenge, and logout endpoints that delegate authentication behavior to the host's configured schemes. |
 
 ### Runtime WebUI And Shared Shell
 
@@ -521,11 +517,11 @@ Artifact builders:
 - `IReleaseTargetRepository`
 - Sieve filtering/sorting/paging infrastructure
 
-## Security Module
+## Team Management Module
 
 ### Domain Model
 
-`Krackend.Sagas.Orchestrations.Security` contains:
+The Control Plane team model contains:
 
 - `Team`
 - `TeamMember`
@@ -594,7 +590,7 @@ All WebUI packages are Razor class libraries. Hosts must call `AddRazorPages`, `
 | --- | --- | --- |
 | `Krackend.Sagas.Orchestrations.Design.WebUI` | `OrchestratorDesignWebUIOptions` | `orchestrator-design` |
 | `Krackend.Sagas.Orchestrations.Distribution.WebUI` | `OrchestratorDistributionWebUIOptions` | `orchestrator-distribution` |
-| `Krackend.Sagas.Orchestrations.Security.WebUI` | `OrchestratorSecurityWebUIOptions` | `orchestrator-security` |
+| `Krackend.Sagas.Orchestrations.ControlPlane.WebUI` security area | `OrchestratorSecurityWebUIOptions` | `orchestrator-security` |
 | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | `OrchestratorRuntimeWebUIOptions` | `runtime` |
 
 `AddOrchestratorControlPlane` overrides these defaults for the control-plane composition:

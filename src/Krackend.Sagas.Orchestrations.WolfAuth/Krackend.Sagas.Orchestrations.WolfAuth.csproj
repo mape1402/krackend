@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1573;CS1574;CS1587;CS1591;NU5104</NoWarn>
+    <PackageId>Krackend.Sagas.Orchestrations.WolfAuth</PackageId>
+    <Title>Krackend Sagas Orchestrations WolfAuth Integration</Title>
+    <Description>WolfAuth authentication integration helpers for Krackend Sagas Orchestrations hosts.</Description>
+    <PackageTags>krackend;sagas;orchestrations;authentication;wolfauth</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WolfAuth.AspNetCore" Version="1.0.0" />
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
+  </ItemGroup>
+</Project>

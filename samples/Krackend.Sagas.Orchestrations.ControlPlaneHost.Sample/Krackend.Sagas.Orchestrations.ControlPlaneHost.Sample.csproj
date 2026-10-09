@@ -14,8 +14,10 @@
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
     <PackageReference Include="Ulid" />
+    <PackageReference Include="WolfAuth.Microsoft.EntraId" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +25,7 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework\Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.WebUI\Krackend.Sagas.Orchestrations.ControlPlane.WebUI.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl\Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WolfAuth\Krackend.Sagas.Orchestrations.WolfAuth.csproj" />
   </ItemGroup>
 
 </Project>

@@ -5,10 +5,13 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrast
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
+using Krackend.Sagas.Orchestrations.WolfAuth;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using MongoDB.Driver;
+using WolfAuth.AspNetCore;
 
 const string adminRootPath = "admin";
 
@@ -110,6 +113,17 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 app.UseExceptionHandler("/Error");
 app.UseRouting();
+if (app.Services.GetService<IAuthenticationSchemeProvider>() is not null)
+{
+    app.UseAuthentication();
+}
+
+if (app.Services.GetService<IKrackendWolfAuthRegistration>() is not null)
+{
+    app.UseWolfAuth();
+}
+
+app.UseKrackendWolfAuthLoginGate();
 app.UseAuthorization();
 app.MapStaticAssets();
 app.MapGet("/", context =>
@@ -130,6 +144,7 @@ app.MapGet("/demo/health", () => Results.Ok(new
 }));
 
 app.MapOrchestratorArtifactDeliveryEndpoints();
+app.MapKrackendWolfAuthEndpoints();
 app.MapRazorPages().WithStaticAssets();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });

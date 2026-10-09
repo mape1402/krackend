@@ -260,8 +260,7 @@ public sealed class CoverageReflectionBranchSweepTests
         yield return typeof(RuntimeDbContext).Assembly;
         yield return typeof(Krackend.Sagas.Orchestrations.Runtime.WebUI.OrchestratorRuntimeWebUIOptions).Assembly;
         yield return typeof(Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection.ServiceCollectionExtensions).Assembly;
-        yield return typeof(Krackend.Sagas.Orchestrations.Security.Configuration.KrackendSecurityOptions).Assembly;
-        yield return typeof(Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework.KrackendSecurityDbContext).Assembly;
+        yield return typeof(Krackend.Sagas.Orchestrations.WolfAuth.KrackendWolfAuthOptions).Assembly;
         yield return typeof(Krackend.Sagas.Orchestrations.WebUI.Shell.ServiceCollectionExtensions).Assembly;
     }
 
