@@ -13,6 +13,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.7" Condition="'$(TargetFramework)' == 'net9.0'" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" />
     <PackageReference Include="Pigeon.Messaging.Rabbit" />
@@ -47,8 +49,7 @@
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WebUI.Shell\Krackend.Sagas.Orchestrations.WebUI.Shell.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.ControlPlane.Api\Krackend.Sagas.Orchestrations.ControlPlane.Api.csproj" />
     <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Runtime.Api\Krackend.Sagas.Orchestrations.Runtime.Api.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security\Krackend.Sagas.Orchestrations.Security.csproj" />
-    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Krackend.Sagas.Orchestrations.WolfAuth\Krackend.Sagas.Orchestrations.WolfAuth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

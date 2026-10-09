@@ -7,8 +7,6 @@ using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
-using Krackend.Sagas.Orchestrations.Security.Core;
-using Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,22 +68,6 @@ public sealed class EntityFrameworkStorageCustomizationTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
 
         Assert.Equal(512, GetMaxLength<RuntimeNodeEntity>(dbContext, nameof(RuntimeNodeEntity.Name)));
-    }
-
-    [Fact]
-    public void SecurityStorageAllowsHostModelCustomization()
-    {
-        var services = new ServiceCollection();
-        services.AddKrackendSecurityStorageEntityFramework(
-            options => options.UseInMemoryDatabase(Guid.NewGuid().ToString("N")),
-            storage => storage.ConfigureModel = modelBuilder =>
-                modelBuilder.Entity<KrackendSubject>().Property(x => x.DisplayName).HasMaxLength(512));
-
-        using var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<KrackendSecurityDbContext>();
-
-        Assert.Equal(512, GetMaxLength<KrackendSubject>(dbContext, nameof(KrackendSubject.DisplayName)));
     }
 
     [Fact]

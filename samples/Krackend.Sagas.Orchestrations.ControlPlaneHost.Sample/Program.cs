@@ -6,11 +6,18 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrast
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI;
 using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.DependencyInjection;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
+using Krackend.Sagas.Orchestrations.WolfAuth;
 using ButterMorph.Web.Razor;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using WolfAuth.AspNetCore;
+using WolfAuth.Microsoft.EntraId;
 
 const string adminRootPath = "admin";
 
@@ -26,6 +33,44 @@ if (string.IsNullOrWhiteSpace(sqlConnection))
 var redisConnection = builder.Configuration.GetConnectionString("Redis");
 var migrationsAssembly = typeof(Program).Assembly.GetName().Name;
 var sqlServerStorageModelCustomizer = new ControlPlaneSqlServerStorageModelCustomizer();
+var entraId = EntraIdSettings.FromConfiguration(builder.Configuration);
+
+if (entraId.IsConfigured)
+{
+    builder.Services.AddSingleton<IWolfAuthEntraIdProvisioningMapper, WolfAuthEntraIdProvisioningMapper>();
+    builder.Services
+        .AddAuthentication(options =>
+        {
+            options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+        })
+        .AddCookie(options =>
+        {
+            options.Cookie.Name = "Krackend.ControlPlane.Sample.Auth";
+            options.LoginPath = "/auth/login";
+            options.LogoutPath = "/auth/logout";
+        })
+        .AddOpenIdConnect(options =>
+        {
+            options.Authority = $"https://login.microsoftonline.com/{entraId.TenantId}/v2.0";
+            options.ClientId = entraId.ClientId;
+            options.ClientSecret = entraId.ClientSecret;
+            options.CallbackPath = entraId.CallbackPath;
+            options.ResponseType = OpenIdConnectResponseType.Code;
+            options.SaveTokens = true;
+            options.Scope.Clear();
+            options.Scope.Add("openid");
+            options.Scope.Add("profile");
+            options.Scope.Add("email");
+            options.TokenValidationParameters.NameClaimType = "name";
+            options.TokenValidationParameters.RoleClaimType = "roles";
+        });
+
+    builder.Services.AddWolfAuth(wolf =>
+    {
+        wolf.ClaimsMapping.DefaultProvider = "microsoft-entra-id";
+    });
+}
 
 if (string.IsNullOrWhiteSpace(redisConnection))
 {
@@ -100,6 +145,20 @@ builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
         options.BaseUri = baseUri;
     }
 });
+
+if (entraId.IsConfigured)
+{
+    builder.Services.UseWolfAuth(builder.Configuration.GetSection("Krackend:WolfAuth"), options =>
+    {
+        options.ApplicationName = "Krackend";
+        options.Subtitle = builder.Configuration["Krackend:WolfAuth:Subtitle"] ?? "Sign in to continue.";
+        options.LoginButtonText = "Login";
+        options.ChallengeSchemes.Add(OpenIdConnectDefaults.AuthenticationScheme);
+        options.SignOutSchemes.Add(CookieAuthenticationDefaults.AuthenticationScheme);
+        options.SignOutSchemes.Add(OpenIdConnectDefaults.AuthenticationScheme);
+    });
+}
+
 builder.Services.AddScoped<IDesignHostSeedDataSeeder, DesignHostSeedDataSeeder>();
 
 var app = builder.Build();
@@ -119,6 +178,17 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 app.UseExceptionHandler("/Error");
 app.UseRouting();
+if (app.Services.GetService<IAuthenticationSchemeProvider>() is not null)
+{
+    app.UseAuthentication();
+}
+
+if (app.Services.GetService<IKrackendWolfAuthRegistration>() is not null)
+{
+    app.UseWolfAuth();
+}
+
+app.UseKrackendWolfAuthLoginGate();
 app.UseAuthorization();
 app.MapStaticAssets();
 app.MapGet("/", context =>
@@ -140,11 +210,36 @@ app.MapGet("/demo/health", () => Results.Ok(new
 
 app.MapOrchestratorArtifactDeliveryEndpoints();
 app.MapButterMorphDesigner("/buttermorph");
+app.MapKrackendWolfAuthEndpoints();
 app.MapRazorPages().WithStaticAssets();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
 app.Run();
+
+internal sealed record EntraIdSettings(
+    string TenantId,
+    string ClientId,
+    string ClientSecret,
+    string CallbackPath)
+{
+    public bool IsConfigured
+        => !string.IsNullOrWhiteSpace(TenantId) &&
+           !string.IsNullOrWhiteSpace(ClientId) &&
+           !string.IsNullOrWhiteSpace(ClientSecret);
+
+    public static EntraIdSettings FromConfiguration(IConfiguration configuration)
+    {
+        var section = configuration.GetSection("EntraId");
+        return new EntraIdSettings(
+            section["TenantId"],
+            section["ClientId"],
+            section["ClientSecret"],
+            string.IsNullOrWhiteSpace(section["CallbackPath"])
+                ? "/signin-oidc"
+                : section["CallbackPath"]);
+    }
+}
 
 internal static class DemoArtifactFactory
 {

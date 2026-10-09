@@ -66,10 +66,7 @@ flowchart LR
 | `Krackend.Sagas.Orchestrations.Messaging.Abstractions` | Contratos broker-neutral y metadata de orquestacion. |
 | `Krackend.Sagas.Orchestrations.Messaging.Pigeon` | Adapter Pigeon opcional. |
 | `Krackend.Sagas.Orchestrations.Runtime.WebUI` | UI Razor de runtime artifacts. |
-| `Krackend.Sagas.Orchestrations.Security` | Modelo de equipos y miembros. |
-| `Krackend.Sagas.Orchestrations.Security.Interaction` | Servicios, commands, queries y validadores de equipos. |
-| `Krackend.Sagas.Orchestrations.Security.Storage.SqlServer` | Repositorios EF Core SQL Server de Security. |
-| `Krackend.Sagas.Orchestrations.Security.WebUI` | UI Razor de equipos. |
+| `Krackend.Sagas.Orchestrations.WolfAuth` | Integracion opcional de autenticacion WebUI sobre WolfAuth/ASP.NET Core configurado por el host. |
 | `Krackend.Sagas.Orchestrations.Web` | Minimal APIs runtime: artifacts, pull, triggers y engine. |
 | `Krackend.Sagas.Orchestrations.WebUI.Shell` | Navegacion y shell compartido. |
 

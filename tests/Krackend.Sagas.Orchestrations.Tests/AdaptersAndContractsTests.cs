@@ -15,7 +15,6 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
-using Krackend.Sagas.Orchestrations.Security.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -64,20 +63,6 @@ public sealed class AdaptersAndContractsTests
         Assert.True(mapping.IsRetryableCandidate);
         Assert.Throws<ArgumentNullException>(() => new OrchestrationClientExceptionErrorMapping(null!, "Error"));
         Assert.Throws<ArgumentException>(() => new OrchestrationClientExceptionErrorMapping(typeof(Exception), " "));
-    }
-
-    [Fact]
-    public void KrackendPagedResultMaterializesRowsAndTreatsNullAsEmpty()
-    {
-        var populated = new KrackendPagedResult<string>(2, 4, 7, 3, ["a", "b"]);
-        var empty = new KrackendPagedResult<string>(1, 1, 0, 10, null!);
-
-        Assert.Equal(2, populated.PageNumber);
-        Assert.Equal(4, populated.TotalPages);
-        Assert.Equal(7, populated.TotalRows);
-        Assert.Equal(3, populated.PageSize);
-        Assert.Equal(["a", "b"], populated.Rows);
-        Assert.Empty(empty.Rows);
     }
 
     [Fact]

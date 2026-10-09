@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ### Added
+
+  - Added `Krackend.Sagas.Orchestrations.WolfAuth`, an optional host-owned WolfAuth/ASP.NET Core authentication integration for the shared WebUI shell, login gate, challenge endpoint, logout endpoint, and authenticated-user shell menu.
+
+- ### Changed
+
+  - Changed Control Plane and Runtime REST API authorization options to accept host-defined policy names without depending on Krackend-owned security defaults.
+  - Changed sample Control Plane and Runtime hosts to opt into the new WolfAuth integration surface when the host configures authentication.
+
+- ### Removed
+
+  - Removed Krackend-owned authentication/authorization security packages and storage from the orchestration package family; users, roles, permissions, and authentication providers now belong to the host/WolfAuth setup.
+
 ------
 
 ## [v5.1.1] - 2026-10-07

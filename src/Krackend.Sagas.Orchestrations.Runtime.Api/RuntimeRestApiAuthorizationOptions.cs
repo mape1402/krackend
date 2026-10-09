@@ -1,5 +1,3 @@
-using Krackend.Sagas.Orchestrations.Security.AspNetCore;
-
 namespace Krackend.Sagas.Orchestrations.Runtime.Api;
 
 /// <summary>
@@ -26,15 +24,4 @@ public sealed class RuntimeRestApiAuthorizationOptions
     /// Gets or sets the policy required by runtime artifact apply endpoints.
     /// </summary>
     public string ArtifactApplyPolicy { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Configures all properties with the default Krackend security policy names.
-    /// </summary>
-    public void UseKrackendDefaults()
-    {
-        ReadPolicy = KrackendAuthorizationPolicies.RuntimeRead;
-        InstancesReadPolicy = KrackendAuthorizationPolicies.RuntimeInstancesRead;
-        ManagePolicy = KrackendAuthorizationPolicies.RuntimeManage;
-        ArtifactApplyPolicy = KrackendAuthorizationPolicies.RuntimeArtifactsApply;
-    }
 }

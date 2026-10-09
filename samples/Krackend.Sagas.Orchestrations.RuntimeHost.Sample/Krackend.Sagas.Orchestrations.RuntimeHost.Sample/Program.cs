@@ -11,12 +11,15 @@ using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Bootstrap;
 using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 using Krackend.Sagas.Orchestrations.WebUI.Shell;
+using Krackend.Sagas.Orchestrations.WolfAuth;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.EntityFrameworkCore;
 using Mule;
 using Mule.EntityFrameworkCore;
 using Pigeon.Messaging.Azure.ServiceBus;
 using Pigeon.Messaging.Topology;
+using WolfAuth.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
@@ -178,11 +181,23 @@ app.UseHttpsRedirection();
 
 app.UseRouting();
 
+if (app.Services.GetService<IAuthenticationSchemeProvider>() is not null)
+{
+    app.UseAuthentication();
+}
+
+if (app.Services.GetService<IKrackendWolfAuthRegistration>() is not null)
+{
+    app.UseWolfAuth();
+}
+
+app.UseKrackendWolfAuthLoginGate();
 app.UseAuthorization();
 
 app.MapStaticAssets();
 app.MapOrchestratorRuntimeDistributionEndpoints();
 app.MapOrchestratorRuntimeReactiveHub();
+app.MapKrackendWolfAuthEndpoints();
 app.MapRazorPages()
    .WithStaticAssets();
 

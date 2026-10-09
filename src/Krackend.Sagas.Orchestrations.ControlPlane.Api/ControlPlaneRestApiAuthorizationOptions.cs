@@ -1,5 +1,3 @@
-using Krackend.Sagas.Orchestrations.Security.AspNetCore;
-
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Api;
 
 /// <summary>
@@ -26,15 +24,4 @@ public sealed class ControlPlaneRestApiAuthorizationOptions
     /// Gets or sets the policy required by control-plane security management endpoints.
     /// </summary>
     public string SecurityManagePolicy { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Configures all properties with the default Krackend security policy names.
-    /// </summary>
-    public void UseKrackendDefaults()
-    {
-        ReadPolicy = KrackendAuthorizationPolicies.ControlPlaneRead;
-        DesignWritePolicy = KrackendAuthorizationPolicies.ControlPlaneDesignWrite;
-        ReleaseExecutePolicy = KrackendAuthorizationPolicies.ControlPlaneReleaseExecute;
-        SecurityManagePolicy = KrackendAuthorizationPolicies.ControlPlaneSecurityManage;
-    }
 }

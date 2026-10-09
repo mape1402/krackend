@@ -64,11 +64,10 @@ dotnet add package Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl
 dotnet add package Krackend.Sagas.Orchestrations.WebUI.Shell
 ```
 
-Security packages:
+Authentication integration package:
 
 ```bash
-dotnet add package Krackend.Sagas.Orchestrations.Security
-dotnet add package Krackend.Sagas.Orchestrations.Security.Storage.EntityFramework
+dotnet add package Krackend.Sagas.Orchestrations.WolfAuth
 ```
 
 ## Event Sourcing
@@ -158,9 +157,9 @@ Samples:
 - `samples/Krackend.EventSourcing.Centralized.Sample`: centralized raw JSON event store with SQLite.
 - `samples/Krackend.EventSourcing.Pelican.Sample`: exploratory Pelican/template integration.
 - `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Sample`: host that mounts runtime storage, Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, and Runtime WebUI.
-- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample`: control-plane host that mounts design, distribution, security, WebUI, artifact delivery endpoints, and EF migrations.
+- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample`: control-plane host that mounts design, distribution, team management, WebUI, artifact delivery endpoints, and EF migrations.
 - `samples/Krackend.Sagas.Orchestrations.RuntimeHost.Mongo.Sample`: Mongo-backed runtime host that uses the MongoDB EF Core provider while keeping Mule buffering, Pigeon messaging, Redis gossip, ButterMorph, Runtime WebUI, and runtime APIs wired through the same orchestration packages.
-- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample`: Mongo-backed control-plane host that uses the MongoDB EF Core provider with design, distribution, security, WebUI, artifact delivery endpoints, APIs, and seed data.
+- `samples/Krackend.Sagas.Orchestrations.ControlPlaneHost.Mongo.Sample`: Mongo-backed control-plane host that uses the MongoDB EF Core provider with design, distribution, team management, WebUI, artifact delivery endpoints, APIs, and seed data.
 
 Runtime samples register the Azure Service Bus Pigeon adapter only when `ConnectionStrings:AzureServiceBus` or `Pigeon:MessageBrokers:AzureServiceBus:ConnectionString` is configured. With the default empty value, the hosts still start for local storage, distribution, and WebUI smoke testing without requiring a broker.
 
@@ -175,7 +174,7 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
-- `Krackend.Sagas.Orchestrations.Security*` keeps authentication in the host and adds provider-agnostic orchestration authorization with subjects, roles, permissions, scopes, bootstrap admins, ASP.NET Core policies, and EF storage.
+- `Krackend.Sagas.Orchestrations.WolfAuth` adds optional WebUI authentication gates over host-owned WolfAuth/ASP.NET Core authentication. Krackend no longer ships its own subject, role, permission, or security storage packages.
 
 Spider event publishing:
 
@@ -305,11 +304,14 @@ ButterMorph compensation contexts include the data that is technically available
 
 The Control Plane WebUI opens ButterMorph directly for compensation execution conditions and transformations. Trigger compensation is edited in its own tab with the same task configuration surface used by regular tasks, including timeout, retry, and on-error policy settings.
 
-Security model:
+Authentication model:
 
-Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host authenticates a `ClaimsPrincipal`; Krackend resolves the external subject from configured claims and evaluates orchestration permissions.
+Authentication belongs to the host. Krackend libraries do not configure Entra ID, JWT bearer, cookies, API keys, IdentityServer, Auth0, Keycloak, or any concrete provider. The host configures WolfAuth and ASP.NET Core authentication, then optionally enables Krackend's WolfAuth integration so the WebUI redirects anonymous browser users to a login shell and requires an authenticated `ClaimsPrincipal`.
 
 ```csharp
+using Krackend.Sagas.Orchestrations.WolfAuth;
+using WolfAuth.AspNetCore;
+
 builder.Services
     .AddAuthentication("HostScheme")
     .AddJwtBearer("HostScheme", options =>
@@ -317,22 +319,20 @@ builder.Services
         // Host-owned authentication configuration.
     });
 
-builder.Services.AddKrackendSecurity(options =>
+builder.Services.UseWolfAuth(builder.Configuration.GetSection("Krackend:WolfAuth"), options =>
 {
-    options.RequireKnownSubject = true;
-    options.Subject.Provider = "entra-id";
-    options.BootstrapAdmins.Add(new KrackendBootstrapSubject
-    {
-        Provider = "entra-id",
-        SubjectId = "external-user-object-id"
-    });
+    options.ApplicationName = "Krackend";
+    options.ChallengeSchemes.Add("HostScheme");
 });
 
-builder.Services.AddKrackendSecurityStorageEntityFramework(options =>
-{
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Security"));
-});
+app.UseAuthentication();
+app.UseWolfAuth();
+app.UseKrackendWolfAuthLoginGate();
+app.UseAuthorization();
+app.MapKrackendWolfAuthEndpoints();
 ```
+
+`UseWolfAuth` is only Krackend's product integration point. It does not create users, roles, permissions, or databases. If the package is not registered, the WebUI shell renders without login/logout controls and Krackend leaves authentication completely to the host.
 
 Entity Framework storage provider model:
 
@@ -350,7 +350,7 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
     });
 ```
 
-The same pattern is available for Control Plane and Security storage. The sample hosts keep their SQL Server-specific model customization beside their migrations so another host can choose a different EF Core provider without changing Krackend packages.
+The same pattern is available for Control Plane storage. The sample hosts keep their SQL Server-specific model customization beside their migrations so another host can choose a different EF Core provider without changing Krackend packages.
 
 Distribution credential protection:
 
@@ -390,15 +390,19 @@ REST APIs can keep an optional global policy and also opt into granular product 
 ```csharp
 app.MapKrackendOrchestrationsControlPlaneApi(options =>
 {
-    options.Authorization.UseKrackendDefaults();
+    options.Authorization.ReadPolicy = "ControlPlaneReaders";
+    options.Authorization.DesignWritePolicy = "DesignWriters";
+    options.Authorization.ReleaseExecutePolicy = "ReleaseOperators";
+    options.Authorization.SecurityManagePolicy = "TeamManagers";
 });
 
 app.MapKrackendOrchestrationsRuntimeApi(options =>
 {
-    options.Authorization.UseKrackendDefaults();
+    options.Authorization.ReadPolicy = "RuntimeReaders";
+    options.Authorization.InstancesReadPolicy = "RuntimeInstanceReaders";
+    options.Authorization.ManagePolicy = "RuntimeManagers";
+    options.Authorization.ArtifactApplyPolicy = "RuntimeArtifactOperators";
 });
-
-app.MapKrackendSecurityAdministrationApi();
 ```
 
 The WebUI and REST API are sibling entry points over the same application/runtime services:
