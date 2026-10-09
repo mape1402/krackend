@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.WebUI.Shell.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,71 @@ public sealed class WolfAuthIntegrationTests
     }
 
     [Fact]
+    public async Task LoginGateDoesNotRenderLoginForNonHtmlRequests()
+    {
+        await using var fixture = await WolfAuthFixture.Start();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/secure");
+        request.Headers.Accept.ParseAdd("application/json");
+
+        using var response = await fixture.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/external-login?returnUrl=%2F", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task LoginGateDoesNotRenderLoginForNonGetRequests()
+    {
+        await using var fixture = await WolfAuthFixture.Start();
+
+        using var response = await fixture.Client.PostAsync("/secure", null);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/external-login?returnUrl=%2F", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public void LoginDecisionTreatsMissingIdentityAsAnonymousBrowserRequest()
+    {
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal()
+        };
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/secure";
+        context.Request.Headers.Accept = "text/html";
+
+        var shouldShowLogin = InvokeShouldShowLogin(context, new KrackendWolfAuthOptions());
+
+        Assert.True(shouldShowLogin);
+    }
+
+    [Theory]
+    [InlineData("/auth/logout")]
+    [InlineData("/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/css/orchestrator-shell.css")]
+    [InlineData("/health")]
+    [InlineData("/healthz")]
+    [InlineData("/api/orchestrations")]
+    [InlineData("/favicon.ico")]
+    public async Task LoginGateDoesNotRenderLoginForBypassPaths(string path)
+    {
+        await using var fixture = await WolfAuthFixture.Start();
+
+        using var response = await fixture.Client.GetAsync(path);
+
+        Assert.False(response.Headers.Location?.OriginalString.StartsWith("/auth/login", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void BypassPathTreatsEmptyPathAsNonBypass()
+    {
+        var isBypass = InvokeIsBypassPath(default, new KrackendWolfAuthOptions());
+
+        Assert.False(isBypass);
+    }
+
+    [Fact]
     public async Task LoginShellRendersConfiguredLoginButton()
     {
         await using var fixture = await WolfAuthFixture.Start(options =>
@@ -46,6 +112,17 @@ public sealed class WolfAuthIntegrationTests
     }
 
     [Fact]
+    public async Task ChallengeEndpointUsesDefaultAuthenticationSchemeWhenNoSchemeIsConfigured()
+    {
+        await using var fixture = await WolfAuthFixture.Start();
+
+        using var response = await fixture.Client.GetAsync("/auth/login/challenge?returnUrl=/secure");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/external-login?returnUrl=%2Fsecure", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
     public async Task ChallengeEndpointUsesConfiguredAuthenticationScheme()
     {
         await using var fixture = await WolfAuthFixture.Start(options =>
@@ -55,6 +132,30 @@ public sealed class WolfAuthIntegrationTests
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/external-login?returnUrl=%2Fsecure", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task LogoutEndpointUsesDefaultSignOutSchemeWhenNoSchemeIsConfigured()
+    {
+        await using var fixture = await WolfAuthFixture.Start(authenticated: true);
+
+        using var response = await fixture.Client.GetAsync("/auth/logout?returnUrl=/secure");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/signed-out?returnUrl=%2Fsecure", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task LogoutEndpointUsesConfiguredSignOutScheme()
+    {
+        await using var fixture = await WolfAuthFixture.Start(
+            options => options.SignOutSchemes.Add(TestAuthenticationDefaults.Scheme),
+            authenticated: true);
+
+        using var response = await fixture.Client.GetAsync("/auth/logout?returnUrl=/secure");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/signed-out?returnUrl=%2Fsecure", response.Headers.Location?.OriginalString);
     }
 
     [Fact]
@@ -92,6 +193,25 @@ public sealed class WolfAuthIntegrationTests
     }
 
     [Fact]
+    public async Task ConfigurationOverloadAppliesAdditionalOptionConfiguration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["LoginButtonText"] = "Configured sign in"
+            })
+            .Build();
+        await using var fixture = await WolfAuthFixture.Start(
+            wolfAuthConfiguration: configuration,
+            configureOptions: options => options.LoginButtonText = "Overridden sign in");
+
+        var html = await fixture.Client.GetStringAsync("/auth/login");
+
+        Assert.Contains(">Overridden sign in</a>", html);
+        Assert.DoesNotContain(">Configured sign in</a>", html);
+    }
+
+    [Fact]
     public async Task IntegrationIsNoOpWhenWolfAuthIsDisabledByConfiguration()
     {
         var configuration = new ConfigurationBuilder()
@@ -118,6 +238,24 @@ public sealed class WolfAuthIntegrationTests
 
         Assert.NotNull(fixture.App.Services.GetService<IKrackendWolfAuthRegistration>());
         Assert.NotNull(fixture.App.Services.GetService<IOrchestratorWebUIAuthenticationRegistration>());
+    }
+
+    private static bool InvokeShouldShowLogin(HttpContext context, KrackendWolfAuthOptions options)
+    {
+        var method = typeof(Krackend.Sagas.Orchestrations.WolfAuth.ApplicationBuilderExtensions).GetMethod(
+            "ShouldShowLogin",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        return Assert.IsType<bool>(method.Invoke(null, [context, options]));
+    }
+
+    private static bool InvokeIsBypassPath(PathString path, KrackendWolfAuthOptions options)
+    {
+        var method = typeof(Krackend.Sagas.Orchestrations.WolfAuth.ApplicationBuilderExtensions).GetMethod(
+            "IsBypassPath",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        return Assert.IsType<bool>(method.Invoke(null, [path, options]));
     }
 
     private sealed class WolfAuthFixture(WebApplication app, HttpClient client) : IAsyncDisposable
@@ -187,7 +325,7 @@ public sealed class WolfAuthIntegrationTests
         ILoggerFactory logger,
         UrlEncoder encoder,
         IOptions<TestAuthenticationState> state)
-        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder), IAuthenticationSignOutHandler
     {
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
@@ -211,6 +349,13 @@ public sealed class WolfAuthIntegrationTests
         {
             var returnUrl = properties.RedirectUri ?? "/";
             Response.Redirect($"/external-login?returnUrl={WebUtility.UrlEncode(returnUrl)}");
+            return Task.CompletedTask;
+        }
+
+        public Task SignOutAsync(AuthenticationProperties? properties)
+        {
+            var returnUrl = properties?.RedirectUri ?? "/";
+            Response.Redirect($"/signed-out?returnUrl={WebUtility.UrlEncode(returnUrl)}");
             return Task.CompletedTask;
         }
     }
