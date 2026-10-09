@@ -1,71 +1,146 @@
 @page
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.IndexModel
 @{
-    ViewData["Title"] = "Control Plane";
+    ViewData["Title"] = "Overview";
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Control Plane</h1>
-        <p class="od-page-subtitle">Design, release, and secure orchestrations from one administration surface.</p>
+<section class="od-home-hero">
+    <div class="od-home-hero-content">
+        <span class="od-home-eyebrow">Control Plane</span>
+        <h1 class="od-home-title">
+            <i class="bi bi-diagram-3-fill" aria-hidden="true"></i>
+            Krackend Orchestrations
+        </h1>
+        <p class="od-home-subtitle">
+            Design saga roadmaps, publish deployable artifacts, and operate runtime topology from one focused administration surface.
+        </p>
     </div>
-</div>
+</section>
 
-<section class="od-list-shell">
-    <div class="od-grid">
-        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index">
-            <div class="od-item-top">
-                <div>
-                    <h2 class="od-item-title">Orchestrations</h2>
-                    <p class="od-item-meta">Design</p>
-                </div>
-                <span class="od-meta-chip">Roadmaps</span>
+<section class="od-home-section">
+    <h2 class="od-home-section-title">Quick Access</h2>
+    <div class="od-home-hub-grid">
+        <a class="od-home-hub-card" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: var(--od-primary);">
+                <i class="bi bi-diagram-3" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Orchestrations</h3>
+                <p>Create roadmaps, manage versions, stages, triggers, tasks, mappings, and execution conditions.</p>
             </div>
-            <p class="od-item-description">Create orchestration definitions, manage versions, stages, triggers, and tasks.</p>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
         </a>
 
-        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDesign" asp-page="/Domains/Index">
-            <div class="od-item-top">
-                <div>
-                    <h2 class="od-item-title">Domains</h2>
-                    <p class="od-item-meta">Design</p>
-                </div>
-                <span class="od-meta-chip">Ownership</span>
+        <a class="od-home-hub-card" asp-area="OrchestratorDesign" asp-page="/Metadata/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #0f8c55;">
+                <i class="bi bi-braces" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Metadata</h3>
+                <p>Describe transversal metadata sources available to transformations and execution conditions.</p>
             </div>
-            <p class="od-item-description">Organize orchestration ownership and domain boundaries used by design workflows.</p>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
         </a>
 
-        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDistribution" asp-page="/Environments/Index">
-            <div class="od-item-top">
-                <div>
-                    <h2 class="od-item-title">Environments</h2>
-                    <p class="od-item-meta">Distribution</p>
-                </div>
-                <span class="od-meta-chip">Targets</span>
+        <a class="od-home-hub-card" asp-area="OrchestratorDesign" asp-page="/Domains/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #245bb8;">
+                <i class="bi bi-boxes" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Domains</h3>
+                <p>Organize ownership boundaries and team context used by orchestration design workflows.</p>
             </div>
-            <p class="od-item-description">Manage the environments and runtime nodes that receive released artifacts.</p>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
         </a>
 
-        <a class="od-item-card text-decoration-none" asp-area="OrchestratorDistribution" asp-page="/Promotions/Index">
-            <div class="od-item-top">
-                <div>
-                    <h2 class="od-item-title">Releases</h2>
-                    <p class="od-item-meta">Distribution</p>
-                </div>
-                <span class="od-meta-chip">Delivery</span>
+        <a class="od-home-hub-card" asp-area="OrchestratorDistribution" asp-page="/Environments/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #a7650d;">
+                <i class="bi bi-layers" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Environments</h3>
+                <p>Define deployment targets and group runtime nodes by operational environment.</p>
             </div>
-            <p class="od-item-description">Review prepared releases and distribute artifacts to configured runtime nodes.</p>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
         </a>
 
-        <a class="od-item-card text-decoration-none" asp-area="OrchestratorSecurity" asp-page="/Teams/Index">
-            <div class="od-item-top">
-                <div>
-                    <h2 class="od-item-title">Teams</h2>
-                    <p class="od-item-meta">Security</p>
-                </div>
-                <span class="od-meta-chip">Access</span>
+        <a class="od-home-hub-card" asp-area="OrchestratorDistribution" asp-page="/RuntimeNodes/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #8b5cf6;">
+                <i class="bi bi-hdd-network" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Runtime Nodes</h3>
+                <p>Register runtime hosts and inspect the node credentials used for artifact delivery.</p>
             </div>
-            <p class="od-item-description">Configure teams and assignments used by control-plane authorization.</p>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
         </a>
+
+        <a class="od-home-hub-card" asp-area="OrchestratorDistribution" asp-page="/Promotions/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #c83d4f;">
+                <i class="bi bi-rocket-takeoff" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Releases</h3>
+                <p>Promote orchestration artifacts and distribute stable versions to selected runtime nodes.</p>
+            </div>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
+        </a>
+
+        <a class="od-home-hub-card" asp-area="OrchestratorDistribution" asp-page="/ArtifactReleases/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #0e7490;">
+                <i class="bi bi-archive" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Artifacts</h3>
+                <p>Review generated orchestration artifacts, snapshots, checksums, and release history.</p>
+            </div>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
+        </a>
+
+        <a class="od-home-hub-card" asp-area="OrchestratorSecurity" asp-page="/Teams/Index">
+            <span class="od-home-hub-icon" style="--od-home-accent: #64748b;">
+                <i class="bi bi-shield-check" aria-hidden="true"></i>
+            </span>
+            <div class="od-home-hub-body">
+                <h3>Teams</h3>
+                <p>Manage control-plane ownership and access boundaries for design and release operations.</p>
+            </div>
+            <i class="bi bi-arrow-right od-home-hub-arrow" aria-hidden="true"></i>
+        </a>
+    </div>
+</section>
+
+<section class="od-home-section">
+    <h2 class="od-home-section-title">Platform Overview</h2>
+    <div class="od-home-stats-grid">
+        <div class="od-home-stat-card">
+            <span class="od-home-stat-value">Design</span>
+            <span class="od-home-stat-label">Orchestration roadmaps, contracts, metadata, mappings, and execution rules.</span>
+        </div>
+        <div class="od-home-stat-card">
+            <span class="od-home-stat-value">Release</span>
+            <span class="od-home-stat-label">Versioned artifacts with snapshots prepared for runtime deployment.</span>
+        </div>
+        <div class="od-home-stat-card">
+            <span class="od-home-stat-value">Runtime</span>
+            <span class="od-home-stat-label">Runtime nodes receive complete artifacts and execute sagas independently.</span>
+        </div>
+        <div class="od-home-stat-card">
+            <span class="od-home-stat-value">Secure</span>
+            <span class="od-home-stat-label">Host-owned authentication with team context for control-plane operations.</span>
+        </div>
+    </div>
+</section>
+
+<section class="od-home-section">
+    <h2 class="od-home-section-title">Getting Started</h2>
+    <div class="od-home-start-card">
+        <ol class="od-home-start-list">
+            <li><strong>Define orchestration metadata</strong> so transversal context is available to conditions and mappings.</li>
+            <li><strong>Create an orchestration</strong> with its trigger, stages, tasks, retries, decisions, and compensation paths.</li>
+            <li><strong>Bind contracts and mappings</strong> using schema snapshots so runtime execution does not depend on the designer.</li>
+            <li><strong>Publish a release</strong> and deploy the artifact to the target runtime nodes.</li>
+            <li><strong>Monitor runtime instances</strong> from the runtime host while messages, replies, and retries flow through the saga.</li>
+        </ol>
     </div>
 </section>
