@@ -9,14 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- No unreleased changes.
+
+------
+
+## [v5.2.0] - 2026-10-12
+
 - ### Added
 
   - Added `Krackend.Sagas.Orchestrations.WolfAuth`, an optional host-owned WolfAuth/ASP.NET Core authentication integration for the shared WebUI shell, login gate, challenge endpoint, logout endpoint, and authenticated-user shell menu.
 
 - ### Changed
 
+  - Changed ButterMorph dependencies to `2.1.0` across Control Plane design, schema design, runtime transformation, validation, and Razor designer packages.
+  - Changed the Control Plane overview into a richer KnOwl-style landing page with hero, quick access cards, platform overview, and getting-started guidance.
   - Changed Control Plane and Runtime REST API authorization options to accept host-defined policy names without depending on Krackend-owned security defaults.
   - Changed sample Control Plane and Runtime hosts to opt into the new WolfAuth integration surface when the host configures authentication.
+  - Increased orchestration security and client execution-context coverage to keep branch coverage above 99%.
 
 - ### Removed
 

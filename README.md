@@ -175,6 +175,7 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 - `Krackend.Sagas.Orchestrations.WolfAuth` adds optional WebUI authentication gates over host-owned WolfAuth/ASP.NET Core authentication. Krackend no longer ships its own subject, role, permission, or security storage packages.
+- Control Plane and runtime ButterMorph integration is aligned with ButterMorph `2.1.0` for schema design, mapping, execution-condition authoring, runtime transforms, and runtime validations.
 
 Spider event publishing:
 
@@ -303,6 +304,8 @@ Tasks and event triggers can define compensating tasks. The runtime evaluates th
 ButterMorph compensation contexts include the data that is technically available at that point in the saga. Task compensation can use the trigger payload and metadata, forward task requests and replies up to the task being compensated, the failed task request when available, and previous compensation replies. Trigger compensation intentionally exposes only the selected event trigger payload, trigger metadata, and transversal metadata, because forward tasks may never have executed when trigger compensation runs. This lets a compensation step reverse the paired forward task and still emit additional compensating side effects when the design requires them.
 
 The Control Plane WebUI opens ButterMorph directly for compensation execution conditions and transformations. Trigger compensation is edited in its own tab with the same task configuration surface used by regular tasks, including timeout, retry, and on-error policy settings.
+
+Krackend `v5.2.0` uses ButterMorph `2.1.0` across the Control Plane designer, schema designer, runtime transform adapter, and validation adapter. Hosts only need to register the Krackend packages; the ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
 
 Authentication model:
 
