@@ -54,7 +54,7 @@ public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogP
             .Where(contract => MatchesKind(contract, request.ContractKind))
             .Where(contract => MatchesSearchText(contract, request.SearchText))
             .OrderByDescending(contract => contract.CreatedAtUtc)
-            .ThenBy(contract => contract.Topic, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(contract => contract.ContractKey, StringComparer.OrdinalIgnoreCase)
             .ThenByDescending(contract => contract.VersionNumber, StringComparer.OrdinalIgnoreCase)
             .Select(contract => Map(contract, request.ContractKind))
             .GroupBy(item => $"{item.ContractKind}|{item.ContractKey}|{item.ContractVersion}", StringComparer.OrdinalIgnoreCase)
@@ -68,7 +68,7 @@ public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogP
         var kind = requestedKind is SchemaContractKind.Command or SchemaContractKind.CommandRequest or SchemaContractKind.CommandResponse
             ? requestedKind
             : MapKind(contract.ArtifactType);
-        var key = contract.Topic ?? string.Empty;
+        var key = contract.ContractKey ?? string.Empty;
         var version = contract.VersionNumber ?? string.Empty;
 
         return new SchemaContractCatalogItem
@@ -116,7 +116,7 @@ public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogP
         }
 
         var normalized = searchText.Trim();
-        return Contains(contract.Topic, normalized) ||
+        return Contains(contract.ContractKey, normalized) ||
             Contains(contract.VersionNumber, normalized) ||
             Contains(contract.ContentHash, normalized) ||
             Contains(contract.Id == Guid.Empty ? string.Empty : contract.Id.ToString(), normalized);
