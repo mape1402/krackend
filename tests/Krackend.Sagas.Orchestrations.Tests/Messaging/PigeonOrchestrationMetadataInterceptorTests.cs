@@ -169,6 +169,47 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
     }
 
     [Theory]
+    [InlineData("event.metadata")]
+    [InlineData("dmx.metadata")]
+    public async Task ClientPublishInterceptorPreservesExistingMetadataOverPropagation(string key)
+    {
+        var outgoingMetadata = JsonNode.Parse("""{"source":"outgoing"}""")!;
+        var propagatedMetadata = JsonNode.Parse("""{"source":"incoming"}""")!;
+        var missingMetadata = JsonNode.Parse("""{"requestId":"req-5"}""")!;
+        var propagationAccessor = Substitute.For<IOrchestrationPropagationMetadataAccessor>();
+        propagationAccessor.Get().Returns(new OrchestrationPropagationMetadata
+        {
+            Items =
+            {
+                [key] = propagatedMetadata,
+                ["audit.context"] = missingMetadata,
+                ["Krackend.Sagas.Orchestrations.Internal"] = JsonValue.Create("reserved")
+            }
+        });
+        var messageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
+        var resultAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
+        messageAccessor.Get().Returns(new OrchestrationMessageMetadata());
+        resultAccessor.Get().Returns(_ => null!);
+        var interceptor = CreatePublishInterceptor(
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon",
+            "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendClientPublishInterceptor",
+            messageAccessor,
+            resultAccessor,
+            propagationAccessor);
+        var context = new PublishContext();
+        context.AddMetadata(key, outgoingMetadata);
+
+        await interceptor.Intercept(context, CancellationToken.None);
+
+        var metadata = GetPublishMetadata(context);
+        Assert.Same(outgoingMetadata, metadata[key]);
+        Assert.Equal("outgoing", ((JsonNode)metadata[key])["source"]!.GetValue<string>());
+        Assert.Equal("req-5", ((JsonNode)metadata["audit.context"])["requestId"]!.GetValue<string>());
+        Assert.NotSame(missingMetadata, metadata["audit.context"]);
+        Assert.False(metadata.ContainsKey("Krackend.Sagas.Orchestrations.Internal"));
+    }
+
+    [Theory]
     [MemberData(nameof(PropagationMapperTypes))]
     public void PropagationMappersAttachSkipNullEmptyAndReservedMetadata(string assemblyName, string typeName)
     {
