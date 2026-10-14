@@ -51,7 +51,7 @@ internal sealed class KrackendEventStoreOptionsExtension : IDbContextOptionsExte
             => HashCode.Combine(
                 typeof(KrackendEventStoreOptionsExtension),
                 string.Join('|', _extension.Stores.Values.Keys.OrderBy(x => x)),
-                _extension.Options.EventIdPropertyConfigurator?.GetHashCode() ?? 0);
+                _extension.Options.GetServiceProviderHashCode());
 
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo)
             => debugInfo["KrackendEventStore"] = string.Join(",", _extension.Stores.Values.Keys.OrderBy(x => x));

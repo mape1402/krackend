@@ -8,6 +8,11 @@ namespace Microsoft.EntityFrameworkCore;
 /// </summary>
 public static class EventStoreEntityModelBuilderExtensions
 {
+    private const int NameMaxLength = 128;
+    private const int IdentifierMaxLength = 256;
+    private const int TypeMaxLength = 256;
+    private const int SchemaVersionMaxLength = 32;
+
     /// <summary>
     /// Adds Krackend event store entity mappings to an EF Core model.
     /// </summary>
@@ -28,8 +33,10 @@ public static class EventStoreEntityModelBuilderExtensions
                 entity => ConfigureEntity(entity, store, options));
         }
 
-        modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord>(ConfigureSnapshotEntity);
-        modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.SnapshotCandidateRecord>(ConfigureSnapshotCandidateEntity);
+        modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord>(
+            entity => ConfigureSnapshotEntity(entity, options));
+        modelBuilder.Entity<Krackend.EventSourcing.EntityFrameworkCore.SnapshotCandidateRecord>(
+            entity => ConfigureSnapshotCandidateEntity(entity, options));
 
         return modelBuilder;
     }
@@ -44,25 +51,21 @@ public static class EventStoreEntityModelBuilderExtensions
         var eventIdProperty = entity.Property(x => x.EventId)
             .IsRequired()
             .ValueGeneratedNever();
+        options.ConfigureKey(eventIdProperty);
 
-        if (options.EventIdPropertyConfigurator is null)
-            eventIdProperty.HasMaxLength(200);
-        else
-            options.EventIdPropertyConfigurator(eventIdProperty, store);
-
-        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
-        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
-        entity.Property(x => x.StreamType).HasMaxLength(300);
-        entity.Property(x => x.EventType).IsRequired().HasMaxLength(500);
-        entity.Property(x => x.EventSchemaVersion).IsRequired().HasMaxLength(50);
+        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(NameMaxLength);
+        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(IdentifierMaxLength);
+        entity.Property(x => x.StreamType).HasMaxLength(TypeMaxLength);
+        entity.Property(x => x.EventType).IsRequired().HasMaxLength(TypeMaxLength);
+        entity.Property(x => x.EventSchemaVersion).IsRequired().HasMaxLength(SchemaVersionMaxLength);
         entity.Property(x => x.StreamVersion).IsRequired();
         entity.Property(x => x.GlobalPosition).IsRequired().ValueGeneratedNever();
         entity.Property(x => x.OccurredAt).IsRequired();
-        entity.Property(x => x.CorrelationId).HasMaxLength(100);
-        entity.Property(x => x.CausationId).HasMaxLength(100);
-        entity.Property(x => x.UserId).HasMaxLength(200);
-        entity.Property(x => x.TenantId).HasMaxLength(200);
-        entity.Property(x => x.Source).HasMaxLength(300);
+        entity.Property(x => x.CorrelationId).HasMaxLength(IdentifierMaxLength);
+        entity.Property(x => x.CausationId).HasMaxLength(IdentifierMaxLength);
+        entity.Property(x => x.UserId).HasMaxLength(IdentifierMaxLength);
+        entity.Property(x => x.TenantId).HasMaxLength(IdentifierMaxLength);
+        entity.Property(x => x.Source).HasMaxLength(IdentifierMaxLength);
         entity.Property(x => x.Payload).IsRequired();
         entity.Property(x => x.Metadata);
         entity.HasIndex(x => new { x.StreamName, x.StreamId, x.StreamVersion }).IsUnique();
@@ -70,33 +73,48 @@ public static class EventStoreEntityModelBuilderExtensions
         entity.HasIndex(x => new { x.EventType, x.GlobalPosition });
         entity.HasIndex(x => x.CorrelationId);
         entity.HasIndex(x => x.CausationId);
+        options.ConfigureEventEntity(entity, store);
     }
 
     private static void ConfigureSnapshotEntity(
-        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord> entity)
+        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.EventSnapshotRecord> entity,
+        Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions options)
     {
         entity.ToTable("EventSnapshots");
         entity.HasKey(x => x.SnapshotId);
-        entity.Property(x => x.SnapshotId).ValueGeneratedNever();
-        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
-        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
+        var snapshotIdProperty = entity.Property(x => x.SnapshotId)
+            .IsRequired()
+            .ValueGeneratedNever();
+        options.ConfigureKey(snapshotIdProperty);
+
+        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(NameMaxLength);
+        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(IdentifierMaxLength);
         entity.Property(x => x.StreamVersion).IsRequired();
-        entity.Property(x => x.StateType).IsRequired().HasMaxLength(500);
-        entity.Property(x => x.StateSchemaVersion).IsRequired().HasMaxLength(50);
+        entity.Property(x => x.StateType).IsRequired().HasMaxLength(TypeMaxLength);
+        entity.Property(x => x.StateSchemaVersion).IsRequired().HasMaxLength(SchemaVersionMaxLength);
         entity.Property(x => x.Payload).IsRequired();
         entity.Property(x => x.CreatedAt).IsRequired();
         entity.HasIndex(x => new { x.StreamName, x.StreamId, x.StreamVersion }).IsUnique();
+        options.ConfigureSnapshotEntity(entity);
     }
 
     private static void ConfigureSnapshotCandidateEntity(
-        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.SnapshotCandidateRecord> entity)
+        EntityTypeBuilder<Krackend.EventSourcing.EntityFrameworkCore.SnapshotCandidateRecord> entity,
+        Krackend.EventSourcing.EntityFrameworkCore.EntityFrameworkEventStoreOptions options)
     {
         entity.ToTable("EventSnapshotCandidates");
-        entity.HasKey(x => new { x.StreamName, x.StreamId });
-        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(200);
-        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(300);
+        entity.HasKey(x => x.CandidateId);
+        var candidateIdProperty = entity.Property(x => x.CandidateId)
+            .IsRequired()
+            .ValueGeneratedNever();
+        options.ConfigureKey(candidateIdProperty);
+
+        entity.Property(x => x.StreamName).IsRequired().HasMaxLength(NameMaxLength);
+        entity.Property(x => x.StreamId).IsRequired().HasMaxLength(IdentifierMaxLength);
         entity.Property(x => x.StreamVersion).IsRequired();
         entity.Property(x => x.MarkedAt).IsRequired();
+        entity.HasIndex(x => new { x.StreamName, x.StreamId }).IsUnique();
         entity.HasIndex(x => x.MarkedAt);
+        options.ConfigureSnapshotCandidateEntity(entity);
     }
 }

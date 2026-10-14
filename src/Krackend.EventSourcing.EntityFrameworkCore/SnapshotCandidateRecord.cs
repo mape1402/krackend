@@ -6,6 +6,11 @@ namespace Krackend.EventSourcing.EntityFrameworkCore;
 public sealed class SnapshotCandidateRecord
 {
     /// <summary>
+    /// Gets or sets the snapshot candidate id.
+    /// </summary>
+    public string CandidateId { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the logical stream name.
     /// </summary>
     public string StreamName { get; set; } = string.Empty;

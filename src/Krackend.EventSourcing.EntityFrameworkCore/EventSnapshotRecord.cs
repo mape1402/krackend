@@ -8,7 +8,7 @@ public sealed class EventSnapshotRecord
     /// <summary>
     /// Gets or sets the snapshot id.
     /// </summary>
-    public Guid SnapshotId { get; set; }
+    public string SnapshotId { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the logical stream name.

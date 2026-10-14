@@ -4,14 +4,14 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
-/// Provides Event Sourcing event id property mapping helpers.
+/// Provides ULID property mapping helpers for Event Sourcing storage.
 /// </summary>
-public static class EventIdPropertyBuilderExtensions
+public static class UlidPropertyBuilderExtensions
 {
     /// <summary>
-    /// Configures a string event id property to store ULID values as 16-byte values.
+    /// Configures a string ULID property to store its value as 16 bytes.
     /// </summary>
-    /// <param name="propertyBuilder">The event id property builder.</param>
+    /// <param name="propertyBuilder">The ULID property builder.</param>
     /// <param name="columnType">Optional provider-specific column type, such as <c>binary(16)</c>, <c>BLOB</c>, or <c>bytea</c>.</param>
     /// <returns>The same property builder.</returns>
     public static PropertyBuilder<string> HasUlidBytesConversion(
@@ -20,7 +20,7 @@ public static class EventIdPropertyBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(propertyBuilder);
 
-        propertyBuilder.HasConversion(new UlidEventIdToBytesConverter());
+        propertyBuilder.HasConversion(new UlidStringToBytesConverter());
 
         if (!string.IsNullOrWhiteSpace(columnType))
             propertyBuilder.HasColumnType(columnType);
