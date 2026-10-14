@@ -475,7 +475,7 @@
 <meta name="request-verification-token" content="@Antiforgery.GetAndStoreTokens(HttpContext).RequestToken" />
 
 @section Scripts {
-<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.0.0"></script>
+<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.3"></script>
 <script>
 const orchestrationVersionCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
 const orchestrationVersionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SelectedVersion?.Id ?? Model.VersionId));
