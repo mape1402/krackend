@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v5.2.2] - 2026-10-14
+
+- ### Changed
+
+  - Changed `Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl` to use `KnOwl.Contracts` `2.4.2` and the current `ContractKey` artifact model.
+  - Changed the KnOwl schema registry adapter to support configurable Control Plane catalog route templates and host-provided request configuration for authenticated catalog calls.
+
+- ### Fixed
+
+  - Fixed KnOwl deployed contract discovery for event and command artifacts returned with `contractKey`, while keeping compatibility with legacy `topic` catalog responses.
+
+------
+
 ## [v5.2.1] - 2026-10-14
 
 - ### Changed

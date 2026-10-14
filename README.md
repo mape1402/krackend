@@ -305,7 +305,7 @@ ButterMorph compensation contexts include the data that is technically available
 
 The Control Plane WebUI opens ButterMorph directly for compensation execution conditions and transformations. Trigger compensation is edited in its own tab with the same task configuration surface used by regular tasks, including timeout, retry, and on-error policy settings.
 
-Krackend `v5.2.1` uses ButterMorph `2.1.3` across the Control Plane designer, schema designer, runtime transform adapter, and validation adapter. Hosts only need to register the Krackend packages; the ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
+Krackend `v5.2.2` uses ButterMorph `2.1.3` across the Control Plane designer, schema designer, runtime transform adapter, and validation adapter. Hosts only need to register the Krackend packages; the ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
 
 Authentication model:
 
@@ -426,6 +426,8 @@ builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
 ```
 
 The KnOwl adapter reads deployed contracts from the KnOwl Control Plane. Event bindings resolve one event artifact, while command bindings can resolve the command request and reply artifacts together so orchestration artifacts keep immutable snapshots for validation, transformation, runtime dispatch, and response handling.
+
+Hosts can override the KnOwl catalog route templates when their Control Plane exposes a custom API shape, and can register `IKnOwlControlPlaneCatalogRequestConfigurator` when catalog requests need host-owned authentication headers.
 
 Minimal runtime host setup:
 
