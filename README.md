@@ -99,9 +99,9 @@ services.AddEventSourcedInitialStateFactory<CustomerState, CustomerInitialStateF
 services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 ```
 
-Event ids:
+Storage ids and EF mapping:
 
-Krackend uses ULID ids by default. The core envelope exposes `EventId` as a string, and the EF Core adapter stores it as text by default. Hosts can replace the generator by registering `IEventIdFactory` before calling `AddKrackendEventSourcing`, or customize the EF Core property mapping when they want provider-specific storage such as SQL Server `binary(16)`.
+Krackend uses string ULIDs for the `EventId`, `SnapshotId`, and `CandidateId` primary keys. The EF Core adapter stores them as portable 26-character text by default. The host can choose a compact binary representation and configure every persisted field without modifying its `DbContext`.
 
 ```csharp
 services.AddScoped<IEventIdFactory, HostEventIdFactory>();
@@ -109,14 +109,25 @@ services.AddKrackendEventSourcing();
 ```
 
 ```csharp
-services.AddKrackendEntityFrameworkEventStore<AppDbContext>(options =>
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>(ef =>
 {
-    options.ConfigureEventIdProperty((property, store) =>
+    ef.Keys(keys => keys.UseUlidBytes("binary(16)"));
+    ef.Events(events =>
     {
-        property.HasUlidBytesConversion("binary(16)");
+        events.ForAll((entity, store) =>
+            entity.Property(x => x.Payload).HasColumnType("nvarchar(max)"));
+
+        events.For("customers", (entity, store) =>
+            entity.Property(x => x.StreamId).HasMaxLength(128));
     });
+    ef.Snapshots(entity =>
+        entity.Property(x => x.Payload).HasColumnType("nvarchar(max)"));
+    ef.SnapshotCandidates(entity =>
+        entity.Property(x => x.StreamId).HasMaxLength(128));
 });
 ```
+
+The provider package, column types, conversions, connection, and migrations remain owned by the host. `IRawEventStore` uses the same configured event entities and mappings as `IEventStore`. Binary key storage requires `IEventIdFactory` to keep returning valid ULID strings; custom non-ULID event ids should configure `EventId` separately through `Events`.
 
 Usage:
 
