@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v5.2.1] - 2026-10-14
+
+- ### Changed
+
+  - Changed ButterMorph dependencies to `2.1.3` across Control Plane design, schema design, runtime transformation, validation, and Razor designer packages.
+  - Changed orchestration client publishing so `UseOrchestration` and `EmitEvent` pass the original business payload object to the configured transport adapter instead of serializing it to `JsonNode` before publication.
+
+- ### Fixed
+
+  - Fixed client-side transport serialization ownership so Pigeon and custom orchestration client adapters can apply their own payload serialization behavior while Krackend still composes orchestration metadata and runtime ingress normalizes received payloads for saga execution.
+
+------
+
 ## [v5.2.0] - 2026-10-12
 
 - ### Added

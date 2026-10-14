@@ -1,8 +1,6 @@
 namespace Krackend.Sagas.Orchestrations.Client.Publishing;
 
-using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
-using Krackend.Sagas.Orchestrations.Client.Serialization;
 
 internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipelinePublisher
 {
@@ -14,7 +12,6 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
     private readonly IOrchestrationExecutionResultMetadataSetter _resultMetadataSetter;
     private readonly IOrchestrationExecutionResultMetadataFactory _resultMetadataFactory;
     private readonly IOrchestrationMessageMetadataComposer _metadataComposer;
-    private readonly IOrchestrationPayloadSerializer _payloadSerializer;
     private readonly IOrchestrationClientPublisher _publisher;
 
     public DefaultOrchestrationPipelinePublisher(
@@ -26,7 +23,6 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         IOrchestrationExecutionResultMetadataSetter resultMetadataSetter,
         IOrchestrationExecutionResultMetadataFactory resultMetadataFactory,
         IOrchestrationMessageMetadataComposer metadataComposer,
-        IOrchestrationPayloadSerializer payloadSerializer,
         IOrchestrationClientPublisher publisher)
     {
         _messageMetadataAccessor = messageMetadataAccessor ?? throw new ArgumentNullException(nameof(messageMetadataAccessor));
@@ -37,7 +33,6 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         _resultMetadataSetter = resultMetadataSetter ?? throw new ArgumentNullException(nameof(resultMetadataSetter));
         _resultMetadataFactory = resultMetadataFactory ?? throw new ArgumentNullException(nameof(resultMetadataFactory));
         _metadataComposer = metadataComposer ?? throw new ArgumentNullException(nameof(metadataComposer));
-        _payloadSerializer = payloadSerializer ?? throw new ArgumentNullException(nameof(payloadSerializer));
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
     }
 
@@ -49,14 +44,13 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
         CancellationToken cancellationToken = default)
     {
         var messageMetadata = _messageMetadataAccessor.Get();
-        var businessPayload = _payloadSerializer.ToJsonNode(payload);
 
         if (HasReplyAddress(messageMetadata))
         {
             try
             {
                 _resultMetadataSetter.Set(_resultMetadataFactory.CreateSuccess(requestType, responseType, options));
-                await _publisher.PublishAsync(businessPayload, messageMetadata.ReplyAddress, cancellationToken);
+                await _publisher.PublishAsync(payload, messageMetadata.ReplyAddress, cancellationToken);
             }
             finally
             {
@@ -68,7 +62,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
 
         if (options?.HasTriggerDestination == true)
         {
-            await PublishEventPayloadAsync(businessPayload, options.TriggerAddress, cancellationToken);
+            await PublishEventPayloadAsync(payload, options.TriggerAddress, cancellationToken);
         }
     }
 
@@ -107,8 +101,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
             return;
         }
 
-        var businessPayload = _payloadSerializer.ToJsonNode(payload);
-        await PublishEventPayloadAsync(businessPayload, options.TriggerAddress, cancellationToken);
+        await PublishEventPayloadAsync(payload, options.TriggerAddress, cancellationToken);
     }
 
     private bool HasReplyAddress(OrchestrationMessageMetadata metadata)
@@ -117,7 +110,7 @@ internal sealed class DefaultOrchestrationPipelinePublisher : IOrchestrationPipe
            && !string.IsNullOrWhiteSpace(metadata.ReplyAddress.SettingsPayload);
 
     private async Task PublishEventPayloadAsync(
-        JsonNode businessPayload,
+        object businessPayload,
         OrchestrationReplyAddress triggerAddress,
         CancellationToken cancellationToken)
     {

@@ -169,13 +169,13 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 
 - `Krackend.Sagas.Orchestrations.ControlPlane*` captures orchestration definitions, versions, releases, runtime nodes, credentials, and artifact delivery.
 - `Krackend.Sagas.Orchestrations.Runtime*` consumes immutable artifacts, projects ingress configuration, runs durable Mule-backed work, dispatches transport-agnostic commands, tracks instances, and exposes runtime diagnostics.
-- `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
+- `Krackend.Sagas.Orchestrations.Client*` lets services start or answer orchestration work without changing business payloads. Client publishers pass the original business payload object to the selected transport adapter so the adapter owns serialization. Pigeon is one messaging adapter and Spider is a pipeline extension over the client core.
 - The Spider client extension supports inline and deferred consumer execution. `EmitEvent` publishes new orchestration trigger events, while `UseOrchestration` keeps the service connected to an existing saga backchannel. Both can be composed in the same pipeline, allowing a consumer to emit one or more events and still report success or failure to the orchestration that invoked it. For deferred SquirrelBox consumers, orchestration metadata is restored from the inbox entry so success and failure callbacks still reach the runtime backchannel without wrapping or mutating the business payload.
 - `Krackend.Sagas.Orchestrations.SchemaRegistry*` keeps schema resolution provider-neutral, with KnOwl Control Plane available as the plug-in adapter for deployed ButterMorph contracts.
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 - `Krackend.Sagas.Orchestrations.WolfAuth` adds optional WebUI authentication gates over host-owned WolfAuth/ASP.NET Core authentication. Krackend no longer ships its own subject, role, permission, or security storage packages.
-- Control Plane and runtime ButterMorph integration is aligned with ButterMorph `2.1.0` for schema design, mapping, execution-condition authoring, runtime transforms, and runtime validations.
+- Control Plane and runtime ButterMorph integration is aligned with ButterMorph `2.1.3` for schema design, mapping, execution-condition authoring, runtime transforms, and runtime validations.
 
 Spider event publishing:
 
@@ -305,7 +305,7 @@ ButterMorph compensation contexts include the data that is technically available
 
 The Control Plane WebUI opens ButterMorph directly for compensation execution conditions and transformations. Trigger compensation is edited in its own tab with the same task configuration surface used by regular tasks, including timeout, retry, and on-error policy settings.
 
-Krackend `v5.2.0` uses ButterMorph `2.1.0` across the Control Plane designer, schema designer, runtime transform adapter, and validation adapter. Hosts only need to register the Krackend packages; the ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
+Krackend `v5.2.1` uses ButterMorph `2.1.3` across the Control Plane designer, schema designer, runtime transform adapter, and validation adapter. Hosts only need to register the Krackend packages; the ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
 
 Authentication model:
 
