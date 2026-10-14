@@ -80,7 +80,7 @@ services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 
 ## Event Identifiers
 
-Each persisted envelope has an `EventId`. The core runtime treats it as a string. The EF Core adapter stores it as required text by default so the mapping stays provider-neutral.
+Each persisted envelope has an `EventId`. The core runtime treats it as a string. By default, Krackend generates ULIDs and the EF Core adapter stores them as required 26-character text so the mapping stays provider-neutral.
 
 By default, Krackend uses ULIDs:
 
@@ -105,19 +105,22 @@ services.AddKrackendEventSourcing();
 
 The factory receives the stream name, stream id, stream version, event type, event schema version, and source event. It must return a non-empty identifier.
 
-EF Core hosts can override the `EventId` property mapping when they want provider-specific storage. For example, SQL Server hosts can store the default ULID strings as 16 bytes:
+The EF Core adapter standardizes all table primary keys as string ULIDs:
+
+- event tables use `EventId`
+- `EventSnapshots` uses `SnapshotId`
+- `EventSnapshotCandidates` uses `CandidateId`
+
+Hosts can store those strings as 16-byte values through an EF Core value converter:
 
 ```csharp
-services.AddKrackendEntityFrameworkEventStore<AppDbContext>(options =>
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>(ef =>
 {
-    options.ConfigureEventIdProperty((property, store) =>
-    {
-        property.HasUlidBytesConversion("binary(16)");
-    });
+    ef.Keys(keys => keys.UseUlidBytes("binary(16)"));
 });
 ```
 
-Use the column type that belongs to the provider, such as `binary(16)` for SQL Server, `BLOB` for SQLite, or `bytea` for PostgreSQL. Binary ULID storage requires the configured `IEventIdFactory` to return valid ULID strings.
+The optional column type belongs to the host and its selected provider, such as `binary(16)`, `BLOB`, or `bytea`; the Krackend package has no dependency on a database provider. `UseUlidBytes` applies to all three primary keys. It requires `IEventIdFactory` to return valid ULID strings. When a host generates non-ULID event ids, it should leave the shared keys as text and configure only `EventId` through `Events` with a suitable conversion.
 
 ## Defining Events
 
@@ -636,18 +639,47 @@ services.AddKrackendEventSourcing(options =>
 services.AddKrackendEntityFrameworkEventStore<AppDbContext>();
 ```
 
-The adapter integrates event store tables into the application `DbContext`. You do not need to add `DbSet<EventStoreRecord>` manually.
+The adapter integrates event store, snapshot, and snapshot-candidate tables into the application `DbContext` through dependency registration. The host does not need to add `DbSet` properties or modify `OnModelCreating`.
 
-If you want to configure the model explicitly:
+Every persisted field can be configured from the registration callback. Global event configuration runs first, followed by the matching store-specific configuration:
 
 ```csharp
-protected override void OnModelCreating(ModelBuilder modelBuilder)
+services.AddKrackendEntityFrameworkEventStore<AppDbContext>(ef =>
 {
-    modelBuilder.AddKrackendEventStore();
-}
+    ef.Keys(keys => keys.UseUlidBytes("binary(16)"));
+
+    ef.Events(events =>
+    {
+        events.ForAll((entity, store) =>
+        {
+            entity.Property(x => x.StreamName).HasMaxLength(128);
+            entity.Property(x => x.Payload).HasColumnType("nvarchar(max)");
+            entity.Property(x => x.Metadata).HasColumnType("nvarchar(max)");
+        });
+
+        events.For("customers", (entity, store) =>
+        {
+            entity.ToTable("CustomerEvents", "events");
+            entity.Property(x => x.StreamId).HasMaxLength(160);
+        });
+    });
+
+    ef.Snapshots(entity =>
+    {
+        entity.ToTable("Snapshots", "events");
+        entity.Property(x => x.Payload).HasColumnType("nvarchar(max)");
+    });
+
+    ef.SnapshotCandidates(entity =>
+        entity.ToTable("SnapshotQueue", "events"));
+});
 ```
 
-The default event table is `Events`. Table names should use PascalCase.
+The CLR types of Krackend records remain stable. The host controls database/provider CLR types with `HasConversion`, physical types with `HasColumnType`, lengths, names, schemas, indexes, and other EF mapping metadata. Provider-specific strings in the example belong in host code, not in the Krackend package.
+
+The default event table is `Events`. `IRawEventStore` and `IEventStore` persist through the same `EventStoreRecord` model, so `Events.ForAll` and `Events.For` apply equally to typed and raw events.
+
+This version changes the snapshot-candidate key from `(StreamName, StreamId)` to `CandidateId` and changes `SnapshotId` from `Guid` to a string ULID. Existing databases require a migration before deployment. Natural uniqueness remains enforced with unique indexes on `(StreamName, StreamId)` for candidates and `(StreamName, StreamId, StreamVersion)` for snapshots and events.
 
 ## Multiple Event Stores
 
