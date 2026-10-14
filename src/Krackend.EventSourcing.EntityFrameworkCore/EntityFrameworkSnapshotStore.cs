@@ -55,7 +55,7 @@ public sealed class EntityFrameworkSnapshotStore<TDbContext> : ISnapshotStore
 
         _dbContext.Set<EventSnapshotRecord>().Add(new EventSnapshotRecord
         {
-            SnapshotId = Guid.NewGuid(),
+            SnapshotId = Ulid.NewUlid().ToString(),
             StreamName = snapshot.StreamName,
             StreamId = snapshot.StreamId,
             StreamVersion = snapshot.StreamVersion,

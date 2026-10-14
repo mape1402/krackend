@@ -34,12 +34,15 @@ public sealed class EntityFrameworkSnapshotCandidateStore<TDbContext> : ISnapsho
             throw new ArgumentOutOfRangeException(nameof(streamVersion), "Stream version must be greater than zero.");
 
         var set = _dbContext.Set<SnapshotCandidateRecord>();
-        var record = await set.FindAsync([streamName, streamId], cancellationToken);
+        var record = await set.SingleOrDefaultAsync(
+            x => x.StreamName == streamName && x.StreamId == streamId,
+            cancellationToken);
 
         if (record is null)
         {
             set.Add(new SnapshotCandidateRecord
             {
+                CandidateId = Ulid.NewUlid().ToString(),
                 StreamName = streamName,
                 StreamId = streamId,
                 StreamVersion = streamVersion,
@@ -88,7 +91,9 @@ public sealed class EntityFrameworkSnapshotCandidateStore<TDbContext> : ISnapsho
         ArgumentNullException.ThrowIfNull(candidate);
 
         var set = _dbContext.Set<SnapshotCandidateRecord>();
-        var record = await set.FindAsync([candidate.StreamName, candidate.StreamId], cancellationToken);
+        var record = await set.SingleOrDefaultAsync(
+            x => x.StreamName == candidate.StreamName && x.StreamId == candidate.StreamId,
+            cancellationToken);
 
         if (record is null)
             return;
