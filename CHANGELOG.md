@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- No unreleased changes.
+
+------
+
+## [v5.3.0] - 2026-10-14
+
+- ### Breaking Changes
+
+  - Changed `EventSnapshotRecord.SnapshotId` from `Guid` to a string ULID and changed snapshot candidates from the composite `(StreamName, StreamId)` primary key to the string ULID `CandidateId`; existing databases require a migration before upgrading.
+  - Removed `ConfigureEventIdProperty`, `EventIdPropertyBuilderExtensions`, and `UlidEventIdToBytesConverter`; hosts must migrate to `Keys`, `Events`, `Snapshots`, `SnapshotCandidates`, `UlidPropertyBuilderExtensions`, and `UlidStringToBytesConverter`.
+
 - ### Added
 
   - Added host-owned EF Core mapping callbacks for all event, snapshot, and snapshot-candidate fields, including global and per-store event configuration.
@@ -20,10 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed snapshot candidates to use `CandidateId` as the primary key while retaining a unique `(StreamName, StreamId)` index.
   - Changed EF Core storage defaults to consistent bounded lengths while leaving payload and metadata storage provider-neutral.
   - Changed typed and raw event persistence to share the same host-configured EF model.
-
-- ### Removed
-
-  - Removed `ConfigureEventIdProperty`, `EventIdPropertyBuilderExtensions`, and `UlidEventIdToBytesConverter`; use `Keys`, `Events`, `Snapshots`, `SnapshotCandidates`, `UlidPropertyBuilderExtensions`, and `UlidStringToBytesConverter` instead.
 
 ------
 
