@@ -1,6 +1,9 @@
 using System.Net;
+using System.Net.Http.Headers;
 using KnOwl.Contracts.Artifacts;
+using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl;
 using Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.Catalog;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Tests.SchemaRegistry;
 
@@ -38,9 +41,45 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
 
         Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
         Assert.Equal("/contracts/artifacts", handler.RequestUri.AbsolutePath);
+        Assert.Equal("application/json", handler.LastAcceptHeader);
         Assert.Equal(2, result.Contracts.Count);
-        Assert.Contains(result.Contracts, contract => contract.Topic == "sales.sale.created");
-        Assert.Contains(result.Contracts, contract => contract.Topic == "inventories.reserve");
+        Assert.Contains(result.Contracts, contract => contract.ContractKey == "sales.sale.created");
+        Assert.Contains(result.Contracts, contract => contract.ContractKey == "inventories.reserve");
+    }
+
+    [Fact]
+    public async Task GetAllDeployedAsync_WhenKnOwlReturnsContractKey_MapsItAsContractKey()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """
+            [
+              {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "artifactType": 0,
+                "contractKey": "events.sales.sale.created",
+                "versionNumber": "1.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "event-hash",
+                "sourceStatus": "Deployed"
+              },
+              {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "artifactType": 3,
+                "contractKey": "commands.inventories.reserve",
+                "versionNumber": "1.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "command-hash",
+                "sourceStatus": "Deployed"
+              }
+            ]
+            """));
+        var client = CreateClient(handler);
+
+        var result = await client.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Contains(result.Contracts, contract => contract.ContractKey == "events.sales.sale.created");
+        Assert.Contains(result.Contracts, contract => contract.ContractKey == "commands.inventories.reserve");
     }
 
     [Fact]
@@ -77,8 +116,36 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
 
         Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
         Assert.Equal("/contracts/commands/inventories.reserve/versions/1.0.0", handler.RequestUri.AbsolutePath);
-        Assert.Equal("inventories.reserve", result.Contract.Topic);
+        Assert.Equal("inventories.reserve", result.Contract.ContractKey);
         Assert.Equal(ContractArtifactType.CommandRequest, result.Contract.ArtifactType);
+        Assert.Equal("request-hash", result.Contract.ContentHash);
+    }
+
+    [Fact]
+    public async Task GetExactAsync_WhenCommandRequestUsesContractKey_MapsRequestArtifact()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """
+            {
+              "commandKey": "inventories.reserve",
+              "version": "1.0.0",
+              "requestArtifact": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "artifactType": 1,
+                "contractKey": "inventories.reserve",
+                "versionNumber": "1.0.0",
+                "payloadSchemaJson": "{\"type\":\"object\"}",
+                "contentHash": "request-hash",
+                "sourceStatus": "Deployed"
+              }
+            }
+            """));
+        var client = CreateClient(handler);
+
+        var result = await client.GetExactAsync(ContractArtifactType.CommandRequest, "inventories.reserve", "1.0.0");
+
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Equal("inventories.reserve", result.Contract.ContractKey);
         Assert.Equal("request-hash", result.Contract.ContentHash);
     }
 
@@ -361,6 +428,75 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
     }
 
     [Fact]
+    public async Task GetAllDeployedAsync_WhenKnOwlRedirects_ReportsAuthenticationOrBaseUriProblem()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Redirect));
+        var client = CreateClient(handler);
+
+        var result = await client.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, result.Status);
+        Assert.Contains("redirected", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("authentication", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task GetAllDeployedAsync_WhenKnOwlRejectsAuthorization_ReportsAuthenticationProblem(HttpStatusCode statusCode)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("{}", statusCode));
+        var client = CreateClient(handler);
+
+        var result = await client.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, result.Status);
+        Assert.Contains("authentication", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetAllDeployedAsync_WhenKnOwlReturnsLoginHtml_ReportsNonJsonContent()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html>login</html>", System.Text.Encoding.UTF8, "text/html")
+        });
+        var client = CreateClient(handler);
+
+        var result = await client.GetAllDeployedAsync();
+
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, result.Status);
+        Assert.Contains("non-JSON", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetExactAsync_UsesConfiguredRouteTemplatesAndRequestConfigurator()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "artifactType": 0,
+              "contractKey": "sales.sale.created",
+              "versionNumber": "1.0.0",
+              "payloadSchemaJson": "{\"type\":\"object\"}",
+              "contentHash": "event-hash",
+              "sourceStatus": "Deployed"
+            }
+            """));
+        var client = CreateClient(
+            handler,
+            options => options.EventContractPath = "/api/catalog/events/{contractKey}/{versionNumber}",
+            new BearerCatalogRequestConfigurator());
+
+        var result = await client.GetExactAsync(ContractArtifactType.Event, "sales.sale.created", "1.0.0");
+
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Equal("/api/catalog/events/sales.sale.created/1.0.0", handler.RequestUri.AbsolutePath);
+        Assert.Equal("Bearer", handler.LastAuthorizationScheme);
+    }
+
+    [Fact]
     public async Task GetExactCommandAsync_WhenTransportFails_MapsToUnavailable()
     {
         var timeout = CreateClient(new RecordingHttpMessageHandler(_ => throw new OperationCanceledException()));
@@ -447,9 +583,31 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
         Assert.Equal(KnOwlContractCatalogStatus.Unavailable, invalidResult.Status);
     }
 
-    private static KnOwlControlPlaneContractCatalogHttpClient CreateClient(RecordingHttpMessageHandler handler)
-        => new(new HttpClient(handler)
+    private static KnOwlControlPlaneContractCatalogHttpClient CreateClient(
+        RecordingHttpMessageHandler handler,
+        Action<KnOwlSchemaRegistryOptions>? configure = null,
+        IKnOwlControlPlaneCatalogRequestConfigurator? requestConfigurator = null)
+    {
+        var options = new KnOwlSchemaRegistryOptions();
+        configure?.Invoke(options);
+        return new(new HttpClient(handler)
         {
             BaseAddress = new Uri("https://knowl-control-plane.local/")
-        });
+        }, Options.Create(options), requestConfigurator ?? new DefaultCatalogRequestConfigurator());
+    }
+
+    private sealed class DefaultCatalogRequestConfigurator : IKnOwlControlPlaneCatalogRequestConfigurator
+    {
+        public ValueTask ConfigureAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
+    }
+
+    private sealed class BearerCatalogRequestConfigurator : IKnOwlControlPlaneCatalogRequestConfigurator
+    {
+        public ValueTask ConfigureAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "catalog-token");
+            return ValueTask.CompletedTask;
+        }
+    }
 }

@@ -118,14 +118,14 @@ public sealed class KnOwlSchemaContractResolver : ISchemaContractResolver
         {
             return SchemaContractResolutionResult.Failed(
                 SchemaContractResolutionStatus.Invalid,
-                $"KnOwl contract artifact '{contract.Topic}' v{contract.VersionNumber} is not deployed.");
+                $"KnOwl contract artifact '{contract.ContractKey}' v{contract.VersionNumber} is not deployed.");
         }
 
         if (string.IsNullOrWhiteSpace(contract.PayloadSchemaJson))
         {
             return SchemaContractResolutionResult.Failed(
                 SchemaContractResolutionStatus.Invalid,
-                $"KnOwl contract artifact '{contract.Topic}' v{contract.VersionNumber} does not contain a payload schema.");
+                $"KnOwl contract artifact '{contract.ContractKey}' v{contract.VersionNumber} does not contain a payload schema.");
         }
 
         var snapshot = new SchemaContractSnapshot
@@ -134,7 +134,7 @@ public sealed class KnOwlSchemaContractResolver : ISchemaContractResolver
             {
                 ProviderKey = ProviderKey,
                 ContractId = contract.Id == Guid.Empty ? reference.ContractId : contract.Id.ToString(),
-                ContractKey = string.IsNullOrWhiteSpace(contract.Topic) ? reference.ContractKey : contract.Topic,
+                ContractKey = string.IsNullOrWhiteSpace(contract.ContractKey) ? reference.ContractKey : contract.ContractKey,
                 ContractVersion = string.IsNullOrWhiteSpace(contract.VersionNumber) ? reference.ContractVersion : contract.VersionNumber
             },
             SchemaFormat = string.IsNullOrWhiteSpace(_options.SchemaFormat) ? "ButterMorph" : _options.SchemaFormat,

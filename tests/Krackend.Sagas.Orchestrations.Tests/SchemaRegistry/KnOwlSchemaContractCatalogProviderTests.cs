@@ -446,7 +446,7 @@ public sealed class KnOwlSchemaContractCatalogProviderTests
         {
             Id = id,
             ArtifactType = artifactType,
-            Topic = topic,
+            ContractKey = topic,
             VersionNumber = version,
             PayloadSchemaJson = payloadSchemaJson,
             ContentHash = contentHash,

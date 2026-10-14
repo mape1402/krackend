@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
 
         services.AddKrackendSchemaRegistry();
         services.Configure(configure);
+        services.TryAddSingleton<IKnOwlControlPlaneCatalogRequestConfigurator, DefaultKnOwlControlPlaneCatalogRequestConfigurator>();
         services.TryAddSingleton<IKnOwlControlPlaneContractCatalogClient>(provider =>
         {
             var options = provider.GetRequiredService<IOptions<KnOwlSchemaRegistryOptions>>().Value;
@@ -33,7 +34,10 @@ public static class ServiceCollectionExtensions
                 Timeout = options.Timeout <= TimeSpan.Zero ? TimeSpan.FromSeconds(30) : options.Timeout
             };
 
-            return new KnOwlControlPlaneContractCatalogHttpClient(httpClient);
+            return new KnOwlControlPlaneContractCatalogHttpClient(
+                httpClient,
+                provider.GetRequiredService<IOptions<KnOwlSchemaRegistryOptions>>(),
+                provider.GetRequiredService<IKnOwlControlPlaneCatalogRequestConfigurator>());
         });
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISchemaContractResolver, KnOwlSchemaContractResolver>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISchemaContractCatalogProvider, KnOwlSchemaContractCatalogProvider>());

@@ -37,6 +37,7 @@ public sealed class KnOwlSchemaRegistryRegistrationTests
         var options = provider.GetRequiredService<IOptions<KnOwlSchemaRegistryOptions>>().Value;
         var catalog = Assert.IsType<KnOwlControlPlaneContractCatalogHttpClient>(
             provider.GetRequiredService<IKnOwlControlPlaneContractCatalogClient>());
+        var requestConfigurator = provider.GetRequiredService<IKnOwlControlPlaneCatalogRequestConfigurator>();
         var resolvers = provider.GetRequiredService<IEnumerable<ISchemaContractResolver>>().ToArray();
         var catalogProviders = provider.GetRequiredService<IEnumerable<ISchemaContractCatalogProvider>>().ToArray();
         var httpClient = GetHttpClient(catalog);
@@ -44,6 +45,8 @@ public sealed class KnOwlSchemaRegistryRegistrationTests
         Assert.Equal("knowl-control", options.ProviderKey);
         Assert.True(options.Enabled);
         Assert.Equal("ButterMorph", options.SchemaFormat);
+        Assert.Equal(KnOwlSchemaRegistryOptions.DefaultCatalogPath, options.CatalogPath);
+        Assert.NotNull(requestConfigurator);
         Assert.Equal(new Uri("https://knowl.local/api/"), httpClient.BaseAddress);
         Assert.Equal(TimeSpan.FromSeconds(30), httpClient.Timeout);
         Assert.Contains(resolvers, resolver => resolver is KnOwlSchemaContractResolver);

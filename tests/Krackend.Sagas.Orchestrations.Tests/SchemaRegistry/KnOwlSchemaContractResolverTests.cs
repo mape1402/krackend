@@ -112,7 +112,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = contractId,
                 ArtifactType = ContractArtifactType.Event,
-                Topic = "sales.sale.created",
+                ContractKey = "sales.sale.created",
                 VersionNumber = "1.0.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "schema-hash",
@@ -151,7 +151,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.NewGuid(),
                 ArtifactType = ContractArtifactType.CommandReply,
-                Topic = "inventories.reserve",
+                ContractKey = "inventories.reserve",
                 VersionNumber = "1.0.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "response-schema-hash",
@@ -184,7 +184,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.NewGuid(),
                 ArtifactType = ContractArtifactType.CommandRequest,
-                Topic = "inventories.reserve",
+                ContractKey = "inventories.reserve",
                 VersionNumber = "1.0.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "request-schema-hash",
@@ -292,7 +292,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.NewGuid(),
                 ArtifactType = ContractArtifactType.Event,
-                Topic = "sales.sale.created",
+                ContractKey = "sales.sale.created",
                 VersionNumber = "1.2.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "latest-schema-hash",
@@ -323,7 +323,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.NewGuid(),
                 ArtifactType = ContractArtifactType.Event,
-                Topic = "sales.sale.created",
+                ContractKey = "sales.sale.created",
                 VersionNumber = "1.3.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "latest-zero-schema-hash",
@@ -358,7 +358,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.NewGuid(),
                 ArtifactType = ContractArtifactType.Event,
-                Topic = "sales.sale.created",
+                ContractKey = "sales.sale.created",
                 VersionNumber = "1.0.0",
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = "schema-hash",
@@ -384,7 +384,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.NewGuid(),
                 ArtifactType = ContractArtifactType.Event,
-                Topic = "sales.sale.created",
+                ContractKey = "sales.sale.created",
                 VersionNumber = "1.0.0",
                 PayloadSchemaJson = string.Empty,
                 ContentHash = "schema-hash",
@@ -412,7 +412,7 @@ public sealed class KnOwlSchemaContractResolverTests
             {
                 Id = Guid.Empty,
                 ArtifactType = ContractArtifactType.Event,
-                Topic = " ",
+                ContractKey = " ",
                 VersionNumber = null!,
                 PayloadSchemaJson = "{\"type\":\"object\"}",
                 ContentHash = null!,
