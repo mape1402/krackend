@@ -89,16 +89,18 @@ public sealed class OrchestrationPipelinePublisherTests
             Transport = OrchestrationTransportNames.Messaging,
             SettingsPayload = "trigger-address"
         };
+        var payload = new { ok = true };
 
         await InvokePublishSuccessAsync(
             pipeline,
             typeof(string),
             typeof(int),
-            new { ok = true },
+            payload,
             new OrchestrationOperationOptions { TriggerAddress = triggerAddress });
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
         var message = Assert.Single(publisher.Messages);
+        Assert.Same(payload, message.Payload);
         Assert.Same(triggerAddress, message.Address);
         Assert.Equal("trigger-correlation", message.MessageMetadata!.CorrelationId);
         Assert.Null(message.MessageMetadata.SagaId);
@@ -128,12 +130,13 @@ public sealed class OrchestrationPipelinePublisherTests
         {
             CorrelationId = "previous-correlation"
         });
+        var payload = new { ok = true };
 
         await InvokePublishSuccessAsync(
             GetPipelinePublisher(scope.ServiceProvider),
             typeof(string),
             typeof(int),
-            new { ok = true },
+            payload,
             new OrchestrationOperationOptions
             {
                 TriggerAddress = new OrchestrationReplyAddress
@@ -145,6 +148,7 @@ public sealed class OrchestrationPipelinePublisherTests
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
         var message = Assert.Single(publisher.Messages);
+        Assert.Same(payload, message.Payload);
         Assert.Equal("previous-correlation", message.MessageMetadata!.CorrelationId);
         Assert.True(message.PropagationMetadata!.Items.ContainsKey(OrchestrationMetadataConstants.TriggerMetadataKey));
     }

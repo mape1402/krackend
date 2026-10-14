@@ -30,9 +30,10 @@ public sealed class OrchestrationOperationClientTests
 
         var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
         client.Begin<ReserveInventoryRequest>();
+        var response = new ReserveInventoryResponse();
 
         await client.ReportSuccessAsync<ReserveInventoryRequest, ReserveInventoryResponse>(
-            new ReserveInventoryResponse());
+            response);
 
         client.Close();
 
@@ -41,7 +42,7 @@ public sealed class OrchestrationOperationClientTests
         Assert.True(publisher.ResultMetadata.Succeeded);
         Assert.Equal(typeof(ReserveInventoryRequest).FullName, publisher.ResultMetadata.RequestType);
         Assert.Equal(typeof(ReserveInventoryResponse).FullName, publisher.ResultMetadata.ResponseType);
-        Assert.IsAssignableFrom<JsonNode>(publisher.Payload);
+        Assert.Same(response, publisher.Payload);
     }
 
     [Fact]
@@ -65,11 +66,12 @@ public sealed class OrchestrationOperationClientTests
         var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
         client.Begin(typeof(string));
         client.Close();
+        var payload = new { ok = true };
 
         await client.ReportSuccessAsync(
             typeof(string),
             typeof(int),
-            new { ok = true },
+            payload,
             new OrchestrationOperationOptions
             {
                 ServiceName = "inventories-api",
@@ -88,7 +90,7 @@ public sealed class OrchestrationOperationClientTests
         Assert.Equal("inventories-api", publisher.ResultMetadata.ServiceName);
         Assert.Equal("inventories.reserve", publisher.ResultMetadata.OperationName);
         Assert.Equal("local", publisher.ResultMetadata.Metadata["node"]?.GetValue<string>());
-        Assert.NotNull(publisher.Payload);
+        Assert.Same(payload, publisher.Payload);
     }
 
     [Fact]
@@ -296,7 +298,7 @@ public sealed class OrchestrationOperationClientTests
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
         Assert.Equal(1, publisher.PublishCount);
-        Assert.Equal(payload!.ToJsonString(), Assert.IsAssignableFrom<JsonNode>(publisher.Payload).ToJsonString());
+        Assert.Same(payload, publisher.Payload);
         Assert.Null(publisher.ResultMetadata);
         Assert.Equal(OrchestrationTransportNames.Messaging, publisher.Address?.Transport);
         Assert.Contains("events.sales.sale.created", publisher.Address?.SettingsPayload);
@@ -348,6 +350,7 @@ public sealed class OrchestrationOperationClientTests
             });
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Same(payload, publisher.Payload);
         Assert.Equal("sale-correlation-1", publisher.MessageMetadata?.CorrelationId);
         Assert.NotNull(publisher.PropagationMetadata);
         Assert.Equal(
@@ -427,6 +430,7 @@ public sealed class OrchestrationOperationClientTests
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
         Assert.Equal(1, publisher.PublishCount);
+        Assert.Same(payload, publisher.Payload);
         Assert.Null(publisher.ResultMetadata);
         Assert.NotNull(publisher.MessageMetadata);
         Assert.Null(publisher.MessageMetadata.ReplyAddress);
@@ -469,11 +473,12 @@ public sealed class OrchestrationOperationClientTests
             }
         });
         var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var payload = new { ok = true };
 
         await client.EmitEventAsync(
             typeof(ReserveInventoryRequest),
             typeof(ReserveInventoryResponse),
-            new { ok = true },
+            payload,
             new OrchestrationOperationOptions
             {
                 TriggerAddress = new OrchestrationReplyAddress
@@ -495,6 +500,7 @@ public sealed class OrchestrationOperationClientTests
         Assert.False(publisher.PropagationMetadata.Items.ContainsKey(OrchestrationMetadataConstants.LegacyTriggerMetadataKey));
         Assert.False(publisher.PropagationMetadata.Items.ContainsKey(OrchestrationMetadataConstants.OriginMetadataKey));
         Assert.Equal("req-legacy", publisher.PropagationMetadata.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.Same(payload, publisher.Payload);
     }
 
     [Fact]
@@ -506,11 +512,12 @@ public sealed class OrchestrationOperationClientTests
 
         using var scope = services.BuildServiceProvider().CreateScope();
         var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var payload = new { ok = true };
 
         await client.EmitEventAsync(
             typeof(ReserveInventoryRequest),
             typeof(ReserveInventoryResponse),
-            new { ok = true },
+            payload,
             new OrchestrationOperationOptions
             {
                 TriggerAddress = new OrchestrationReplyAddress
@@ -524,7 +531,7 @@ public sealed class OrchestrationOperationClientTests
         var trigger = publisher.PropagationMetadata!.Items[OrchestrationMetadataConstants.TriggerMetadataKey]!;
         Assert.True(Ulid.TryParse(trigger[nameof(OrchestrationTriggerMetadata.EventId)]!.GetValue<string>(), out _));
         Assert.False(trigger.AsObject().ContainsKey(nameof(OrchestrationTriggerMetadata.EventType)));
-        Assert.NotNull(publisher.Payload);
+        Assert.Same(payload, publisher.Payload);
     }
 
     [Fact]
@@ -570,6 +577,7 @@ public sealed class OrchestrationOperationClientTests
 
         var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
         var publishedPayload = Assert.IsAssignableFrom<JsonNode>(publisher.Payload);
+        Assert.Same(businessPayload, publishedPayload);
         Assert.NotNull(publisher.ResultMetadata);
         Assert.Equal("reservation-1", publishedPayload["reservationId"]?.GetValue<string>());
         Assert.Equal("sale-1", publishedPayload["saleId"]?.GetValue<string>());
