@@ -33,7 +33,7 @@ internal sealed class PigeonPropagationMetadataMapper
 
         foreach (var item in metadata.Clone().Items)
         {
-            if (IsReserved(item.Key))
+            if (IsReserved(item.Key) || context.Metadata.ContainsKey(item.Key))
             {
                 continue;
             }
