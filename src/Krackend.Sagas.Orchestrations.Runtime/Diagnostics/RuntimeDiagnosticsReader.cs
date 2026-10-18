@@ -629,11 +629,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             var metadata = node.Deserialize<OrchestrationPropagationMetadata>(ArtifactJsonOptions);
             return metadata?.Items is null ? null : metadata.Clone();
         }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
             return null;
         }
@@ -657,11 +653,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
 
             return metadata;
         }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
             return null;
         }

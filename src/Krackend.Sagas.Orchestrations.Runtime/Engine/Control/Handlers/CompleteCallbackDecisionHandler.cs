@@ -205,11 +205,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     bool.TryParse(value.GetValue<string>(), out var parsed) &&
                     parsed);
             }
-            catch (InvalidOperationException)
-            {
-                return false;
-            }
-            catch (FormatException)
+            catch (Exception exception) when (exception is InvalidOperationException or FormatException)
             {
                 return false;
             }

@@ -43,11 +43,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Metadata
                 var metadata = node.Deserialize<OrchestrationPropagationMetadata>(SerializerOptions);
                 return metadata?.Items is null ? null : metadata;
             }
-            catch (JsonException)
-            {
-                return null;
-            }
-            catch (InvalidOperationException)
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
             {
                 return null;
             }
@@ -71,11 +67,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Metadata
 
                 return metadata;
             }
-            catch (JsonException)
-            {
-                return null;
-            }
-            catch (InvalidOperationException)
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException)
             {
                 return null;
             }

@@ -632,34 +632,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
-            try
+            if (value.GetValueKind() == System.Text.Json.JsonValueKind.True)
             {
-                if (value.GetValueKind() == System.Text.Json.JsonValueKind.True)
-                {
-                    return true;
-                }
-
-                if (value.GetValueKind() == System.Text.Json.JsonValueKind.False)
-                {
-                    return false;
-                }
-
-                if (value.GetValueKind() == System.Text.Json.JsonValueKind.String &&
-                    bool.TryParse(value.GetValue<string>(), out var parsed))
-                {
-                    return parsed;
-                }
-
-                return null;
+                return true;
             }
-            catch (InvalidOperationException)
+
+            if (value.GetValueKind() == System.Text.Json.JsonValueKind.False)
             {
-                return null;
+                return false;
             }
-            catch (FormatException)
+
+            if (value.GetValueKind() == System.Text.Json.JsonValueKind.String &&
+                bool.TryParse(value.GetValue<string>(), out var parsed))
             {
-                return null;
+                return parsed;
             }
+
+            return null;
         }
     }
 }

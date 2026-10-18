@@ -174,11 +174,7 @@ public sealed class ButterMorphOrchestrationConditionEvaluator : IOrchestrationC
                 return true;
             }
         }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-        catch (FormatException)
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException)
         {
             return false;
         }

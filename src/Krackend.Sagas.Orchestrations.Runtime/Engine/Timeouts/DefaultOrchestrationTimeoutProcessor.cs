@@ -334,10 +334,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             value = node.GetValue<DateTime>();
             return true;
         }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (FormatException)
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException)
         {
         }
 
@@ -349,11 +346,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
                 out value);
         }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-        catch (FormatException)
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException)
         {
             return false;
         }
