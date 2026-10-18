@@ -6,7 +6,10 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 public sealed class JsonArtifactValidationPolicy : IArtifactValidationPolicy
 {
     public bool CanValidate(string artifactType)
-        => string.Equals(artifactType, ArtifactTypes.OrchestrationVersionSnapshot, StringComparison.OrdinalIgnoreCase);
+        => string.Equals(artifactType, ArtifactTypes.NewOrchestrationVersion, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(artifactType, ArtifactTypes.DeprecatedOrchestrationVersion, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(artifactType, ArtifactTypes.ArchivedOrchestrationVersion, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(artifactType, ArtifactTypes.OrchestrationVersionSnapshot, StringComparison.OrdinalIgnoreCase);
 
     public void Validate(Artifact artifact)
     {

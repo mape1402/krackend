@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMetadataDescriptorApplicationService, MetadataDescriptorApplicationService>();
         services.AddScoped<IOrchestrationApplicationService, OrchestrationApplicationService>();
         services.AddScoped<IOrchestrationVersionApplicationService, OrchestrationVersionApplicationService>();
+        services.AddScoped<IOrchestrationVersionReviewApplicationService, OrchestrationVersionReviewApplicationService>();
         services.AddScoped<IStageApplicationService, StageApplicationService>();
         services.AddScoped<ITaskApplicationService, TaskApplicationService>();
         services.AddScoped<ITriggerBindingApplicationService, TriggerBindingApplicationService>();

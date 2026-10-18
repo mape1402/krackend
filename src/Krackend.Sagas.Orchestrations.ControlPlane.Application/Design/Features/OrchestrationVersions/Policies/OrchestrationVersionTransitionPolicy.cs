@@ -12,31 +12,34 @@ public sealed class OrchestrationVersionTransitionPolicy : IOrchestrationVersion
         {
             [OrchestrationVersionStatus.Draft] = new HashSet<OrchestrationVersionStatus>
             {
-                OrchestrationVersionStatus.InReview,
-                OrchestrationVersionStatus.Archived,
+                OrchestrationVersionStatus.PendingDeployment,
+                OrchestrationVersionStatus.Abandoned,
             },
-            [OrchestrationVersionStatus.InReview] = new HashSet<OrchestrationVersionStatus>
+            [OrchestrationVersionStatus.PendingDeployment] = new HashSet<OrchestrationVersionStatus>
             {
                 OrchestrationVersionStatus.Draft,
-                OrchestrationVersionStatus.Approved,
-                OrchestrationVersionStatus.Archived,
-            },
-            [OrchestrationVersionStatus.Approved] = new HashSet<OrchestrationVersionStatus>
-            {
-                OrchestrationVersionStatus.InReview,
                 OrchestrationVersionStatus.Deployed,
-                OrchestrationVersionStatus.Archived,
             },
             [OrchestrationVersionStatus.Deployed] = new HashSet<OrchestrationVersionStatus>
+            {
+                OrchestrationVersionStatus.PendingDeprecation,
+            },
+            [OrchestrationVersionStatus.PendingDeprecation] = new HashSet<OrchestrationVersionStatus>
+            {
+                OrchestrationVersionStatus.Deployed,
+                OrchestrationVersionStatus.Deprecated,
+            },
+            [OrchestrationVersionStatus.Deprecated] = new HashSet<OrchestrationVersionStatus>
+            {
+                OrchestrationVersionStatus.PendingArchive,
+            },
+            [OrchestrationVersionStatus.PendingArchive] = new HashSet<OrchestrationVersionStatus>
             {
                 OrchestrationVersionStatus.Deprecated,
                 OrchestrationVersionStatus.Archived,
             },
-            [OrchestrationVersionStatus.Deprecated] = new HashSet<OrchestrationVersionStatus>
-            {
-                OrchestrationVersionStatus.Archived,
-            },
             [OrchestrationVersionStatus.Archived] = new HashSet<OrchestrationVersionStatus>(),
+            [OrchestrationVersionStatus.Abandoned] = new HashSet<OrchestrationVersionStatus>(),
         };
 
     /// <summary>

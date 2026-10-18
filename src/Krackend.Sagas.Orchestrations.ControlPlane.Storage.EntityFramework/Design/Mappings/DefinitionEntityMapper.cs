@@ -79,7 +79,10 @@ internal static class DefinitionEntityMapper
         {
             Id = definition.Id,
             OrchestrationDefinitionId = definition.OrchestrationDefinitionId,
-            Version = definition.Version.ToString(),
+            Version = definition.Version?.ToString(),
+            DraftSlot = string.IsNullOrWhiteSpace(definition.DraftSlot)
+                ? $"closed:{definition.Id}"
+                : definition.DraftSlot,
             Status = definition.Status,
             VersionLabel = definition.VersionLabel,
             Description = definition.Description,
@@ -103,7 +106,10 @@ internal static class DefinitionEntityMapper
         {
             Id = entity.Id,
             OrchestrationDefinitionId = entity.OrchestrationDefinitionId,
-            Version = ParseSemanticVersion(entity.Version),
+            Version = string.IsNullOrWhiteSpace(entity.Version) ? null : ParseSemanticVersion(entity.Version),
+            DraftSlot = string.IsNullOrWhiteSpace(entity.DraftSlot)
+                ? $"closed:{entity.Id}"
+                : entity.DraftSlot,
             Status = entity.Status,
             VersionLabel = entity.VersionLabel,
             Description = entity.Description,

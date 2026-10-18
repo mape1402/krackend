@@ -19,7 +19,7 @@ public sealed class OrchestrationVersionApplicationMapper : IOrchestrationVersio
         {
             Id = source.Id.ToString(),
             OrchestrationDefinitionId = source.OrchestrationDefinitionId.ToString(),
-            Version = source.Version.ToString(),
+            Version = source.Version?.ToString() ?? string.Empty,
             Status = source.Status,
             VersionLabel = source.VersionLabel ?? string.Empty,
             Description = source.Description ?? string.Empty,

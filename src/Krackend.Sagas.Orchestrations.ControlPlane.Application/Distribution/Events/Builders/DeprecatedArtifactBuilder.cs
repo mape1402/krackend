@@ -29,6 +29,7 @@ public sealed class DeprecatedArtifactBuilder : IArtifactBuilder<OrchestrationVe
             integrationEvent.VersionNumber,
             integrationEvent.ArtifactPayloadJson,
             integrationEvent.Checksum,
+            ArtifactTypes.DeprecatedOrchestrationVersion,
             nameof(OrchestrationVersionDeprecatedEvent),
             integrationEvent.OccurredAtUtc);
     }

@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ConditionConfigurat
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage;
 using NSubstitute;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Design;
@@ -25,9 +26,13 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
         var created = Assert.Single(fixture.CreatedVersions);
         Assert.Equal(created.Id.ToString(), createdId);
         Assert.Equal(definitionId, created.OrchestrationDefinitionId);
-        Assert.Equal("2.0.0", created.Version.ToString());
+        Assert.Null(created.Version);
         Assert.Equal(OrchestrationVersionStatus.Draft, created.Status);
-        Assert.Equal("Version 2", created.VersionLabel);
+        Assert.Equal(string.Empty, created.VersionLabel);
+        Assert.Equal(string.Empty, created.Description);
+        Assert.Equal(string.Empty, created.Notes);
+        Assert.StartsWith("draft:", created.Checksum.Value, StringComparison.Ordinal);
+        Assert.Equal($"open:{definitionId}", created.DraftSlot);
         Assert.Equal("operator", created.CreatedBy);
         Assert.Empty(fixture.CreatedStages);
         Assert.Empty(fixture.CreatedTasks);
@@ -105,22 +110,17 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleRejectsDuplicateVersionBeforeCreatingRoadmap()
+    public async Task HandleDoesNotReserveASemanticVersionUntilTheApprovedDraftIsApplied()
     {
         var fixture = new Fixture();
         var definitionId = Id.New();
-        fixture.VersionRepository
-            .Exists(definitionId, new SemanticVersion(1, 1, 0), Arg.Any<CancellationToken>())
-            .Returns(true);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Handler.Handle(Command(definitionId, "1.1.0"), CancellationToken.None));
+        await fixture.Handler.Handle(Command(definitionId, "1.1.0"), CancellationToken.None);
 
-        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(fixture.CreatedVersions);
+        Assert.Single(fixture.CreatedVersions);
         Assert.Empty(fixture.CreatedStages);
         Assert.Empty(fixture.CreatedTasks);
-        await fixture.VersionRepository.DidNotReceiveWithAnyArgs().Create(default!, default);
+        await fixture.VersionRepository.DidNotReceive().Exists(Arg.Any<Id>(), Arg.Any<SemanticVersion>(), Arg.Any<CancellationToken>());
         await fixture.SnapshotBuilder.DidNotReceiveWithAnyArgs().Build(default!, default);
     }
 
@@ -328,6 +328,9 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
                 .Returns(Task.CompletedTask);
             VariableDefinitionRepository.Create(Arg.Do<VariableDefinition>(CreatedVariables.Add), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
+            UnitOfWork
+                .ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>())
+                .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(0)(call.ArgAt<CancellationToken>(1)));
 
             Handler = new CreateOrchestrationVersionCommandHandler(
                 VersionRepository,
@@ -337,7 +340,8 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
                 BranchRuleRepository,
                 TriggerBindingRepository,
                 VariableDefinitionRepository,
-                SnapshotBuilder);
+                SnapshotBuilder,
+                UnitOfWork);
         }
 
         public IOrchestrationVersionRepository VersionRepository { get; } = Substitute.For<IOrchestrationVersionRepository>();
@@ -356,6 +360,8 @@ public sealed class CreateOrchestrationVersionCommandHandlerTests
 
         public IOrchestrationVersionArtifactSnapshotBuilder SnapshotBuilder { get; } =
             Substitute.For<IOrchestrationVersionArtifactSnapshotBuilder>();
+
+        public IControlPlaneUnitOfWork UnitOfWork { get; } = Substitute.For<IControlPlaneUnitOfWork>();
 
         public CreateOrchestrationVersionCommandHandler Handler { get; }
 

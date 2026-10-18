@@ -20,7 +20,8 @@ internal sealed class OrchestrationVersionEntityConfiguration : IEntityTypeConfi
 
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationDefinitionId).HasConversion(new IdToBytesConverter());
-        builder.Property(x => x.Version).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Version).HasMaxLength(64).IsRequired(false);
+        builder.Property(x => x.DraftSlot).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.VersionLabel).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.Description).HasMaxLength(2000).IsRequired(false);
@@ -32,5 +33,6 @@ internal sealed class OrchestrationVersionEntityConfiguration : IEntityTypeConfi
 
         builder.HasIndex(x => new { x.OrchestrationDefinitionId, x.Version });
         builder.HasIndex(x => x.OrchestrationDefinitionId);
+        builder.HasIndex(x => x.DraftSlot).IsUnique();
     }
 }

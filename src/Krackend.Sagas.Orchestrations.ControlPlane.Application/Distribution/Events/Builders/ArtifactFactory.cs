@@ -18,6 +18,7 @@ public sealed class ArtifactFactory : IArtifactFactory
         string versionNumber,
         string payload,
         string checksum,
+        string artifactType,
         string sourceEvent,
         DateTime occurredAtUtc)
     {
@@ -29,7 +30,7 @@ public sealed class ArtifactFactory : IArtifactFactory
             OrchestrationDisplayName = orchestrationDisplayName,
             VersionLabel = versionLabel,
             VersionNumber = versionNumber,
-            ArtifactType = ArtifactTypes.OrchestrationVersionSnapshot,
+            ArtifactType = artifactType,
             SchemaVersion = ArtifactTypes.SchemaVersion,
             Payload = payload,
             Metadata = JsonSerializer.Serialize(new

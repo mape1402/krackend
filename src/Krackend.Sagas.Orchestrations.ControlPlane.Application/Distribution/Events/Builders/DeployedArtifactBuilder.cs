@@ -30,6 +30,7 @@ public sealed class DeployedArtifactBuilder : IArtifactBuilder<OrchestrationVers
             integrationEvent.VersionNumber,
             integrationEvent.ArtifactPayloadJson,
             integrationEvent.Checksum,
+            ArtifactTypes.NewOrchestrationVersion,
             nameof(OrchestrationVersionDeployedEvent),
             integrationEvent.OccurredAtUtc);
     }

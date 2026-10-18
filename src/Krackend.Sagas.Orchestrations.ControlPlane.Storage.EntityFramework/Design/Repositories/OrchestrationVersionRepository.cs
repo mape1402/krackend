@@ -33,7 +33,16 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
     public async Task Create(OrchestrationVersion orchestrationVersion, CancellationToken cancellationToken = default)
     {
         _dbContext.OrchestrationVersions.Add(orchestrationVersion.ToEntity());
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsOpenDraftConstraintViolation(exception))
+        {
+            throw new InvalidOperationException(
+                "This orchestration already has an open draft. Deploy or abandon it before creating another draft.",
+                exception);
+        }
     }
 
     /// <summary>
@@ -44,6 +53,10 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
         var current = await _dbContext.OrchestrationVersions.FirstOrDefaultAsync(x => x.Id == orchestrationVersion.Id, cancellationToken)
             ?? throw new KeyNotFoundException($"OrchestrationVersion '{orchestrationVersion.Id}' was not found.");
 
+        orchestrationVersion.DraftSlot = GetDraftSlot(
+            orchestrationVersion.OrchestrationDefinitionId,
+            orchestrationVersion.Id,
+            orchestrationVersion.Status);
         var next = orchestrationVersion.ToEntity();
         _dbContext.Entry(current).CurrentValues.SetValues(next);
 
@@ -59,6 +72,7 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
             ?? throw new KeyNotFoundException($"OrchestrationVersion '{orchestrationVersionId}' was not found.");
 
         current.Status = status;
+        current.DraftSlot = GetDraftSlot(current.OrchestrationDefinitionId, current.Id, status);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -147,4 +161,13 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
 
         return entity?.ToDefinition();
     }
+
+    private static string GetDraftSlot(Id orchestrationDefinitionId, Id versionId, OrchestrationVersionStatus status)
+        => status is OrchestrationVersionStatus.Draft or OrchestrationVersionStatus.PendingDeployment
+            ? $"open:{orchestrationDefinitionId}"
+            : $"closed:{versionId}";
+
+    private static bool IsOpenDraftConstraintViolation(DbUpdateException exception)
+        => exception.InnerException?.Message.Contains("DraftSlot", StringComparison.OrdinalIgnoreCase) == true
+            || exception.Message.Contains("DraftSlot", StringComparison.OrdinalIgnoreCase);
 }

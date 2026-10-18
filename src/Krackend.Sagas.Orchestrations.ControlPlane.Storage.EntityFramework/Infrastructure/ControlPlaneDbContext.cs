@@ -65,6 +65,11 @@ public sealed class ControlPlaneDbContext : DbContext
     public DbSet<OrchestrationVersionEntity> OrchestrationVersions => Set<OrchestrationVersionEntity>();
 
     /// <summary>
+    /// Gets independent orchestration version review requests.
+    /// </summary>
+    public DbSet<OrchestrationVersionReviewEntity> OrchestrationVersionReviews => Set<OrchestrationVersionReviewEntity>();
+
+    /// <summary>
     /// Gets stage definitions.
     /// </summary>
     public DbSet<StageDefinitionEntity> StageDefinitions => Set<StageDefinitionEntity>();
@@ -186,6 +191,7 @@ public sealed class ControlPlaneDbContext : DbContext
         modelBuilder.ApplyConfiguration(new MetadataDescriptorEntityConfiguration());
         modelBuilder.ApplyConfiguration(new OrchestrationDefinitionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new OrchestrationVersionEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new OrchestrationVersionReviewEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ParallelGroupDefinitionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new StageDefinitionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new TaskDefinitionEntityConfiguration());

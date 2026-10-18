@@ -17,6 +17,7 @@ public interface IArtifactFactory
     /// <param name="versionNumber">Semantic version number.</param>
     /// <param name="payload">Serialized artifact payload.</param>
     /// <param name="checksum">Artifact checksum.</param>
+    /// <param name="artifactType">Lifecycle-specific artifact type.</param>
     /// <param name="sourceEvent">Event that produced the artifact.</param>
     /// <param name="occurredAtUtc">Event occurrence timestamp.</param>
     /// <returns>The created artifact entity.</returns>
@@ -28,6 +29,7 @@ public interface IArtifactFactory
         string versionNumber,
         string payload,
         string checksum,
+        string artifactType,
         string sourceEvent,
         DateTime occurredAtUtc);
 }

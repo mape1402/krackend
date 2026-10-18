@@ -563,32 +563,22 @@ public sealed class ControlPlaneApplicationHandlersTests
     }
 
     [Fact]
-    public async Task VersionApprovalHandlersApplyStatusTransitions()
+    public async Task LegacyVersionApprovalHandlersCannotBypassAnIndependentReview()
     {
         var repository = Substitute.For<IOrchestrationVersionRepository>();
         var policy = new OrchestrationVersionTransitionPolicy();
         var version = Version();
-        version.Status = OrchestrationVersionStatus.InReview;
+        version.Status = OrchestrationVersionStatus.Draft;
         repository.GetById(version.Id, Arg.Any<CancellationToken>()).Returns(version);
 
-        var approved = await new ApproveOrchestrationVersionCommandHandler(repository, policy).Handle(
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new ApproveOrchestrationVersionCommandHandler(repository, policy).Handle(
             new ApproveOrchestrationVersionCommand(version.Id.ToString(), "approver"),
-            CancellationToken.None);
-        var reopened = await new ReopenOrchestrationVersionReviewCommandHandler(repository, policy).Handle(
-            new ReopenOrchestrationVersionReviewCommand(version.Id.ToString(), "reviewer"),
-            CancellationToken.None);
-
-        Assert.True(approved);
-        Assert.True(reopened);
-        Assert.Equal(OrchestrationVersionStatus.InReview, version.Status);
-        Assert.Equal(default, version.ApprovedOnUtc);
-        Assert.Equal(string.Empty, version.ApprovedBy);
-        Assert.Equal("reviewer", version.UpdatedBy);
-        await repository.Received(2).Update(version, Arg.Any<CancellationToken>());
-
+            CancellationToken.None));
         await Assert.ThrowsAsync<InvalidOperationException>(() => new ReopenOrchestrationVersionReviewCommandHandler(repository, policy).Handle(
             new ReopenOrchestrationVersionReviewCommand(version.Id.ToString(), "reviewer"),
             CancellationToken.None));
+
+        await repository.DidNotReceive().Update(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -999,7 +989,7 @@ public sealed class ControlPlaneApplicationHandlersTests
     }
 
     [Fact]
-    public async Task VersionStatusCommandsUseTransitionPolicyAndSetStatus()
+    public async Task LegacyStatusCommandsCannotBypassAnIndependentReview()
     {
         var repository = Substitute.For<IOrchestrationVersionRepository>();
         var policy = new OrchestrationVersionTransitionPolicy();
@@ -1007,20 +997,11 @@ public sealed class ControlPlaneApplicationHandlersTests
         draft.Status = OrchestrationVersionStatus.Draft;
         repository.GetById(draft.Id, Arg.Any<CancellationToken>()).Returns(draft);
 
-        var setInReview = await new SetOrchestrationVersionInReviewCommandHandler(repository, policy)
-            .Handle(new SetOrchestrationVersionInReviewCommand(draft.Id.ToString()), CancellationToken.None);
-        draft.Status = OrchestrationVersionStatus.InReview;
-        var returnToDraft = await new ReturnOrchestrationVersionToDraftCommandHandler(repository, policy)
-            .Handle(new ReturnOrchestrationVersionToDraftCommand(draft.Id.ToString()), CancellationToken.None);
-
-        Assert.True(setInReview);
-        Assert.True(returnToDraft);
-        await repository.Received(1).SetStatus(draft.Id, OrchestrationVersionStatus.InReview, Arg.Any<CancellationToken>());
-        await repository.Received(1).SetStatus(draft.Id, OrchestrationVersionStatus.Draft, Arg.Any<CancellationToken>());
-
-        draft.Status = OrchestrationVersionStatus.Approved;
         await Assert.ThrowsAsync<InvalidOperationException>(() => new SetOrchestrationVersionInReviewCommandHandler(repository, policy)
             .Handle(new SetOrchestrationVersionInReviewCommand(draft.Id.ToString()), CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new ReturnOrchestrationVersionToDraftCommandHandler(repository, policy)
+            .Handle(new ReturnOrchestrationVersionToDraftCommand(draft.Id.ToString()), CancellationToken.None));
+        await repository.DidNotReceive().SetStatus(Arg.Any<Id>(), Arg.Any<OrchestrationVersionStatus>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

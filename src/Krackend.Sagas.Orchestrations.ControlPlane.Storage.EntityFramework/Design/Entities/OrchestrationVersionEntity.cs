@@ -23,6 +23,11 @@ public sealed class OrchestrationVersionEntity
     /// </summary>
     public string Version { get; set; }
 
+    /// <summary>
+    /// Gets or sets the portable unique slot used to guarantee one open draft per orchestration.
+    /// </summary>
+    public string DraftSlot { get; set; }
+
     [Sieve(CanFilter = true, CanSort = true, Name = "status")]
     /// <summary>
     /// Gets or sets Status.

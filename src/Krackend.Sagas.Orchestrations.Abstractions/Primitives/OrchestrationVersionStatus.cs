@@ -10,23 +10,41 @@ public enum OrchestrationVersionStatus
     /// </summary>
     Draft,
     /// <summary>
-    /// Represents in review.
+    /// Represents a draft that is waiting for its deployment review to be decided and applied.
     /// </summary>
-    InReview,
+    PendingDeployment,
     /// <summary>
-    /// Represents approved.
-    /// </summary>
-    Approved,
-    /// <summary>
-    /// Represents deployed.
+    /// Represents a version deployed to the distribution catalog.
     /// </summary>
     Deployed,
+    /// <summary>
+    /// Represents a deployed version that is waiting for its deprecation review to be decided and applied.
+    /// </summary>
+    PendingDeprecation,
     /// <summary>
     /// Represents deprecated.
     /// </summary>
     Deprecated,
     /// <summary>
+    /// Represents a deprecated version that is waiting for its archive review to be decided and applied.
+    /// </summary>
+    PendingArchive,
+    /// <summary>
     /// Represents archived.
     /// </summary>
-    Archived
+    Archived,
+    /// <summary>
+    /// Represents a discarded draft that was never deployed.
+    /// </summary>
+    Abandoned,
+    /// <summary>
+    /// Legacy persisted state retained only to read data created before the review workflow.
+    /// </summary>
+    [Obsolete("Use PendingDeployment and an OrchestrationVersionReview instead.")]
+    InReview,
+    /// <summary>
+    /// Legacy persisted state retained only to read data created before the review workflow.
+    /// </summary>
+    [Obsolete("Approval belongs to OrchestrationVersionReview instead.")]
+    Approved
 }

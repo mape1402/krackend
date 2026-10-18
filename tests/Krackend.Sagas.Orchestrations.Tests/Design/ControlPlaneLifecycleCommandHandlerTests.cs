@@ -16,9 +16,9 @@ namespace Krackend.Sagas.Orchestrations.Tests.Design;
 public sealed class ControlPlaneLifecycleCommandHandlerTests
 {
     [Fact]
-    public async Task DeployOrchestrationVersionPublishesArtifactAndUpdatesStatus()
+    public async Task LegacyDeploymentCommandCannotBypassAnApprovedReview()
     {
-        var fixture = new LifecycleFixture(OrchestrationVersionStatus.Approved);
+        var fixture = new LifecycleFixture(OrchestrationVersionStatus.Draft);
         OrchestrationVersionDeployedEvent? published = null;
         fixture.PublicationService
             .PublishDeployment(Arg.Do<OrchestrationVersionDeployedEvent>(evt => published = evt), Arg.Any<CancellationToken>())
@@ -32,25 +32,17 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             fixture.DslValidationService,
             fixture.PublicationService);
 
-        var result = await handler.Handle(new DeployOrchestrationVersionCommand(fixture.Version.Id.ToString(), "operator"), CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new DeployOrchestrationVersionCommand(fixture.Version.Id.ToString(), "operator"),
+            CancellationToken.None));
 
-        Assert.True(result);
-        fixture.TransitionPolicy.Received(1).EnsureCanTransition(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.Deployed);
-        fixture.DslValidationService.Received(1).Validate(fixture.Version);
-        await fixture.VersionRepository.Received(1).Update(fixture.Version, Arg.Any<CancellationToken>());
-        Assert.Equal(OrchestrationVersionStatus.Deployed, fixture.Version.Status);
-        Assert.Equal("operator", fixture.Version.UpdatedBy);
-        Assert.NotNull(fixture.Version.UpdatedOnUtc);
-        Assert.NotNull(published);
-        Assert.Equal(fixture.Version.Id.ToString(), published.OrchestrationVersionId);
-        Assert.Equal("Sale Created", published.OrchestrationDisplayName);
-        Assert.Equal("1.0.0", published.VersionNumber);
-        Assert.Equal("""{"artifact":true}""", published.ArtifactPayloadJson);
-        Assert.Equal("operator", published.Actor);
+        fixture.DslValidationService.DidNotReceiveWithAnyArgs().Validate(default!);
+        await fixture.VersionRepository.DidNotReceive().Update(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>());
+        Assert.Null(published);
     }
 
     [Fact]
-    public async Task ArchiveAndDeprecateVersionPublishLifecycleArtifacts()
+    public async Task LegacyLifecycleCommandsCannotBypassAnApprovedReview()
     {
         var archiveFixture = new LifecycleFixture(OrchestrationVersionStatus.Deprecated);
         OrchestrationVersionArchivedEvent? archived = null;
@@ -65,10 +57,10 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             archiveFixture.PayloadFactory,
             archiveFixture.PublicationService);
 
-        Assert.True(await archiveHandler.Handle(new ArchiveOrchestrationVersionCommand(archiveFixture.Version.Id.ToString(), "archiver"), CancellationToken.None));
-        Assert.Equal(OrchestrationVersionStatus.Archived, archiveFixture.Version.Status);
-        Assert.Equal("archiver", archiveFixture.Version.UpdatedBy);
-        Assert.Equal(archiveFixture.Version.Id.ToString(), archived!.CorrelationId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => archiveHandler.Handle(
+            new ArchiveOrchestrationVersionCommand(archiveFixture.Version.Id.ToString(), "archiver"),
+            CancellationToken.None));
+        Assert.Null(archived);
 
         var deprecateFixture = new LifecycleFixture(OrchestrationVersionStatus.Deployed);
         OrchestrationVersionDeprecatedEvent? deprecated = null;
@@ -83,14 +75,14 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             deprecateFixture.PayloadFactory,
             deprecateFixture.PublicationService);
 
-        Assert.True(await deprecateHandler.Handle(new DeprecateOrchestrationVersionCommand(deprecateFixture.Version.Id.ToString(), "deprecator"), CancellationToken.None));
-        Assert.Equal(OrchestrationVersionStatus.Deprecated, deprecateFixture.Version.Status);
-        Assert.Equal("deprecator", deprecateFixture.Version.UpdatedBy);
-        Assert.Equal("""{"artifact":true}""", deprecated!.ArtifactPayloadJson);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => deprecateHandler.Handle(
+            new DeprecateOrchestrationVersionCommand(deprecateFixture.Version.Id.ToString(), "deprecator"),
+            CancellationToken.None));
+        Assert.Null(deprecated);
     }
 
     [Fact]
-    public async Task ArchiveVersionPublishesMinimalPayloadWhenSnapshotCannotBeBuilt()
+    public async Task LegacyArchiveCommandCannotArchiveDrafts()
     {
         var fixture = new LifecycleFixture(OrchestrationVersionStatus.Draft);
         OrchestrationVersionArchivedEvent? archived = null;
@@ -108,11 +100,12 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             fixture.PayloadFactory,
             fixture.PublicationService);
 
-        Assert.True(await handler.Handle(new ArchiveOrchestrationVersionCommand(fixture.Version.Id.ToString(), "archiver"), CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ArchiveOrchestrationVersionCommand(fixture.Version.Id.ToString(), "archiver"),
+            CancellationToken.None));
 
-        Assert.Equal(OrchestrationVersionStatus.Archived, fixture.Version.Status);
-        Assert.NotNull(archived);
-        Assert.Contains("\"archived\":true", archived!.ArtifactPayloadJson, StringComparison.Ordinal);
+        Assert.Equal(OrchestrationVersionStatus.Draft, fixture.Version.Status);
+        Assert.Null(archived);
         fixture.PayloadFactory.DidNotReceiveWithAnyArgs().CreatePayloadJson(default!, default!);
     }
 
@@ -385,7 +378,7 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
         public OrchestrationDefinition Definition { get; }
         public IOrchestrationVersionRepository VersionRepository { get; } = Substitute.For<IOrchestrationVersionRepository>();
         public IOrchestrationDefinitionRepository DefinitionRepository { get; } = Substitute.For<IOrchestrationDefinitionRepository>();
-        public IOrchestrationVersionTransitionPolicy TransitionPolicy { get; } = Substitute.For<IOrchestrationVersionTransitionPolicy>();
+        public IOrchestrationVersionTransitionPolicy TransitionPolicy { get; } = new OrchestrationVersionTransitionPolicy();
         public IOrchestrationVersionArtifactSnapshotBuilder SnapshotBuilder { get; } = Substitute.For<IOrchestrationVersionArtifactSnapshotBuilder>();
         public IOrchestrationArtifactPayloadFactory PayloadFactory { get; } = Substitute.For<IOrchestrationArtifactPayloadFactory>();
         public IOrchestrationArtifactDslValidationService DslValidationService { get; } = Substitute.For<IOrchestrationArtifactDslValidationService>();

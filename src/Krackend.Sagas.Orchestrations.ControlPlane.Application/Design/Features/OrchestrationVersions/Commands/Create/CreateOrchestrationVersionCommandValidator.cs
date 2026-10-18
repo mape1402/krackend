@@ -1,4 +1,5 @@
 using FluentValidation;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
@@ -13,8 +14,7 @@ public sealed class CreateOrchestrationVersionCommandValidator : AbstractValidat
     public CreateOrchestrationVersionCommandValidator()
     {
         RuleFor(x => x.OrchestrationDefinitionId).NotEmpty().Must(ValidationRules.IsUlid);
-        RuleFor(x => x.Version).NotEmpty().Must(ValidationRules.IsSemanticVersion);
-        RuleFor(x => x.Checksum).NotEmpty();
+        RuleFor(x => x.Status).Equal(OrchestrationVersionStatus.Draft);
         RuleFor(x => x.CreatedBy).NotEmpty().MaximumLength(128);
     }
 }

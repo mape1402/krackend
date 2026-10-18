@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage;
 using Pelican.Mediator;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
@@ -18,6 +19,7 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
     private readonly ITriggerBindingRepository _triggerBindingRepository;
     private readonly IVariableDefinitionRepository _variableDefinitionRepository;
     private readonly IOrchestrationVersionArtifactSnapshotBuilder _snapshotBuilder;
+    private readonly IControlPlaneUnitOfWork _unitOfWork;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CreateOrchestrationVersionCommandHandler"/> class.
@@ -31,7 +33,8 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
         IBranchRuleRepository branchRuleRepository,
         ITriggerBindingRepository triggerBindingRepository,
         IVariableDefinitionRepository variableDefinitionRepository,
-        IOrchestrationVersionArtifactSnapshotBuilder snapshotBuilder)
+        IOrchestrationVersionArtifactSnapshotBuilder snapshotBuilder,
+        IControlPlaneUnitOfWork unitOfWork)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -41,6 +44,7 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
         _triggerBindingRepository = triggerBindingRepository ?? throw new ArgumentNullException(nameof(triggerBindingRepository));
         _variableDefinitionRepository = variableDefinitionRepository ?? throw new ArgumentNullException(nameof(variableDefinitionRepository));
         _snapshotBuilder = snapshotBuilder ?? throw new ArgumentNullException(nameof(snapshotBuilder));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
     /// <summary>
@@ -53,23 +57,17 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
     {
         Id id = Id.New();
         var orchestrationDefinitionId = PrimitiveParser.ParseId(request.OrchestrationDefinitionId);
-        var version = PrimitiveParser.ParseSemanticVersion(request.Version);
-
-        if (await _repository.Exists(orchestrationDefinitionId, version, cancellationToken))
-        {
-            throw new InvalidOperationException($"Orchestration version '{version}' already exists for this orchestration.");
-        }
-
         OrchestrationVersion model = new()
         {
             Id = id,
             OrchestrationDefinitionId = orchestrationDefinitionId,
-            Version = version,
-            Status = request.Status,
-            VersionLabel = request.VersionLabel,
-            Description = request.Description,
-            Checksum = new Checksum(request.Checksum),
-            Notes = request.Notes,
+            Version = null,
+            Status = OrchestrationVersionStatus.Draft,
+            VersionLabel = string.Empty,
+            Description = string.Empty,
+            Checksum = new Checksum($"draft:{id}"),
+            DraftSlot = $"open:{orchestrationDefinitionId}",
+            Notes = string.Empty,
             CreatedOnUtc = DateTime.UtcNow,
             CreatedBy = request.CreatedBy,
             ApprovedOnUtc = default,
@@ -78,8 +76,12 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
             UpdatedBy = string.Empty,
         };
 
-        await _repository.Create(model, cancellationToken);
-        await ClonePreviousVersionRoadmap(model, cancellationToken);
+        await _unitOfWork.ExecuteInTransactionAsync(async token =>
+        {
+            await _repository.Create(model, token);
+            await ClonePreviousVersionRoadmap(model, token);
+        }, cancellationToken);
+
         return id.ToString();
     }
 

@@ -25,13 +25,18 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(version);
 
+        if (!version.Version.HasValue)
+        {
+            throw new InvalidOperationException($"Orchestration version '{version.Id}' must have a semantic version before an artifact can be generated.");
+        }
+
         var artifact = new OrchestrationArtifact(
             definition.Id,
             version.Id,
             definition.Key,
             definition.Name,
             definition.Domain,
-            version.Version,
+            version.Version.Value,
             version.Checksum,
             version.TriggerBindings.Select(MapTrigger).ToArray(),
             version.VariableDefinitions.Select(MapVariable).ToArray(),

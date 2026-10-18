@@ -6,17 +6,16 @@ namespace Krackend.Sagas.Orchestrations.Tests.Design;
 public sealed class OrchestrationVersionTransitionPolicyTests
 {
     [Theory]
-    [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.InReview)]
-    [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.Archived)]
-    [InlineData(OrchestrationVersionStatus.InReview, OrchestrationVersionStatus.Draft)]
-    [InlineData(OrchestrationVersionStatus.InReview, OrchestrationVersionStatus.Approved)]
-    [InlineData(OrchestrationVersionStatus.InReview, OrchestrationVersionStatus.Archived)]
-    [InlineData(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.InReview)]
-    [InlineData(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.Deployed)]
-    [InlineData(OrchestrationVersionStatus.Approved, OrchestrationVersionStatus.Archived)]
-    [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.Deprecated)]
-    [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.Archived)]
-    [InlineData(OrchestrationVersionStatus.Deprecated, OrchestrationVersionStatus.Archived)]
+    [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.PendingDeployment)]
+    [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.Abandoned)]
+    [InlineData(OrchestrationVersionStatus.PendingDeployment, OrchestrationVersionStatus.Draft)]
+    [InlineData(OrchestrationVersionStatus.PendingDeployment, OrchestrationVersionStatus.Deployed)]
+    [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.PendingDeprecation)]
+    [InlineData(OrchestrationVersionStatus.PendingDeprecation, OrchestrationVersionStatus.Deployed)]
+    [InlineData(OrchestrationVersionStatus.PendingDeprecation, OrchestrationVersionStatus.Deprecated)]
+    [InlineData(OrchestrationVersionStatus.Deprecated, OrchestrationVersionStatus.PendingArchive)]
+    [InlineData(OrchestrationVersionStatus.PendingArchive, OrchestrationVersionStatus.Deprecated)]
+    [InlineData(OrchestrationVersionStatus.PendingArchive, OrchestrationVersionStatus.Archived)]
     public void CanTransitionAllowsOnlySupportedLifecycleMoves(
         OrchestrationVersionStatus from,
         OrchestrationVersionStatus to)
@@ -29,7 +28,9 @@ public sealed class OrchestrationVersionTransitionPolicyTests
 
     [Theory]
     [InlineData(OrchestrationVersionStatus.Draft, OrchestrationVersionStatus.Deployed)]
-    [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.Approved)]
+    [InlineData(OrchestrationVersionStatus.Deployed, OrchestrationVersionStatus.Deprecated)]
+    [InlineData(OrchestrationVersionStatus.Deprecated, OrchestrationVersionStatus.Archived)]
+    [InlineData(OrchestrationVersionStatus.PendingDeployment, OrchestrationVersionStatus.Abandoned)]
     [InlineData(OrchestrationVersionStatus.Archived, OrchestrationVersionStatus.Draft)]
     public void EnsureCanTransitionRejectsInvalidLifecycleMoves(
         OrchestrationVersionStatus from,

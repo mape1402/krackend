@@ -76,6 +76,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMetadataDescriptorRepository, MetadataDescriptorRepository>();
         services.AddScoped<IOrchestrationDefinitionRepository, OrchestrationDefinitionRepository>();
         services.AddScoped<IOrchestrationVersionRepository, OrchestrationVersionRepository>();
+        services.AddScoped<IOrchestrationVersionReviewRepository, OrchestrationVersionReviewRepository>();
         services.AddScoped<IStageRepository, StageRepository>();
         services.AddScoped<ITaskRepository, TaskRepository>();
         services.AddScoped<ITriggerBindingRepository, TriggerBindingRepository>();

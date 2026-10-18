@@ -29,6 +29,7 @@ public sealed class ArchivedArtifactBuilder : IArtifactBuilder<OrchestrationVers
             integrationEvent.VersionNumber,
             integrationEvent.ArtifactPayloadJson,
             integrationEvent.Checksum,
+            ArtifactTypes.ArchivedOrchestrationVersion,
             nameof(OrchestrationVersionArchivedEvent),
             integrationEvent.OccurredAtUtc);
     }

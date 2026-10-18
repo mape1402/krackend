@@ -20,7 +20,7 @@ public sealed class OrchestrationVersion
     /// <summary>
     /// Gets or sets version.
     /// </summary>
-    public required SemanticVersion Version { get; set; }
+    public SemanticVersion? Version { get; set; }
 
     /// <summary>
     /// Gets or sets status.
@@ -41,6 +41,12 @@ public sealed class OrchestrationVersion
     /// Gets or sets checksum.
     /// </summary>
     public required Checksum Checksum { get; set; }
+
+    /// <summary>
+    /// Gets or sets the durable draft exclusivity slot. Open drafts for the same orchestration share a slot;
+    /// every closed version receives its own slot so a portable unique index can enforce the invariant.
+    /// </summary>
+    public string DraftSlot { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets trigger bindings.
@@ -80,11 +86,13 @@ public sealed class OrchestrationVersion
     /// <summary>
     /// Gets or sets approved on utc.
     /// </summary>
+    [Obsolete("Approval audit belongs to OrchestrationVersionReview.")]
     public DateTime? ApprovedOnUtc { get; set; }
 
     /// <summary>
     /// Gets or sets approved by.
     /// </summary>
+    [Obsolete("Approval audit belongs to OrchestrationVersionReview.")]
     public string ApprovedBy { get; set; }
 
     /// <summary>
