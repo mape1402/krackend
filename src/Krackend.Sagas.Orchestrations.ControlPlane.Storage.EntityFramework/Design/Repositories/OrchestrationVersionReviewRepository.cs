@@ -75,6 +75,33 @@ public sealed class OrchestrationVersionReviewRepository : IOrchestrationVersion
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<OrchestrationVersionReview>> GetAll(
+        PagedSettings pagedSettings,
+        CancellationToken cancellationToken = default)
+    {
+        var pageNumber = Math.Max(1, pagedSettings?.PageNumber ?? 1);
+        var pageSize = Math.Clamp(pagedSettings?.PageSize ?? 25, 1, 100);
+        var query = _dbContext.Set<OrchestrationVersionReviewEntity>()
+            .AsNoTracking()
+            .OrderByDescending(x => x.RequestedOnUtc)
+            .ThenByDescending(x => x.Id);
+
+        var totalRows = await query.LongCountAsync(cancellationToken);
+        var totalPages = totalRows == 0 ? 1 : (int)Math.Ceiling(totalRows / (double)pageSize);
+        var rows = await query
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<OrchestrationVersionReview>(
+            pageNumber,
+            totalPages,
+            totalRows,
+            pageSize,
+            rows.Select(ToDomain).ToArray());
+    }
+
+    /// <inheritdoc />
     public async Task Update(OrchestrationVersionReview review, CancellationToken cancellationToken = default)
     {
         var entitySet = _dbContext.Set<OrchestrationVersionReviewEntity>();

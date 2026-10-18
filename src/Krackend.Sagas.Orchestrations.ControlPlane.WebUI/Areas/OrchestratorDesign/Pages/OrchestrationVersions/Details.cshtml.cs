@@ -70,10 +70,6 @@ public sealed class DetailsModel : PageModel
 
     public IReadOnlyDictionary<string, int> StageTaskCounts { get; private set; } = new Dictionary<string, int>(StringComparer.Ordinal);
 
-    /// <summary>Gets the auditable lifecycle review history for the selected version.</summary>
-    public IReadOnlyCollection<OrchestrationVersionReviewModel> ReviewHistory { get; private set; }
-        = Array.Empty<OrchestrationVersionReviewModel>();
-
     [BindProperty]
     public CreateStageInput NewStage { get; set; } = new();
 
@@ -494,12 +490,6 @@ public sealed class DetailsModel : PageModel
             TriggerBindings = (await _triggerBindingService.GetAll(new GetTriggerBindingsQuery(SelectedVersion.Id), cancellationToken))
                 .ToArray();
 
-            ReviewHistory = (await _reviewService.GetAll(
-                    new GetOrchestrationVersionReviewsQuery(SelectedVersion.Id),
-                    cancellationToken) ?? Array.Empty<OrchestrationVersionReviewModel>())
-                .OrderByDescending(x => x.RequestedOnUtc)
-                .ThenByDescending(x => x.Id, StringComparer.Ordinal)
-                .ToArray();
         }
         catch (Exception ex)
         {

@@ -64,6 +64,50 @@ public sealed class ApplicationServiceFacadeTests
     }
 
     [Fact]
+    public async Task OrchestrationVersionReviewApplicationServiceDelegatesEveryOperationToMediator()
+    {
+        var review = new DesignApp.OrchestrationVersionReviewModel
+        {
+            Id = "review-1",
+            OrchestrationVersionId = "version-1"
+        };
+        IReadOnlyCollection<DesignApp.OrchestrationVersionReviewModel> history = [review];
+        var page = new DesignApp.ApplicationPagedResult<DesignApp.OrchestrationVersionReviewModel>(1, 1, 1, 20, history);
+        var mediator = new RecordingMediator()
+            .With("review-1")
+            .With(true)
+            .With(review)
+            .With(history)
+            .With(page);
+        var service = new DesignApp.OrchestrationVersionReviewApplicationService(mediator);
+
+        var request = new DesignApp.RequestOrchestrationVersionReviewCommand(
+            "version-1",
+            OrchestrationVersionReviewOperation.Deploy,
+            "requester");
+        var approve = new DesignApp.ApproveOrchestrationVersionReviewCommand("review-1", "approver");
+        var reject = new DesignApp.RejectOrchestrationVersionReviewCommand("review-1", "reviewer", "");
+        var abort = new DesignApp.AbortOrchestrationVersionReviewCommand("review-1", "requester", "");
+        var apply = new DesignApp.ApplyOrchestrationVersionReviewCommand("review-1", "deployer", "1.0.0", "", "", "");
+        var getById = new DesignApp.GetOrchestrationVersionReviewByIdQuery("review-1");
+        var getPending = new DesignApp.GetPendingOrchestrationVersionReviewQuery("version-1");
+        var getHistory = new DesignApp.GetOrchestrationVersionReviewsQuery("version-1");
+        var getAll = new DesignApp.GetAllOrchestrationVersionReviewsQuery(new DesignApp.ApplicationPagedSettings { PageNumber = 1, PageSize = 20 });
+
+        Assert.Equal("review-1", await service.Request(request));
+        Assert.True(await service.Approve(approve));
+        Assert.True(await service.Reject(reject));
+        Assert.True(await service.Abort(abort));
+        Assert.True(await service.Apply(apply));
+        Assert.Same(review, await service.GetById(getById));
+        Assert.Same(review, await service.GetPending(getPending));
+        Assert.Same(history, await service.GetAll(getHistory));
+        Assert.Same(page, await service.GetAll(getAll));
+        Assert.Equal([request, approve, reject, abort, apply, getById, getPending, getHistory, getAll], mediator.Requests);
+        Assert.Throws<ArgumentNullException>(() => new DesignApp.OrchestrationVersionReviewApplicationService(null!));
+    }
+
+    [Fact]
     public async Task TeamApplicationServiceDelegatesEveryOperationToMediator()
     {
         var team = new SecurityApp.TeamModel { Id = "team-1", Key = "sales" };

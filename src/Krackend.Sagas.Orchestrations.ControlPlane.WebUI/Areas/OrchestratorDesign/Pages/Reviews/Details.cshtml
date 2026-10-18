@@ -11,7 +11,10 @@
         <h1 class="od-page-title">Lifecycle review</h1>
         <p class="od-page-subtitle">@Model.Review?.Operation for @(string.IsNullOrWhiteSpace(Model.Version?.Version) ? "Draft roadmap" : $"version {Model.Version.Version}")</p>
     </div>
-    <a asp-area="OrchestratorDesign" asp-page="/OrchestrationVersions/Details" asp-route-orchestrationId="@Model.OrchestrationId" asp-route-versionId="@Model.Review?.OrchestrationVersionId" class="btn btn-outline-secondary">Back to roadmap</a>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-area="OrchestratorDesign" asp-page="/Reviews/Index" class="btn btn-outline-secondary">Back to reviews</a>
+        <a asp-area="OrchestratorDesign" asp-page="/OrchestrationVersions/Details" asp-route-orchestrationId="@Model.OrchestrationId" asp-route-versionId="@Model.Review?.OrchestrationVersionId" class="btn btn-outline-secondary">Open roadmap</a>
+    </div>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))

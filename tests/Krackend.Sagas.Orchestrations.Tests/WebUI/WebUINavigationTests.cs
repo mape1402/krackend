@@ -46,6 +46,7 @@ public sealed class WebUINavigationTests
             items,
             item => AssertNavigation(item, "Overview", "OrchestratorDesign", "/Index", 0),
             item => AssertNavigation(item, "Orchestrations", "OrchestratorDesign", "/Orchestrations/Index", 10),
+            item => AssertNavigation(item, "Reviews", "OrchestratorDesign", "/Reviews/Index", 15),
             item => AssertNavigation(item, "Environments", "OrchestratorDistribution", "/Environments/Index", 19),
             item => AssertNavigation(item, "Domains", "OrchestratorDesign", "/Domains/Index", 20),
             item => AssertNavigation(item, "Runtime Nodes", "OrchestratorDistribution", "/RuntimeNodes/Index", 20),
@@ -360,7 +361,7 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(21, options.Conventions.Count);
+        Assert.Equal(22, options.Conventions.Count);
     }
 
     [Fact]
@@ -389,6 +390,35 @@ public sealed class WebUINavigationTests
         Assert.Contains("runtime/instances", routes);
         Assert.Contains("runtime/artifacts", routes);
         Assert.Contains("runtime/design-nodes", routes);
+    }
+
+    [Fact]
+    public async Task DesignWebUiMapsLifecycleReviewRoutesWhenRegisteredByExtension()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = "Development"
+        });
+
+        builder.Services.AddLogging();
+        ControlPlaneWebUiServices.AddOrchestratorControlPlane(builder.Services, options =>
+        {
+            options.AdminRootPath = "admin";
+            options.ConfigureStorage = storage => storage.UseInMemoryDatabase($"lifecycle-review-routes-{Guid.NewGuid():N}");
+        });
+
+        await using var app = builder.Build();
+
+        app.MapRazorPages();
+
+        var routes = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(dataSource => dataSource.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("admin/design/reviews", routes);
+        Assert.Contains("admin/design/reviews/{reviewId}", routes);
     }
 
     [Fact]

@@ -35,4 +35,9 @@ public sealed class OrchestrationVersionReviewApplicationService : IOrchestratio
         GetOrchestrationVersionReviewsQuery query,
         CancellationToken cancellationToken = default)
         => _mediator.Send(query, cancellationToken);
+
+    public Task<ApplicationPagedResult<OrchestrationVersionReviewModel>> GetAll(
+        GetAllOrchestrationVersionReviewsQuery query,
+        CancellationToken cancellationToken = default)
+        => _mediator.Send(query, cancellationToken);
 }

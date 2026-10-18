@@ -22,6 +22,11 @@ public interface IOrchestrationVersionReviewRepository
         Id orchestrationVersionId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Returns lifecycle reviews across orchestration versions in reverse chronological order.</summary>
+    Task<PagedResult<OrchestrationVersionReview>> GetAll(
+        PagedSettings pagedSettings,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Persists changes to a review request.</summary>
     Task Update(OrchestrationVersionReview review, CancellationToken cancellationToken = default);
 }

@@ -63,9 +63,28 @@
 
     var allItems = Navigation.GetItems();
 
-    bool IsActive(OrchestratorNavigationItem item) =>
-        string.Equals(currentArea, item.Area, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(currentPage, item.Page, StringComparison.OrdinalIgnoreCase);
+    bool IsActive(OrchestratorNavigationItem item)
+    {
+        if (!string.Equals(currentArea, item.Area, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var itemPath = Url.Page(item.Page, new { area = item.Area });
+        var requestPath = Context.Request.Path.ToString();
+        if (string.IsNullOrWhiteSpace(itemPath) || string.IsNullOrWhiteSpace(requestPath))
+        {
+            return string.Equals(currentPage, item.Page, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (string.Equals(item.Page, "/Index", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(requestPath, itemPath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(requestPath, itemPath, StringComparison.OrdinalIgnoreCase)
+            || requestPath.StartsWith($"{itemPath}/", StringComparison.OrdinalIgnoreCase);
+    }
 
     var navGroups = new[]
     {

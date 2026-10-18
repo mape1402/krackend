@@ -79,6 +79,7 @@ public static class ServiceCollectionExtensions
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Orchestrations/Details", $"{prefix}/orchestrations/{{orchestrationId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/OrchestrationVersions/Details", $"{prefix}/orchestrations/{{orchestrationId}}/versions/{{versionId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/OrchestrationStages/Details", $"{prefix}/orchestrations/{{orchestrationId}}/versions/{{versionId}}/stages/{{stageId}}");
+            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Reviews/Index", $"{prefix}/reviews");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Reviews/Details", $"{prefix}/reviews/{{reviewId}}");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Domains/Index", $"{prefix}/domains");
             options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Metadata/Index", $"{prefix}/metadata");

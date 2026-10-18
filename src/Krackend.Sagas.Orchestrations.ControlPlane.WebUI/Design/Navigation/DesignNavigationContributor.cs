@@ -24,6 +24,13 @@ public sealed class DesignNavigationContributor : IOrchestratorNavigationContrib
             },
             new OrchestratorNavigationItem
             {
+                Label = "Reviews",
+                Area = "OrchestratorDesign",
+                Page = "/Reviews/Index",
+                Order = 15
+            },
+            new OrchestratorNavigationItem
+            {
                 Label = "Domains",
                 Area = "OrchestratorDesign",
                 Page = "/Domains/Index",

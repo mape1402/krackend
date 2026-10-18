@@ -10,6 +10,34 @@ using Microsoft.EntityFrameworkCore;
 public sealed class OrchestrationVersionReviewRepositoryTests
 {
     [Fact]
+    public async Task GetAllReturnsLifecycleReviewsInReverseChronologicalOrderAndPagesThem()
+    {
+        var options = new DbContextOptionsBuilder<ControlPlaneDbContext>()
+            .UseInMemoryDatabase($"krackend-review-list-{Guid.NewGuid():N}")
+            .Options;
+        var older = CreateReview();
+        older.RequestedOnUtc = DateTime.UtcNow.AddMinutes(-1);
+        var newer = CreateReview();
+        newer.RequestedOnUtc = DateTime.UtcNow;
+
+        await using (var setup = new ControlPlaneDbContext(options))
+        {
+            var repository = new OrchestrationVersionReviewRepository(setup);
+            await repository.Create(older);
+            await repository.Create(newer);
+        }
+
+        await using var verification = new ControlPlaneDbContext(options);
+        var rows = await new OrchestrationVersionReviewRepository(verification).GetAll(
+            new Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage.PagedSettings(1, 1, [], []));
+
+        Assert.Equal(1, rows.PageNumber);
+        Assert.Equal(2, rows.TotalPages);
+        Assert.Equal(2, rows.TotalRows);
+        Assert.Equal(newer.Id, Assert.Single(rows.Rows).Id);
+    }
+
+    [Fact]
     public async Task UpdateRejectsAStaleLifecycleDecisionFromAnotherControlPlaneInstance()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"krackend-review-concurrency-{Guid.NewGuid():N}.db");

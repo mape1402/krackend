@@ -176,6 +176,39 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
         await repository.Received(1).GetAllForVersion(versionId, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task GetAllAcrossVersionsMapsThePagedReviewQueue()
+    {
+        var repository = Substitute.For<IOrchestrationVersionReviewRepository>();
+        var review = new OrchestrationVersionReview
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = Id.New(),
+            Operation = OrchestrationVersionReviewOperation.Archive,
+            FromStatus = OrchestrationVersionStatus.Deprecated,
+            PendingStatus = OrchestrationVersionStatus.PendingArchive,
+            TargetStatus = OrchestrationVersionStatus.Archived,
+            ExpectedChecksum = "sha256:archive",
+            RequestedBy = "designer",
+            RequestedOnUtc = DateTime.UtcNow,
+        };
+        repository.GetAll(Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>())
+            .Returns(new PagedResult<OrchestrationVersionReview>(2, 3, 51, 25, [review]));
+        var handler = new GetAllOrchestrationVersionReviewsQueryHandler(repository);
+
+        var result = await handler.Handle(
+            new GetAllOrchestrationVersionReviewsQuery(new Krackend.Sagas.Orchestrations.ControlPlane.Application.Design.ApplicationPagedSettings { PageNumber = 2, PageSize = 25 }),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.PageNumber);
+        Assert.Equal(3, result.TotalPages);
+        Assert.Equal(51, result.TotalRows);
+        Assert.Equal(review.Id.ToString(), Assert.Single(result.Rows).Id);
+        await repository.Received(1).GetAll(
+            Arg.Is<PagedSettings>(x => x.PageNumber == 2 && x.PageSize == 25),
+            Arg.Any<CancellationToken>());
+    }
+
     private sealed class Fixture
     {
         public Fixture(OrchestrationVersionStatus status)
