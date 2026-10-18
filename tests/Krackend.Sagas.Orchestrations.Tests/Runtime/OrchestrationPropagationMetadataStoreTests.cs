@@ -77,6 +77,20 @@ public sealed class OrchestrationPropagationMetadataStoreTests
     }
 
     [Fact]
+    public void LoadPreservesNullValuesWhenFallingBackToRawItems()
+    {
+        var store = new DefaultOrchestrationPropagationMetadataStore();
+        var instance = CreateInstance();
+        instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
+            JsonNode.Parse("""{"items":[1],"optional.context":null}""")!;
+
+        var loaded = store.Load(instance);
+
+        Assert.True(loaded.Items.ContainsKey("optional.context"));
+        Assert.Null(loaded.Items["optional.context"]);
+    }
+
+    [Fact]
     public void LoadReturnsEmptyMetadataWhenEnvelopeAndItemsCannotBeRead()
     {
         var store = new DefaultOrchestrationPropagationMetadataStore();

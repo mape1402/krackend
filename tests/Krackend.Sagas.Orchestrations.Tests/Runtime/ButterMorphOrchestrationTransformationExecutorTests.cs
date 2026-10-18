@@ -69,6 +69,36 @@ public sealed class ButterMorphOrchestrationTransformationExecutorTests
     }
 
     [Fact]
+    public async Task TransformAsyncReturnsEmptyPayloadWhenSuccessfulTransformationHasNoResultGraph()
+    {
+        var engine = Substitute.For<IButterMorphEngine>();
+        var parser = Substitute.For<IDslParser>();
+        var sourceGraphBuilder = Substitute.For<IButterMorphSourceGraphBuilder>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(new DslDocument());
+        sourceGraphBuilder.Build(Arg.Any<OrchestrationPayloadContext>())
+            .Returns(new Dictionary<string, IStructureGraph>(StringComparer.Ordinal));
+        engine.Transform(Arg.Any<TransformationRequest>()).Returns(new TransformationResult
+        {
+            Succeeded = true,
+            ResultGraph = null!
+        });
+        var executor = new ButterMorphOrchestrationTransformationExecutor(
+            engine,
+            parser,
+            new ButterMorphDiagnosticMetadataMapper(),
+            sourceGraphBuilder);
+
+        var result = await executor.TransformAsync(new OrchestrationTransformationRequest
+        {
+            Task = CreateTask("target { SaleId: $trigger.SaleId }"),
+            PayloadContext = EmptyPayloadContext()
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Payload);
+    }
+
+    [Fact]
     public async Task TransformAsyncMapsButterMorphExceptionsToExecutionFailure()
     {
         var engine = Substitute.For<IButterMorphEngine>();

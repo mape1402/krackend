@@ -23,6 +23,20 @@ public sealed class OrchestrationVersionRepositoryBranchTests
     }
 
     [Fact]
+    public void GetDraftSlotUsesTheSharedOpenSlotForPendingDeploymentVersions()
+    {
+        var orchestrationId = Id.New();
+
+        var slot = InvokePrivateStatic<string>(
+            "GetDraftSlot",
+            orchestrationId,
+            Id.New(),
+            OrchestrationVersionStatus.PendingDeployment);
+
+        Assert.Equal($"open:{orchestrationId}", slot);
+    }
+
+    [Fact]
     public void DraftSlotConstraintDetectionRecognizesBothProviderErrorLocations()
     {
         var innerViolation = new DbUpdateException("storage update failed", new InvalidOperationException("DraftSlot is unique"));

@@ -71,8 +71,8 @@ public sealed class ButterMorphOrchestrationTransformationExecutor : IOrchestrat
                     _diagnosticMapper.Map(result.Diagnostics)));
             }
 
-            var output = _jsonWriter.Write(result.ResultGraph);
-            var payload = string.IsNullOrWhiteSpace(output.Content)
+            var output = result.ResultGraph is null ? null : _jsonWriter.Write(result.ResultGraph);
+            var payload = string.IsNullOrWhiteSpace(output?.Content)
                 ? null
                 : JsonNode.Parse(output.Content);
 

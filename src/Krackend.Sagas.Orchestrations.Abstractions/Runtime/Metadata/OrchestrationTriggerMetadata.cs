@@ -99,7 +99,7 @@ public sealed class OrchestrationTriggerMetadata
 
         try
         {
-            return value.GetValue<string>() ?? string.Empty;
+            return value.GetValue<string>();
         }
         catch (InvalidOperationException)
         {
