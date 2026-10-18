@@ -410,18 +410,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             OrchestrationInstance instance,
             TaskExecution failedTask)
         {
-            if (!string.IsNullOrWhiteSpace(instance?.ErrorSummary))
+            if (instance is not null && !string.IsNullOrWhiteSpace(instance.ErrorSummary))
             {
                 return instance.ErrorSummary;
             }
 
-            var errorCode = TryGetString(failedTask?.Metadata, "ExecutionErrorCode")
-                ?? TryGetString(failedTask?.Metadata, "PreparationErrorCode")
-                ?? TryGetString(failedTask?.Metadata, "TimeoutErrorCode");
+            var taskKey = failedTask is null ? string.Empty : failedTask.TaskKey;
+            var metadata = failedTask is null ? null : failedTask.Metadata;
+            var errorCode = TryGetString(metadata, "ExecutionErrorCode")
+                ?? TryGetString(metadata, "PreparationErrorCode")
+                ?? TryGetString(metadata, "TimeoutErrorCode");
 
             return string.IsNullOrWhiteSpace(errorCode)
-                ? $"Task '{failedTask?.TaskKey}' failed and no retry, continue, or compensation policy can recover it."
-                : $"Task '{failedTask?.TaskKey}' failed with '{errorCode}' and no retry, continue, or compensation policy can recover it.";
+                ? $"Task '{taskKey}' failed and no retry, continue, or compensation policy can recover it."
+                : $"Task '{taskKey}' failed with '{errorCode}' and no retry, continue, or compensation policy can recover it.";
         }
 
         private static string TryGetString(

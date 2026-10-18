@@ -45,7 +45,7 @@ public sealed class ArtifactDeliveryEndpointAuthenticator : IArtifactDeliveryEnd
             return [ArtifactDeliveryScope.ArtifactAcknowledge];
         }
 
-        return request.Path.Value?.Contains("/pending", StringComparison.OrdinalIgnoreCase) == true
+        return request.Path.HasValue && request.Path.Value.Contains("/pending", StringComparison.OrdinalIgnoreCase)
             ? [ArtifactDeliveryScope.ReleaseRead]
             : [ArtifactDeliveryScope.ArtifactRead];
     }

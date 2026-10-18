@@ -291,6 +291,24 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Equal("override", Assert.Single(fixture.Forwards).Payload!["value"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task ReplayRecoverableInstanceWithoutASnapshotForwardsANullPayload()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        instance.SnapshotPayload = null!;
+        fixture.ArrangeReplay(
+            instance,
+            CreateResolvedArtifact(instance.RuntimeOrchestrationArtifactId, Stage("stage-one", MessagingTask("reserve-stock"))),
+            Array.Empty<StageExecution>(),
+            Array.Empty<TaskExecution>());
+
+        var result = await fixture.Service.ReplayAsync(instance.Id.ToString(), " ");
+
+        Assert.True(result.Succeeded);
+        Assert.Null(Assert.Single(fixture.Forwards).Payload);
+    }
+
     private static OrchestrationInstance CreateInstance(
         OrchestrationInstanceStatus status,
         string currentStageKey = "stage-one",

@@ -275,6 +275,9 @@ public sealed class DecisionControlRetryTests
         failedTask.Metadata.Clear();
         var fallbackReason = InvokeDecisionControlPrivateStatic<string>("ResolveDeadLetterReason", CreateInstance(), failedTask);
         Assert.Contains("no retry, continue, or compensation policy", fallbackReason, StringComparison.Ordinal);
+        failedTask.Metadata = null!;
+        var missingMetadataReason = InvokeDecisionControlPrivateStatic<string>("ResolveDeadLetterReason", CreateInstance(), failedTask);
+        Assert.Contains("no retry, continue, or compensation policy", missingMetadataReason, StringComparison.Ordinal);
         var missingInstanceReason = InvokeDecisionControlPrivateStatic<string>("ResolveDeadLetterReason", null!, failedTask);
         Assert.Contains("no retry, continue, or compensation policy", missingInstanceReason, StringComparison.Ordinal);
         var missingTaskReason = InvokeDecisionControlPrivateStatic<string>("ResolveDeadLetterReason", CreateInstance(), null!);

@@ -1352,6 +1352,37 @@ public sealed class OrchestrationButterMorphViewerHostTests
     }
 
     [Fact]
+    public async Task MappingViewerReportsMissingTargetWhenTheContextHasNoTarget()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContexts = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var context = CreateSchemaContextWithoutTarget();
+        schemaContexts.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(context);
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            Transformation = CreateTransformation("target { Result: $trigger.id }")
+        });
+
+        var host = new OrchestrationButterMorphMappingViewerHost(
+            schemaContexts,
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            CreateImporter(),
+            Substitute.For<IDslParser>());
+
+        var result = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskTransformation("version-1", "task-1")
+        });
+
+        Assert.Null(result.TargetSchema);
+        Assert.Contains("does not have a stored schema snapshot", result.Message);
+    }
+
+    [Fact]
     public async Task MappingViewerLoadsStoredCompensationDefinitionsAndRejectsUnknownContext()
     {
         var contextParser = new OrchestrationButterMorphDesignerContextParser();
@@ -1549,6 +1580,24 @@ public sealed class OrchestrationButterMorphViewerHostTests
         Assert.Contains("Invalid orchestration execution condition context.", invalid.Message);
     }
 
+    [Fact]
+    public void TransformationHostResolvesTargetHashAcrossOptionalSchemaParts()
+    {
+        var method = typeof(OrchestrationButterMorphDesignerHost).GetMethod(
+            "GetTargetSchemaHash",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+        var complete = CreateSchemaContext();
+        var withoutTarget = CreateSchemaContextWithoutTarget();
+        var withoutBinding = CreateSchemaContextWithoutTargetBinding();
+        var withoutSnapshot = CreateSchemaContext();
+        withoutSnapshot.Target.SchemaBinding.Snapshot = null!;
+
+        Assert.Equal("target-hash", method.Invoke(null, [complete]));
+        Assert.Equal(string.Empty, method.Invoke(null, [withoutTarget]));
+        Assert.Equal(string.Empty, method.Invoke(null, [withoutBinding]));
+        Assert.Equal(string.Empty, method.Invoke(null, [withoutSnapshot]));
+    }
+
     private static OrchestrationSchemaContext CreateSchemaContext()
         => new()
         {
@@ -1563,6 +1612,33 @@ public sealed class OrchestrationButterMorphViewerHostTests
                 StageKey = "stage-1",
                 TaskKey = "task-1",
                 SchemaBinding = CreateBinding()
+            }
+        };
+
+    private static OrchestrationSchemaContext CreateSchemaContextWithoutTarget()
+        => new()
+        {
+            OrchestrationVersionId = "version-1",
+            OrchestrationVersion = "1.0.0",
+            StageKey = "stage-1",
+            TaskKey = "task-1",
+            Signature = "schema-signature",
+            Target = null
+        };
+
+    private static OrchestrationSchemaContext CreateSchemaContextWithoutTargetBinding()
+        => new()
+        {
+            OrchestrationVersionId = "version-1",
+            OrchestrationVersion = "1.0.0",
+            StageKey = "stage-1",
+            TaskKey = "task-1",
+            Signature = "schema-signature",
+            Target = new OrchestrationSchemaTarget
+            {
+                Alias = "request",
+                StageKey = "stage-1",
+                TaskKey = "task-1"
             }
         };
 

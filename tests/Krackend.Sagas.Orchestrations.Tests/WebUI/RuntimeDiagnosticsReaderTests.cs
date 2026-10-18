@@ -176,6 +176,20 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
+    public async Task GetDetail_WhenPendingConfiguredStageHasNoParallelGroups_UsesZero()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        store.Artifact.ArtifactPayload["stageDefinitions"]!.AsArray()[1]!["parallelGroups"] = null;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var pendingStage = Assert.Single(detail.Stages.Where(stage => !stage.HasExecution));
+        Assert.Equal(0, pendingStage.ParallelGroupCount);
+    }
+
+    [Fact]
     public async Task GetDetail_WhenExecutedTaskIsNotInArtifact_KeepsItAfterConfiguredPendingTasks()
     {
         var store = RuntimeDiagnosticsStore.Create();

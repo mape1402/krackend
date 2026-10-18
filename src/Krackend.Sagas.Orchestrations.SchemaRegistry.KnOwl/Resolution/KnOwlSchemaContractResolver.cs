@@ -128,19 +128,25 @@ public sealed class KnOwlSchemaContractResolver : ISchemaContractResolver
                 $"KnOwl contract artifact '{contract.ContractKey}' v{contract.VersionNumber} does not contain a payload schema.");
         }
 
+        var artifactId = contract.Id == Guid.Empty ? string.Empty : contract.Id.ToString();
+        var contractKey = string.IsNullOrWhiteSpace(contract.ContractKey) ? reference.ContractKey : contract.ContractKey;
+        var contractVersion = string.IsNullOrWhiteSpace(contract.VersionNumber) ? reference.ContractVersion : contract.VersionNumber;
+        var schemaFormat = string.IsNullOrWhiteSpace(_options.SchemaFormat) ? "ButterMorph" : _options.SchemaFormat;
+        var contentHash = contract.ContentHash ?? string.Empty;
+
         var snapshot = new SchemaContractSnapshot
         {
             Reference = reference with
             {
                 ProviderKey = ProviderKey,
-                ContractId = contract.Id == Guid.Empty ? reference.ContractId : contract.Id.ToString(),
-                ContractKey = string.IsNullOrWhiteSpace(contract.ContractKey) ? reference.ContractKey : contract.ContractKey,
-                ContractVersion = string.IsNullOrWhiteSpace(contract.VersionNumber) ? reference.ContractVersion : contract.VersionNumber
+                ContractId = string.IsNullOrWhiteSpace(artifactId) ? reference.ContractId : artifactId,
+                ContractKey = contractKey,
+                ContractVersion = contractVersion
             },
-            SchemaFormat = string.IsNullOrWhiteSpace(_options.SchemaFormat) ? "ButterMorph" : _options.SchemaFormat,
+            SchemaFormat = schemaFormat,
             SchemaJson = contract.PayloadSchemaJson,
-            ContentHash = contract.ContentHash ?? string.Empty,
-            SourceArtifactId = contract.Id == Guid.Empty ? string.Empty : contract.Id.ToString(),
+            ContentHash = contentHash,
+            SourceArtifactId = artifactId,
             ResolvedBy = ProviderKey,
             ResolvedAtUtc = DateTimeOffset.UtcNow
         };

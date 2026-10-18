@@ -64,9 +64,10 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             MapCompensation(trigger.CompensationDefinition));
 
     private static ITriggerChannelArtifact MapTriggerChannel(ITriggerChannel channel)
-        => channel switch
+    {
+        if (channel is EventTriggerChannel eventChannel)
         {
-            EventTriggerChannel eventChannel => new EventTriggerChannelArtifact(
+            return new EventTriggerChannelArtifact(
                 MapSchemaBinding(eventChannel.SchemaBinding, eventChannel.HasSchemaValidation, SchemaContractKind.Event),
                 eventChannel.Topic,
                 eventChannel.Version)
@@ -75,9 +76,11 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
                     eventChannel.Validation,
                     eventChannel.HasValidation || eventChannel.HasSchemaValidation,
                     "TriggerValidationFailed"),
-            },
-            _ => throw new InvalidOperationException($"Trigger channel '{channel.GetType().Name}' is not supported.")
-        };
+            };
+        }
+
+        throw new InvalidOperationException($"Trigger channel '{channel.GetType().Name}' is not supported.");
+    }
 
     private static VariableDefinitionArtifact MapVariable(VariableDefinition variable)
         => new(

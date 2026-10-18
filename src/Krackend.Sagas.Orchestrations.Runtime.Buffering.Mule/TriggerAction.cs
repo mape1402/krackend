@@ -50,10 +50,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 return $"mule:{action.Key}:{action.DeduplicationKey.Trim()}";
             }
 
-            var actionId = action.Id.ToString();
-            return string.IsNullOrWhiteSpace(actionId)
-                ? null
-                : $"mule:{action.Key}:{actionId}";
+            return $"mule:{action.Key}:{action.Id}";
         }
     }
 }

@@ -163,7 +163,7 @@ public sealed class KnOwlSchemaContractResolverTests
                 options.BaseUri = new Uri("https://knowl-control-plane.local");
             },
             catalog);
-        var request = CreateRequest();
+        var request = CreateRequest(contractId: "requested-artifact-id");
 
         var result = await resolver.ResolveAsync(request);
 
@@ -462,6 +462,32 @@ public sealed class KnOwlSchemaContractResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenSchemaFormatIsBlank_UsesButterMorphFormat()
+    {
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+                options.SchemaFormat = " ";
+            },
+            KnOwlContractCatalogResult.Found(new ContractArtifact
+            {
+                Id = Guid.NewGuid(),
+                ArtifactType = ContractArtifactType.Event,
+                ContractKey = "sales.sale.created",
+                VersionNumber = "1.0.0",
+                PayloadSchemaJson = "{\"type\":\"object\"}",
+                SourceStatus = "Deployed"
+            }));
+
+        var result = await resolver.ResolveAsync(CreateRequest());
+
+        Assert.Equal(SchemaContractResolutionStatus.Resolved, result.Status);
+        Assert.Equal("ButterMorph", result.Snapshot.SchemaFormat);
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenCatalogReturnsUnknownFailureStatus_MapsToUnavailable()
     {
         var resolver = CreateResolver(
@@ -505,7 +531,8 @@ public sealed class KnOwlSchemaContractResolverTests
     private static SchemaContractResolutionRequest CreateRequest(
         string contractKey = "sales.sale.created",
         string contractVersion = "1.0.0",
-        SchemaContractKind contractKind = SchemaContractKind.Event)
+        SchemaContractKind contractKind = SchemaContractKind.Event,
+        string contractId = "")
         => new()
         {
             Reference = new SchemaContractReference
@@ -513,6 +540,7 @@ public sealed class KnOwlSchemaContractResolverTests
                 ProviderKey = "knowl",
                 ContractKey = contractKey,
                 ContractVersion = contractVersion,
+                ContractId = contractId,
                 Kind = contractKind
             },
             RequireRemoteResolution = true

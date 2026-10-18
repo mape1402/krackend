@@ -197,6 +197,72 @@ public sealed class ControlPlaneReleasesPageModelTests
     }
 
     [Fact]
+    public async Task OnPostCreateAcceptsRolloutForLegacyVersionSnapshotArtifacts()
+    {
+        var fixture = new Fixture();
+        CreateReleaseInput? captured = null;
+        fixture.ReleaseService
+            .Create(Arg.Do<CreateReleaseInput>(input => captured = input), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("release-new"));
+        var page = fixture.CreatePage();
+        page.Input = new ReleasesIndexModel.ReleaseInput
+        {
+            OrchestrationDefinitionId = "sales.sale.created",
+            ArtifactId = "artifact-sales",
+            Strategy = "Rollout",
+            RuntimeNodeIds = ["runtime-enabled"]
+        };
+
+        var result = await page.OnPostCreateAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.NotNull(captured);
+        Assert.Equal("Rollout", captured!.Strategy);
+    }
+
+    [Fact]
+    public async Task OnPostCreateAcceptsRolloutForNewVersionArtifacts()
+    {
+        var fixture = new Fixture();
+        CreateReleaseInput? captured = null;
+        fixture.ArtifactService.GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
+            .Returns(Page(new ArtifactModel
+            {
+                Id = "artifact-new",
+                OrchestrationDefinitionId = "sales.sale.created",
+                OrchestrationVersionId = "artifact-new-version",
+                OrchestrationDisplayName = "sales.sale.created",
+                VersionLabel = "1.0.1",
+                VersionNumber = "1.0.1",
+                ArtifactType = "orchestration-version.new",
+                SchemaVersion = "1.0",
+                Payload = "{}",
+                Metadata = "{}",
+                SourceEvent = "tests",
+                SourceVersion = "1.0.1",
+                Checksum = "checksum-new",
+                CreatedAtUtc = DateTime.UtcNow
+            }));
+        fixture.ReleaseService
+            .Create(Arg.Do<CreateReleaseInput>(input => captured = input), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("release-new"));
+        var page = fixture.CreatePage();
+        page.Input = new ReleasesIndexModel.ReleaseInput
+        {
+            OrchestrationDefinitionId = "sales.sale.created",
+            ArtifactId = "artifact-new",
+            Strategy = "Rollout",
+            RuntimeNodeIds = ["runtime-enabled"]
+        };
+
+        var result = await page.OnPostCreateAsync(CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.NotNull(captured);
+        Assert.Equal("Rollout", captured!.Strategy);
+    }
+
+    [Fact]
     public async Task OnPostCreatePassesDirectStrategyToApplicationService()
     {
         var fixture = new Fixture();

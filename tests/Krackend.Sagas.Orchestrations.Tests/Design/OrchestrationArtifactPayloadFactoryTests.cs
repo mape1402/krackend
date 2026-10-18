@@ -97,6 +97,35 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
     }
 
     [Fact]
+    public void CreatePayloadJson_RejectsUnsupportedTriggerChannels()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersion(definition.Id);
+        version.TriggerBindings[0].TriggerChannel = new UnsupportedTriggerChannel();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version));
+
+        Assert.Contains(nameof(UnsupportedTriggerChannel), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePayloadJson_DoesNotEnableTriggerValidationWhenNoTriggerValidationIsConfigured()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersion(definition.Id);
+        var channel = Assert.IsType<EventTriggerChannel>(version.TriggerBindings[0].TriggerChannel);
+        channel.HasValidation = false;
+        channel.HasSchemaValidation = false;
+        channel.Validation = null!;
+
+        var payloadJson = new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version);
+        var validation = JsonNode.Parse(payloadJson)!["TriggerBindings"]!.AsArray()[0]!["TriggerChannel"]!["Validation"]!.AsObject();
+
+        Assert.False(validation["IsEnabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public void CreatePayloadJson_IncludesMetadataDescriptorSnapshots()
     {
         var definition = CreateDefinition();
