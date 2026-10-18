@@ -70,13 +70,6 @@ internal sealed class DefaultExecutionPolicyResolver : IExecutionPolicyResolver
             ? FirstOrDefaultProvider(allowedProviders)
             : selectedProvider;
 
-        if (string.IsNullOrWhiteSpace(selectedProvider))
-        {
-            return ExecutionPolicyResolutionResult.Failure(
-                "ExecutionProviderMissing",
-                $"No execution provider can be resolved for task '{request.Task.Key}' in stage '{request.StageKey}'.");
-        }
-
         if (forbiddenProviders.Contains(selectedProvider))
         {
             return ExecutionPolicyResolutionResult.Failure(

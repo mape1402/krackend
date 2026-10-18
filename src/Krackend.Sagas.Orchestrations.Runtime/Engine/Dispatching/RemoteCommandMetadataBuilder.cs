@@ -26,7 +26,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
             if (HasMessageMetadata(messageMetadata))
             {
                 metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey] =
-                    JsonSerializer.SerializeToNode(messageMetadata, SerializerOptions) ?? new JsonObject();
+                    JsonSerializer.SerializeToNode(messageMetadata, SerializerOptions)!;
             }
 
             if (propagationMetadata is not { HasItems: true })

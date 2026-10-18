@@ -199,6 +199,24 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
     }
 
     [Fact]
+    public async Task OrchestrationInstanceRepositoryKeepsTheLeaseWhenUpdatingTheSameInstanceReference()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        instance.ActiveLeaseId = "lease-1";
+        instance.ActiveLeaseExpiresOnUtc = DateTime.UtcNow.AddMinutes(1);
+        await repository.Create(instance);
+
+        await repository.Update(instance);
+
+        var persisted = await repository.GetById(instance.Id);
+        Assert.Same(instance, persisted);
+        Assert.Equal("lease-1", persisted.ActiveLeaseId);
+    }
+
+    [Fact]
     public async Task OrchestrationInstanceRepositoryReturnsRecentInstancesAndStatusSummary()
     {
         using var provider = CreateProvider();

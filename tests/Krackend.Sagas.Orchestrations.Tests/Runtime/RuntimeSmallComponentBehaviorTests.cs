@@ -16,6 +16,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.RetryStrategies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TimeoutBehaviorPolicies;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfigurations;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
+using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
@@ -375,6 +376,27 @@ public sealed class RuntimeSmallComponentBehaviorTests
             Environment.SetEnvironmentVariable("KUBERNETES_POD_UID", previousKubernetesPodUid);
             Environment.SetEnvironmentVariable("HOSTNAME", previousHostname);
         }
+    }
+
+    [Fact]
+    public void DefaultRuntimeReplicaIdentityUsesTheDefaultLaneForWhitespacePrefix()
+    {
+        var identity = CreateReplicaIdentity(new RuntimeReplicaOptions
+        {
+            ReplicaId = "replica-a",
+            StandupLanePrefix = " "
+        });
+
+        Assert.Equal("runtime-standup:replica-a", identity.LocalStandupLane);
+    }
+
+    [Fact]
+    public async Task DefaultIntakeBufferAcceptsWorkItemsAndNullFallbackItems()
+    {
+        var buffer = new DefaultIntakeBuffer(NullLogger<DefaultIntakeBuffer>.Instance);
+
+        await buffer.EnqueueWorkAsync(new WorkItem { ArtifactId = "artifact-a" });
+        await buffer.EnqueueWorkAsync(null!);
     }
 
     [Fact]
