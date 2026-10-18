@@ -1295,6 +1295,63 @@ public sealed class OrchestrationButterMorphViewerHostTests
     }
 
     [Fact]
+    public async Task MappingViewerReportsTargetImportFailuresWithoutDiscardingTheStoredDsl()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContexts = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var schemaContext = CreateSchemaContext();
+        schemaContexts.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(schemaContext);
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            Transformation = CreateTransformation("target { Result: $trigger.id }")
+        });
+
+        var host = new OrchestrationButterMorphMappingViewerHost(
+            schemaContexts,
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            new FailingSchemaImporter("The target schema is invalid."),
+            Substitute.For<IDslParser>());
+
+        var result = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskTransformation("version-1", "task-1")
+        });
+
+        Assert.Null(result.TargetSchema);
+        Assert.Equal("target { Result: $trigger.id }", result.DslContent);
+        Assert.Contains("The target schema is invalid.", result.Message);
+    }
+
+    [Fact]
+    public async Task MappingViewerReportsMissingTargetWhenTheSchemaContextIsUnavailable()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContexts = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        schemaContexts.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns((OrchestrationSchemaContext)null!);
+
+        var host = new OrchestrationButterMorphMappingViewerHost(
+            schemaContexts,
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            CreateImporter(),
+            Substitute.For<IDslParser>());
+
+        var result = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskTransformation("version-1", "task-1")
+        });
+
+        Assert.Null(result.TargetSchema);
+        Assert.Contains("does not have a stored schema snapshot", result.Message);
+    }
+
+    [Fact]
     public async Task MappingViewerLoadsStoredCompensationDefinitionsAndRejectsUnknownContext()
     {
         var contextParser = new OrchestrationButterMorphDesignerContextParser();
@@ -1513,4 +1570,14 @@ public sealed class OrchestrationButterMorphViewerHostTests
 
     private static OrchestrationButterMorphSchemaImporter CreateImporter()
         => new(new JsonSchemaImporter(), new PayloadSchemaDefinitionHydrator(), new PayloadSchemaBuilder());
+
+    private sealed class FailingSchemaImporter(string message) : IOrchestrationButterMorphSchemaImporter
+    {
+        public bool TryImport(SchemaBinding binding, out IStructureSchema schema, out string error)
+        {
+            schema = null!;
+            error = message;
+            return false;
+        }
+    }
 }

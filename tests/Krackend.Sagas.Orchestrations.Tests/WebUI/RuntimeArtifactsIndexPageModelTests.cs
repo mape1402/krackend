@@ -49,6 +49,25 @@ public sealed class RuntimeArtifactsIndexPageModelTests
     }
 
     [Fact]
+    public async Task OnGetAsync_NormalizesMissingLifecycleReferencesForDisplay()
+    {
+        var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);
+        artifact.LastReleaseId = null;
+        artifact.LastControlPlaneArtifactId = null;
+        artifact.ReleaseStrategy = null;
+        artifact.ProjectionError = null;
+        var model = CreateModel(new ArtifactRepositoryStub(artifact));
+
+        await model.OnGetAsync();
+
+        var row = Assert.Single(model.Artifacts);
+        Assert.Equal(string.Empty, row.LastReleaseId);
+        Assert.Equal(string.Empty, row.LastControlPlaneArtifactId);
+        Assert.Equal(string.Empty, row.ReleaseStrategy);
+        Assert.Equal(string.Empty, row.ProjectionError);
+    }
+
+    [Fact]
     public async Task OnPostRequestStandupAsync_WhenArtifactIsReadyAndActive_NotifiesReplicas()
     {
         var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 2, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);

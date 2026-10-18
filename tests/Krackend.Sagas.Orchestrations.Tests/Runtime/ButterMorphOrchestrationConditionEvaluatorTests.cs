@@ -234,6 +234,38 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_WhenSuccessfulTransformationHasNoResultGraph_ReturnsResultNotBoolean()
+    {
+        var engine = Substitute.For<IButterMorphEngine>();
+        var parser = Substitute.For<IDslParser>();
+        var sourceGraphBuilder = Substitute.For<IButterMorphSourceGraphBuilder>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(new DslDocument());
+        sourceGraphBuilder.Build(Arg.Any<OrchestrationPayloadContext>())
+            .Returns(new Dictionary<string, IStructureGraph>(StringComparer.Ordinal));
+        engine.Transform(Arg.Any<TransformationRequest>()).Returns(new TransformationResult
+        {
+            Succeeded = true,
+            ResultGraph = null!
+        });
+        var evaluator = new ButterMorphOrchestrationConditionEvaluator(
+            engine,
+            parser,
+            new ButterMorphDiagnosticMetadataMapper(),
+            sourceGraphBuilder);
+
+        var result = await evaluator.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Condition = EnabledCondition("$trigger.CanReserve"),
+            PayloadContext = EmptyPayloadContext(),
+            ElementKey = "reserve-inventory",
+            Phase = "Task"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ConditionResultNotBoolean", result.ErrorCode);
+    }
+
+    [Fact]
     public async Task EvaluateAsync_WhenDslCannotExecute_ReturnsExecutionFailedWithDiagnostics()
     {
         var result = await CreateEvaluator().EvaluateAsync(new OrchestrationConditionEvaluationRequest

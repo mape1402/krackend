@@ -737,7 +737,7 @@ public static class OrchestrationPipelineBuilderExtensions
         }
 
         var inbox = services.GetService<IInboxContextAccessor>()?.Current;
-        if (inbox?.Entry?.Metadata is null
+        if (inbox is null || inbox.Entry.Metadata is null
             || !inbox.Entry.Metadata.TryGetValue(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey, out var payload)
             || string.IsNullOrWhiteSpace(payload))
         {
@@ -762,7 +762,7 @@ public static class OrchestrationPipelineBuilderExtensions
         }
 
         var inbox = services.GetService<IInboxContextAccessor>()?.Current;
-        if (inbox?.Entry?.Metadata is null || inbox.Entry.Metadata.Count == 0)
+        if (inbox is null || inbox.Entry.Metadata is null || inbox.Entry.Metadata.Count == 0)
         {
             return;
         }

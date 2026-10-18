@@ -959,6 +959,92 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
     }
 
     [Fact]
+    public void PrivateRequestEventPipelineCoreRejectsNullBuilder()
+    {
+        var method = typeof(OrchestrationPipelineBuilderExtensions)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(candidate => candidate.Name == "AttachRequestEvent" && candidate.GetGenericArguments().Length == 1)
+            .MakeGenericMethod(typeof(PipelineRequest));
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(
+            null,
+            [
+                null!,
+                (Func<PipelineRequest, object>)(static request => request),
+                "events.sales.completed",
+                "1.0.0"
+            ]));
+
+        Assert.Equal("builder", Assert.IsType<ArgumentNullException>(exception.InnerException).ParamName);
+    }
+
+    [Fact]
+    public void PrivateRequestEventPipelineCoreRejectsNullTransform()
+    {
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest>>();
+        var method = typeof(OrchestrationPipelineBuilderExtensions)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(candidate => candidate.Name == "AttachRequestEvent" && candidate.GetGenericArguments().Length == 1)
+            .MakeGenericMethod(typeof(PipelineRequest));
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(
+            null,
+            [builder, null!, "events.sales.completed", "1.0.0"]));
+
+        Assert.Equal("transform", Assert.IsType<ArgumentNullException>(exception.InnerException).ParamName);
+    }
+
+    [Fact]
+    public void PrivateResponseEventPipelineCoreRejectsNullBuilder()
+    {
+        var method = GetResponseEventCore();
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(
+            null,
+            [
+                null!,
+                CreateResponseEventTransform(),
+                (Func<PipelineResponse, object>)(static response => response),
+                "events.sales.completed",
+                "1.0.0"
+            ]));
+
+        Assert.Equal("builder", Assert.IsType<ArgumentNullException>(exception.InnerException).ParamName);
+    }
+
+    [Fact]
+    public void PrivateResponseEventPipelineCoreRejectsNullTransform()
+    {
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        var method = GetResponseEventCore();
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(
+            null,
+            [
+                builder,
+                null!,
+                (Func<PipelineResponse, object>)(static response => response),
+                "events.sales.completed",
+                "1.0.0"
+            ]));
+
+        Assert.Equal("transform", Assert.IsType<ArgumentNullException>(exception.InnerException).ParamName);
+    }
+
+    [Fact]
+    public void PrivateResponseEventPipelineCoreRejectsNullTransformer()
+    {
+        var builder = Substitute.For<IPipelineBuilder<PipelineRequest, PipelineResponse>>();
+        var method = GetResponseEventCore();
+
+        var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(
+            null,
+            [builder, CreateResponseEventTransform(), null!, "events.sales.completed", "1.0.0"]));
+
+        Assert.Equal("transformer", Assert.IsType<ArgumentNullException>(exception.InnerException).ParamName);
+    }
+
+    [Fact]
     public void PrivateRestoreDeferredMetadataCoversInboxFallbacksAndReservedKeys()
     {
         var inboxAccessor = new TestInboxContextAccessor();
@@ -1145,6 +1231,15 @@ public sealed class SpiderOrchestrationPipelineBuilderExtensionsTests
                 SettingsPayload = "{}"
             }
         };
+
+    private static MethodInfo GetResponseEventCore()
+        => typeof(OrchestrationPipelineBuilderExtensions)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(candidate => candidate.Name == "AttachResponseEvent" && candidate.GetGenericArguments().Length == 3)
+            .MakeGenericMethod(typeof(PipelineRequest), typeof(PipelineResponse), typeof(Func<PipelineResponse, object>));
+
+    private static Func<PipelineRequest, PipelineResponse, Func<PipelineResponse, object>, object> CreateResponseEventTransform()
+        => static (_, response, transformer) => transformer(response);
 
     private static ServiceProvider CreateClientProvider(IInboxContextAccessor inboxAccessor)
     {

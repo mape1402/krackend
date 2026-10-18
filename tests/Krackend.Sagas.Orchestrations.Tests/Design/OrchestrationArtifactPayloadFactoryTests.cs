@@ -453,6 +453,19 @@ public sealed class OrchestrationArtifactPayloadFactoryTests
         }
     }
 
+    [Fact]
+    public void CreatePayloadJson_RejectsADeploymentWithoutASemanticVersion()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+        version.Version = null;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new OrchestrationArtifactPayloadFactory().CreatePayloadJson(definition, version));
+
+        Assert.Contains("semantic version", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static OrchestrationDefinition CreateDefinition()
         => new()
         {

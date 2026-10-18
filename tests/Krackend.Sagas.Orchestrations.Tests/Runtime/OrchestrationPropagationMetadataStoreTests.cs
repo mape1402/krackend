@@ -17,7 +17,8 @@ public sealed class OrchestrationPropagationMetadataStoreTests
         {
             Items =
             {
-                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1"}""")!
+                ["audit.context"] = JsonNode.Parse("""{"requestId":"req-1"}""")!,
+                ["optional.context"] = null
             }
         };
 
@@ -29,6 +30,8 @@ public sealed class OrchestrationPropagationMetadataStoreTests
         var loadedAgain = store.Load(instance);
 
         Assert.Equal("req-1", loadedAgain.Items["audit.context"]!["requestId"]!.GetValue<string>());
+        Assert.True(loadedAgain.Items.ContainsKey("optional.context"));
+        Assert.Null(loadedAgain.Items["optional.context"]);
     }
 
     [Fact]

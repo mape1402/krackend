@@ -209,6 +209,47 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public void LifecycleArtifactTypeRejectsAnUnknownReviewOperation()
+    {
+        var method = typeof(ApplyOrchestrationVersionReviewCommandHandler).GetMethod(
+            "GetArtifactType",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        var exception = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+            method!.Invoke(null, [(OrchestrationVersionReviewOperation)999]));
+
+        Assert.IsType<ArgumentOutOfRangeException>(exception.InnerException);
+    }
+
+    [Fact]
+    public void LifecyclePublicationRejectsAnUnknownReviewOperation()
+    {
+        var fixture = new Fixture(OrchestrationVersionStatus.Deployed);
+        var method = typeof(ApplyOrchestrationVersionReviewCommandHandler).GetMethod(
+            "Publish",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        var exception = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+            method!.Invoke(fixture.Apply,
+            [
+                (OrchestrationVersionReviewOperation)999,
+                new OrchestrationDefinition
+                {
+                    Id = fixture.Version.OrchestrationDefinitionId,
+                    Key = "orders.fulfillment",
+                    Name = "Order fulfillment",
+                    CreatedBy = "tests"
+                },
+                fixture.Version,
+                "{}",
+                "deployer",
+                CancellationToken.None
+            ]));
+
+        Assert.IsType<ArgumentOutOfRangeException>(exception.InnerException);
+    }
+
     private sealed class Fixture
     {
         public Fixture(OrchestrationVersionStatus status)

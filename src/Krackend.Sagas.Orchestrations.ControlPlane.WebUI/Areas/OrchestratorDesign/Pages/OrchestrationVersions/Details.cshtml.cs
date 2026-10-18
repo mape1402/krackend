@@ -536,8 +536,7 @@ public sealed class DetailsModel : PageModel
 
     private void ValidateTriggerInput()
     {
-        var triggerType = ResolveTriggerType(ParseEnum(TriggerInput.TriggerType, TriggerType.Event));
-        if (triggerType == TriggerType.Event && string.IsNullOrWhiteSpace(TriggerInput.EventTopic))
+        if (string.IsNullOrWhiteSpace(TriggerInput.EventTopic))
         {
             ModelState.AddModelError(nameof(TriggerInput.EventTopic), "Capture the event topic.");
         }
@@ -601,8 +600,8 @@ public sealed class DetailsModel : PageModel
 
         foreach (var validationResult in validationResults)
         {
-            var memberNames = validationResult.MemberNames?.Where(memberName => !string.IsNullOrWhiteSpace(memberName)).ToArray();
-            if (memberNames is null || memberNames.Length == 0)
+            var memberNames = validationResult.MemberNames.Where(memberName => !string.IsNullOrWhiteSpace(memberName)).ToArray();
+            if (memberNames.Length == 0)
             {
                 ModelState.AddModelError(modelName, validationResult.ErrorMessage ?? "The value is invalid.");
                 continue;

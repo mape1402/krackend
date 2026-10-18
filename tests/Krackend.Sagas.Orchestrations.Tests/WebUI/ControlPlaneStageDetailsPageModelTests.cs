@@ -1457,6 +1457,61 @@ public sealed class ControlPlaneStageDetailsPageModelTests
     }
 
     [Fact]
+    public void HttpConfigurationAllowsSchemaValidationWithoutStrictMode()
+    {
+        var input = new DetailsModel.CreateTaskInput
+        {
+            HttpBaseUrlVariableRef = "service.url",
+            HttpRelativePath = "/reserve",
+            HttpMethod = "post",
+            HasHttpSchemaValidation = true,
+            HttpSchemaContractKey = " ",
+            HttpSchemaStrictMode = false,
+            CompensationHttpBaseUrlVariableRef = "service.url",
+            CompensationHttpRelativePath = "/undo",
+            CompensationHttpMethod = "post",
+            HasCompensationHttpSchemaValidation = true,
+            CompensationHttpSchemaContractKey = " ",
+            CompensationHttpSchemaStrictMode = false
+        };
+
+        var task = Assert.IsType<HttpTaskConfiguration>(InvokePrivateStatic<ITaskConfiguration>(
+            "BuildTaskConfiguration",
+            TaskKind.Http,
+            input,
+            "knowl-default"));
+        var compensation = Assert.IsType<HttpTaskConfiguration>(InvokePrivateStatic<ITaskConfiguration>(
+            "BuildCompensationTaskConfiguration",
+            TaskKind.Http,
+            input,
+            "knowl-default"));
+
+        Assert.NotNull(task.SchemaBinding);
+        Assert.False(task.SchemaBinding!.StrictMode);
+        Assert.NotNull(compensation.SchemaBinding);
+        Assert.False(compensation.SchemaBinding!.StrictMode);
+    }
+
+    [Fact]
+    public void TransformationFallbackNormalizesSparseNonDslInput()
+    {
+        var transformation = InvokePrivateStatic<TransformationDefinition>(
+            "BuildTransformation",
+            EngineType.Plugin.ToString(),
+            null!,
+            "source",
+            "target",
+            "diagnostics");
+
+        var configuration = Assert.IsType<DslTransformationConfiguration>(transformation.Configuration);
+        Assert.Equal(EngineType.DSL, transformation.Engine);
+        Assert.Equal(string.Empty, configuration.Dsl);
+        Assert.Equal("source", configuration.SourceContextHash);
+        Assert.Equal("target", configuration.TargetSchemaHash);
+        Assert.Equal("diagnostics", configuration.SemanticDiagnosticsJson);
+    }
+
+    [Fact]
     public async Task TaskTransformationAndSchemaContextEndpointsUpdateAndSerializePayloads()
     {
         var fixture = new Fixture();

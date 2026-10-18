@@ -128,6 +128,50 @@ public sealed class OrchestrationVersionReviewRepositoryTests
         Assert.Equal($"closed:{review.Id}", entity.PendingSlot);
     }
 
+    [Fact]
+    public void LegacyReviewMappingNormalizesBlankTokensAndClosedApplicationSlots()
+    {
+        var review = CreateReview();
+        review.ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Aborted;
+        review.StateToken = null!;
+        var entity = InvokePrivateStatic<Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities.OrchestrationVersionReviewEntity>(
+            "ToEntity",
+            review);
+
+        Assert.Equal($"closed:{review.Id}", entity.PendingSlot);
+        Assert.Equal(string.Empty, entity.StateToken);
+        entity.StateToken = null!;
+
+        var restored = InvokePrivateStatic<OrchestrationVersionReview>("ToDomain", entity);
+
+        Assert.Equal(string.Empty, restored.StateToken);
+    }
+
+    [Fact]
+    public async Task CreateReplacesWhitespaceOnlyStateTokensForLegacySafety()
+    {
+        var options = new DbContextOptionsBuilder<ControlPlaneDbContext>()
+            .UseInMemoryDatabase($"krackend-whitespace-review-token-{Guid.NewGuid():N}")
+            .Options;
+        var review = CreateReview();
+        review.StateToken = "   ";
+
+        await using var context = new ControlPlaneDbContext(options);
+        await new OrchestrationVersionReviewRepository(context).Create(review);
+
+        Assert.False(string.IsNullOrWhiteSpace(review.StateToken));
+    }
+
+    private static T InvokePrivateStatic<T>(string methodName, params object?[] arguments)
+    {
+        var method = typeof(OrchestrationVersionReviewRepository).GetMethod(
+            methodName,
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        Assert.NotNull(method);
+        return (T)method.Invoke(null, arguments)!;
+    }
+
     private static OrchestrationVersionReview CreateReview()
         => new()
         {

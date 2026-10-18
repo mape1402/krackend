@@ -33,7 +33,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Metadata
             }
 
             instance.Metadata[OrchestrationMetadataConstants.OrchestrationPropagationMetadataKey] =
-                JsonSerializer.SerializeToNode(metadata.Clone(), SerializerOptions) ?? new JsonObject();
+                JsonSerializer.SerializeToNode(metadata.Clone(), SerializerOptions)!;
         }
 
         private static OrchestrationPropagationMetadata TryDeserializeEnvelope(JsonNode node)

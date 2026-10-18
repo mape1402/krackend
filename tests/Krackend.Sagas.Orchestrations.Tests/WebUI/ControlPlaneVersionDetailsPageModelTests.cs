@@ -50,6 +50,20 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public void SelectionListsExposeOnlySupportedTriggerAndCompensationValues()
+    {
+        var page = CreateContext().Page;
+
+        Assert.Equal([TriggerType.Event.ToString()], page.TriggerTypes.Select(x => x.Value));
+        Assert.Equal([TaskKind.Messaging.ToString()], page.CompensationTaskKinds.Select(x => x.Value));
+        Assert.Equal([TaskDispatchType.FireAndForget.ToString()], page.CompensationDispatchTypes.Select(x => x.Value));
+        Assert.Equal([OnErrorPolicy.Stop.ToString(), OnErrorPolicy.Continue.ToString()], page.CompensationOnErrorPolicies.Select(x => x.Value));
+        Assert.Equal([RetryStrategyType.Fixed.ToString()], page.RetryStrategyTypes.Select(x => x.Value));
+        Assert.NotEmpty(page.TimeoutBehaviors);
+        Assert.NotEmpty(page.TimeoutActions);
+    }
+
+    [Fact]
     public async Task ConstructorRejectsMissingServicesAndUsesFallbackProviderKey()
     {
         var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
@@ -1322,6 +1336,64 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.True(reconcile.RetryPolicy.StopOnNonRetryableError);
         Assert.Equal(TimeoutBehavior.Fail, failTimeout.TimeoutBehavior);
         Assert.Equal("TIMEOUT", ((FailTimeoutBehaviorPolicy)failTimeout.TimeoutBehaviorPolicy).ErrorCode);
+    }
+
+    [Fact]
+    public void TriggerCompensationKeepsStoredMappingsWhenTheyAreDisabled()
+    {
+        var existingCondition = new ExecutionCondition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslConditionConfiguration { Expression = new Expression("$trigger.CanUndo") }
+        };
+        var existingTransformation = new TransformationDefinition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslTransformationConfiguration { Dsl = "target { Id: $trigger.Id }" }
+        };
+        var existing = new CompensationDefinition
+        {
+            ExecutionCondition = existingCondition,
+            Transformation = existingTransformation
+        };
+        var input = new VersionDetailsModel.UpsertTriggerInput
+        {
+            HasCompensation = true,
+            CompensationMessagingTopic = "commands.undo",
+            CompensationMessagingVersion = "1.0.0",
+            HasCompensationExecutionCondition = false,
+            HasCompensationTransformation = false
+        };
+
+        var compensation = InvokePrivateStatic<CompensationDefinition?>(
+            "BuildTriggerCompensationDefinition",
+            input,
+            "orchestration-1",
+            "knowl",
+            existing);
+
+        Assert.NotNull(compensation);
+        Assert.Same(existingCondition, compensation.ExecutionCondition);
+        Assert.Same(existingTransformation, compensation.Transformation);
+    }
+
+    [Fact]
+    public void TimeoutPolicyUsesTheProvidedFailErrorCodeWhenPresent()
+    {
+        var timeout = InvokePrivateStatic<TimeoutPolicy>(
+            "BuildTimeoutPolicy",
+            5d,
+            "unsupported",
+            "CUSTOM_TIMEOUT",
+            1d,
+            OrchestrationActionOnTimeout.Block.ToString(),
+            RetryStrategyType.Fixed.ToString(),
+            0,
+            0d,
+            string.Empty,
+            false);
+
+        Assert.Equal("CUSTOM_TIMEOUT", ((FailTimeoutBehaviorPolicy)timeout.TimeoutBehaviorPolicy).ErrorCode);
     }
 
     [Fact]
