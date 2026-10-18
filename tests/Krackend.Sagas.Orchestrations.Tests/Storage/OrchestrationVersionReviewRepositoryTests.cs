@@ -10,6 +10,23 @@ using Microsoft.EntityFrameworkCore;
 public sealed class OrchestrationVersionReviewRepositoryTests
 {
     [Fact]
+    public async Task GetAllNormalizesMissingPagingSettingsForAnEmptyReviewQueue()
+    {
+        var options = new DbContextOptionsBuilder<ControlPlaneDbContext>()
+            .UseInMemoryDatabase($"krackend-empty-review-list-{Guid.NewGuid():N}")
+            .Options;
+        await using var context = new ControlPlaneDbContext(options);
+
+        var rows = await new OrchestrationVersionReviewRepository(context).GetAll(null!);
+
+        Assert.Equal(1, rows.PageNumber);
+        Assert.Equal(25, rows.PageSize);
+        Assert.Equal(1, rows.TotalPages);
+        Assert.Equal(0, rows.TotalRows);
+        Assert.Empty(rows.Rows);
+    }
+
+    [Fact]
     public async Task GetAllReturnsLifecycleReviewsInReverseChronologicalOrderAndPagesThem()
     {
         var options = new DbContextOptionsBuilder<ControlPlaneDbContext>()
@@ -85,6 +102,30 @@ public sealed class OrchestrationVersionReviewRepositoryTests
                 File.Delete(databasePath);
             }
         }
+    }
+
+    [Fact]
+    public async Task CreatePreservesAnExistingStateTokenAndUsesAClosedSlotAfterApplication()
+    {
+        var options = new DbContextOptionsBuilder<ControlPlaneDbContext>()
+            .UseInMemoryDatabase($"krackend-closed-review-slot-{Guid.NewGuid():N}")
+            .Options;
+        var review = CreateReview();
+        review.ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Applied;
+        review.StateToken = "existing-state-token";
+
+        await using (var setup = new ControlPlaneDbContext(options))
+        {
+            await new OrchestrationVersionReviewRepository(setup).Create(review);
+        }
+
+        await using var verification = new ControlPlaneDbContext(options);
+        var persisted = await new OrchestrationVersionReviewRepository(verification).GetById(review.Id);
+        var entity = await verification.Set<Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.Entities.OrchestrationVersionReviewEntity>()
+            .SingleAsync(x => x.Id == review.Id);
+
+        Assert.Equal("existing-state-token", persisted.StateToken);
+        Assert.Equal($"closed:{review.Id}", entity.PendingSlot);
     }
 
     private static OrchestrationVersionReview CreateReview()

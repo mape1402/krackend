@@ -132,6 +132,97 @@ public sealed class InMemoryRepositoryBranchTests
         Assert.Equal("""{"updated":true}""", Assert.Single(afterUpsert).SettingsPayload);
     }
 
+    [Fact]
+    public async Task RuntimeTriggerClaimRepositoryNormalizesDuplicatesAndTreatsEmptyInputsAsNoOps()
+    {
+        await using var provider = CreateRuntimeProvider();
+        var repository = provider.GetRequiredService<IRuntimeTriggerClaimRepository>();
+        var owner = Id.New();
+        var contender = Id.New();
+
+        var nullInput = await repository.ClaimAsync(null!, owner, []);
+        var empty = await repository.ClaimAsync([" ", string.Empty], owner, []);
+        var acquired = await repository.ClaimAsync(
+            [" messaging|events.sales.created|1.0.0 ", "MESSAGING|EVENTS.SALES.CREATED|1.0.0"],
+            owner,
+            null!);
+        var sameOwner = await repository.ClaimAsync(["messaging|events.sales.created|1.0.0"], owner, []);
+        var conflict = await repository.ClaimAsync(["messaging|events.sales.created|1.0.0"], contender, []);
+        await repository.ReleaseAsync(null!);
+        await repository.ReleaseAsync([]);
+        await repository.ReleaseAsync([Id.New()]);
+
+        Assert.True(nullInput.Succeeded);
+        Assert.True(empty.Succeeded);
+        Assert.True(acquired.Succeeded);
+        Assert.True(sameOwner.Succeeded);
+        Assert.False(conflict.Succeeded);
+        Assert.Equal(owner, conflict.ConflictingArtifactId);
+    }
+
+    [Fact]
+    public async Task RuntimeTriggerClaimRepositoryReleasesEveryIdentityOwnedByAnArtifact()
+    {
+        await using var provider = CreateRuntimeProvider();
+        var repository = provider.GetRequiredService<IRuntimeTriggerClaimRepository>();
+        var retiring = Id.New();
+        var replacement = Id.New();
+        var identities = new[]
+        {
+            "messaging|events.sales.created|1.0.0",
+            "messaging|events.sales.cancelled|1.0.0"
+        };
+
+        await repository.ClaimAsync(identities, retiring, []);
+        await repository.ReleaseAsync([retiring]);
+        var claimed = await repository.ClaimAsync(identities, replacement, []);
+
+        Assert.True(claimed.Succeeded);
+    }
+
+    [Fact]
+    public async Task RuntimeIngressConfigurationRepositoryDeactivatesOnlyTriggerConfigurations()
+    {
+        await using var provider = CreateRuntimeProvider();
+        var artifactRepository = provider.GetRequiredService<IRuntimeArtifactRepository>();
+        var repository = provider.GetRequiredService<IRuntimeIngressConfigurationRepository>();
+        var artifactId = Id.New();
+        await artifactRepository.Upsert(Artifact(artifactId, RuntimeOrchestrationArtifactStatus.Ready, isActive: true));
+        var trigger = Configuration(artifactId, "trigger");
+        var backchannel = Configuration(artifactId, "backchannel");
+        backchannel.IngressKind = IngressKind.Backchannel;
+
+        await repository.UpsertForArtifactAsync(artifactId, [trigger, backchannel]);
+        await repository.DeactivateTriggersForArtifactsAsync(null!);
+        await repository.DeactivateTriggersForArtifactsAsync([]);
+        await repository.DeactivateTriggersForArtifactsAsync([artifactId]);
+        var remaining = await repository.GetActiveByArtifactIdAsync(artifactId);
+
+        Assert.Equal("backchannel", Assert.Single(remaining).ConfigurationKey);
+    }
+
+    [Fact]
+    public async Task RuntimeIngressConfigurationRepositoryReplacesActiveConfigurationsForAnArtifact()
+    {
+        await using var provider = CreateRuntimeProvider();
+        var artifactRepository = provider.GetRequiredService<IRuntimeArtifactRepository>();
+        var repository = provider.GetRequiredService<IRuntimeIngressConfigurationRepository>();
+        var artifactId = Id.New();
+        await artifactRepository.Upsert(Artifact(artifactId, RuntimeOrchestrationArtifactStatus.Ready, isActive: true));
+        var original = Configuration(artifactId, "original");
+        var retained = Configuration(artifactId, "retained");
+        await repository.UpsertForArtifactAsync(artifactId, [original, retained]);
+
+        var replacement = Configuration(artifactId, "retained");
+        replacement.SettingsPayload = """{"replacement":true}""";
+        await repository.UpsertForArtifactAsync(artifactId, [replacement]);
+        var active = await repository.GetActiveByArtifactIdAsync(artifactId);
+
+        var configuration = Assert.Single(active);
+        Assert.Equal("retained", configuration.ConfigurationKey);
+        Assert.Equal("""{"replacement":true}""", configuration.SettingsPayload);
+    }
+
     private static ServiceProvider CreateRuntimeProvider()
     {
         var services = new ServiceCollection();
