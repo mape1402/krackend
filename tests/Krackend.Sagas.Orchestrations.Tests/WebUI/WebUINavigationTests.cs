@@ -26,6 +26,7 @@ using SecurityWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.S
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
+using System.Reflection;
 public sealed class WebUINavigationTests
 {
     [Fact]
@@ -102,6 +103,20 @@ public sealed class WebUINavigationTests
         };
 
         Assert.Equal("dark", theme.CssMode);
+    }
+
+    [Fact]
+    public void ControlPlaneWebUiNormalizesBlankRoutePrefixesAndSchemaRegistryKeys()
+    {
+        var extensions = typeof(ControlPlaneWebUiServices);
+        var normalizePrefix = extensions.GetMethod("NormalizePrefix", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var normalizeProvider = extensions.GetMethod("NormalizeSchemaRegistryProviderKey", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Assert.Equal("admin/design", normalizePrefix.Invoke(null, ["/", "admin/design"]));
+        Assert.Equal("admin/design", normalizePrefix.Invoke(null, [null!, "admin/design"]));
+        Assert.Equal("custom/design", normalizePrefix.Invoke(null, ["/custom/design/", "admin/design"]));
+        Assert.Equal("knowl", normalizeProvider.Invoke(null, [" "]));
+        Assert.Equal("registry", normalizeProvider.Invoke(null, [" registry "]));
     }
 
     [Fact]
