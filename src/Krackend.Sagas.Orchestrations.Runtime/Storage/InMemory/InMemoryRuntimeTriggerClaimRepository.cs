@@ -50,7 +50,7 @@ internal sealed class InMemoryRuntimeTriggerClaimRepository : IRuntimeTriggerCla
             {
                 _store.TriggerClaims[key] = new RuntimeTriggerClaim
                 {
-                    Identity = key,
+                    Id = key,
                     RuntimeOrchestrationArtifactId = artifactId,
                     UpdatedOnUtc = now
                 };

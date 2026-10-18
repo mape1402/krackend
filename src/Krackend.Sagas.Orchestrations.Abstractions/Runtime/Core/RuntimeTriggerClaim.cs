@@ -13,8 +13,11 @@ public sealed class RuntimeTriggerClaim
 {
     /// <summary>
     /// Gets or sets the normalized transport/topic/version identity.
+    ///
+    /// The conventional <c>Id</c> name intentionally lets EF providers select their
+    /// native primary-key representation without a provider-specific mapping.
     /// </summary>
-    public required string Identity { get; set; }
+    public required string Id { get; set; }
 
     /// <summary>
     /// Gets or sets the artifact that currently owns the trigger.

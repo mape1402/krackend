@@ -178,8 +178,8 @@ public sealed class RuntimeDbContext : DbContext
     {
         var builder = modelBuilder.Entity<RuntimeTriggerClaim>();
         builder.ToTable("RuntimeTriggerClaims");
-        builder.HasKey(x => x.Identity);
-        builder.Property(x => x.Identity).HasMaxLength(1024).IsRequired();
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasMaxLength(1024).IsRequired();
         builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
         builder.HasIndex(x => x.RuntimeOrchestrationArtifactId);
     }

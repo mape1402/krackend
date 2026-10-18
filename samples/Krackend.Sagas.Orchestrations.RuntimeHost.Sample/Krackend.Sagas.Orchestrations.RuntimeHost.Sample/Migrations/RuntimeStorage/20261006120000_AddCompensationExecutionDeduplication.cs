@@ -1,3 +1,5 @@
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeStorage
 {
     /// <inheritdoc />
+    [DbContext(typeof(RuntimeDbContext))]
     [Migration("20261006120000_AddCompensationExecutionDeduplication")]
     public partial class AddCompensationExecutionDeduplication : Migration
     {

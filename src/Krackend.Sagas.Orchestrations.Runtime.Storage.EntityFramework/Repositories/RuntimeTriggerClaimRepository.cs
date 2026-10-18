@@ -36,7 +36,7 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
 
         var replaceable = (replaceableArtifactIds ?? Array.Empty<Id>()).ToHashSet();
         var existingClaims = await _dbContext.RuntimeTriggerClaims
-            .Where(claim => keys.Contains(claim.Identity))
+            .Where(claim => keys.Contains(claim.Id))
             .ToArrayAsync(cancellationToken);
 
         var conflicting = existingClaims.FirstOrDefault(claim =>
@@ -47,7 +47,7 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
             return RuntimeTriggerClaimResult.Conflict(conflicting.RuntimeOrchestrationArtifactId);
         }
 
-        var known = existingClaims.ToDictionary(claim => claim.Identity, StringComparer.Ordinal);
+        var known = existingClaims.ToDictionary(claim => claim.Id, StringComparer.Ordinal);
         var now = DateTime.UtcNow;
         foreach (var key in keys)
         {
@@ -60,7 +60,7 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
 
             _dbContext.RuntimeTriggerClaims.Add(new RuntimeTriggerClaim
             {
-                Identity = key,
+                Id = key,
                 RuntimeOrchestrationArtifactId = artifactId,
                 UpdatedOnUtc = now
             });
@@ -84,7 +84,7 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
 
             var refreshedClaims = await _dbContext.RuntimeTriggerClaims
                 .AsNoTracking()
-                .Where(claim => keys.Contains(claim.Identity))
+                .Where(claim => keys.Contains(claim.Id))
                 .ToArrayAsync(cancellationToken);
             var collision = refreshedClaims.FirstOrDefault(claim => claim.RuntimeOrchestrationArtifactId != artifactId);
             return collision is null

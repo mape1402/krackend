@@ -356,6 +356,69 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.ToTable("OrchestrationInstances", "Runtime");
                 });
 
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.Abstractions.Runtime.RuntimeArtifactDeploymentRecord", b =>
+                {
+                    b.Property<byte[]>("Id")
+                        .HasColumnType("binary(16)");
+
+                    b.Property<DateTime>("AppliedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ArtifactType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ControlPlaneArtifactId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("LifecycleStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OrchestrationDefinitionKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("OrchestrationVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ReleaseId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ReleaseStrategy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<byte[]>("RuntimeOrchestrationArtifactId")
+                        .IsRequired()
+                        .HasColumnType("binary(16)");
+
+                    b.Property<string>("RuntimeStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ControlPlaneArtifactId")
+                        .IsUnique();
+
+                    b.HasIndex("ReleaseId");
+
+                    b.HasIndex("OrchestrationDefinitionKey", "AppliedOnUtc");
+
+                    b.ToTable("RuntimeArtifactDeploymentHistory", "Runtime");
+                });
+
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.Abstractions.Runtime.RuntimeOrchestrationArtifact", b =>
                 {
                     b.Property<byte[]>("Id")
@@ -387,6 +450,21 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<string>("LastControlPlaneArtifactId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("LastReleaseId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("LifecycleStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("Active");
+
                     b.Property<bool>("LoadedToCache")
                         .HasColumnType("bit");
 
@@ -412,6 +490,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime?>("ProjectionStartedOnUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ReleaseStrategy")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTime?>("RetiredOnUtc")
                         .HasColumnType("datetime2");
 
@@ -436,6 +518,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasKey("Id");
 
+                    b.HasIndex("LifecycleStatus", "IsActive");
+
                     b.HasIndex("OrchestrationDefinitionKey", "IsActive");
 
                     b.HasIndex("OrchestrationDefinitionKey", "Version")
@@ -444,6 +528,26 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("Status", "IsActive");
 
                     b.ToTable("RuntimeOrchestrationArtifacts", "Runtime");
+                });
+
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.Abstractions.Runtime.RuntimeTriggerClaim", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<byte[]>("RuntimeOrchestrationArtifactId")
+                        .IsRequired()
+                        .HasColumnType("binary(16)");
+
+                    b.Property<DateTime>("UpdatedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuntimeOrchestrationArtifactId");
+
+                    b.ToTable("RuntimeTriggerClaims", "Runtime");
                 });
 
             modelBuilder.Entity("Krackend.Sagas.Orchestrations.Abstractions.Runtime.StageExecution", b =>
@@ -956,6 +1060,11 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<string>("MessageDisposition")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RuntimeOrchestrationArtifactId")
                         .IsRequired()
