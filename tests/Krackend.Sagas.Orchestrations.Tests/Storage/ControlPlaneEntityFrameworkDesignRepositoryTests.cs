@@ -371,8 +371,9 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
         var versionOne = Version(definition.Id, 1);
         var versionTwo = Version(definition.Id, 2);
         await versionRepository.Create(versionOne);
+        await versionRepository.SetStatus(versionOne.Id, OrchestrationVersionStatus.Deployed);
         await versionRepository.Create(versionTwo);
-        await versionRepository.SetStatus(versionTwo.Id, OrchestrationVersionStatus.Approved);
+        await versionRepository.SetStatus(versionTwo.Id, OrchestrationVersionStatus.Deployed);
 
         var stage = new StageDefinition
         {
@@ -496,6 +497,25 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
         Assert.Empty(await taskRepository.GetAll(stage.Id));
         Assert.Empty(await triggerRepository.GetAll(versionTwo.Id));
         Assert.Empty(await variableRepository.GetAll(versionTwo.Id));
+    }
+
+    [Fact]
+    public async Task VersionRepositoryPreventsMultipleOpenDraftsWithoutCallerManagedSlots()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationVersionRepository>();
+        var definitionId = Id.New();
+
+        var first = Version(definitionId, 1);
+        await repository.Create(first);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.Create(Version(definitionId, 2)));
+
+        Assert.Contains("already has an open draft", exception.Message, StringComparison.Ordinal);
+        var persisted = await repository.GetById(first.Id);
+        Assert.Equal($"open:{definitionId}", persisted.DraftSlot);
     }
 
     [Fact]
@@ -1098,6 +1118,7 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
         var version = Version(definition.Id, 1);
         var secondVersion = Version(definition.Id, 2);
         await versionRepository.Create(version);
+        await versionRepository.SetStatus(version.Id, OrchestrationVersionStatus.Deployed);
         await versionRepository.Create(secondVersion);
 
         version.VersionLabel = "v1-updated";

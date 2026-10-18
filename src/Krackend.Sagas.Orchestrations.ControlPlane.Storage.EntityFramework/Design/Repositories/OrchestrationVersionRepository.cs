@@ -32,6 +32,13 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
     /// </summary>
     public async Task Create(OrchestrationVersion orchestrationVersion, CancellationToken cancellationToken = default)
     {
+        if (IsOpenDraft(orchestrationVersion.Status)
+            && await HasOpenDraft(orchestrationVersion.OrchestrationDefinitionId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "This orchestration already has an open draft. Deploy or abandon it before creating another draft.");
+        }
+
         _dbContext.OrchestrationVersions.Add(orchestrationVersion.ToEntity());
         try
         {
@@ -163,9 +170,19 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
     }
 
     private static string GetDraftSlot(Id orchestrationDefinitionId, Id versionId, OrchestrationVersionStatus status)
-        => status is OrchestrationVersionStatus.Draft or OrchestrationVersionStatus.PendingDeployment
+        => IsOpenDraft(status)
             ? $"open:{orchestrationDefinitionId}"
             : $"closed:{versionId}";
+
+    private Task<bool> HasOpenDraft(Id orchestrationDefinitionId, CancellationToken cancellationToken)
+        => _dbContext.OrchestrationVersions.AnyAsync(
+            x => x.OrchestrationDefinitionId == orchestrationDefinitionId
+                && (x.Status == OrchestrationVersionStatus.Draft
+                    || x.Status == OrchestrationVersionStatus.PendingDeployment),
+            cancellationToken);
+
+    private static bool IsOpenDraft(OrchestrationVersionStatus status)
+        => status is OrchestrationVersionStatus.Draft or OrchestrationVersionStatus.PendingDeployment;
 
     private static bool IsOpenDraftConstraintViolation(DbUpdateException exception)
         => exception.InnerException?.Message.Contains("DraftSlot", StringComparison.OrdinalIgnoreCase) == true

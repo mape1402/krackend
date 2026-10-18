@@ -81,7 +81,7 @@ internal static class DefinitionEntityMapper
             OrchestrationDefinitionId = definition.OrchestrationDefinitionId,
             Version = definition.Version?.ToString(),
             DraftSlot = string.IsNullOrWhiteSpace(definition.DraftSlot)
-                ? $"closed:{definition.Id}"
+                ? GetDraftSlot(definition)
                 : definition.DraftSlot,
             Status = definition.Status,
             VersionLabel = definition.VersionLabel,
@@ -929,6 +929,11 @@ internal static class DefinitionEntityMapper
 
         return ToModel(source);
     }
+
+    private static string GetDraftSlot(OrchestrationVersion definition)
+        => definition.Status is OrchestrationVersionStatus.Draft or OrchestrationVersionStatus.PendingDeployment
+            ? $"open:{definition.OrchestrationDefinitionId}"
+            : $"closed:{definition.Id}";
 
     /// <summary>
     /// Restores a stored condition even when it is disabled. Its activation flag is exposed
