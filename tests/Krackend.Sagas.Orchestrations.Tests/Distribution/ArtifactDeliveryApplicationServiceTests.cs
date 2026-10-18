@@ -66,6 +66,10 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         Assert.Equal("runtime-artifact-1", result.ExternalReference);
         Assert.Equal(new Uri("https://runtime.local/runtime/artifacts/deploy"), handler.RequestUri);
         Assert.Equal("Bearer", handler.LastAuthorizationScheme);
+        var delivered = JsonSerializer.Deserialize<RuntimeArtifactDeliveryPackage>(handler.LastRequestBody);
+        Assert.NotNull(delivered);
+        Assert.Equal(state.Target.ReleaseId!.Value.ToString(), delivered.ReleaseId);
+        Assert.Equal(state.Target.RolloutGroup, delivered.ReleaseStrategy);
         Assert.Equal(ReleaseTargetStatus.Activated, state.Target.Status);
         Assert.Equal(ActivationStatus.Activated, state.Target.ActivationStatus);
         Assert.True(state.Artifact.IsPublished);
@@ -442,7 +446,7 @@ public sealed class ArtifactDeliveryApplicationServiceTests
             RuntimeNodeId = node.Id,
             ArtifactId = artifact.Id,
             ReleaseId = Id.New(),
-            RolloutGroup = "default",
+            RolloutGroup = "Direct",
             Status = ReleaseTargetStatus.Pending,
             ActivationStatus = ActivationStatus.NotActivated,
             AssignedAtUtc = DateTime.UtcNow,

@@ -36,7 +36,7 @@ public sealed class ReleaseApplicationServiceTests
         Assert.Equal(artifact.Id, release.ArtifactId);
         Assert.Equal("sales.sale.created", release.OrchestrationDefinitionId);
         Assert.Equal("web-ui", release.RequestedBy);
-        Assert.Equal("Immediate", release.Strategy);
+        Assert.Equal("Direct", release.Strategy);
         Assert.Equal(ReleaseStatus.InProgress, release.Status);
         Assert.Equal(3, planTargets.Length);
         Assert.All(planTargets, target =>
@@ -56,7 +56,7 @@ public sealed class ReleaseApplicationServiceTests
         {
             Assert.Equal(release.Id, target.ReleaseId);
             Assert.Equal(artifact.Id, target.ArtifactId);
-            Assert.Equal("Immediate", target.RolloutGroup);
+            Assert.Equal("Direct", target.RolloutGroup);
             Assert.Equal(ActivationStatus.NotActivated, target.ActivationStatus);
             Assert.Equal(release.Id.ToString(), target.CorrelationId);
         });
@@ -186,6 +186,67 @@ public sealed class ReleaseApplicationServiceTests
 
         Assert.Contains("already has a release target", exception.Message, StringComparison.Ordinal);
         Assert.Empty(state.CreatedReleases);
+    }
+
+    [Fact]
+    public async Task CreateNormalizesLegacyImmediateStrategyToDirect()
+    {
+        var artifact = Artifact("sales.sale.created");
+        var node = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
+        var state = CreateState(artifact, node);
+
+        await state.CreateService().Create(new CreateReleaseInput(
+            artifact.Id.ToString(), "tester", "Immediate", [node.Id.ToString()], string.Empty));
+
+        Assert.Equal("Direct", Assert.Single(state.CreatedReleases).Strategy);
+    }
+
+    [Fact]
+    public async Task CreateAcceptsRolloutForNewVersionArtifact()
+    {
+        var artifact = Artifact("sales.sale.created");
+        artifact.ArtifactType = "orchestration-version.new";
+        var node = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
+        var state = CreateState(artifact, node);
+
+        await state.CreateService().Create(new CreateReleaseInput(
+            artifact.Id.ToString(), "tester", "Rollout", [node.Id.ToString()], string.Empty));
+
+        Assert.Equal("Rollout", Assert.Single(state.CreatedReleases).Strategy);
+        Assert.Equal("Rollout", Assert.Single(state.CreatedReleaseTargets).RolloutGroup);
+    }
+
+    [Theory]
+    [InlineData("orchestration-version.deprecated")]
+    [InlineData("orchestration-version.archived")]
+    public async Task CreateRejectsRolloutForLifecycleArtifact(string artifactType)
+    {
+        var artifact = Artifact("sales.sale.created");
+        artifact.ArtifactType = artifactType;
+        var node = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
+        var state = CreateState(artifact, node);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => state.CreateService().Create(new CreateReleaseInput(
+            artifact.Id.ToString(), "tester", "Rollout", [node.Id.ToString()], string.Empty)));
+
+        Assert.Contains("only supported", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateRejectsUnknownStrategyAndAnEmptyTargetSet()
+    {
+        var artifact = Artifact("sales.sale.created");
+        var node = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
+        var state = CreateState(artifact, node);
+        var service = state.CreateService();
+
+        var unknown = await Assert.ThrowsAsync<InvalidOperationException>(() => service.Create(new CreateReleaseInput(
+            artifact.Id.ToString(), "tester", "canary", [node.Id.ToString()], string.Empty)));
+        var empty = await Assert.ThrowsAsync<InvalidOperationException>(() => service.Create(new CreateReleaseInput(
+            artifact.Id.ToString(), "tester", "Direct", [], string.Empty)));
+
+        Assert.Contains("Direct or Rollout", unknown.Message, StringComparison.Ordinal);
+        Assert.Contains("At least one runtime node", empty.Message, StringComparison.Ordinal);
     }
 
     [Fact]

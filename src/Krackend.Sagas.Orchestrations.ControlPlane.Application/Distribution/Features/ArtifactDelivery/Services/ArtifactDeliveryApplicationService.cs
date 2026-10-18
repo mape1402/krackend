@@ -247,9 +247,11 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
     {
         return new RuntimeArtifactDeliveryPackage
         {
+            ReleaseId = target.ReleaseId?.ToString() ?? string.Empty,
             ReleaseTargetId = target.Id.ToString(),
             ArtifactId = artifact.Id.ToString(),
             ArtifactType = artifact.ArtifactType,
+            ReleaseStrategy = target.RolloutGroup,
             SchemaVersion = artifact.SchemaVersion,
             OrchestrationDefinitionId = artifact.OrchestrationDefinitionId,
             OrchestrationVersionId = artifact.OrchestrationVersionId,

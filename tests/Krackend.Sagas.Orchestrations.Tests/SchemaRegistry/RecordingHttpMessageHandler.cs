@@ -18,11 +18,14 @@ internal sealed class RecordingHttpMessageHandler : HttpMessageHandler
 
     public string LastAcceptHeader { get; private set; } = string.Empty;
 
+    public string LastRequestBody { get; private set; } = string.Empty;
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         RequestUri = request.RequestUri ?? new Uri("about:blank");
         LastAuthorizationScheme = request.Headers.Authorization?.Scheme ?? string.Empty;
         LastAcceptHeader = request.Headers.Accept.ToString();
+        LastRequestBody = request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult() ?? string.Empty;
         return Task.FromResult(_responseFactory(request));
     }
 

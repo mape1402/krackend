@@ -30,11 +30,19 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
 
     public async Task<string> Create(CreateReleaseInput input, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(input);
+
         var artifactId = new Id(Ulid.Parse(input.ArtifactId));
         var artifact = await _artifactRepository.GetById(artifactId, cancellationToken);
+        var strategy = ResolveStrategy(input.Strategy);
+        EnsureStrategyIsSupportedForArtifact(strategy, artifact.ArtifactType);
         var orchestrationDefinitionId = artifact.OrchestrationDefinitionId;
 
         var selectedNodeIds = input.RuntimeNodeIds.Select(x => new Id(Ulid.Parse(x))).Distinct().ToArray();
+        if (selectedNodeIds.Length == 0)
+        {
+            throw new InvalidOperationException("At least one runtime node must be selected for a release.");
+        }
         var allowedNodeIds = await _policyRepository.GetAllowedRuntimeNodeIds(orchestrationDefinitionId, cancellationToken);
 
         if (allowedNodeIds.Count == 0)
@@ -83,7 +91,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
             ArtifactId = artifactId,
             OrchestrationDefinitionId = orchestrationDefinitionId,
             RequestedBy = string.IsNullOrWhiteSpace(input.RequestedBy) ? "web-ui" : input.RequestedBy.Trim(),
-            Strategy = string.IsNullOrWhiteSpace(input.Strategy) ? "Immediate" : input.Strategy.Trim(),
+            Strategy = strategy.ToString(),
             Status = ReleaseStatus.InProgress, CreatedAtUtc = DateTime.UtcNow
         };
         var targets = nodesNeedingTargets.Select(id => new ReleasePlanTarget
@@ -150,6 +158,37 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
 
     private static bool IsRuntimePullMode(DistributionMode mode)
         => mode is DistributionMode.RuntimeFetchesFromDesign or DistributionMode.HybridSync;
+
+    private static ReleaseStrategy ResolveStrategy(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            string.Equals(value, "Immediate", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReleaseStrategy.Direct;
+        }
+
+        if (Enum.TryParse<ReleaseStrategy>(value.Trim(), true, out var strategy))
+        {
+            return strategy;
+        }
+
+        throw new InvalidOperationException("Release strategy must be Direct or Rollout.");
+    }
+
+    private static void EnsureStrategyIsSupportedForArtifact(ReleaseStrategy strategy, string artifactType)
+    {
+        var isNewVersion = string.Equals(
+            artifactType,
+            ArtifactTypes.NewOrchestrationVersion,
+            StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(artifactType, ArtifactTypes.OrchestrationVersionSnapshot, StringComparison.OrdinalIgnoreCase);
+
+        if (strategy == ReleaseStrategy.Rollout && !isNewVersion)
+        {
+            throw new InvalidOperationException(
+                "Rollout is only supported when deploying a new orchestration version. Deprecation and archive artifacts must use Direct.");
+        }
+    }
 }
 
 

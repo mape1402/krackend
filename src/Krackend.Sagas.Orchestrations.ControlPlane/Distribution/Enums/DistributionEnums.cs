@@ -125,6 +125,24 @@ public enum ReleaseStatus
 }
 
 /// <summary>
+/// Defines how an artifact is introduced to its selected runtime nodes.
+/// </summary>
+public enum ReleaseStrategy
+{
+    /// <summary>
+    /// Delivers the artifact directly. The release is rejected when it would
+    /// introduce a competing trigger subscription.
+    /// </summary>
+    Direct = 1,
+
+    /// <summary>
+    /// Replaces a compatible trigger subscription progressively across the
+    /// selected runtime nodes.
+    /// </summary>
+    Rollout = 2
+}
+
+/// <summary>
 /// Represents artifact activation status in Runtime.
 /// </summary>
 public enum ActivationStatus

@@ -6,6 +6,11 @@ namespace Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 public sealed class RuntimeArtifactDeliveryPackage
 {
     /// <summary>
+    /// Gets or sets the release identifier that authorized this delivery.
+    /// </summary>
+    public string ReleaseId { get; set; }
+
+    /// <summary>
     /// Gets or sets the release target identifier assigned by the source control plane.
     /// </summary>
     public string ReleaseTargetId { get; set; }
@@ -19,6 +24,11 @@ public sealed class RuntimeArtifactDeliveryPackage
     /// Gets or sets the artifact type.
     /// </summary>
     public string ArtifactType { get; set; }
+
+    /// <summary>
+    /// Gets or sets the release strategy selected by the control plane.
+    /// </summary>
+    public string ReleaseStrategy { get; set; }
 
     /// <summary>
     /// Gets or sets the artifact schema version.
