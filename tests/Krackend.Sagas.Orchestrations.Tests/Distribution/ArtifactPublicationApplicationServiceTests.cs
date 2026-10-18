@@ -26,7 +26,7 @@ public sealed class ArtifactPublicationApplicationServiceTests
         Assert.Equal(integrationEvent.OrchestrationDisplayName, artifact.OrchestrationDisplayName);
         Assert.Equal(integrationEvent.VersionLabel, artifact.VersionLabel);
         Assert.Equal(integrationEvent.VersionNumber, artifact.VersionNumber);
-        Assert.Equal("orchestration-version-snapshot", artifact.ArtifactType);
+        Assert.Equal("orchestration-version.new", artifact.ArtifactType);
         Assert.Equal("1.0", artifact.SchemaVersion);
         Assert.Equal(integrationEvent.ArtifactPayloadJson, artifact.Payload);
         Assert.Equal(integrationEvent.Checksum, artifact.Checksum);
@@ -47,7 +47,7 @@ public sealed class ArtifactPublicationApplicationServiceTests
         var service = CreateService(repository);
         var integrationEvent = DeploymentEvent(checksum: "same-checksum");
         var existing = ArtifactFor(integrationEvent, checksum: "same-checksum");
-        repository.LatestArtifacts[(integrationEvent.OrchestrationVersionId, "orchestration-version-snapshot")] = existing;
+        repository.LatestArtifacts[(integrationEvent.OrchestrationVersionId, "orchestration-version.new")] = existing;
 
         await service.PublishDeployment(integrationEvent);
 
@@ -60,7 +60,7 @@ public sealed class ArtifactPublicationApplicationServiceTests
         var repository = new RecordingArtifactRepository();
         var service = CreateService(repository);
         var integrationEvent = DeploymentEvent(checksum: "new-checksum");
-        repository.LatestArtifacts[(integrationEvent.OrchestrationVersionId, "orchestration-version-snapshot")] = ArtifactFor(
+        repository.LatestArtifacts[(integrationEvent.OrchestrationVersionId, "orchestration-version.new")] = ArtifactFor(
             integrationEvent,
             checksum: "old-checksum");
 
@@ -183,7 +183,7 @@ public sealed class ArtifactPublicationApplicationServiceTests
             OrchestrationDisplayName = integrationEvent.OrchestrationDisplayName,
             VersionLabel = integrationEvent.VersionLabel,
             VersionNumber = integrationEvent.VersionNumber,
-            ArtifactType = "orchestration-version-snapshot",
+            ArtifactType = "orchestration-version.new",
             SchemaVersion = "1.0",
             Payload = integrationEvent.ArtifactPayloadJson,
             Metadata = "{}",
