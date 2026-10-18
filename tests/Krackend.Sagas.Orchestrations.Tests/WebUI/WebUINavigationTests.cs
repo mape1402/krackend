@@ -94,6 +94,17 @@ public sealed class WebUINavigationTests
     }
 
     [Fact]
+    public void ThemeOptionsExposeTheConfiguredDarkCssMode()
+    {
+        var theme = new OrchestratorWebUIThemeOptions
+        {
+            Mode = OrchestratorWebUIThemeMode.Dark
+        };
+
+        Assert.Equal("dark", theme.CssMode);
+    }
+
+    [Fact]
     public void ThemeModeAccessorUsesCookieBeforeConfiguredDefault()
     {
         var services = new ServiceCollection();

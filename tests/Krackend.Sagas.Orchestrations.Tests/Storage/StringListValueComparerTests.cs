@@ -28,6 +28,14 @@ public sealed class StringListValueComparerTests
         Assert.Equal(["one"], Assert.IsType<List<string>>(snapshot));
     }
 
+    [Fact]
+    public void DeserializeCreatesAnEmptyListForJsonNull()
+    {
+        var snapshot = GetDeserializeMethod().Invoke(null, ["null"]);
+
+        Assert.Empty(Assert.IsType<List<string>>(snapshot));
+    }
+
     private static ValueComparer CreateComparer()
     {
         var type = typeof(ControlPlaneDbContext).Assembly.GetType(
