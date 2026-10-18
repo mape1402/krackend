@@ -69,7 +69,8 @@ internal sealed class RuntimeAcceptanceHarness : IDisposable
         var dataset = await reader.ReadAsync();
         var selector = ingressScope.ServiceProvider.GetRequiredService<IMessagingIngressConfigurationSelector>();
         var configuration = selector.SelectMatching(dataset.Configurations, topic, version)
-            .Single(x => x.IngressKind == IngressKind.Trigger);
+            .Single(x => x.IngressKind == IngressKind.Trigger &&
+                x.MessageDisposition == IngressMessageDisposition.Process);
 
         await Services.GetRequiredService<ISagaEngine>().StartOrchestrationAsync(new StartIntent
         {

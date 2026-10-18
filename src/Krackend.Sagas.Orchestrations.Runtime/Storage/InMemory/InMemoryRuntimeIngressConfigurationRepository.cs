@@ -41,6 +41,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 }
 
                 current.IngressKind = configuration.IngressKind;
+                current.MessageDisposition = configuration.MessageDisposition;
                 current.IngressTransport = configuration.IngressTransport;
                 current.SettingsPayload = configuration.SettingsPayload;
                 current.IsActive = true;

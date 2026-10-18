@@ -108,6 +108,56 @@ public sealed class PigeonIngressAdapterTests
     }
 
     [Fact]
+    public async Task ConnectRejectsDeprecatedTriggerWhenNoProcessableIngressMatches()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var selector = Substitute.For<IMessagingIngressConfigurationSelector>();
+        var intake = new RecordingIntakeBuffer();
+        var rejected = default(Exception);
+        var deprecated = Ingress("artifact-deprecated", IngressKind.Trigger);
+        deprecated.MessageDisposition = IngressMessageDisposition.Reject;
+        selector.SelectMatching(Arg.Any<IReadOnlyCollection<IngressConfiguration>>(), "events.sales.sale.created", "1.0.0")
+            .Returns([deprecated]);
+        await using var provider = CreateProvider(
+            intake,
+            new StaticMessageMetadataAccessor(new OrchestrationMessageMetadata()),
+            new StaticPropagationMetadataAccessor(new OrchestrationPropagationMetadata()),
+            new StaticExecutionResultMetadataAccessor(new OrchestrationExecutionResultMetadata()),
+            new PagedIngressAccessor([
+                new IngressConfigurationReadingResult { HasMoreItems = false, Configurations = [deprecated] }
+            ]));
+        var adapter = CreateAdapter(consuming, selector);
+        await adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "connector-1",
+            Topic = "events.sales.sale.created",
+            Version = "1.0.0",
+            IngressKind = IngressKind.Trigger,
+            IngressTransport = IngressTransport.Messaging
+        });
+        var context = new ConsumeContext
+        {
+            Services = provider,
+            Topic = "events.sales.sale.created",
+            Subscription = "Default",
+            MessageVersion = PigeonVersion.Parse("1.0.0")
+        };
+        typeof(ConsumeContext)
+            .GetField("_rejectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(context, (Func<Exception, CancellationToken, Task>)((exception, _) =>
+            {
+                rejected = exception;
+                return Task.CompletedTask;
+            }));
+
+        await consuming.Handler!(context, JsonNode.Parse("""{"saleId":"S-1"}""")!);
+
+        Assert.Empty(intake.Items);
+        var exception = Assert.IsType<IngressMessageRejectedException>(rejected);
+        Assert.Contains("deprecated", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ConnectAndDisconnectReferenceCountSharedPigeonEndpoint()
     {
         var consuming = new RecordingConsumingConfigurator();

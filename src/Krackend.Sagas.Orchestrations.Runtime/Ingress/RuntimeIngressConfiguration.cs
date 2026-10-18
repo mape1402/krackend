@@ -28,6 +28,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         public IngressKind IngressKind { get; set; }
 
         /// <summary>
+        /// Gets or sets how the owning artifact wants matching ingress messages to be settled.
+        /// </summary>
+        public IngressMessageDisposition MessageDisposition { get; set; } = IngressMessageDisposition.Process;
+
+        /// <summary>
         /// Gets or sets the transport used by this ingress.
         /// </summary>
         public IngressTransport IngressTransport { get; set; }

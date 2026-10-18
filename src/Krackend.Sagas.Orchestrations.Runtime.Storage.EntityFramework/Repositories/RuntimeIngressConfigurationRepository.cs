@@ -35,6 +35,7 @@ internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryB
             }
 
             current.IngressKind = next.IngressKind;
+            current.MessageDisposition = next.MessageDisposition;
             current.IngressTransport = next.IngressTransport;
             current.SettingsPayload = next.SettingsPayload;
             current.IsActive = true;

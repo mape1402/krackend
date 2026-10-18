@@ -44,11 +44,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             }
 
             var configurations = new List<RuntimeIngressConfiguration>();
-            if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Active)
+            if (artifact.LifecycleStatus is RuntimeOrchestrationLifecycleStatus.Active or RuntimeOrchestrationLifecycleStatus.Deprecated)
             {
+                var disposition = artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Deprecated
+                    ? IngressMessageDisposition.Reject
+                    : IngressMessageDisposition.Process;
                 var triggers = orchestrationArtifact.TriggerBindings
                     .Where(x => x.IsEnabled)
-                    .SelectMany(x => BuildTriggerConfigurations(artifact.Id, x, now))
+                    .SelectMany(x => BuildTriggerConfigurations(artifact.Id, x, disposition, now))
                     .ToArray();
                 if (triggers.Length == 0)
                 {
@@ -59,8 +62,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                 configurations.AddRange(triggers);
             }
 
-            // A deprecated version must complete in-flight work, so its
-            // backchannel remains available while its trigger is removed.
+            // Deprecated versions retain callback ingress for active SAGAs and
+            // retain trigger ingress only to reject new starts at the adapter.
             configurations.Add(BuildBackchannelConfiguration(artifact.Id, orchestrationArtifact, artifact.Version, now));
 
             await _repository.UpsertForArtifactAsync(artifact.Id, configurations, cancellationToken);
@@ -69,6 +72,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
         private IEnumerable<RuntimeIngressConfiguration> BuildTriggerConfigurations(
             Id artifactId,
             TriggerBindingArtifact trigger,
+            IngressMessageDisposition messageDisposition,
             DateTime now)
         {
             if (trigger.TriggerChannel is not EventTriggerChannelArtifact eventTrigger)
@@ -88,6 +92,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                 RuntimeOrchestrationArtifactId = artifactId,
                 ConfigurationKey = _keyBuilder.BuildTriggerKey(trigger),
                 IngressKind = IngressKind.Trigger,
+                MessageDisposition = messageDisposition,
                 IngressTransport = IngressTransport.Messaging,
                 SettingsPayload = _messagingConfigurationSerializer.Serialize(new MessagingConfiguration
                 {
@@ -111,6 +116,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
                 RuntimeOrchestrationArtifactId = artifactId,
                 ConfigurationKey = _keyBuilder.BuildBackchannelKey(IngressTransport.Messaging),
                 IngressKind = IngressKind.Backchannel,
+                MessageDisposition = IngressMessageDisposition.Process,
                 IngressTransport = IngressTransport.Messaging,
                 SettingsPayload = _messagingConfigurationSerializer.Serialize(new MessagingConfiguration
                 {

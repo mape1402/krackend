@@ -60,7 +60,7 @@ public sealed class RuntimeIngressConfigurationProjectorTests
     }
 
     [Fact]
-    public async Task ProjectAsync_WhenArtifactIsDeprecated_KeepsOnlyTheBackchannel()
+    public async Task ProjectAsync_WhenArtifactIsDeprecated_RejectsNewTriggerMessagesAndKeepsTheBackchannel()
     {
         var artifact = CreateRuntimeArtifact(CreateArtifact(
             "sales.sale.created",
@@ -71,9 +71,13 @@ public sealed class RuntimeIngressConfigurationProjectorTests
 
         await projector.ProjectAsync(artifact);
 
-        var configuration = Assert.Single(repository.Configurations);
-        Assert.Equal(IngressKind.Backchannel, configuration.IngressKind);
-        Assert.True(configuration.IsActive);
+        var configurations = repository.Configurations.OrderBy(configuration => configuration.IngressKind).ToArray();
+        Assert.Equal(2, configurations.Length);
+        var trigger = Assert.Single(configurations, configuration => configuration.IngressKind == IngressKind.Trigger);
+        var backchannel = Assert.Single(configurations, configuration => configuration.IngressKind == IngressKind.Backchannel);
+        Assert.Equal(IngressMessageDisposition.Reject, trigger.MessageDisposition);
+        Assert.Equal(IngressMessageDisposition.Process, backchannel.MessageDisposition);
+        Assert.All(configurations, configuration => Assert.True(configuration.IsActive));
     }
 
     [Fact]

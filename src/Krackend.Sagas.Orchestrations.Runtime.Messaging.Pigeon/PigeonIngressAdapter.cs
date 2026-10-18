@@ -91,7 +91,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                     }
                     while (dataset.HasMoreItems);
 
-                    foreach (var ingress in _ingressSelector.SelectMatching(configurations, configuration.Topic, configuration.Version))
+                    var matchingIngress = _ingressSelector
+                        .SelectMatching(configurations, configuration.Topic, configuration.Version)
+                        .ToArray();
+                    var processableIngress = matchingIngress
+                        .Where(ingress => ingress.MessageDisposition == IngressMessageDisposition.Process)
+                        .ToArray();
+                    if (processableIngress.Length == 0 && matchingIngress.Any(ingress =>
+                            ingress.IngressKind == IngressKind.Trigger &&
+                            ingress.MessageDisposition == IngressMessageDisposition.Reject))
+                    {
+                        await context.RejectAsync(
+                            new IngressMessageRejectedException(
+                                $"The matching orchestration trigger for '{configuration.Topic}' v{configuration.Version} is deprecated."),
+                            cancellationToken);
+                        return;
+                    }
+
+                    foreach (var ingress in processableIngress)
                     {
                         await intake.EnqueueWorkAsync(new WorkItem
                         {

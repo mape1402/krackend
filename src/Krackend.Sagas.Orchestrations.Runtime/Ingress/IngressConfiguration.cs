@@ -44,5 +44,10 @@
         /// Gets or sets whether this ingress starts or continues an orchestration.
         /// </summary>
         public IngressKind IngressKind { get; set; }
+
+        /// <summary>
+        /// Gets or sets how a matching message must be handled by its transport adapter.
+        /// </summary>
+        public IngressMessageDisposition MessageDisposition { get; set; } = IngressMessageDisposition.Process;
     }
 }

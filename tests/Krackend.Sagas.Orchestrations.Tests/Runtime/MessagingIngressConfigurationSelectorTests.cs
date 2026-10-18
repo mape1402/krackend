@@ -45,6 +45,23 @@ public sealed class MessagingIngressConfigurationSelectorTests
     }
 
     [Fact]
+    public void SelectMatchingPrefersAProcessableTriggerOverADeprecatedTrigger()
+    {
+        var selector = CreateSelector();
+        var configurations = new[]
+        {
+            CreateTrigger("artifact-deprecated", "orders.created", "1.0.0", "orders.fulfillment", "1.0.0", DateTime.UtcNow,
+                IngressMessageDisposition.Reject),
+            CreateTrigger("artifact-active", "orders.created", "1.0.0", "orders.fulfillment", "1.0.1", DateTime.UtcNow.AddMinutes(-1),
+                IngressMessageDisposition.Process)
+        };
+
+        var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-active", Assert.Single(selected).ArtifactId);
+    }
+
+    [Fact]
     public void SelectMatchingPrefersArtifactVersionThatMatchesIncomingMessageVersion()
     {
         var selector = CreateSelector();
@@ -182,7 +199,8 @@ public sealed class MessagingIngressConfigurationSelectorTests
         string messageVersion,
         string orchestrationDefinitionKey,
         string orchestrationVersion,
-        DateTime deployedOnUtc)
+        DateTime deployedOnUtc,
+        IngressMessageDisposition messageDisposition = IngressMessageDisposition.Process)
     {
         var serializer = new DefaultMessagingConfigurationSerializer();
         return new IngressConfiguration
@@ -193,6 +211,7 @@ public sealed class MessagingIngressConfigurationSelectorTests
             OrchestrationVersion = orchestrationVersion,
             DeployedOnUtc = deployedOnUtc,
             IngressKind = IngressKind.Trigger,
+            MessageDisposition = messageDisposition,
             IngressTransport = IngressTransport.Messaging,
             SettingsPayload = serializer.Serialize(new MessagingConfiguration
             {

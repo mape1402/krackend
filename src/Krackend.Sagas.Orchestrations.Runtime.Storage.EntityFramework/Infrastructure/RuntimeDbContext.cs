@@ -363,6 +363,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.ConfigurationKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.IngressKind).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.MessageDisposition).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.IngressTransport).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.SettingsPayload).IsRequired();
         builder.HasIndex(x => new { x.RuntimeOrchestrationArtifactId, x.ConfigurationKey }).IsUnique();

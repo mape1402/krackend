@@ -23,6 +23,7 @@ internal sealed class TestIngressConfigurationAccessor : IGetIngressConfiguratio
                 Id = configuration.Id.ToString(),
                 ArtifactId = configuration.RuntimeOrchestrationArtifactId.ToString(),
                 IngressKind = configuration.IngressKind,
+                MessageDisposition = configuration.MessageDisposition,
                 IngressTransport = configuration.IngressTransport,
                 SettingsPayload = configuration.SettingsPayload
             })

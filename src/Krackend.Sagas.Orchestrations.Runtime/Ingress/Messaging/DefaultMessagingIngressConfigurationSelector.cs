@@ -101,7 +101,13 @@ public sealed class DefaultMessagingIngressConfigurationSelector : IMessagingIng
             return matches.First().Configuration;
         }
 
-        var exactVersionMatches = matches
+        var processableMatches = matches
+            .Where(match => match.Configuration.MessageDisposition == IngressMessageDisposition.Process)
+            .ToArray();
+        var eligibleMatches = processableMatches.Length > 0
+            ? processableMatches
+            : matches.ToArray();
+        var exactVersionMatches = eligibleMatches
             .Where(match => string.Equals(
                 match.Configuration.OrchestrationVersion,
                 incomingVersion,
@@ -109,7 +115,7 @@ public sealed class DefaultMessagingIngressConfigurationSelector : IMessagingIng
             .ToArray();
         var candidates = exactVersionMatches.Length > 0
             ? exactVersionMatches
-            : matches.ToArray();
+            : eligibleMatches;
         var selected = candidates
             .OrderByDescending(match => TryParseSemanticVersion(match.Configuration.OrchestrationVersion, out var parsed)
                 ? parsed

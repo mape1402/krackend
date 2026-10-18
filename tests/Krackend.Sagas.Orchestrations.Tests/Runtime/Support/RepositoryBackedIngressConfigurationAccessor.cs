@@ -69,6 +69,7 @@ internal sealed class RepositoryBackedIngressConfigurationAccessor :
                 OrchestrationVersion = artifact.Version.ToString(),
                 DeployedOnUtc = artifact.DeployedOnUtc,
                 IngressKind = configuration.IngressKind,
+                MessageDisposition = configuration.MessageDisposition,
                 IngressTransport = configuration.IngressTransport,
                 SettingsPayload = configuration.SettingsPayload
             });

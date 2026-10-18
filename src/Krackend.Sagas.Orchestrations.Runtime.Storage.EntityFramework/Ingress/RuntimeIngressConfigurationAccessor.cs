@@ -44,6 +44,7 @@ internal sealed class RuntimeIngressConfigurationAccessor :
                 OrchestrationVersion = x.Artifact.Version.ToString(),
                 DeployedOnUtc = x.Artifact.DeployedOnUtc,
                 IngressKind = x.Configuration.IngressKind,
+                MessageDisposition = x.Configuration.MessageDisposition,
                 IngressTransport = x.Configuration.IngressTransport,
                 SettingsPayload = x.Configuration.SettingsPayload
             })
@@ -85,6 +86,7 @@ internal sealed class RuntimeIngressConfigurationAccessor :
                 OrchestrationVersion = x.Artifact.Version.ToString(),
                 DeployedOnUtc = x.Artifact.DeployedOnUtc,
                 IngressKind = x.Configuration.IngressKind,
+                MessageDisposition = x.Configuration.MessageDisposition,
                 IngressTransport = x.Configuration.IngressTransport,
                 SettingsPayload = x.Configuration.SettingsPayload
             })

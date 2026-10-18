@@ -458,10 +458,13 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             Assert.Equal("3.0.0", ingress.OrchestrationVersion);
         });
 
-        await ingressRepository.UpsertForArtifactAsync(readyArtifact.Id, [Ingress(readyArtifact.Id, "trigger-001", IngressKind.Trigger, """{"topic":"updated"}""")]);
+        var rejectedIngress = Ingress(readyArtifact.Id, "trigger-001", IngressKind.Trigger, """{"topic":"updated"}""");
+        rejectedIngress.MessageDisposition = IngressMessageDisposition.Reject;
+        await ingressRepository.UpsertForArtifactAsync(readyArtifact.Id, [rejectedIngress]);
         var activeAfterUpsert = await ingressRepository.GetActiveByArtifactIdAsync(readyArtifact.Id);
         Assert.Single(activeAfterUpsert);
         Assert.Equal("""{"topic":"updated"}""", activeAfterUpsert.Single().SettingsPayload);
+        Assert.Equal(IngressMessageDisposition.Reject, activeAfterUpsert.Single().MessageDisposition);
 
         var sourceNode = DesignNode(
             "design-main",
