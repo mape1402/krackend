@@ -75,6 +75,21 @@ public sealed class PagedSettingsSieveExtensionsTests
         Assert.Null(model.Filters);
     }
 
+    [Fact]
+    public void ToSieveModel_WhenEveryFilterIsDiscarded_ReturnsNullFilters()
+    {
+        var model = ToSieveModel(new PagedSettings(
+            1,
+            25,
+            [
+                null!,
+                new QueryFilter(" ", "eq", "ignored")
+            ],
+            []));
+
+        Assert.Null(model.Filters);
+    }
+
     private static SieveModel ToSieveModel(PagedSettings? settings)
     {
         var type = typeof(ControlPlaneDbContext).Assembly.GetType(

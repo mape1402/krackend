@@ -10,6 +10,9 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructu
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.DataProtection.Repositories;
+using System.Reflection;
+using System.Xml.Linq;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
@@ -137,10 +140,68 @@ public sealed class EntityFrameworkStorageCustomizationTests
         }
     }
 
+    [Fact]
+    public void ControlPlaneDataProtectionRepositoryStoresAnEmptyFriendlyNameWhenNoneIsProvided()
+    {
+        var databaseName = Guid.NewGuid().ToString("N");
+        var services = new ServiceCollection();
+        services.AddOrchestratorControlPlaneStorageEntityFramework(
+            options => options.UseInMemoryDatabase(databaseName));
+
+        using var provider = services.BuildServiceProvider();
+        var repository = CreateDataProtectionRepository(
+            provider,
+            typeof(ControlPlaneDbContext).Assembly,
+            "ControlPlaneDataProtectionKeyXmlRepository");
+
+        repository.StoreElement(new XElement("key"), null!);
+
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+        Assert.Equal(string.Empty, Assert.Single(dbContext.DataProtectionKeys).FriendlyName);
+    }
+
+    [Fact]
+    public void RuntimeDataProtectionRepositoryStoresAnEmptyFriendlyNameWhenNoneIsProvided()
+    {
+        var databaseName = Guid.NewGuid().ToString("N");
+        var services = new ServiceCollection();
+        services.AddOrchestratorRuntimeStorageEntityFramework(
+            options => options.UseInMemoryDatabase(databaseName));
+
+        using var provider = services.BuildServiceProvider();
+        var repository = CreateDataProtectionRepository(
+            provider,
+            typeof(RuntimeDbContext).Assembly,
+            "RuntimeDataProtectionKeyXmlRepository");
+
+        repository.StoreElement(new XElement("key"), null!);
+
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        Assert.Equal(string.Empty, Assert.Single(dbContext.DataProtectionKeys).FriendlyName);
+    }
+
     private static int? GetMaxLength<TEntity>(DbContext dbContext, string propertyName)
         where TEntity : class
     {
         return dbContext.Model.FindEntityType(typeof(TEntity))?.FindProperty(propertyName)?.GetMaxLength();
+    }
+
+    private static IXmlRepository CreateDataProtectionRepository(
+        ServiceProvider provider,
+        Assembly assembly,
+        string implementationName)
+    {
+        var type = assembly
+            .GetTypes()
+            .Single(type => string.Equals(type.Name, implementationName, StringComparison.Ordinal));
+        return (IXmlRepository)Activator.CreateInstance(
+            type,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            null,
+            [provider.GetRequiredService<IServiceScopeFactory>()],
+            null)!;
     }
 
     private static ServiceProvider CreateControlPlaneDistributionProvider(
