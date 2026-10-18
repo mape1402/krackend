@@ -1470,6 +1470,37 @@ public sealed class OrchestrationButterMorphViewerHostTests
     }
 
     [Fact]
+    public async Task ValidationViewerReportsStoredDslParsingFailuresWithoutDiscardingTheCondition()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            ExecutionCondition = CreateCondition("validate { assert true: \"ok\" }")
+        });
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(_ => throw new InvalidOperationException("invalid condition DSL"));
+
+        var host = new OrchestrationButterMorphValidationViewerHost(
+            Substitute.For<IStageApplicationService>(),
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            dslParser);
+
+        var result = await host.Load(new ButterMorphValidationViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskExecutionCondition("version-1", "task-1")
+        });
+
+        Assert.Null(result.Document);
+        Assert.Contains("could not be parsed", result.Message);
+        Assert.Contains("invalid condition DSL", result.Message);
+        Assert.Contains("validate", result.DslContent);
+    }
+
+    [Fact]
     public async Task ValidationViewerLoadsCompensationDefinitionsAndHandlesInvalidContexts()
     {
         var contextParser = new OrchestrationButterMorphDesignerContextParser();

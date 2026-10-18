@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Distribution.Entities;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Extensions;
@@ -18,6 +19,18 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
 public sealed class EntityFrameworkStorageCustomizationTests
 {
+    [Fact]
+    public void RuntimeDbContextSupportsTheOptionsOnlyConstructor()
+    {
+        var options = new DbContextOptionsBuilder<RuntimeDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        using var dbContext = new RuntimeDbContext(options);
+
+        Assert.NotNull(dbContext.Model.FindEntityType(typeof(RuntimeOrchestrationArtifact)));
+    }
+
     [Fact]
     public void RuntimeStorageAllowsHostModelCustomization()
     {

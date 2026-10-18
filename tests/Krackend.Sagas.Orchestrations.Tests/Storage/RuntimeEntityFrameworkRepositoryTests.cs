@@ -23,6 +23,22 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task RuntimeStorageUnitOfWorkIgnoresRepeatedDeferralDisposal()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IRuntimeStorageUnitOfWork>();
+
+        var deferral = unitOfWork.DeferAutoSave();
+        Assert.False(unitOfWork.AutoSaveChanges);
+
+        deferral.Dispose();
+        deferral.Dispose();
+
+        Assert.True(unitOfWork.AutoSaveChanges);
+    }
+
+    [Fact]
     public async Task RuntimeExecutionRepositoriesPersistQueryAndUpdateExecutionGraph()
     {
         await using var provider = CreateProvider();
