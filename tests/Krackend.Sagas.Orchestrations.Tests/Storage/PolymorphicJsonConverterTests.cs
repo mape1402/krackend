@@ -1,6 +1,8 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
+using System.Buffers;
 using System.Text.Json;
+using System.Text;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonModels;
 
@@ -88,6 +90,25 @@ public sealed class PolymorphicJsonConverterTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TaskConfigurationJsonModel>("{}"));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TaskConfigurationJsonModel>("""{"$type":" "}"""));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TaskConfigurationJsonModel>("""{"$type":"missing"}"""));
+    }
+
+    [Fact]
+    public void PolymorphicConverterWritesNullWhenInvokedDirectly()
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+
+        var converterType = typeof(TaskConfigurationJsonModel).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Design.JsonConverters.TaskConfigurationJsonConverter",
+            throwOnError: true)!;
+        var converter = (System.Text.Json.Serialization.JsonConverter<TaskConfigurationJsonModel>)Activator.CreateInstance(
+            converterType,
+            nonPublic: true)!;
+
+        converter.Write(writer, null!, new JsonSerializerOptions());
+        writer.Flush();
+
+        Assert.Equal("null", Encoding.UTF8.GetString(buffer.WrittenSpan));
     }
 
     public static TheoryData<TaskConfigurationJsonModel, string, Type> TaskConfigurationCases()

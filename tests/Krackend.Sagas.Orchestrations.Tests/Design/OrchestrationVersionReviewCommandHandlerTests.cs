@@ -223,6 +223,13 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
     }
 
     [Fact]
+    public void RequestLifecycleTransitionRejectsAnUnknownReviewOperation()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            RequestOrchestrationVersionReviewCommandHandler.ResolveTransition((OrchestrationVersionReviewOperation)999));
+    }
+
+    [Fact]
     public void LifecyclePublicationRejectsAnUnknownReviewOperation()
     {
         var fixture = new Fixture(OrchestrationVersionStatus.Deployed);

@@ -7,10 +7,27 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class InMemoryRepositoryBranchTests
 {
+    [Fact]
+    public async Task ArtifactDeploymentHistoryReturnsRecordsInReverseApplicationOrder()
+    {
+        var repository = new InMemoryRuntimeArtifactDeploymentHistoryRepository(new InMemoryRuntimeStore());
+        var older = DeploymentRecord(DateTime.UtcNow.AddMinutes(-1));
+        var newer = DeploymentRecord(DateTime.UtcNow);
+
+        await repository.Append(older);
+        await repository.Append(newer);
+
+        var history = await repository.GetAll();
+
+        Assert.Equal([newer.Id, older.Id], history.Select(x => x.Id).ToArray());
+        await Assert.ThrowsAsync<ArgumentNullException>(() => repository.Append(null!));
+    }
+
     [Fact]
     public async Task TaskExecutionRepositoryCoversLookupSuccessFailureAndWaitingFilters()
     {
@@ -131,6 +148,21 @@ public sealed class InMemoryRepositoryBranchTests
         Assert.Empty(afterDeactivate);
         Assert.Equal("""{"updated":true}""", Assert.Single(afterUpsert).SettingsPayload);
     }
+
+    private static RuntimeArtifactDeploymentRecord DeploymentRecord(DateTime appliedOnUtc)
+        => new()
+        {
+            Id = Id.New(),
+            RuntimeOrchestrationArtifactId = Id.New(),
+            OrchestrationDefinitionKey = "orders_fulfillment",
+            OrchestrationVersion = "1.0.0",
+            ControlPlaneArtifactId = Id.New().ToString(),
+            ArtifactType = "orchestration-version.new",
+            ReleaseStrategy = "Direct",
+            LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Active,
+            RuntimeStatus = RuntimeOrchestrationArtifactStatus.Ready,
+            AppliedOnUtc = appliedOnUtc
+        };
 
     [Fact]
     public async Task RuntimeTriggerClaimRepositoryNormalizesDuplicatesAndTreatsEmptyInputsAsNoOps()

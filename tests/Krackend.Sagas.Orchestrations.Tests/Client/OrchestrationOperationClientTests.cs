@@ -451,6 +451,33 @@ public sealed class OrchestrationOperationClientTests
     }
 
     [Fact]
+    public async Task GenericEmitEventAsyncPublishesTheDeclaredRequestAndResponseTypes()
+    {
+        var services = new ServiceCollection();
+        services.AddKrackendOrchestrationsClient();
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+
+        using var scope = services.BuildServiceProvider().CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<IOrchestrationOperationClient>();
+        var payload = new ReserveInventoryResponse();
+
+        await client.EmitEventAsync<ReserveInventoryRequest, ReserveInventoryResponse>(
+            payload,
+            new OrchestrationOperationOptions
+            {
+                TriggerAddress = new OrchestrationReplyAddress
+                {
+                    Transport = OrchestrationTransportNames.Messaging,
+                    SettingsPayload = "{}"
+                }
+            });
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Same(payload, publisher.Payload);
+        Assert.Null(publisher.ResultMetadata);
+    }
+
+    [Fact]
     public async Task EmitEventAsync_WithDefaultTriggerMetadata_UsesLegacyTriggerAndMessagingTopic()
     {
         var services = new ServiceCollection();
