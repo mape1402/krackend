@@ -529,6 +529,33 @@ public sealed class RuntimeSmallComponentBehaviorTests
     }
 
     [Fact]
+    public async Task DefaultConditionEvaluatorTreatsANullExpressionValueAsMissing()
+    {
+        var evaluator = new DefaultOrchestrationConditionEvaluator();
+        var result = await evaluator.EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Phase = "Task",
+            ElementKey = "task",
+            PayloadContext = new OrchestrationPayloadContext
+            {
+                ContextPayload = JsonNode.Parse("{}"),
+                TriggerPayload = JsonNode.Parse("{}"),
+                StageKey = "stage",
+                TaskKey = "task"
+            },
+            Condition = new ExecutionConditionArtifact(
+                EngineType.DSL,
+                new DslConditionConfigurationArtifact(new Expression(null!)))
+            {
+                IsEnabled = true
+            }
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ConditionExpressionMissing", result.ErrorCode);
+    }
+
+    [Fact]
     public void RuntimeRequestAndResultContractsExposeConfiguredValues()
     {
         var payloadContext = new OrchestrationPayloadContext

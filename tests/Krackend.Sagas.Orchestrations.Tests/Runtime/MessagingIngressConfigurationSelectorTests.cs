@@ -188,6 +188,21 @@ public sealed class MessagingIngressConfigurationSelectorTests
         Assert.Equal("artifact-without-definition", Assert.Single(selected).ArtifactId);
     }
 
+    [Fact]
+    public void SelectMatchingUsesArtifactIdentityToResolveConflictingBlankDefinitionKeys()
+    {
+        var selector = CreateSelector();
+        var configurations = new[]
+        {
+            CreateTrigger("artifact-old", "orders.created", "1.0.0", " ", "1.0.0", DateTime.UtcNow.AddMinutes(-1)),
+            CreateTrigger("artifact-new", "orders.created", "1.0.0", " ", "1.0.1", DateTime.UtcNow)
+        };
+
+        var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
+
+        Assert.Equal("artifact-old", Assert.Single(selected).ArtifactId);
+    }
+
     private static IMessagingIngressConfigurationSelector CreateSelector()
         => new DefaultMessagingIngressConfigurationSelector(
             new DefaultMessagingConfigurationSerializer(),

@@ -100,6 +100,26 @@ public sealed class ButterMorphOrchestrationConditionEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_WhenConditionExpressionValueIsNull_ReturnsExpressionMissing()
+    {
+        var result = await CreateEvaluator().EvaluateAsync(new OrchestrationConditionEvaluationRequest
+        {
+            Condition = new ExecutionConditionArtifact(
+                EngineType.DSL,
+                new DslConditionConfigurationArtifact(new Expression(null!)))
+            {
+                IsEnabled = true
+            },
+            PayloadContext = EmptyPayloadContext(),
+            ElementKey = "reserve-inventory",
+            Phase = "Task"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("ConditionExpressionMissing", result.ErrorCode);
+    }
+
+    [Fact]
     public async Task EvaluateAsync_WhenConditionReadsPayload_ReturnsEvaluatedValue()
     {
         var result = await CreateEvaluator().EvaluateAsync(new OrchestrationConditionEvaluationRequest
