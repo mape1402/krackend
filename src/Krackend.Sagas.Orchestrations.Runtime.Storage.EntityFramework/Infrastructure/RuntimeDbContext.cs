@@ -33,6 +33,8 @@ public sealed class RuntimeDbContext : DbContext
 
     public DbSet<RuntimeArtifactDeploymentRecord> RuntimeArtifactDeploymentHistory => Set<RuntimeArtifactDeploymentRecord>();
 
+    public DbSet<RuntimeTriggerClaim> RuntimeTriggerClaims => Set<RuntimeTriggerClaim>();
+
     public DbSet<RuntimeDesignNode> RuntimeDesignNodes => Set<RuntimeDesignNode>();
 
     public DbSet<OrchestrationInstance> OrchestrationInstances => Set<OrchestrationInstance>();
@@ -64,6 +66,7 @@ public sealed class RuntimeDbContext : DbContext
         modelBuilder.HasDefaultSchema("Runtime");
         ConfigureRuntimeArtifacts(modelBuilder);
         ConfigureRuntimeArtifactDeploymentHistory(modelBuilder);
+        ConfigureRuntimeTriggerClaims(modelBuilder);
         ConfigureRuntimeDesignNodes(modelBuilder);
         ConfigureInstances(modelBuilder);
         ConfigureStages(modelBuilder);
@@ -169,6 +172,16 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.AppliedOnUtc });
         builder.HasIndex(x => x.ControlPlaneArtifactId).IsUnique();
         builder.HasIndex(x => x.ReleaseId);
+    }
+
+    private static void ConfigureRuntimeTriggerClaims(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<RuntimeTriggerClaim>();
+        builder.ToTable("RuntimeTriggerClaims");
+        builder.HasKey(x => x.Identity);
+        builder.Property(x => x.Identity).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
+        builder.HasIndex(x => x.RuntimeOrchestrationArtifactId);
     }
 
     private static void ConfigureInstances(ModelBuilder modelBuilder)

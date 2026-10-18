@@ -23,6 +23,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     private readonly IRuntimeArtifactSerializer _artifactSerializer;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
+    private readonly IRuntimeTriggerClaimRepository _triggerClaimRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
@@ -35,7 +36,8 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         IRuntimeIngressConfigurationRepository ingressConfigurationRepository,
         IRuntimeArtifactSerializer artifactSerializer,
         IOrchestrationInstanceRepository instanceRepository,
-        IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository)
+        IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository,
+        IRuntimeTriggerClaimRepository triggerClaimRepository)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
@@ -45,6 +47,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         _artifactSerializer = artifactSerializer ?? throw new ArgumentNullException(nameof(artifactSerializer));
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
+        _triggerClaimRepository = triggerClaimRepository ?? throw new ArgumentNullException(nameof(triggerClaimRepository));
     }
 
     /// <inheritdoc />
@@ -160,6 +163,19 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         using (_unitOfWork.DeferAutoSave())
         {
+            var claimResult = await ClaimTriggersAsync(
+                TryGetTriggerIdentities(payload),
+                artifact.Id,
+                strategy == RuntimeReleaseStrategy.Rollout
+                    ? conflictingArtifacts.Select(conflictingArtifact => conflictingArtifact.Id).ToArray()
+                    : Array.Empty<Id>(),
+                cancellationToken);
+            if (!claimResult.Succeeded)
+            {
+                return Rejected(
+                    "Another runtime deployment already owns one of these trigger identities. Refresh the release state and use Rollout only for the active owner.");
+            }
+
             await _artifactRepository.Upsert(artifact, cancellationToken);
             await AppendHistoryAsync(artifact, package, now, cancellationToken);
             if (conflictingArtifacts.Count > 0)
@@ -223,6 +239,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         using (_unitOfWork.DeferAutoSave())
         {
+            await ReleaseTriggersAsync([artifact.Id], cancellationToken);
             await _artifactRepository.Upsert(artifact, cancellationToken);
             await AppendHistoryAsync(artifact, package, now, cancellationToken);
             await ScheduleProjectionAsync(artifact, sourceKey, now, cancellationToken);
@@ -282,6 +299,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         using (_unitOfWork.DeferAutoSave())
         {
+            await ReleaseTriggersAsync([artifact.Id], cancellationToken);
             await _artifactRepository.Upsert(artifact, cancellationToken);
             await AppendHistoryAsync(artifact, package, artifact.RetiredOnUtc!.Value, cancellationToken);
             await _ingressConfigurationRepository.DeactivateForArtifactsAsync([artifact.Id], cancellationToken);
@@ -477,6 +495,16 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         }, cancellationToken);
     }
 
+    private Task<RuntimeTriggerClaimResult> ClaimTriggersAsync(
+        IReadOnlyCollection<string> identities,
+        Id artifactId,
+        IReadOnlyCollection<Id> replaceableArtifactIds,
+        CancellationToken cancellationToken)
+        => _triggerClaimRepository.ClaimAsync(identities, artifactId, replaceableArtifactIds, cancellationToken);
+
+    private Task ReleaseTriggersAsync(IReadOnlyCollection<Id> artifactIds, CancellationToken cancellationToken)
+        => _triggerClaimRepository.ReleaseAsync(artifactIds, cancellationToken);
+
     private Task AppendHistoryAsync(
         RuntimeOrchestrationArtifact artifact,
         RuntimeArtifactDeliveryPackage package,
@@ -501,7 +529,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         => artifact.TriggerBindings
             .Where(x => x.IsEnabled && x.TriggerChannel is EventTriggerChannelArtifact)
             .Select(x => (EventTriggerChannelArtifact)x.TriggerChannel)
-            .Select(x => $"{Normalize(x.Topic)}|{Normalize(x.Version.ToString())}")
+            .Select(x => $"{IngressTransport.Messaging}|{Normalize(x.Topic)}|{Normalize(x.Version.ToString())}")
             .ToHashSet(StringComparer.Ordinal);
 
     private HashSet<string> TryGetTriggerIdentities(JsonNode payload)

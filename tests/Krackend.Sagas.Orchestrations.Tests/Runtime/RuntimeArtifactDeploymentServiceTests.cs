@@ -10,6 +10,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.Fakes;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.Support;
@@ -97,6 +98,56 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
+    public async Task DeployAsync_RejectsWhenTheDurableTriggerClaimWasAcquiredByAnotherRuntime()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var claims = new RecordingRuntimeTriggerClaimRepository
+        {
+            NextResult = RuntimeTriggerClaimResult.Conflict(Id.New())
+        };
+        var package = CreatePackage(
+            "sales.sale.created",
+            Version,
+            "checksum-a",
+            Id.New(),
+            triggers: [EventTrigger("events.sales.sale.created")]);
+        package.ArtifactType = "orchestration-version.new";
+        package.ReleaseStrategy = "Direct";
+
+        var result = await CreateService(repository, scheduler, triggerClaims: claims).DeployAsync(package, "design-a");
+
+        Assert.False(result.Accepted);
+        Assert.Contains("already owns", result.Message, StringComparison.OrdinalIgnoreCase);
+        var claim = Assert.Single(claims.ClaimRequests);
+        Assert.Contains("MESSAGING|EVENTS.SALES.SALE.CREATED|1.0.0", claim.Identities);
+        Assert.Empty(repository.Artifacts);
+        Assert.Empty(scheduler.Requests);
+    }
+
+    [Fact]
+    public async Task DeployAsync_RolloutMakesTheCurrentTriggerOwnerReplaceableInTheDurableClaim()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-old", RuntimeOrchestrationArtifactStatus.Ready, 1,
+            [EventTrigger("events.sales.sale.created")]));
+        var claims = new RecordingRuntimeTriggerClaimRepository();
+        var package = CreatePackage(
+            "sales.sale.created", new SemanticVersion(1, 0, 1), "checksum-new", Id.New(),
+            triggers: [EventTrigger("events.sales.sale.created")]);
+        package.ArtifactType = "orchestration-version.new";
+        package.ReleaseStrategy = "Rollout";
+
+        var result = await CreateService(repository, scheduler, triggerClaims: claims).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        var claim = Assert.Single(claims.ClaimRequests);
+        Assert.Equal([current.Id], claim.ReplaceableArtifactIds);
+    }
+
+    [Fact]
     public async Task DeployAsync_DeprecationKeepsArtifactActiveAndSchedulesBackchannelProjection()
     {
         var repository = new TestRuntimeArtifactDeploymentRepository();
@@ -114,6 +165,24 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         Assert.Equal(RuntimeOrchestrationLifecycleStatus.Deprecated, current.LifecycleStatus);
         Assert.Equal(RuntimeOrchestrationArtifactStatus.Pending, current.Status);
         Assert.Single(scheduler.Requests);
+    }
+
+    [Fact]
+    public async Task DeployAsync_DeprecationReleasesTheArtifactTriggerClaim()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Ready, 2));
+        var claims = new RecordingRuntimeTriggerClaimRepository();
+        var package = CreatePackage(current.OrchestrationDefinitionKey, current.Version, current.ArtifactChecksum.Value, current.SourceOrchestrationVersionId);
+        package.ArtifactType = "orchestration-version.deprecated";
+        package.ReleaseStrategy = "Direct";
+
+        var result = await CreateService(repository, scheduler, triggerClaims: claims).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Equal([current.Id], Assert.Single(claims.ReleaseRequests));
     }
 
     [Fact]
@@ -172,6 +241,41 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         Assert.Equal(RuntimeOrchestrationLifecycleStatus.Archived, current.LifecycleStatus);
         Assert.Equal(RuntimeOrchestrationArtifactStatus.Retired, current.Status);
         Assert.All(ingress.Configurations, configuration => Assert.False(configuration.IsActive));
+    }
+
+    [Fact]
+    public async Task DeployAsync_ArchiveReleasesTheArtifactTriggerClaim()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Ready, 2));
+        current.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Deprecated;
+        var claims = new RecordingRuntimeTriggerClaimRepository();
+        var package = CreatePackage(current.OrchestrationDefinitionKey, current.Version, current.ArtifactChecksum.Value, current.SourceOrchestrationVersionId);
+        package.ArtifactType = "orchestration-version.archived";
+        package.ReleaseStrategy = "Direct";
+
+        var result = await CreateService(repository, scheduler, triggerClaims: claims).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Equal([current.Id], Assert.Single(claims.ReleaseRequests));
+    }
+
+    [Fact]
+    public async Task InMemoryTriggerClaims_AllowOnlyOneConcurrentOwnerForEveryIdentity()
+    {
+        var claims = new InMemoryRuntimeTriggerClaimRepository(new InMemoryRuntimeStore());
+        var identities = new[]
+        {
+            "Messaging|events.sales.sale.created|1.0.0",
+            "Messaging|events.sales.sale.created.secondary|1.0.0"
+        };
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => claims.ClaimAsync(identities, Id.New(), Array.Empty<Id>())));
+
+        Assert.Single(attempts.Where(result => result.Succeeded));
+        Assert.Equal(11, attempts.Count(result => !result.Succeeded));
     }
 
     [Fact]
@@ -791,7 +895,8 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         IRuntimeArtifactCompatibilityValidator? compatibilityValidator = null,
         RecordingRuntimeIngressConfigurationRepository? ingress = null,
         IOrchestrationInstanceRepository? instances = null,
-        RecordingRuntimeArtifactDeploymentHistoryRepository? history = null)
+        RecordingRuntimeArtifactDeploymentHistoryRepository? history = null,
+        IRuntimeTriggerClaimRepository? triggerClaims = null)
     {
         if (instances is null)
         {
@@ -807,7 +912,8 @@ public sealed class RuntimeArtifactDeploymentServiceTests
             ingress ?? new RecordingRuntimeIngressConfigurationRepository(),
             new DefaultRuntimeArtifactSerializer(),
             instances,
-            history ?? new RecordingRuntimeArtifactDeploymentHistoryRepository());
+            history ?? new RecordingRuntimeArtifactDeploymentHistoryRepository(),
+            triggerClaims ?? new RecordingRuntimeTriggerClaimRepository());
     }
 
     private static RuntimeOrchestrationArtifact CreateRuntimeArtifact(

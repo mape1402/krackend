@@ -72,6 +72,7 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IRuntimeDesignNodeRepository, RuntimeDesignNodeRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactDeploymentHistoryRepository, RuntimeArtifactDeploymentHistoryRepository>());
+        services.Replace(ServiceDescriptor.Scoped<IRuntimeTriggerClaimRepository, RuntimeTriggerClaimRepository>());
         services.Replace(ServiceDescriptor.Scoped<IOrchestrationInstanceRepository, OrchestrationInstanceRepository>());
         services.Replace(ServiceDescriptor.Scoped<IStageExecutionRepository, StageExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionRepository, TaskExecutionRepository>());

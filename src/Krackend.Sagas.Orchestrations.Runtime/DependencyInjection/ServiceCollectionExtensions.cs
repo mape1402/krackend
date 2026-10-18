@@ -145,6 +145,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IRuntimeExtensionPackageRepository, InMemoryRuntimeExtensionPackageRepository>();
             services.TryAddScoped<IRuntimeArtifactRepository, InMemoryRuntimeArtifactRepository>();
             services.TryAddScoped<IRuntimeArtifactDeploymentHistoryRepository, InMemoryRuntimeArtifactDeploymentHistoryRepository>();
+            services.TryAddScoped<IRuntimeTriggerClaimRepository, InMemoryRuntimeTriggerClaimRepository>();
             services.TryAddScoped<IOrchestrationInstanceRepository, InMemoryOrchestrationInstanceRepository>();
             services.TryAddScoped<IStageExecutionRepository, InMemoryStageExecutionRepository>();
             services.TryAddScoped<ITaskExecutionRepository, InMemoryTaskExecutionRepository>();
