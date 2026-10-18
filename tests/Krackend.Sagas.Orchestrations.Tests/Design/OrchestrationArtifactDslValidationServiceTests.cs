@@ -384,6 +384,26 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
     }
 
     [Fact]
+    public void ValidateIgnoresDisabledCompensationResponseSchemaValidation()
+    {
+        var service = CreateService();
+        var version = CreateVersion();
+        version.StageDefinitions[0].TaskDefinitions[0].CompensationDefinition = new CompensationDefinition
+        {
+            CompensationTaskKind = TaskKind.Messaging,
+            Configuration = new MessagingTaskConfiguration
+            {
+                Topic = "inventories.release",
+                Version = new SemanticVersion(1, 0, 0),
+                ResponseSchemaBinding = new SchemaBinding { IsValidationEnabled = false }
+            },
+            DispatchType = TaskDispatchType.FireAndForget
+        };
+
+        service.Validate(version);
+    }
+
+    [Fact]
     public void ValidateThrowsWhenParsedDslIsNotATransformationDocument()
     {
         var parser = Substitute.For<IDslParser>();

@@ -304,6 +304,7 @@ public sealed class DesignCommandValidatorTests
         var retryWithCodes = Retry(2);
         var retryWithNegativeDelay = Retry(2);
         ((FixedRetryStrategy)retryWithNegativeDelay.Strategy).Delay = Duration.FromSeconds(-1);
+        var retryWithNegativeCount = Retry(-1);
         var retryWithUnsupportedStrategy = Retry(2);
         retryWithUnsupportedStrategy.StrategyType = RetryStrategyType.Custom;
 
@@ -320,6 +321,7 @@ public sealed class DesignCommandValidatorTests
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithBlankCodes));
             Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithCodes));
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithNegativeDelay));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithNegativeCount));
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithUnsupportedStrategy));
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", new ExecutionCondition
             {
@@ -357,6 +359,10 @@ public sealed class DesignCommandValidatorTests
             {
                 Topic = " ",
                 HasSchemaValidation = true
+            }));
+            Assert.True(InvokePrivateStatic<bool>(validatorType, "IsSupportedEventChannel", new EventTriggerChannel
+            {
+                Topic = "events.sales.created"
             }));
         }
 

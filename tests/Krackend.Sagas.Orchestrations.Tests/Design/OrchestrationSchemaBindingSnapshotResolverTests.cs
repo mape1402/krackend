@@ -326,8 +326,16 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
             SchemaContractKind.CommandRequest,
             true,
             false);
+        var preservedSideBinding = InvokePrivateStatic<SchemaBinding>(
+            "CreateCommandSideBinding",
+            commandBinding,
+            matchingSide,
+            SchemaContractKind.CommandRequest,
+            true,
+            false);
 
         Assert.Equal("command.request.hash", sideBinding!.Snapshot!.ContentHash);
+        Assert.Equal(matchingSide.Id, preservedSideBinding!.Id);
         Assert.True(InvokePrivateStatic<bool>(
             "IsMatchingCommandSideBinding",
             commandBinding,
