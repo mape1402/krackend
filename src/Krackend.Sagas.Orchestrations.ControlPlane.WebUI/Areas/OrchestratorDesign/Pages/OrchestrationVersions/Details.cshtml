@@ -245,6 +245,10 @@
                         <label asp-for="NewStage.Description" class="form-label"></label>
                         <textarea asp-for="NewStage.Description" class="form-control" rows="2"></textarea>
                     </div>
+                    <div class="form-check form-switch mb-2">
+                        <input asp-for="NewStage.HasExecutionCondition" class="form-check-input" />
+                        <label asp-for="NewStage.HasExecutionCondition" class="form-check-label">Enable execution condition</label>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -676,17 +680,24 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
         Key: '',
         Name: '',
         Description: '',
+        HasExecutionCondition: false,
     };
     const payloadFieldAliases = {
         stageId: 'StageId',
         key: 'Key',
         name: 'Name',
         description: 'Description',
+        hasExecutionCondition: 'HasExecutionCondition',
     };
 
     function setInputValue(propertyName, value) {
         const element = document.getElementById(`NewStage_${propertyName}`);
         if (!element) {
+            return;
+        }
+
+        if ((element.getAttribute('type') || '').toLowerCase() === 'checkbox') {
+            element.checked = value === true || value === 'true' || value === 1;
             return;
         }
 

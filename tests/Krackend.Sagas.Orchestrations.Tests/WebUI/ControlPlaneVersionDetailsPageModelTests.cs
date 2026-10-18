@@ -288,11 +288,17 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             StageId = "stage-0",
             Key = "validated",
             Name = "Validated",
-            Description = "Updated"
+            Description = "Updated",
+            HasExecutionCondition = false
         };
 
         Assert.IsType<RedirectToPageResult>(await context.Page.OnPostUpsertStageAsync("orch-1", "version-1"));
-        await context.StageService.Received(1).Update(Arg.Is<UpdateStageDefinitionCommand>(x => x.Key == "validated"), Arg.Any<CancellationToken>());
+        await context.StageService.Received(1).Update(
+            Arg.Is<UpdateStageDefinitionCommand>(x =>
+                x.Key == "validated" &&
+                x.ExecutionCondition != null &&
+                x.HasExecutionCondition == false),
+            Arg.Any<CancellationToken>());
 
         var invalid = CreateContext();
         invalid.Page.ModelState.AddModelError("NewStage.Key", "required");

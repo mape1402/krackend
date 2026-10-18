@@ -1464,10 +1464,16 @@ public sealed class OrchestrationButterMorphViewerHostTests
     private static OrchestrationSchemaContext CreateSchemaContext()
         => new()
         {
+            OrchestrationVersionId = "version-1",
             OrchestrationVersion = "1.0.0",
+            StageKey = "stage-1",
+            TaskKey = "task-1",
+            Signature = "schema-signature",
             Target = new OrchestrationSchemaTarget
             {
                 Alias = "request",
+                StageKey = "stage-1",
+                TaskKey = "task-1",
                 SchemaBinding = CreateBinding()
             }
         };
@@ -1475,6 +1481,10 @@ public sealed class OrchestrationButterMorphViewerHostTests
     private static SchemaBinding CreateBinding()
         => new()
         {
+            Id = Id.New(),
+            ElementType = ElementType.Task,
+            ElementId = Id.New(),
+            ContractId = Id.New(),
             ContractKey = "commands.sales.reserve",
             ContractVersion = new SemanticVersion(1, 0, 0),
             Snapshot = new DesignSchemaContractSnapshot

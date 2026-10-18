@@ -186,7 +186,7 @@ public sealed class DetailsModel : PageModel
                     NewStage.Description ?? string.Empty,
                     current.Order,
                     current.ExecutionCondition,
-                    current.HasExecutionCondition),
+                    NewStage.HasExecutionCondition),
                 cancellationToken);
 
             return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
@@ -226,6 +226,7 @@ public sealed class DetailsModel : PageModel
             key = stage.Key,
             name = stage.Name,
             description = stage.Description ?? string.Empty,
+            hasExecutionCondition = stage.HasExecutionCondition,
         });
     }
 
@@ -1094,6 +1095,8 @@ public sealed class DetailsModel : PageModel
         public string Name { get; set; } = string.Empty;
 
         public string Description { get; set; } = string.Empty;
+
+        public bool HasExecutionCondition { get; set; }
     }
 
     public sealed class UpsertTriggerInput

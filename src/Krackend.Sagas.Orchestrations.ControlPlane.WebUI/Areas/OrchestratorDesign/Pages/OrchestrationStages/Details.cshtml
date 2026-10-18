@@ -424,11 +424,14 @@
                             </div>
                         </div>
                         <div class="tab-pane fade" id="task-policies-pane" role="tabpanel" aria-labelledby="task-policies-tab" tabindex="0">
-                            <input asp-for="NewTask.HasExecutionCondition" type="hidden" id="hasExecutionCondition" />
+                            <div class="form-check form-switch mb-2">
+                                <input asp-for="NewTask.HasExecutionCondition" class="form-check-input" id="hasExecutionCondition" />
+                                <label asp-for="NewTask.HasExecutionCondition" class="form-check-label">Enable execution condition</label>
+                            </div>
                             <input asp-for="NewTask.ConditionEngine" type="hidden" id="conditionEngineSelector" />
                             <input asp-for="NewTask.ConditionDslExpression" type="hidden" />
                             <hr />
-                            <div class="form-check form-switch mb-2 d-none">
+                            <div class="form-check form-switch mb-2">
                                 <input asp-for="NewTask.HasTransformation" class="form-check-input" id="hasTransformation" />
                                 <label asp-for="NewTask.HasTransformation" class="form-check-label">Enable transformation</label>
                             </div>

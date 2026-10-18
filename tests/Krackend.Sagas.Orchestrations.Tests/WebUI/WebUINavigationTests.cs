@@ -360,7 +360,7 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(20, options.Conventions.Count);
+        Assert.Equal(21, options.Conventions.Count);
     }
 
     [Fact]
