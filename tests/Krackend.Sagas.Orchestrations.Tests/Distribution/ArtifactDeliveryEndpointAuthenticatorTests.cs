@@ -80,6 +80,7 @@ public sealed class ArtifactDeliveryEndpointAuthenticatorTests
         var authenticator = new ArtifactDeliveryEndpointAuthenticator(validator);
         var context = new DefaultHttpContext();
         context.Request.Method = HttpMethods.Get;
+        context.Request.Path = new PathString((string?)null);
 
         var result = await authenticator.AuthenticateRuntimeNodeAsync(context.Request, "runtime-1", "{}");
 

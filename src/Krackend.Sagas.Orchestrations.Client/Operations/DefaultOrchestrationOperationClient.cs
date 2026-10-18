@@ -11,8 +11,10 @@ internal sealed class DefaultOrchestrationOperationClient : IOrchestrationOperat
         IOrchestrationOperationExecutionContext executionContext,
         IOrchestrationPipelinePublisher pipelinePublisher)
     {
-        _executionContext = executionContext ?? throw new ArgumentNullException(nameof(executionContext));
-        _pipelinePublisher = pipelinePublisher ?? throw new ArgumentNullException(nameof(pipelinePublisher));
+        ArgumentNullException.ThrowIfNull(executionContext);
+        ArgumentNullException.ThrowIfNull(pipelinePublisher);
+        _executionContext = executionContext;
+        _pipelinePublisher = pipelinePublisher;
     }
 
     public void Begin<TRequest>()

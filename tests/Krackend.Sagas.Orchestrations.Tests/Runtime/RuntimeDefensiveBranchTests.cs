@@ -69,6 +69,59 @@ public sealed class RuntimeDefensiveBranchTests
     }
 
     [Fact]
+    public void DecisionControlIncludesTheMappedErrorCodeInTheDeadLetterReason()
+    {
+        var assembly = typeof(RuntimeArtifactDeploymentService).Assembly;
+        var type = assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Runtime.Engine.Control.DecisionControl",
+            throwOnError: true)!;
+        var method = type.GetMethod("ResolveDeadLetterReason", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var reason = (string)method.Invoke(null,
+        [
+            new OrchestrationInstance
+            {
+                OrchestrationDefinitionKey = "orders_fulfillment",
+                CorrelationId = "corr-1",
+                SagaId = "saga-1",
+                ExecutionKey = "orders_fulfillment:corr-1",
+                ErrorSummary = string.Empty
+            },
+            new TaskExecution
+            {
+                TaskKey = "reserve_inventory",
+                Metadata = new Dictionary<string, JsonNode>
+                {
+                    ["ExecutionErrorCode"] = JsonValue.Create("InventoryUnavailable")
+                }
+            }
+        ])!;
+
+        Assert.Contains("InventoryUnavailable", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TimeoutProcessorUsesTheInstanceIdentifierWhenSagaIdIsBlank()
+    {
+        var type = typeof(RuntimeArtifactDeploymentService).Assembly.GetType(
+            "Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts.DefaultOrchestrationTimeoutProcessor",
+            throwOnError: true)!;
+        var method = type.GetMethod("GetSagaId", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            OrchestrationDefinitionKey = "orders_fulfillment",
+            CorrelationId = "corr-1",
+            SagaId = " ",
+            ExecutionKey = "orders_fulfillment:corr-1"
+        };
+
+        var sagaId = (string)method.Invoke(null, [instance])!;
+
+        Assert.Equal(instance.Id.ToString(), sagaId);
+    }
+
+    [Fact]
     public void RuntimeArtifactDeploymentRejectsRolloutForLifecycleArtifacts()
     {
         var method = typeof(RuntimeArtifactDeploymentService).GetMethod(

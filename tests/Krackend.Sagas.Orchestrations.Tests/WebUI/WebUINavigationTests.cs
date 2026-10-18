@@ -106,6 +106,17 @@ public sealed class WebUINavigationTests
     }
 
     [Fact]
+    public void ThemeOptionsExposeLightCssModeWhenDarkModeIsNotConfigured()
+    {
+        var theme = new OrchestratorWebUIThemeOptions
+        {
+            Mode = OrchestratorWebUIThemeMode.Light
+        };
+
+        Assert.Equal("light", theme.CssMode);
+    }
+
+    [Fact]
     public void ControlPlaneWebUiNormalizesBlankRoutePrefixesAndSchemaRegistryKeys()
     {
         var extensions = typeof(ControlPlaneWebUiServices);
@@ -419,6 +430,33 @@ public sealed class WebUINavigationTests
     }
 
     [Fact]
+    public async Task RuntimeWebUiUsesDefaultRoutesAndLiveHubWhenPrefixIsBlank()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = "Development"
+        });
+
+        builder.Services.AddLogging();
+        builder.Services.AddScoped<IRuntimeDiagnosticsReader, NoopRuntimeDiagnosticsReader>();
+        RuntimeWebUiServices.AddOrchestratorRuntimeWebUI(builder.Services, options => options.RoutePrefix = " ");
+
+        await using var app = builder.Build();
+        app.MapRazorPages();
+        app.MapOrchestratorRuntimeReactiveHub();
+
+        var endpointDataSources = ((IEndpointRouteBuilder)app).DataSources;
+        var routes = endpointDataSources
+            .SelectMany(dataSource => dataSource.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("runtime", routes);
+        Assert.NotEmpty(endpointDataSources);
+    }
+
+    [Fact]
     public async Task DesignWebUiMapsLifecycleReviewRoutesWhenRegisteredByExtension()
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -481,6 +519,20 @@ public sealed class WebUINavigationTests
         Assert.Equal("admin/design", provider.GetRequiredService<IOptions<OrchestratorDesignWebUIOptions>>().Value.RoutePrefix);
         Assert.Equal("admin/distribution", provider.GetRequiredService<IOptions<OrchestratorDistributionWebUIOptions>>().Value.RoutePrefix);
         Assert.Equal("admin/security", provider.GetRequiredService<IOptions<OrchestratorSecurityWebUIOptions>>().Value.RoutePrefix);
+    }
+
+    [Fact]
+    public void ControlPlaneAreaRoutesUseDefaultsWhenPrefixesAreBlank()
+    {
+        var services = new ServiceCollection();
+
+        DistributionWebUiServices.AddOrchestratorDistributionWebUI(services, options => options.RoutePrefix = " ");
+        SecurityWebUiServices.AddOrchestratorSecurityWebUI(services, options => options.RoutePrefix = " ");
+
+        using var provider = services.BuildServiceProvider();
+        var routes = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
+
+        Assert.NotEmpty(routes.Conventions);
     }
 
     [Fact]

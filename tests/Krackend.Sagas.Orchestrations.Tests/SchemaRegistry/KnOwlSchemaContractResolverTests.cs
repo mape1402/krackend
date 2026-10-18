@@ -143,6 +143,35 @@ public sealed class KnOwlSchemaContractResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_WhenKnOwlDoesNotProvideAnArtifactId_PreservesTheRequestedReference()
+    {
+        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        catalog.GetExactAsync(ContractArtifactType.Event, "sales.sale.created", "1.0.0", Arg.Any<CancellationToken>())
+            .Returns(KnOwlContractCatalogResult.Found(new ContractArtifact
+            {
+                Id = Guid.Empty,
+                ArtifactType = ContractArtifactType.Event,
+                ContractKey = "sales.sale.created",
+                VersionNumber = "1.0.0",
+                PayloadSchemaJson = "{\"type\":\"object\"}",
+                SourceStatus = "Deployed"
+            }));
+        var resolver = CreateResolver(
+            options =>
+            {
+                options.Enabled = true;
+                options.BaseUri = new Uri("https://knowl-control-plane.local");
+            },
+            catalog);
+        var request = CreateRequest();
+
+        var result = await resolver.ResolveAsync(request);
+
+        Assert.Equal(request.Reference.ContractId, result.Snapshot.Reference.ContractId);
+        Assert.Equal(string.Empty, result.Snapshot.SourceArtifactId);
+    }
+
+    [Fact]
     public async Task ResolveAsync_WhenCommandResponseIsRequested_UsesKnOwlCommandReplyArtifactType()
     {
         var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();

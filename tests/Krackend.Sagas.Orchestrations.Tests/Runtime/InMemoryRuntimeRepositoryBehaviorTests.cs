@@ -217,6 +217,19 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
     }
 
     [Fact]
+    public async Task OrchestrationInstanceRepositoryAcceptsAnInitialUpdateWithoutAPriorStoredInstance()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(OrchestrationInstanceStatus.Created, DateTime.UtcNow);
+
+        await repository.Update(instance);
+
+        Assert.Same(instance, await repository.GetById(instance.Id));
+    }
+
+    [Fact]
     public async Task OrchestrationInstanceRepositoryReturnsRecentInstancesAndStatusSummary()
     {
         using var provider = CreateProvider();
