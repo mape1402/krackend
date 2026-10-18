@@ -26,8 +26,10 @@ public sealed class OrchestrationArtifactDslValidationService : IOrchestrationAr
         IDslParser dslParser,
         ITransformationSemanticAnalyzer semanticAnalyzer)
     {
-        _dslParser = dslParser ?? throw new ArgumentNullException(nameof(dslParser));
-        _semanticAnalyzer = semanticAnalyzer ?? throw new ArgumentNullException(nameof(semanticAnalyzer));
+        ArgumentNullException.ThrowIfNull(dslParser);
+        ArgumentNullException.ThrowIfNull(semanticAnalyzer);
+        _dslParser = dslParser;
+        _semanticAnalyzer = semanticAnalyzer;
     }
 
     /// <inheritdoc />

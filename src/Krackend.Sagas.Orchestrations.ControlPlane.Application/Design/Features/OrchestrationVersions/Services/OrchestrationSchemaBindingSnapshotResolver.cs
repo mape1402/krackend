@@ -19,7 +19,8 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
     /// <param name="resolverCatalog">Schema resolver catalog.</param>
     public OrchestrationSchemaBindingSnapshotResolver(ISchemaContractResolverCatalog resolverCatalog)
     {
-        _resolverCatalog = resolverCatalog ?? throw new ArgumentNullException(nameof(resolverCatalog));
+        ArgumentNullException.ThrowIfNull(resolverCatalog);
+        _resolverCatalog = resolverCatalog;
     }
 
     /// <inheritdoc />
@@ -237,12 +238,18 @@ public sealed class OrchestrationSchemaBindingSnapshotResolver : IOrchestrationS
             ContractKind = contractKind,
             StrictMode = strictMode,
             IsValidationEnabled = isValidationEnabled,
-            Snapshot = source.Snapshot?.ContractKind == contractKind
-                ? source.Snapshot
-                : commandBinding.Snapshot?.ContractKind == contractKind
-                    ? commandBinding.Snapshot
-                    : null
+            Snapshot = GetSnapshot(source, contractKind) ?? GetSnapshot(commandBinding, contractKind)
         };
+    }
+
+    private static DesignSchemaContractSnapshot GetSnapshot(
+        SchemaBinding binding,
+        SchemaContractKind contractKind)
+    {
+        var snapshot = binding.Snapshot;
+        return snapshot is not null && snapshot.ContractKind == contractKind
+            ? snapshot
+            : null;
     }
 
     private static bool IsMatchingCommandSideBinding(

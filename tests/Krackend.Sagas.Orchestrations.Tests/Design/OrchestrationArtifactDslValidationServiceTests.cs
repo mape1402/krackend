@@ -15,6 +15,58 @@ using DesignApplicationServices = Krackend.Sagas.Orchestrations.ControlPlane.App
 public sealed class OrchestrationArtifactDslValidationServiceTests
 {
     [Fact]
+    public void ConstructorRequiresBothButterMorphDependencies()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+
+        Assert.Equal("dslParser", Assert.Throws<ArgumentNullException>(
+            () => new OrchestrationArtifactDslValidationService(null!, analyzer)).ParamName);
+        Assert.Equal("semanticAnalyzer", Assert.Throws<ArgumentNullException>(
+            () => new OrchestrationArtifactDslValidationService(parser, null!)).ParamName);
+    }
+
+    [Fact]
+    public void ValidateUsesSchemaValidationFlagForEventTriggers()
+    {
+        var parser = Substitute.For<IDslParser>();
+        var analyzer = Substitute.For<ITransformationSemanticAnalyzer>();
+        parser.Parse(Arg.Any<IDslDefinition>()).Returns(Substitute.For<IValidationDocument>());
+        var service = CreateService(parser, analyzer);
+        var version = CreateVersion();
+        version.TriggerBindings.Add(new TriggerBinding
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = version.Id,
+            Key = "sale_created",
+            TriggerType = TriggerType.Event,
+            IsEnabled = true,
+            TriggerChannel = new EventTriggerChannel
+            {
+                Topic = "events.sales.sale.created",
+                Version = new SemanticVersion(1, 0, 0),
+                HasSchemaValidation = true,
+                Validation = DslValidation("validate { assert source.saleId != null }")
+            }
+        });
+        var unsupportedChannel = Substitute.For<ITriggerChannel>();
+        unsupportedChannel.TriggerType.Returns(TriggerType.Event);
+        version.TriggerBindings.Add(new TriggerBinding
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = version.Id,
+            Key = "unsupported",
+            TriggerType = TriggerType.Event,
+            IsEnabled = true,
+            TriggerChannel = unsupportedChannel
+        });
+
+        service.Validate(version);
+
+        parser.Received(1).Parse(Arg.Any<IDslDefinition>());
+    }
+
+    [Fact]
     public void ValidateThrowsWhenEnabledTransformationHasNoDsl()
     {
         var service = CreateService();
@@ -384,10 +436,38 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
     }
 
     [Fact]
+    public void ValidateThrowsWhenEnabledTransformationIsMissing()
+    {
+        var service = CreateService();
+        var version = CreateVersion();
+        version.StageDefinitions[0].TaskDefinitions[0].HasTransformation = true;
+        version.StageDefinitions[0].TaskDefinitions[0].Transformation = null!;
+
+        var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
+
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:transformation", exception.Path);
+    }
+
+    [Fact]
+    public void ValidateThrowsWhenEnabledConditionIsMissing()
+    {
+        var service = CreateService();
+        var version = CreateVersion();
+        version.StageDefinitions[0].TaskDefinitions[0].HasExecutionCondition = true;
+        version.StageDefinitions[0].TaskDefinitions[0].ExecutionCondition = null!;
+
+        var exception = Assert.Throws<OrchestrationArtifactDslValidationException>(() => service.Validate(version));
+
+        Assert.Equal("stage:fulfillment:task:reserve_inventory:condition", exception.Path);
+    }
+
+    [Fact]
     public void ValidateIgnoresDisabledCompensationResponseSchemaValidation()
     {
         var service = CreateService();
         var version = CreateVersion();
+        var responseSchemaBinding = ValidationEnabledBinding();
+        responseSchemaBinding.IsValidationEnabled = false;
         version.StageDefinitions[0].TaskDefinitions[0].CompensationDefinition = new CompensationDefinition
         {
             CompensationTaskKind = TaskKind.Messaging,
@@ -395,11 +475,16 @@ public sealed class OrchestrationArtifactDslValidationServiceTests
             {
                 Topic = "inventories.release",
                 Version = new SemanticVersion(1, 0, 0),
-                ResponseSchemaBinding = new SchemaBinding { IsValidationEnabled = false }
+                ResponseSchemaBinding = responseSchemaBinding
             },
             DispatchType = TaskDispatchType.FireAndForget
         };
 
+        service.Validate(version);
+
+        var messaging = Assert.IsType<MessagingTaskConfiguration>(
+            version.StageDefinitions[0].TaskDefinitions[0].CompensationDefinition!.Configuration);
+        messaging.ResponseSchemaBinding = null!;
         service.Validate(version);
     }
 

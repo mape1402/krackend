@@ -15,10 +15,12 @@ public sealed class CreateOrchestrationDefinitionCommandValidator : AbstractVali
         RuleFor(x => x.Key).NotEmpty().MaximumLength(128).Must(ValidationRules.IsOrchestratorKey);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
         RuleFor(x => x.DomainId).NotEmpty().Must(ValidationRules.IsUlid);
-        RuleFor(x => x.OwnerTeamId).NotEmpty().Must(ValidationRules.IsUlid);
+        RuleFor(x => x.OwnerTeamId).NotEmpty().Must(IsUlid);
         RuleFor(x => x.CreatedBy).NotEmpty().MaximumLength(128);
         RuleForEach(x => x.Tags).MaximumLength(64);
     }
+
+    private bool IsUlid(string value) => ValidationRules.IsUlid(value);
 }
 
 

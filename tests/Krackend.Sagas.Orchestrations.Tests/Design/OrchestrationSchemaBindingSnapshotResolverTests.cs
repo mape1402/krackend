@@ -309,6 +309,11 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         var matchingSide = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
         matchingSide.RegistryProviderKey = commandBinding.RegistryProviderKey;
         matchingSide.ContractVersion = commandBinding.ContractVersion;
+        matchingSide.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandRequest,
+            ContentHash = "stored.side.hash"
+        };
         var wrongKey = CreateBinding("inventories.other", SchemaContractKind.CommandRequest);
         wrongKey.RegistryProviderKey = commandBinding.RegistryProviderKey;
         wrongKey.ContractVersion = commandBinding.ContractVersion;
@@ -333,9 +338,49 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
             SchemaContractKind.CommandRequest,
             true,
             false);
+        var commandBindingWithWrongSnapshot = CreateBinding("inventories.reserve", SchemaContractKind.Command);
+        commandBindingWithWrongSnapshot.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandResponse,
+            ContentHash = "command.response.hash"
+        };
+        var commandBindingWithoutSnapshot = CreateBinding("inventories.reserve", SchemaContractKind.Command);
+        var matchingSideWithWrongSnapshot = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        matchingSideWithWrongSnapshot.RegistryProviderKey = commandBindingWithoutSnapshot.RegistryProviderKey;
+        matchingSideWithWrongSnapshot.ContractVersion = commandBindingWithoutSnapshot.ContractVersion;
+        matchingSideWithWrongSnapshot.Snapshot = new DesignSchemaContractSnapshot
+        {
+            ContractKind = SchemaContractKind.CommandResponse,
+            ContentHash = "stored.response.hash"
+        };
+        var unavailableSideBinding = InvokePrivateStatic<SchemaBinding>(
+            "CreateCommandSideBinding",
+            commandBindingWithWrongSnapshot,
+            wrongKey,
+            SchemaContractKind.CommandRequest,
+            true,
+            false);
+        var missingSnapshotSideBinding = InvokePrivateStatic<SchemaBinding>(
+            "CreateCommandSideBinding",
+            commandBindingWithoutSnapshot,
+            wrongKey,
+            SchemaContractKind.CommandRequest,
+            true,
+            false);
+        var matchingSideWithoutCommandSnapshot = InvokePrivateStatic<SchemaBinding>(
+            "CreateCommandSideBinding",
+            commandBindingWithoutSnapshot,
+            matchingSideWithWrongSnapshot,
+            SchemaContractKind.CommandRequest,
+            true,
+            false);
 
         Assert.Equal("command.request.hash", sideBinding!.Snapshot!.ContentHash);
         Assert.Equal(matchingSide.Id, preservedSideBinding!.Id);
+        Assert.Equal("stored.side.hash", preservedSideBinding.Snapshot!.ContentHash);
+        Assert.Null(unavailableSideBinding!.Snapshot);
+        Assert.Null(missingSnapshotSideBinding!.Snapshot);
+        Assert.Null(matchingSideWithoutCommandSnapshot!.Snapshot);
         Assert.True(InvokePrivateStatic<bool>(
             "IsMatchingCommandSideBinding",
             commandBinding,
@@ -389,6 +434,17 @@ public sealed class OrchestrationSchemaBindingSnapshotResolverTests
         Assert.True(InvokePrivateStatic<bool>("HasCurrentSnapshot", currentBinding, SchemaContractKind.CommandRequest));
         Assert.False(InvokePrivateStatic<bool>("HasCurrentSnapshot", blankHash, SchemaContractKind.CommandRequest));
         Assert.False(InvokePrivateStatic<bool>("HasCurrentSnapshot", wrongSnapshotKind, SchemaContractKind.CommandRequest));
+
+        var optionalBinding = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        var requiredBinding = CreateBinding("inventories.reserve", SchemaContractKind.CommandRequest);
+        requiredBinding.StrictMode = true;
+
+        Assert.True(InvokePrivateStatic<bool>("MustHaveSnapshot", requiredBinding, SchemaContractResolutionStatus.NotConfigured));
+        Assert.True(InvokePrivateStatic<bool>("MustHaveSnapshot", requiredBinding, SchemaContractResolutionStatus.Invalid));
+        Assert.True(InvokePrivateStatic<bool>("MustHaveSnapshot", requiredBinding, SchemaContractResolutionStatus.NotFound));
+        Assert.True(InvokePrivateStatic<bool>("MustHaveSnapshot", requiredBinding, SchemaContractResolutionStatus.Unavailable));
+        Assert.False(InvokePrivateStatic<bool>("MustHaveSnapshot", optionalBinding, SchemaContractResolutionStatus.NotFound));
+        Assert.False(InvokePrivateStatic<bool>("MustHaveSnapshot", requiredBinding, SchemaContractResolutionStatus.Resolved));
     }
 
     [Fact]

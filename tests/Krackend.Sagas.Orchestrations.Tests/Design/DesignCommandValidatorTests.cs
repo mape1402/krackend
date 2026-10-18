@@ -150,6 +150,12 @@ public sealed class DesignCommandValidatorTests
 
         Assert.True(create.Validate(new CreateTriggerBindingCommand(ValidId, "Sales.Sale_Created", TriggerType.Event, channel, true, "")).IsValid);
         Assert.True(update.Validate(new UpdateTriggerBindingCommand(ValidId, "Sales.Sale_Created", TriggerType.Event, channel, true, "")).IsValid);
+        Assert.True(update.Validate(new UpdateTriggerBindingCommand(ValidId, "Sales.Sale_Created", TriggerType.Event, new EventTriggerChannel
+        {
+            Topic = "events.sales.sale.created",
+            HasSchemaValidation = true,
+            Validation = DslValidation("$payload.saleId != null")
+        }, true, "")).IsValid);
         Assert.False(create.Validate(new CreateTriggerBindingCommand(ValidId, "sales-sale-created", TriggerType.Event, channel, true, "")).IsValid);
         Assert.False(create.Validate(new CreateTriggerBindingCommand("bad", "", (TriggerType)999, null!, true, "")).IsValid);
         Assert.False(update.Validate(new UpdateTriggerBindingCommand("bad", "", (TriggerType)999, new EventTriggerChannel { Topic = "", HasValidation = true }, true, "")).IsValid);
@@ -221,6 +227,7 @@ public sealed class DesignCommandValidatorTests
             ValidStageId);
 
         Assert.True(new CreateOrchestrationDefinitionCommandValidator().Validate(validDefinitionCreate).IsValid);
+        Assert.True(new CreateOrchestrationDefinitionCommandValidator().Validate(validDefinitionCreate).IsValid);
         Assert.True(new UpdateOrchestrationDefinitionCommandValidator().Validate(validDefinitionUpdate).IsValid);
         Assert.False(new CreateOrchestrationDefinitionCommandValidator()
             .Validate(validDefinitionCreate with { DomainId = "bad-domain" })
@@ -249,6 +256,7 @@ public sealed class DesignCommandValidatorTests
         Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
             .Validate(validDefinitionUpdate with { OwnerTeamId = null! })
             .IsValid);
+        Assert.True(new CreateBranchRuleDefinitionCommandValidator().Validate(validBranchCreate).IsValid);
         Assert.True(new CreateBranchRuleDefinitionCommandValidator().Validate(validBranchCreate).IsValid);
         Assert.True(new UpdateBranchRuleDefinitionCommandValidator().Validate(validBranchUpdate).IsValid);
         Assert.False(new CreateBranchRuleDefinitionCommandValidator()
@@ -307,6 +315,10 @@ public sealed class DesignCommandValidatorTests
         var retryWithNegativeCount = Retry(-1);
         var retryWithUnsupportedStrategy = Retry(2);
         retryWithUnsupportedStrategy.StrategyType = RetryStrategyType.Custom;
+        var retryWithMissingStrategy = Retry(2);
+        retryWithMissingStrategy.Strategy = null!;
+        var retryWithoutCodeCollection = Retry(2);
+        retryWithoutCodeCollection.RetryableErrorCodes = null!;
 
         foreach (var validatorType in new[] { createTaskType, updateTaskType })
         {
@@ -323,6 +335,8 @@ public sealed class DesignCommandValidatorTests
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithNegativeDelay));
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithNegativeCount));
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithUnsupportedStrategy));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithMissingStrategy));
+            Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedRetryPolicy", retryWithoutCodeCollection));
             Assert.False(InvokePrivateStatic<bool>(validatorType, "IsSupportedCondition", new ExecutionCondition
             {
                 Engine = EngineType.DSL,

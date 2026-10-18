@@ -18,7 +18,7 @@ public sealed class CreateBranchRuleDefinitionCommandValidator : AbstractValidat
         RuleFor(x => x.FromType).Equal(ElementType.Stage);
         RuleFor(x => x.FromId).NotEmpty().Must(ValidationRules.IsUlid);
         RuleFor(x => x.NavigateToType).Equal(ElementType.Stage);
-        RuleFor(x => x.NavigateToId).NotEmpty().Must(ValidationRules.IsUlid);
+        RuleFor(x => x.NavigateToId).NotEmpty().Must(IsUlid);
         RuleFor(x => x.Condition).NotNull();
         RuleFor(x => x.Condition).Must(IsSupportedCondition);
     }
@@ -27,5 +27,7 @@ public sealed class CreateBranchRuleDefinitionCommandValidator : AbstractValidat
         => condition is not null &&
             condition.Engine == EngineType.DSL &&
             condition.Configuration is DslConditionConfiguration;
+
+    private bool IsUlid(string value) => ValidationRules.IsUlid(value);
 }
 
