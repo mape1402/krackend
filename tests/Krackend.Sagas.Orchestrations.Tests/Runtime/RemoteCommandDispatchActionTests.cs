@@ -20,6 +20,24 @@ using System.Text.Json.Nodes;
 public sealed class RemoteCommandDispatchActionTests
 {
     [Fact]
+    public void TerminalStateHelpersDistinguishTerminalAndActiveExecutions()
+    {
+        var taskMethod = typeof(RemoteCommandDispatchAction).GetMethod(
+            "IsTerminal",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic,
+            [typeof(TaskExecutionStatus)])!;
+        var instanceMethod = typeof(RemoteCommandDispatchAction).GetMethod(
+            "IsTerminal",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic,
+            [typeof(OrchestrationInstanceStatus)])!;
+
+        Assert.True((bool)taskMethod.Invoke(null, [TaskExecutionStatus.TimedOut])!);
+        Assert.False((bool)taskMethod.Invoke(null, [TaskExecutionStatus.Running])!);
+        Assert.True((bool)instanceMethod.Invoke(null, [OrchestrationInstanceStatus.DeadLettered])!);
+        Assert.False((bool)instanceMethod.Invoke(null, [OrchestrationInstanceStatus.Running])!);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenCallbackCompletesBeforePublishConfirmation_DoesNotDowngradeTaskState()
     {
         var instance = new OrchestrationInstance
