@@ -86,6 +86,22 @@ public sealed class IndexModel : PageModel
             return Page();
         }
 
+        var strategy = NormalizeReleaseStrategy(Input.Strategy);
+        if (strategy is null)
+        {
+            ModelState.AddModelError(nameof(Input.Strategy), "Select Direct or Rollout as the release strategy.");
+            await LoadPageData(cancellationToken);
+            return Page();
+        }
+
+        if (string.Equals(strategy, ReleaseStrategy.Rollout.ToString(), StringComparison.Ordinal) &&
+            !IsNewVersionArtifact(selectedArtifact.ArtifactType))
+        {
+            ModelState.AddModelError(nameof(Input.Strategy), "Rollout is available only when deploying a new orchestration version. Deprecation and archive artifacts use Direct.");
+            await LoadPageData(cancellationToken);
+            return Page();
+        }
+
         var ids = Input.RuntimeNodeIds?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
         if (ids.Length == 0)
         {
@@ -96,7 +112,7 @@ public sealed class IndexModel : PageModel
 
         try
         {
-            await _promotionService.Create(new CreateReleaseInput(Input.ArtifactId, Input.RequestedBy, Input.Strategy, ids, Input.Notes), cancellationToken);
+            await _promotionService.Create(new CreateReleaseInput(Input.ArtifactId, Input.RequestedBy, strategy, ids, Input.Notes), cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
@@ -263,7 +279,7 @@ public sealed class IndexModel : PageModel
         [Required] public string OrchestrationDefinitionId { get; set; } = string.Empty;
         [Required] public string ArtifactId { get; set; } = string.Empty;
         public string RequestedBy { get; set; } = "web-ui";
-        public string Strategy { get; set; } = "Immediate";
+        public string Strategy { get; set; } = nameof(ReleaseStrategy.Direct);
         public string[] RuntimeNodeIds { get; set; } = Array.Empty<string>();
         public string Notes { get; set; } = string.Empty;
     }
@@ -279,4 +295,16 @@ public sealed class IndexModel : PageModel
     {
         public static ReleaseOrchestrationSummary Empty { get; } = new(0, null);
     }
+
+    private static string? NormalizeReleaseStrategy(string value)
+    {
+        return Enum.TryParse<ReleaseStrategy>(value, ignoreCase: true, out var strategy) &&
+               (strategy == ReleaseStrategy.Direct || strategy == ReleaseStrategy.Rollout)
+            ? strategy.ToString()
+            : null;
+    }
+
+    private static bool IsNewVersionArtifact(string artifactType)
+        => string.Equals(artifactType, "orchestration-version.new", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(artifactType, "orchestration-version-snapshot", StringComparison.OrdinalIgnoreCase);
 }

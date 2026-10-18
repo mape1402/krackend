@@ -1,4 +1,5 @@
 @page
+@using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
 @{
     ViewData["Title"] = "Releases";
@@ -261,7 +262,6 @@ else
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <input asp-for="Input.Strategy" type="hidden" value="Immediate" />
                         <input asp-for="Input.OrchestrationDefinitionId" type="hidden" value="@Model.OrchestrationId" />
                         <input asp-for="Input.RequestedBy" type="hidden" />
                         <input asp-for="Input.Notes" type="hidden" />
@@ -273,11 +273,20 @@ else
                                     @foreach (var artifact in Model.SelectedArtifacts)
                                     {
                                         <option value="@artifact.Id"
-                                                data-orchestration-id="@artifact.OrchestrationDefinitionId">
+                                                data-orchestration-id="@artifact.OrchestrationDefinitionId"
+                                                data-artifact-type="@artifact.ArtifactType">
                                             @artifact.OrchestrationDisplayName - @artifact.ArtifactType, @artifact.VersionNumber - @(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)
                                         </option>
                                     }
                                 </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.Strategy" class="form-label">Release strategy</label>
+                                <select asp-for="Input.Strategy" class="form-select" id="releaseStrategySelect">
+                                    <option value="@ReleaseStrategy.Direct">Direct</option>
+                                    <option value="@ReleaseStrategy.Rollout">Rollout</option>
+                                </select>
+                                <div class="form-text" id="releaseStrategyHint">Direct applies this artifact to the selected runtime nodes.</div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Target runtime nodes</label>
@@ -474,6 +483,8 @@ else
 <script>
 (() => {
     const artifactSelect = document.getElementById('releaseArtifactSelect');
+    const strategySelect = document.getElementById('releaseStrategySelect');
+    const strategyHint = document.getElementById('releaseStrategyHint');
     const nodeCheckboxes = Array.from(document.querySelectorAll('.js-runtime-node-option'));
     const warning = document.getElementById('releaseAllowedNodesWarning');
     const submitButton = document.getElementById('createReleaseSubmitButton');
@@ -535,6 +546,28 @@ else
             if (!wrapper) return;
             wrapper.classList.toggle('d-none', !isAllowed);
         });
+    };
+
+    const updateStrategyAvailability = () => {
+        if (!artifactSelect || !strategySelect || !strategyHint) {
+            return;
+        }
+
+        const selected = artifactSelect.options[artifactSelect.selectedIndex];
+        const type = selected?.getAttribute('data-artifact-type') ?? '';
+        const rolloutAllowed = type === 'orchestration-version.new' || type === 'orchestration-version-snapshot';
+        const rolloutOption = Array.from(strategySelect.options).find(option => option.value === 'Rollout');
+        if (rolloutOption) {
+            rolloutOption.disabled = !rolloutAllowed;
+        }
+
+        if (!rolloutAllowed && strategySelect.value === 'Rollout') {
+            strategySelect.value = 'Direct';
+        }
+
+        strategyHint.textContent = rolloutAllowed
+            ? 'Direct applies immediately. Rollout replaces an existing trigger owner in a controlled handoff.'
+            : 'Deprecation and archive artifacts are applied directly to preserve a deterministic runtime lifecycle.';
     };
 
     const loadAllowedNodesForOrchestration = async (orchestrationId) => {
@@ -617,9 +650,13 @@ else
     });
 
     if (artifactSelect) {
-        artifactSelect.addEventListener('change', updateNodeVisibility);
+        artifactSelect.addEventListener('change', () => {
+            updateNodeVisibility();
+            updateStrategyAvailability();
+        });
     }
     updateNodeVisibility();
+    updateStrategyAvailability();
 })();
 </script>
 <style>

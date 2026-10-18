@@ -81,7 +81,7 @@ public sealed class ReleaseApplicationServiceTests
         await service.Create(new CreateReleaseInput(
             artifact.Id.ToString(),
             "tester",
-            "canary",
+            "Direct",
             [existingNode.Id.ToString(), missingNode.Id.ToString()],
             ""));
 

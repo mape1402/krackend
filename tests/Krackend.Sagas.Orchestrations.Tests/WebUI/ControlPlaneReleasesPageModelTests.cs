@@ -102,7 +102,7 @@ public sealed class ControlPlaneReleasesPageModelTests
             OrchestrationDefinitionId = "sales.sale.created",
             ArtifactId = "artifact-sales",
             RequestedBy = "tester",
-            Strategy = "Immediate",
+            Strategy = "Direct",
             RuntimeNodeIds = ["runtime-enabled", "", "runtime-enabled"],
             Notes = "rollout"
         };
@@ -136,6 +136,87 @@ public sealed class ControlPlaneReleasesPageModelTests
 
         Assert.IsType<PageResult>(result);
         Assert.Contains(page.ModelState[string.Empty]!.Errors, error => error.ErrorMessage == "node policy missing");
+    }
+
+    [Fact]
+    public async Task OnPostCreateRejectsUnknownReleaseStrategyBeforeCallingApplicationService()
+    {
+        var fixture = new Fixture();
+        var page = fixture.CreatePage();
+        page.Input = new ReleasesIndexModel.ReleaseInput
+        {
+            OrchestrationDefinitionId = "sales.sale.created",
+            ArtifactId = "artifact-sales",
+            Strategy = "Unsupported",
+            RuntimeNodeIds = ["runtime-enabled"]
+        };
+
+        var result = await page.OnPostCreateAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Contains(page.ModelState[nameof(page.Input.Strategy)]!.Errors, error => error.ErrorMessage.Contains("Direct or Rollout", StringComparison.Ordinal));
+        await fixture.ReleaseService.DidNotReceive().Create(Arg.Any<CreateReleaseInput>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnPostCreateRejectsRolloutForLifecycleArtifactBeforeCallingApplicationService()
+    {
+        var fixture = new Fixture();
+        fixture.ArtifactService.GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
+            .Returns(Page(new ArtifactModel
+            {
+                Id = "artifact-deprecated",
+                OrchestrationDefinitionId = "sales.sale.created",
+                OrchestrationVersionId = "artifact-deprecated-version",
+                OrchestrationDisplayName = "sales.sale.created",
+                VersionLabel = "1.0.0",
+                VersionNumber = "1.0.0",
+                ArtifactType = "orchestration-version.deprecated",
+                SchemaVersion = "1.0",
+                Payload = "{}",
+                Metadata = "{}",
+                SourceEvent = "tests",
+                SourceVersion = "1.0.0",
+                Checksum = "checksum-deprecated",
+                CreatedAtUtc = DateTime.UtcNow
+            }));
+        var page = fixture.CreatePage();
+        page.Input = new ReleasesIndexModel.ReleaseInput
+        {
+            OrchestrationDefinitionId = "sales.sale.created",
+            ArtifactId = "artifact-deprecated",
+            Strategy = "Rollout",
+            RuntimeNodeIds = ["runtime-enabled"]
+        };
+
+        var result = await page.OnPostCreateAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Contains(page.ModelState[nameof(page.Input.Strategy)]!.Errors, error => error.ErrorMessage.Contains("Deprecation and archive", StringComparison.Ordinal));
+        await fixture.ReleaseService.DidNotReceive().Create(Arg.Any<CreateReleaseInput>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnPostCreatePassesDirectStrategyToApplicationService()
+    {
+        var fixture = new Fixture();
+        CreateReleaseInput? captured = null;
+        fixture.ReleaseService
+            .Create(Arg.Do<CreateReleaseInput>(input => captured = input), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("release-new"));
+        var page = fixture.CreatePage();
+        page.Input = new ReleasesIndexModel.ReleaseInput
+        {
+            OrchestrationDefinitionId = "sales.sale.created",
+            ArtifactId = "artifact-sales",
+            Strategy = "Direct",
+            RuntimeNodeIds = ["runtime-enabled"]
+        };
+
+        await page.OnPostCreateAsync(CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal("Direct", captured!.Strategy);
     }
 
     [Fact]
