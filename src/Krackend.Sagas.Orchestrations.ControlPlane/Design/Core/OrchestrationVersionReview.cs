@@ -106,6 +106,11 @@ public sealed class OrchestrationVersionReview
     /// Gets or sets the generated deployed artifact identifier after application.
     /// </summary>
     public string DeployedArtifactId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the optimistic concurrency token for lifecycle decisions and application.
+    /// </summary>
+    public string StateToken { get; set; } = Guid.NewGuid().ToString("N");
 }
 
 /// <summary>

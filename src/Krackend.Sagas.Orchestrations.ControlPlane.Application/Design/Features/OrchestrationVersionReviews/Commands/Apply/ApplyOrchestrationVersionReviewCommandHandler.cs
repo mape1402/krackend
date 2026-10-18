@@ -102,6 +102,13 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
 
         await _unitOfWork.ExecuteInTransactionAsync(async token =>
         {
+            // Claim the approved review before changing the roadmap or producing its artifact.
+            // The review's concurrency token means exactly one competing Apply can cross this point.
+            review.ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Applied;
+            review.AppliedBy = request.AppliedBy;
+            review.AppliedOnUtc = DateTime.UtcNow;
+            await _reviewRepository.Update(review, token);
+
             version.Status = review.TargetStatus;
             version.UpdatedBy = request.AppliedBy;
             version.UpdatedOnUtc = DateTime.UtcNow;
@@ -113,9 +120,6 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
                 GetArtifactType(review.Operation),
                 token);
 
-            review.ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Applied;
-            review.AppliedBy = request.AppliedBy;
-            review.AppliedOnUtc = DateTime.UtcNow;
             review.DeployedArtifactId = artifact?.Id.ToString() ?? string.Empty;
             await _reviewRepository.Update(review, token);
         }, cancellationToken);

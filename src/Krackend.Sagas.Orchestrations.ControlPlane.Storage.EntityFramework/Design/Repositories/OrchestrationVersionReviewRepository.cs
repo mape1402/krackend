@@ -23,6 +23,7 @@ public sealed class OrchestrationVersionReviewRepository : IOrchestrationVersion
     /// <inheritdoc />
     public async Task Create(OrchestrationVersionReview review, CancellationToken cancellationToken = default)
     {
+        review.StateToken = EnsureStateToken(review.StateToken);
         _dbContext.Set<OrchestrationVersionReviewEntity>().Add(ToEntity(review));
         try
         {
@@ -76,12 +77,36 @@ public sealed class OrchestrationVersionReviewRepository : IOrchestrationVersion
     /// <inheritdoc />
     public async Task Update(OrchestrationVersionReview review, CancellationToken cancellationToken = default)
     {
-        var current = await _dbContext.Set<OrchestrationVersionReviewEntity>()
-            .SingleOrDefaultAsync(x => x.Id == review.Id, cancellationToken)
-            ?? throw new KeyNotFoundException($"OrchestrationVersionReview '{review.Id}' was not found.");
+        var entitySet = _dbContext.Set<OrchestrationVersionReviewEntity>();
+        var local = entitySet.Local.FirstOrDefault(x => x.Id == review.Id);
+        if (local is not null)
+        {
+            _dbContext.Entry(local).State = EntityState.Detached;
+        }
 
-        _dbContext.Entry(current).CurrentValues.SetValues(ToEntity(review));
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        // Existing databases can contain reviews created before the token was introduced.
+        // Their empty token remains a valid original value for this first guarded update.
+        var expectedStateToken = review.StateToken ?? string.Empty;
+        var nextStateToken = CreateStateToken();
+        var next = ToEntity(review);
+        next.StateToken = nextStateToken;
+        _dbContext.Attach(next);
+        var entry = _dbContext.Entry(next);
+        entry.State = EntityState.Modified;
+        entry.Property(x => x.StateToken).OriginalValue = expectedStateToken;
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            review.StateToken = nextStateToken;
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            entry.State = EntityState.Detached;
+            throw new InvalidOperationException(
+                "The lifecycle review was updated by another actor. Reload it and try again.",
+                exception);
+        }
     }
 
     private static OrchestrationVersionReviewEntity ToEntity(OrchestrationVersionReview review)
@@ -108,6 +133,7 @@ public sealed class OrchestrationVersionReviewRepository : IOrchestrationVersion
             AppliedOnUtc = review.AppliedOnUtc,
             DeployedArtifactId = review.DeployedArtifactId,
             PendingSlot = GetPendingSlot(review),
+            StateToken = review.StateToken ?? string.Empty,
         };
 
     private static OrchestrationVersionReview ToDomain(OrchestrationVersionReviewEntity entity)
@@ -133,10 +159,17 @@ public sealed class OrchestrationVersionReviewRepository : IOrchestrationVersion
             AppliedBy = entity.AppliedBy,
             AppliedOnUtc = entity.AppliedOnUtc,
             DeployedArtifactId = entity.DeployedArtifactId,
+            StateToken = entity.StateToken ?? string.Empty,
         };
 
     private static string GetPendingSlot(OrchestrationVersionReview review)
         => review.ApplicationStatus == OrchestrationVersionReviewApplicationStatus.Pending
             ? $"pending:{review.OrchestrationVersionId}"
             : $"closed:{review.Id}";
+
+    private static string EnsureStateToken(string stateToken)
+        => string.IsNullOrWhiteSpace(stateToken) ? CreateStateToken() : stateToken;
+
+    private static string CreateStateToken()
+        => Guid.NewGuid().ToString("N");
 }

@@ -32,6 +32,7 @@ internal sealed class OrchestrationVersionReviewEntityConfiguration : IEntityTyp
         builder.Property(x => x.AppliedBy).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.DeployedArtifactId).HasMaxLength(64).IsRequired(false);
         builder.Property(x => x.PendingSlot).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.StateToken).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.HasIndex(x => x.OrchestrationVersionId);
         builder.HasIndex(x => x.PendingSlot).IsUnique();
     }

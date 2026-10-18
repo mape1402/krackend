@@ -70,4 +70,7 @@ public sealed class OrchestrationVersionReviewEntity
 
     /// <summary>Gets or sets a unique non-terminal review slot.</summary>
     public string PendingSlot { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the optimistic concurrency token for this review.</summary>
+    public string StateToken { get; set; } = string.Empty;
 }
