@@ -619,11 +619,11 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
         Assert.Empty(persistedDefinition.Tags);
         Assert.Equal("fulfillment", persistedDefinition.OwnerTeamDisplayName);
         Assert.False(persistedStage.HasExecutionCondition);
-        Assert.Null(persistedStage.ExecutionCondition);
+        Assert.Equal("$trigger.ShouldCancel", Assert.IsType<DslConditionConfiguration>(persistedStage.ExecutionCondition!.Configuration).Expression.ToString());
         Assert.False(persistedTask.HasExecutionCondition);
-        Assert.Null(persistedTask.ExecutionCondition);
+        Assert.Equal("$trigger.Total > 0", Assert.IsType<DslConditionConfiguration>(persistedTask.ExecutionCondition!.Configuration).Expression.ToString());
         Assert.False(persistedTask.HasTransformation);
-        Assert.Null(persistedTask.Transformation);
+        Assert.Equal("should stay disabled", Assert.IsType<DslTransformationConfiguration>(persistedTask.Transformation!.Configuration).Dsl);
         Assert.Null(persistedTask.RetryPolicy);
         Assert.IsType<ReconcileTimeoutBehaviorPolicy>(persistedTask.TimeoutPolicy.TimeoutBehaviorPolicy);
         var persistedMessaging = Assert.IsType<MessagingTaskConfiguration>(persistedTask.Configuration);

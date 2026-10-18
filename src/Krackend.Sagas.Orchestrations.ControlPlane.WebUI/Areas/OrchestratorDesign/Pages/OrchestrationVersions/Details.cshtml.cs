@@ -185,7 +185,8 @@ public sealed class DetailsModel : PageModel
                     string.IsNullOrWhiteSpace(NewStage.Name) ? current.Name : NewStage.Name.Trim(),
                     NewStage.Description ?? string.Empty,
                     current.Order,
-                    current.ExecutionCondition),
+                    current.ExecutionCondition,
+                    current.HasExecutionCondition),
                 cancellationToken);
 
             return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
@@ -417,7 +418,8 @@ public sealed class DetailsModel : PageModel
                     stage.Name,
                     stage.Description,
                     index,
-                    stage.ExecutionCondition),
+                    stage.ExecutionCondition,
+                    stage.HasExecutionCondition),
                 cancellationToken);
         }
 
@@ -514,7 +516,8 @@ public sealed class DetailsModel : PageModel
                     stage.Name,
                     stage.Description,
                     index,
-                    stage.ExecutionCondition),
+                    stage.ExecutionCondition,
+                    stage.HasExecutionCondition),
                 cancellationToken);
         }
     }
@@ -750,11 +753,11 @@ public sealed class DetailsModel : PageModel
         compensation.HasExecutionCondition = input.HasCompensationExecutionCondition;
         compensation.ExecutionCondition = input.HasCompensationExecutionCondition
             ? existingCompensation?.ExecutionCondition ?? DefinitionDefaults.CreateExecutionCondition()
-            : null;
+            : existingCompensation?.ExecutionCondition;
         compensation.HasTransformation = input.HasCompensationTransformation;
         compensation.Transformation = input.HasCompensationTransformation
             ? existingCompensation?.Transformation ?? DefinitionDefaults.CreateTransformationDefinition()
-            : null;
+            : existingCompensation?.Transformation;
         compensation.RetryPolicy = input.HasCompensationRetryPolicy
             ? BuildRetryPolicy(
                 input.CompensationRetryStrategyType,

@@ -33,8 +33,9 @@ public sealed class UpdateStageDefinitionCommandHandler : IRequestHandler<Update
         current.Name = request.Name;
         current.Description = request.Description;
         current.Order = request.Order;
-        current.ExecutionCondition = request.ExecutionCondition;
-        current.HasExecutionCondition = request.ExecutionCondition is not null;
+        // Preserve the saved condition while allowing its execution to be turned off.
+        current.ExecutionCondition = request.ExecutionCondition ?? current.ExecutionCondition;
+        current.HasExecutionCondition = request.HasExecutionCondition ?? request.ExecutionCondition is not null;
 
         await _repository.Update(current, cancellationToken);
         return true;

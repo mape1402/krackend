@@ -12,5 +12,6 @@ public sealed record UpdateStageDefinitionCommand(
     string Name,
     string Description,
     int Order,
-    ExecutionCondition ExecutionCondition) : IRequest<bool>;
+    ExecutionCondition ExecutionCondition,
+    bool? HasExecutionCondition = null) : IRequest<bool>;
 

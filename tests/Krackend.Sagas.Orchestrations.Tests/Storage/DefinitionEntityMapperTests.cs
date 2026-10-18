@@ -144,6 +144,31 @@ public sealed class DefinitionEntityMapperTests
     }
 
     [Fact]
+    public void TaskMapperPreservesDisabledButterMorphDefinitions()
+    {
+        var task = CreateTask(Id.New(), TaskKind.Messaging, CreateMessagingConfiguration(Id.New()));
+        task.ExecutionCondition = new ExecutionCondition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslConditionConfiguration { Expression = new Expression("$trigger.enabled") }
+        };
+        task.HasExecutionCondition = false;
+        task.Transformation = new TransformationDefinition
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslTransformationConfiguration { Dsl = "map preserved" }
+        };
+        task.HasTransformation = false;
+
+        var roundTrip = ToDefinition(ToEntity(task));
+
+        Assert.False(roundTrip.HasExecutionCondition);
+        Assert.Equal("$trigger.enabled", Assert.IsType<DslConditionConfiguration>(roundTrip.ExecutionCondition!.Configuration).Expression.ToString());
+        Assert.False(roundTrip.HasTransformation);
+        Assert.Equal("map preserved", Assert.IsType<DslTransformationConfiguration>(roundTrip.Transformation!.Configuration).Dsl);
+    }
+
+    [Fact]
     public void EntityMapperReadsDefaultAndLegacyJsonBranches()
     {
         var stageEntity = new StageDefinitionEntity

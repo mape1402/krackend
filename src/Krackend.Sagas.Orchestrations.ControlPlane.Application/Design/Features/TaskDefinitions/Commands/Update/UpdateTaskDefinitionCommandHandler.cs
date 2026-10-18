@@ -43,10 +43,12 @@ public sealed class UpdateTaskDefinitionCommandHandler : IRequestHandler<UpdateT
         current.ParallelGroupId = string.IsNullOrWhiteSpace(request.ParallelGroupId)
             ? null
             : PrimitiveParser.ParseId(request.ParallelGroupId);
-        current.ExecutionCondition = request.ExecutionCondition;
-        current.HasExecutionCondition = request.ExecutionCondition is not null;
-        current.Transformation = request.Transformation;
-        current.HasTransformation = request.Transformation is not null;
+        // The configuration and its enabled state are intentionally independent. A user can
+        // disable a ButterMorph condition or mapping without discarding the designed DSL.
+        current.ExecutionCondition = request.ExecutionCondition ?? current.ExecutionCondition;
+        current.HasExecutionCondition = request.HasExecutionCondition ?? request.ExecutionCondition is not null;
+        current.Transformation = request.Transformation ?? current.Transformation;
+        current.HasTransformation = request.HasTransformation ?? request.Transformation is not null;
         current.Configuration = request.Configuration;
         current.RetryPolicy = request.RetryPolicy;
         current.TimeoutPolicy = request.TimeoutPolicy;

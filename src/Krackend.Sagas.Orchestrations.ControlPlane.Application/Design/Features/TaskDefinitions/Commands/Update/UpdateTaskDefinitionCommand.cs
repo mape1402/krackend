@@ -24,5 +24,7 @@ public sealed record UpdateTaskDefinitionCommand(
     OnErrorPolicy OnErrorPolicy,
     CompensationDefinition CompensationDefinition,
     TaskDispatchType DispatchType,
-    bool IsEnabled) : IRequest<bool>;
+    bool IsEnabled,
+    bool? HasExecutionCondition = null,
+    bool? HasTransformation = null) : IRequest<bool>;
 

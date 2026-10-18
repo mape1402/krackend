@@ -171,10 +171,10 @@ public sealed class DetailsModel : PageModel
                     editParallelGroupId,
                     NewTask.HasExecutionCondition
                         ? BuildExecutionCondition(NewTask.ConditionEngine, NewTask.ConditionDslExpression)
-                        : null,
+                        : current.ExecutionCondition,
                     NewTask.HasTransformation
                         ? BuildTransformation(NewTask.TransformationEngine, NewTask.TransformationDsl)
-                        : null,
+                        : current.Transformation,
                     BuildTaskConfiguration(editKind, NewTask, _defaultSchemaRegistryProviderKey),
                     NewTask.HasRetryPolicy
                         ? BuildRetryPolicy(
@@ -198,9 +198,11 @@ public sealed class DetailsModel : PageModel
                             NewTask.TimeoutReconcileStopOnNonRetryableError)
                         : null,
                     editOnErrorPolicy,
-                    NewTask.HasCompensation ? BuildCompensationDefinition(NewTask, _defaultSchemaRegistryProviderKey) : null,
+                    NewTask.HasCompensation ? BuildExistingCompensationDefinition(NewTask, _defaultSchemaRegistryProviderKey, current.CompensationDefinition) : null,
                     editDispatchType,
-                    current.IsEnabled),
+                    current.IsEnabled,
+                    NewTask.HasExecutionCondition,
+                    NewTask.HasTransformation),
                 cancellationToken);
 
             return RedirectToPage("/OrchestrationStages/Details", new { area = "OrchestratorDesign", orchestrationId, versionId, stageId = NewTask.StageId });
@@ -433,7 +435,9 @@ public sealed class DetailsModel : PageModel
                     task.OnErrorPolicy,
                     task.CompensationDefinition,
                     task.DispatchType,
-                    task.IsEnabled),
+                    task.IsEnabled,
+                    task.HasExecutionCondition,
+                    task.HasTransformation),
                 cancellationToken);
         }
 
@@ -574,7 +578,9 @@ public sealed class DetailsModel : PageModel
                     task.OnErrorPolicy,
                     task.CompensationDefinition,
                     task.DispatchType,
-                    task.IsEnabled),
+                    task.IsEnabled,
+                    task.HasExecutionCondition,
+                    task.HasTransformation),
                 cancellationToken);
         }
 
@@ -1146,7 +1152,9 @@ public sealed class DetailsModel : PageModel
                     task.OnErrorPolicy,
                     task.CompensationDefinition,
                     task.DispatchType,
-                    task.IsEnabled),
+                    task.IsEnabled,
+                    task.HasExecutionCondition,
+                    task.HasTransformation),
                 cancellationToken);
         }
     }
@@ -1484,6 +1492,12 @@ public sealed class DetailsModel : PageModel
     private static CompensationDefinition BuildCompensationDefinition(
         CreateTaskInput input,
         string defaultSchemaRegistryProviderKey)
+        => BuildExistingCompensationDefinition(input, defaultSchemaRegistryProviderKey, null);
+
+    private static CompensationDefinition BuildExistingCompensationDefinition(
+        CreateTaskInput input,
+        string defaultSchemaRegistryProviderKey,
+        CompensationDefinition existingCompensation)
     {
         var compensationKind = ResolveTaskKind(ParseEnum(input.CompensationKind, TaskKind.Messaging));
         var compensationDispatchType = ResolveCompensationDispatchType(compensationKind, ParseEnum(input.CompensationDispatchType, TaskDispatchType.FireAndForget));
@@ -1493,11 +1507,11 @@ public sealed class DetailsModel : PageModel
         compensation.OnErrorPolicy = ResolveCompensationOnErrorPolicy(ParseEnum(input.CompensationOnErrorPolicy, OnErrorPolicy.Stop));
         compensation.ExecutionCondition = input.HasCompensationExecutionCondition
             ? BuildExecutionCondition(input.CompensationConditionEngine, input.CompensationConditionDslExpression)
-            : null;
+            : existingCompensation?.ExecutionCondition;
         compensation.HasExecutionCondition = input.HasCompensationExecutionCondition;
         compensation.Transformation = input.HasCompensationTransformation
             ? BuildTransformation(input.CompensationTransformationEngine, input.CompensationTransformationDsl)
-            : null;
+            : existingCompensation?.Transformation;
         compensation.HasTransformation = input.HasCompensationTransformation;
         compensation.Configuration = BuildCompensationTaskConfiguration(compensationKind, input, defaultSchemaRegistryProviderKey);
         compensation.RetryPolicy = input.HasCompensationRetryPolicy

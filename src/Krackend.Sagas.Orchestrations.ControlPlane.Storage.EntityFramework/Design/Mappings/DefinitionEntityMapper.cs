@@ -228,7 +228,7 @@ internal static class DefinitionEntityMapper
             Description = entity.Description,
             Order = entity.Order,
             IsEnabled = entity.IsEnabled,
-            ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
+            ExecutionCondition = ToStoredModel(entity.ExecutionCondition),
             HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
         };
     }
@@ -277,9 +277,9 @@ internal static class DefinitionEntityMapper
             Kind = entity.Kind,
             ExecutionMode = entity.ExecutionMode,
             ParallelGroupId = entity.ParallelGroupId,
-            ExecutionCondition = ToOptionalModel(entity.ExecutionCondition),
+            ExecutionCondition = ToStoredModel(entity.ExecutionCondition),
             HasExecutionCondition = IsExecutionConditionEnabled(entity.ExecutionCondition),
-            Transformation = ToOptionalModel(entity.Transformation),
+            Transformation = ToStoredModel(entity.Transformation),
             HasTransformation = IsTransformationEnabled(entity.Transformation),
             Configuration = ToModel(entity.Configuration),
             RetryPolicy = ToOptionalModel(entity.RetryPolicy),
@@ -931,10 +931,35 @@ internal static class DefinitionEntityMapper
     }
 
     /// <summary>
+    /// Restores a stored condition even when it is disabled. Its activation flag is exposed
+    /// separately through <c>HasExecutionCondition</c> so editing a version never erases DSL.
+    /// </summary>
+    private static ExecutionCondition ToStoredModel(ExecutionConditionJsonModel source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var config = source.Configuration;
+        var type = (config?.Type ?? string.Empty).Trim();
+        var dslExpression = config?.Dsl?.Expression;
+        return config is null || (string.IsNullOrWhiteSpace(type) && string.IsNullOrWhiteSpace(dslExpression))
+            ? null
+            : ToModel(source);
+    }
+
+    /// <summary>
     /// Executes ToOptionalModel.
     /// </summary>
     private static TransformationDefinition ToOptionalModel(TransformationDefinitionJsonModel source)
         => IsTransformationEnabled(source) ? ToModel(source) : null;
+
+    /// <summary>
+    /// Restores a stored mapping independently of its activation state.
+    /// </summary>
+    private static TransformationDefinition ToStoredModel(TransformationDefinitionJsonModel source)
+        => source?.Configuration is null ? null : ToModel(source);
 
     /// <summary>
     /// Executes ToOptionalModel.
