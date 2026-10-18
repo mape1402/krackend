@@ -73,6 +73,29 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             return Task.CompletedTask;
         }
 
+        public Task DeactivateTriggersForArtifactsAsync(
+            IReadOnlyCollection<Id> runtimeOrchestrationArtifactIds,
+            CancellationToken cancellationToken = default)
+        {
+            if (runtimeOrchestrationArtifactIds is null || runtimeOrchestrationArtifactIds.Count == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            var now = DateTime.UtcNow;
+            foreach (var configuration in _store.IngressConfigurations.Values.Where(x =>
+                         runtimeOrchestrationArtifactIds.Contains(x.RuntimeOrchestrationArtifactId) &&
+                         x.IsActive &&
+                         x.IngressKind == IngressKind.Trigger))
+            {
+                configuration.IsActive = false;
+                configuration.UpdatedOnUtc = now;
+                configuration.DeactivatedOnUtc = now;
+            }
+
+            return Task.CompletedTask;
+        }
+
         public Task<IReadOnlyCollection<RuntimeIngressConfiguration>> ReadActiveAsync(
             int skip,
             int take,

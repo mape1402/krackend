@@ -37,19 +37,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
 
             var orchestrationArtifact = _artifactSerializer.Deserialize(artifact.ArtifactPayload.ToJsonString());
             var now = DateTime.UtcNow;
-            var triggerConfigurations = orchestrationArtifact.TriggerBindings
-                .Where(x => x.IsEnabled)
-                .SelectMany(x => BuildTriggerConfigurations(artifact.Id, x, now))
-                .ToArray();
-            if (triggerConfigurations.Length == 0)
+            if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Archived)
             {
-                throw new IngressProjectionConfigurationException(
-                    $"Artifact '{artifact.Id}' does not contain any enabled messaging trigger ingress configuration.");
+                await _repository.UpsertForArtifactAsync(artifact.Id, [], cancellationToken);
+                return;
             }
 
-            var configurations = triggerConfigurations
-                .Append(BuildBackchannelConfiguration(artifact.Id, orchestrationArtifact, artifact.Version, now))
-                .ToArray();
+            var configurations = new List<RuntimeIngressConfiguration>();
+            if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Active)
+            {
+                var triggers = orchestrationArtifact.TriggerBindings
+                    .Where(x => x.IsEnabled)
+                    .SelectMany(x => BuildTriggerConfigurations(artifact.Id, x, now))
+                    .ToArray();
+                if (triggers.Length == 0)
+                {
+                    throw new IngressProjectionConfigurationException(
+                        $"Artifact '{artifact.Id}' does not contain any enabled messaging trigger ingress configuration.");
+                }
+
+                configurations.AddRange(triggers);
+            }
+
+            // A deprecated version must complete in-flight work, so its
+            // backchannel remains available while its trigger is removed.
+            configurations.Add(BuildBackchannelConfiguration(artifact.Id, orchestrationArtifact, artifact.Version, now));
 
             await _repository.UpsertForArtifactAsync(artifact.Id, configurations, cancellationToken);
         }

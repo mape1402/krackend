@@ -75,6 +75,32 @@ internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryB
         await SaveChanges(cancellationToken);
     }
 
+    public async Task DeactivateTriggersForArtifactsAsync(
+        IReadOnlyCollection<Id> runtimeOrchestrationArtifactIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (runtimeOrchestrationArtifactIds is null || runtimeOrchestrationArtifactIds.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var configurations = await DbContext.RuntimeIngressConfigurations
+            .Where(x => runtimeOrchestrationArtifactIds.Contains(x.RuntimeOrchestrationArtifactId) &&
+                x.IsActive &&
+                x.IngressKind == IngressKind.Trigger)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var configuration in configurations)
+        {
+            configuration.IsActive = false;
+            configuration.UpdatedOnUtc = now;
+            configuration.DeactivatedOnUtc = now;
+        }
+
+        await SaveChanges(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<RuntimeIngressConfiguration>> ReadActiveAsync(
         int skip,
         int take,

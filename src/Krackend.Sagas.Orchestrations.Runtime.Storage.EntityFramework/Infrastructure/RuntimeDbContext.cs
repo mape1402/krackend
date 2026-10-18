@@ -135,12 +135,17 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.ArtifactChecksum).HasMaxLength(256).HasConversion(new ChecksumConverter()).IsRequired();
         builder.Property(x => x.ArtifactPayload).HasConversion(new JsonNodeConverter()).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationArtifactStatus.Pending).IsRequired();
+        builder.Property(x => x.LifecycleStatus).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationLifecycleStatus.Active).IsRequired();
+        builder.Property(x => x.LastReleaseId).HasMaxLength(128).IsRequired(false);
+        builder.Property(x => x.LastControlPlaneArtifactId).HasMaxLength(128).IsRequired(false);
+        builder.Property(x => x.ReleaseStrategy).HasMaxLength(64).IsRequired(false);
         builder.Property(x => x.ProjectionError).HasMaxLength(4000).IsRequired(false);
         builder.Property(x => x.SupersededByArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.Notes).HasMaxLength(2000).IsRequired(false);
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.Version }).IsUnique();
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.IsActive });
         builder.HasIndex(x => new { x.Status, x.IsActive });
+        builder.HasIndex(x => new { x.LifecycleStatus, x.IsActive });
     }
 
     private static void ConfigureInstances(ModelBuilder modelBuilder)

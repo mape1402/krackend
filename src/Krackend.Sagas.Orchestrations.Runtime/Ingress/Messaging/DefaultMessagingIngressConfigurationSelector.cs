@@ -4,7 +4,8 @@ using Microsoft.Extensions.Logging;
 namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 
 /// <summary>
-/// Selects messaging ingress configurations and resolves duplicate trigger subscriptions for the same orchestration.
+/// Selects messaging ingress configurations and applies a final runtime safety guard
+/// against duplicate trigger subscriptions.
 /// </summary>
 public sealed class DefaultMessagingIngressConfigurationSelector : IMessagingIngressConfigurationSelector
 {
@@ -129,13 +130,20 @@ public sealed class DefaultMessagingIngressConfigurationSelector : IMessagingIng
     }
 
     private string BuildSelectionKey(IngressConfiguration configuration, MessagingConfiguration settings)
-        => string.Join(
+    {
+        var baseKey = string.Join(
             "|",
             configuration.IngressKind,
             configuration.IngressTransport,
-            ResolveOrchestrationSelectionKey(configuration),
             Normalize(settings.Topic),
             Normalize(settings.Version));
+
+        // A trigger has one owner in a runtime node. Backchannels remain
+        // scoped by orchestration so in-flight versions can complete safely.
+        return configuration.IngressKind == IngressKind.Trigger
+            ? baseKey
+            : $"{baseKey}|{ResolveOrchestrationSelectionKey(configuration)}";
+    }
 
     private static string ResolveOrchestrationSelectionKey(IngressConfiguration configuration)
         => string.IsNullOrWhiteSpace(configuration.OrchestrationDefinitionKey)

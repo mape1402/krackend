@@ -30,6 +30,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Deactivates only trigger ingress configurations for the supplied
+        /// artifacts while preserving their callback backchannels.
+        /// </summary>
+        Task DeactivateTriggersForArtifactsAsync(
+            IReadOnlyCollection<Id> runtimeOrchestrationArtifactIds,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Reads active ingress configurations using paging.
         /// </summary>
         /// <param name="skip">Number of configurations to skip.</param>

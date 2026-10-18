@@ -30,7 +30,7 @@ public sealed class MessagingIngressConfigurationSelectorTests
     }
 
     [Fact]
-    public void SelectMatchingKeepsFanoutAcrossDifferentOrchestrations()
+    public void SelectMatchingUsesOneDeterministicOwnerForConflictingTriggers()
     {
         var selector = CreateSelector();
         var configurations = new[]
@@ -41,7 +41,7 @@ public sealed class MessagingIngressConfigurationSelectorTests
 
         var selected = selector.SelectMatching(configurations, "orders.created", "1.0.0");
 
-        Assert.Equal(["artifact-a", "artifact-b"], selected.Select(x => x.ArtifactId).OrderBy(x => x));
+        Assert.Equal("artifact-b", Assert.Single(selected).ArtifactId);
     }
 
     [Fact]

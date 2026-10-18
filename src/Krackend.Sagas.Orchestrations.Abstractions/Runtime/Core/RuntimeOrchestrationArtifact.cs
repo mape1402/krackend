@@ -51,6 +51,26 @@ public sealed class RuntimeOrchestrationArtifact
     public RuntimeOrchestrationArtifactStatus Status { get; set; } = RuntimeOrchestrationArtifactStatus.Pending;
 
     /// <summary>
+    /// Gets or sets the lifecycle state independently from installation readiness.
+    /// </summary>
+    public RuntimeOrchestrationLifecycleStatus LifecycleStatus { get; set; } = RuntimeOrchestrationLifecycleStatus.Active;
+
+    /// <summary>
+    /// Gets or sets the control-plane release that last changed this artifact.
+    /// </summary>
+    public string LastReleaseId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the control-plane deployed artifact that last changed this artifact.
+    /// </summary>
+    public string LastControlPlaneArtifactId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the release strategy that introduced the active state.
+    /// </summary>
+    public string ReleaseStrategy { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the ingress configuration generation represented by this artifact.
     /// </summary>
     public long IngressGeneration { get; set; }

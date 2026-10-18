@@ -60,6 +60,53 @@ public sealed class RuntimeIngressConfigurationProjectorTests
     }
 
     [Fact]
+    public async Task ProjectAsync_WhenArtifactIsDeprecated_KeepsOnlyTheBackchannel()
+    {
+        var artifact = CreateRuntimeArtifact(CreateArtifact(
+            "sales.sale.created",
+            new SemanticVersion(1, 2, 0),
+            Trigger("events.sales.sale.created", new SemanticVersion(1, 0, 0), isEnabled: true)));
+        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Deprecated;
+        var (projector, repository) = CreateProjector();
+
+        await projector.ProjectAsync(artifact);
+
+        var configuration = Assert.Single(repository.Configurations);
+        Assert.Equal(IngressKind.Backchannel, configuration.IngressKind);
+        Assert.True(configuration.IsActive);
+    }
+
+    [Fact]
+    public async Task ProjectAsync_WhenArtifactIsArchived_RemovesAllIngressConfigurations()
+    {
+        var artifact = CreateRuntimeArtifact(CreateArtifact(
+            "sales.sale.created",
+            new SemanticVersion(1, 2, 0),
+            Trigger("events.sales.sale.created", new SemanticVersion(1, 0, 0), isEnabled: true)));
+        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived;
+        var (projector, repository) = CreateProjector();
+        await repository.UpsertForArtifactAsync(artifact.Id,
+        [
+            new RuntimeIngressConfiguration
+            {
+                Id = Id.New(),
+                RuntimeOrchestrationArtifactId = artifact.Id,
+                ConfigurationKey = "trigger",
+                IngressKind = IngressKind.Trigger,
+                IngressTransport = IngressTransport.Messaging,
+                SettingsPayload = "{}",
+                IsActive = true,
+                CreatedOnUtc = DateTime.UtcNow,
+                UpdatedOnUtc = DateTime.UtcNow
+            }
+        ]);
+
+        await projector.ProjectAsync(artifact);
+
+        Assert.Empty(repository.Configurations.Where(x => x.IsActive));
+    }
+
+    [Fact]
     public async Task ProjectAsync_WhenMessagingTriggerTopicIsMissing_FailsWithoutPersistingConfigurations()
     {
         var artifact = CreateRuntimeArtifact(CreateArtifact(

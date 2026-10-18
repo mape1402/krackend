@@ -1,9 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Distribution;
 
@@ -16,6 +19,9 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
     private readonly IRuntimeArtifactProjectionScheduler _projectionScheduler;
     private readonly IRuntimeArtifactCompatibilityValidator _compatibilityValidator;
+    private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
+    private readonly IRuntimeArtifactSerializer _artifactSerializer;
+    private readonly IOrchestrationInstanceRepository _instanceRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
@@ -24,12 +30,18 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeStorageUnitOfWork unitOfWork,
         IRuntimeArtifactProjectionScheduler projectionScheduler,
-        IRuntimeArtifactCompatibilityValidator compatibilityValidator)
+        IRuntimeArtifactCompatibilityValidator compatibilityValidator,
+        IRuntimeIngressConfigurationRepository ingressConfigurationRepository,
+        IRuntimeArtifactSerializer artifactSerializer,
+        IOrchestrationInstanceRepository instanceRepository)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _projectionScheduler = projectionScheduler ?? throw new ArgumentNullException(nameof(projectionScheduler));
         _compatibilityValidator = compatibilityValidator ?? throw new ArgumentNullException(nameof(compatibilityValidator));
+        _ingressConfigurationRepository = ingressConfigurationRepository ?? throw new ArgumentNullException(nameof(ingressConfigurationRepository));
+        _artifactSerializer = artifactSerializer ?? throw new ArgumentNullException(nameof(artifactSerializer));
+        _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
     }
 
     /// <inheritdoc />
@@ -45,6 +57,34 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             return Rejected(packageValidationError);
         }
 
+        try
+        {
+            return ResolveOperation(package.ArtifactType) switch
+            {
+                RuntimeArtifactOperation.Deploy => await DeployNewVersionAsync(
+                    package, sourceKey, payload, version, artifactId, sourceVersionId, cancellationToken),
+                RuntimeArtifactOperation.Deprecate => await DeprecateAsync(
+                    package, sourceKey, version, cancellationToken),
+                RuntimeArtifactOperation.Archive => await ArchiveAsync(
+                    package, sourceKey, version, cancellationToken),
+                _ => Rejected($"Artifact type '{package.ArtifactType}' is not supported.")
+            };
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Rejected(exception.Message);
+        }
+    }
+
+    private async Task<RuntimeArtifactDeploymentResult> DeployNewVersionAsync(
+        RuntimeArtifactDeliveryPackage package,
+        string sourceKey,
+        JsonNode payload,
+        SemanticVersion version,
+        Id artifactId,
+        Id sourceVersionId,
+        CancellationToken cancellationToken)
+    {
         var compatibility = await _compatibilityValidator.ValidateAsync(payload, cancellationToken);
         if (!compatibility.Succeeded)
         {
@@ -52,11 +92,8 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                 $"Artifact runtime compatibility validation failed ({compatibility.ErrorCode}): {compatibility.ErrorMessage}");
         }
 
-        var existingArtifact = await TryGetExistingArtifact(
-            package.OrchestrationDefinitionKey,
-            version,
-            cancellationToken);
-
+        var strategy = ResolveStrategy(package.ReleaseStrategy);
+        var existingArtifact = await TryGetExistingArtifact(package.OrchestrationDefinitionKey, version, cancellationToken);
         if (existingArtifact is not null &&
             !string.Equals(existingArtifact.ArtifactChecksum.Value, package.Checksum, StringComparison.Ordinal))
         {
@@ -64,17 +101,25 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                 $"Artifact '{package.OrchestrationDefinitionKey}' v{package.Version} already exists with a different checksum.");
         }
 
+        if (existingArtifact is not null && existingArtifact.LifecycleStatus != RuntimeOrchestrationLifecycleStatus.Active)
+        {
+            return Rejected(
+                $"Artifact '{package.OrchestrationDefinitionKey}' v{package.Version} is {existingArtifact.LifecycleStatus} and cannot be deployed again.");
+        }
+
         if (existingArtifact is not null &&
             existingArtifact.ArtifactChecksum.Value == package.Checksum &&
             existingArtifact.Status == RuntimeOrchestrationArtifactStatus.Ready)
         {
-            return new RuntimeArtifactDeploymentResult
-            {
-                Accepted = true,
-                RuntimeArtifactId = existingArtifact.Id.ToString(),
-                Status = RuntimeOrchestrationArtifactStatus.Ready.ToString(),
-                Message = $"Artifact '{existingArtifact.OrchestrationDefinitionKey}' v{existingArtifact.Version} is already ready."
-            };
+            return Accepted(existingArtifact, RuntimeOrchestrationArtifactStatus.Ready,
+                $"Artifact '{existingArtifact.OrchestrationDefinitionKey}' v{existingArtifact.Version} is already ready.");
+        }
+
+        var conflictingArtifacts = await FindTriggerConflictsAsync(payload, existingArtifact?.Id, cancellationToken);
+        if (conflictingArtifacts.Count > 0 && strategy == RuntimeReleaseStrategy.Direct)
+        {
+            return Rejected(
+                "Direct deployment would create competing trigger ingress. Use Rollout to replace the active trigger subscription.");
         }
 
         var now = DateTime.UtcNow;
@@ -91,6 +136,10 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             ArtifactChecksum = new Checksum(package.Checksum),
             ArtifactPayload = payload,
             Status = RuntimeOrchestrationArtifactStatus.Pending,
+            LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Active,
+            LastReleaseId = package.ReleaseId ?? string.Empty,
+            LastControlPlaneArtifactId = package.ArtifactId,
+            ReleaseStrategy = strategy.ToString(),
             IngressGeneration = ingressGeneration,
             IsActive = true,
             LoadedToCache = false,
@@ -102,32 +151,140 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             ProjectionError = null,
             RetiredOnUtc = null,
             SupersededByArtifactId = null,
-            Notes = $"Installed from '{sourceKey}' release target '{package.ReleaseTargetId}'."
+            Notes = $"Installed from '{sourceKey}' release '{package.ReleaseId}' target '{package.ReleaseTargetId}'."
         };
 
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         using (_unitOfWork.DeferAutoSave())
         {
             await _artifactRepository.Upsert(artifact, cancellationToken);
-            await _projectionScheduler.ScheduleProjectionAsync(new RuntimeArtifactProjectionRequest
+            if (conflictingArtifacts.Count > 0)
             {
-                ArtifactId = artifact.Id.ToString(),
-                IngressGeneration = artifact.IngressGeneration,
-                RequestedBy = sourceKey,
-                RequestedOnUtc = now
-            }, cancellationToken);
+                await _ingressConfigurationRepository.DeactivateTriggersForArtifactsAsync(
+                    conflictingArtifacts.Select(x => x.Id).ToArray(),
+                    cancellationToken);
+            }
+
+            await ScheduleProjectionAsync(artifact, sourceKey, now, cancellationToken);
             await _unitOfWork.SaveChanges(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
+        return Accepted(artifact, RuntimeOrchestrationArtifactStatus.Pending,
+            $"Artifact '{artifact.OrchestrationDefinitionKey}' v{artifact.Version} accepted for ingress projection.");
+    }
 
-        return new RuntimeArtifactDeploymentResult
+    private async Task<RuntimeArtifactDeploymentResult> DeprecateAsync(
+        RuntimeArtifactDeliveryPackage package,
+        string sourceKey,
+        SemanticVersion version,
+        CancellationToken cancellationToken)
+    {
+        EnsureDirectLifecycleStrategy(package.ReleaseStrategy);
+        var artifact = await TryGetExistingArtifact(package.OrchestrationDefinitionKey, version, cancellationToken);
+        if (artifact is null)
         {
-            Accepted = true,
-            RuntimeArtifactId = artifact.Id.ToString(),
-            Status = RuntimeOrchestrationArtifactStatus.Pending.ToString(),
-            Message = $"Artifact '{artifact.OrchestrationDefinitionKey}' v{artifact.Version} accepted for ingress projection."
-        };
+            return Rejected($"Artifact '{package.OrchestrationDefinitionKey}' v{package.Version} is not installed in this runtime.");
+        }
+
+        if (!string.Equals(artifact.ArtifactChecksum.Value, package.Checksum, StringComparison.Ordinal))
+        {
+            return Rejected("Deprecation artifact checksum does not match the installed orchestration version.");
+        }
+
+        if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Archived)
+        {
+            return Rejected("An archived orchestration version cannot be deprecated.");
+        }
+
+        if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Deprecated &&
+            string.Equals(artifact.LastControlPlaneArtifactId, package.ArtifactId, StringComparison.Ordinal))
+        {
+            return Accepted(artifact, artifact.Status, "Artifact is already deprecated.");
+        }
+
+        var now = DateTime.UtcNow;
+        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Deprecated;
+        artifact.LastReleaseId = package.ReleaseId ?? string.Empty;
+        artifact.LastControlPlaneArtifactId = package.ArtifactId;
+        artifact.ReleaseStrategy = RuntimeReleaseStrategy.Direct.ToString();
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Pending;
+        artifact.IngressGeneration = Math.Max(artifact.IngressGeneration, 1) + 1;
+        artifact.ProjectionStartedOnUtc = null;
+        artifact.ProjectionCompletedOnUtc = null;
+        artifact.ProjectionFailedOnUtc = null;
+        artifact.ProjectionError = null;
+        artifact.Notes = $"Deprecated from '{sourceKey}' release '{package.ReleaseId}' target '{package.ReleaseTargetId}'.";
+
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_unitOfWork.DeferAutoSave())
+        {
+            await _artifactRepository.Upsert(artifact, cancellationToken);
+            await ScheduleProjectionAsync(artifact, sourceKey, now, cancellationToken);
+            await _unitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return Accepted(artifact, RuntimeOrchestrationArtifactStatus.Pending,
+            $"Artifact '{artifact.OrchestrationDefinitionKey}' v{artifact.Version} was deprecated and will retain only its callback ingress.");
+    }
+
+    private async Task<RuntimeArtifactDeploymentResult> ArchiveAsync(
+        RuntimeArtifactDeliveryPackage package,
+        string sourceKey,
+        SemanticVersion version,
+        CancellationToken cancellationToken)
+    {
+        EnsureDirectLifecycleStrategy(package.ReleaseStrategy);
+        var artifact = await TryGetExistingArtifact(package.OrchestrationDefinitionKey, version, cancellationToken);
+        if (artifact is null)
+        {
+            return Rejected($"Artifact '{package.OrchestrationDefinitionKey}' v{package.Version} is not installed in this runtime.");
+        }
+
+        if (!string.Equals(artifact.ArtifactChecksum.Value, package.Checksum, StringComparison.Ordinal))
+        {
+            return Rejected("Archive artifact checksum does not match the installed orchestration version.");
+        }
+
+        if (artifact.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Archived &&
+            string.Equals(artifact.LastControlPlaneArtifactId, package.ArtifactId, StringComparison.Ordinal))
+        {
+            return Accepted(artifact, RuntimeOrchestrationArtifactStatus.Retired, "Artifact is already archived.");
+        }
+
+        if (artifact.LifecycleStatus != RuntimeOrchestrationLifecycleStatus.Deprecated)
+        {
+            return Rejected("Only a deprecated orchestration version can be archived.");
+        }
+
+        var recoverable = await _instanceRepository.GetRecoverable(int.MaxValue, cancellationToken);
+        if (recoverable.Any(x => x.RuntimeOrchestrationArtifactId == artifact.Id))
+        {
+            return Rejected("The orchestration version still has active SAGA instances and cannot be archived.");
+        }
+
+        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived;
+        artifact.LastReleaseId = package.ReleaseId ?? string.Empty;
+        artifact.LastControlPlaneArtifactId = package.ArtifactId;
+        artifact.ReleaseStrategy = RuntimeReleaseStrategy.Direct.ToString();
+        artifact.IsActive = false;
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Retired;
+        artifact.RetiredOnUtc = DateTime.UtcNow;
+        artifact.IngressGeneration = Math.Max(artifact.IngressGeneration, 1) + 1;
+        artifact.Notes = $"Archived from '{sourceKey}' release '{package.ReleaseId}' target '{package.ReleaseTargetId}'.";
+
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_unitOfWork.DeferAutoSave())
+        {
+            await _artifactRepository.Upsert(artifact, cancellationToken);
+            await _ingressConfigurationRepository.DeactivateForArtifactsAsync([artifact.Id], cancellationToken);
+            await _unitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return Accepted(artifact, RuntimeOrchestrationArtifactStatus.Retired,
+            $"Artifact '{artifact.OrchestrationDefinitionKey}' v{artifact.Version} was archived and its ingress was removed.");
     }
 
     private static bool TryValidatePackage(
@@ -268,6 +425,135 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         }
     }
 
+    private async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> FindTriggerConflictsAsync(
+        JsonNode incomingPayload,
+        Id? artifactBeingUpdated,
+        CancellationToken cancellationToken)
+    {
+        var incomingTriggers = TryGetTriggerIdentities(incomingPayload);
+        if (incomingTriggers.Count == 0)
+        {
+            return [];
+        }
+
+        var artifacts = await _artifactRepository.GetAll(cancellationToken);
+        var conflicts = new List<RuntimeOrchestrationArtifact>();
+        foreach (var artifact in artifacts)
+        {
+            if (!artifact.IsActive ||
+                artifact.LifecycleStatus != RuntimeOrchestrationLifecycleStatus.Active ||
+                (artifactBeingUpdated.HasValue && artifact.Id == artifactBeingUpdated.Value))
+            {
+                continue;
+            }
+
+            if (TryGetTriggerIdentities(artifact.ArtifactPayload).Overlaps(incomingTriggers))
+            {
+                conflicts.Add(artifact);
+            }
+        }
+
+        return conflicts;
+    }
+
+    private async Task ScheduleProjectionAsync(
+        RuntimeOrchestrationArtifact artifact,
+        string sourceKey,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await _projectionScheduler.ScheduleProjectionAsync(new RuntimeArtifactProjectionRequest
+        {
+            ArtifactId = artifact.Id.ToString(),
+            IngressGeneration = artifact.IngressGeneration,
+            RequestedBy = sourceKey,
+            RequestedOnUtc = now
+        }, cancellationToken);
+    }
+
+    private static HashSet<string> GetTriggerIdentities(OrchestrationArtifact artifact)
+        => artifact.TriggerBindings
+            .Where(x => x.IsEnabled && x.TriggerChannel is EventTriggerChannelArtifact)
+            .Select(x => (EventTriggerChannelArtifact)x.TriggerChannel)
+            .Select(x => $"{Normalize(x.Topic)}|{Normalize(x.Version.ToString())}")
+            .ToHashSet(StringComparer.Ordinal);
+
+    private HashSet<string> TryGetTriggerIdentities(JsonNode payload)
+    {
+        try
+        {
+            return GetTriggerIdentities(_artifactSerializer.Deserialize(payload.ToJsonString()));
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
+        {
+            // Compatibility validation owns payload acceptance. An older envelope
+            // cannot safely participate in trigger comparison, so it remains
+            // deployable rather than turning this safeguard into a new wire break.
+            return [];
+        }
+    }
+
+    private static RuntimeArtifactOperation ResolveOperation(string artifactType)
+    {
+        if (string.Equals(artifactType, "orchestration-version.new", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(artifactType, "orchestration-version-snapshot", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeArtifactOperation.Deploy;
+        }
+
+        if (string.Equals(artifactType, "orchestration-version.deprecated", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeArtifactOperation.Deprecate;
+        }
+
+        if (string.Equals(artifactType, "orchestration-version.archived", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeArtifactOperation.Archive;
+        }
+
+        throw new InvalidOperationException($"Artifact type '{artifactType}' is not supported.");
+    }
+
+    private static RuntimeReleaseStrategy ResolveStrategy(string strategy)
+    {
+        if (string.IsNullOrWhiteSpace(strategy) ||
+            string.Equals(strategy, "Immediate", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(strategy, "Direct", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeReleaseStrategy.Direct;
+        }
+
+        if (string.Equals(strategy, "Rollout", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeReleaseStrategy.Rollout;
+        }
+
+        throw new InvalidOperationException("Release strategy must be Direct or Rollout.");
+    }
+
+    private static void EnsureDirectLifecycleStrategy(string strategy)
+    {
+        if (ResolveStrategy(strategy) != RuntimeReleaseStrategy.Direct)
+        {
+            throw new InvalidOperationException("Deprecation and archive artifacts must use the Direct release strategy.");
+        }
+    }
+
+    private static RuntimeArtifactDeploymentResult Accepted(
+        RuntimeOrchestrationArtifact artifact,
+        RuntimeOrchestrationArtifactStatus status,
+        string message)
+        => new()
+        {
+            Accepted = true,
+            RuntimeArtifactId = artifact.Id.ToString(),
+            Status = status.ToString(),
+            Message = message
+        };
+
+    private static string Normalize(string value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant();
+
     private static Id ParseId(string value)
         => new(Ulid.Parse(value));
 
@@ -283,5 +569,18 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         }
 
         return new SemanticVersion(major, minor, patch);
+    }
+
+    private enum RuntimeArtifactOperation
+    {
+        Deploy,
+        Deprecate,
+        Archive
+    }
+
+    private enum RuntimeReleaseStrategy
+    {
+        Direct,
+        Rollout
     }
 }

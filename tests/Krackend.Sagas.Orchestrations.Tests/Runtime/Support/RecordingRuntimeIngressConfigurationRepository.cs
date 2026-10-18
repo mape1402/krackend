@@ -33,6 +33,20 @@ internal sealed class RecordingRuntimeIngressConfigurationRepository : IRuntimeI
         return Task.CompletedTask;
     }
 
+    public Task DeactivateTriggersForArtifactsAsync(
+        IReadOnlyCollection<Id> runtimeOrchestrationArtifactIds,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var configuration in _configurations.Where(configuration =>
+                     runtimeOrchestrationArtifactIds.Contains(configuration.RuntimeOrchestrationArtifactId) &&
+                     configuration.IngressKind == IngressKind.Trigger))
+        {
+            configuration.IsActive = false;
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<IReadOnlyCollection<RuntimeIngressConfiguration>> ReadActiveAsync(
         int skip,
         int take,

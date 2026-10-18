@@ -3,7 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts
 {
-    internal sealed class DefaultRuntimeArtifactSerializer : IRuntimeArtifactSerializer
+    public sealed class DefaultRuntimeArtifactSerializer : IRuntimeArtifactSerializer
     {
         private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
         private readonly IOrchestrationArtifactMigrator _migrator;
