@@ -108,6 +108,34 @@ public sealed class DesignCommandValidatorTests
     }
 
     [Fact]
+    public void TaskConditionAndTransformationValidatorsAllowRemovalAndRejectUnsupportedDefinitions()
+    {
+        var unsupportedCondition = new ExecutionCondition
+        {
+            Engine = EngineType.Plugin,
+            Configuration = new DslConditionConfiguration { Expression = new Expression("true") }
+        };
+        var unsupportedTransformation = new TransformationDefinition
+        {
+            Engine = EngineType.Plugin,
+            Configuration = new DslTransformationConfiguration { Dsl = "target {}" }
+        };
+
+        Assert.True(new SetTaskExecutionConditionCommandValidator()
+            .Validate(new SetTaskExecutionConditionCommand(ValidId, null!))
+            .IsValid);
+        Assert.False(new SetTaskExecutionConditionCommandValidator()
+            .Validate(new SetTaskExecutionConditionCommand(ValidId, unsupportedCondition))
+            .IsValid);
+        Assert.True(new SetTaskTransformationCommandValidator()
+            .Validate(new SetTaskTransformationCommand(ValidId, null!))
+            .IsValid);
+        Assert.False(new SetTaskTransformationCommandValidator()
+            .Validate(new SetTaskTransformationCommand(ValidId, unsupportedTransformation))
+            .IsValid);
+    }
+
+    [Fact]
     public void TriggerValidatorsAcceptEventChannelsAndRejectInvalidChannels()
     {
         var create = new CreateTriggerBindingCommandValidator();
