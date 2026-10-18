@@ -11,6 +11,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
     {
         public ConcurrentDictionary<Id, RuntimeOrchestrationArtifact> Artifacts { get; } = new();
 
+        public ConcurrentDictionary<Id, RuntimeArtifactDeploymentRecord> ArtifactDeploymentHistory { get; } = new();
+
         public ConcurrentDictionary<Id, RuntimeDesignNode> DesignNodes { get; } = new();
 
         public ConcurrentDictionary<Id, RuntimeExtensionPackage> ExtensionPackages { get; } = new();

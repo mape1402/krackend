@@ -30,6 +30,25 @@ public sealed class RuntimeArtifactsIndexPageModelTests
     }
 
     [Fact]
+    public async Task OnGetAsync_GroupsDeploymentTimelineByRuntimeArtifact()
+    {
+        var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);
+        var history = new DeploymentHistoryRepositoryStub(
+        [
+            Record(artifact, "orchestration-version.new", RuntimeOrchestrationLifecycleStatus.Active),
+            Record(artifact, "orchestration-version.deprecated", RuntimeOrchestrationLifecycleStatus.Deprecated)
+        ]);
+        var model = CreateModel(new ArtifactRepositoryStub(artifact), history: history);
+
+        await model.OnGetAsync();
+
+        var timeline = Assert.Single(model.HistoryByArtifactId).Value;
+        Assert.Equal(2, timeline.Count);
+        Assert.Contains(timeline, item => item.ArtifactType == "orchestration-version.new" && item.LifecycleStatus == "Active");
+        Assert.Contains(timeline, item => item.ArtifactType == "orchestration-version.deprecated" && item.LifecycleStatus == "Deprecated");
+    }
+
+    [Fact]
     public async Task OnPostRequestStandupAsync_WhenArtifactIsReadyAndActive_NotifiesReplicas()
     {
         var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 2, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);
@@ -113,10 +132,12 @@ public sealed class RuntimeArtifactsIndexPageModelTests
 
     private static IndexModel CreateModel(
         IRuntimeArtifactRepository artifactRepository,
-        IRuntimeArtifactReadyNotifier? notifier = null)
+        IRuntimeArtifactReadyNotifier? notifier = null,
+        IRuntimeArtifactDeploymentHistoryRepository? history = null)
     {
         var model = new IndexModel(
             artifactRepository,
+            history ?? new DeploymentHistoryRepositoryStub(),
             notifier ?? new RecordingRuntimeArtifactReadyNotifier());
         model.TempData = new TempDataDictionary(new DefaultHttpContext(), new EmptyTempDataProvider());
         return model;
@@ -147,6 +168,25 @@ public sealed class RuntimeArtifactsIndexPageModelTests
             ProjectionCompletedOnUtc = status == RuntimeOrchestrationArtifactStatus.Ready ? deployedOnUtc.AddSeconds(20) : null,
             ProjectionFailedOnUtc = status == RuntimeOrchestrationArtifactStatus.Failed ? deployedOnUtc.AddSeconds(20) : null,
             ProjectionError = error
+        };
+
+    private static RuntimeArtifactDeploymentRecord Record(
+        RuntimeOrchestrationArtifact artifact,
+        string artifactType,
+        RuntimeOrchestrationLifecycleStatus lifecycleStatus)
+        => new()
+        {
+            Id = Id.New(),
+            RuntimeOrchestrationArtifactId = artifact.Id,
+            OrchestrationDefinitionKey = artifact.OrchestrationDefinitionKey,
+            OrchestrationVersion = artifact.Version.ToString(),
+            ControlPlaneArtifactId = Id.New().ToString(),
+            ReleaseId = Id.New().ToString(),
+            ArtifactType = artifactType,
+            ReleaseStrategy = "Direct",
+            LifecycleStatus = lifecycleStatus,
+            RuntimeStatus = RuntimeOrchestrationArtifactStatus.Ready,
+            AppliedOnUtc = DateTime.UtcNow
         };
 
     private sealed class ArtifactRepositoryStub(params RuntimeOrchestrationArtifact[] artifacts) : IRuntimeArtifactRepository
@@ -197,6 +237,15 @@ public sealed class RuntimeArtifactsIndexPageModelTests
             Messages.Add(message);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class DeploymentHistoryRepositoryStub(params RuntimeArtifactDeploymentRecord[] records) : IRuntimeArtifactDeploymentHistoryRepository
+    {
+        public Task Append(RuntimeArtifactDeploymentRecord record, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyCollection<RuntimeArtifactDeploymentRecord>> GetAll(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<RuntimeArtifactDeploymentRecord>>(records);
     }
 
     private sealed class EmptyTempDataProvider : ITempDataProvider

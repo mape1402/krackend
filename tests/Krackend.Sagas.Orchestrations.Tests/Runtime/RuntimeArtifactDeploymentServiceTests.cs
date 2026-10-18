@@ -175,6 +175,44 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
+    public async Task DeployAsync_RecordsChronologicalLifecycleHistoryWithReleaseReferences()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var history = new RecordingRuntimeArtifactDeploymentHistoryRepository();
+        var versionId = Id.New();
+        var service = CreateService(repository, scheduler, history: history);
+        var deployed = CreatePackage("sales.sale.created", Version, "checksum-a", versionId);
+        deployed.ArtifactType = "orchestration-version.new";
+        deployed.ReleaseId = Id.New().ToString();
+        deployed.ReleaseStrategy = "Direct";
+
+        Assert.True((await service.DeployAsync(deployed, "design-a")).Accepted);
+        var runtimeArtifact = Assert.Single(repository.Artifacts);
+        runtimeArtifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
+
+        var deprecated = CreatePackage("sales.sale.created", Version, "checksum-a", versionId);
+        deprecated.ArtifactType = "orchestration-version.deprecated";
+        deprecated.ReleaseId = Id.New().ToString();
+        deprecated.ReleaseStrategy = "Direct";
+        Assert.True((await service.DeployAsync(deprecated, "design-a")).Accepted);
+        runtimeArtifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
+
+        var archived = CreatePackage("sales.sale.created", Version, "checksum-a", versionId);
+        archived.ArtifactType = "orchestration-version.archived";
+        archived.ReleaseId = Id.New().ToString();
+        archived.ReleaseStrategy = "Direct";
+        Assert.True((await service.DeployAsync(archived, "design-a")).Accepted);
+
+        Assert.Equal(
+            ["orchestration-version.new", "orchestration-version.deprecated", "orchestration-version.archived"],
+            history.Records.Select(x => x.ArtifactType));
+        Assert.All(history.Records, record => Assert.NotEqual(string.Empty, record.ReleaseId));
+        Assert.Equal(RuntimeOrchestrationLifecycleStatus.Archived, history.Records.Last().LifecycleStatus);
+        Assert.Equal(runtimeArtifact.Id, history.Records.Last().RuntimeOrchestrationArtifactId);
+    }
+
+    [Fact]
     public async Task DeployAsync_WhenExistingFailedArtifactHasSameChecksum_RequeuesProjectionWithSameGeneration()
     {
         var repository = new TestRuntimeArtifactDeploymentRepository();
@@ -752,7 +790,8 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         RecordingRuntimeArtifactProjectionScheduler scheduler,
         IRuntimeArtifactCompatibilityValidator? compatibilityValidator = null,
         RecordingRuntimeIngressConfigurationRepository? ingress = null,
-        IOrchestrationInstanceRepository? instances = null)
+        IOrchestrationInstanceRepository? instances = null,
+        RecordingRuntimeArtifactDeploymentHistoryRepository? history = null)
     {
         if (instances is null)
         {
@@ -767,7 +806,8 @@ public sealed class RuntimeArtifactDeploymentServiceTests
             compatibilityValidator ?? new MessagingRuntimeArtifactCompatibilityValidator(),
             ingress ?? new RecordingRuntimeIngressConfigurationRepository(),
             new DefaultRuntimeArtifactSerializer(),
-            instances);
+            instances,
+            history ?? new RecordingRuntimeArtifactDeploymentHistoryRepository());
     }
 
     private static RuntimeOrchestrationArtifact CreateRuntimeArtifact(

@@ -41,22 +41,29 @@
     }
     else
     {
-        <div class="od-instance-table-wrap">
-            <table class="od-instance-table">
+        @foreach (var orchestration in Model.Artifacts.GroupBy(x => x.OrchestrationDefinitionKey, StringComparer.OrdinalIgnoreCase).OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            <section class="od-artifact-group" aria-label="@orchestration.Key artifact history">
+                <div class="od-artifact-group-head">
+                    <strong>@orchestration.Key</strong>
+                    <span>@orchestration.Count() version@(orchestration.Count() == 1 ? string.Empty : "s") in runtime</span>
+                </div>
+                <div class="od-instance-table-wrap">
+                    <table class="od-instance-table">
                 <thead>
                     <tr>
-                        <th>Orchestration</th>
                         <th>Version</th>
-                        <th>Status</th>
+                        <th>Runtime state</th>
                         <th>Generation</th>
                         <th>Deployed</th>
+                        <th>Release</th>
                         <th>Projection</th>
                         <th>Artifact</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var artifact in Model.Artifacts)
+                    @foreach (var artifact in orchestration.OrderByDescending(x => x.DeployedOnUtc))
                     {
                         var isReady = string.Equals(artifact.Status, "Ready", StringComparison.OrdinalIgnoreCase) && artifact.IsActive;
                         var statusClass = artifact.Status switch
@@ -69,14 +76,11 @@
                         };
                         <tr>
                             <td>
-                                <strong>@artifact.OrchestrationDefinitionKey</strong>
-                            </td>
-                            <td>
                                 <span class="od-version-badge">v@(artifact.Version)</span>
                             </td>
                             <td>
-                                <span class="od-status @statusClass">@artifact.Status</span>
-                                <small>@(artifact.IsActive ? "Active" : "Inactive")</small>
+                                <span class="od-status @statusClass">@artifact.LifecycleStatus</span>
+                                <small>@artifact.Status · @(artifact.IsActive ? "Ingress active" : "Ingress removed")</small>
                             </td>
                             <td>@artifact.IngressGeneration</td>
                             <td>
@@ -85,6 +89,10 @@
                                 {
                                     <small>Activated @artifact.ActivatedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</small>
                                 }
+                            </td>
+                            <td>
+                                <small>@(string.IsNullOrWhiteSpace(artifact.ReleaseStrategy) ? "-" : artifact.ReleaseStrategy)</small>
+                                <small>@(string.IsNullOrWhiteSpace(artifact.LastReleaseId) ? "No release reference" : artifact.LastReleaseId)</small>
                             </td>
                             <td>
                                 @if (artifact.ProjectionCompletedOnUtc is not null)
@@ -109,6 +117,10 @@
                                 <small>Version @artifact.Version</small>
                                 <small>@artifact.ArtifactId</small>
                                 <small>@artifact.Checksum</small>
+                                @if (!string.IsNullOrWhiteSpace(artifact.LastControlPlaneArtifactId))
+                                {
+                                    <small>Control artifact @artifact.LastControlPlaneArtifactId</small>
+                                }
                             </td>
                             <td>
                                 <form method="post" asp-page-handler="RequestStandup" data-orchestrator-busy="true" data-busy-title="Requesting standup" data-busy-message="Runtime is scheduling local standup and notifying peer replicas when gossip is enabled.">
@@ -120,9 +132,31 @@
                                 </form>
                             </td>
                         </tr>
+                        @if (Model.HistoryByArtifactId.TryGetValue(artifact.ArtifactId, out var history) && history.Count > 0)
+                        {
+                            <tr class="od-artifact-history-row">
+                                <td colspan="7">
+                                    <div class="od-artifact-timeline">
+                                        @foreach (var item in history)
+                                        {
+                                            <span>
+                                                <strong>@item.ArtifactType</strong>
+                                                @item.LifecycleStatus · @item.ReleaseStrategy · @item.AppliedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC
+                                                @if (!string.IsNullOrWhiteSpace(item.ReleaseId))
+                                                {
+                                                    <small>Release @item.ReleaseId</small>
+                                                }
+                                            </span>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
                     }
                 </tbody>
-            </table>
-        </div>
+                    </table>
+                </div>
+            </section>
+        }
     }
 </section>

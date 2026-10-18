@@ -2811,3 +2811,60 @@
         display: grid;
     }
 }
+
+.od-artifact-group {
+    margin-top: 1rem;
+    border: 1px solid var(--od-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: var(--od-surface);
+}
+
+.od-artifact-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--od-surface-2);
+    border-bottom: 1px solid var(--od-border);
+    color: var(--od-text);
+}
+
+.od-artifact-group-head span,
+.od-artifact-timeline small {
+    color: var(--od-muted);
+    font-size: 0.78rem;
+}
+
+.od-artifact-history-row td {
+    padding: 0.45rem 0.7rem 0.7rem;
+    background: color-mix(in srgb, var(--od-surface-2) 58%, var(--od-surface));
+}
+
+.od-artifact-timeline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.od-artifact-timeline span {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0.28rem 0.46rem;
+    border: 1px solid var(--od-border);
+    border-radius: 0.35rem;
+    color: var(--od-text);
+    font-size: 0.76rem;
+    background: var(--od-surface);
+}
+
+@media (max-width: 640px) {
+    .od-artifact-group-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+}

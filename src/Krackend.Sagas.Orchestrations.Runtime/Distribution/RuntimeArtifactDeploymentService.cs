@@ -22,6 +22,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
     private readonly IRuntimeArtifactSerializer _artifactSerializer;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
+    private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
@@ -33,7 +34,8 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         IRuntimeArtifactCompatibilityValidator compatibilityValidator,
         IRuntimeIngressConfigurationRepository ingressConfigurationRepository,
         IRuntimeArtifactSerializer artifactSerializer,
-        IOrchestrationInstanceRepository instanceRepository)
+        IOrchestrationInstanceRepository instanceRepository,
+        IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
@@ -42,6 +44,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         _ingressConfigurationRepository = ingressConfigurationRepository ?? throw new ArgumentNullException(nameof(ingressConfigurationRepository));
         _artifactSerializer = artifactSerializer ?? throw new ArgumentNullException(nameof(artifactSerializer));
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
+        _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
     }
 
     /// <inheritdoc />
@@ -158,6 +161,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         using (_unitOfWork.DeferAutoSave())
         {
             await _artifactRepository.Upsert(artifact, cancellationToken);
+            await AppendHistoryAsync(artifact, package, now, cancellationToken);
             if (conflictingArtifacts.Count > 0)
             {
                 await _ingressConfigurationRepository.DeactivateTriggersForArtifactsAsync(
@@ -220,6 +224,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         using (_unitOfWork.DeferAutoSave())
         {
             await _artifactRepository.Upsert(artifact, cancellationToken);
+            await AppendHistoryAsync(artifact, package, now, cancellationToken);
             await ScheduleProjectionAsync(artifact, sourceKey, now, cancellationToken);
             await _unitOfWork.SaveChanges(cancellationToken);
         }
@@ -278,6 +283,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         using (_unitOfWork.DeferAutoSave())
         {
             await _artifactRepository.Upsert(artifact, cancellationToken);
+            await AppendHistoryAsync(artifact, package, artifact.RetiredOnUtc!.Value, cancellationToken);
             await _ingressConfigurationRepository.DeactivateForArtifactsAsync([artifact.Id], cancellationToken);
             await _unitOfWork.SaveChanges(cancellationToken);
         }
@@ -470,6 +476,26 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             RequestedOnUtc = now
         }, cancellationToken);
     }
+
+    private Task AppendHistoryAsync(
+        RuntimeOrchestrationArtifact artifact,
+        RuntimeArtifactDeliveryPackage package,
+        DateTime appliedOnUtc,
+        CancellationToken cancellationToken)
+        => _deploymentHistoryRepository.Append(new RuntimeArtifactDeploymentRecord
+        {
+            Id = Id.New(),
+            RuntimeOrchestrationArtifactId = artifact.Id,
+            OrchestrationDefinitionKey = artifact.OrchestrationDefinitionKey,
+            OrchestrationVersion = artifact.Version.ToString(),
+            ControlPlaneArtifactId = package.ArtifactId,
+            ReleaseId = package.ReleaseId ?? string.Empty,
+            ArtifactType = package.ArtifactType,
+            ReleaseStrategy = artifact.ReleaseStrategy,
+            LifecycleStatus = artifact.LifecycleStatus,
+            RuntimeStatus = artifact.Status,
+            AppliedOnUtc = appliedOnUtc
+        }, cancellationToken);
 
     private static HashSet<string> GetTriggerIdentities(OrchestrationArtifact artifact)
         => artifact.TriggerBindings

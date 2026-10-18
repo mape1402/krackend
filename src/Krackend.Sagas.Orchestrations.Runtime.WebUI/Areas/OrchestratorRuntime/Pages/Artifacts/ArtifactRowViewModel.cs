@@ -26,6 +26,26 @@ public sealed class ArtifactRowViewModel
     public string Status { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the runtime lifecycle state.
+    /// </summary>
+    public string LifecycleStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the release that last changed this artifact.
+    /// </summary>
+    public string LastReleaseId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the latest control-plane artifact id.
+    /// </summary>
+    public string LastControlPlaneArtifactId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the strategy that last changed this artifact.
+    /// </summary>
+    public string ReleaseStrategy { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets a value indicating whether this artifact is active.
     /// </summary>
     public bool IsActive { get; set; }

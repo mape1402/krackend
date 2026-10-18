@@ -31,6 +31,8 @@ public sealed class RuntimeDbContext : DbContext
 
     public DbSet<RuntimeOrchestrationArtifact> RuntimeOrchestrationArtifacts => Set<RuntimeOrchestrationArtifact>();
 
+    public DbSet<RuntimeArtifactDeploymentRecord> RuntimeArtifactDeploymentHistory => Set<RuntimeArtifactDeploymentRecord>();
+
     public DbSet<RuntimeDesignNode> RuntimeDesignNodes => Set<RuntimeDesignNode>();
 
     public DbSet<OrchestrationInstance> OrchestrationInstances => Set<OrchestrationInstance>();
@@ -61,6 +63,7 @@ public sealed class RuntimeDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema("Runtime");
         ConfigureRuntimeArtifacts(modelBuilder);
+        ConfigureRuntimeArtifactDeploymentHistory(modelBuilder);
         ConfigureRuntimeDesignNodes(modelBuilder);
         ConfigureInstances(modelBuilder);
         ConfigureStages(modelBuilder);
@@ -146,6 +149,26 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.IsActive });
         builder.HasIndex(x => new { x.Status, x.IsActive });
         builder.HasIndex(x => new { x.LifecycleStatus, x.IsActive });
+    }
+
+    private static void ConfigureRuntimeArtifactDeploymentHistory(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<RuntimeArtifactDeploymentRecord>();
+        builder.ToTable("RuntimeArtifactDeploymentHistory");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.OrchestrationVersion).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ControlPlaneArtifactId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ReleaseId).HasMaxLength(128).IsRequired(false);
+        builder.Property(x => x.ArtifactType).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ReleaseStrategy).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.LifecycleStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RuntimeStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.AppliedOnUtc });
+        builder.HasIndex(x => x.ControlPlaneArtifactId).IsUnique();
+        builder.HasIndex(x => x.ReleaseId);
     }
 
     private static void ConfigureInstances(ModelBuilder modelBuilder)

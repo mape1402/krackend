@@ -137,6 +137,11 @@ public static class EndpointRouteBuilderExtensions
                 return Results.Ok(await repository.GetById(id, cancellationToken));
             });
 
+        readGroup.MapGet("/artifacts/history", async (
+            [FromServices] IRuntimeArtifactDeploymentHistoryRepository repository,
+            CancellationToken cancellationToken)
+            => Results.Ok(await repository.GetAll(cancellationToken)));
+
         applyGroup.MapPost("/artifacts/{artifactId}/standup", async (
             string artifactId,
             [FromServices] IRuntimeArtifactRepository repository,

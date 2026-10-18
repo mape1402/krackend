@@ -13,6 +13,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.
 public sealed class IndexModel : PageModel
 {
     private readonly IRuntimeArtifactRepository _artifactRepository;
+    private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
     private readonly IRuntimeArtifactReadyNotifier _artifactReadyNotifier;
 
     /// <summary>
@@ -20,9 +21,11 @@ public sealed class IndexModel : PageModel
     /// </summary>
     public IndexModel(
         IRuntimeArtifactRepository artifactRepository,
+        IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository,
         IRuntimeArtifactReadyNotifier artifactReadyNotifier)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
+        _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
         _artifactReadyNotifier = artifactReadyNotifier ?? throw new ArgumentNullException(nameof(artifactReadyNotifier));
     }
 
@@ -30,6 +33,12 @@ public sealed class IndexModel : PageModel
     /// Gets artifact rows.
     /// </summary>
     public IReadOnlyCollection<ArtifactRowViewModel> Artifacts { get; private set; } = Array.Empty<ArtifactRowViewModel>();
+
+    /// <summary>
+    /// Gets deployment history indexed by runtime artifact for the timeline shown in each orchestration group.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyCollection<ArtifactDeploymentHistoryRowViewModel>> HistoryByArtifactId { get; private set; } =
+        new Dictionary<string, IReadOnlyCollection<ArtifactDeploymentHistoryRowViewModel>>(StringComparer.Ordinal);
 
     /// <summary>
     /// Gets or sets the search text.
@@ -83,11 +92,29 @@ public sealed class IndexModel : PageModel
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         var artifacts = await _artifactRepository.GetAll(cancellationToken);
+        var history = await _deploymentHistoryRepository.GetAll(cancellationToken);
         Artifacts = artifacts
             .Where(MatchesSearch)
             .OrderByDescending(x => x.DeployedOnUtc)
             .Select(ToRow)
             .ToArray();
+        HistoryByArtifactId = history
+            .GroupBy(x => x.RuntimeOrchestrationArtifactId.ToString(), StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyCollection<ArtifactDeploymentHistoryRowViewModel>)group
+                    .OrderBy(x => x.AppliedOnUtc)
+                    .Select(x => new ArtifactDeploymentHistoryRowViewModel
+                    {
+                        ArtifactType = x.ArtifactType,
+                        ReleaseId = x.ReleaseId,
+                        ReleaseStrategy = x.ReleaseStrategy,
+                        LifecycleStatus = x.LifecycleStatus.ToString(),
+                        RuntimeStatus = x.RuntimeStatus.ToString(),
+                        AppliedOnUtc = x.AppliedOnUtc
+                    })
+                    .ToArray(),
+                StringComparer.Ordinal);
     }
 
     private bool MatchesSearch(RuntimeOrchestrationArtifact artifact)
@@ -111,6 +138,10 @@ public sealed class IndexModel : PageModel
             OrchestrationDefinitionKey = artifact.OrchestrationDefinitionKey,
             Version = artifact.Version.ToString(),
             Status = artifact.Status.ToString(),
+            LifecycleStatus = artifact.LifecycleStatus.ToString(),
+            LastReleaseId = artifact.LastReleaseId ?? string.Empty,
+            LastControlPlaneArtifactId = artifact.LastControlPlaneArtifactId ?? string.Empty,
+            ReleaseStrategy = artifact.ReleaseStrategy ?? string.Empty,
             IsActive = artifact.IsActive,
             IngressGeneration = artifact.IngressGeneration,
             Checksum = artifact.ArtifactChecksum.Value,
