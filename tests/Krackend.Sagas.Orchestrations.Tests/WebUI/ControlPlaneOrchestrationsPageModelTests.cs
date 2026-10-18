@@ -358,6 +358,13 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
                         Status = OrchestrationVersionStatus.Approved,
                         CreatedOnUtc = "2026-01-02T00:00:00Z"
                     }));
+            VersionService.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>())
+                .Returns(new OrchestrationVersionModel
+                {
+                    Id = "version-1",
+                    OrchestrationDefinitionId = "orch-1",
+                    Status = OrchestrationVersionStatus.Draft,
+                });
             VersionService.Create(Arg.Any<CreateOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
                 .Returns("version-created");
             VersionService.Update(Arg.Any<UpdateOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())

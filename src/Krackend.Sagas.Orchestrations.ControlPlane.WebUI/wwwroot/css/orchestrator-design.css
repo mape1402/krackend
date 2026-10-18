@@ -125,6 +125,57 @@ main.container {
     width: 100%;
 }
 
+.od-review-history {
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+}
+
+.od-review-history-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.7rem;
+}
+
+.od-review-history-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.od-review-history-item {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.08rem 0.6rem;
+    min-width: min(100%, 260px);
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--od-border);
+    border-radius: 0.45rem;
+    background: var(--od-surface-2);
+    color: var(--od-text);
+    text-decoration: none;
+}
+
+.od-review-history-item:hover {
+    border-color: var(--od-primary);
+    color: var(--od-text);
+}
+
+.od-review-history-operation {
+    font-weight: 700;
+}
+
+.od-review-history-state,
+.od-review-history-meta {
+    color: var(--od-muted);
+    font-size: 0.78rem;
+}
+
+.od-review-history-meta {
+    grid-column: 1 / -1;
+}
+
 .od-roadmap-layout {
     display: grid;
     grid-template-columns: 282px minmax(0, 1fr);

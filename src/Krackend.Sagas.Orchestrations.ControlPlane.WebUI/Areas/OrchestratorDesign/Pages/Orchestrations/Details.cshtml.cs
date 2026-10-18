@@ -158,6 +158,14 @@ public sealed class DetailsModel : PageModel
 
         try
         {
+            var current = await _versionService.GetById(
+                new GetOrchestrationVersionByIdQuery(versionId),
+                cancellationToken);
+            if (current is null || !string.Equals(current.OrchestrationDefinitionId, orchestrationId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The selected orchestration version does not belong to this orchestration.");
+            }
+
             switch (action)
             {
                 case "RequestDeployment":
@@ -179,6 +187,8 @@ public sealed class DetailsModel : PageModel
                 case "Abandon":
                     await _versionService.Abandon(new AbandonOrchestrationVersionCommand(versionId, actor), cancellationToken);
                     break;
+                default:
+                    throw new InvalidOperationException("The requested lifecycle action is not supported.");
             }
 
             return RedirectToPage("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId });

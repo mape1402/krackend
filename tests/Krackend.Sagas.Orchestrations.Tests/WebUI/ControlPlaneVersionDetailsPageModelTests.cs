@@ -50,6 +50,37 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
+    public async Task OnGetLoadsLifecycleReviewHistoryForTheSelectedVersion()
+    {
+        var context = CreateContext();
+        context.ReviewService.GetAll(
+                Arg.Is<GetOrchestrationVersionReviewsQuery>(x => x.OrchestrationVersionId == "version-1"),
+                Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new OrchestrationVersionReviewModel
+                {
+                    Id = "review-newest",
+                    OrchestrationVersionId = "version-1",
+                    Operation = OrchestrationVersionReviewOperation.Deprecate,
+                    RequestedOnUtc = DateTime.UtcNow,
+                },
+                new OrchestrationVersionReviewModel
+                {
+                    Id = "review-oldest",
+                    OrchestrationVersionId = "version-1",
+                    Operation = OrchestrationVersionReviewOperation.Deploy,
+                    RequestedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+                },
+            ]);
+
+        var result = await context.Page.OnGetAsync("orch-1", "version-1");
+
+        Assert.IsType<PageResult>(result);
+        Assert.Equal(["review-newest", "review-oldest"], context.Page.ReviewHistory.Select(x => x.Id));
+    }
+
+    [Fact]
     public async Task ConstructorRejectsMissingServicesAndUsesFallbackProviderKey()
     {
         var orchestrationService = Substitute.For<IOrchestrationApplicationService>();

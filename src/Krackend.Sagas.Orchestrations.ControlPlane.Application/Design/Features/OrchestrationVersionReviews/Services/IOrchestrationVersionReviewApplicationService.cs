@@ -10,4 +10,5 @@ public interface IOrchestrationVersionReviewApplicationService
     Task<bool> Apply(ApplyOrchestrationVersionReviewCommand command, CancellationToken cancellationToken = default);
     Task<OrchestrationVersionReviewModel> GetById(GetOrchestrationVersionReviewByIdQuery query, CancellationToken cancellationToken = default);
     Task<OrchestrationVersionReviewModel> GetPending(GetPendingOrchestrationVersionReviewQuery query, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<OrchestrationVersionReviewModel>> GetAll(GetOrchestrationVersionReviewsQuery query, CancellationToken cancellationToken = default);
 }

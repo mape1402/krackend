@@ -128,6 +128,54 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
         Assert.Contains("approved", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task GetAllMapsTheImmutableReviewHistoryForTheRequestedVersion()
+    {
+        var repository = Substitute.For<IOrchestrationVersionReviewRepository>();
+        var versionId = Id.New();
+        var newest = new OrchestrationVersionReview
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = versionId,
+            Operation = OrchestrationVersionReviewOperation.Deprecate,
+            FromStatus = OrchestrationVersionStatus.Deployed,
+            PendingStatus = OrchestrationVersionStatus.PendingDeprecation,
+            TargetStatus = OrchestrationVersionStatus.Deprecated,
+            ExpectedChecksum = "sha256:newest",
+            RequestedBy = "designer",
+            RequestedOnUtc = DateTime.UtcNow,
+            ApprovalStatus = OrchestrationVersionReviewApprovalStatus.Approved,
+            ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Applied,
+        };
+        var previous = new OrchestrationVersionReview
+        {
+            Id = Id.New(),
+            OrchestrationVersionId = versionId,
+            Operation = OrchestrationVersionReviewOperation.Deploy,
+            FromStatus = OrchestrationVersionStatus.Draft,
+            PendingStatus = OrchestrationVersionStatus.PendingDeployment,
+            TargetStatus = OrchestrationVersionStatus.Deployed,
+            ExpectedChecksum = "sha256:previous",
+            RequestedBy = "designer",
+            RequestedOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            ApprovalStatus = OrchestrationVersionReviewApprovalStatus.Rejected,
+            ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Aborted,
+            RejectionComment = "Needs changes.",
+        };
+        repository.GetAllForVersion(versionId, Arg.Any<CancellationToken>())
+            .Returns([newest, previous]);
+        var handler = new GetOrchestrationVersionReviewsQueryHandler(repository);
+
+        var results = await handler.Handle(
+            new GetOrchestrationVersionReviewsQuery(versionId.ToString()),
+            CancellationToken.None);
+
+        Assert.Equal([newest.Id.ToString(), previous.Id.ToString()], results.Select(x => x.Id));
+        Assert.Equal(OrchestrationVersionReviewApplicationStatus.Applied, results.First().ApplicationStatus);
+        Assert.Equal("Needs changes.", results.Last().RejectionComment);
+        await repository.Received(1).GetAllForVersion(versionId, Arg.Any<CancellationToken>());
+    }
+
     private sealed class Fixture
     {
         public Fixture(OrchestrationVersionStatus status)

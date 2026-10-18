@@ -70,6 +70,10 @@ public sealed class DetailsModel : PageModel
 
     public IReadOnlyDictionary<string, int> StageTaskCounts { get; private set; } = new Dictionary<string, int>(StringComparer.Ordinal);
 
+    /// <summary>Gets the auditable lifecycle review history for the selected version.</summary>
+    public IReadOnlyCollection<OrchestrationVersionReviewModel> ReviewHistory { get; private set; }
+        = Array.Empty<OrchestrationVersionReviewModel>();
+
     [BindProperty]
     public CreateStageInput NewStage { get; set; } = new();
 
@@ -122,6 +126,14 @@ public sealed class DetailsModel : PageModel
 
         try
         {
+            var current = await _versionService.GetById(
+                new GetOrchestrationVersionByIdQuery(versionId),
+                cancellationToken);
+            if (current is null || !string.Equals(current.OrchestrationDefinitionId, orchestrationId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The selected orchestration version does not belong to this orchestration.");
+            }
+
             switch (action)
             {
                 case "RequestDeployment":
@@ -143,6 +155,8 @@ public sealed class DetailsModel : PageModel
                 case "Abandon":
                     await _versionService.Abandon(new AbandonOrchestrationVersionCommand(versionId, actor), cancellationToken);
                     break;
+                default:
+                    throw new InvalidOperationException("The requested lifecycle action is not supported.");
             }
 
             return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
@@ -478,6 +492,13 @@ public sealed class DetailsModel : PageModel
             StageTaskCounts = stageTaskCounts;
 
             TriggerBindings = (await _triggerBindingService.GetAll(new GetTriggerBindingsQuery(SelectedVersion.Id), cancellationToken))
+                .ToArray();
+
+            ReviewHistory = (await _reviewService.GetAll(
+                    new GetOrchestrationVersionReviewsQuery(SelectedVersion.Id),
+                    cancellationToken) ?? Array.Empty<OrchestrationVersionReviewModel>())
+                .OrderByDescending(x => x.RequestedOnUtc)
+                .ThenByDescending(x => x.Id, StringComparer.Ordinal)
                 .ToArray();
         }
         catch (Exception ex)

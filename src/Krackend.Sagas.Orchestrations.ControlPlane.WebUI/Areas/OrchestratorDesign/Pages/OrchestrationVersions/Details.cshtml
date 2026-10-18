@@ -56,6 +56,31 @@
     <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
 }
 
+@if (Model.ReviewHistory.Any())
+{
+    <section class="od-list-shell od-review-history" aria-labelledby="review-history-title">
+        <div class="od-review-history-head">
+            <div>
+                <h2 id="review-history-title" class="od-panel-title">Lifecycle reviews</h2>
+                <p class="od-item-meta mb-0">Approval and application history for this roadmap.</p>
+            </div>
+        </div>
+        <div class="od-review-history-list">
+            @foreach (var review in Model.ReviewHistory)
+            {
+                <a class="od-review-history-item"
+                   asp-area="OrchestratorDesign"
+                   asp-page="/Reviews/Details"
+                   asp-route-reviewId="@review.Id">
+                    <span class="od-review-history-operation">@review.Operation</span>
+                    <span class="od-review-history-state">@review.ApprovalStatus / @review.ApplicationStatus</span>
+                    <span class="od-review-history-meta">@review.RequestedOnUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                </a>
+            }
+        </div>
+    </section>
+}
+
 <div class="od-roadmap-layout">
     <aside class="od-list-shell od-roadmap-side">
         <div class="od-trigger-shell">
