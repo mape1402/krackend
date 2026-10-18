@@ -200,6 +200,9 @@ public sealed class DesignCommandValidatorTests
         Assert.False(new CreateOrchestrationDefinitionCommandValidator()
             .Validate(validDefinitionCreate with { OwnerTeamId = "bad-team" })
             .IsValid);
+        Assert.False(new CreateOrchestrationDefinitionCommandValidator()
+            .Validate(validDefinitionCreate with { OwnerTeamId = null! })
+            .IsValid);
         Assert.False(new UpdateOrchestrationDefinitionCommandValidator()
             .Validate(validDefinitionUpdate with { DomainId = "bad-domain" })
             .IsValid);
@@ -225,6 +228,9 @@ public sealed class DesignCommandValidatorTests
             .IsValid);
         Assert.False(new CreateBranchRuleDefinitionCommandValidator()
             .Validate(validBranchCreate with { NavigateToId = "bad-to" })
+            .IsValid);
+        Assert.False(new CreateBranchRuleDefinitionCommandValidator()
+            .Validate(validBranchCreate with { NavigateToId = null! })
             .IsValid);
         Assert.False(new UpdateBranchRuleDefinitionCommandValidator()
             .Validate(validBranchUpdate with { FromId = "bad-from" })

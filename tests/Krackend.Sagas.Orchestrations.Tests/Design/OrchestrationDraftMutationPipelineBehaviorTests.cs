@@ -20,6 +20,13 @@ public sealed class OrchestrationDraftMutationPipelineBehaviorTests
     private const string BranchId = "01JMJGBJ0R7WFN9QBG3CCBEVM7";
 
     [Fact]
+    public void ConstructorRejectsANullDraftEditGuard()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new OrchestrationDraftMutationPipelineBehavior<SetDomainIsActiveCommand, bool>(null!));
+    }
+
+    [Fact]
     public async Task HandleGuardsStringReturningDraftMutationsBeforeCallingNext()
     {
         await AssertStringGuarded(

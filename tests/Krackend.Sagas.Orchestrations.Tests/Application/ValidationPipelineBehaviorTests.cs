@@ -76,6 +76,13 @@ public sealed class ValidationPipelineBehaviorTests
         Assert.Equal("Role", Assert.Single(exception.Errors).PropertyName);
     }
 
+    [Fact]
+    public void ValidationBehaviorsRejectNullValidatorCollections()
+    {
+        Assert.Throws<ArgumentNullException>(() => new DesignValidationPipelineBehavior(null!));
+        Assert.Throws<ArgumentNullException>(() => new SecurityValidationPipelineBehavior(null!));
+    }
+
     public sealed record SampleRequest(string Value) : IRequest<string>;
 
     private sealed class PassingValidator : AbstractValidator<SampleRequest>
