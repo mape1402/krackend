@@ -49,6 +49,8 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphPayloadSchemaDesignerHost, MetadataDescriptorButterMorphSchemaDesignerHost>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphDesignerHost, OrchestrationButterMorphDesignerHost>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphValidationDesignerHost, OrchestrationButterMorphValidationDesignerHost>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphMappingViewerHost, OrchestrationButterMorphMappingViewerHost>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IButterMorphValidationViewerHost, OrchestrationButterMorphValidationViewerHost>());
         return services;
     }
 

@@ -124,9 +124,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
 
         return LoadCondition(
             schemaContext,
-            stage?.HasExecutionCondition == true
-                ? (stage.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
-                : string.Empty);
+            (stage?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty);
     }
 
     private async Task<ButterMorphValidationDesignerLoadResult> LoadTaskCondition(
@@ -139,9 +137,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
 
         return LoadCondition(
             schemaContext,
-            task?.HasExecutionCondition == true
-                ? (task.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
-                : string.Empty);
+            (task?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty);
     }
 
     private async Task<ButterMorphValidationDesignerLoadResult> LoadTaskCompensationCondition(
@@ -154,9 +150,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
 
         return LoadCondition(
             schemaContext,
-            task?.CompensationDefinition?.HasExecutionCondition == true
-                ? (task.CompensationDefinition.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
-                : string.Empty);
+            (task?.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty);
     }
 
     private async Task<ButterMorphValidationDesignerLoadResult> LoadTriggerCompensationCondition(
@@ -169,9 +163,7 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
 
         return LoadCondition(
             schemaContext,
-            trigger?.CompensationDefinition?.HasExecutionCondition == true
-                ? (trigger.CompensationDefinition.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty
-                : string.Empty);
+            (trigger?.CompensationDefinition?.ExecutionCondition?.Configuration as DslConditionConfiguration)?.Expression.ToString() ?? string.Empty);
     }
 
     private ButterMorphValidationDesignerLoadResult LoadCondition(

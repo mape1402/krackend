@@ -3,6 +3,8 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 using global::ButterMorph.Json.Schema;
 using global::ButterMorph.SchemaDesign;
 using global::ButterMorph.Web.Razor;
+using global::ButterMorph.Abstractions;
+using global::ButterMorph.Core;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
@@ -457,9 +459,9 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
             ContextKey = parser.FormatTriggerCompensationTransformation("version-1", "trigger-1")
         });
 
-        Assert.Empty(disabledTask.InitialDslContent);
+        Assert.Equal("should not load", disabledTask.InitialDslContent);
         Assert.Empty(missingTaskCompensation.InitialDslContent);
-        Assert.Empty(disabledTrigger.InitialDslContent);
+        Assert.Equal("should not load", disabledTrigger.InitialDslContent);
     }
 
     [Fact]
@@ -858,11 +860,11 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
             ContextKey = parser.FormatTriggerCompensationExecutionCondition("version-1", "trigger-1")
         });
 
-        Assert.Empty(stage.InitialDslContent);
-        Assert.Empty(task.InitialDslContent);
-        Assert.Empty(taskCompensationDisabled.InitialDslContent);
+        Assert.Equal("stage.ready", stage.InitialDslContent);
+        Assert.Equal("task.ready", task.InitialDslContent);
+        Assert.Equal("task.compensate", taskCompensationDisabled.InitialDslContent);
         Assert.Empty(taskCompensationMissing.InitialDslContent);
-        Assert.Empty(triggerCompensation.InitialDslContent);
+        Assert.Equal("trigger.compensate", triggerCompensation.InitialDslContent);
     }
 
     [Fact]
@@ -1212,4 +1214,293 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
             return true;
         }
     }
+}
+
+public sealed class OrchestrationButterMorphViewerHostTests
+{
+    [Fact]
+    public async Task MappingViewerLoadsStoredTransformationWhenTheMappingIsDisabled()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContexts = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        var document = Substitute.For<ITransformationDocument>();
+        var schemaContext = CreateSchemaContext();
+
+        schemaContexts.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(schemaContext);
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            HasTransformation = false,
+            Transformation = CreateTransformation("target { Result: $trigger.id }")
+        });
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(document);
+
+        var host = new OrchestrationButterMorphMappingViewerHost(
+            schemaContexts,
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            CreateImporter(),
+            dslParser);
+
+        var result = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskTransformation("version-1", "task-1")
+        });
+
+        Assert.Equal("Task transformation", result.Name);
+        Assert.Equal("target { Result: $trigger.id }", result.DslContent);
+        Assert.Same(document, result.Document);
+        Assert.NotNull(result.TargetSchema);
+        Assert.Empty(result.Message);
+    }
+
+    [Fact]
+    public async Task MappingViewerReportsInvalidDslAndMissingTargetSnapshotWithoutThrowing()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContexts = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        var context = CreateSchemaContext();
+        context.Target.SchemaBinding.Snapshot = null;
+
+        schemaContexts.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(context);
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            Transformation = CreateTransformation("invalid")
+        });
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(_ => throw new InvalidOperationException("invalid DSL"));
+
+        var host = new OrchestrationButterMorphMappingViewerHost(
+            schemaContexts,
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            CreateImporter(),
+            dslParser);
+
+        var result = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskTransformation("version-1", "task-1")
+        });
+
+        Assert.Null(result.Document);
+        Assert.Null(result.TargetSchema);
+        Assert.Contains("does not have a stored schema snapshot", result.Message);
+        Assert.Contains("could not be parsed", result.Message);
+    }
+
+    [Fact]
+    public async Task MappingViewerLoadsStoredCompensationDefinitionsAndRejectsUnknownContext()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var schemaContexts = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var triggers = Substitute.For<ITriggerBindingApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(Substitute.For<ITransformationDocument>());
+        schemaContexts.GetForTaskCompensation(Arg.Any<GetTaskCompensationSchemaContextQuery>()).Returns(CreateSchemaContext());
+        schemaContexts.GetForTriggerCompensation(Arg.Any<GetTriggerCompensationSchemaContextQuery>()).Returns(CreateSchemaContext());
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            CompensationDefinition = new CompensationDefinition
+            {
+                HasTransformation = false,
+                Transformation = CreateTransformation("target { Compensation: $trigger.id }")
+            }
+        });
+        triggers.GetById(Arg.Any<GetTriggerBindingByIdQuery>()).Returns(new TriggerBindingModel
+        {
+            Id = "trigger-1",
+            CompensationDefinition = new CompensationDefinition
+            {
+                HasTransformation = false,
+                Transformation = CreateTransformation("target { Compensation: $trigger.id }")
+            }
+        });
+
+        var host = new OrchestrationButterMorphMappingViewerHost(
+            schemaContexts,
+            tasks,
+            triggers,
+            contextParser,
+            CreateImporter(),
+            dslParser);
+
+        var task = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskCompensationTransformation("version-1", "task-1")
+        });
+        var trigger = await host.Load(new ButterMorphMappingViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTriggerCompensationTransformation("version-1", "trigger-1")
+        });
+        var invalid = await host.Load(new ButterMorphMappingViewerLoadRequest { ContextKey = "invalid" });
+
+        Assert.Equal("Task compensation transformation", task.Name);
+        Assert.Equal("Trigger compensation transformation", trigger.Name);
+        Assert.Equal("target { Compensation: $trigger.id }", task.DslContent);
+        Assert.Equal("target { Compensation: $trigger.id }", trigger.DslContent);
+        Assert.Contains("Invalid orchestration transformation context.", invalid.Message);
+    }
+
+    [Fact]
+    public async Task ValidationViewerLoadsStoredConditionWhenItIsDisabled()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        var document = Substitute.For<IValidationDocument>();
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            HasExecutionCondition = false,
+            ExecutionCondition = CreateCondition("validate { assert eq($trigger.state, \"ready\"): \"Ready\" }")
+        });
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(document);
+
+        var host = new OrchestrationButterMorphValidationViewerHost(
+            Substitute.For<IStageApplicationService>(),
+            tasks,
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            dslParser);
+
+        var result = await host.Load(new ButterMorphValidationViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskExecutionCondition("version-1", "task-1")
+        });
+
+        Assert.Equal("Task execution condition", result.Name);
+        Assert.NotNull(result.Document);
+        Assert.Contains("validate", result.DslContent);
+        Assert.Empty(result.Message);
+    }
+
+    [Fact]
+    public async Task ValidationViewerKeepsExpressionConditionsReadableAndExplainsTheMissingVisualDocument()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var stages = Substitute.For<IStageApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        stages.GetById(Arg.Any<GetStageDefinitionByIdQuery>()).Returns(new StageDefinitionModel
+        {
+            Id = "stage-1",
+            ExecutionCondition = CreateCondition("eq($trigger.state, \"ready\")")
+        });
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(Substitute.For<ITransformationDocument>());
+
+        var host = new OrchestrationButterMorphValidationViewerHost(
+            stages,
+            Substitute.For<ITaskApplicationService>(),
+            Substitute.For<ITriggerBindingApplicationService>(),
+            contextParser,
+            dslParser);
+
+        var result = await host.Load(new ButterMorphValidationViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatStageExecutionCondition("version-1", "stage-1")
+        });
+
+        Assert.Null(result.Document);
+        Assert.Equal("eq($trigger.state, \"ready\")", result.DslContent);
+        Assert.Contains("does not have a visual validation document", result.Message);
+    }
+
+    [Fact]
+    public async Task ValidationViewerLoadsCompensationDefinitionsAndHandlesInvalidContexts()
+    {
+        var contextParser = new OrchestrationButterMorphDesignerContextParser();
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var triggers = Substitute.For<ITriggerBindingApplicationService>();
+        var dslParser = Substitute.For<IDslParser>();
+        dslParser.Parse(Arg.Any<DslDefinition>()).Returns(Substitute.For<IValidationDocument>());
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel
+        {
+            Id = "task-1",
+            CompensationDefinition = new CompensationDefinition
+            {
+                HasExecutionCondition = false,
+                ExecutionCondition = CreateCondition("validate { assert true: \"ok\" }")
+            }
+        });
+        triggers.GetById(Arg.Any<GetTriggerBindingByIdQuery>()).Returns(new TriggerBindingModel
+        {
+            Id = "trigger-1",
+            CompensationDefinition = new CompensationDefinition
+            {
+                HasExecutionCondition = false,
+                ExecutionCondition = CreateCondition("validate { assert true: \"ok\" }")
+            }
+        });
+
+        var host = new OrchestrationButterMorphValidationViewerHost(
+            Substitute.For<IStageApplicationService>(),
+            tasks,
+            triggers,
+            contextParser,
+            dslParser);
+
+        var task = await host.Load(new ButterMorphValidationViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTaskCompensationExecutionCondition("version-1", "task-1")
+        });
+        var trigger = await host.Load(new ButterMorphValidationViewerLoadRequest
+        {
+            ContextKey = contextParser.FormatTriggerCompensationExecutionCondition("version-1", "trigger-1")
+        });
+        var invalid = await host.Load(new ButterMorphValidationViewerLoadRequest { ContextKey = "invalid" });
+
+        Assert.Equal("Task compensation execution condition", task.Name);
+        Assert.Equal("Trigger compensation execution condition", trigger.Name);
+        Assert.Contains("Invalid orchestration execution condition context.", invalid.Message);
+    }
+
+    private static OrchestrationSchemaContext CreateSchemaContext()
+        => new()
+        {
+            OrchestrationVersion = "1.0.0",
+            Target = new OrchestrationSchemaTarget
+            {
+                Alias = "request",
+                SchemaBinding = CreateBinding()
+            }
+        };
+
+    private static SchemaBinding CreateBinding()
+        => new()
+        {
+            ContractKey = "commands.sales.reserve",
+            ContractVersion = new SemanticVersion(1, 0, 0),
+            Snapshot = new DesignSchemaContractSnapshot
+            {
+                SchemaFormat = "JsonSchema",
+                SchemaJson = """
+                    { "type": "object", "properties": { "id": { "type": "string" } } }
+                    """,
+                ContentHash = "target-hash"
+            }
+        };
+
+    private static TransformationDefinition CreateTransformation(string dsl)
+        => new()
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslTransformationConfiguration { Dsl = dsl }
+        };
+
+    private static ExecutionCondition CreateCondition(string dsl)
+        => new()
+        {
+            Engine = EngineType.DSL,
+            Configuration = new DslConditionConfiguration { Expression = new Expression(dsl) }
+        };
+
+    private static OrchestrationButterMorphSchemaImporter CreateImporter()
+        => new(new JsonSchemaImporter(), new PayloadSchemaDefinitionHydrator(), new PayloadSchemaBuilder());
 }

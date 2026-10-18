@@ -763,9 +763,10 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
             return;
         }
 
-        const mode = orchestrationVersionCanEdit ? 'edit' : 'view';
         const contextKey = `orchestration-stage-execution-condition:${orchestrationVersionId}:${stageId}`;
-        const designerUrl = `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=${mode}`;
+        const designerUrl = orchestrationVersionCanEdit
+            ? `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=edit`
+            : `/buttermorph/validations/viewer?context=${encodeURIComponent(contextKey)}`;
         window.ButterMorphHost.openFrame(designerUrl, {
             title: 'ButterMorph execution condition',
             width: '96vw',
@@ -1230,13 +1231,15 @@ window.addEventListener('message', event => {
             return;
         }
 
-        const mode = canEdit ? 'edit' : 'view';
         const prefix = kind === 'condition'
             ? 'orchestration-trigger-compensation-execution-condition'
             : 'orchestration-trigger-compensation-transform';
-        const route = kind === 'condition' ? '/buttermorph/validations/designer' : '/buttermorph/designer';
+        const route = canEdit
+            ? (kind === 'condition' ? '/buttermorph/validations/designer' : '/buttermorph/designer')
+            : (kind === 'condition' ? '/buttermorph/validations/viewer' : '/buttermorph/mappings/viewer');
         const contextKey = `${prefix}:${orchestrationVersionId}:${triggerId}`;
-        window.ButterMorphHost.openFrame(`${route}?context=${encodeURIComponent(contextKey)}&mode=${mode}`, {
+        const mode = canEdit ? '&mode=edit' : '';
+        window.ButterMorphHost.openFrame(`${route}?context=${encodeURIComponent(contextKey)}${mode}`, {
             title: kind === 'condition' ? 'ButterMorph trigger compensation condition' : 'ButterMorph trigger compensation transformation',
             width: '96vw',
             height: '92vh'

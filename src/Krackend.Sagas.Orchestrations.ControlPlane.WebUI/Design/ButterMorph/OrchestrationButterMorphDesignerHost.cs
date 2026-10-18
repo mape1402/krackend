@@ -68,9 +68,7 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
                 var task = await _taskApplicationService.GetById(new GetTaskDefinitionByIdQuery(compensationContext.TaskDefinitionId));
                 return LoadTransformation(
                     schemaContext,
-                    task?.CompensationDefinition?.HasTransformation == true
-                        ? (task.CompensationDefinition.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty
-                        : string.Empty);
+                    (task?.CompensationDefinition?.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty);
             }
 
             if (_contextParser.TryParseTriggerCompensationTransformation(request.ContextKey, out var triggerContext))
@@ -81,9 +79,7 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
                 var trigger = await _triggerBindingApplicationService.GetById(new GetTriggerBindingByIdQuery(triggerContext.TriggerBindingId));
                 return LoadTransformation(
                     schemaContext,
-                    trigger?.CompensationDefinition?.HasTransformation == true
-                        ? (trigger.CompensationDefinition.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty
-                        : string.Empty);
+                    (trigger?.CompensationDefinition?.Transformation?.Configuration as DslTransformationConfiguration)?.Dsl ?? string.Empty);
             }
 
             return CreateLoadFailure("Invalid orchestration transformation context.");
