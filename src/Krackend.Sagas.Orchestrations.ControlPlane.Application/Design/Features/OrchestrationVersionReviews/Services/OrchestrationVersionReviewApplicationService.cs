@@ -27,4 +27,7 @@ public sealed class OrchestrationVersionReviewApplicationService : IOrchestratio
 
     public Task<OrchestrationVersionReviewModel> GetById(GetOrchestrationVersionReviewByIdQuery query, CancellationToken cancellationToken = default)
         => _mediator.Send(query, cancellationToken);
+
+    public Task<OrchestrationVersionReviewModel> GetPending(GetPendingOrchestrationVersionReviewQuery query, CancellationToken cancellationToken = default)
+        => _mediator.Send(query, cancellationToken);
 }

@@ -21,61 +21,32 @@ public interface IOrchestrationVersionApplicationService
     /// <returns>True when the operation completes successfully.</returns>
     Task<bool> Update(UpdateOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Moves the resource to InReview status.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to request and apply lifecycle transitions.")]
     Task<bool> SetInReview(SetOrchestrationVersionInReviewCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Moves the resource back to Draft status.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to reject or abort a lifecycle review.")]
     Task<bool> ReturnToDraft(ReturnOrchestrationVersionToDraftCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Reopens the review process for the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to request a new lifecycle review.")]
     Task<bool> ReopenReview(ReopenOrchestrationVersionReviewCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Approves the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to approve a lifecycle review.")]
     Task<bool> Approve(ApproveOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Deploys the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to apply a deployment review.")]
     Task<bool> Deploy(DeployOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Marks the resource as deprecated.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to apply a deprecation review.")]
     Task<bool> Deprecate(DeprecateOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Archives the resource.
-    /// </summary>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to apply an archive review.")]
+    Task<bool> Archive(ArchiveOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>Abandons an editable draft directly without creating a review.</summary>
     /// <param name="command">Command to execute.</param>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>True when the operation completes successfully.</returns>
-    Task<bool> Archive(ArchiveOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
+    Task<bool> Abandon(AbandonOrchestrationVersionCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets one resource by identifier.

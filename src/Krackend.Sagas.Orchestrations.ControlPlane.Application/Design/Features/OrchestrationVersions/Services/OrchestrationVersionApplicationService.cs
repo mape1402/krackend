@@ -40,82 +40,37 @@ public sealed class OrchestrationVersionApplicationService : IOrchestrationVersi
         return _mediator.Send(command, cancellationToken);
     }
 
-    /// <summary>
-    /// Moves the resource to InReview status.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to request and apply lifecycle transitions.")]
     public Task<bool> SetInReview(SetOrchestrationVersionInReviewCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
 
-    /// <summary>
-    /// Moves the resource back to Draft status.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to reject or abort a lifecycle review.")]
     public Task<bool> ReturnToDraft(ReturnOrchestrationVersionToDraftCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
 
-    /// <summary>
-    /// Reopens the review process for the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to request a new lifecycle review.")]
     public Task<bool> ReopenReview(ReopenOrchestrationVersionReviewCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
 
-    /// <summary>
-    /// Approves the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to approve a lifecycle review.")]
     public Task<bool> Approve(ApproveOrchestrationVersionCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
 
-    /// <summary>
-    /// Deploys the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to apply a deployment review.")]
     public Task<bool> Deploy(DeployOrchestrationVersionCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
 
-    /// <summary>
-    /// Marks the resource as deprecated.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to apply a deprecation review.")]
     public Task<bool> Deprecate(DeprecateOrchestrationVersionCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
 
-    /// <summary>
-    /// Archives the resource.
-    /// </summary>
-    /// <param name="command">Command to execute.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>True when the operation completes successfully.</returns>
+    [Obsolete("Use IOrchestrationVersionReviewApplicationService to apply an archive review.")]
     public Task<bool> Archive(ArchiveOrchestrationVersionCommand command, CancellationToken cancellationToken = default)
-    {
-        return _mediator.Send(command, cancellationToken);
-    }
+        => _mediator.Send(command, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<bool> Abandon(AbandonOrchestrationVersionCommand command, CancellationToken cancellationToken = default)
+        => _mediator.Send(command, cancellationToken);
 
     /// <summary>
     /// Gets one resource by identifier.

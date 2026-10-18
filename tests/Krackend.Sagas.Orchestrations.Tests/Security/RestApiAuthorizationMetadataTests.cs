@@ -25,7 +25,7 @@ public sealed class RestApiAuthorizationMetadataTests
 
         AssertEndpointPolicy(app, "/api/v1/control-plane/design/orchestrations", "GET", "control-plane-read");
         AssertEndpointPolicy(app, "/api/v1/control-plane/design/orchestrations", "POST", "control-plane-design-write");
-        AssertEndpointPolicy(app, "/api/v1/control-plane/design/versions/{versionId}/deploy", "POST", "control-plane-release-execute");
+        AssertEndpointPolicy(app, "/api/v1/control-plane/design/reviews/{reviewId}/apply", "POST", "control-plane-release-execute");
         AssertEndpointPolicy(app, "/api/v1/control-plane/security/teams", "POST", "control-plane-security-manage");
     }
 

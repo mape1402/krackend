@@ -54,6 +54,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     {
         var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
         var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
+        var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var stageService = Substitute.For<IStageApplicationService>();
         var taskService = Substitute.For<ITaskApplicationService>();
         var triggerService = Substitute.For<ITriggerBindingApplicationService>();
@@ -65,6 +66,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("orchestrationService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
             null!,
             versionService,
+            reviewService,
             stageService,
             taskService,
             triggerService,
@@ -73,6 +75,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
             orchestrationService,
             null!,
+            reviewService,
             stageService,
             taskService,
             triggerService,
@@ -81,6 +84,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("stageService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             null!,
             taskService,
             triggerService,
@@ -89,6 +93,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("taskService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             null!,
             triggerService,
@@ -97,6 +102,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("triggerBindingService", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             taskService,
             null!,
@@ -105,6 +111,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         Assert.Equal("schemaContractCatalog", Assert.Throws<ArgumentNullException>(() => new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             taskService,
             triggerService,
@@ -114,6 +121,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var nullOptionsPage = new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             taskService,
             triggerService,
@@ -134,6 +142,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var nullValuePage = new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             taskService,
             triggerService,
@@ -152,6 +161,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         var customProviderPage = new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             taskService,
             triggerService,
@@ -197,35 +207,33 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     }
 
     [Fact]
-    public async Task TransitionVersionInvokesRequestedApplicationCommand()
+    public async Task TransitionVersionRequestsLifecycleReviewsAndAbandonsDrafts()
     {
         var context = CreateContext();
 
-        foreach (var action in new[] { "SetInReview", "ReturnToDraft", "ReopenReview", "Approve", "Deploy", "Deprecate", "Archive", "Unknown" })
+        foreach (var action in new[] { "RequestDeployment", "RequestDeprecation", "RequestArchive" })
         {
             var result = await context.Page.OnPostTransitionVersionAsync("orch-1", "version-1", action);
-            Assert.IsType<RedirectToPageResult>(result);
+            Assert.Equal("/Reviews/Details", Assert.IsType<RedirectToPageResult>(result).PageName);
         }
+        Assert.IsType<RedirectToPageResult>(await context.Page.OnPostTransitionVersionAsync("orch-1", "version-1", "Abandon"));
 
-        await context.VersionService.Received(1).SetInReview(Arg.Any<SetOrchestrationVersionInReviewCommand>(), Arg.Any<CancellationToken>());
-        await context.VersionService.Received(1).ReturnToDraft(Arg.Any<ReturnOrchestrationVersionToDraftCommand>(), Arg.Any<CancellationToken>());
-        await context.VersionService.Received(1).ReopenReview(Arg.Any<ReopenOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>());
-        await context.VersionService.Received(1).Approve(Arg.Any<ApproveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
-        await context.VersionService.Received(1).Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
-        await context.VersionService.Received(1).Deprecate(Arg.Any<DeprecateOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
-        await context.VersionService.Received(1).Archive(Arg.Any<ArchiveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
+        await context.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Deploy), Arg.Any<CancellationToken>());
+        await context.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Deprecate), Arg.Any<CancellationToken>());
+        await context.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Archive), Arg.Any<CancellationToken>());
+        await context.VersionService.Received(1).Abandon(Arg.Any<AbandonOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task TransitionVersionSurfacesFriendlyDslErrors()
     {
         var context = CreateContext();
-        context.VersionService.Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
-            .Returns<Task<bool>>(_ => throw new OrchestrationArtifactDslValidationException(
+        context.ReviewService.Request(Arg.Any<RequestOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new OrchestrationArtifactDslValidationException(
                 "stage:inventories:task:discountstock:transformation",
-                "DSL has semantic errors."));
+                "DSL has semantic errors.")));
 
-        var result = await context.Page.OnPostTransitionVersionAsync("orch-1", "version-1", "Deploy", CancellationToken.None);
+        var result = await context.Page.OnPostTransitionVersionAsync("orch-1", "version-1", "RequestDeployment", CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
         Assert.Contains("cannot be published", context.Page.ErrorMessage, StringComparison.Ordinal);
@@ -236,23 +244,23 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     public async Task TransitionVersionSurfacesInvalidOperationAndGenericErrors()
     {
         var invalidOperation = CreateContext();
-        invalidOperation.VersionService.Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
-            .Returns<Task<bool>>(_ => throw new InvalidOperationException("Runtime node credentials are not ready."));
+        invalidOperation.ReviewService.Request(Arg.Any<RequestOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new InvalidOperationException("Runtime node credentials are not ready.")));
 
         var invalidOperationResult = await invalidOperation.Page.OnPostTransitionVersionAsync(
             "orch-1",
             "version-1",
-            "Deploy",
+            "RequestDeployment",
             CancellationToken.None);
 
         var generic = CreateContext();
-        generic.VersionService.Approve(Arg.Any<ApproveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
-            .Returns<Task<bool>>(_ => throw new Exception("hidden"));
+        generic.ReviewService.Request(Arg.Any<RequestOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new Exception("hidden")));
 
         var genericResult = await generic.Page.OnPostTransitionVersionAsync(
             "orch-1",
             "version-1",
-            "Approve",
+            "RequestDeployment",
             CancellationToken.None);
 
         Assert.IsType<PageResult>(invalidOperationResult);
@@ -961,11 +969,12 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     {
         var page = CreateContext().Page;
 
-        Assert.Equal(["SetInReview", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
-        Assert.Equal(["Approve", "ReturnToDraft", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.InReview));
-        Assert.Equal(["Deploy", "ReopenReview", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Approved));
-        Assert.Equal(["Deprecate", "Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
-        Assert.Equal(["Archive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
+        Assert.Equal(["RequestDeployment", "Abandon"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
+        Assert.Equal(["OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingDeployment));
+        Assert.Equal(["OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingDeprecation));
+        Assert.Equal(["OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingArchive));
+        Assert.Equal(["RequestDeprecation"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
+        Assert.Equal(["RequestArchive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
         Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
     }
 
@@ -1386,6 +1395,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
     {
         var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
         var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
+        var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var stageService = Substitute.For<IStageApplicationService>();
         var taskService = Substitute.For<ITaskApplicationService>();
         var triggerService = Substitute.For<ITriggerBindingApplicationService>();
@@ -1468,17 +1478,22 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
             .Returns(Task.FromResult(true));
         versionService.Archive(Arg.Any<ArchiveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
+        versionService.Abandon(Arg.Any<AbandonOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+        reviewService.Request(Arg.Any<RequestOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("review-1"));
 
         var page = new VersionDetailsModel(
             orchestrationService,
             versionService,
+            reviewService,
             stageService,
             taskService,
             triggerService,
             schemaContractCatalog,
             Options.Create(new OrchestratorDesignWebUIOptions { DefaultSchemaRegistryProviderKey = "knowl" }));
 
-        return new TestContext(page, orchestrationService, versionService, stageService, triggerService, schemaContractCatalog);
+        return new TestContext(page, orchestrationService, versionService, reviewService, stageService, triggerService, schemaContractCatalog);
     }
 
     private static OrchestrationDefinitionModel CreateOrchestration()
@@ -1657,6 +1672,7 @@ public sealed class ControlPlaneVersionDetailsPageModelTests
         VersionDetailsModel Page,
         IOrchestrationApplicationService OrchestrationService,
         IOrchestrationVersionApplicationService VersionService,
+        IOrchestrationVersionReviewApplicationService ReviewService,
         IStageApplicationService StageService,
         ITriggerBindingApplicationService TriggerService,
         ISchemaContractCatalog SchemaContractCatalog);

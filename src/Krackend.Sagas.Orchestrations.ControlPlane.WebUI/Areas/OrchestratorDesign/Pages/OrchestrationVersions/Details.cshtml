@@ -4,14 +4,49 @@
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
     ViewData["Title"] = "Version roadmap";
+
+    string VersionLabel()
+        => string.IsNullOrWhiteSpace(Model.SelectedVersion?.Version)
+            ? "Draft roadmap"
+            : $"Roadmap {Model.SelectedVersion.Version}";
+
+    string ActionLabel(string action)
+        => action switch
+        {
+            "RequestDeployment" => "Send to deployment review",
+            "RequestDeprecation" => "Request deprecation",
+            "RequestArchive" => "Request archive",
+            "OpenReview" => "Open review",
+            "Abandon" => "Abandon draft",
+            _ => action
+        };
 }
 
 <div class="od-page-head">
     <div>
         <h1 class="od-page-title">@Model.Orchestration?.Name</h1>
-        <p class="od-page-subtitle">Roadmap @Model.SelectedVersion?.Version</p>
+        <p class="od-page-subtitle">@VersionLabel()</p>
     </div>
     <div class="d-flex gap-2">
+        @if (Model.GetAllowedActions(Model.SelectedVersion?.Status ?? OrchestrationVersionStatus.Abandoned).Any())
+        {
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false">Actions</button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    @foreach (var action in Model.GetAllowedActions(Model.SelectedVersion!.Status))
+                    {
+                        <li>
+                            <form method="post" asp-page-handler="TransitionVersion" class="od-inline-form" data-orchestrator-validate="false" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected lifecycle action.">
+                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                                <input type="hidden" name="versionId" value="@Model.VersionId" />
+                                <input type="hidden" name="action" value="@action" />
+                                <button type="submit" class="dropdown-item @(action == "Abandon" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
+                            </form>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
         <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Details" asp-route-orchestrationId="@Model.OrchestrationId" class="btn btn-outline-secondary">Back</a>
     </div>
 </div>

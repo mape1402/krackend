@@ -278,23 +278,27 @@ public static class EndpointRouteBuilderExtensions
 
     private static void MapVersionActions(RouteGroupBuilder group, ControlPlaneRestApiOptions options)
     {
+        var readGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReadPolicy);
         var writeGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.DesignWritePolicy);
         var releaseGroup = RequirePolicy(group.MapGroup(string.Empty), options.Authorization.ReleaseExecutePolicy);
 
-        writeGroup.MapPost("/design/versions/{versionId}/submit-review", async (string versionId, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.SetInReview(new CPDesign.SetOrchestrationVersionInReviewCommand(versionId), cancellationToken)));
-        writeGroup.MapPost("/design/versions/{versionId}/return-draft", async (string versionId, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.ReturnToDraft(new CPDesign.ReturnOrchestrationVersionToDraftCommand(versionId), cancellationToken)));
-        writeGroup.MapPost("/design/versions/{versionId}/reopen-review", async (string versionId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.ReopenReview(new CPDesign.ReopenOrchestrationVersionReviewCommand(versionId, NormalizeActor(request, user)), cancellationToken)));
-        releaseGroup.MapPost("/design/versions/{versionId}/approve", async (string versionId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.Approve(new CPDesign.ApproveOrchestrationVersionCommand(versionId, NormalizeActor(request, user)), cancellationToken)));
-        releaseGroup.MapPost("/design/versions/{versionId}/deploy", async (string versionId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.Deploy(new CPDesign.DeployOrchestrationVersionCommand(versionId, NormalizeActor(request, user)), cancellationToken)));
-        releaseGroup.MapPost("/design/versions/{versionId}/deprecate", async (string versionId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.Deprecate(new CPDesign.DeprecateOrchestrationVersionCommand(versionId, NormalizeActor(request, user)), cancellationToken)));
-        releaseGroup.MapPost("/design/versions/{versionId}/archive", async (string versionId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
-            => ApiEndpointResults.Ok(await service.Archive(new CPDesign.ArchiveOrchestrationVersionCommand(versionId, NormalizeActor(request, user)), cancellationToken)));
+        readGroup.MapGet("/design/reviews/{reviewId}", async (string reviewId, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => Results.Ok(await service.GetById(new CPDesign.GetOrchestrationVersionReviewByIdQuery(reviewId), cancellationToken)));
+        readGroup.MapGet("/design/versions/{versionId}/review", async (string versionId, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => Results.Ok(await service.GetPending(new CPDesign.GetPendingOrchestrationVersionReviewQuery(versionId), cancellationToken)));
+
+        writeGroup.MapPost("/design/versions/{versionId}/reviews", async (string versionId, [FromBody] LifecycleReviewRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Created(await service.Request(new CPDesign.RequestOrchestrationVersionReviewCommand(versionId, request.Operation, NormalizeActor(request, user)), cancellationToken)));
+        writeGroup.MapPost("/design/versions/{versionId}/abandon", async (string versionId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Abandon(new CPDesign.AbandonOrchestrationVersionCommand(versionId, NormalizeActor(request, user)), cancellationToken)));
+        releaseGroup.MapPost("/design/reviews/{reviewId}/approve", async (string reviewId, [FromBody] ActorRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Approve(new CPDesign.ApproveOrchestrationVersionReviewCommand(reviewId, NormalizeActor(request, user)), cancellationToken)));
+        releaseGroup.MapPost("/design/reviews/{reviewId}/reject", async (string reviewId, [FromBody] LifecycleReviewDecisionRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Reject(new CPDesign.RejectOrchestrationVersionReviewCommand(reviewId, NormalizeActor(request, user), request.Comment), cancellationToken)));
+        releaseGroup.MapPost("/design/reviews/{reviewId}/abort", async (string reviewId, [FromBody] LifecycleReviewDecisionRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Abort(new CPDesign.AbortOrchestrationVersionReviewCommand(reviewId, NormalizeActor(request, user), request.Comment), cancellationToken)));
+        releaseGroup.MapPost("/design/reviews/{reviewId}/apply", async (string reviewId, [FromBody] LifecycleReviewApplyRequest request, ClaimsPrincipal user, [FromServices] CPDesign.IOrchestrationVersionReviewApplicationService service, CancellationToken cancellationToken)
+            => ApiEndpointResults.Ok(await service.Apply(new CPDesign.ApplyOrchestrationVersionReviewCommand(reviewId, NormalizeActor(request, user), request.Version, request.VersionLabel, request.Description, request.Notes), cancellationToken)));
     }
 
     private static void MapStageEndpoints(RouteGroupBuilder group, ControlPlaneRestApiOptions options)

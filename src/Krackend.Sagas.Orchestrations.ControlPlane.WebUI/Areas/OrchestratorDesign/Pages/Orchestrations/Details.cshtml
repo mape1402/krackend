@@ -9,11 +9,10 @@
         return status switch
         {
             OrchestrationVersionStatus.Draft => "od-status od-status-draft",
-            OrchestrationVersionStatus.InReview => "od-status od-status-inreview",
-            OrchestrationVersionStatus.Approved => "od-status od-status-approved",
+            OrchestrationVersionStatus.PendingDeployment or OrchestrationVersionStatus.PendingDeprecation or OrchestrationVersionStatus.PendingArchive => "od-status od-status-inreview",
             OrchestrationVersionStatus.Deployed => "od-status od-status-deployed",
             OrchestrationVersionStatus.Deprecated => "od-status od-status-deprecated",
-            OrchestrationVersionStatus.Archived => "od-status od-status-archived",
+            OrchestrationVersionStatus.Archived or OrchestrationVersionStatus.Abandoned => "od-status od-status-archived",
             _ => "od-status od-status-draft"
         };
     }
@@ -22,7 +21,9 @@
     {
         return status switch
         {
-            OrchestrationVersionStatus.InReview => "In review",
+            OrchestrationVersionStatus.PendingDeployment => "Pending deployment review",
+            OrchestrationVersionStatus.PendingDeprecation => "Pending deprecation review",
+            OrchestrationVersionStatus.PendingArchive => "Pending archive review",
             _ => status.ToString()
         };
     }
@@ -31,13 +32,11 @@
     {
         return action switch
         {
-            "SetInReview" => "Send to review",
-            "ReturnToDraft" => "Return to draft",
-            "ReopenReview" => "Reopen review",
-            "Approve" => "Approve version",
-            "Deploy" => "Deploy version",
-            "Deprecate" => "Deprecate version",
-            "Archive" => "Archive version",
+            "RequestDeployment" => "Send to deployment review",
+            "RequestDeprecation" => "Request deprecation",
+            "RequestArchive" => "Request archive",
+            "OpenReview" => "Open review",
+            "Abandon" => "Abandon draft",
             _ => action
         };
     }
@@ -76,15 +75,10 @@
             {
                 <article class="od-item-card od-version-card"
                          data-version-id="@version.Id"
-                         data-open-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = version.Id })"
-                         data-version="@version.Version"
-                         data-version-label="@version.VersionLabel"
-                         data-version-description="@version.Description"
-                         data-version-notes="@version.Notes"
-                         data-version-checksum="@version.Checksum">
+                         data-open-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = version.Id })">
                     <div class="od-item-top">
                         <div>
-                            <h3 class="od-item-title">@version.Version</h3>
+                            <h3 class="od-item-title">@(string.IsNullOrWhiteSpace(version.Version) ? "Draft" : version.Version)</h3>
                             <p class="od-item-meta">@version.VersionLabel</p>
                         </div>
                         <div class="d-flex align-items-start gap-2">
@@ -92,9 +86,6 @@
                             <div class="dropdown">
                                 <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Version actions">&#8942;</button>
                                 <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <button type="button" class="dropdown-item js-open-version-modal" data-version-mode="edit">Edit version</button>
-                                    </li>
                                     <li>
                                         <a class="dropdown-item"
                                            asp-area="OrchestratorDesign"
@@ -110,7 +101,7 @@
                                                 <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
                                                 <input type="hidden" name="versionId" value="@version.Id" />
                                                 <input type="hidden" name="action" value="@action" />
-                                                <button type="submit" formnovalidate class="dropdown-item @(action == "Archive" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
+                                                <button type="submit" formnovalidate class="dropdown-item @(action == "Abandon" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
                                             </form>
                                         </li>
                                     }
@@ -136,21 +127,7 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                    <input asp-for="NewVersion.VersionId" type="hidden" id="versionModalVersionId" />
-                    <input asp-for="NewVersion.Checksum" type="hidden" id="versionModalChecksum" />
-                    <input asp-for="NewVersion.Notes" type="hidden" id="versionModalNotes" />
-                    <div class="mb-2">
-                        <label asp-for="NewVersion.Version" class="form-label"></label>
-                        <input asp-for="NewVersion.Version" class="form-control" id="versionModalVersion" data-orchestrator-version="true" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="NewVersion.VersionLabel" class="form-label"></label>
-                        <input asp-for="NewVersion.VersionLabel" class="form-control" id="versionModalVersionLabel" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="NewVersion.Description" class="form-label"></label>
-                        <textarea asp-for="NewVersion.Description" class="form-control" rows="2" id="versionModalDescription"></textarea>
-                    </div>
+                    <p class="mb-0">Create a new editable draft from the latest non-archived roadmap. Its version number, label, and description are set only when an approved deployment review is applied.</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -163,90 +140,12 @@
 
 @section Scripts {
 <script>
-(() => {
-    const modalElement = document.getElementById('newVersionModal');
-    const modalTitle = document.getElementById('newVersionModalLabel');
-    const submitButton = document.getElementById('versionModalSubmitButton');
-    const versionIdInput = document.getElementById('versionModalVersionId');
-    const versionInput = document.getElementById('versionModalVersion');
-    const versionLabelInput = document.getElementById('versionModalVersionLabel');
-    const descriptionInput = document.getElementById('versionModalDescription');
-    const checksumInput = document.getElementById('versionModalChecksum');
-    const notesInput = document.getElementById('versionModalNotes');
-    if (!modalElement || !modalTitle || !submitButton || !versionIdInput || !versionInput || !versionLabelInput || !descriptionInput || !checksumInput || !notesInput || !window.bootstrap?.Modal) {
-        return;
-    }
-
-    const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
-    const defaults = {
-        version: '',
-        versionLabel: '',
-        description: '',
-        notes: '',
-        checksum: ''
-    };
-
-    function openCreateMode() {
-        modalTitle.textContent = 'Create version';
-        submitButton.textContent = 'Create';
-        versionIdInput.value = '';
-        versionInput.value = defaults.version;
-        versionInput.readOnly = false;
-        versionLabelInput.value = defaults.versionLabel;
-        descriptionInput.value = defaults.description;
-        notesInput.value = defaults.notes;
-        checksumInput.value = defaults.checksum;
-        modal.show();
-    }
-
-    function openEditMode(card) {
-        if (!card) {
-            return;
-        }
-
-        modalTitle.textContent = 'Edit version';
-        submitButton.textContent = 'Save';
-        versionIdInput.value = card.getAttribute('data-version-id') || '';
-        versionInput.value = card.getAttribute('data-version') || defaults.version;
-        versionInput.readOnly = true;
-        versionLabelInput.value = card.getAttribute('data-version-label') || '';
-        descriptionInput.value = card.getAttribute('data-version-description') || '';
-        notesInput.value = card.getAttribute('data-version-notes') || '';
-        checksumInput.value = card.getAttribute('data-version-checksum') || '';
-        modal.show();
-    }
-
-    document.querySelectorAll('[data-bs-target="#newVersionModal"]:not(.js-open-version-modal)').forEach(button => {
-        button.addEventListener('click', openCreateMode);
+document.querySelectorAll('.od-version-card[data-open-url]').forEach(card => {
+    card.addEventListener('click', event => {
+        if (event.target.closest('a, button, input, textarea, select, label, form, .dropdown')) return;
+        window.location.href = card.getAttribute('data-open-url') || window.location.href;
     });
-
-    document.querySelectorAll('.js-open-version-modal[data-version-mode="edit"]').forEach(button => {
-        button.addEventListener('click', event => {
-            event.preventDefault();
-            const card = button.closest('.od-version-card');
-            openEditMode(card);
-        });
-    });
-
-    document.querySelectorAll('.od-version-card[data-open-url]').forEach(card => {
-        card.addEventListener('click', event => {
-            if (event.target.closest('a, button, input, textarea, select, label, form, .dropdown')) {
-                return;
-            }
-
-            const openUrl = card.getAttribute('data-open-url') || '';
-            if (!openUrl) {
-                return;
-            }
-
-            window.location.href = openUrl;
-        });
-    });
-
-    modalElement.addEventListener('hidden.bs.modal', () => {
-        versionInput.readOnly = false;
-    });
-})();
+});
 </script>
 }
 

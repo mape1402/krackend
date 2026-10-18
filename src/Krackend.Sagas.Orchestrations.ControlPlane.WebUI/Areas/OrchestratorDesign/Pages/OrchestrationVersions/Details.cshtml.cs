@@ -25,6 +25,7 @@ public sealed class DetailsModel : PageModel
 {
     private readonly IOrchestrationApplicationService _orchestrationService;
     private readonly IOrchestrationVersionApplicationService _versionService;
+    private readonly IOrchestrationVersionReviewApplicationService _reviewService;
     private readonly IStageApplicationService _stageService;
     private readonly ITaskApplicationService _taskService;
     private readonly ITriggerBindingApplicationService _triggerBindingService;
@@ -34,6 +35,7 @@ public sealed class DetailsModel : PageModel
     public DetailsModel(
         IOrchestrationApplicationService orchestrationService,
         IOrchestrationVersionApplicationService versionService,
+        IOrchestrationVersionReviewApplicationService reviewService,
         IStageApplicationService stageService,
         ITaskApplicationService taskService,
         ITriggerBindingApplicationService triggerBindingService,
@@ -42,6 +44,7 @@ public sealed class DetailsModel : PageModel
     {
         _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
+        _reviewService = reviewService ?? throw new ArgumentNullException(nameof(reviewService));
         _stageService = stageService ?? throw new ArgumentNullException(nameof(stageService));
         _taskService = taskService ?? throw new ArgumentNullException(nameof(taskService));
         _triggerBindingService = triggerBindingService ?? throw new ArgumentNullException(nameof(triggerBindingService));
@@ -121,26 +124,24 @@ public sealed class DetailsModel : PageModel
         {
             switch (action)
             {
-                case "SetInReview":
-                    await _versionService.SetInReview(new SetOrchestrationVersionInReviewCommand(versionId), cancellationToken);
-                    break;
-                case "ReturnToDraft":
-                    await _versionService.ReturnToDraft(new ReturnOrchestrationVersionToDraftCommand(versionId), cancellationToken);
-                    break;
-                case "ReopenReview":
-                    await _versionService.ReopenReview(new ReopenOrchestrationVersionReviewCommand(versionId, actor), cancellationToken);
-                    break;
-                case "Approve":
-                    await _versionService.Approve(new ApproveOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                    break;
-                case "Deploy":
-                    await _versionService.Deploy(new DeployOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                    break;
-                case "Deprecate":
-                    await _versionService.Deprecate(new DeprecateOrchestrationVersionCommand(versionId, actor), cancellationToken);
-                    break;
-                case "Archive":
-                    await _versionService.Archive(new ArchiveOrchestrationVersionCommand(versionId, actor), cancellationToken);
+                case "RequestDeployment":
+                case "RequestDeprecation":
+                case "RequestArchive":
+                    var reviewId = await _reviewService.Request(
+                        new RequestOrchestrationVersionReviewCommand(versionId, ToReviewOperation(action), actor),
+                        cancellationToken);
+                    return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId });
+                case "OpenReview":
+                    var pendingReview = await _reviewService.GetPending(
+                        new GetPendingOrchestrationVersionReviewQuery(versionId), cancellationToken);
+                    if (pendingReview is not null)
+                    {
+                        return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId = pendingReview.Id });
+                    }
+
+                    throw new InvalidOperationException("This version does not have a review awaiting application.");
+                case "Abandon":
+                    await _versionService.Abandon(new AbandonOrchestrationVersionCommand(versionId, actor), cancellationToken);
                     break;
             }
 
@@ -427,14 +428,22 @@ public sealed class DetailsModel : PageModel
     {
         return status switch
         {
-            OrchestrationVersionStatus.Draft => new[] { "SetInReview", "Archive" },
-            OrchestrationVersionStatus.InReview => new[] { "Approve", "ReturnToDraft", "Archive" },
-            OrchestrationVersionStatus.Approved => new[] { "Deploy", "ReopenReview", "Archive" },
-            OrchestrationVersionStatus.Deployed => new[] { "Deprecate", "Archive" },
-            OrchestrationVersionStatus.Deprecated => new[] { "Archive" },
+            OrchestrationVersionStatus.Draft => new[] { "RequestDeployment", "Abandon" },
+            OrchestrationVersionStatus.PendingDeployment or OrchestrationVersionStatus.PendingDeprecation or OrchestrationVersionStatus.PendingArchive => new[] { "OpenReview" },
+            OrchestrationVersionStatus.Deployed => new[] { "RequestDeprecation" },
+            OrchestrationVersionStatus.Deprecated => new[] { "RequestArchive" },
             _ => Array.Empty<string>()
         };
     }
+
+    private static OrchestrationVersionReviewOperation ToReviewOperation(string action)
+        => action switch
+        {
+            "RequestDeployment" => OrchestrationVersionReviewOperation.Deploy,
+            "RequestDeprecation" => OrchestrationVersionReviewOperation.Deprecate,
+            "RequestArchive" => OrchestrationVersionReviewOperation.Archive,
+            _ => throw new InvalidOperationException("The requested lifecycle action is not supported.")
+        };
 
     private async Task LoadDataAsync(CancellationToken cancellationToken)
     {

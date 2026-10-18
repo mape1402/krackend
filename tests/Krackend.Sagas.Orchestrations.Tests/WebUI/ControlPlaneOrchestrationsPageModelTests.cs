@@ -2,6 +2,7 @@ using System.Reflection;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
+using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using NSubstitute;
@@ -190,67 +191,50 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
     }
 
     [Fact]
-    public async Task DetailsCreatesUpdatesAndDispatchesVersionActions()
+    public async Task DetailsCreatesDraftAndRequestsLifecycleReviews()
     {
         var fixture = new Fixture();
         CreateOrchestrationVersionCommand? createCommand = null;
-        UpdateOrchestrationVersionCommand? updateCommand = null;
         fixture.VersionService.Create(
                 Arg.Do<CreateOrchestrationVersionCommand>(command => createCommand = command),
                 Arg.Any<CancellationToken>())
             .Returns("version-created");
-        fixture.VersionService.Update(
-                Arg.Do<UpdateOrchestrationVersionCommand>(command => updateCommand = command),
-                Arg.Any<CancellationToken>())
-            .Returns(true);
         var page = fixture.CreateDetailsPage();
         page.NewVersion = new OrchestrationDetailsPageModel.CreateVersionInput
         {
-            Version = "1.2.3",
-            VersionLabel = " v1 ",
-            Description = " description ",
-            Notes = " notes ",
             CreatedBy = ""
         };
 
         var createResult = await page.OnPostCreateVersionAsync("orch-1", CancellationToken.None);
 
-        page.NewVersion.VersionId = "version-existing";
-        page.NewVersion.CreatedBy = "";
-        page.NewVersion.Checksum = "";
-        var updateResult = await page.OnPostCreateVersionAsync("orch-1", CancellationToken.None);
-
-        foreach (var action in new[] { "SetInReview", "ReturnToDraft", "ReopenReview", "Approve", "Deploy", "Deprecate", "Archive", "Unknown" })
+        foreach (var action in new[] { "RequestDeployment", "RequestDeprecation", "RequestArchive" })
         {
-            Assert.IsType<RedirectToPageResult>(await page.OnPostVersionActionAsync("orch-1", "version-1", action, CancellationToken.None));
+            var actionResult = Assert.IsType<RedirectToPageResult>(await page.OnPostVersionActionAsync("orch-1", "version-1", action, CancellationToken.None));
+            Assert.Equal("/Reviews/Details", actionResult.PageName);
         }
+        Assert.IsType<RedirectToPageResult>(await page.OnPostVersionActionAsync("orch-1", "version-1", "Abandon", CancellationToken.None));
 
         Assert.Equal("/OrchestrationVersions/Details", Assert.IsType<RedirectToPageResult>(createResult).PageName);
-        Assert.Equal("/Orchestrations/Details", Assert.IsType<RedirectToPageResult>(updateResult).PageName);
         Assert.NotNull(createCommand);
         Assert.Equal("web-ui", createCommand!.CreatedBy);
-        Assert.NotNull(updateCommand);
-        Assert.Equal("web-ui", updateCommand!.UpdatedBy);
-        await fixture.VersionService.Received(1).SetInReview(Arg.Any<SetOrchestrationVersionInReviewCommand>(), Arg.Any<CancellationToken>());
-        await fixture.VersionService.Received(1).ReturnToDraft(Arg.Any<ReturnOrchestrationVersionToDraftCommand>(), Arg.Any<CancellationToken>());
-        await fixture.VersionService.Received(1).ReopenReview(Arg.Any<ReopenOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>());
-        await fixture.VersionService.Received(1).Approve(Arg.Any<ApproveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
-        await fixture.VersionService.Received(1).Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
-        await fixture.VersionService.Received(1).Deprecate(Arg.Any<DeprecateOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
-        await fixture.VersionService.Received(1).Archive(Arg.Any<ArchiveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
+        Assert.Equal(string.Empty, createCommand.Version);
+        await fixture.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Deploy), Arg.Any<CancellationToken>());
+        await fixture.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Deprecate), Arg.Any<CancellationToken>());
+        await fixture.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Archive), Arg.Any<CancellationToken>());
+        await fixture.VersionService.Received(1).Abandon(Arg.Any<AbandonOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task DetailsVersionActionSurfacesFriendlyDslErrors()
     {
         var fixture = new Fixture();
-        fixture.VersionService.Deploy(Arg.Any<DeployOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
-            .Returns<Task<bool>>(_ => throw new OrchestrationArtifactDslValidationException(
+        fixture.ReviewService.Request(Arg.Any<RequestOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new OrchestrationArtifactDslValidationException(
                 "stage:inventories:task:discountstock:transformation",
-                "DSL has semantic errors."));
+                "DSL has semantic errors.")));
         var page = fixture.CreateDetailsPage();
 
-        var result = await page.OnPostVersionActionAsync("orch-1", "version-1", "Deploy", CancellationToken.None);
+        var result = await page.OnPostVersionActionAsync("orch-1", "version-1", "RequestDeployment", CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
         Assert.Contains("cannot be published", page.ErrorMessage, StringComparison.Ordinal);
@@ -280,12 +264,12 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
     {
         var fixture = new Fixture();
         var page = fixture.CreateDetailsPage();
-        page.ModelState.AddModelError("NewVersion.Version", "required");
+        page.ModelState.AddModelError("NewVersion.CreatedBy", "required");
 
-        var result = await page.OnPostVersionActionAsync("orch-1", "version-1", "Archive", CancellationToken.None);
+        var result = await page.OnPostVersionActionAsync("orch-1", "version-1", "RequestArchive", CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        await fixture.VersionService.Received(1).Archive(Arg.Any<ArchiveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>());
+        await fixture.ReviewService.Received(1).Request(Arg.Is<RequestOrchestrationVersionReviewCommand>(x => x.Operation == OrchestrationVersionReviewOperation.Archive), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -293,20 +277,15 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
     {
         var fixture = new Fixture();
         var page = fixture.CreateDetailsPage();
-        page.ModelState.AddModelError("NewVersion.Version", "required");
+        page.ModelState.AddModelError("NewVersion.CreatedBy", "required");
 
         var result = await page.OnPostCreateVersionAsync("orch-1", CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
-        Assert.Contains("SetInReview", page.GetAllowedActions(OrchestrationVersionStatus.Draft));
-        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Draft));
-        Assert.Contains("Approve", page.GetAllowedActions(OrchestrationVersionStatus.InReview));
-        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.InReview));
-        Assert.Contains("Deploy", page.GetAllowedActions(OrchestrationVersionStatus.Approved));
-        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Approved));
-        Assert.Contains("Deprecate", page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
-        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
-        Assert.Contains("Archive", page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
+        Assert.Equal(["RequestDeployment", "Abandon"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
+        Assert.Equal(["OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingDeployment));
+        Assert.Equal(["RequestDeprecation"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
+        Assert.Equal(["RequestArchive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
         Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
     }
 
@@ -339,6 +318,8 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         public IOrchestrationApplicationService OrchestrationService { get; } = Substitute.For<IOrchestrationApplicationService>();
 
         public IOrchestrationVersionApplicationService VersionService { get; } = Substitute.For<IOrchestrationVersionApplicationService>();
+
+        public IOrchestrationVersionReviewApplicationService ReviewService { get; } = Substitute.For<IOrchestrationVersionReviewApplicationService>();
 
         public IDomainApplicationService DomainService { get; } = Substitute.For<IDomainApplicationService>();
 
@@ -395,6 +376,10 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
                 .Returns(true);
             VersionService.Archive(Arg.Any<ArchiveOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
                 .Returns(true);
+            VersionService.Abandon(Arg.Any<AbandonOrchestrationVersionCommand>(), Arg.Any<CancellationToken>())
+                .Returns(true);
+            ReviewService.Request(Arg.Any<RequestOrchestrationVersionReviewCommand>(), Arg.Any<CancellationToken>())
+                .Returns("review-1");
 
             DomainService.GetAll(Arg.Any<GetDomainsQuery>(), Arg.Any<CancellationToken>())
                 .Returns(DomainsPage(
@@ -413,6 +398,6 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
             => new(OrchestrationService, DomainService, TeamService);
 
         public OrchestrationDetailsPageModel CreateDetailsPage()
-            => new(OrchestrationService, VersionService);
+            => new(OrchestrationService, VersionService, ReviewService);
     }
 }
