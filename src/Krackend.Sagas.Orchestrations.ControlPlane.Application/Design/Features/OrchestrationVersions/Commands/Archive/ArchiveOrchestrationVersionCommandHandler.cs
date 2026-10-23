@@ -4,7 +4,6 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Pelican.Mediator;
-using System.Text.Json;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
@@ -13,23 +12,20 @@ public sealed class ArchiveOrchestrationVersionCommandHandler : IRequestHandler<
     private readonly IOrchestrationVersionRepository _repository;
     private readonly IOrchestrationDefinitionRepository _definitionRepository;
     private readonly IOrchestrationVersionTransitionPolicy _transitionPolicy;
-    private readonly IOrchestrationVersionArtifactSnapshotBuilder _artifactSnapshotBuilder;
-    private readonly IOrchestrationArtifactPayloadFactory _artifactPayloadFactory;
+    private readonly IOrchestrationLifecycleArtifactPayloadFactory _lifecyclePayloadFactory;
     private readonly IArtifactPublicationApplicationService _artifactPublicationService;
 
     public ArchiveOrchestrationVersionCommandHandler(
         IOrchestrationVersionRepository repository,
         IOrchestrationDefinitionRepository definitionRepository,
         IOrchestrationVersionTransitionPolicy transitionPolicy,
-        IOrchestrationVersionArtifactSnapshotBuilder artifactSnapshotBuilder,
-        IOrchestrationArtifactPayloadFactory artifactPayloadFactory,
+        IOrchestrationLifecycleArtifactPayloadFactory lifecyclePayloadFactory,
         IArtifactPublicationApplicationService artifactPublicationService)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
         _transitionPolicy = transitionPolicy ?? throw new ArgumentNullException(nameof(transitionPolicy));
-        _artifactSnapshotBuilder = artifactSnapshotBuilder ?? throw new ArgumentNullException(nameof(artifactSnapshotBuilder));
-        _artifactPayloadFactory = artifactPayloadFactory ?? throw new ArgumentNullException(nameof(artifactPayloadFactory));
+        _lifecyclePayloadFactory = lifecyclePayloadFactory ?? throw new ArgumentNullException(nameof(lifecyclePayloadFactory));
         _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
     }
 
@@ -45,7 +41,10 @@ public sealed class ArchiveOrchestrationVersionCommandHandler : IRequestHandler<
 
         await _repository.Update(current, cancellationToken);
         var definition = await _definitionRepository.GetById(current.OrchestrationDefinitionId, cancellationToken);
-        var artifactPayloadJson = await CreateArchivePayloadJson(definition, current, cancellationToken);
+        var lifecyclePayload = _lifecyclePayloadFactory.CreatePayload(
+            definition,
+            current,
+            OrchestrationVersionReviewOperation.Archive);
 
         await _artifactPublicationService.PublishArchive(new OrchestrationVersionArchivedEvent(
             current.Id.ToString(),
@@ -53,35 +52,12 @@ public sealed class ArchiveOrchestrationVersionCommandHandler : IRequestHandler<
             definition.Name,
             current.VersionLabel,
             current.Version.ToString(),
-            artifactPayloadJson,
-            current.Checksum.Value,
+            lifecyclePayload.Json,
+            lifecyclePayload.Checksum.Value,
             request.UpdatedBy,
             current.Id.ToString(),
             DateTime.UtcNow), cancellationToken);
 
         return true;
-    }
-
-    private async Task<string> CreateArchivePayloadJson(
-        OrchestrationDefinition definition,
-        OrchestrationVersion current,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var versionSnapshot = await _artifactSnapshotBuilder.Build(current, cancellationToken);
-            return _artifactPayloadFactory.CreatePayloadJson(definition, versionSnapshot);
-        }
-        catch
-        {
-            return JsonSerializer.Serialize(new
-            {
-                archived = true,
-                orchestrationVersionId = current.Id.ToString(),
-                orchestrationDefinitionId = current.OrchestrationDefinitionId.ToString(),
-                orchestrationKey = definition.Key,
-                version = current.Version.ToString()
-            });
-        }
     }
 }

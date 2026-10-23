@@ -2,6 +2,8 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Security.Cryptography;
+using System.Text;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -263,6 +265,114 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
+    public async Task DeployAsync_CompactDeprecationPreservesTheInstalledExecutableSnapshot()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Ready, 2));
+        var originalPayload = current.ArtifactPayload.ToJsonString();
+        var package = CreateLifecyclePackage(
+            current.OrchestrationDefinitionKey,
+            current.Version,
+            current.ArtifactChecksum.Value,
+            current.SourceOrchestrationVersionId,
+            "orchestration-version.deprecated",
+            "deprecate");
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Equal(RuntimeOrchestrationLifecycleStatus.Deprecated, current.LifecycleStatus);
+        Assert.Equal(originalPayload, current.ArtifactPayload.ToJsonString());
+        Assert.Single(scheduler.Requests);
+    }
+
+    [Fact]
+    public async Task DeployAsync_CompactArchiveRemovesIngressWithoutReplacingTheExecutableSnapshot()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Ready, 2));
+        current.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Deprecated;
+        var originalPayload = current.ArtifactPayload.ToJsonString();
+        var package = CreateLifecyclePackage(
+            current.OrchestrationDefinitionKey,
+            current.Version,
+            current.ArtifactChecksum.Value,
+            current.SourceOrchestrationVersionId,
+            "orchestration-version.archived",
+            "archive");
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Equal(RuntimeOrchestrationLifecycleStatus.Archived, current.LifecycleStatus);
+        Assert.Equal(originalPayload, current.ArtifactPayload.ToJsonString());
+    }
+
+    [Fact]
+    public async Task DeployAsync_CompactLifecycleRejectsAConflictingTargetChecksumWithoutChangingState()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Ready, 2));
+        var package = CreateLifecyclePackage(
+            current.OrchestrationDefinitionKey,
+            current.Version,
+            "checksum-other",
+            current.SourceOrchestrationVersionId,
+            "orchestration-version.deprecated",
+            "deprecate");
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.False(result.Accepted);
+        Assert.Contains("does not match", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RuntimeOrchestrationLifecycleStatus.Active, current.LifecycleStatus);
+        Assert.Empty(scheduler.Requests);
+    }
+
+    [Fact]
+    public async Task DeployAsync_CompactLifecycleRejectsPayloadTamperingAndMismatchedActions()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var current = repository.Add(CreateRuntimeArtifact(
+            "sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Ready, 2));
+        var mismatchedAction = CreateLifecyclePackage(
+            current.OrchestrationDefinitionKey,
+            current.Version,
+            current.ArtifactChecksum.Value,
+            current.SourceOrchestrationVersionId,
+            "orchestration-version.deprecated",
+            "archive");
+
+        var mismatchedResult = await CreateService(repository, scheduler).DeployAsync(mismatchedAction, "design-a");
+
+        Assert.False(mismatchedResult.Accepted);
+        Assert.Contains("does not match package type", mismatchedResult.Message, StringComparison.OrdinalIgnoreCase);
+
+        var tampered = CreateLifecyclePackage(
+            current.OrchestrationDefinitionKey,
+            current.Version,
+            current.ArtifactChecksum.Value,
+            current.SourceOrchestrationVersionId,
+            "orchestration-version.deprecated",
+            "deprecate");
+        tampered.PayloadJson = tampered.PayloadJson.Replace("checksum-a", "checksum-tampered", StringComparison.Ordinal);
+
+        var tamperedResult = await CreateService(repository, scheduler).DeployAsync(tampered, "design-a");
+
+        Assert.False(tamperedResult.Accepted);
+        Assert.Contains("checksum", tamperedResult.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RuntimeOrchestrationLifecycleStatus.Active, current.LifecycleStatus);
+        Assert.Empty(scheduler.Requests);
+    }
+
+    [Fact]
     public async Task InMemoryTriggerClaims_AllowOnlyOneConcurrentOwnerForEveryIdentity()
     {
         var claims = new InMemoryRuntimeTriggerClaimRepository(new InMemoryRuntimeStore());
@@ -295,17 +405,25 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         var runtimeArtifact = Assert.Single(repository.Artifacts);
         runtimeArtifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
 
-        var deprecated = CreatePackage("sales.sale.created", Version, "checksum-a", versionId);
-        deprecated.ArtifactType = "orchestration-version.deprecated";
+        var deprecated = CreateLifecyclePackage(
+            "sales.sale.created",
+            Version,
+            "checksum-a",
+            versionId,
+            "orchestration-version.deprecated",
+            "deprecate");
         deprecated.ReleaseId = Id.New().ToString();
-        deprecated.ReleaseStrategy = "Direct";
         Assert.True((await service.DeployAsync(deprecated, "design-a")).Accepted);
         runtimeArtifact.Status = RuntimeOrchestrationArtifactStatus.Ready;
 
-        var archived = CreatePackage("sales.sale.created", Version, "checksum-a", versionId);
-        archived.ArtifactType = "orchestration-version.archived";
+        var archived = CreateLifecyclePackage(
+            "sales.sale.created",
+            Version,
+            "checksum-a",
+            versionId,
+            "orchestration-version.archived",
+            "archive");
         archived.ReleaseId = Id.New().ToString();
-        archived.ReleaseStrategy = "Direct";
         Assert.True((await service.DeployAsync(archived, "design-a")).Accepted);
 
         Assert.Equal(
@@ -1063,6 +1181,44 @@ public sealed class RuntimeArtifactDeploymentServiceTests
             CreatedOnUtc = DateTime.UtcNow,
             UpdatedOnUtc = DateTime.UtcNow
         };
+
+    private static RuntimeArtifactDeliveryPackage CreateLifecyclePackage(
+        string key,
+        SemanticVersion version,
+        string targetArtifactChecksum,
+        Id versionId,
+        string artifactType,
+        string operation)
+    {
+        var payload = new OrchestrationVersionLifecycleArtifact
+        {
+            Operation = operation,
+            OrchestrationDefinitionId = Id.New().ToString(),
+            OrchestrationDefinitionKey = key,
+            OrchestrationVersionId = versionId.ToString(),
+            Version = version.ToString(),
+            TargetArtifactChecksum = targetArtifactChecksum,
+        };
+        var payloadJson = JsonSerializer.Serialize(payload, SerializerOptions);
+        var checksum = SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson));
+        return new RuntimeArtifactDeliveryPackage
+        {
+            ReleaseTargetId = Id.New().ToString(),
+            ArtifactId = Id.New().ToString(),
+            ArtifactType = artifactType,
+            ReleaseStrategy = "Direct",
+            SchemaVersion = "1.0",
+            OrchestrationDefinitionId = payload.OrchestrationDefinitionId,
+            OrchestrationVersionId = versionId.ToString(),
+            OrchestrationDefinitionKey = key,
+            Version = version.ToString(),
+            Checksum = $"sha256:{Convert.ToHexString(checksum).ToLowerInvariant()}",
+            PayloadJson = payloadJson,
+            CorrelationId = Id.New().ToString(),
+            PromotedBy = "tests",
+            PromotedOnUtc = DateTime.UtcNow,
+        };
+    }
 
     private static SchemaBindingArtifact SchemaBinding(bool validationEnabled)
         => new(

@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Contracts.Events;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
@@ -114,10 +115,88 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
         Assert.Equal("Autumn release", fixture.Version.VersionLabel);
         await fixture.ArtifactPublicationService.Received(1).PublishDeployment(
             Arg.Is<OrchestrationVersionDeployedEvent>(x =>
-                x.Version == "1.4.0" &&
+                x.VersionNumber == "1.4.0" &&
                 x.VersionLabel == "Autumn release" &&
                 x.Actor == "deployer"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApprovedDeprecationPublishesACompactLifecycleArtifactWithoutRebuildingTheSnapshot()
+    {
+        var fixture = new Fixture(OrchestrationVersionStatus.PendingDeprecation);
+        var review = fixture.CreateReview(
+            OrchestrationVersionReviewOperation.Deprecate,
+            OrchestrationVersionStatus.Deployed,
+            OrchestrationVersionStatus.PendingDeprecation,
+            OrchestrationVersionStatus.Deprecated);
+        review.ApprovalStatus = OrchestrationVersionReviewApprovalStatus.Approved;
+        fixture.ReviewRepository.GetById(review.Id, Arg.Any<CancellationToken>()).Returns(review);
+        fixture.LifecyclePayloadFactory.CreatePayload(
+                Arg.Any<OrchestrationDefinition>(),
+                Arg.Any<OrchestrationVersion>(),
+                OrchestrationVersionReviewOperation.Deprecate)
+            .Returns(new OrchestrationLifecycleArtifactPayload(
+                """{"artifactKind":"orchestration-version-lifecycle","operation":"deprecate"}""",
+                new Checksum("sha256:lifecycle")));
+        OrchestrationVersionDeprecatedEvent? published = null;
+        fixture.ArtifactPublicationService
+            .PublishDeprecation(Arg.Do<OrchestrationVersionDeprecatedEvent>(evt => published = evt), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var originalChecksum = fixture.Version.Checksum;
+
+        var result = await fixture.Apply.Handle(
+            new ApplyOrchestrationVersionReviewCommand(review.Id.ToString(), "deployer", string.Empty, string.Empty, string.Empty, string.Empty),
+            CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(OrchestrationVersionStatus.Deprecated, fixture.Version.Status);
+        Assert.Equal(originalChecksum, fixture.Version.Checksum);
+        Assert.NotNull(published);
+        Assert.Equal("sha256:lifecycle", published!.Checksum);
+        Assert.Contains("orchestration-version-lifecycle", published.ArtifactPayloadJson, StringComparison.Ordinal);
+        await fixture.SnapshotBuilder.DidNotReceiveWithAnyArgs().Build(default!, default);
+        fixture.PayloadFactory.DidNotReceiveWithAnyArgs().CreatePayloadJson(default!, default!);
+        fixture.DslValidationService.DidNotReceiveWithAnyArgs().Validate(default!);
+    }
+
+    [Fact]
+    public async Task ApprovedArchivePublishesACompactLifecycleArtifactWithoutRebuildingTheSnapshot()
+    {
+        var fixture = new Fixture(OrchestrationVersionStatus.PendingArchive);
+        var review = fixture.CreateReview(
+            OrchestrationVersionReviewOperation.Archive,
+            OrchestrationVersionStatus.Deprecated,
+            OrchestrationVersionStatus.PendingArchive,
+            OrchestrationVersionStatus.Archived);
+        review.ApprovalStatus = OrchestrationVersionReviewApprovalStatus.Approved;
+        fixture.ReviewRepository.GetById(review.Id, Arg.Any<CancellationToken>()).Returns(review);
+        fixture.LifecyclePayloadFactory.CreatePayload(
+                Arg.Any<OrchestrationDefinition>(),
+                Arg.Any<OrchestrationVersion>(),
+                OrchestrationVersionReviewOperation.Archive)
+            .Returns(new OrchestrationLifecycleArtifactPayload(
+                """{"artifactKind":"orchestration-version-lifecycle","operation":"archive"}""",
+                new Checksum("sha256:lifecycle-archive")));
+        OrchestrationVersionArchivedEvent? published = null;
+        fixture.ArtifactPublicationService
+            .PublishArchive(Arg.Do<OrchestrationVersionArchivedEvent>(evt => published = evt), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var originalChecksum = fixture.Version.Checksum;
+
+        var result = await fixture.Apply.Handle(
+            new ApplyOrchestrationVersionReviewCommand(review.Id.ToString(), "archiver", string.Empty, string.Empty, string.Empty, string.Empty),
+            CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(OrchestrationVersionStatus.Archived, fixture.Version.Status);
+        Assert.Equal(originalChecksum, fixture.Version.Checksum);
+        Assert.NotNull(published);
+        Assert.Equal("sha256:lifecycle-archive", published!.Checksum);
+        Assert.Contains("orchestration-version-lifecycle", published.ArtifactPayloadJson, StringComparison.Ordinal);
+        await fixture.SnapshotBuilder.DidNotReceiveWithAnyArgs().Build(default!, default);
+        fixture.PayloadFactory.DidNotReceiveWithAnyArgs().CreatePayloadJson(default!, default!);
+        fixture.DslValidationService.DidNotReceiveWithAnyArgs().Validate(default!);
     }
 
     [Fact]
@@ -302,6 +381,7 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
                 },
                 fixture.Version,
                 "{}",
+                new Checksum("sha256:test"),
                 "deployer",
                 CancellationToken.None
             ]));
@@ -347,6 +427,11 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
             SnapshotBuilder.Build(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>())
                 .Returns(call => Task.FromResult(call.ArgAt<OrchestrationVersion>(0)));
             PayloadFactory.CreatePayloadJson(Arg.Any<OrchestrationDefinition>(), Arg.Any<OrchestrationVersion>()).Returns("{}");
+            LifecyclePayloadFactory.CreatePayload(
+                    Arg.Any<OrchestrationDefinition>(),
+                    Arg.Any<OrchestrationVersion>(),
+                    Arg.Any<OrchestrationVersionReviewOperation>())
+                .Returns(new OrchestrationLifecycleArtifactPayload("{}", new Checksum("sha256:lifecycle")));
             ArtifactPublicationService.PublishDeployment(Arg.Any<OrchestrationVersionDeployedEvent>(), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
             ArtifactRepository.GetLatestForOrchestrationVersion(Arg.Any<Id>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -365,6 +450,7 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
                 Policy,
                 SnapshotBuilder,
                 PayloadFactory,
+                LifecyclePayloadFactory,
                 DslValidationService,
                 ArtifactPublicationService,
                 ArtifactRepository,
@@ -377,6 +463,7 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
         public IOrchestrationDefinitionRepository DefinitionRepository { get; } = Substitute.For<IOrchestrationDefinitionRepository>();
         public IOrchestrationVersionArtifactSnapshotBuilder SnapshotBuilder { get; } = Substitute.For<IOrchestrationVersionArtifactSnapshotBuilder>();
         public IOrchestrationArtifactPayloadFactory PayloadFactory { get; } = Substitute.For<IOrchestrationArtifactPayloadFactory>();
+        public IOrchestrationLifecycleArtifactPayloadFactory LifecyclePayloadFactory { get; } = Substitute.For<IOrchestrationLifecycleArtifactPayloadFactory>();
         public IOrchestrationArtifactDslValidationService DslValidationService { get; } = Substitute.For<IOrchestrationArtifactDslValidationService>();
         public IArtifactPublicationApplicationService ArtifactPublicationService { get; } = Substitute.For<IArtifactPublicationApplicationService>();
         public IArtifactRepository ArtifactRepository { get; } = Substitute.For<IArtifactRepository>();

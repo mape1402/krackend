@@ -53,8 +53,7 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             archiveFixture.VersionRepository,
             archiveFixture.DefinitionRepository,
             archiveFixture.TransitionPolicy,
-            archiveFixture.SnapshotBuilder,
-            archiveFixture.PayloadFactory,
+            archiveFixture.LifecyclePayloadFactory,
             archiveFixture.PublicationService);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => archiveHandler.Handle(
@@ -71,8 +70,7 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             deprecateFixture.VersionRepository,
             deprecateFixture.DefinitionRepository,
             deprecateFixture.TransitionPolicy,
-            deprecateFixture.SnapshotBuilder,
-            deprecateFixture.PayloadFactory,
+            deprecateFixture.LifecyclePayloadFactory,
             deprecateFixture.PublicationService);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => deprecateHandler.Handle(
@@ -96,8 +94,7 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             fixture.VersionRepository,
             fixture.DefinitionRepository,
             fixture.TransitionPolicy,
-            fixture.SnapshotBuilder,
-            fixture.PayloadFactory,
+            fixture.LifecyclePayloadFactory,
             fixture.PublicationService);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
@@ -106,7 +103,7 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
 
         Assert.Equal(OrchestrationVersionStatus.Draft, fixture.Version.Status);
         Assert.Null(archived);
-        fixture.PayloadFactory.DidNotReceiveWithAnyArgs().CreatePayloadJson(default!, default!);
+        fixture.LifecyclePayloadFactory.DidNotReceiveWithAnyArgs().CreatePayload(default!, default!, default);
     }
 
     [Fact]
@@ -371,6 +368,8 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
             DefinitionRepository.GetById(Definition.Id, Arg.Any<CancellationToken>()).Returns(Definition);
             SnapshotBuilder.Build(Version, Arg.Any<CancellationToken>()).Returns(Version);
             PayloadFactory.CreatePayloadJson(Definition, Version).Returns("""{"artifact":true}""");
+            LifecyclePayloadFactory.CreatePayload(Arg.Any<OrchestrationDefinition>(), Arg.Any<OrchestrationVersion>(), Arg.Any<OrchestrationVersionReviewOperation>())
+                .Returns(new OrchestrationLifecycleArtifactPayload("{}", new Checksum("sha256:lifecycle")));
             VersionRepository.Update(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         }
 
@@ -381,6 +380,7 @@ public sealed class ControlPlaneLifecycleCommandHandlerTests
         public IOrchestrationVersionTransitionPolicy TransitionPolicy { get; } = new OrchestrationVersionTransitionPolicy();
         public IOrchestrationVersionArtifactSnapshotBuilder SnapshotBuilder { get; } = Substitute.For<IOrchestrationVersionArtifactSnapshotBuilder>();
         public IOrchestrationArtifactPayloadFactory PayloadFactory { get; } = Substitute.For<IOrchestrationArtifactPayloadFactory>();
+        public IOrchestrationLifecycleArtifactPayloadFactory LifecyclePayloadFactory { get; } = Substitute.For<IOrchestrationLifecycleArtifactPayloadFactory>();
         public IOrchestrationArtifactDslValidationService DslValidationService { get; } = Substitute.For<IOrchestrationArtifactDslValidationService>();
         public IArtifactPublicationApplicationService PublicationService { get; } = Substitute.For<IArtifactPublicationApplicationService>();
     }

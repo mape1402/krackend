@@ -93,7 +93,15 @@ public sealed class ArtifactPublicationApplicationServiceTests
                 ? nameof(OrchestrationVersionDeprecatedEvent)
                 : nameof(OrchestrationVersionArchivedEvent),
             artifact.SourceEvent);
-        Assert.Equal("""{"Key":"sales.sale.created"}""", artifact.Payload);
+        Assert.Equal(
+            lifecycle == "deprecated"
+                ? "orchestration-version.deprecated"
+                : "orchestration-version.archived",
+            artifact.ArtifactType);
+        using var payload = JsonDocument.Parse(artifact.Payload);
+        Assert.Equal("orchestration-version-lifecycle", payload.RootElement.GetProperty("artifactKind").GetString());
+        Assert.Equal(lifecycle == "deprecated" ? "deprecate" : "archive", payload.RootElement.GetProperty("operation").GetString());
+        Assert.False(payload.RootElement.TryGetProperty("stageDefinitions", out _));
     }
 
     [Theory]
@@ -155,8 +163,8 @@ public sealed class ArtifactPublicationApplicationServiceTests
             "Sale Created",
             "1.0.0",
             "1.0.0",
-            """{"Key":"sales.sale.created"}""",
-            "checksum",
+            LifecyclePayload("deprecate"),
+            "action-checksum",
             "tester",
             "correlation-1",
             DateTime.UtcNow);
@@ -168,11 +176,14 @@ public sealed class ArtifactPublicationApplicationServiceTests
             "Sale Created",
             "1.0.0",
             "1.0.0",
-            """{"Key":"sales.sale.created"}""",
-            "checksum",
+            LifecyclePayload("archive"),
+            "action-checksum",
             "tester",
             "correlation-1",
             DateTime.UtcNow);
+
+    private static string LifecyclePayload(string operation)
+        => $$"""{"artifactKind":"orchestration-version-lifecycle","operation":"{{operation}}","orchestrationDefinitionKey":"sales.sale.created"}""";
 
     private static Artifact ArtifactFor(OrchestrationVersionDeployedEvent integrationEvent, string checksum)
         => new()

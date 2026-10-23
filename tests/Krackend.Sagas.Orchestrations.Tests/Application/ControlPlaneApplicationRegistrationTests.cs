@@ -29,6 +29,7 @@ public sealed class ControlPlaneApplicationRegistrationTests
         AssertRegistered<IBranchRuleApplicationService>(services);
         AssertRegistered<IOrchestrationVersionTransitionPolicy>(services);
         AssertRegistered<IOrchestrationArtifactDslValidationService>(services);
+        AssertRegistered<IOrchestrationLifecycleArtifactPayloadFactory>(services);
     }
 
     [Fact]

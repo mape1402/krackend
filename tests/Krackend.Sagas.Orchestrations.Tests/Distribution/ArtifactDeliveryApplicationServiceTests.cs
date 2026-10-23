@@ -78,6 +78,32 @@ public sealed class ArtifactDeliveryApplicationServiceTests
     }
 
     [Fact]
+    public async Task PushDeliversCompactLifecycleArtifactsWithoutExpandingTheirPayload()
+    {
+        var state = CreateState(DistributionMode.DesignPublishesToRuntime);
+        state.Artifact.ArtifactType = "orchestration-version.deprecated";
+        state.Artifact.Payload = """
+            {"artifactKind":"orchestration-version-lifecycle","operation":"deprecate","orchestrationDefinitionKey":"sales.sale.created"}
+            """;
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(JsonSerializer.Serialize(new RuntimeArtifactDeploymentResult
+        {
+            Accepted = true,
+            RuntimeArtifactId = "runtime-artifact-1",
+            Status = "Ready"
+        })));
+        var service = CreateService(state, handler);
+
+        var result = await service.Push(state.Target.Id.ToString(), "tester");
+
+        Assert.True(result.Succeeded);
+        var delivered = JsonSerializer.Deserialize<RuntimeArtifactDeliveryPackage>(handler.LastRequestBody);
+        Assert.NotNull(delivered);
+        Assert.Equal("orchestration-version.deprecated", delivered!.ArtifactType);
+        Assert.Equal(state.Artifact.Payload, delivered.PayloadJson);
+        Assert.Equal("sales.sale.created", delivered.OrchestrationDefinitionKey);
+    }
+
+    [Fact]
     public async Task PushMarksAcceptedRuntimeAsDeliveredWhileActivationContinues()
     {
         var state = CreateState(DistributionMode.DesignPublishesToRuntime);
@@ -291,6 +317,7 @@ public sealed class ArtifactDeliveryApplicationServiceTests
     [InlineData("""{"Key":"pascal-root"}""", "fallback", "pascal-root")]
     [InlineData("""{"key":"lower-key"}""", "fallback", "lower-key")]
     [InlineData("""{"orchestrationDefinitionKey":"camel-key"}""", "fallback", "camel-key")]
+    [InlineData("""{"artifactKind":"orchestration-version-lifecycle","orchestrationDefinitionKey":"lifecycle-key"}""", "fallback", "lifecycle-key")]
     [InlineData("""{"OrchestrationDefinitionKey":"pascal-key"}""", "fallback", "pascal-key")]
     [InlineData("""{"orchestrationDefinitionId":"camel-id"}""", "fallback", "camel-id")]
     [InlineData("""{"OrchestrationDefinitionId":"pascal-id"}""", "fallback", "pascal-id")]

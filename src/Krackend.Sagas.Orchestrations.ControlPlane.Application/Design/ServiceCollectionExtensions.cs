@@ -46,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IParallelGroupApplicationService, ParallelGroupApplicationService>();
         services.AddScoped<IBranchRuleApplicationService, BranchRuleApplicationService>();
         services.AddScoped<IOrchestrationArtifactPayloadFactory, OrchestrationArtifactPayloadFactory>();
+        services.AddScoped<IOrchestrationLifecycleArtifactPayloadFactory, OrchestrationLifecycleArtifactPayloadFactory>();
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
         services.AddScoped<IOrchestrationSchemaBindingSnapshotResolver, OrchestrationSchemaBindingSnapshotResolver>();
         services.AddScoped<IOrchestrationArtifactDslValidationService, OrchestrationArtifactDslValidationService>();

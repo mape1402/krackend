@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -16,6 +18,49 @@ namespace Krackend.Sagas.Orchestrations.Tests.Design;
 
 public sealed class OrchestrationArtifactPayloadFactoryTests
 {
+    [Theory]
+    [InlineData(OrchestrationVersionReviewOperation.Deprecate, "deprecate")]
+    [InlineData(OrchestrationVersionReviewOperation.Archive, "archive")]
+    public void LifecyclePayloadContainsOnlyTheActionTargetAndItsIntegrityChecksum(
+        OrchestrationVersionReviewOperation operation,
+        string expectedOperation)
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+
+        var result = new OrchestrationLifecycleArtifactPayloadFactory().CreatePayload(definition, version, operation);
+        var payload = JsonNode.Parse(result.Json)!.AsObject();
+
+        Assert.Equal(OrchestrationVersionLifecycleArtifact.Kind, payload["ArtifactKind"]!.GetValue<string>());
+        Assert.Equal(expectedOperation, payload["Operation"]!.GetValue<string>());
+        Assert.Equal(definition.Id.ToString(), payload["OrchestrationDefinitionId"]!.GetValue<string>());
+        Assert.Equal(definition.Key, payload["OrchestrationDefinitionKey"]!.GetValue<string>());
+        Assert.Equal(version.Id.ToString(), payload["OrchestrationVersionId"]!.GetValue<string>());
+        Assert.Equal(version.Version!.Value.ToString(), payload["Version"]!.GetValue<string>());
+        Assert.Equal(version.Checksum.Value, payload["TargetArtifactChecksum"]!.GetValue<string>());
+        Assert.Null(payload["TriggerBindings"]);
+        Assert.Null(payload["StageDefinitions"]);
+        Assert.Null(payload["MetadataDescriptors"]);
+        Assert.Equal(
+            $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(result.Json))).ToLowerInvariant()}",
+            result.Checksum.Value);
+    }
+
+    [Fact]
+    public void LifecyclePayloadRejectsNonLifecycleOperationsAndUnversionedDrafts()
+    {
+        var definition = CreateDefinition();
+        var version = CreateVersionWithoutOptionalTaskPolicies(definition.Id);
+        var factory = new OrchestrationLifecycleArtifactPayloadFactory();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            factory.CreatePayload(definition, version, OrchestrationVersionReviewOperation.Deploy));
+
+        version.Version = null;
+        Assert.Throws<InvalidOperationException>(() =>
+            factory.CreatePayload(definition, version, OrchestrationVersionReviewOperation.Deprecate));
+    }
+
     [Fact]
     public void CreatePayloadJson_PreservesRuntimeCriticalDesignConfiguration()
     {

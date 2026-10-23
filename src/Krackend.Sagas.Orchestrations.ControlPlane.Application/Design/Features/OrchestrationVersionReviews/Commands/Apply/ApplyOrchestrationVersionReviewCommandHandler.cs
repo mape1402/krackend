@@ -23,6 +23,7 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
     private readonly IOrchestrationVersionTransitionPolicy _transitionPolicy;
     private readonly IOrchestrationVersionArtifactSnapshotBuilder _snapshotBuilder;
     private readonly IOrchestrationArtifactPayloadFactory _payloadFactory;
+    private readonly IOrchestrationLifecycleArtifactPayloadFactory _lifecyclePayloadFactory;
     private readonly IOrchestrationArtifactDslValidationService _dslValidationService;
     private readonly IArtifactPublicationApplicationService _artifactPublicationService;
     private readonly IArtifactRepository _artifactRepository;
@@ -36,6 +37,7 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
         IOrchestrationVersionTransitionPolicy transitionPolicy,
         IOrchestrationVersionArtifactSnapshotBuilder snapshotBuilder,
         IOrchestrationArtifactPayloadFactory payloadFactory,
+        IOrchestrationLifecycleArtifactPayloadFactory lifecyclePayloadFactory,
         IOrchestrationArtifactDslValidationService dslValidationService,
         IArtifactPublicationApplicationService artifactPublicationService,
         IArtifactRepository artifactRepository,
@@ -47,6 +49,7 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
         _transitionPolicy = transitionPolicy ?? throw new ArgumentNullException(nameof(transitionPolicy));
         _snapshotBuilder = snapshotBuilder ?? throw new ArgumentNullException(nameof(snapshotBuilder));
         _payloadFactory = payloadFactory ?? throw new ArgumentNullException(nameof(payloadFactory));
+        _lifecyclePayloadFactory = lifecyclePayloadFactory ?? throw new ArgumentNullException(nameof(lifecyclePayloadFactory));
         _dslValidationService = dslValidationService ?? throw new ArgumentNullException(nameof(dslValidationService));
         _artifactPublicationService = artifactPublicationService ?? throw new ArgumentNullException(nameof(artifactPublicationService));
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
@@ -95,10 +98,22 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
 
         _transitionPolicy.EnsureCanTransition(version.Status, review.TargetStatus);
         var definition = await _definitionRepository.GetById(version.OrchestrationDefinitionId, cancellationToken);
-        var snapshot = await _snapshotBuilder.Build(version, cancellationToken);
-        _dslValidationService.Validate(snapshot);
-        var payload = _payloadFactory.CreatePayloadJson(definition, snapshot);
-        version.Checksum = CreateChecksum(payload);
+        string payload;
+        Checksum artifactChecksum;
+        if (review.Operation == OrchestrationVersionReviewOperation.Deploy)
+        {
+            var snapshot = await _snapshotBuilder.Build(version, cancellationToken);
+            _dslValidationService.Validate(snapshot);
+            payload = _payloadFactory.CreatePayloadJson(definition, snapshot);
+            version.Checksum = CreateChecksum(payload);
+            artifactChecksum = version.Checksum;
+        }
+        else
+        {
+            var lifecyclePayload = _lifecyclePayloadFactory.CreatePayload(definition, version, review.Operation);
+            payload = lifecyclePayload.Json;
+            artifactChecksum = lifecyclePayload.Checksum;
+        }
 
         await _unitOfWork.ExecuteInTransactionAsync(async token =>
         {
@@ -114,7 +129,7 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
             version.UpdatedOnUtc = DateTime.UtcNow;
             await _versionRepository.Update(version, token);
 
-            await Publish(review.Operation, definition, version, payload, request.AppliedBy, token);
+            await Publish(review.Operation, definition, version, payload, artifactChecksum, request.AppliedBy, token);
             var artifact = await _artifactRepository.GetLatestForOrchestrationVersion(
                 version.Id,
                 GetArtifactType(review.Operation),
@@ -132,6 +147,7 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
         OrchestrationDefinition definition,
         OrchestrationVersion version,
         string payload,
+        Checksum artifactChecksum,
         string actor,
         CancellationToken cancellationToken)
     {
@@ -140,13 +156,13 @@ public sealed class ApplyOrchestrationVersionReviewCommandHandler : IRequestHand
         {
             OrchestrationVersionReviewOperation.Deploy => _artifactPublicationService.PublishDeployment(new OrchestrationVersionDeployedEvent(
                 version.Id.ToString(), version.OrchestrationDefinitionId.ToString(), definition.Name, version.VersionLabel,
-                version.Version!.Value.ToString(), payload, version.Checksum.Value, actor, version.Id.ToString(), occurredAt), cancellationToken),
+                version.Version!.Value.ToString(), payload, artifactChecksum.Value, actor, version.Id.ToString(), occurredAt), cancellationToken),
             OrchestrationVersionReviewOperation.Deprecate => _artifactPublicationService.PublishDeprecation(new OrchestrationVersionDeprecatedEvent(
                 version.Id.ToString(), version.OrchestrationDefinitionId.ToString(), definition.Name, version.VersionLabel,
-                version.Version!.Value.ToString(), payload, version.Checksum.Value, actor, version.Id.ToString(), occurredAt), cancellationToken),
+                version.Version!.Value.ToString(), payload, artifactChecksum.Value, actor, version.Id.ToString(), occurredAt), cancellationToken),
             OrchestrationVersionReviewOperation.Archive => _artifactPublicationService.PublishArchive(new OrchestrationVersionArchivedEvent(
                 version.Id.ToString(), version.OrchestrationDefinitionId.ToString(), definition.Name, version.VersionLabel,
-                version.Version!.Value.ToString(), payload, version.Checksum.Value, actor, version.Id.ToString(), occurredAt), cancellationToken),
+                version.Version!.Value.ToString(), payload, artifactChecksum.Value, actor, version.Id.ToString(), occurredAt), cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unsupported review operation."),
         };
     }

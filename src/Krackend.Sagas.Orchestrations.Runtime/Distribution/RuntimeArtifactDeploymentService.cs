@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
@@ -58,7 +60,14 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     {
         ArgumentNullException.ThrowIfNull(package);
 
-        if (!TryValidatePackage(package, out var packageValidationError, out var payload, out var version, out var artifactId, out var sourceVersionId))
+        if (!TryValidatePackage(
+                package,
+                out var packageValidationError,
+                out var payload,
+                out var version,
+                out var artifactId,
+                out var sourceVersionId,
+                out var targetArtifactChecksum))
         {
             return Rejected(packageValidationError);
         }
@@ -70,9 +79,9 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                 RuntimeArtifactOperation.Deploy => await DeployNewVersionAsync(
                     package, sourceKey, payload, version, artifactId, sourceVersionId, cancellationToken),
                 RuntimeArtifactOperation.Deprecate => await DeprecateAsync(
-                    package, sourceKey, version, cancellationToken),
+                    package, sourceKey, version, targetArtifactChecksum, cancellationToken),
                 RuntimeArtifactOperation.Archive => await ArchiveAsync(
-                    package, sourceKey, version, cancellationToken),
+                    package, sourceKey, version, targetArtifactChecksum, cancellationToken),
                 _ => Rejected($"Artifact type '{package.ArtifactType}' is not supported.")
             };
         }
@@ -198,6 +207,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         RuntimeArtifactDeliveryPackage package,
         string sourceKey,
         SemanticVersion version,
+        string targetArtifactChecksum,
         CancellationToken cancellationToken)
     {
         EnsureDirectLifecycleStrategy(package.ReleaseStrategy);
@@ -207,7 +217,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             return Rejected($"Artifact '{package.OrchestrationDefinitionKey}' v{package.Version} is not installed in this runtime.");
         }
 
-        if (!string.Equals(artifact.ArtifactChecksum.Value, package.Checksum, StringComparison.Ordinal))
+        if (!string.Equals(artifact.ArtifactChecksum.Value, targetArtifactChecksum, StringComparison.Ordinal))
         {
             return Rejected("Deprecation artifact checksum does not match the installed orchestration version.");
         }
@@ -255,6 +265,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         RuntimeArtifactDeliveryPackage package,
         string sourceKey,
         SemanticVersion version,
+        string targetArtifactChecksum,
         CancellationToken cancellationToken)
     {
         EnsureDirectLifecycleStrategy(package.ReleaseStrategy);
@@ -264,7 +275,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             return Rejected($"Artifact '{package.OrchestrationDefinitionKey}' v{package.Version} is not installed in this runtime.");
         }
 
-        if (!string.Equals(artifact.ArtifactChecksum.Value, package.Checksum, StringComparison.Ordinal))
+        if (!string.Equals(artifact.ArtifactChecksum.Value, targetArtifactChecksum, StringComparison.Ordinal))
         {
             return Rejected("Archive artifact checksum does not match the installed orchestration version.");
         }
@@ -317,13 +328,15 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         out JsonNode payload,
         out SemanticVersion version,
         out Id artifactId,
-        out Id sourceVersionId)
+        out Id sourceVersionId,
+        out string targetArtifactChecksum)
     {
         error = string.Empty;
         payload = null;
         version = default;
         artifactId = default;
         sourceVersionId = default;
+        targetArtifactChecksum = string.Empty;
 
         try
         {
@@ -343,6 +356,19 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             if (payload is not JsonObject payloadObject)
             {
                 throw new InvalidOperationException("Artifact payload must be a JSON object.");
+            }
+
+            var operation = ResolveOperation(package.ArtifactType);
+            if ((operation is RuntimeArtifactOperation.Deprecate or RuntimeArtifactOperation.Archive) &&
+                IsLifecycleArtifact(payloadObject))
+            {
+                targetArtifactChecksum = ValidateLifecyclePayload(package, operation);
+                return true;
+            }
+
+            if (operation == RuntimeArtifactOperation.Deploy && IsLifecycleArtifact(payloadObject))
+            {
+                throw new InvalidOperationException("A lifecycle action payload cannot be deployed as a new orchestration version.");
             }
 
             var payloadKey = ReadRequiredPayloadString(payloadObject, "Key", "key");
@@ -374,6 +400,9 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                     $"Artifact package checksum '{package.Checksum}' does not match payload checksum '{payloadChecksum}'.");
             }
 
+            // Artifacts created before lifecycle envelopes carried the complete snapshot. Keep accepting
+            // those historical release packages while treating their snapshot checksum as the target.
+            targetArtifactChecksum = package.Checksum;
             return true;
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or JsonException or InvalidOperationException)
@@ -412,6 +441,87 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         }
 
         return text;
+    }
+
+    private static bool IsLifecycleArtifact(JsonObject payload)
+        => string.Equals(
+            ReadPayloadString(payload["artifactKind"] ?? payload["ArtifactKind"]),
+            OrchestrationVersionLifecycleArtifact.Kind,
+            StringComparison.Ordinal);
+
+    private static string ValidateLifecyclePayload(
+        RuntimeArtifactDeliveryPackage package,
+        RuntimeArtifactOperation operation)
+    {
+        var lifecycle = JsonSerializer.Deserialize<OrchestrationVersionLifecycleArtifact>(
+            package.PayloadJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("Lifecycle artifact payload is empty.");
+
+        if (!string.Equals(lifecycle.SchemaVersion, "1.0", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Lifecycle artifact schema version '{lifecycle.SchemaVersion}' is not supported.");
+        }
+
+        if (!string.Equals(lifecycle.ArtifactKind, OrchestrationVersionLifecycleArtifact.Kind, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Lifecycle artifact kind is invalid.");
+        }
+
+        EnsureRequired(lifecycle.OrchestrationDefinitionId, "Payload field 'orchestrationDefinitionId'");
+        EnsureRequired(lifecycle.OrchestrationDefinitionKey, "Payload field 'orchestrationDefinitionKey'");
+        EnsureRequired(lifecycle.OrchestrationVersionId, "Payload field 'orchestrationVersionId'");
+        EnsureRequired(lifecycle.Version, "Payload field 'version'");
+
+        var expectedOperation = operation switch
+        {
+            RuntimeArtifactOperation.Deprecate => "deprecate",
+            RuntimeArtifactOperation.Archive => "archive",
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unsupported lifecycle operation."),
+        };
+        if (!string.Equals(lifecycle.Operation, expectedOperation, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Lifecycle artifact operation '{lifecycle.Operation}' does not match package type '{package.ArtifactType}'.");
+        }
+
+        EnsurePackageAndLifecycleMatch(
+            package.OrchestrationDefinitionId,
+            lifecycle.OrchestrationDefinitionId,
+            "orchestration definition id");
+        EnsurePackageAndLifecycleMatch(
+            package.OrchestrationDefinitionKey,
+            lifecycle.OrchestrationDefinitionKey,
+            "orchestration definition key");
+        EnsurePackageAndLifecycleMatch(
+            package.OrchestrationVersionId,
+            lifecycle.OrchestrationVersionId,
+            "orchestration version id");
+        EnsurePackageAndLifecycleMatch(package.Version, lifecycle.Version, "version");
+        EnsureRequired(lifecycle.TargetArtifactChecksum, "Payload field 'targetArtifactChecksum'");
+
+        var calculatedChecksum = CalculateChecksum(package.PayloadJson);
+        if (!string.Equals(calculatedChecksum, package.Checksum, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Lifecycle artifact checksum does not match its payload.");
+        }
+
+        return lifecycle.TargetArtifactChecksum;
+    }
+
+    private static void EnsurePackageAndLifecycleMatch(string packageValue, string payloadValue, string field)
+    {
+        if (!string.Equals(packageValue, payloadValue, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Artifact package {field} '{packageValue}' does not match lifecycle payload {field} '{payloadValue}'.");
+        }
+    }
+
+    private static string CalculateChecksum(string payload)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
 
     private static string ReadPayloadString(JsonNode value)
