@@ -6,6 +6,24 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
 public sealed class ControlPlaneArtifactsPageModelTests
 {
+    [Theory]
+    [InlineData("orchestration-version.new", "New version", "od-artifact-type-new")]
+    [InlineData("orchestration-version.deprecated", "Deprecated", "od-artifact-type-deprecated")]
+    [InlineData("orchestration-version.archived", "Archived", "od-artifact-type-archived")]
+    [InlineData("orchestration-version-snapshot", "Snapshot", "od-artifact-type-legacy")]
+    [InlineData("custom-artifact", "custom-artifact", "od-artifact-type-legacy")]
+    public void ArtifactTypePresentationUsesDistinctLifecycleLabelsAndColors(
+        string artifactType,
+        string expectedLabel,
+        string expectedCssClass)
+    {
+        var fixture = new Fixture();
+        var presentation = fixture.CreatePage().GetArtifactTypePresentation(artifactType);
+
+        Assert.Equal(expectedLabel, presentation.Label);
+        Assert.Equal(expectedCssClass, presentation.CssClass);
+    }
+
     [Fact]
     public async Task OnGetWithoutSelectedOrchestrationLoadsOrchestrationsButNoRows()
     {

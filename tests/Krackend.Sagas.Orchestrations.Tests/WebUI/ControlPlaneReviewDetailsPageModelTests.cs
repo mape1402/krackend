@@ -21,6 +21,8 @@ public sealed class ControlPlaneReviewDetailsPageModelTests
         Assert.Equal("review-1", context.Page.ReviewId);
         Assert.Equal("version-1", context.Page.Review.OrchestrationVersionId);
         Assert.Equal("orchestration-1", context.Page.OrchestrationId);
+        Assert.Equal("Sales sale created", context.Page.Orchestration.Name);
+        Assert.Equal("sales_sale_created", context.Page.Orchestration.Key);
         Assert.True(context.Page.CanApprove);
         Assert.False(context.Page.CanApply);
         Assert.True(context.Page.CanAbort);
@@ -247,15 +249,18 @@ public sealed class ControlPlaneReviewDetailsPageModelTests
     {
         var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var versions = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrations = Substitute.For<IOrchestrationApplicationService>();
 
-        Assert.Equal("reviewService", Assert.Throws<ArgumentNullException>(() => new ReviewDetailsModel(null!, versions)).ParamName);
-        Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new ReviewDetailsModel(reviews, null!)).ParamName);
+        Assert.Equal("reviewService", Assert.Throws<ArgumentNullException>(() => new ReviewDetailsModel(null!, versions, orchestrations)).ParamName);
+        Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new ReviewDetailsModel(reviews, null!, orchestrations)).ParamName);
+        Assert.Equal("orchestrationService", Assert.Throws<ArgumentNullException>(() => new ReviewDetailsModel(reviews, versions, null!)).ParamName);
     }
 
     private static TestContext CreateContext(OrchestrationVersionReviewOperation operation = OrchestrationVersionReviewOperation.Deploy)
     {
         var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
         var review = new OrchestrationVersionReviewModel
         {
             Id = "review-1",
@@ -287,8 +292,15 @@ public sealed class ControlPlaneReviewDetailsPageModelTests
                 Version = "1.3.0",
                 Status = OrchestrationVersionStatus.Draft
             }));
+        orchestrationService.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new OrchestrationDefinitionModel
+            {
+                Id = "orchestration-1",
+                Key = "sales_sale_created",
+                Name = "Sales sale created",
+            }));
 
-        return new TestContext(new ReviewDetailsModel(reviewService, versionService), reviewService, versionService, review);
+        return new TestContext(new ReviewDetailsModel(reviewService, versionService, orchestrationService), reviewService, versionService, review);
     }
 
     private sealed record TestContext(

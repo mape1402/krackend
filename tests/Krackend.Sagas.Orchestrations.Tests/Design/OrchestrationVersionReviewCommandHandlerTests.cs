@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
+using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage;
 using NSubstitute;
@@ -64,8 +65,59 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
 
         Assert.True(result);
         Assert.Equal(OrchestrationVersionReviewApprovalStatus.Approved, review.ApprovalStatus);
+        Assert.Equal(OrchestrationVersionReviewApplicationStatus.Pending, review.ApplicationStatus);
         Assert.Equal("approver", review.DecidedBy);
+        Assert.Null(fixture.Version.Version);
+        Assert.Equal(OrchestrationVersionStatus.PendingDeployment, fixture.Version.Status);
         await fixture.VersionRepository.DidNotReceive().Update(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApprovedDeploymentPublishesItsArtifactOnlyWhenManuallyApplied()
+    {
+        var fixture = new Fixture(OrchestrationVersionStatus.Draft);
+        await fixture.Request.Handle(
+            new RequestOrchestrationVersionReviewCommand(
+                fixture.Version.Id.ToString(),
+                OrchestrationVersionReviewOperation.Deploy,
+                "designer"),
+            CancellationToken.None);
+        var review = Assert.Single(fixture.CreatedReviews);
+        fixture.ReviewRepository.GetById(review.Id, Arg.Any<CancellationToken>()).Returns(review);
+
+        await fixture.Approve.Handle(
+            new ApproveOrchestrationVersionReviewCommand(review.Id.ToString(), "approver"),
+            CancellationToken.None);
+
+        Assert.Equal(OrchestrationVersionReviewApprovalStatus.Approved, review.ApprovalStatus);
+        Assert.Equal(OrchestrationVersionReviewApplicationStatus.Pending, review.ApplicationStatus);
+        Assert.Equal(OrchestrationVersionStatus.PendingDeployment, fixture.Version.Status);
+        Assert.Null(fixture.Version.Version);
+        await fixture.ArtifactPublicationService.DidNotReceive().PublishDeployment(
+            Arg.Any<OrchestrationVersionDeployedEvent>(),
+            Arg.Any<CancellationToken>());
+
+        var result = await fixture.Apply.Handle(
+            new ApplyOrchestrationVersionReviewCommand(
+                review.Id.ToString(),
+                "deployer",
+                "1.4.0",
+                "Autumn release",
+                "Adds the delivery branch.",
+                "Approved after rehearsal."),
+            CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(OrchestrationVersionReviewApplicationStatus.Applied, review.ApplicationStatus);
+        Assert.Equal(OrchestrationVersionStatus.Deployed, fixture.Version.Status);
+        Assert.Equal("1.4.0", fixture.Version.Version!.Value.ToString());
+        Assert.Equal("Autumn release", fixture.Version.VersionLabel);
+        await fixture.ArtifactPublicationService.Received(1).PublishDeployment(
+            Arg.Is<OrchestrationVersionDeployedEvent>(x =>
+                x.Version == "1.4.0" &&
+                x.VersionLabel == "Autumn release" &&
+                x.Actor == "deployer"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -284,6 +336,21 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
             }), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
             ReviewRepository.Create(Arg.Do<OrchestrationVersionReview>(CreatedReviews.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
             ReviewRepository.Update(Arg.Any<OrchestrationVersionReview>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+            VersionRepository.Exists(Arg.Any<Id>(), Arg.Any<SemanticVersion>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
+            DefinitionRepository.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(new OrchestrationDefinition
+            {
+                Id = Version.OrchestrationDefinitionId,
+                Key = "orders_fulfillment",
+                Name = "Order fulfillment",
+                CreatedBy = "tests",
+            }));
+            SnapshotBuilder.Build(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult(call.ArgAt<OrchestrationVersion>(0)));
+            PayloadFactory.CreatePayloadJson(Arg.Any<OrchestrationDefinition>(), Arg.Any<OrchestrationVersion>()).Returns("{}");
+            ArtifactPublicationService.PublishDeployment(Arg.Any<OrchestrationVersionDeployedEvent>(), Arg.Any<CancellationToken>())
+                .Returns(Task.CompletedTask);
+            ArtifactRepository.GetLatestForOrchestrationVersion(Arg.Any<Id>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new Artifact { Id = Id.New() }));
             UnitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>())
                 .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(0)(call.ArgAt<CancellationToken>(1)));
 
@@ -294,19 +361,25 @@ public sealed class OrchestrationVersionReviewCommandHandlerTests
             Apply = new ApplyOrchestrationVersionReviewCommandHandler(
                 ReviewRepository,
                 VersionRepository,
-                Substitute.For<IOrchestrationDefinitionRepository>(),
+                DefinitionRepository,
                 Policy,
-                Substitute.For<IOrchestrationVersionArtifactSnapshotBuilder>(),
-                Substitute.For<IOrchestrationArtifactPayloadFactory>(),
-                Substitute.For<IOrchestrationArtifactDslValidationService>(),
-                Substitute.For<IArtifactPublicationApplicationService>(),
-                Substitute.For<IArtifactRepository>(),
+                SnapshotBuilder,
+                PayloadFactory,
+                DslValidationService,
+                ArtifactPublicationService,
+                ArtifactRepository,
                 UnitOfWork);
         }
 
         public OrchestrationVersion Version { get; }
         public IOrchestrationVersionRepository VersionRepository { get; } = Substitute.For<IOrchestrationVersionRepository>();
         public IOrchestrationVersionReviewRepository ReviewRepository { get; } = Substitute.For<IOrchestrationVersionReviewRepository>();
+        public IOrchestrationDefinitionRepository DefinitionRepository { get; } = Substitute.For<IOrchestrationDefinitionRepository>();
+        public IOrchestrationVersionArtifactSnapshotBuilder SnapshotBuilder { get; } = Substitute.For<IOrchestrationVersionArtifactSnapshotBuilder>();
+        public IOrchestrationArtifactPayloadFactory PayloadFactory { get; } = Substitute.For<IOrchestrationArtifactPayloadFactory>();
+        public IOrchestrationArtifactDslValidationService DslValidationService { get; } = Substitute.For<IOrchestrationArtifactDslValidationService>();
+        public IArtifactPublicationApplicationService ArtifactPublicationService { get; } = Substitute.For<IArtifactPublicationApplicationService>();
+        public IArtifactRepository ArtifactRepository { get; } = Substitute.For<IArtifactRepository>();
         public IControlPlaneUnitOfWork UnitOfWork { get; } = Substitute.For<IControlPlaneUnitOfWork>();
         public IOrchestrationVersionTransitionPolicy Policy { get; } = new OrchestrationVersionTransitionPolicy();
         public List<OrchestrationVersionReview> CreatedReviews { get; } = new();

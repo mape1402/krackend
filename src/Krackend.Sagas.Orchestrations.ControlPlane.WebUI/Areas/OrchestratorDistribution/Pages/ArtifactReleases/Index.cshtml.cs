@@ -6,6 +6,10 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 
 public sealed class IndexModel : PageModel
 {
+    private const string NewVersionArtifactType = "orchestration-version.new";
+    private const string DeprecatedArtifactType = "orchestration-version.deprecated";
+    private const string ArchivedArtifactType = "orchestration-version.archived";
+    private const string LegacySnapshotArtifactType = "orchestration-version-snapshot";
     private const int PageSize = 300;
     private const int MaxPageReads = 50;
 
@@ -32,6 +36,17 @@ public sealed class IndexModel : PageModel
            ArtifactSummaryByOrchestrationId.TryGetValue(orchestrationId, out var summary)
             ? summary
             : ArtifactOrchestrationSummary.Empty;
+
+    /// <summary>Returns a concise, color-distinct presentation for an artifact lifecycle type.</summary>
+    public ArtifactTypePresentation GetArtifactTypePresentation(string artifactType)
+        => artifactType switch
+        {
+            NewVersionArtifactType => new ArtifactTypePresentation("New version", "od-artifact-type-new"),
+            DeprecatedArtifactType => new ArtifactTypePresentation("Deprecated", "od-artifact-type-deprecated"),
+            ArchivedArtifactType => new ArtifactTypePresentation("Archived", "od-artifact-type-archived"),
+            LegacySnapshotArtifactType => new ArtifactTypePresentation("Snapshot", "od-artifact-type-legacy"),
+            _ => new ArtifactTypePresentation(string.IsNullOrWhiteSpace(artifactType) ? "Unknown" : artifactType, "od-artifact-type-legacy"),
+        };
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
@@ -82,4 +97,7 @@ public sealed class IndexModel : PageModel
     {
         public static ArtifactOrchestrationSummary Empty { get; } = new(0, null);
     }
+
+    /// <summary>Describes the visible label and theme-safe class for an artifact type.</summary>
+    public sealed record ArtifactTypePresentation(string Label, string CssClass);
 }

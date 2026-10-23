@@ -609,6 +609,30 @@ main.container {
     border-color: var(--od-danger-border);
 }
 
+.od-artifact-type-new {
+    color: var(--od-primary);
+    background: color-mix(in srgb, var(--od-primary) 13%, var(--od-surface));
+    border-color: color-mix(in srgb, var(--od-primary) 32%, var(--od-border));
+}
+
+.od-artifact-type-deprecated {
+    color: var(--od-warning-text);
+    background: var(--od-warning-bg);
+    border-color: var(--od-warning-border);
+}
+
+.od-artifact-type-archived {
+    color: var(--od-danger-text);
+    background: var(--od-danger-bg);
+    border-color: var(--od-danger-border);
+}
+
+.od-artifact-type-legacy {
+    color: var(--od-muted);
+    background: color-mix(in srgb, var(--od-muted) 12%, var(--od-surface));
+    border-color: color-mix(in srgb, var(--od-muted) 24%, var(--od-border));
+}
+
 .od-runtime-node-grid {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
 }

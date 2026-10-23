@@ -31,6 +31,7 @@
                 <thead>
                     <tr>
                         <th scope="col">Operation</th>
+                        <th scope="col">Orchestration</th>
                         <th scope="col">Roadmap</th>
                         <th scope="col">Approval</th>
                         <th scope="col">Application</th>
@@ -43,6 +44,19 @@
                     {
                         <tr>
                             <td><strong>@row.Review.Operation</strong></td>
+                            <td>
+                                @if (row.Orchestration is not null)
+                                {
+                                    <a asp-area="OrchestratorDesign"
+                                       asp-page="/Orchestrations/Details"
+                                       asp-route-orchestrationId="@row.Orchestration.Id">@row.Orchestration.Name</a>
+                                    <div class="od-item-meta">@row.Orchestration.Key</div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Orchestration unavailable</span>
+                                }
+                            </td>
                             <td>
                                 @if (row.Version is not null)
                                 {

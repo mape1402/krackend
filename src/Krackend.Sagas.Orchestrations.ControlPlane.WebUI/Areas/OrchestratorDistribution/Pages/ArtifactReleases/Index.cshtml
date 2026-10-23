@@ -109,6 +109,7 @@ else
                  data-od-infinite-batch-size="30">
                 @foreach (var item in artifactRows)
                 {
+                    var artifactPresentation = Model.GetArtifactTypePresentation(item.ArtifactType);
                     <article class="od-item-card od-artifact-detail-card od-infinite-item"
                              data-display-name="@item.OrchestrationDisplayName"
                              data-version-id="@item.OrchestrationVersionId"
@@ -123,7 +124,7 @@ else
                                 <h2 class="od-item-title">Version @item.VersionNumber</h2>
                                 <p class="od-item-meta od-release-id">@item.Id</p>
                             </div>
-                            <span class="od-status od-status-active">@item.ArtifactType</span>
+                            <span class="od-status @artifactPresentation.CssClass">@artifactPresentation.Label</span>
                         </div>
                         <div class="od-chip-row">
                             <span class="od-meta-chip">Label: @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "Unlabeled" : item.VersionLabel)</span>

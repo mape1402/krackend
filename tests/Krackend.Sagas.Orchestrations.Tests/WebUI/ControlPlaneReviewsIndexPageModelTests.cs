@@ -13,6 +13,7 @@ public sealed class ControlPlaneReviewsIndexPageModelTests
     {
         var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
         var review = CreateReview("review-1", "version-1");
         reviewService.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ApplicationPagedResult<OrchestrationVersionReviewModel>(2, 3, 51, 25, [review])));
@@ -24,13 +25,22 @@ public sealed class ControlPlaneReviewsIndexPageModelTests
                 Version = "1.4.0",
                 Status = OrchestrationVersionStatus.Deployed,
             }));
-        var page = new ReviewsIndexModel(reviewService, versionService);
+        orchestrationService.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new OrchestrationDefinitionModel
+            {
+                Id = "orchestration-1",
+                Key = "sales_sale_created",
+                Name = "Sales sale created",
+            }));
+        var page = new ReviewsIndexModel(reviewService, versionService, orchestrationService);
 
         await page.OnGetAsync(2);
 
         var row = Assert.Single(page.Rows);
         Assert.Equal("review-1", row.Review.Id);
         Assert.Equal("1.4.0", row.Version.Version);
+        Assert.Equal("Sales sale created", row.Orchestration.Name);
+        Assert.Equal("sales_sale_created", row.Orchestration.Key);
         Assert.Equal(2, page.PageNumber);
         Assert.Equal(3, page.TotalPages);
         await reviewService.Received(1).GetAll(
@@ -43,12 +53,13 @@ public sealed class ControlPlaneReviewsIndexPageModelTests
     {
         var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
         var review = CreateReview("review-missing", "version-missing");
         reviewService.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ApplicationPagedResult<OrchestrationVersionReviewModel>(1, 1, 1, 25, [review])));
         versionService.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<OrchestrationVersionModel>(new KeyNotFoundException()));
-        var page = new ReviewsIndexModel(reviewService, versionService);
+        var page = new ReviewsIndexModel(reviewService, versionService, orchestrationService);
 
         await page.OnGetAsync();
 
@@ -64,7 +75,10 @@ public sealed class ControlPlaneReviewsIndexPageModelTests
         var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         reviewService.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<ApplicationPagedResult<OrchestrationVersionReviewModel>>(new InvalidOperationException("storage unavailable")));
-        var page = new ReviewsIndexModel(reviewService, Substitute.For<IOrchestrationVersionApplicationService>());
+        var page = new ReviewsIndexModel(
+            reviewService,
+            Substitute.For<IOrchestrationVersionApplicationService>(),
+            Substitute.For<IOrchestrationApplicationService>());
 
         await page.OnGetAsync(0);
 
@@ -78,9 +92,11 @@ public sealed class ControlPlaneReviewsIndexPageModelTests
     {
         var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var versions = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrations = Substitute.For<IOrchestrationApplicationService>();
 
-        Assert.Equal("reviewService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(null!, versions)).ParamName);
-        Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(reviews, null!)).ParamName);
+        Assert.Equal("reviewService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(null!, versions, orchestrations)).ParamName);
+        Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(reviews, null!, orchestrations)).ParamName);
+        Assert.Equal("orchestrationService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(reviews, versions, null!)).ParamName);
     }
 
     private static OrchestrationVersionReviewModel CreateReview(string id, string versionId)

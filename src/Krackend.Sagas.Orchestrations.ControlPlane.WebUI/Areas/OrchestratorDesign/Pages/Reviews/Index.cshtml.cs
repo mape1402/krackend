@@ -9,14 +9,17 @@ public sealed class IndexModel : PageModel
     private const int PageSize = 25;
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;
     private readonly IOrchestrationVersionApplicationService _versionService;
+    private readonly IOrchestrationApplicationService _orchestrationService;
 
     /// <summary>Initializes a new instance.</summary>
     public IndexModel(
         IOrchestrationVersionReviewApplicationService reviewService,
-        IOrchestrationVersionApplicationService versionService)
+        IOrchestrationVersionApplicationService versionService,
+        IOrchestrationApplicationService orchestrationService)
     {
         _reviewService = reviewService ?? throw new ArgumentNullException(nameof(reviewService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
+        _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
     }
 
     /// <summary>Gets review rows for the active page.</summary>
@@ -47,16 +50,29 @@ public sealed class IndexModel : PageModel
             var rows = new List<ReviewRow>();
             foreach (var review in result.Rows)
             {
+                OrchestrationVersionModel version;
                 try
                 {
-                    var version = await _versionService.GetById(
+                    version = await _versionService.GetById(
                         new GetOrchestrationVersionByIdQuery(review.OrchestrationVersionId),
                         cancellationToken);
-                    rows.Add(new ReviewRow(review, version));
                 }
                 catch (KeyNotFoundException)
                 {
-                    rows.Add(new ReviewRow(review, null));
+                    rows.Add(new ReviewRow(review, null, null));
+                    continue;
+                }
+
+                try
+                {
+                    var orchestration = await _orchestrationService.GetById(
+                        new GetOrchestrationDefinitionByIdQuery(version.OrchestrationDefinitionId),
+                        cancellationToken);
+                    rows.Add(new ReviewRow(review, version, orchestration));
+                }
+                catch (KeyNotFoundException)
+                {
+                    rows.Add(new ReviewRow(review, version, null));
                 }
             }
 
@@ -71,5 +87,8 @@ public sealed class IndexModel : PageModel
     }
 
     /// <summary>Represents a review enriched with its roadmap version when it still exists.</summary>
-    public sealed record ReviewRow(OrchestrationVersionReviewModel Review, OrchestrationVersionModel Version);
+    public sealed record ReviewRow(
+        OrchestrationVersionReviewModel Review,
+        OrchestrationVersionModel Version,
+        OrchestrationDefinitionModel Orchestration);
 }

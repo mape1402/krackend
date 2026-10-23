@@ -12,13 +12,16 @@ public sealed class DetailsModel : PageModel
     private const string Actor = "web-ui";
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;
     private readonly IOrchestrationVersionApplicationService _versionService;
+    private readonly IOrchestrationApplicationService _orchestrationService;
 
     public DetailsModel(
         IOrchestrationVersionReviewApplicationService reviewService,
-        IOrchestrationVersionApplicationService versionService)
+        IOrchestrationVersionApplicationService versionService,
+        IOrchestrationApplicationService orchestrationService)
     {
         _reviewService = reviewService ?? throw new ArgumentNullException(nameof(reviewService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
+        _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
     }
 
     [BindProperty(SupportsGet = true)]
@@ -27,6 +30,8 @@ public sealed class DetailsModel : PageModel
     public OrchestrationVersionReviewModel Review { get; private set; }
 
     public OrchestrationVersionModel Version { get; private set; }
+
+    public OrchestrationDefinitionModel Orchestration { get; private set; }
 
     public string OrchestrationId { get; private set; } = string.Empty;
 
@@ -142,6 +147,12 @@ public sealed class DetailsModel : PageModel
                 new GetOrchestrationVersionByIdQuery(Review.OrchestrationVersionId),
                 cancellationToken);
             OrchestrationId = Version?.OrchestrationDefinitionId ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(OrchestrationId))
+            {
+                Orchestration = await _orchestrationService.GetById(
+                    new GetOrchestrationDefinitionByIdQuery(OrchestrationId),
+                    cancellationToken);
+            }
         }
         catch (Exception exception)
         {
