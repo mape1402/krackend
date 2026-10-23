@@ -515,6 +515,47 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
+    public async Task DeployAsync_WhenPackageUsesPayloadHashAndSnapshotChecksumDiffers_AcceptsAndStoresPayloadHash()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var versionId = Id.New();
+        var package = CreatePackage(
+            "sales.sale.created",
+            Version,
+            "draft:snapshot-checksum",
+            versionId,
+            payloadChecksum: "draft:snapshot-checksum");
+        package.Checksum = CalculateChecksum(package.PayloadJson);
+        var service = CreateService(repository, scheduler);
+
+        var result = await service.DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Single(repository.Artifacts);
+        Assert.Equal(package.Checksum, repository.Artifacts.Single().ArtifactChecksum.Value);
+        Assert.Single(scheduler.Requests);
+    }
+
+    [Fact]
+    public async Task DeployAsync_WhenPayloadHashPackageIsTampered_RejectsWithoutSchedulingProjection()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var package = CreatePackage("sales.sale.created", Version, "draft:snapshot-checksum", Id.New(), payloadChecksum: "draft:snapshot-checksum");
+        package.Checksum = CalculateChecksum(package.PayloadJson);
+        package.PayloadJson += " ";
+        var service = CreateService(repository, scheduler);
+
+        var result = await service.DeployAsync(package, "design-a");
+
+        Assert.False(result.Accepted);
+        Assert.Contains("checksum", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(repository.Artifacts);
+        Assert.Empty(scheduler.Requests);
+    }
+
+    [Fact]
     public async Task DeployAsync_WhenPackagePayloadHasDifferentOrchestrationKey_RejectsWithoutSchedulingProjection()
     {
         var repository = new TestRuntimeArtifactDeploymentRepository();
@@ -1218,6 +1259,12 @@ public sealed class RuntimeArtifactDeploymentServiceTests
             PromotedBy = "tests",
             PromotedOnUtc = DateTime.UtcNow,
         };
+    }
+
+    private static string CalculateChecksum(string payload)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
 
     private static SchemaBindingArtifact SchemaBinding(bool validationEnabled)

@@ -394,8 +394,20 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                     $"Artifact package orchestration version id '{package.OrchestrationVersionId}' does not match payload version id '{payloadVersionId}'.");
             }
 
-            if (!string.Equals(payloadChecksum, package.Checksum, StringComparison.Ordinal))
+            var calculatedPayloadChecksum = CalculateChecksum(package.PayloadJson);
+            if (package.Checksum.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
             {
+                // The package checksum protects the serialized transport envelope. The checksum
+                // embedded in an orchestration snapshot identifies the design snapshot and is
+                // intentionally allowed to differ from the envelope hash.
+                if (!string.Equals(calculatedPayloadChecksum, package.Checksum, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Artifact package checksum does not match its payload.");
+                }
+            }
+            else if (!string.Equals(payloadChecksum, package.Checksum, StringComparison.Ordinal))
+            {
+                // Historical packages used the snapshot checksum as the package checksum.
                 throw new InvalidOperationException(
                     $"Artifact package checksum '{package.Checksum}' does not match payload checksum '{payloadChecksum}'.");
             }
