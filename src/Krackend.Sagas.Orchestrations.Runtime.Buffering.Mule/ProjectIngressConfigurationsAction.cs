@@ -49,7 +49,7 @@ public sealed class ProjectIngressConfigurationsAction : IMuleAction<RuntimeArti
         ArgumentNullException.ThrowIfNull(context);
 
         var request = context.Payload ?? throw new InvalidOperationException("Projection request payload is required.");
-        var artifactId = new Id(Ulid.Parse(request.ArtifactId));
+        var artifactId = new Id(System.Ulid.Parse(request.ArtifactId));
         var artifact = await _artifactRepository.GetById(artifactId, cancellationToken);
         if (artifact.IngressGeneration != request.IngressGeneration)
         {

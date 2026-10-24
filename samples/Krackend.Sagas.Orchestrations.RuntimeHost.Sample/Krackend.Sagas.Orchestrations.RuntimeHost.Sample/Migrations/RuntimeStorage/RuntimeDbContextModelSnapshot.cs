@@ -1112,9 +1112,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
             modelBuilder.Entity("Mule.DurableAction", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("Id")
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
 
                     b.Property<int>("Attempts")
                         .HasColumnType("int");
@@ -1122,16 +1122,22 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTimeOffset?>("CompletedOnUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
                     b.Property<string>("CorrelationId")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<DateTimeOffset>("CreatedOnUtc")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("DeduplicationKey")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("Key")
                         .IsRequired()
@@ -1161,8 +1167,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<string>("PayloadType")
                         .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTimeOffset?>("StartedOnUtc")
                         .HasColumnType("datetimeoffset");
@@ -1175,21 +1181,122 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Key", "DeduplicationKey")
-                        .IsUnique()
-                        .HasDatabaseName("UX_MuleActions_Key_DeduplicationKey")
-                        .HasFilter("[DeduplicationKey] IS NOT NULL");
+                    b.HasIndex("Key", "DeduplicationKey");
 
-                    b.HasIndex("Status", "CompletedOnUtc")
-                        .HasDatabaseName("IX_MuleActions_Status_CompletedOnUtc");
+                    b.HasIndex("Status", "CompletedOnUtc");
 
-                    b.HasIndex("Status", "LockedOnUtc")
-                        .HasDatabaseName("IX_MuleActions_Status_LockedOnUtc");
+                    b.HasIndex("Status", "LockedOnUtc");
 
-                    b.HasIndex("Lane", "Status", "NextAttemptOnUtc", "CreatedOnUtc")
-                        .HasDatabaseName("IX_MuleActions_Lane_Status_NextAttemptOnUtc_CreatedOnUtc");
+                    b.HasIndex("Lane", "Status", "NextAttemptOnUtc", "CreatedOnUtc");
 
-                    b.ToTable("MuleActions", "Runtime");
+                    b.ToTable("DurableAction", "Runtime");
+                });
+
+            modelBuilder.Entity("Mule.MuleReplay", b =>
+                {
+                    b.Property<string>("RequestId")
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<string>("ActionKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BranchId")
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Lane")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LockToken")
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<DateTimeOffset?>("LockedOnUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("MaterializedOnUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("NextAttemptOnUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("OriginalDeduplicationKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReplayActionId")
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<string>("ReplayRootActionId")
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<int>("ReplaySequence")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("RequestedOnUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("ScheduleOnUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceActionId")
+                        .IsRequired()
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("RequestId");
+
+                    b.HasIndex("ReplayActionId")
+                        .IsUnique();
+
+                    b.HasIndex("SourceActionId", "BranchId")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "LockedOnUtc");
+
+                    b.HasIndex("Status", "ScheduleOnUtc", "NextAttemptOnUtc");
+
+                    b.ToTable("MuleReplay", "Runtime");
                 });
 #pragma warning restore 612, 618
         }

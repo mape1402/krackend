@@ -1,8 +1,11 @@
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Mule;
 using Mule.Dispatching;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 {
@@ -16,6 +19,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly IMuleCommitNotifier _commitNotifier;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MuleRemoteCommandDispatcher> _logger;
+        private readonly ITaskDispatchRepository? _dispatchRepository;
 
         public MuleRemoteCommandDispatcher(
             IMuleClient muleClient,
@@ -23,7 +27,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             IMuleSerializer muleSerializer,
             IMuleCommitNotifier commitNotifier,
             IServiceScopeFactory scopeFactory,
-            ILogger<MuleRemoteCommandDispatcher> logger)
+            ILogger<MuleRemoteCommandDispatcher> logger,
+            ITaskDispatchRepository? dispatchRepository = null)
         {
             _muleClient = muleClient ?? throw new ArgumentNullException(nameof(muleClient));
             _muleStorage = muleStorage ?? throw new ArgumentNullException(nameof(muleStorage));
@@ -31,6 +36,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _commitNotifier = commitNotifier ?? throw new ArgumentNullException(nameof(commitNotifier));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _dispatchRepository = dispatchRepository;
         }
 
         public async Task DispatchAsync(RemoteCommand command, CancellationToken cancellationToken = default)
@@ -47,7 +53,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 return;
             }
 
-            await _muleClient.EnqueueAsync(
+            var actionId = await _muleClient.EnqueueAsync(
                 MuleActionKeys.RemoteCommandDispatchActionKey,
                 command,
                 options =>
@@ -56,6 +62,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     options.DeduplicationKey = BuildDeduplicationKey(command);
                 },
                 cancellationToken);
+
+            await CaptureActionReferenceAsync(command, actionId, MuleSettings.DefaultLane, cancellationToken);
         }
 
         private async Task EnqueueScheduledAsync(
@@ -65,7 +73,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         {
             var action = new DurableAction
             {
-                Id = Guid.NewGuid(),
+                Id = global::Mule.Ulid.NewUlid(),
                 Key = MuleActionKeys.RemoteCommandDispatchActionKey,
                 Lane = MuleSettings.DefaultLane,
                 Payload = _muleSerializer.Serialize(command),
@@ -88,11 +96,49 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     action.DeduplicationKey,
                     cancellationToken) ?? action.Id;
 
+            await CaptureActionReferenceAsync(command, actionId, action.Lane, cancellationToken);
             await _commitNotifier.NotifySavedAsync(actionId, action.Lane, cancellationToken);
             ScheduleDueNotification(actionId, action.Lane, scheduledOnUtc);
         }
 
-        private void ScheduleDueNotification(Guid actionId, string lane, DateTimeOffset scheduledOnUtc)
+        private async Task CaptureActionReferenceAsync(
+            RemoteCommand command,
+            global::Mule.Ulid actionId,
+            string lane,
+            CancellationToken cancellationToken)
+        {
+            var dispatchRepository = _dispatchRepository;
+            if (dispatchRepository is null ||
+                string.IsNullOrWhiteSpace(command.DispatchId) ||
+                !System.Ulid.TryParse(command.DispatchId, out var dispatchValue))
+            {
+                return;
+            }
+
+            try
+            {
+                var dispatch = await dispatchRepository.TryGetById(new Id(dispatchValue), cancellationToken);
+                if (dispatch is null)
+                {
+                    return;
+                }
+
+                dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
+                dispatch.Metadata["Mule.Lane"] = JsonValue.Create(lane);
+                await dispatchRepository.Update(dispatch, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                // Publishing already succeeded. A missing diagnostic reference must not create a duplicate dispatch.
+                _logger.LogWarning(
+                    exception,
+                    "Mule action '{ActionId}' was enqueued but could not be associated with task dispatch '{DispatchId}'.",
+                    actionId,
+                    command.DispatchId);
+            }
+        }
+
+        private void ScheduleDueNotification(global::Mule.Ulid actionId, string lane, DateTimeOffset scheduledOnUtc)
         {
             var delay = scheduledOnUtc - DateTimeOffset.UtcNow;
             if (delay > MaxInProcessWakeUpDelay)

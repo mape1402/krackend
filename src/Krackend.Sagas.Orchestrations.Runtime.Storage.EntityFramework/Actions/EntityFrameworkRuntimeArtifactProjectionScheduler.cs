@@ -70,7 +70,7 @@ internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRunti
 
         var action = new DurableAction
         {
-            Id = Guid.NewGuid(),
+            Id = global::Mule.Ulid.NewUlid(),
             Key = key,
             Lane = RuntimeArtifactProjectionSchedulerDefaults.Lane,
             Payload = JsonSerializer.Serialize(request, SerializerOptions),
@@ -100,7 +100,7 @@ internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRunti
     }
 
     private async Task SaveAndNotifyIfNeededAsync(
-        Guid actionId,
+        global::Mule.Ulid actionId,
         ActionKey key,
         string deduplicationKey,
         string lane,
@@ -135,7 +135,7 @@ internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRunti
         }
     }
 
-    private void DetachPendingAction(Guid actionId)
+    private void DetachPendingAction(global::Mule.Ulid actionId)
     {
         var entries = _dbContext.ChangeTracker.Entries<DurableAction>()
             .Where(entry => entry.Entity.Id == actionId && entry.State == EntityState.Added)

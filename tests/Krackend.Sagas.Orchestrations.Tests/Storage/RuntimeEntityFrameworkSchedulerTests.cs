@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Mule;
 using Mule.Dispatching;
 using NSubstitute;
+using MuleUlid = Mule.Ulid;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
@@ -161,7 +162,7 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         var actions = await dbContext.Set<DurableAction>().OrderBy(x => x.DeduplicationKey).ToArrayAsync();
 
         Assert.Equal(["artifact-shared:5:boot-a", "artifact-shared:5:boot-b"], actions.Select(x => x.DeduplicationKey).ToArray());
-        await commitNotifier.Received(2).NotifySavedAsync(Arg.Any<Guid>(), "runtime-standup:replica-a", Arg.Any<CancellationToken>());
+        await commitNotifier.Received(2).NotifySavedAsync(Arg.Any<MuleUlid>(), "runtime-standup:replica-a", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -424,7 +425,7 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
 
     private static Task InvokeSaveAndNotifyAsync(
         object scheduler,
-        Guid actionId,
+        MuleUlid actionId,
         ActionKey key,
         string deduplicationKey,
         string lane)
@@ -527,7 +528,7 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         DurableActionStatus status)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = MuleUlid.NewUlid(),
             Key = ActionKey.From(RuntimeArtifactActionNames.ProjectIngressConfigurations),
             Lane = RuntimeArtifactProjectionSchedulerDefaults.Lane,
             Payload = JsonSerializer.Serialize(ProjectionRequest(artifactId, generation), SerializerOptions),
@@ -545,7 +546,7 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         DurableActionStatus status)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = MuleUlid.NewUlid(),
             Key = ActionKey.From(RuntimeArtifactActionNames.StandUpArtifactIngress),
             Lane = "runtime-standup:replica-a",
             Payload = JsonSerializer.Serialize(StandupRequest(artifactId, generation, "existing"), SerializerOptions),

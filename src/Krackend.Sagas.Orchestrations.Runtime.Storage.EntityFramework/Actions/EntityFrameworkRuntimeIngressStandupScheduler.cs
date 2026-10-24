@@ -83,7 +83,7 @@ internal sealed class EntityFrameworkRuntimeIngressStandupScheduler : IRuntimeIn
 
         var action = new DurableAction
         {
-            Id = Guid.NewGuid(),
+            Id = global::Mule.Ulid.NewUlid(),
             Key = key,
             Lane = _replicaIdentity.LocalStandupLane,
             Payload = JsonSerializer.Serialize(request, SerializerOptions),
@@ -113,7 +113,7 @@ internal sealed class EntityFrameworkRuntimeIngressStandupScheduler : IRuntimeIn
     }
 
     private async Task SaveAndNotifyIfNeededAsync(
-        Guid actionId,
+        global::Mule.Ulid actionId,
         ActionKey key,
         string deduplicationKey,
         string lane,
@@ -148,7 +148,7 @@ internal sealed class EntityFrameworkRuntimeIngressStandupScheduler : IRuntimeIn
         }
     }
 
-    private void DetachPendingAction(Guid actionId)
+    private void DetachPendingAction(global::Mule.Ulid actionId)
     {
         var entries = _dbContext.ChangeTracker.Entries<DurableAction>()
             .Where(entry => entry.Entity.Id == actionId && entry.State == EntityState.Added)

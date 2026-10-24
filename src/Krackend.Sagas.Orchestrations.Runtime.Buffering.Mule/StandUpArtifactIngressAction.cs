@@ -62,7 +62,7 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
         catch (IngressStandupConfigurationException exception)
         {
             await _artifactRepository.MarkProjectionFailed(
-                new Id(Ulid.Parse(request.ArtifactId)),
+                new Id(System.Ulid.Parse(request.ArtifactId)),
                 request.IngressGeneration,
                 exception.Message,
                 cancellationToken);

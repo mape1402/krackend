@@ -516,7 +516,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         }
 
         private Id ParseId(string value)
-            => new(Ulid.Parse(value));
+            => new(System.Ulid.Parse(value));
 
         private bool HasRuntimeDispatchState(RemoteCommand command)
             => !string.IsNullOrWhiteSpace(command.OrchestrationInstanceId)

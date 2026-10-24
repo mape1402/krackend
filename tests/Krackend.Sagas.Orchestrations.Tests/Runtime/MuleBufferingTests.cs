@@ -1,6 +1,9 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
@@ -10,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Mule;
 using Mule.Dispatching;
 using NSubstitute;
+using MuleUlid = Mule.Ulid;
 
 public sealed class MuleBufferingTests
 {
@@ -26,7 +30,7 @@ public sealed class MuleBufferingTests
                 Arg.Do<WorkItem>(payload => capturedPayload = payload),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
@@ -67,7 +71,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<WorkItem>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
@@ -108,7 +112,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<WorkItem>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
@@ -165,7 +169,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<WorkItem>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
@@ -193,7 +197,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<WorkItem>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
@@ -234,7 +238,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<WorkItem>(),
                 Arg.Any<Action<EnqueueOptions>>(),
                 Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<Guid>(Task.FromException<Guid>(new InvalidOperationException("redis unavailable"))));
+            .Returns(_ => new ValueTask<MuleUlid>(Task.FromException<MuleUlid>(new InvalidOperationException("redis unavailable"))));
         var buffer = BuildServiceProvider(muleClient).GetRequiredService<IIntakeBuffer>();
         var workItem = new WorkItem
         {
@@ -267,7 +271,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<RemoteCommand>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var dispatcher = BuildServiceProvider(
                 muleClient,
                 Substitute.For<IMuleStorage>(),
@@ -295,6 +299,47 @@ public sealed class MuleBufferingTests
     }
 
     [Fact]
+    public async Task MuleRemoteCommandDispatcher_WhenDispatchExists_RecordsTheMuleActionReference()
+    {
+        var muleClient = Substitute.For<IMuleClient>();
+        var actionId = MuleUlid.NewUlid();
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<RemoteCommand>(),
+                Arg.Any<Action<EnqueueOptions>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleUlid>(actionId));
+        await using var provider = BuildServiceProvider(
+            muleClient,
+            Substitute.For<IMuleStorage>(),
+            Substitute.For<IMuleSerializer>(),
+            Substitute.For<IMuleCommitNotifier>());
+        using var scope = provider.CreateScope();
+        var dispatchRepository = scope.ServiceProvider.GetRequiredService<ITaskDispatchRepository>();
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Enqueued"
+        };
+        await dispatchRepository.Create(dispatch);
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRemoteCommandDispatcher>();
+
+        await dispatcher.DispatchAsync(new RemoteCommand
+        {
+            OrchestrationInstanceId = "instance-1",
+            TaskExecutionAttemptId = dispatch.TaskExecutionAttemptId.ToString(),
+            DispatchId = dispatch.Id.ToString()
+        });
+
+        var persisted = await dispatchRepository.GetById(dispatch.Id);
+        Assert.Equal(actionId.ToString(), persisted.Metadata["Mule.ActionId"].GetValue<string>());
+        Assert.Equal(MuleSettings.DefaultLane, persisted.Metadata["Mule.Lane"].GetValue<string>());
+    }
+
+    [Fact]
     public async Task MuleRemoteCommandDispatcher_WhenCommandHasNoDispatchState_UsesTaskSpecificDeduplication()
     {
         var muleClient = Substitute.For<IMuleClient>();
@@ -305,7 +350,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<RemoteCommand>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var dispatcher = BuildServiceProvider(
                 muleClient,
                 Substitute.For<IMuleStorage>(),
@@ -381,7 +426,7 @@ public sealed class MuleBufferingTests
                 Arg.Any<RemoteCommand>(),
                 Arg.Do<Action<EnqueueOptions>>(options => capturedOptions = options),
                 Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<Guid>(Guid.NewGuid()));
+            .Returns(new ValueTask<MuleUlid>(MuleUlid.NewUlid()));
         var dispatcher = BuildServiceProvider(
                 muleClient,
                 Substitute.For<IMuleStorage>(),
@@ -504,7 +549,7 @@ public sealed class MuleBufferingTests
                 Substitute.For<IMuleSerializer>(),
                 commitNotifier)
             .GetRequiredService<IRemoteCommandDispatcher>();
-        var actionId = Guid.NewGuid();
+        var actionId = MuleUlid.NewUlid();
         var scheduleMethod = dispatcher.GetType().GetMethod(
             "ScheduleDueNotification",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -523,7 +568,7 @@ public sealed class MuleBufferingTests
     {
         var commitNotifier = Substitute.For<IMuleCommitNotifier>();
         commitNotifier
-            .NotifySavedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask(Task.FromException(new InvalidOperationException("notifier unavailable"))));
         var dispatcher = BuildServiceProvider(
                 Substitute.For<IMuleClient>(),
@@ -531,7 +576,7 @@ public sealed class MuleBufferingTests
                 Substitute.For<IMuleSerializer>(),
                 commitNotifier)
             .GetRequiredService<IRemoteCommandDispatcher>();
-        var actionId = Guid.NewGuid();
+        var actionId = MuleUlid.NewUlid();
         var scheduleMethod = dispatcher.GetType().GetMethod(
             "ScheduleDueNotification",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
