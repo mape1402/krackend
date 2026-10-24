@@ -162,6 +162,119 @@ public sealed class RemoteCommandDispatchActionTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenDispatchIsCancelledWhilePublishIsInFlight_PreservesCancellation()
+    {
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            OrchestrationDefinitionKey = "sales.sale.created",
+            CorrelationId = Id.New().ToString(),
+            SagaId = Id.New().ToString(),
+            ExecutionKey = "sales.sale.created",
+            Status = OrchestrationInstanceStatus.Running,
+            StartedOnUtc = DateTime.UtcNow,
+            LastUpdatedOnUtc = DateTime.UtcNow
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "payments.charge",
+            Status = TaskExecutionStatus.Running
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Running
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "FireAndWaitCallback",
+            DispatchStatus = "Enqueued"
+        };
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        executor
+            .ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                dispatch.DispatchStatus = "Cancelled";
+                task.Status = TaskExecutionStatus.Cancelled;
+                attempt.Status = TaskExecutionStatus.Cancelled;
+                instance.Status = OrchestrationInstanceStatus.Aborted;
+                return Task.CompletedTask;
+            });
+
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
+        var provider = services.BuildServiceProvider();
+        var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
+        var taskRepository = Substitute.For<ITaskExecutionRepository>();
+        var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
+        var transitionRepository = Substitute.For<IExecutionTransitionRepository>();
+        instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
+        dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        var action = new RemoteCommandDispatchAction(
+            provider,
+            Substitute.For<IOrchestrationMessageMetadataSetter>(),
+            instanceRepository,
+            taskRepository,
+            attemptRepository,
+            dispatchRepository,
+            transitionRepository,
+            new DefaultMuleTerminalFailureMarker());
+        var command = new RemoteCommand
+        {
+            RemoteCommandTransport = RemoteCommandTransport.Messaging,
+            Payload = "{}",
+            OrchestrationInstanceId = instance.Id.ToString(),
+            StageExecutionId = task.StageExecutionId.ToString(),
+            TaskExecutionId = task.Id.ToString(),
+            TaskExecutionAttemptId = attempt.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            AwaitResponse = true
+        };
+
+        await action.ExecuteAsync(
+            new MuleActionContext<RemoteCommand>(
+                new DurableAction
+                {
+                    Key = ActionKey.From("RemoteCommandDispatch"),
+                    Lane = "default",
+                    CorrelationId = instance.CorrelationId,
+                    DeduplicationKey = dispatch.Id.ToString(),
+                    Status = DurableActionStatus.Pending
+                },
+                provider,
+                command),
+            CancellationToken.None);
+
+        Assert.Equal("Cancelled", dispatch.DispatchStatus);
+        Assert.Equal(TaskExecutionStatus.Cancelled, task.Status);
+        Assert.Equal(TaskExecutionStatus.Cancelled, attempt.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Aborted, instance.Status);
+        await dispatchRepository.DidNotReceive().MarkSent(
+            dispatch.Id,
+            Arg.Any<string>(),
+            Arg.Any<DateTime>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+        await transitionRepository.Received(1).Create(
+            Arg.Is<ExecutionTransition>(transition =>
+                transition.TransitionType == "TaskDispatchPublishIgnored" &&
+                transition.FromStatus == "Cancelled" &&
+                transition.ToStatus == "Cancelled"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenDispatchIsNoLongerCurrent_SuppressesTransportExecution()
     {
         var instance = new OrchestrationInstance

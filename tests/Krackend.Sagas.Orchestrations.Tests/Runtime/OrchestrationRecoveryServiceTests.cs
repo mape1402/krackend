@@ -74,6 +74,10 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Equal("InstanceAborted", transition.TransitionType);
         Assert.Equal(OrchestrationInstanceStatus.DeadLettered.ToString(), transition.FromStatus);
         Assert.Equal(OrchestrationInstanceStatus.Aborted.ToString(), transition.ToStatus);
+        await fixture.DispatchCancellationCoordinator.Received(1).CancelPendingAsync(
+            instance,
+            "operator fixed externally",
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -709,7 +713,8 @@ public sealed class OrchestrationRecoveryServiceTests
                 AttemptRepository,
                 DispatchRepository,
                 DispatchReplayService,
-                new NoopRuntimeStorageUnitOfWork());
+                new NoopRuntimeStorageUnitOfWork(),
+                DispatchCancellationCoordinator);
         }
 
         public IOrchestrationInstanceRepository InstanceRepository { get; } =
@@ -738,6 +743,9 @@ public sealed class OrchestrationRecoveryServiceTests
 
         public ITaskDispatchReplayService DispatchReplayService { get; } =
             Substitute.For<ITaskDispatchReplayService>();
+
+        public IOrchestrationDispatchCancellationCoordinator DispatchCancellationCoordinator { get; } =
+            Substitute.For<IOrchestrationDispatchCancellationCoordinator>();
 
         public ISagaEngine SagaEngine { get; } =
             Substitute.For<ISagaEngine>();

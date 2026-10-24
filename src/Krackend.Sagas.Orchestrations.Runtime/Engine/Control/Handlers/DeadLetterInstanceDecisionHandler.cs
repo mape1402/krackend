@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 {
@@ -14,13 +15,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         private readonly IOrchestrationInstanceRepository _instanceRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
+        private readonly IOrchestrationDispatchCancellationCoordinator _dispatchCancellationCoordinator;
 
         public DeadLetterInstanceDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
-            IExecutionTransitionRepository transitionRepository)
+            IExecutionTransitionRepository transitionRepository,
+            IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
+            _dispatchCancellationCoordinator = dispatchCancellationCoordinator ?? throw new ArgumentNullException(nameof(dispatchCancellationCoordinator));
         }
 
         public async Task HandleAsync(DeadLetterInstanceDecision decision, CancellationToken cancellationToken = default)
@@ -47,6 +51,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.Metadata[RecoveryAllowedMetadataKey] = JsonValue.Create(true);
 
             await _instanceRepository.Update(instance, cancellationToken);
+            await _dispatchCancellationCoordinator.CancelPendingAsync(instance, reason, cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),

@@ -75,5 +75,6 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
+           string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
 }

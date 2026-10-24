@@ -117,8 +117,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 await executor.ExecuteAsync(command, cancellationToken);
                 if (HasRuntimeDispatchState(command))
                 {
-                    await MarkDispatchPublishedAsync(command, dispatchedOnUtc, cancellationToken);
-                    await ContinueFireAndForgetAsync(command, cancellationToken);
+                    if (await MarkDispatchPublishedAsync(command, dispatchedOnUtc, cancellationToken))
+                    {
+                        await ContinueFireAndForgetAsync(command, cancellationToken);
+                    }
                 }
             }
             catch (RemoteCommandConfigurationException exception)
@@ -261,7 +263,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             await _instanceRepository.Update(instance, cancellationToken);
         }
 
-        private async Task MarkDispatchPublishedAsync(
+        private async Task<bool> MarkDispatchPublishedAsync(
             RemoteCommand command,
             DateTime dispatchedOnUtc,
             CancellationToken cancellationToken)
@@ -269,14 +271,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             var now = DateTime.UtcNow;
             if (command.AwaitResponse)
             {
-                await MarkAwaitedDispatchPublishedAsync(command, now, dispatchedOnUtc, cancellationToken);
-                return;
+                return await MarkAwaitedDispatchPublishedAsync(command, now, dispatchedOnUtc, cancellationToken);
             }
 
             var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId), cancellationToken);
             var task = await _taskRepository.GetById(ParseId(command.TaskExecutionId), cancellationToken);
             var attempt = await _attemptRepository.GetById(ParseId(command.TaskExecutionAttemptId), cancellationToken);
             var dispatch = await _dispatchRepository.GetById(ParseId(command.DispatchId), cancellationToken);
+
+            if (IsCancelled(dispatch.DispatchStatus))
+            {
+                await RecordIgnoredPublishedDispatchAsync(instance, task, attempt, dispatch, command, cancellationToken);
+                return false;
+            }
 
             dispatch.SentOnUtc = now;
             if (!string.Equals(dispatch.DispatchStatus, "Failed", StringComparison.OrdinalIgnoreCase))
@@ -329,20 +336,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 Payload = string.IsNullOrWhiteSpace(command.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(command.Payload),
                 ProducedBy = nameof(RemoteCommandDispatchAction)
             }, cancellationToken);
+            return true;
         }
 
-        private async Task MarkAwaitedDispatchPublishedAsync(
+        private async Task<bool> MarkAwaitedDispatchPublishedAsync(
             RemoteCommand command,
             DateTime sentOnUtc,
             DateTime dispatchedOnUtc,
             CancellationToken cancellationToken)
         {
             var dispatchId = ParseId(command.DispatchId);
-            await _dispatchRepository.MarkSent(dispatchId, "WaitingResponse", sentOnUtc, cancellationToken: cancellationToken);
-
             var instance = await _instanceRepository.GetById(ParseId(command.OrchestrationInstanceId), cancellationToken);
             var task = await _taskRepository.GetById(ParseId(command.TaskExecutionId), cancellationToken);
             var attempt = await _attemptRepository.GetById(ParseId(command.TaskExecutionAttemptId), cancellationToken);
+            var dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
+            if (IsCancelled(dispatch.DispatchStatus))
+            {
+                await RecordIgnoredPublishedDispatchAsync(instance, task, attempt, dispatch, command, cancellationToken);
+                return false;
+            }
+
+            await _dispatchRepository.MarkSent(dispatchId, "WaitingResponse", sentOnUtc, cancellationToken: cancellationToken);
             await _transitionRepository.Create(new ExecutionTransition
             {
                 Id = Id.New(),
@@ -358,7 +372,31 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 Payload = string.IsNullOrWhiteSpace(command.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(command.Payload),
                 ProducedBy = nameof(RemoteCommandDispatchAction)
             }, cancellationToken);
+            return true;
         }
+
+        private Task RecordIgnoredPublishedDispatchAsync(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            RemoteCommand command,
+            CancellationToken cancellationToken)
+            => _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = task.StageExecutionId,
+                TaskExecutionId = task.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskDispatchPublishIgnored",
+                FromStatus = dispatch.DispatchStatus,
+                ToStatus = dispatch.DispatchStatus,
+                OccurredOnUtc = DateTime.UtcNow,
+                Message = $"Task '{task.TaskKey}' command publication completed after the dispatch was no longer executable.",
+                Payload = string.IsNullOrWhiteSpace(command.Payload) ? null : System.Text.Json.Nodes.JsonNode.Parse(command.Payload),
+                ProducedBy = nameof(RemoteCommandDispatchAction)
+            }, cancellationToken);
 
         private async Task ContinueFireAndForgetAsync(RemoteCommand command, CancellationToken cancellationToken)
         {
@@ -528,7 +566,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
+               string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsCancelled(string status)
+            => string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
 
         private static bool IsDispatchPending(string status)
             => string.Equals(status, "Enqueued", StringComparison.OrdinalIgnoreCase) ||

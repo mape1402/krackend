@@ -34,6 +34,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     private readonly IRuntimeArtifactResolver _artifactResolver;
     private readonly ITaskAttemptDispatcher _taskAttemptDispatcher;
     private readonly ITaskDispatchReplayService _taskDispatchReplayService;
+    private readonly IOrchestrationDispatchCancellationCoordinator _dispatchCancellationCoordinator;
     private readonly ISagaEngine _sagaEngine;
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
@@ -50,6 +51,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         ITaskDispatchRepository dispatchRepository,
         ITaskDispatchReplayService taskDispatchReplayService,
         IRuntimeStorageUnitOfWork storageUnitOfWork,
+        IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator,
         IOrchestrationInstanceCoordinator coordinator = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -63,6 +65,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         _taskDispatchReplayService = taskDispatchReplayService ?? throw new ArgumentNullException(nameof(taskDispatchReplayService));
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         _storageUnitOfWork = storageUnitOfWork ?? throw new ArgumentNullException(nameof(storageUnitOfWork));
+        _dispatchCancellationCoordinator = dispatchCancellationCoordinator ?? throw new ArgumentNullException(nameof(dispatchCancellationCoordinator));
         _coordinator = coordinator ?? PassthroughOrchestrationInstanceCoordinator.Instance;
     }
 
@@ -608,6 +611,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.Metadata[AbortedOnUtcMetadataKey] = JsonValue.Create(now);
 
         await _instanceRepository.Update(instance, cancellationToken);
+        await _dispatchCancellationCoordinator.CancelPendingAsync(instance, abortReason, cancellationToken);
         await _transitionRepository.Create(new ExecutionTransition
         {
             Id = Id.New(),
