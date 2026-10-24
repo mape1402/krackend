@@ -18,6 +18,22 @@ public interface IOrchestrationRecoveryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Replays one failed or timed out task by creating a new execution attempt.
+    /// </summary>
+    /// <param name="instanceId">Orchestration instance id.</param>
+    /// <param name="taskExecutionId">Task execution id.</param>
+    /// <param name="payload">Optional replay payload override.</param>
+    /// <param name="reason">Optional operator reason.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recovery operation result.</returns>
+    Task<OrchestrationRecoveryResult> ReplayTaskAsync(
+        string instanceId,
+        string taskExecutionId,
+        string payload = null,
+        string reason = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Aborts an orchestration instance after operator review.
     /// </summary>
     /// <param name="instanceId">Orchestration instance id.</param>

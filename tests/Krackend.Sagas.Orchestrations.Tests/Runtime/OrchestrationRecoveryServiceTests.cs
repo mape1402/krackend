@@ -133,9 +133,123 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Same(taskExecution, dispatch.TaskExecution);
         Assert.Contains("snapshot", dispatch.Payload, StringComparison.Ordinal);
         var transition = Assert.Single(fixture.Transitions);
-        Assert.Equal("InstanceReplayRequested", transition.TransitionType);
+        Assert.Equal("TaskReplayRequested", transition.TransitionType);
+        Assert.Equal(TaskExecutionStatus.Failed.ToString(), transition.FromStatus);
+        Assert.Equal(TaskExecutionStatus.Running.ToString(), transition.ToStatus);
         Assert.Equal(stageExecution.Id, transition.StageExecutionId);
         Assert.Equal(taskExecution.Id, transition.TaskExecutionId);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificTimedOutTaskCreatesANewAttemptAndRetainsTheOperatorReason()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered, currentTaskKey: "reserve-stock");
+        var stage = new StageExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageKey = "stage-one",
+            Order = 1,
+            Status = StageExecutionStatus.Failed
+        };
+        var timedOutTask = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = stage.Id,
+            TaskKey = "reserve-stock",
+            TaskKind = TaskKind.Messaging,
+            Status = TaskExecutionStatus.TimedOut,
+            TimedOutOnUtc = DateTime.UtcNow.AddMinutes(-1),
+            LastAttemptNumber = 1
+        };
+        fixture.ArrangeReplay(
+            instance,
+            CreateResolvedArtifact(instance.RuntimeOrchestrationArtifactId, Stage("stage-one", MessagingTask("reserve-stock"))),
+            [stage],
+            [timedOutTask]);
+        fixture.TaskRepository
+            .GetById(timedOutTask.Id, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(timedOutTask));
+
+        var result = await fixture.Service.ReplayTaskAsync(
+            instance.Id.ToString(),
+            timedOutTask.Id.ToString(),
+            "{\"value\":\"operator-payload\"}",
+            "  service is available again  ");
+
+        Assert.True(result.Succeeded);
+        var dispatch = Assert.Single(fixture.Dispatches);
+        Assert.Equal(TaskAttemptDispatchKind.Retry, dispatch.Kind);
+        Assert.Equal("operator-payload", JsonNode.Parse(dispatch.Payload)!["value"]!.GetValue<string>());
+        Assert.Equal("service is available again", timedOutTask.Metadata["Recovery.TaskReplayReason"]!.GetValue<string>());
+        var transition = Assert.Single(fixture.Transitions);
+        Assert.Equal("TaskReplayRequested", transition.TransitionType);
+        Assert.Equal(TaskExecutionStatus.TimedOut.ToString(), transition.FromStatus);
+        Assert.Equal(TaskExecutionStatus.Running.ToString(), transition.ToStatus);
+        Assert.Equal(timedOutTask.Id, transition.TaskExecutionId);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificTaskRejectsATaskThatDoesNotBelongToTheInstance()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+        var unrelatedTask = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = Id.New(),
+            StageExecutionId = Id.New(),
+            TaskKey = "reserve-stock",
+            Status = TaskExecutionStatus.Failed
+        };
+        fixture.InstanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(instance));
+        fixture.TaskRepository.GetById(unrelatedTask.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(unrelatedTask));
+
+        var result = await fixture.Service.ReplayTaskAsync(instance.Id.ToString(), unrelatedTask.Id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("does not belong", result.Message, StringComparison.OrdinalIgnoreCase);
+        await fixture.ArtifactResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        Assert.Empty(fixture.Dispatches);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificTaskRejectsANonTerminalTask()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        var waitingTask = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "reserve-stock",
+            Status = TaskExecutionStatus.WaitingResponse
+        };
+        fixture.InstanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(instance));
+        fixture.TaskRepository.GetById(waitingTask.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(waitingTask));
+
+        var result = await fixture.Service.ReplayTaskAsync(instance.Id.ToString(), waitingTask.Id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse.ToString(), result.Status);
+        Assert.Contains("cannot be replayed", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(fixture.Dispatches);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificTaskRejectsInvalidTaskId()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+
+        var result = await fixture.Service.ReplayTaskAsync(instance.Id.ToString(), "not-a-valid-id");
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Task execution id is invalid", result.Message, StringComparison.Ordinal);
+        await fixture.InstanceRepository.DidNotReceiveWithAnyArgs().GetById(default, default);
     }
 
     [Fact]

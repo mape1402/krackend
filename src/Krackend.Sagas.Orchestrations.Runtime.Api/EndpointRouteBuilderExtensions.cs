@@ -90,6 +90,23 @@ public static class EndpointRouteBuilderExtensions
                 return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
             });
 
+        manageGroup.MapPost("/instances/{instanceId}/tasks/{taskExecutionId}/replay", async (
+            string instanceId,
+            string taskExecutionId,
+            [FromBody] RuntimeInstanceRecoveryRequest request,
+            [FromServices] IOrchestrationRecoveryService recovery,
+            CancellationToken cancellationToken)
+            =>
+            {
+                var result = await recovery.ReplayTaskAsync(
+                    instanceId,
+                    taskExecutionId,
+                    request?.Payload,
+                    request?.Reason,
+                    cancellationToken);
+                return result.Succeeded ? Results.Ok(result) : Results.BadRequest(result);
+            });
+
         manageGroup.MapPost("/instances/{instanceId}/abort", async (
             string instanceId,
             [FromBody] RuntimeInstanceRecoveryRequest request,

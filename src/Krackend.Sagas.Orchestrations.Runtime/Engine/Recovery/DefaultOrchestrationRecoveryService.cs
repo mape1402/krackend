@@ -13,6 +13,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
 {
     private const string ReplayRequestedOnUtcMetadataKey = "Recovery.ReplayRequestedOnUtc";
     private const string ReplayRequestedByMetadataKey = "Recovery.ReplayRequestedBy";
+    private const string TaskReplayReasonMetadataKey = "Recovery.TaskReplayReason";
     private const string AbortReasonMetadataKey = "Recovery.AbortReason";
     private const string AbortedOnUtcMetadataKey = "Recovery.AbortedOnUtc";
 
@@ -100,13 +101,14 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
 
         if (failedTask is not null)
         {
-            return await ReplayTaskAsync(
+            return await ReplayTaskCoreAsync(
                 instance,
                 failedTask,
                 stageExecutions,
                 stages,
                 resolvedArtifact.Artifact.MetadataDescriptors,
                 payload,
+                null,
                 now,
                 cancellationToken);
         }
@@ -125,6 +127,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 cancellationToken);
         }
 
+        var previousStatus = instance.Status;
         instance.Status = OrchestrationInstanceStatus.Running;
         instance.FailedOnUtc = null;
         instance.ErrorSummary = null;
@@ -133,13 +136,117 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
         await _instanceRepository.Update(instance, cancellationToken);
-        await CreateReplayTransition(instance, null, null, "Instance replay requested.", now, cancellationToken);
+        await CreateReplayTransition(
+            instance,
+            null,
+            null,
+            "InstanceReplayRequested",
+            previousStatus.ToString(),
+            OrchestrationInstanceStatus.Running.ToString(),
+            "Instance replay requested.",
+            now,
+            cancellationToken);
         await _sagaEngine.OrchestrateAsync(BuildForwardIntent(instance, payload), cancellationToken);
 
         return OrchestrationRecoveryResult.Success(
             instance.Id.ToString(),
             OrchestrationInstanceStatus.Running.ToString(),
             "Replay requested for recoverable orchestration instance.");
+    }
+
+    public async Task<OrchestrationRecoveryResult> ReplayTaskAsync(
+        string instanceId,
+        string taskExecutionId,
+        string payload = null,
+        string reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseId(instanceId, out var parsedInstanceId))
+        {
+            return OrchestrationRecoveryResult.Rejected(instanceId, string.Empty, "Instance id is invalid.");
+        }
+
+        if (!TryParseId(taskExecutionId, out var parsedTaskExecutionId))
+        {
+            return OrchestrationRecoveryResult.Rejected(parsedInstanceId.ToString(), string.Empty, "Task execution id is invalid.");
+        }
+
+        OrchestrationRecoveryResult result = null;
+        var acquired = await _coordinator.TryExecuteAsync(
+            parsedInstanceId,
+            async token => result = await ReplayTaskCoreAsync(
+                parsedInstanceId,
+                parsedTaskExecutionId,
+                payload,
+                reason,
+                token),
+            cancellationToken);
+
+        return acquired
+            ? result
+            : OrchestrationRecoveryResult.Rejected(
+                parsedInstanceId.ToString(),
+                string.Empty,
+                $"Instance '{parsedInstanceId}' is being processed by another runtime node.");
+    }
+
+    private async Task<OrchestrationRecoveryResult> ReplayTaskCoreAsync(
+        Id instanceId,
+        Id taskExecutionId,
+        string payload,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+        if (instance is null)
+        {
+            return OrchestrationRecoveryResult.Rejected(instanceId.ToString(), string.Empty, "Orchestration instance was not found.");
+        }
+
+        if (!IsRecoverable(instance.Status))
+        {
+            return OrchestrationRecoveryResult.Rejected(
+                instance.Id.ToString(),
+                instance.Status.ToString(),
+                $"Instance '{instance.Id}' is not in a recoverable status.");
+        }
+
+        var task = await _taskRepository.GetById(taskExecutionId, cancellationToken);
+        if (task is null || task.OrchestrationInstanceId != instance.Id)
+        {
+            return OrchestrationRecoveryResult.Rejected(
+                instance.Id.ToString(),
+                instance.Status.ToString(),
+                $"Task '{taskExecutionId}' does not belong to instance '{instance.Id}'.");
+        }
+
+        if (task.Status is not (TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut))
+        {
+            return OrchestrationRecoveryResult.Rejected(
+                instance.Id.ToString(),
+                task.Status.ToString(),
+                $"Task '{task.TaskKey}' is not failed or timed out and cannot be replayed.");
+        }
+
+        var resolvedArtifact = await _artifactResolver.ResolveAsync(
+            instance.RuntimeOrchestrationArtifactId.ToString(),
+            cancellationToken);
+        var stages = (resolvedArtifact.Artifact.StageDefinitions ?? [])
+            .Where(x => x.IsEnabled)
+            .OrderBy(x => x.Order)
+            .ToArray();
+        var stageExecutions = await _stageRepository.GetByInstanceId(instance.Id, cancellationToken);
+
+        return await ReplayTaskCoreAsync(
+            instance,
+            task,
+            stageExecutions,
+            stages,
+            resolvedArtifact.Artifact.MetadataDescriptors,
+            payload,
+            reason,
+            DateTime.UtcNow,
+            cancellationToken);
     }
 
     public async Task<OrchestrationRecoveryResult> AbortAsync(
@@ -214,13 +321,14 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             abortReason);
     }
 
-    private async Task<OrchestrationRecoveryResult> ReplayTaskAsync(
+    private async Task<OrchestrationRecoveryResult> ReplayTaskCoreAsync(
         OrchestrationInstance instance,
         TaskExecution failedTask,
         IReadOnlyCollection<StageExecution> stageExecutions,
         IReadOnlyCollection<StageArtifact> stages,
         IReadOnlyCollection<MetadataDescriptorArtifact> metadataDescriptors,
         string payload,
+        string reason,
         DateTime now,
         CancellationToken cancellationToken)
     {
@@ -239,9 +347,14 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 $"Failed task '{failedTask.TaskKey}' cannot be replayed because its artifact definition is unavailable.");
         }
 
+        var previousTaskStatus = failedTask.Status;
         failedTask.Metadata.Remove("RetrySuppressed");
         failedTask.Metadata["ManualReplay"] = JsonValue.Create(true);
         failedTask.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            failedTask.Metadata[TaskReplayReasonMetadataKey] = JsonValue.Create(reason.Trim());
+        }
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
 
@@ -264,6 +377,9 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             instance,
             stageExecution.Id,
             failedTask.Id,
+            "TaskReplayRequested",
+            previousTaskStatus.ToString(),
+            TaskExecutionStatus.Running.ToString(),
             $"Replay requested for task '{failedTask.TaskKey}'.",
             now,
             cancellationToken);
@@ -324,6 +440,9 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         OrchestrationInstance instance,
         Id? stageExecutionId,
         Id? taskExecutionId,
+        string transitionType,
+        string fromStatus,
+        string toStatus,
         string message,
         DateTime now,
         CancellationToken cancellationToken)
@@ -334,9 +453,9 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             OrchestrationInstanceId = instance.Id,
             StageExecutionId = stageExecutionId,
             TaskExecutionId = taskExecutionId,
-            TransitionType = "InstanceReplayRequested",
-            FromStatus = OrchestrationInstanceStatus.DeadLettered.ToString(),
-            ToStatus = OrchestrationInstanceStatus.Running.ToString(),
+            TransitionType = transitionType,
+            FromStatus = fromStatus,
+            ToStatus = toStatus,
             OccurredOnUtc = now,
             Message = message,
             ProducedBy = nameof(DefaultOrchestrationRecoveryService)
