@@ -10,6 +10,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Tests.Runtime.Fakes;
 using NSubstitute;
 
 public sealed class OrchestrationRecoveryServiceTests
@@ -250,6 +251,154 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.False(result.Succeeded);
         Assert.Contains("Task execution id is invalid", result.Message, StringComparison.Ordinal);
         await fixture.InstanceRepository.DidNotReceiveWithAnyArgs().GetById(default, default);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificFailedDispatchSchedulesTheProviderWithoutCreatingANewTaskAttempt()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+        var task = CreateFailedTask(instance.Id);
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Failed
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Messaging",
+            DispatchStatus = "Failed"
+        };
+        fixture.ArrangeDispatchReplay(instance, task, attempt, dispatch);
+        fixture.DispatchReplayService
+            .ReplayAsync(Arg.Any<TaskDispatchReplayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(TaskDispatchReplayResult.Success("Scheduled", "Delivery replay was scheduled.", "provider-action-1")));
+
+        var result = await fixture.Service.ReplayDispatchAsync(
+            instance.Id.ToString(),
+            task.Id.ToString(),
+            dispatch.Id.ToString(),
+            "dependency recovered");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Running, task.Status);
+        Assert.Equal(TaskExecutionStatus.Running, attempt.Status);
+        Assert.Equal("ReplayPending", dispatch.DispatchStatus);
+        Assert.False(task.Metadata.ContainsKey("ManualReplay"));
+        Assert.NotNull(dispatch.Metadata["Recovery.DispatchReplayRequestId"]);
+        Assert.Equal("dependency recovered", dispatch.Metadata["Recovery.DispatchReplayReason"]!.GetValue<string>());
+        Assert.Equal("provider-action-1", dispatch.Metadata["Recovery.DispatchReplayProviderActionId"]!.GetValue<string>());
+        Assert.Equal(["TaskDispatchReplayRequested", "TaskDispatchReplayScheduled"], fixture.Transitions.Select(x => x.TransitionType));
+        await fixture.TaskAttemptDispatcher.DidNotReceiveWithAnyArgs().DispatchAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificFailedDispatchRestoresFailureWhenTheProviderRejectsIt()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+        var task = CreateFailedTask(instance.Id);
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Failed
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Messaging",
+            DispatchStatus = "Failed"
+        };
+        fixture.ArrangeDispatchReplay(instance, task, attempt, dispatch);
+        fixture.DispatchReplayService
+            .ReplayAsync(Arg.Any<TaskDispatchReplayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(TaskDispatchReplayResult.Rejected("NotEligible", "The source delivery is not eligible.")));
+
+        var result = await fixture.Service.ReplayDispatchAsync(instance.Id.ToString(), task.Id.ToString(), dispatch.Id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, task.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, attempt.Status);
+        Assert.Equal("Failed", dispatch.DispatchStatus);
+        Assert.Equal("NotEligible", dispatch.Metadata["Recovery.DispatchReplayProviderStatus"]!.GetValue<string>());
+        Assert.Equal(["TaskDispatchReplayRequested", "TaskDispatchReplayRejected"], fixture.Transitions.Select(x => x.TransitionType));
+    }
+
+    [Fact]
+    public async Task ReplaySpecificPendingDispatchResumesWithTheSameIdempotencyKey()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.Running);
+        var task = CreateFailedTask(instance.Id);
+        task.Status = TaskExecutionStatus.Running;
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Running
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Messaging",
+            DispatchStatus = "ReplayPending",
+            Metadata =
+            {
+                ["Recovery.DispatchReplayRequestId"] = JsonValue.Create(Id.New().ToString())
+            }
+        };
+        fixture.ArrangeDispatchReplay(instance, task, attempt, dispatch);
+        string? requestId = null;
+        fixture.DispatchReplayService
+            .ReplayAsync(Arg.Do<TaskDispatchReplayRequest>(request => requestId = request.RequestId), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(TaskDispatchReplayResult.Success("AlreadyScheduled", "Delivery replay is already scheduled.")));
+
+        var result = await fixture.Service.ReplayDispatchAsync(instance.Id.ToString(), task.Id.ToString(), dispatch.Id.ToString());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(dispatch.Metadata["Recovery.DispatchReplayRequestId"]!.GetValue<string>(), requestId);
+        Assert.Single(fixture.Transitions);
+        Assert.Equal("TaskDispatchReplayScheduled", fixture.Transitions[0].TransitionType);
+    }
+
+    [Fact]
+    public async Task ReplaySpecificDispatchRejectsAnActiveDelivery()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        var task = CreateFailedTask(instance.Id);
+        task.Status = TaskExecutionStatus.WaitingResponse;
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            Status = TaskExecutionStatus.WaitingResponse
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "Messaging",
+            DispatchStatus = "WaitingResponse"
+        };
+        fixture.ArrangeDispatchReplay(instance, task, attempt, dispatch);
+
+        var result = await fixture.Service.ReplayDispatchAsync(instance.Id.ToString(), task.Id.ToString(), dispatch.Id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("not failed", result.Message, StringComparison.OrdinalIgnoreCase);
+        await fixture.DispatchReplayService.DidNotReceiveWithAnyArgs().ReplayAsync(default!, default);
     }
 
     [Fact]
@@ -516,6 +665,18 @@ public sealed class OrchestrationRecoveryServiceTests
             TaskDispatchType.FireAndWaitCallback,
             true);
 
+    private static TaskExecution CreateFailedTask(Id instanceId)
+        => new()
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instanceId,
+            StageExecutionId = Id.New(),
+            TaskKey = "reserve-stock",
+            TaskKind = TaskKind.Messaging,
+            Status = TaskExecutionStatus.Failed,
+            FailedOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+
     private sealed class RecoveryFixture
     {
         public RecoveryFixture()
@@ -530,6 +691,9 @@ public sealed class OrchestrationRecoveryServiceTests
             TaskAttemptDispatcher
                 .DispatchAsync(Arg.Do<TaskAttemptDispatchRequest>(request => Dispatches.Add(request)), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
+            DispatchReplayService
+                .ReplayAsync(Arg.Any<TaskDispatchReplayRequest>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(TaskDispatchReplayResult.Rejected("Unsupported", "Delivery replay is not configured.")));
             SagaEngine
                 .OrchestrateAsync(Arg.Do<ForwardIntent>(intent => Forwards.Add(intent)), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
@@ -541,7 +705,11 @@ public sealed class OrchestrationRecoveryServiceTests
                 TransitionRepository,
                 ArtifactResolver,
                 TaskAttemptDispatcher,
-                SagaEngine);
+                SagaEngine,
+                AttemptRepository,
+                DispatchRepository,
+                DispatchReplayService,
+                new NoopRuntimeStorageUnitOfWork());
         }
 
         public IOrchestrationInstanceRepository InstanceRepository { get; } =
@@ -556,11 +724,20 @@ public sealed class OrchestrationRecoveryServiceTests
         public IExecutionTransitionRepository TransitionRepository { get; } =
             Substitute.For<IExecutionTransitionRepository>();
 
+        public ITaskExecutionAttemptRepository AttemptRepository { get; } =
+            Substitute.For<ITaskExecutionAttemptRepository>();
+
+        public ITaskDispatchRepository DispatchRepository { get; } =
+            Substitute.For<ITaskDispatchRepository>();
+
         public IRuntimeArtifactResolver ArtifactResolver { get; } =
             Substitute.For<IRuntimeArtifactResolver>();
 
         public ITaskAttemptDispatcher TaskAttemptDispatcher { get; } =
             Substitute.For<ITaskAttemptDispatcher>();
+
+        public ITaskDispatchReplayService DispatchReplayService { get; } =
+            Substitute.For<ITaskDispatchReplayService>();
 
         public ISagaEngine SagaEngine { get; } =
             Substitute.For<ISagaEngine>();
@@ -591,6 +768,18 @@ public sealed class OrchestrationRecoveryServiceTests
             TaskRepository
                 .GetByInstanceId(instance.Id, Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(tasks));
+        }
+
+        public void ArrangeDispatchReplay(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch)
+        {
+            InstanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(instance));
+            TaskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(task));
+            AttemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(attempt));
+            DispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(dispatch));
         }
     }
 }

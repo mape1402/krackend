@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Buffering;
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Microsoft.Extensions.DependencyInjection;
 using Mule;
@@ -337,6 +338,88 @@ public sealed class MuleBufferingTests
         var persisted = await dispatchRepository.GetById(dispatch.Id);
         Assert.Equal(actionId.ToString(), persisted.Metadata["Mule.ActionId"].GetValue<string>());
         Assert.Equal(MuleSettings.DefaultLane, persisted.Metadata["Mule.Lane"].GetValue<string>());
+    }
+
+    [Fact]
+    public async Task MuleTaskDispatchReplayService_SchedulesFailedMuleDeliveryWithThePersistedRequestId()
+    {
+        var replayService = Substitute.For<IMuleReplayService>();
+        var sourceActionId = MuleUlid.NewUlid();
+        var requestId = MuleUlid.NewUlid();
+        var replayActionId = MuleUlid.NewUlid();
+        MuleReplayRequest? capturedRequest = null;
+        replayService.ReplayAsync(
+                sourceActionId,
+                Arg.Do<MuleReplayRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleReplayResult>(new MuleReplayResult
+            {
+                Outcome = MuleReplayOutcome.Scheduled,
+                Replay = new MuleReplayInfo
+                {
+                    RequestId = requestId,
+                    ReplayOfActionId = sourceActionId,
+                    ReplayRootActionId = sourceActionId,
+                    ReplayActionId = replayActionId,
+                    ReplaySequence = 1,
+                    Status = MuleReplayStatus.Scheduled,
+                    ActionKey = ActionKey.From("RemoteCommandDispatch"),
+                    RequestedOnUtc = DateTimeOffset.UtcNow,
+                    ScheduleOnUtc = DateTimeOffset.UtcNow
+                }
+            }));
+        var service = new MuleTaskDispatchReplayService(replayService);
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Failed",
+            Metadata =
+            {
+                ["Mule.ActionId"] = System.Text.Json.Nodes.JsonValue.Create(sourceActionId.ToString())
+            }
+        };
+
+        var result = await service.ReplayAsync(new TaskDispatchReplayRequest
+        {
+            Dispatch = dispatch,
+            RequestId = requestId.ToString(),
+            RequestedBy = "operator",
+            Reason = "dependency recovered"
+        });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Scheduled", result.Status);
+        Assert.Equal(replayActionId.ToString(), result.ProviderActionId);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(requestId, capturedRequest!.RequestId);
+        Assert.False(capturedRequest.AllowParallelReplay);
+        Assert.Equal(dispatch.Id.ToString(), capturedRequest.Metadata!["Krackend.DispatchId"]);
+    }
+
+    [Fact]
+    public async Task MuleTaskDispatchReplayService_RejectsMissingOrInvalidMuleActionReference()
+    {
+        var replayService = Substitute.For<IMuleReplayService>();
+        var service = new MuleTaskDispatchReplayService(replayService);
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Failed"
+        };
+
+        var result = await service.ReplayAsync(new TaskDispatchReplayRequest
+        {
+            Dispatch = dispatch,
+            RequestId = MuleUlid.NewUlid().ToString()
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("MissingMuleActionReference", result.Status);
+        await replayService.DidNotReceiveWithAnyArgs().ReplayAsync(default, default!, default);
     }
 
     [Fact]

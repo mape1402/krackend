@@ -533,7 +533,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private static bool IsDispatchPending(string status)
             => string.Equals(status, "Enqueued", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(status, "RetryPending", StringComparison.OrdinalIgnoreCase);
+               string.Equals(status, "RetryPending", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "ReplayPending", StringComparison.OrdinalIgnoreCase);
 
         private static bool IsTerminal(TaskExecutionStatus status)
             => status is TaskExecutionStatus.Completed

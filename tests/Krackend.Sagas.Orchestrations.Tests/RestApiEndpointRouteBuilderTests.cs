@@ -460,12 +460,19 @@ public sealed class RestApiEndpointRouteBuilderTests
         var recovery = Substitute.For<IOrchestrationRecoveryService>();
         var replayPayload = string.Empty;
         var taskReplayReason = string.Empty;
+        var dispatchReplayReason = string.Empty;
         var abortReason = string.Empty;
         recovery.ReplayAsync("instance-1", Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 replayPayload = call.ArgAt<string>(1);
                 return OrchestrationRecoveryResult.Success("instance-1", "Running", "Replay requested.");
+            });
+        recovery.ReplayDispatchAsync("instance-1", "task-1", "dispatch-1", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                dispatchReplayReason = call.ArgAt<string>(3);
+                return OrchestrationRecoveryResult.Success("instance-1", "Running", "Dispatch replay requested.");
             });
         recovery.ReplayTaskAsync("instance-1", "task-1", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call =>
@@ -502,19 +509,33 @@ public sealed class RestApiEndpointRouteBuilderTests
             "/api/v1/runtime/instances/{instanceId}/tasks/{taskExecutionId}/replay",
             "{\"payload\":\"{\\\"fixed\\\":true}\",\"reason\":\"Service recovered.\"}",
             new Dictionary<string, object?> { ["instanceId"] = "instance-1", ["taskExecutionId"] = "task-1" });
+        var dispatchReplay = await Invoke(
+            app,
+            "POST",
+            "/api/v1/runtime/instances/{instanceId}/tasks/{taskExecutionId}/dispatches/{dispatchId}/replay",
+            "{\"reason\":\"Retry the durable delivery.\"}",
+            new Dictionary<string, object?>
+            {
+                ["instanceId"] = "instance-1",
+                ["taskExecutionId"] = "task-1",
+                ["dispatchId"] = "dispatch-1"
+            });
 
         Assert.Equal(StatusCodes.Status200OK, replay.StatusCode);
         Assert.Equal(StatusCodes.Status200OK, abort.StatusCode);
         Assert.Equal(StatusCodes.Status200OK, taskReplay.StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, dispatchReplay.StatusCode);
         Assert.Contains("Running", replay.Body, StringComparison.Ordinal);
         Assert.Contains("Aborted", abort.Body, StringComparison.Ordinal);
         Assert.Equal("{\"fixed\":true}", replayPayload);
         Assert.Equal("Operator cancelled.", abortReason);
         Assert.Equal("Service recovered.", taskReplayReason);
+        Assert.Equal("Retry the durable delivery.", dispatchReplayReason);
 
         await recovery.Received(1).ReplayAsync("instance-1", Arg.Any<string>(), Arg.Any<CancellationToken>());
         await recovery.Received(1).AbortAsync("instance-2", Arg.Any<string>(), Arg.Any<CancellationToken>());
         await recovery.Received(1).ReplayTaskAsync("instance-1", "task-1", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await recovery.Received(1).ReplayDispatchAsync("instance-1", "task-1", "dispatch-1", Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
