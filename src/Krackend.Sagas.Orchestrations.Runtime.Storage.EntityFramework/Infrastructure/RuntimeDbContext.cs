@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Mule;
 using Mule.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
@@ -80,8 +81,18 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureRuntimeExtensionPackages(modelBuilder);
         ConfigureDataProtectionKeys(modelBuilder);
         modelBuilder.UseMuleModel();
+        ConfigureMuleReplayProviderCompatibility(modelBuilder);
         base.OnModelCreating(modelBuilder);
         storageOptions.ConfigureModel?.Invoke(modelBuilder);
+    }
+
+    private static void ConfigureMuleReplayProviderCompatibility(ModelBuilder modelBuilder)
+    {
+        // MongoDB requires every primary-key property to map to the reserved _id element.
+        // Relational and in-memory providers ignore this provider-specific annotation.
+        modelBuilder.Entity<MuleReplay>()
+            .Property(x => x.RequestId)
+            .HasAnnotation("Mongo:ElementName", "_id");
     }
 
     private static void ConfigureDataProtectionKeys(ModelBuilder modelBuilder)

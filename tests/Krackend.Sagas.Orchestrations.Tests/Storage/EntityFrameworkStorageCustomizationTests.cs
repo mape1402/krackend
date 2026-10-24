@@ -67,6 +67,10 @@ public sealed class EntityFrameworkStorageCustomizationTests
         Assert.Equal("RuntimeExtensionPackages", entityType!.GetTableName());
         Assert.NotNull(entityType.FindProperty(nameof(RuntimeExtensionPackage.Manifest))?.GetValueConverter());
         Assert.NotNull(entityType.FindProperty(nameof(RuntimeExtensionPackage.Version))?.GetValueConverter());
+        var muleReplay = dbContext.Model.FindEntityType("Mule.MuleReplay");
+        Assert.Equal(
+            "_id",
+            muleReplay?.FindProperty("RequestId")?.FindAnnotation("Mongo:ElementName")?.Value);
     }
 #endif
 
