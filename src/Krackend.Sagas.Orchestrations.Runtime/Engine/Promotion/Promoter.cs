@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
@@ -17,6 +18,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         private readonly IOrchestrationPayloadState _payloadState;
         private readonly ITriggerPayloadValidator _triggerPayloadValidator;
         private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public Promoter(
             IRuntimeArtifactResolver artifactResolver,
@@ -25,7 +27,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             IResolvedOrchestrationArtifactAccessor artifactAccessor,
             IOrchestrationPayloadState payloadState,
             ITriggerPayloadValidator triggerPayloadValidator,
-            IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
+            IOrchestrationPropagationMetadataStore propagationMetadataStore = null,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -34,6 +37,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
             _triggerPayloadValidator = triggerPayloadValidator ?? throw new ArgumentNullException(nameof(triggerPayloadValidator));
             _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
+            _stateTransaction = stateTransaction;
         }
 
         public async Task<PromotionResult> PromoteToInstanceAsync(PromotionRequest request, CancellationToken cancellationToken = default)
@@ -102,7 +106,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 
             try
             {
-                await _instanceRepository.Create(instance, cancellationToken);
+                await PersistStateAsync(async token =>
+                {
+                    await _instanceRepository.Create(instance, token);
+                    await _transitionRepository.Create(new ExecutionTransition
+                    {
+                        Id = Id.New(),
+                        OrchestrationInstanceId = instance.Id,
+                        TransitionType = "InstancePromoted",
+                        FromStatus = string.Empty,
+                        ToStatus = OrchestrationInstanceStatus.Created.ToString(),
+                        OccurredOnUtc = now,
+                        Message = "Mule work item promoted to orchestration instance.",
+                        Payload = request.Payload?.DeepClone(),
+                        ProducedBy = nameof(Promoter)
+                    }, token);
+                }, cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException &&
                 !string.IsNullOrWhiteSpace(startIdempotencyKey))
@@ -117,19 +136,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 
                 throw;
             }
-
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                TransitionType = "InstancePromoted",
-                FromStatus = string.Empty,
-                ToStatus = OrchestrationInstanceStatus.Created.ToString(),
-                OccurredOnUtc = now,
-                Message = "Mule work item promoted to orchestration instance.",
-                Payload = request.Payload?.DeepClone(),
-                ProducedBy = nameof(Promoter)
-            }, cancellationToken);
 
             return new PromotionResult
             {
@@ -149,6 +155,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 InstanceId = instance.Id.ToString(),
                 AlreadyPromoted = true
             };
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
+        }
 
         private static OrchestrationTriggerMetadata GetTriggerMetadata(OrchestrationPropagationMetadata propagationMetadata)
         {
