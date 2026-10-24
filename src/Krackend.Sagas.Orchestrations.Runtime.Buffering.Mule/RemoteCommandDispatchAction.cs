@@ -96,6 +96,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         {
             try
             {
+                if (!await IsCurrentDispatchAsync(command, cancellationToken))
+                {
+                    return;
+                }
+
                 await PersistCommandMetadataAsync(command, cancellationToken);
 
                 var executor = _serviceProvider.GetKeyedService<IRemoteCommandExecutor>(command.RemoteCommandTransport)
@@ -139,6 +144,64 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     throw;
                 }
             }
+        }
+
+        private async Task<bool> IsCurrentDispatchAsync(
+            RemoteCommand command,
+            CancellationToken cancellationToken)
+        {
+            if (!HasRuntimeDispatchState(command))
+            {
+                return true;
+            }
+
+            var instanceId = ParseId(command.OrchestrationInstanceId);
+            var taskId = ParseId(command.TaskExecutionId);
+            var attemptId = ParseId(command.TaskExecutionAttemptId);
+            var dispatchId = ParseId(command.DispatchId);
+            var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+            var task = await _taskRepository.GetById(taskId, cancellationToken);
+            var attempt = await _attemptRepository.GetById(attemptId, cancellationToken);
+            var dispatch = await _dispatchRepository.GetById(dispatchId, cancellationToken);
+
+            if (instance.Id == instanceId &&
+                task.OrchestrationInstanceId == instanceId &&
+                attempt.TaskExecutionId == taskId &&
+                dispatch.TaskExecutionAttemptId == attemptId &&
+                !IsTerminal(instance.Status) &&
+                task.Status == TaskExecutionStatus.Running &&
+                attempt.Status == TaskExecutionStatus.Running &&
+                (task.LastAttemptNumber == 0 || task.LastAttemptNumber == attempt.AttemptNumber) &&
+                IsDispatchPending(dispatch.DispatchStatus))
+            {
+                return true;
+            }
+
+            await RecordSuppressedDispatchAsync(instance, task, attempt, dispatch, cancellationToken);
+            return false;
+        }
+
+        private async Task RecordSuppressedDispatchAsync(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            CancellationToken cancellationToken)
+        {
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = task.StageExecutionId,
+                TaskExecutionId = task.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskDispatchSuppressed",
+                FromStatus = dispatch?.DispatchStatus,
+                ToStatus = dispatch?.DispatchStatus,
+                OccurredOnUtc = DateTime.UtcNow,
+                Message = $"Task '{task.TaskKey}' durable dispatch was suppressed because it is no longer the current executable attempt.",
+                ProducedBy = nameof(RemoteCommandDispatchAction)
+            }, cancellationToken);
         }
 
         private async Task PersistCommandMetadataAsync(RemoteCommand command, CancellationToken cancellationToken)
@@ -466,6 +529,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "TimedOut", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsDispatchPending(string status)
+            => string.Equals(status, "Enqueued", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "RetryPending", StringComparison.OrdinalIgnoreCase);
 
         private static bool IsTerminal(TaskExecutionStatus status)
             => status is TaskExecutionStatus.Completed
