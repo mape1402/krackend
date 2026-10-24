@@ -86,7 +86,6 @@ public sealed class DecisionControlRetryTests
     [InlineData(OrchestrationInstanceStatus.Completed)]
     [InlineData(OrchestrationInstanceStatus.CompletedWithErrors)]
     [InlineData(OrchestrationInstanceStatus.Stopped)]
-    [InlineData(OrchestrationInstanceStatus.Compensating)]
     [InlineData(OrchestrationInstanceStatus.Compensated)]
     [InlineData(OrchestrationInstanceStatus.Aborted)]
     [InlineData(OrchestrationInstanceStatus.DeadLettered)]
@@ -99,6 +98,20 @@ public sealed class DecisionControlRetryTests
         var decisions = await decisionControl.DecideAsync(Request(state), CancellationToken.None);
 
         Assert.Empty(decisions);
+    }
+
+    [Fact]
+    public async Task DecideAsyncResumesAnInProgressCompensation()
+    {
+        var state = await CreateRetryStateAsync();
+        await UpdateInstanceAsync(state, instance => instance.Status = OrchestrationInstanceStatus.Compensating);
+        var decisionControl = state.Services.GetRequiredService<IDecisionControl>();
+
+        var decisions = await decisionControl.DecideAsync(Request(state), CancellationToken.None);
+
+        var decision = Assert.IsType<CompensateInstanceDecision>(Assert.Single(decisions));
+        Assert.Equal(state.InstanceId, decision.InstanceId);
+        Assert.Equal(state.ArtifactId.ToString(), decision.ArtifactId);
     }
 
     [Fact]

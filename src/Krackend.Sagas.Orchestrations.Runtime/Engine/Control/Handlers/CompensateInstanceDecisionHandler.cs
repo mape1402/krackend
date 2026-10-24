@@ -8,8 +8,10 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -17,6 +19,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
     internal sealed class CompensateInstanceDecisionHandler : IDecisionHandler<CompensateInstanceDecision>
     {
         private const string CompensationTerminalFailureMetadataKey = "Compensation.TerminalFailure";
+        private const string CompensationDeliveryCommandMetadataKey = "Runtime.Compensation.Delivery.Command";
+        private const string CompensationDeliveryTerminalFailureMetadataKey = "Runtime.Compensation.Delivery.TerminalFailure";
+        private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
         private readonly IRuntimeArtifactResolver _artifactResolver;
         private readonly IOrchestrationInstanceRepository _instanceRepository;
@@ -30,6 +35,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
         private readonly IOrchestrationTransformationExecutor _transformationExecutor;
         private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public CompensateInstanceDecisionHandler(
             IRuntimeArtifactResolver artifactResolver,
@@ -43,7 +49,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IOrchestrationConditionEvaluator conditionEvaluator,
             IOrchestrationPayloadContextFactory payloadContextFactory,
             IOrchestrationTransformationExecutor transformationExecutor,
-            IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
+            IOrchestrationPropagationMetadataStore propagationMetadataStore = null,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -57,13 +64,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
             _transformationExecutor = transformationExecutor ?? throw new ArgumentNullException(nameof(transformationExecutor));
             _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
+            _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(CompensateInstanceDecision decision, CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
-            if (IsCompensationTerminal(instance.Status))
+            if (IsCompensationTerminal(instance.Status) ||
+                HasCompensationTerminalFailure(instance))
             {
                 return;
             }
@@ -77,10 +86,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 .SelectMany(x => x.TaskDefinitions)
                 .ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
 
-            instance.Status = OrchestrationInstanceStatus.Compensating;
-            instance.CompensationStartedOnUtc = now;
-            instance.LastUpdatedOnUtc = now;
-            await _instanceRepository.Update(instance, cancellationToken);
+            if (instance.Status != OrchestrationInstanceStatus.Compensating)
+            {
+                instance.Status = OrchestrationInstanceStatus.Compensating;
+                instance.CompensationStartedOnUtc = now;
+                instance.LastUpdatedOnUtc = now;
+                await PersistStateAsync(
+                    token => _instanceRepository.Update(instance, token),
+                    cancellationToken);
+            }
 
             foreach (var task in completedTasks)
             {
@@ -207,9 +221,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 ? resolvedAdapter
                 : null;
             var compensationTaskKey = ResolveCompensationTaskKey(adapter, compensationArtifact);
-            if (await CompensationAlreadyExistsAsync(instance.Id, sourceTaskExecutionId, compensationTaskKey, cancellationToken))
+            var existingCompensation = await FindExistingCompensationAsync(
+                instance.Id,
+                sourceTaskExecutionId,
+                compensationTaskKey,
+                cancellationToken);
+            if (existingCompensation is not null)
             {
-                return true;
+                return ResolveExistingCompensation(existingCompensation, compensationArtifact);
             }
 
             var payloadContext = _payloadContextFactory.Create(
@@ -232,13 +251,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 OrchestrationInstanceId = instance.Id,
                 SourceTaskExecutionId = sourceTaskExecutionId,
                 CompensationTaskKey = compensationTaskKey,
-                Status = "Running",
+                Status = "Pending",
                 StartedOnUtc = DateTime.UtcNow,
                 RequestPayload = ParsePayload(fallbackPayload)
             };
             compensation.Metadata["SourceElementType"] = JsonValue.Create(sourceElementType);
             compensation.Metadata["SourceElementKey"] = JsonValue.Create(sourceElementKey);
-            await _compensationRepository.Create(compensation, cancellationToken);
+            await PersistStateAsync(
+                token => _compensationRepository.Create(compensation, token),
+                cancellationToken);
 
             if (!condition.Succeeded)
             {
@@ -299,7 +320,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             compensation.RequestPayload = payloadPreparation.Payload?.DeepClone();
-            await _compensationRepository.Update(compensation, cancellationToken);
 
             try
             {
@@ -325,7 +345,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     ReplyAddress = descriptor.ReplyAddress
                 };
 
-                await _dispatcher.DispatchAsync(new RemoteCommand
+                var command = new RemoteCommand
                 {
                     Payload = payloadPreparation.PayloadText,
                     RemoteCommandTransport = descriptor.Transport,
@@ -337,7 +357,41 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     AwaitResponse = false,
                     PropagationMetadata = propagationMetadata,
                     MessageMetadata = messageMetadata
+                };
+                compensation.Metadata[CompensationDeliveryCommandMetadataKey] = JsonSerializer.SerializeToNode(command, SerializerOptions);
+                compensation.Metadata[CompensationDeliveryTerminalFailureMetadataKey] = JsonValue.Create(
+                    IsTerminalCompensationFailure(compensationArtifact));
+                await PersistStateAsync(async token =>
+                {
+                    await _compensationRepository.Update(compensation, token);
+                    await _transitionRepository.Create(new ExecutionTransition
+                    {
+                        Id = Id.New(),
+                        OrchestrationInstanceId = instance.Id,
+                        StageExecutionId = stageExecutionId,
+                        TaskExecutionId = sourceTaskExecutionId,
+                        TransitionType = "CompensationDispatchQueued",
+                        FromStatus = "Pending",
+                        ToStatus = "Pending",
+                        OccurredOnUtc = DateTime.UtcNow,
+                        Message = $"Compensation '{compensation.CompensationTaskKey}' delivery intent persisted.",
+                        Payload = compensation.RequestPayload?.DeepClone(),
+                        ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                    }, token);
                 }, cancellationToken);
+
+                await _dispatcher.DispatchAsync(command, cancellationToken);
+            }
+            catch (RemoteCommandDeliveryUncertainException exception)
+            {
+                await MarkCompensationDeliveryDeferredAsync(
+                    instance,
+                    stageExecutionId,
+                    sourceTaskExecutionId,
+                    compensation,
+                    exception,
+                    cancellationToken);
+                return false;
             }
             catch (Exception exception)
             {
@@ -355,19 +409,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             compensation.Status = "Completed";
             compensation.CompletedOnUtc = DateTime.UtcNow;
-            await _compensationRepository.Update(compensation, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecutionId,
-                TaskExecutionId = sourceTaskExecutionId,
-                TransitionType = sourceElementType == "Trigger" ? "TriggerCompensationCompleted" : "CompensationCompleted",
-                FromStatus = "Running",
-                ToStatus = "Completed",
-                OccurredOnUtc = compensation.CompletedOnUtc.Value,
-                Message = $"Compensation '{compensation.CompensationTaskKey}' completed for {sourceElementType.ToLowerInvariant()} '{sourceElementKey}'.",
-                ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                await _compensationRepository.Update(compensation, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecutionId,
+                    TaskExecutionId = sourceTaskExecutionId,
+                    TransitionType = sourceElementType == "Trigger" ? "TriggerCompensationCompleted" : "CompensationCompleted",
+                    FromStatus = "Pending",
+                    ToStatus = "Completed",
+                    OccurredOnUtc = compensation.CompletedOnUtc.Value,
+                    Message = $"Compensation '{compensation.CompensationTaskKey}' completed for {sourceElementType.ToLowerInvariant()} '{sourceElementKey}'.",
+                    ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                }, token);
             }, cancellationToken);
 
             return true;
@@ -432,26 +489,49 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private static bool ShouldContinueAfterCompensationFailure(CompensationArtifact compensation)
             => !IsTerminalCompensationFailure(compensation);
 
-        private async Task<bool> CompensationAlreadyExistsAsync(
+        private async Task<CompensationExecution> FindExistingCompensationAsync(
             Id instanceId,
             Id sourceTaskExecutionId,
             string compensationTaskKey,
             CancellationToken cancellationToken)
             => (await _compensationRepository.GetByInstanceId(instanceId, cancellationToken))
-                .Any(compensation =>
+                .FirstOrDefault(compensation =>
                     compensation.SourceTaskExecutionId == sourceTaskExecutionId &&
                     string.Equals(
                         compensation.CompensationTaskKey,
                         compensationTaskKey,
                         StringComparison.OrdinalIgnoreCase));
 
+        private static bool ResolveExistingCompensation(
+            CompensationExecution compensation,
+            CompensationArtifact compensationArtifact)
+        {
+            if (string.Equals(compensation.Status, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(compensation.Status, "Skipped", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (string.Equals(compensation.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+            {
+                return ShouldContinueAfterCompensationFailure(compensationArtifact);
+            }
+
+            return false;
+        }
+
         private static bool IsCompensationTerminal(OrchestrationInstanceStatus status)
             => status is OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
-                or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated
+                or OrchestrationInstanceStatus.DeadLettered
                 or OrchestrationInstanceStatus.Aborted
                 or OrchestrationInstanceStatus.Stopped;
+
+        private static bool HasCompensationTerminalFailure(OrchestrationInstance instance)
+            => instance.Metadata.TryGetValue(CompensationTerminalFailureMetadataKey, out var value) &&
+               value is not null &&
+               value.GetValueKind() == System.Text.Json.JsonValueKind.True;
 
         private static JsonNode ParsePayload(string payload)
             => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
@@ -481,23 +561,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
             }
 
-            await _compensationRepository.Update(compensation, cancellationToken);
-            if (terminalFailure)
+            await PersistStateAsync(async token =>
             {
-                await _instanceRepository.Update(instance, cancellationToken);
-            }
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecutionId,
-                TaskExecutionId = sourceTaskExecutionId,
-                TransitionType = "CompensationConditionFailed",
-                FromStatus = "Running",
-                ToStatus = "Failed",
-                OccurredOnUtc = compensation.FailedOnUtc.Value,
-                Message = condition.ErrorMessage,
-                ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                await _compensationRepository.Update(compensation, token);
+                if (terminalFailure)
+                {
+                    await _instanceRepository.Update(instance, token);
+                }
+
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecutionId,
+                    TaskExecutionId = sourceTaskExecutionId,
+                    TransitionType = "CompensationConditionFailed",
+                    FromStatus = "Pending",
+                    ToStatus = "Failed",
+                    OccurredOnUtc = compensation.FailedOnUtc.Value,
+                    Message = condition.ErrorMessage,
+                    ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -513,19 +597,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             compensation.CompletedOnUtc = DateTime.UtcNow;
             compensation.Metadata["ConditionResult"] = JsonValue.Create(false);
 
-            await _compensationRepository.Update(compensation, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecutionId,
-                TaskExecutionId = sourceTaskExecutionId,
-                TransitionType = "CompensationSkipped",
-                FromStatus = "Running",
-                ToStatus = "Skipped",
-                OccurredOnUtc = compensation.CompletedOnUtc.Value,
-                Message = $"Compensation '{compensation.CompensationTaskKey}' for '{sourceElementKey}' skipped because its execution condition evaluated to false.",
-                ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                await _compensationRepository.Update(compensation, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecutionId,
+                    TaskExecutionId = sourceTaskExecutionId,
+                    TransitionType = "CompensationSkipped",
+                    FromStatus = "Pending",
+                    ToStatus = "Skipped",
+                    OccurredOnUtc = compensation.CompletedOnUtc.Value,
+                    Message = $"Compensation '{compensation.CompensationTaskKey}' for '{sourceElementKey}' skipped because its execution condition evaluated to false.",
+                    ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -555,23 +642,27 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
             }
 
-            await _compensationRepository.Update(compensation, cancellationToken);
-            if (terminalFailure)
+            await PersistStateAsync(async token =>
             {
-                await _instanceRepository.Update(instance, cancellationToken);
-            }
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecutionId,
-                TaskExecutionId = sourceTaskExecutionId,
-                TransitionType = "CompensationFailed",
-                FromStatus = "Running",
-                ToStatus = "Failed",
-                OccurredOnUtc = failedOnUtc,
-                Message = exception.Message,
-                ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                await _compensationRepository.Update(compensation, token);
+                if (terminalFailure)
+                {
+                    await _instanceRepository.Update(instance, token);
+                }
+
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecutionId,
+                    TaskExecutionId = sourceTaskExecutionId,
+                    TransitionType = "CompensationFailed",
+                    FromStatus = "Pending",
+                    ToStatus = "Failed",
+                    OccurredOnUtc = failedOnUtc,
+                    Message = exception.Message,
+                    ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -601,24 +692,70 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 instance.Metadata[CompensationTerminalFailureMetadataKey] = JsonValue.Create(true);
             }
 
-            await _compensationRepository.Update(compensation, cancellationToken);
-            if (terminalFailure)
+            await PersistStateAsync(async token =>
             {
-                await _instanceRepository.Update(instance, cancellationToken);
-            }
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecutionId,
-                TaskExecutionId = sourceTaskExecutionId,
-                TransitionType = "CompensationTransformationFailed",
-                FromStatus = "Running",
-                ToStatus = "Failed",
-                OccurredOnUtc = failedOnUtc,
-                Message = preparation.ErrorMessage,
-                ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                await _compensationRepository.Update(compensation, token);
+                if (terminalFailure)
+                {
+                    await _instanceRepository.Update(instance, token);
+                }
+
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecutionId,
+                    TaskExecutionId = sourceTaskExecutionId,
+                    TransitionType = "CompensationTransformationFailed",
+                    FromStatus = "Pending",
+                    ToStatus = "Failed",
+                    OccurredOnUtc = failedOnUtc,
+                    Message = preparation.ErrorMessage,
+                    ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                }, token);
             }, cancellationToken);
+        }
+
+        private async Task MarkCompensationDeliveryDeferredAsync(
+            OrchestrationInstance instance,
+            Id? stageExecutionId,
+            Id? sourceTaskExecutionId,
+            CompensationExecution compensation,
+            Exception exception,
+            CancellationToken cancellationToken)
+        {
+            var now = DateTime.UtcNow;
+            compensation.Metadata["Runtime.Compensation.Delivery.LastFailure"] = JsonValue.Create(exception.Message);
+            compensation.Metadata["Runtime.Compensation.Delivery.LastAttemptOnUtc"] = JsonValue.Create(now);
+
+            await PersistStateAsync(async token =>
+            {
+                await _compensationRepository.Update(compensation, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecutionId,
+                    TaskExecutionId = sourceTaskExecutionId,
+                    TransitionType = "CompensationDispatchDeferred",
+                    FromStatus = "Pending",
+                    ToStatus = "Pending",
+                    OccurredOnUtc = now,
+                    Message = exception.Message,
+                    ProducedBy = nameof(CompensateInstanceDecisionHandler)
+                }, token);
+            }, cancellationToken);
+        }
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
         }
 
         private static void CopyDiagnostics(

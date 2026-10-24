@@ -11,4 +11,5 @@ public sealed record RuntimeReconciliationResult(
     int TimeoutsProcessed,
     bool Skipped,
     string? Reason = null,
-    int DeliveriesRecovered = 0);
+    int DeliveriesRecovered = 0,
+    int CompensationsRecovered = 0);

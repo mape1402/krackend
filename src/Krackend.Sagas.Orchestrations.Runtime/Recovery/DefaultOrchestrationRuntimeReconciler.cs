@@ -19,6 +19,7 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IOrchestrationTimeoutProcessor _timeoutProcessor;
     private readonly IOrchestrationDispatchRecoveryCoordinator _dispatchRecoveryCoordinator;
+    private readonly IOrchestrationCompensationRecoveryCoordinator _compensationRecoveryCoordinator;
     private readonly ISagaEngine _sagaEngine;
     private readonly RuntimeReconciliationOptions _options;
 
@@ -28,12 +29,14 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
         IOrchestrationTimeoutProcessor timeoutProcessor,
         ISagaEngine sagaEngine,
         IOptions<RuntimeReconciliationOptions> options,
-        IOrchestrationDispatchRecoveryCoordinator dispatchRecoveryCoordinator = null)
+        IOrchestrationDispatchRecoveryCoordinator dispatchRecoveryCoordinator = null,
+        IOrchestrationCompensationRecoveryCoordinator compensationRecoveryCoordinator = null)
     {
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _timeoutProcessor = timeoutProcessor ?? throw new ArgumentNullException(nameof(timeoutProcessor));
         _dispatchRecoveryCoordinator = dispatchRecoveryCoordinator;
+        _compensationRecoveryCoordinator = compensationRecoveryCoordinator;
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
@@ -52,6 +55,11 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
         var recoveredDispatches = _dispatchRecoveryCoordinator is null
             ? 0
             : await _dispatchRecoveryCoordinator.RecoverPendingDispatchesAsync(
+                Math.Max(1, _options.BatchSize),
+                cancellationToken);
+        var recoveredCompensations = _compensationRecoveryCoordinator is null
+            ? 0
+            : await _compensationRecoveryCoordinator.RecoverPendingCompensationsAsync(
                 Math.Max(1, _options.BatchSize),
                 cancellationToken);
         var timeoutsProcessed = await _timeoutProcessor.ProcessDueTimeoutsAsync(utcNow, cancellationToken);
@@ -75,7 +83,13 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
             advanced++;
         }
 
-        return new RuntimeReconciliationResult(instances.Count, advanced, timeoutsProcessed, false, DeliveriesRecovered: recoveredDispatches);
+        return new RuntimeReconciliationResult(
+            instances.Count,
+            advanced,
+            timeoutsProcessed,
+            false,
+            DeliveriesRecovered: recoveredDispatches,
+            CompensationsRecovered: recoveredCompensations);
     }
 
     private static OrchestrationMessageMetadata BuildMetadata(OrchestrationInstance instance)

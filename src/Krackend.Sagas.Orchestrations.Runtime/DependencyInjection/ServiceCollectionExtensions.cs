@@ -91,6 +91,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<ITaskDispatchCancellationService, LogicalOnlyTaskDispatchCancellationService>();
             services.TryAddScoped<IOrchestrationDispatchCancellationCoordinator, DefaultOrchestrationDispatchCancellationCoordinator>();
             services.TryAddScoped<IOrchestrationDispatchRecoveryCoordinator, DefaultOrchestrationDispatchRecoveryCoordinator>();
+            services.TryAddScoped<IOrchestrationCompensationRecoveryCoordinator, DefaultOrchestrationCompensationRecoveryCoordinator>();
             services.TryAddScoped<ITaskDispatchRequestPayloadPreparer, DefaultTaskDispatchRequestPayloadPreparer>();
             services.TryAddScoped<ITaskRuntimeAdapterRegistry, TaskRuntimeAdapterRegistry>();
             services.TryAddScoped<IExecutionPolicyResolver, DefaultExecutionPolicyResolver>();

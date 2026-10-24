@@ -200,6 +200,35 @@ public sealed class CompensateInstanceDecisionHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsyncRetainsAPersistedCompensationIntentWhenDeliveryCannotBeConfirmed()
+    {
+        var fixture = new CompensationFixture();
+        fixture.AdapterRegistry.Adapter = new RecordingTaskRuntimeAdapter();
+        fixture.Dispatcher.DispatchAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new RemoteCommandDeliveryUncertainException(
+                "Mule did not confirm the delivery.",
+                new TimeoutException())));
+        var instance = CreateInstance();
+        var stage = StageExecution(instance.Id);
+        var completedTask = CompletedTask(instance.Id, stage.Id, "task-one");
+        fixture.Arrange(instance, [completedTask], [stage], CreateResolvedArtifact(
+            instance.RuntimeOrchestrationArtifactId,
+            Stage("stage-one", MessagingTask("task-one") with { Compensation = Compensation("commands.undo") })));
+
+        await fixture.Handler.HandleAsync(new CompensateInstanceDecision(
+            instance.Id,
+            instance.RuntimeOrchestrationArtifactId.ToString(),
+            "{\"value\":\"fallback\"}"));
+
+        var compensation = Assert.Single(fixture.CreatedCompensations);
+        Assert.Equal("Pending", compensation.Status);
+        Assert.True(compensation.Metadata.ContainsKey("Runtime.Compensation.Delivery.Command"));
+        Assert.Equal(OrchestrationInstanceStatus.Compensating, instance.Status);
+        Assert.Contains(fixture.Transitions, transition => transition.TransitionType == "CompensationDispatchDeferred");
+        Assert.DoesNotContain(fixture.Transitions, transition => transition.TransitionType == "InstanceCompensated");
+    }
+
+    [Fact]
     public void PrivateCompensationHelpersHandleFallbacksAndNullDiagnostics()
     {
         var instance = CreateInstance();

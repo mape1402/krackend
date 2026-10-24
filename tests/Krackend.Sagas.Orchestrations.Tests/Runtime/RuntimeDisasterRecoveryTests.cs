@@ -446,6 +446,47 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
+    public async Task ReconcilerRecoversPendingCompensationsBeforeEvaluatingTimeouts()
+    {
+        var now = DateTime.UtcNow;
+        var calls = new List<string>();
+        var admission = Substitute.For<IRuntimeAdmissionController>();
+        var repository = Substitute.For<IOrchestrationInstanceRepository>();
+        var timeoutProcessor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var compensationRecovery = Substitute.For<IOrchestrationCompensationRecoveryCoordinator>();
+        var sagaEngine = Substitute.For<ISagaEngine>();
+        admission.CanAccept(RuntimeAdmissionOperation.Reconciliation).Returns(true);
+        admission.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        compensationRecovery.RecoverPendingCompensationsAsync(4, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("compensations");
+                return Task.FromResult(3);
+            });
+        timeoutProcessor.ProcessDueTimeoutsAsync(now, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("timeouts");
+                return Task.FromResult(0);
+            });
+        repository.GetRecoverable(4, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(Array.Empty<OrchestrationInstance>()));
+        var reconciler = new DefaultOrchestrationRuntimeReconciler(
+            admission,
+            repository,
+            timeoutProcessor,
+            sagaEngine,
+            Options.Create(new RuntimeReconciliationOptions { BatchSize = 4 }),
+            compensationRecoveryCoordinator: compensationRecovery);
+
+        var result = await reconciler.ReconcileAsync(now);
+
+        Assert.Equal(3, result.CompensationsRecovered);
+        Assert.Equal(["compensations", "timeouts"], calls);
+    }
+
+    [Fact]
     public async Task ReconcilerAdvancesFailedInstanceSoTheEngineCanApplyItsRecoveryPolicy()
     {
         var now = DateTime.UtcNow;

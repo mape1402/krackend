@@ -63,10 +63,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
             var instanceId = RuntimeIdParser.Parse(request.MessageMetadata.OrchestrationInstanceId);
             var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+            if (instance.Status == OrchestrationInstanceStatus.Compensating)
+            {
+                return [new CompensateInstanceDecision(
+                    instance.Id,
+                    request.ArtifactId,
+                    _payloadState.GetDispatchPayload(instance, request.Payload)?.ToJsonString())];
+            }
+
             if (instance.Status is OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
                 or OrchestrationInstanceStatus.Stopped
-                or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated
                 or OrchestrationInstanceStatus.Aborted)
             {
