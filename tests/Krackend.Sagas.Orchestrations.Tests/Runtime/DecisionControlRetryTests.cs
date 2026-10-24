@@ -68,6 +68,20 @@ public sealed class DecisionControlRetryTests
         Assert.DoesNotContain(decisions, decision => decision.Kind == "retry-task");
     }
 
+    [Fact]
+    public async Task DecideAsyncRetriesTimedOutTaskUsingConfiguredRetryBudget()
+    {
+        var state = await CreateRetryStateAsync();
+        await UpdateTaskAsync(state, task => task.Status = TaskExecutionStatus.TimedOut);
+        var decisionControl = state.Services.GetRequiredService<IDecisionControl>();
+
+        var decisions = await decisionControl.DecideAsync(
+            Request(state, "TaskTimedOut"),
+            CancellationToken.None);
+
+        Assert.Contains(decisions, decision => decision.Kind == "retry-task");
+    }
+
     [Theory]
     [InlineData(OrchestrationInstanceStatus.Completed)]
     [InlineData(OrchestrationInstanceStatus.CompletedWithErrors)]

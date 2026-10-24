@@ -1202,14 +1202,14 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
-    public async Task TimeoutProcessorRetriesTimedOutTaskWhenTimeoutErrorCodeIsRetryable()
+    public async Task TimeoutProcessorRetriesTimedOutTaskUsingConfiguredRetryBudget()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
             Stage("stage-one", 1, MessagingTask(
                 "task.timeout.retry",
                 1,
-                retryPolicy: RetryPolicy(1, "TIMEOUT"),
-                timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(1), "TIMEOUT")))));
+                retryPolicy: RetryPolicy(1, "PaymentTemporaryFailure"),
+                timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(1), "TaskTimedOut")))));
 
         await harness.StartAsync(BusinessPayload("trigger"), "correlation-13");
 
@@ -1231,7 +1231,7 @@ public sealed class MessagingDecisionE2ETests
 
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
         Assert.Equal(TaskExecutionStatus.TimedOut, attempts[0].Status);
-        Assert.Equal("TIMEOUT", attempts[0].ErrorCode);
+        Assert.Equal("TaskTimedOut", attempts[0].ErrorCode);
         Assert.Equal(TaskExecutionStatus.Completed, attempts[1].Status);
         Assert.Contains(transitions, transition => transition.TransitionType == "TaskTimedOut");
     }

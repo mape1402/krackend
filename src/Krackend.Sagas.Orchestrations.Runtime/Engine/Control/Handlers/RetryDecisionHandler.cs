@@ -73,7 +73,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             if (failedTask.Status == TaskExecutionStatus.TimedOut &&
                 taskArtifact?.TimeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicyArtifact reconcile)
             {
-                return reconcile.RetryPolicy;
+                return reconcile.RetryPolicy ?? taskArtifact.RetryPolicy;
             }
 
             return taskArtifact?.RetryPolicy;

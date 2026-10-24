@@ -316,6 +316,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return false;
             }
 
+            // A response timeout has no service-provided error code to classify. Once a task is
+            // configured with a retry budget, each timed-out attempt consumes that budget.
+            // Retryable error codes remain the policy for failures reported by the service.
+            if (failedTask.Status == TaskExecutionStatus.TimedOut)
+            {
+                return true;
+            }
+
             if (retryPolicy.RetryableErrorCodes is null || retryPolicy.RetryableErrorCodes.Count == 0)
             {
                 return false;
@@ -380,7 +388,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             if (failedTask.Status == TaskExecutionStatus.TimedOut &&
                 failedArtifact?.TimeoutPolicy?.TimeoutBehaviorPolicy is ReconcileTimeoutBehaviorPolicyArtifact reconcile)
             {
-                return reconcile.RetryPolicy;
+                return reconcile.RetryPolicy ?? failedArtifact.RetryPolicy;
             }
 
             return failedArtifact?.RetryPolicy;
