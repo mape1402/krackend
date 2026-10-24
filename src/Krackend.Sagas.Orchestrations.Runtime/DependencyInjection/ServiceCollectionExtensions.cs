@@ -12,6 +12,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
@@ -79,6 +80,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionControl, DecisionControl>();
             services.TryAddScoped<IDecisionExecutor, DecisionExecutor>();
             services.TryAddScoped<IOrchestrationPayloadState, DefaultOrchestrationPayloadState>();
+            services.TryAddScoped<IRuntimeStateTransaction, RuntimeStateTransaction>();
             services.TryAddScoped<IOrchestrationPayloadContextFactory, DefaultOrchestrationPayloadContextFactory>();
             services.TryAddScoped<IOrchestrationConditionEvaluator, DefaultOrchestrationConditionEvaluator>();
             services.TryAddScoped<IOrchestrationBranchNavigator, DefaultOrchestrationBranchNavigator>();

@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using System.Text.Json.Nodes;
 
@@ -22,6 +23,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationPayloadState _payloadState;
         private readonly IRuntimeArtifactResolver _artifactResolver;
         private readonly IOrchestrationValidationExecutor _validationExecutor;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public CompleteCallbackDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -32,7 +34,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IOrchestrationPayloadState payloadState,
             IRuntimeArtifactResolver artifactResolver,
-            IOrchestrationValidationExecutor validationExecutor)
+            IOrchestrationValidationExecutor validationExecutor,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -43,6 +46,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _validationExecutor = validationExecutor ?? throw new ArgumentNullException(nameof(validationExecutor));
+            _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(CompleteCallbackDecision decision, CancellationToken cancellationToken = default)
@@ -101,29 +105,43 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     responsePayload);
             }
 
-            await _dispatchRepository.Update(dispatch, cancellationToken);
-            await _attemptRepository.Update(attempt, cancellationToken);
-            await _taskRepository.Update(task, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = task.StageExecutionId,
-                TaskExecutionId = task.Id,
-                TaskExecutionAttemptId = attempt.Id,
-                TransitionType = succeeded ? "TaskCallbackCompleted" : "TaskCallbackFailed",
-                FromStatus = previousAttemptStatus == TaskExecutionStatus.WaitingResponse
-                    ? previousTaskStatus.ToString()
-                    : $"{previousTaskStatus}/{previousAttemptStatus}",
-                ToStatus = task.Status.ToString(),
-                OccurredOnUtc = now,
-                Message = succeeded
-                    ? $"Callback completed task '{task.TaskKey}'."
-                    : $"Callback failed task '{task.TaskKey}': {errorMessage}",
-                Payload = responsePayload?.DeepClone(),
-                ProducedBy = nameof(CompleteCallbackDecisionHandler)
+                await _dispatchRepository.Update(dispatch, token);
+                await _attemptRepository.Update(attempt, token);
+                await _taskRepository.Update(task, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = task.StageExecutionId,
+                    TaskExecutionId = task.Id,
+                    TaskExecutionAttemptId = attempt.Id,
+                    TransitionType = succeeded ? "TaskCallbackCompleted" : "TaskCallbackFailed",
+                    FromStatus = previousAttemptStatus == TaskExecutionStatus.WaitingResponse
+                        ? previousTaskStatus.ToString()
+                        : $"{previousTaskStatus}/{previousAttemptStatus}",
+                    ToStatus = task.Status.ToString(),
+                    OccurredOnUtc = now,
+                    Message = succeeded
+                        ? $"Callback completed task '{task.TaskKey}'."
+                        : $"Callback failed task '{task.TaskKey}': {errorMessage}",
+                    Payload = responsePayload?.DeepClone(),
+                    ProducedBy = nameof(CompleteCallbackDecisionHandler)
+                }, token);
             }, cancellationToken);
+        }
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
         }
 
         private static bool CanApplyCallback(

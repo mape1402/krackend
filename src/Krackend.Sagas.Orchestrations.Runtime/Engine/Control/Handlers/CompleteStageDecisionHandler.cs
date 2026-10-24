@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Branching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -17,17 +18,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IStageExecutionRepository _stageRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IOrchestrationBranchNavigator _branchNavigator;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public CompleteStageDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
             IStageExecutionRepository stageRepository,
             IExecutionTransitionRepository transitionRepository,
-            IOrchestrationBranchNavigator branchNavigator)
+            IOrchestrationBranchNavigator branchNavigator,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _branchNavigator = branchNavigator ?? throw new ArgumentNullException(nameof(branchNavigator));
+            _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(CompleteStageDecision decision, CancellationToken cancellationToken = default)
@@ -72,46 +76,49 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 instance.Metadata[BranchRuleIdMetadataKey] = JsonValue.Create(branchNavigation.BranchRuleId?.ToString() ?? string.Empty);
             }
 
-            await _stageRepository.Update(stage, cancellationToken);
-            if (branchNavigation.HasNavigation)
+            await PersistStateAsync(async token =>
             {
-                await SkipStagesBeforeBranchTargetAsync(
-                    decision,
-                    instance,
-                    branchNavigation.TargetStage,
-                    now,
-                    cancellationToken);
-            }
+                await _stageRepository.Update(stage, token);
+                if (branchNavigation.HasNavigation)
+                {
+                    await SkipStagesBeforeBranchTargetAsync(
+                        decision,
+                        instance,
+                        branchNavigation.TargetStage,
+                        now,
+                        token);
+                }
 
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stage.Id,
-                TransitionType = "StageCompleted",
-                FromStatus = StageExecutionStatus.Running.ToString(),
-                ToStatus = StageExecutionStatus.Completed.ToString(),
-                OccurredOnUtc = now,
-                Message = $"Stage '{stage.StageKey}' completed.",
-                ProducedBy = nameof(CompleteStageDecisionHandler)
-            }, cancellationToken);
-
-            if (branchNavigation.HasNavigation)
-            {
+                await _instanceRepository.Update(instance, token);
                 await _transitionRepository.Create(new ExecutionTransition
                 {
                     Id = Id.New(),
                     OrchestrationInstanceId = instance.Id,
                     StageExecutionId = stage.Id,
-                    TransitionType = "BranchTaken",
-                    FromStatus = StageExecutionStatus.Completed.ToString(),
-                    ToStatus = branchNavigation.TargetStage.Key,
+                    TransitionType = "StageCompleted",
+                    FromStatus = StageExecutionStatus.Running.ToString(),
+                    ToStatus = StageExecutionStatus.Completed.ToString(),
                     OccurredOnUtc = now,
-                    Message = $"Branch rule '{branchNavigation.BranchRuleId}' navigated to stage '{branchNavigation.TargetStage.Key}'.",
+                    Message = $"Stage '{stage.StageKey}' completed.",
                     ProducedBy = nameof(CompleteStageDecisionHandler)
-                }, cancellationToken);
-            }
+                }, token);
+
+                if (branchNavigation.HasNavigation)
+                {
+                    await _transitionRepository.Create(new ExecutionTransition
+                    {
+                        Id = Id.New(),
+                        OrchestrationInstanceId = instance.Id,
+                        StageExecutionId = stage.Id,
+                        TransitionType = "BranchTaken",
+                        FromStatus = StageExecutionStatus.Completed.ToString(),
+                        ToStatus = branchNavigation.TargetStage.Key,
+                        OccurredOnUtc = now,
+                        Message = $"Branch rule '{branchNavigation.BranchRuleId}' navigated to stage '{branchNavigation.TargetStage.Key}'.",
+                        ProducedBy = nameof(CompleteStageDecisionHandler)
+                    }, token);
+                }
+            }, cancellationToken);
         }
 
         private async Task MarkBranchEvaluationFailedAsync(
@@ -136,19 +143,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.LastUpdatedOnUtc = now;
             instance.WaitingSinceUtc = null;
 
-            await _stageRepository.Update(stage, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stage.Id,
-                TransitionType = "BranchEvaluationFailed",
-                FromStatus = StageExecutionStatus.Running.ToString(),
-                ToStatus = StageExecutionStatus.Failed.ToString(),
-                OccurredOnUtc = now,
-                Message = branchNavigation.ErrorMessage,
-                ProducedBy = nameof(CompleteStageDecisionHandler)
+                await _stageRepository.Update(stage, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stage.Id,
+                    TransitionType = "BranchEvaluationFailed",
+                    FromStatus = StageExecutionStatus.Running.ToString(),
+                    ToStatus = StageExecutionStatus.Failed.ToString(),
+                    OccurredOnUtc = now,
+                    Message = branchNavigation.ErrorMessage,
+                    ProducedBy = nameof(CompleteStageDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -217,6 +227,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             {
                 metadata[$"Branch.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
+        }
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
         }
 
         private static bool IsTerminal(OrchestrationInstanceStatus status)

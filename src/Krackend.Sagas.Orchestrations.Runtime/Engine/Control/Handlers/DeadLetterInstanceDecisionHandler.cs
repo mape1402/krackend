@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 {
@@ -16,15 +17,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationInstanceRepository _instanceRepository;
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IOrchestrationDispatchCancellationCoordinator _dispatchCancellationCoordinator;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public DeadLetterInstanceDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
             IExecutionTransitionRepository transitionRepository,
-            IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator)
+            IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _dispatchCancellationCoordinator = dispatchCancellationCoordinator ?? throw new ArgumentNullException(nameof(dispatchCancellationCoordinator));
+            _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(DeadLetterInstanceDecision decision, CancellationToken cancellationToken = default)
@@ -50,21 +54,24 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.Metadata[DeadLetterReasonMetadataKey] = JsonValue.Create(reason);
             instance.Metadata[RecoveryAllowedMetadataKey] = JsonValue.Create(true);
 
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _dispatchCancellationCoordinator.CancelPendingAsync(instance, reason, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = decision.StageExecutionId,
-                TaskExecutionId = decision.TaskExecutionId,
-                TransitionType = "InstanceDeadLettered",
-                FromStatus = previousStatus.ToString(),
-                ToStatus = OrchestrationInstanceStatus.DeadLettered.ToString(),
-                OccurredOnUtc = now,
-                Message = reason,
-                ProducedBy = nameof(DeadLetterInstanceDecisionHandler)
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = decision.StageExecutionId,
+                    TaskExecutionId = decision.TaskExecutionId,
+                    TransitionType = "InstanceDeadLettered",
+                    FromStatus = previousStatus.ToString(),
+                    ToStatus = OrchestrationInstanceStatus.DeadLettered.ToString(),
+                    OccurredOnUtc = now,
+                    Message = reason,
+                    ProducedBy = nameof(DeadLetterInstanceDecisionHandler)
+                }, token);
             }, cancellationToken);
+            await _dispatchCancellationCoordinator.CancelPendingAsync(instance, reason, cancellationToken);
         }
 
         private static bool IsHardTerminal(OrchestrationInstanceStatus status)
@@ -74,5 +81,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated
                 or OrchestrationInstanceStatus.Aborted;
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
+        }
     }
 }

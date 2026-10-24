@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -17,6 +18,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
         private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly ITaskAttemptDispatcher _taskAttemptDispatcher;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public DispatchTaskDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -24,7 +26,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IExecutionTransitionRepository transitionRepository,
             IOrchestrationPayloadContextFactory payloadContextFactory,
             IOrchestrationConditionEvaluator conditionEvaluator,
-            ITaskAttemptDispatcher taskAttemptDispatcher)
+            ITaskAttemptDispatcher taskAttemptDispatcher,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
@@ -32,6 +35,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
             _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _taskAttemptDispatcher = taskAttemptDispatcher ?? throw new ArgumentNullException(nameof(taskAttemptDispatcher));
+            _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(DispatchTaskDecision decision, CancellationToken cancellationToken = default)
@@ -129,20 +133,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.LastUpdatedOnUtc = now;
             instance.WaitingSinceUtc = null;
 
-            await _taskRepository.Create(taskExecution, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = decision.StageExecutionId,
-                TaskExecutionId = taskExecution.Id,
-                TransitionType = "TaskConditionFailed",
-                FromStatus = TaskExecutionStatus.Pending.ToString(),
-                ToStatus = TaskExecutionStatus.Failed.ToString(),
-                OccurredOnUtc = now,
-                Message = condition.ErrorMessage,
-                ProducedBy = nameof(DispatchTaskDecisionHandler)
+                await _taskRepository.Create(taskExecution, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = decision.StageExecutionId,
+                    TaskExecutionId = taskExecution.Id,
+                    TransitionType = "TaskConditionFailed",
+                    FromStatus = TaskExecutionStatus.Pending.ToString(),
+                    ToStatus = TaskExecutionStatus.Failed.ToString(),
+                    OccurredOnUtc = now,
+                    Message = condition.ErrorMessage,
+                    ProducedBy = nameof(DispatchTaskDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -179,20 +186,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.LastUpdatedOnUtc = now;
             instance.WaitingSinceUtc = null;
 
-            await _taskRepository.Create(taskExecution, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = decision.StageExecutionId,
-                TaskExecutionId = taskExecution.Id,
-                TransitionType = "TaskSkipped",
-                FromStatus = TaskExecutionStatus.Pending.ToString(),
-                ToStatus = TaskExecutionStatus.Skipped.ToString(),
-                OccurredOnUtc = now,
-                Message = $"Task '{decision.Task.Key}' skipped because its execution condition evaluated to false.",
-                ProducedBy = nameof(DispatchTaskDecisionHandler)
+                await _taskRepository.Create(taskExecution, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = decision.StageExecutionId,
+                    TaskExecutionId = taskExecution.Id,
+                    TransitionType = "TaskSkipped",
+                    FromStatus = TaskExecutionStatus.Pending.ToString(),
+                    ToStatus = TaskExecutionStatus.Skipped.ToString(),
+                    OccurredOnUtc = now,
+                    Message = $"Task '{decision.Task.Key}' skipped because its execution condition evaluated to false.",
+                    ProducedBy = nameof(DispatchTaskDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -210,6 +220,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             {
                 metadata[$"{prefix}.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
+        }
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
         }
 
         private async Task<bool> TaskAlreadyExistsAsync(

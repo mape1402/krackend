@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -19,19 +20,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IExecutionTransitionRepository _transitionRepository;
         private readonly IOrchestrationConditionEvaluator _conditionEvaluator;
         private readonly IOrchestrationPayloadContextFactory _payloadContextFactory;
+        private readonly IRuntimeStateTransaction _stateTransaction;
 
         public StartStageDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
             IStageExecutionRepository stageRepository,
             IExecutionTransitionRepository transitionRepository,
             IOrchestrationConditionEvaluator conditionEvaluator,
-            IOrchestrationPayloadContextFactory payloadContextFactory)
+            IOrchestrationPayloadContextFactory payloadContextFactory,
+            IRuntimeStateTransaction stateTransaction = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
             _transitionRepository = transitionRepository ?? throw new ArgumentNullException(nameof(transitionRepository));
             _conditionEvaluator = conditionEvaluator ?? throw new ArgumentNullException(nameof(conditionEvaluator));
             _payloadContextFactory = payloadContextFactory ?? throw new ArgumentNullException(nameof(payloadContextFactory));
+            _stateTransaction = stateTransaction;
         }
 
         public async Task HandleAsync(StartStageDecision decision, CancellationToken cancellationToken = default)
@@ -92,19 +96,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.WaitingSinceUtc = null;
             ClearBranchNavigation(instance, decision.Stage.Id.ToString());
 
-            await _stageRepository.Create(stageExecution, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecution.Id,
-                TransitionType = "StageStarted",
-                FromStatus = StageExecutionStatus.Pending.ToString(),
-                ToStatus = StageExecutionStatus.Running.ToString(),
-                OccurredOnUtc = now,
-                Message = $"Stage '{decision.Stage.Key}' started.",
-                ProducedBy = nameof(StartStageDecisionHandler)
+                await _stageRepository.Create(stageExecution, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecution.Id,
+                    TransitionType = "StageStarted",
+                    FromStatus = StageExecutionStatus.Pending.ToString(),
+                    ToStatus = StageExecutionStatus.Running.ToString(),
+                    OccurredOnUtc = now,
+                    Message = $"Stage '{decision.Stage.Key}' started.",
+                    ProducedBy = nameof(StartStageDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -144,19 +151,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.WaitingSinceUtc = null;
             ClearBranchNavigation(instance, decision.Stage.Id.ToString());
 
-            await _stageRepository.Create(stageExecution, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecution.Id,
-                TransitionType = "StageConditionFailed",
-                FromStatus = StageExecutionStatus.Pending.ToString(),
-                ToStatus = StageExecutionStatus.Failed.ToString(),
-                OccurredOnUtc = now,
-                Message = condition.ErrorMessage,
-                ProducedBy = nameof(StartStageDecisionHandler)
+                await _stageRepository.Create(stageExecution, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecution.Id,
+                    TransitionType = "StageConditionFailed",
+                    FromStatus = StageExecutionStatus.Pending.ToString(),
+                    ToStatus = StageExecutionStatus.Failed.ToString(),
+                    OccurredOnUtc = now,
+                    Message = condition.ErrorMessage,
+                    ProducedBy = nameof(StartStageDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -189,19 +199,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.WaitingSinceUtc = null;
             ClearBranchNavigation(instance, decision.Stage.Id.ToString());
 
-            await _stageRepository.Create(stageExecution, cancellationToken);
-            await _instanceRepository.Update(instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await PersistStateAsync(async token =>
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = stageExecution.Id,
-                TransitionType = "StageSkipped",
-                FromStatus = StageExecutionStatus.Pending.ToString(),
-                ToStatus = StageExecutionStatus.Skipped.ToString(),
-                OccurredOnUtc = now,
-                Message = $"Stage '{decision.Stage.Key}' skipped because its execution condition evaluated to false.",
-                ProducedBy = nameof(StartStageDecisionHandler)
+                await _stageRepository.Create(stageExecution, token);
+                await _instanceRepository.Update(instance, token);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = instance.Id,
+                    StageExecutionId = stageExecution.Id,
+                    TransitionType = "StageSkipped",
+                    FromStatus = StageExecutionStatus.Pending.ToString(),
+                    ToStatus = StageExecutionStatus.Skipped.ToString(),
+                    OccurredOnUtc = now,
+                    Message = $"Stage '{decision.Stage.Key}' skipped because its execution condition evaluated to false.",
+                    ProducedBy = nameof(StartStageDecisionHandler)
+                }, token);
             }, cancellationToken);
         }
 
@@ -219,6 +232,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             {
                 metadata[$"{prefix}.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
             }
+        }
+
+        private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            if (_stateTransaction is null)
+            {
+                await mutation(cancellationToken);
+                return;
+            }
+
+            await _stateTransaction.ExecuteAsync(mutation, cancellationToken);
         }
 
         private static void ClearBranchNavigation(OrchestrationInstance instance, string stageId)
