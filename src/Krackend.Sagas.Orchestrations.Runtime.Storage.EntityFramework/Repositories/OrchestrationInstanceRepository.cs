@@ -132,8 +132,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 x.Status != OrchestrationInstanceStatus.Completed &&
                 x.Status != OrchestrationInstanceStatus.CompletedWithErrors &&
                 x.Status != OrchestrationInstanceStatus.DeadLettered &&
-                x.Status != OrchestrationInstanceStatus.Aborted &&
-                x.Status != OrchestrationInstanceStatus.Failed)
+                x.Status != OrchestrationInstanceStatus.Aborted)
             .OrderBy(x => x.LastUpdatedOnUtc)
             .Take(take)
             .ToArrayAsync(cancellationToken);

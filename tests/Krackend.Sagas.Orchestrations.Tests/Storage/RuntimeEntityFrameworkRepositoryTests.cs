@@ -39,6 +39,25 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task OrchestrationInstanceRepositoryReturnsFailedInstancesForRecovery()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var failed = Instance(Id.New(), OrchestrationInstanceStatus.Failed, now.AddMinutes(-2));
+        var running = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-3));
+        var deadLettered = Instance(Id.New(), OrchestrationInstanceStatus.DeadLettered, now.AddMinutes(-4));
+        await repository.Create(failed);
+        await repository.Create(running);
+        await repository.Create(deadLettered);
+
+        var recoverable = await repository.GetRecoverable();
+
+        Assert.Equal([running.Id, failed.Id], recoverable.Select(instance => instance.Id).ToArray());
+    }
+
+    [Fact]
     public async Task RuntimeExecutionRepositoriesPersistQueryAndUpdateExecutionGraph()
     {
         await using var provider = CreateProvider();

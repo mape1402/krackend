@@ -118,7 +118,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 or OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
                 or OrchestrationInstanceStatus.DeadLettered
-                or OrchestrationInstanceStatus.Aborted
-                or OrchestrationInstanceStatus.Failed;
+                or OrchestrationInstanceStatus.Aborted;
     }
 }

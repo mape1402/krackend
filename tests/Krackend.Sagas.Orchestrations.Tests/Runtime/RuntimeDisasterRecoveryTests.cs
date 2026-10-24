@@ -404,6 +404,38 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
+    public async Task ReconcilerAdvancesFailedInstanceSoTheEngineCanApplyItsRecoveryPolicy()
+    {
+        var now = DateTime.UtcNow;
+        var failed = Instance(OrchestrationInstanceStatus.Failed, now.AddMinutes(-5));
+        var admission = Substitute.For<IRuntimeAdmissionController>();
+        var repository = Substitute.For<IOrchestrationInstanceRepository>();
+        var timeoutProcessor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var sagaEngine = Substitute.For<ISagaEngine>();
+        admission.CanAccept(RuntimeAdmissionOperation.Reconciliation).Returns(true);
+        admission.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        timeoutProcessor.ProcessDueTimeoutsAsync(now, Arg.Any<CancellationToken>()).Returns(0);
+        repository.GetRecoverable(1, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>([failed]));
+        var reconciler = new DefaultOrchestrationRuntimeReconciler(
+            admission,
+            repository,
+            timeoutProcessor,
+            sagaEngine,
+            Options.Create(new RuntimeReconciliationOptions { BatchSize = 1 }));
+
+        var result = await reconciler.ReconcileAsync(now);
+
+        Assert.Equal(1, result.InstancesAdvanced);
+        await sagaEngine.Received(1).OrchestrateAsync(
+            Arg.Is<ForwardIntent>(intent =>
+                intent.MessageMetadata.OrchestrationInstanceId == failed.Id.ToString() &&
+                intent.MessageMetadata.CorrelationId == failed.CorrelationId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ReconcilerSkipsTerminalInstancesAndBuildsFallbackMetadata()
     {
         var now = DateTime.UtcNow;
@@ -535,7 +567,7 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
-    public async Task InMemoryRepositoryReturnsOnlyNonTerminalRecoverableInstancesOldestFirst()
+    public async Task InMemoryRepositoryReturnsFailedAndNonTerminalRecoverableInstancesOldestFirst()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -546,14 +578,16 @@ public sealed class RuntimeDisasterRecoveryTests
         var now = DateTime.UtcNow;
         var running = Instance(OrchestrationInstanceStatus.Running, now.AddMinutes(-10));
         var waiting = Instance(OrchestrationInstanceStatus.Waiting, now.AddMinutes(-5));
+        var failed = Instance(OrchestrationInstanceStatus.Failed, now.AddMinutes(-7));
         var completed = Instance(OrchestrationInstanceStatus.Completed, now.AddMinutes(-20));
         await repository.Create(waiting);
         await repository.Create(completed);
+        await repository.Create(failed);
         await repository.Create(running);
 
         var recoverable = await repository.GetRecoverable(10);
 
-        Assert.Equal([running.Id, waiting.Id], recoverable.Select(instance => instance.Id).ToArray());
+        Assert.Equal([running.Id, failed.Id, waiting.Id], recoverable.Select(instance => instance.Id).ToArray());
     }
 
     [Fact]

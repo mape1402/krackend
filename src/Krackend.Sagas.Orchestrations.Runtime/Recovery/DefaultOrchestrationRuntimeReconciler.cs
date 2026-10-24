@@ -84,7 +84,6 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
     private static bool IsTerminal(OrchestrationInstanceStatus status)
         => status is OrchestrationInstanceStatus.Completed
             or OrchestrationInstanceStatus.CompletedWithErrors
-            or OrchestrationInstanceStatus.Failed
             or OrchestrationInstanceStatus.DeadLettered
             or OrchestrationInstanceStatus.Aborted
             or OrchestrationInstanceStatus.Stopped
