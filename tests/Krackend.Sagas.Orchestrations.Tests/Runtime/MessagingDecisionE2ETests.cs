@@ -1237,6 +1237,32 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task TimeoutProcessorCommitsTimeoutStateBeforeAdvancingTheSaga()
+    {
+        var unitOfWork = new RecordingTimeoutStorageUnitOfWork();
+        using var harness = await MessagingEngineHarness.CreateAsync(
+            CreateArtifact(
+                Stage("stage-one", 1, MessagingTask(
+                    "task.timeout.transaction",
+                    1,
+                    retryPolicy: RetryPolicy(1, "PaymentTemporaryFailure"),
+                    timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(1), "TaskTimedOut")))),
+            services => services.Replace(
+                ServiceDescriptor.Scoped<IRuntimeStorageUnitOfWork>(_ => unitOfWork)));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-timeout-transaction");
+
+        var command = harness.Dispatcher.Commands.Single();
+        var task = await harness.GetTaskAsync(command);
+        var processor = harness.GetRequiredService<IOrchestrationTimeoutProcessor>();
+
+        await processor.ProcessDueTimeoutsAsync(task.WaitingSinceUtc!.Value.AddSeconds(2));
+
+        Assert.Equal(["Begin", "Defer", "Save", "Commit"], unitOfWork.Operations);
+        Assert.Equal(2, harness.Dispatcher.Commands.Count);
+    }
+
+    [Fact]
     public async Task EngineIgnoresStaleLateSuccessFromTimedOutAttemptAfterRetryWasDispatched()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
@@ -2300,5 +2326,56 @@ public sealed class MessagingDecisionE2ETests
             string artifactId,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<IngressConfiguration>>(Array.Empty<IngressConfiguration>());
+    }
+
+    private sealed class RecordingTimeoutStorageUnitOfWork : IRuntimeStorageUnitOfWork
+    {
+        public List<string> Operations { get; } = [];
+
+        public bool AutoSaveChanges => true;
+
+        public Task<IRuntimeStorageTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            Operations.Add("Begin");
+            return Task.FromResult<IRuntimeStorageTransaction>(new Transaction(Operations));
+        }
+
+        public IDisposable DeferAutoSave()
+        {
+            Operations.Add("Defer");
+            return new NoopDisposable();
+        }
+
+        public Task SaveChanges(CancellationToken cancellationToken = default)
+        {
+            Operations.Add("Save");
+            return Task.CompletedTask;
+        }
+
+        private sealed class Transaction : IRuntimeStorageTransaction
+        {
+            private readonly List<string> _operations;
+
+            public Transaction(List<string> operations)
+            {
+                _operations = operations;
+            }
+
+            public Task CommitAsync(CancellationToken cancellationToken = default)
+            {
+                _operations.Add("Commit");
+                return Task.CompletedTask;
+            }
+
+            public ValueTask DisposeAsync()
+                => ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public void Dispose()
+        {
+        }
     }
 }

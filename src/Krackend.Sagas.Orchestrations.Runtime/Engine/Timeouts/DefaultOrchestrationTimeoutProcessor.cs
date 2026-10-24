@@ -28,6 +28,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     private readonly ISagaEngine _sagaEngine;
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly IRuntimeAdmissionController _admissionController;
+    private readonly IRuntimeStorageUnitOfWork _unitOfWork;
 
     public DefaultOrchestrationTimeoutProcessor(
         IOrchestrationInstanceRepository instanceRepository,
@@ -39,7 +40,8 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         IRuntimeArtifactResolver artifactResolver,
         ISagaEngine sagaEngine,
         IOrchestrationInstanceCoordinator coordinator,
-        IRuntimeAdmissionController admissionController)
+        IRuntimeAdmissionController admissionController,
+        IRuntimeStorageUnitOfWork unitOfWork)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -51,6 +53,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
     public async Task<int> ProcessDueTimeoutsAsync(DateTime utcNow, CancellationToken cancellationToken = default)
@@ -156,28 +159,14 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
 
         ApplyTimeoutState(instance, task, attempt, dispatch, timeoutPolicy, errorCode, errorMessage, utcNow);
 
-        if (dispatch is not null)
-        {
-            await _dispatchRepository.Update(dispatch, cancellationToken);
-        }
-
-        await _attemptRepository.Update(attempt, cancellationToken);
-        await _taskRepository.Update(task, cancellationToken);
-        await _instanceRepository.Update(instance, cancellationToken);
-        await _transitionRepository.Create(new ExecutionTransition
-        {
-            Id = Id.New(),
-            OrchestrationInstanceId = instance.Id,
-            StageExecutionId = task.StageExecutionId,
-            TaskExecutionId = task.Id,
-            TaskExecutionAttemptId = attempt.Id,
-            TransitionType = "TaskTimedOut",
-            FromStatus = TaskExecutionStatus.WaitingResponse.ToString(),
-            ToStatus = TaskExecutionStatus.TimedOut.ToString(),
-            OccurredOnUtc = utcNow,
-            Message = errorMessage,
-            ProducedBy = nameof(DefaultOrchestrationTimeoutProcessor)
-        }, cancellationToken);
+        await PersistTimeoutAsync(
+            instance,
+            task,
+            attempt,
+            dispatch,
+            errorMessage,
+            utcNow,
+            cancellationToken);
 
         await _sagaEngine.OrchestrateAsync(new ForwardIntent
         {
@@ -231,23 +220,70 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         task.Metadata[TimeoutGraceExpiresOnUtcMetadataKey] = JsonValue.Create(graceExpiresOnUtc);
         instance.LastUpdatedOnUtc = utcNow;
 
-        await _taskRepository.Update(task, cancellationToken);
-        await _instanceRepository.Update(instance, cancellationToken);
-        await _transitionRepository.Create(new ExecutionTransition
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_unitOfWork.DeferAutoSave())
         {
-            Id = Id.New(),
-            OrchestrationInstanceId = instance.Id,
-            StageExecutionId = task.StageExecutionId,
-            TaskExecutionId = task.Id,
-            TransitionType = "TaskTimeoutPolicyApplied",
-            FromStatus = TaskExecutionStatus.WaitingResponse.ToString(),
-            ToStatus = TaskExecutionStatus.WaitingResponse.ToString(),
-            OccurredOnUtc = utcNow,
-            Message = $"Wait timeout policy applied for task '{task.TaskKey}' until {graceExpiresOnUtc:O}.",
-            ProducedBy = nameof(DefaultOrchestrationTimeoutProcessor)
-        }, cancellationToken);
+            await _taskRepository.Update(task, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = task.StageExecutionId,
+                TaskExecutionId = task.Id,
+                TransitionType = "TaskTimeoutPolicyApplied",
+                FromStatus = TaskExecutionStatus.WaitingResponse.ToString(),
+                ToStatus = TaskExecutionStatus.WaitingResponse.ToString(),
+                OccurredOnUtc = utcNow,
+                Message = $"Wait timeout policy applied for task '{task.TaskKey}' until {graceExpiresOnUtc:O}.",
+                ProducedBy = nameof(DefaultOrchestrationTimeoutProcessor)
+            }, cancellationToken);
+            await _unitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
 
         return WaitGraceResult.Applied;
+    }
+
+    private async Task PersistTimeoutAsync(
+        OrchestrationInstance instance,
+        TaskExecution task,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        string errorMessage,
+        DateTime utcNow,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_unitOfWork.DeferAutoSave())
+        {
+            if (dispatch is not null)
+            {
+                await _dispatchRepository.Update(dispatch, cancellationToken);
+            }
+
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _taskRepository.Update(task, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = instance.Id,
+                StageExecutionId = task.StageExecutionId,
+                TaskExecutionId = task.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskTimedOut",
+                FromStatus = TaskExecutionStatus.WaitingResponse.ToString(),
+                ToStatus = TaskExecutionStatus.TimedOut.ToString(),
+                OccurredOnUtc = utcNow,
+                Message = errorMessage,
+                ProducedBy = nameof(DefaultOrchestrationTimeoutProcessor)
+            }, cancellationToken);
+            await _unitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static void ApplyTimeoutState(
