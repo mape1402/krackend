@@ -87,4 +87,30 @@ public sealed class RemoteCommandDispatcherTests
 
         Assert.Contains("No remote command executor is configured", exception.Message);
     }
+
+    [Fact]
+    public async Task DispatchAsync_WhenTransportCannotConfirmDelivery_ThrowsUncertainDeliveryException()
+    {
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        executor
+            .ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new TimeoutException("The broker did not acknowledge the publish.")));
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        services.AddKeyedScoped(RemoteCommandTransport.Messaging, (_, _) => executor);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRemoteCommandDispatcher>();
+
+        var exception = await Assert.ThrowsAsync<RemoteCommandDeliveryUncertainException>(() =>
+            dispatcher.DispatchAsync(new RemoteCommand
+            {
+                DispatchId = "dispatch-1",
+                RemoteCommandTransport = RemoteCommandTransport.Messaging,
+                Payload = "{}"
+            }));
+
+        Assert.IsType<TimeoutException>(exception.InnerException);
+    }
 }

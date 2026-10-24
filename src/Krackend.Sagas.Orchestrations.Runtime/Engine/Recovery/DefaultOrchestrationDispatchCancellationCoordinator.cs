@@ -148,7 +148,8 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator : IOrc
     }
 
     private static bool IsPending(string dispatchStatus)
-        => string.Equals(dispatchStatus, "Enqueued", StringComparison.OrdinalIgnoreCase) ||
+        => string.Equals(dispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(dispatchStatus, "Enqueued", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(dispatchStatus, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(dispatchStatus, "RetryPending", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(dispatchStatus, "ReplayPending", StringComparison.OrdinalIgnoreCase);

@@ -36,7 +36,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching
 
             _messageMetadataSetter.Set(command.MessageMetadata ?? new OrchestrationMessageMetadata());
             _propagationMetadataSetter?.Set(command.PropagationMetadata ?? new OrchestrationPropagationMetadata());
-            await executor.ExecuteAsync(command, cancellationToken);
+
+            try
+            {
+                await executor.ExecuteAsync(command, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (RemoteCommandDeliveryUncertainException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new RemoteCommandDeliveryUncertainException(
+                    $"The '{command.RemoteCommandTransport}' provider could not confirm whether it accepted command '{command.DispatchId}'.",
+                    exception);
+            }
         }
     }
 }

@@ -10,7 +10,7 @@ using NSubstitute;
 public sealed class OrchestrationDispatchCancellationCoordinatorTests
 {
     [Fact]
-    public async Task CancelPendingCancelsOnlyDurableDispatchesThatHaveNotBeenPublished()
+    public async Task CancelPendingCancelsQueuePreparedDispatchesBeforeTheyReachTheProvider()
     {
         var fixture = new CancellationFixture();
         var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
@@ -18,7 +18,7 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
         var waitingTask = CreateTask(instance.Id, TaskExecutionStatus.WaitingResponse);
         var pendingAttempt = CreateAttempt(pendingTask.Id, TaskExecutionStatus.Running);
         var waitingAttempt = CreateAttempt(waitingTask.Id, TaskExecutionStatus.WaitingResponse);
-        var pendingDispatch = CreateDispatch(pendingAttempt.Id, "RetryPending");
+        var pendingDispatch = CreateDispatch(pendingAttempt.Id, "QueuePending");
         var waitingDispatch = CreateDispatch(waitingAttempt.Id, "WaitingResponse");
         fixture.Arrange(
             instance,
@@ -42,7 +42,7 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
         Assert.Equal(TaskExecutionStatus.WaitingResponse, waitingTask.Status);
         var transition = Assert.Single(fixture.Transitions);
         Assert.Equal("TaskDispatchCancelled", transition.TransitionType);
-        Assert.Equal("RetryPending", transition.FromStatus);
+        Assert.Equal("QueuePending", transition.FromStatus);
         await fixture.CancellationService.Received(1).CancelAsync(
             Arg.Is<TaskDispatchCancellationRequest>(request => request.Dispatch == pendingDispatch),
             Arg.Any<CancellationToken>());

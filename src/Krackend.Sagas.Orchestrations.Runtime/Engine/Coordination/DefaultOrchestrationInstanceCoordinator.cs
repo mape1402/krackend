@@ -26,7 +26,8 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
     public async Task<bool> TryExecuteAsync(
         Id instanceId,
         Func<CancellationToken, Task> operation,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool waitForLease = true)
     {
         ArgumentNullException.ThrowIfNull(operation);
 
@@ -38,7 +39,7 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
 
         var leaseId = $"runtime:{Id.New()}";
         var leaseDuration = ResolveLeaseDuration(_options);
-        var acquisition = await TryAcquireLeaseAsync(instanceId, leaseId, leaseDuration, cancellationToken);
+        var acquisition = await TryAcquireLeaseAsync(instanceId, leaseId, leaseDuration, waitForLease, cancellationToken);
         if (acquisition.InstanceMissing)
         {
             await operation(cancellationToken);
@@ -80,11 +81,12 @@ internal sealed class DefaultOrchestrationInstanceCoordinator : IOrchestrationIn
         Id instanceId,
         string leaseId,
         TimeSpan leaseDuration,
+        bool waitForLease,
         CancellationToken cancellationToken)
     {
         var waitWindow = ResolveLeaseUnavailableWait(_options);
         var retryDelay = ResolveLeaseUnavailableRetryDelay(_options);
-        var deadline = DateTime.UtcNow.Add(waitWindow);
+        var deadline = waitForLease ? DateTime.UtcNow.Add(waitWindow) : DateTime.UtcNow;
 
         while (true)
         {

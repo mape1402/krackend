@@ -71,6 +71,13 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
             .Where(x => x.ScheduledOnUtc <= dueBeforeUtc)
             .ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<TaskDispatch>> GetQueuePending(int take, CancellationToken cancellationToken = default)
+        => await DbContext.TaskDispatches.AsNoTracking()
+            .Where(x => x.DispatchStatus == "QueuePending")
+            .OrderBy(x => x.ScheduledOnUtc)
+            .Take(Math.Max(1, take))
+            .ToArrayAsync(cancellationToken);
+
     private static bool IsFinished(string status)
         => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||

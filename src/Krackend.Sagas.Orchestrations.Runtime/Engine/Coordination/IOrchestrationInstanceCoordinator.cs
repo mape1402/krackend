@@ -13,9 +13,11 @@ public interface IOrchestrationInstanceCoordinator
     /// <param name="instanceId">Orchestration instance id.</param>
     /// <param name="operation">Operation to execute while holding the lease.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="waitForLease">Whether to wait for a busy lease before skipping the operation.</param>
     /// <returns><c>true</c> when the operation ran; otherwise <c>false</c>.</returns>
     Task<bool> TryExecuteAsync(
         Id instanceId,
         Func<CancellationToken, Task> operation,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool waitForLease = true);
 }

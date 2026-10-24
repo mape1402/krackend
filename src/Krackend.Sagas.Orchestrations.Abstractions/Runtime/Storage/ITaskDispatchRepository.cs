@@ -25,4 +25,12 @@ public interface ITaskDispatchRepository
     Task<TaskDispatch> GetByAttemptId(Id taskExecutionAttemptId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<TaskDispatch>> GetScheduledOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets dispatches whose durable delivery intent was persisted but has not yet been acknowledged by its execution provider.
+    /// </summary>
+    /// <param name="take">Maximum number of dispatches to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Pending durable delivery intents.</returns>
+    Task<IReadOnlyCollection<TaskDispatch>> GetQueuePending(int take, CancellationToken cancellationToken = default);
 }

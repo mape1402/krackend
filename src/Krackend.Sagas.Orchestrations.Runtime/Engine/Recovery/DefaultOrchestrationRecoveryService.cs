@@ -820,7 +820,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         public async Task<bool> TryExecuteAsync(
             Id instanceId,
             Func<CancellationToken, Task> operation,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool waitForLease = true)
         {
             await operation(cancellationToken);
             return true;

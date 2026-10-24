@@ -78,10 +78,10 @@ public sealed class RemoteCommandDispatchActionTests
             .ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
-                Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
-                Assert.Equal(OrchestrationInstanceStatus.Waiting, instance.Status);
-                Assert.Equal("WaitingResponse", dispatch.DispatchStatus);
+                Assert.Equal(TaskExecutionStatus.Running, task.Status);
+                Assert.Equal(TaskExecutionStatus.Running, attempt.Status);
+                Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
+                Assert.Equal("Enqueued", dispatch.DispatchStatus);
 
                 task.Status = TaskExecutionStatus.Completed;
                 task.WaitingSinceUtc = null;
@@ -152,12 +152,12 @@ public sealed class RemoteCommandDispatchActionTests
         Assert.Equal(TaskExecutionStatus.Completed, task.Status);
         Assert.Equal(TaskExecutionStatus.Completed, attempt.Status);
         Assert.Equal("Acknowledged", dispatch.DispatchStatus);
-        Assert.NotNull(dispatch.SentOnUtc);
+        Assert.Null(dispatch.SentOnUtc);
         Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
         await transitionRepository.Received(1).Create(
             Arg.Is<ExecutionTransition>(transition =>
-                transition.TransitionType == "TaskDispatched" &&
-                transition.ToStatus == TaskExecutionStatus.WaitingResponse.ToString()),
+                transition.TransitionType == "TaskDispatchPublishIgnored" &&
+                transition.ToStatus == "Acknowledged"),
             Arg.Any<CancellationToken>());
     }
 
@@ -272,6 +272,115 @@ public sealed class RemoteCommandDispatchActionTests
                 transition.FromStatus == "Cancelled" &&
                 transition.ToStatus == "Cancelled"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DoesNotStartCallbackTimeoutUntilTransportPublishCompletes()
+    {
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(),
+            OrchestrationDefinitionKey = "sales.sale.created",
+            CorrelationId = Id.New().ToString(),
+            SagaId = Id.New().ToString(),
+            ExecutionKey = "sales.sale.created",
+            Status = OrchestrationInstanceStatus.Running
+        };
+        var task = new TaskExecution
+        {
+            Id = Id.New(),
+            OrchestrationInstanceId = instance.Id,
+            StageExecutionId = Id.New(),
+            TaskKey = "payments.charge",
+            Status = TaskExecutionStatus.Running,
+            LastAttemptNumber = 1
+        };
+        var attempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = task.Id,
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.Running
+        };
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = attempt.Id,
+            DispatchType = "FireAndWaitCallback",
+            DispatchStatus = "QueuePending"
+        };
+        attempt.DispatchId = dispatch.Id;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executor = Substitute.For<IRemoteCommandExecutor>();
+        executor
+            .ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                entered.SetResult();
+                await release.Task;
+            });
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(RemoteCommandTransport.Messaging, executor);
+        var provider = services.BuildServiceProvider();
+        var instanceRepository = Substitute.For<IOrchestrationInstanceRepository>();
+        var taskRepository = Substitute.For<ITaskExecutionRepository>();
+        var attemptRepository = Substitute.For<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
+        instanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        taskRepository.GetById(task.Id, Arg.Any<CancellationToken>()).Returns(task);
+        attemptRepository.GetById(attempt.Id, Arg.Any<CancellationToken>()).Returns(attempt);
+        dispatchRepository.GetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(dispatch);
+        var action = new RemoteCommandDispatchAction(
+            provider,
+            Substitute.For<IOrchestrationMessageMetadataSetter>(),
+            instanceRepository,
+            taskRepository,
+            attemptRepository,
+            dispatchRepository,
+            Substitute.For<IExecutionTransitionRepository>(),
+            new DefaultMuleTerminalFailureMarker());
+        var command = new RemoteCommand
+        {
+            RemoteCommandTransport = RemoteCommandTransport.Messaging,
+            Payload = "{}",
+            OrchestrationInstanceId = instance.Id.ToString(),
+            StageExecutionId = task.StageExecutionId.ToString(),
+            TaskExecutionId = task.Id.ToString(),
+            TaskExecutionAttemptId = attempt.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            AwaitResponse = true
+        };
+        var context = new MuleActionContext<RemoteCommand>(
+            new DurableAction
+            {
+                Key = ActionKey.From("RemoteCommandDispatch"),
+                Lane = "default",
+                CorrelationId = instance.CorrelationId,
+                DeduplicationKey = dispatch.Id.ToString(),
+                Status = DurableActionStatus.Pending
+            },
+            provider,
+            command);
+
+        var execution = action.ExecuteAsync(context, CancellationToken.None).AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(execution.IsCompleted);
+        Assert.Equal(TaskExecutionStatus.Running, task.Status);
+        Assert.Equal(TaskExecutionStatus.Running, attempt.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
+        Assert.Equal("QueuePending", dispatch.DispatchStatus);
+        Assert.Null(dispatch.SentOnUtc);
+
+        release.SetResult();
+        await execution;
+
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Waiting, instance.Status);
+        Assert.Equal("WaitingResponse", dispatch.DispatchStatus);
+        Assert.NotNull(dispatch.SentOnUtc);
     }
 
     [Fact]
@@ -608,7 +717,7 @@ public sealed class RemoteCommandDispatchActionTests
         await transitionRepository.Received(1).Create(
             Arg.Is<ExecutionTransition>(transition =>
                 transition.TransitionType == "TaskDispatchRetryPending" &&
-                transition.FromStatus == "WaitingResponse" &&
+                transition.FromStatus == "Enqueued" &&
                 transition.ToStatus == "RetryPending"),
             Arg.Any<CancellationToken>());
     }
@@ -1454,7 +1563,8 @@ public sealed class RemoteCommandDispatchActionTests
         public async Task<bool> TryExecuteAsync(
             Id instanceId,
             Func<CancellationToken, Task> operation,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool waitForLease = true)
         {
             InstanceIds.Add(instanceId);
             if (!acquire)

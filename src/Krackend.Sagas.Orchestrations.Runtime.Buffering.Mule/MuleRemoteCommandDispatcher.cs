@@ -53,15 +53,33 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 return;
             }
 
-            var actionId = await _muleClient.EnqueueAsync(
-                MuleActionKeys.RemoteCommandDispatchActionKey,
-                command,
-                options =>
-                {
-                    options.CorrelationId = command.OrchestrationInstanceId;
-                    options.DeduplicationKey = BuildDeduplicationKey(command);
-                },
-                cancellationToken);
+            global::Mule.Ulid actionId;
+            try
+            {
+                actionId = await _muleClient.EnqueueAsync(
+                    MuleActionKeys.RemoteCommandDispatchActionKey,
+                    command,
+                    options =>
+                    {
+                        options.CorrelationId = command.OrchestrationInstanceId;
+                        options.DeduplicationKey = BuildDeduplicationKey(command);
+                    },
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (RemoteCommandDeliveryUncertainException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new RemoteCommandDeliveryUncertainException(
+                    $"Mule could not confirm whether it accepted remote command dispatch '{command.DispatchId}'.",
+                    exception);
+            }
 
             await CaptureActionReferenceAsync(command, actionId, MuleSettings.DefaultLane, cancellationToken);
         }
@@ -86,15 +104,33 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 NextAttemptOnUtc = scheduledOnUtc
             };
 
-            await _muleStorage.AddAsync(action, cancellationToken);
-            await _muleStorage.SaveChangesAsync(cancellationToken);
+            global::Mule.Ulid actionId;
+            try
+            {
+                await _muleStorage.AddAsync(action, cancellationToken);
+                await _muleStorage.SaveChangesAsync(cancellationToken);
 
-            var actionId = string.IsNullOrWhiteSpace(action.DeduplicationKey)
-                ? action.Id
-                : await _muleStorage.FindByDeduplicationKeyAsync(
-                    action.Key,
-                    action.DeduplicationKey,
-                    cancellationToken) ?? action.Id;
+                actionId = string.IsNullOrWhiteSpace(action.DeduplicationKey)
+                    ? action.Id
+                    : await _muleStorage.FindByDeduplicationKeyAsync(
+                        action.Key,
+                        action.DeduplicationKey,
+                        cancellationToken) ?? action.Id;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (RemoteCommandDeliveryUncertainException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new RemoteCommandDeliveryUncertainException(
+                    $"Mule could not confirm whether it persisted scheduled remote command dispatch '{command.DispatchId}'.",
+                    exception);
+            }
 
             await CaptureActionReferenceAsync(command, actionId, action.Lane, cancellationToken);
             await _commitNotifier.NotifySavedAsync(actionId, action.Lane, cancellationToken);

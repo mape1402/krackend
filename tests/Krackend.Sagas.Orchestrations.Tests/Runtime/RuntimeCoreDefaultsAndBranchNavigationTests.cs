@@ -419,11 +419,11 @@ public sealed class RuntimeCoreDefaultsAndBranchNavigationTests
             TaskAttemptDispatchKind.Retry,
             false));
         Assert.Equal(TaskExecutionStatus.Pending.ToString(), InvokeTaskAttemptDispatcherPrivateStatic<string>(
-            "ResolveQueuedFromStatus",
+            "ResolveQueuePreparedFromStatus",
             TaskAttemptDispatchKind.Initial,
             TaskExecutionStatus.Failed));
         Assert.Equal(TaskExecutionStatus.Failed.ToString(), InvokeTaskAttemptDispatcherPrivateStatic<string>(
-            "ResolveQueuedFromStatus",
+            "ResolveQueuePreparedFromStatus",
             TaskAttemptDispatchKind.Retry,
             TaskExecutionStatus.Failed));
         Assert.Equal("Task 'inventories.reserve' dispatch enqueued.", InvokeTaskAttemptDispatcherPrivateStatic<string>(

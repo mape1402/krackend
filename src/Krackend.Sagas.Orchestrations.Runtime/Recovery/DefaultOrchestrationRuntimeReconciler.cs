@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
@@ -17,6 +18,7 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
     private readonly IRuntimeAdmissionController _admissionController;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IOrchestrationTimeoutProcessor _timeoutProcessor;
+    private readonly IOrchestrationDispatchRecoveryCoordinator _dispatchRecoveryCoordinator;
     private readonly ISagaEngine _sagaEngine;
     private readonly RuntimeReconciliationOptions _options;
 
@@ -25,11 +27,13 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
         IOrchestrationInstanceRepository instanceRepository,
         IOrchestrationTimeoutProcessor timeoutProcessor,
         ISagaEngine sagaEngine,
-        IOptions<RuntimeReconciliationOptions> options)
+        IOptions<RuntimeReconciliationOptions> options,
+        IOrchestrationDispatchRecoveryCoordinator dispatchRecoveryCoordinator = null)
     {
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _timeoutProcessor = timeoutProcessor ?? throw new ArgumentNullException(nameof(timeoutProcessor));
+        _dispatchRecoveryCoordinator = dispatchRecoveryCoordinator;
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
@@ -45,6 +49,11 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
 
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, cancellationToken);
 
+        var recoveredDispatches = _dispatchRecoveryCoordinator is null
+            ? 0
+            : await _dispatchRecoveryCoordinator.RecoverPendingDispatchesAsync(
+                Math.Max(1, _options.BatchSize),
+                cancellationToken);
         var timeoutsProcessed = await _timeoutProcessor.ProcessDueTimeoutsAsync(utcNow, cancellationToken);
         var instances = await _instanceRepository.GetRecoverable(Math.Max(1, _options.BatchSize), cancellationToken);
         var advanced = 0;
@@ -66,7 +75,7 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
             advanced++;
         }
 
-        return new RuntimeReconciliationResult(instances.Count, advanced, timeoutsProcessed, false);
+        return new RuntimeReconciliationResult(instances.Count, advanced, timeoutsProcessed, false, DeliveriesRecovered: recoveredDispatches);
     }
 
     private static OrchestrationMessageMetadata BuildMetadata(OrchestrationInstance instance)

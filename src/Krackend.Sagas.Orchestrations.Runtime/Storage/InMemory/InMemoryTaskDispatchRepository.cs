@@ -67,6 +67,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .Where(x => x.ScheduledOnUtc <= dueBeforeUtc)
                 .ToArray());
 
+        public Task<IReadOnlyCollection<TaskDispatch>> GetQueuePending(int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(_store.Dispatches.Values
+                .Where(x => string.Equals(x.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(x => x.ScheduledOnUtc)
+                .Take(Math.Max(1, take))
+                .ToArray());
+
         private static bool IsFinished(string status)
             => string.Equals(status, "Acknowledged", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "Failed", StringComparison.OrdinalIgnoreCase) ||

@@ -231,9 +231,19 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             CommandId = "cmd-2",
             ScheduledOnUtc = now.AddMinutes(-20)
         };
+        var queuePendingDispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = laterAttempt.Id,
+            DispatchType = "Messaging",
+            DispatchStatus = "QueuePending",
+            CommandId = "cmd-queue-pending",
+            ScheduledOnUtc = now.AddMinutes(-21)
+        };
 
         await dispatchRepository.Create(dispatch);
         await dispatchRepository.Create(oldDispatch);
+        await dispatchRepository.Create(queuePendingDispatch);
         await dispatchRepository.MarkSent(dispatch.Id, "Sent", now.AddMinutes(-8), "external-1");
         await dispatchRepository.MarkFailed(oldDispatch.Id, "broker down", "external-2");
         await dispatchRepository.MarkSent(oldDispatch.Id, "Sent", now.AddMinutes(-7), "external-2");
@@ -347,7 +357,8 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Equal(dispatch.Id, (await dispatchRepository.TryGetById(dispatch.Id)).Id);
         Assert.Equal(dispatch.Id, (await dispatchRepository.GetByCommandId("cmd-1")).Id);
         Assert.Equal(dispatch.Id, (await dispatchRepository.GetByAttemptId(attempt.Id)).Id);
-        Assert.Equal(2, (await dispatchRepository.GetScheduledOlderThan(now)).Count);
+        Assert.Equal(3, (await dispatchRepository.GetScheduledOlderThan(now)).Count);
+        Assert.Equal(queuePendingDispatch.Id, Assert.Single(await dispatchRepository.GetQueuePending(1)).Id);
         var failedDispatch = await dispatchRepository.GetById(oldDispatch.Id);
         Assert.Equal("Failed", failedDispatch.DispatchStatus);
         Assert.NotNull(failedDispatch.SentOnUtc);

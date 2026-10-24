@@ -269,8 +269,11 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         var repository = scope.ServiceProvider.GetRequiredService<ITaskDispatchRepository>();
         var due = Dispatch("cmd-due", DateTime.UtcNow.AddMinutes(-2));
         var future = Dispatch("cmd-future", DateTime.UtcNow.AddMinutes(10));
+        var queuePending = Dispatch("cmd-queue-pending", DateTime.UtcNow.AddMinutes(11));
+        queuePending.DispatchStatus = "QueuePending";
         await repository.Create(due);
         await repository.Create(future);
+        await repository.Create(queuePending);
 
         await repository.MarkSent(due.Id, "Sent", DateTime.UtcNow, "external-1");
         await repository.MarkFailed(future.Id, "broker down", "external-2");
@@ -280,6 +283,7 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         var byAttempt = await repository.GetByAttemptId(due.TaskExecutionAttemptId);
         var missing = await repository.TryGetById(Id.New());
         var scheduled = await repository.GetScheduledOlderThan(DateTime.UtcNow);
+        var pending = await repository.GetQueuePending(take: 1);
 
         Assert.Equal("Sent", byId.DispatchStatus);
         Assert.NotNull(byId.SentOnUtc);
@@ -290,6 +294,7 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         Assert.NotNull(future.SentOnUtc);
         Assert.Equal("broker down", future.FailureReason);
         Assert.Single(scheduled);
+        Assert.Equal(queuePending.Id, Assert.Single(pending).Id);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetByCommandId("missing-command"));
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.GetByAttemptId(Id.New()));
     }

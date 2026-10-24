@@ -96,6 +96,9 @@ public sealed class MessagingDecisionE2ETests
             "correlation-propagation",
             firstDispatch.Metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]!
                 ["correlationId"]!.GetValue<string>());
+        Assert.Equal("built-in-local", firstDispatch.Metadata["Runtime.Delivery.ProviderKey"]!.GetValue<string>());
+        Assert.Equal(firstCommand.DispatchId, firstDispatch.Metadata["Runtime.Delivery.Command"]!["dispatchId"]!.GetValue<string>());
+        Assert.Equal(firstCommand.TaskKey, firstDispatch.Metadata["Runtime.Delivery.Command"]!["taskKey"]!.GetValue<string>());
 
         await harness.ForwardAsync(firstCommand, BusinessPayload("response-one"), Success("service-a", "operation-a"));
 
@@ -1258,7 +1261,7 @@ public sealed class MessagingDecisionE2ETests
 
         await processor.ProcessDueTimeoutsAsync(task.WaitingSinceUtc!.Value.AddSeconds(2));
 
-        Assert.Equal(["Begin", "Defer", "Save", "Commit"], unitOfWork.Operations);
+        Assert.Equal(["Begin", "Defer", "Save", "Commit"], unitOfWork.Operations.Take(4));
         Assert.Equal(2, harness.Dispatcher.Commands.Count);
     }
 

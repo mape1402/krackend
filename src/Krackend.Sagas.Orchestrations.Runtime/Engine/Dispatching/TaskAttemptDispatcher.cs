@@ -14,6 +14,8 @@ using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private const string DeliveryProviderKeyMetadataKey = "Runtime.Delivery.ProviderKey";
+    private const string DeliveryCommandMetadataKey = "Runtime.Delivery.Command";
 
     private readonly ITaskRuntimeAdapterRegistry _adapterRegistry;
     private readonly ITaskExecutionRepository _taskRepository;
@@ -25,6 +27,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
     private readonly IOrchestrationPayloadState _payloadState;
     private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
     private readonly IExecutionPolicyResolver _executionPolicyResolver;
+    private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
 
     public TaskAttemptDispatcher(
         ITaskRuntimeAdapterRegistry adapterRegistry,
@@ -36,6 +39,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         ITaskDispatchRequestPayloadPreparer requestPayloadPreparer,
         IOrchestrationPayloadState payloadState,
         IExecutionPolicyResolver executionPolicyResolver,
+        IRuntimeStorageUnitOfWork storageUnitOfWork,
         IOrchestrationPropagationMetadataStore propagationMetadataStore = null)
     {
         _adapterRegistry = adapterRegistry ?? throw new ArgumentNullException(nameof(adapterRegistry));
@@ -47,6 +51,7 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         _requestPayloadPreparer = requestPayloadPreparer ?? throw new ArgumentNullException(nameof(requestPayloadPreparer));
         _payloadState = payloadState ?? throw new ArgumentNullException(nameof(payloadState));
         _executionPolicyResolver = executionPolicyResolver ?? throw new ArgumentNullException(nameof(executionPolicyResolver));
+        _storageUnitOfWork = storageUnitOfWork ?? throw new ArgumentNullException(nameof(storageUnitOfWork));
         _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
     }
 
@@ -132,45 +137,33 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
 
         PrepareRunningState(request, taskExecution, attemptNumber, now, requestPayload);
 
-        if (request.Kind == TaskAttemptDispatchKind.Initial)
-        {
-            await _taskRepository.Create(taskExecution, cancellationToken);
-        }
-        else
-        {
-            await _taskRepository.Update(taskExecution, cancellationToken);
-        }
-
-        await _attemptRepository.Create(attempt, cancellationToken);
-        await _dispatchRepository.Create(dispatch, cancellationToken);
-        await _instanceRepository.Update(request.Instance, cancellationToken);
-
+        PreparedDispatch preparedDispatch;
         try
         {
-            var preparation = await _requestPayloadPreparer.PrepareAsync(
-                new TaskDispatchRequestPayloadPreparationRequest
-                {
-                    Instance = request.Instance,
-                    StageKey = request.StageKey,
-                    Task = request.Task,
-                    Configuration = request.Task.Configuration,
-                    MetadataDescriptors = request.MetadataDescriptors,
-                    Payload = request.Payload
-                },
+            preparedDispatch = await PrepareDispatchAsync(
+                request,
+                adapter,
+                executionPolicy,
+                taskExecution,
+                attempt,
+                dispatch,
+                hasDeferredDispatch ? scheduledOnUtc : null,
                 cancellationToken);
-
-            requestPayload = preparation.Payload;
-            attempt.RequestPayload = requestPayload?.DeepClone();
-            dispatch.RequestPayload = requestPayload?.DeepClone();
-            request.Instance.SnapshotPayload = _payloadState.ApplyTaskRequestPayload(
-                request.Instance,
-                request.StageKey,
-                request.Task.Key,
-                requestPayload);
         }
         catch (TaskDispatchPreparationException exception)
         {
-            await MarkPreparationFailedAsync(
+            await PersistPreparationFailedAsync(
+                request,
+                taskExecution,
+                attempt,
+                dispatch,
+                exception,
+                cancellationToken);
+            return;
+        }
+        catch (Exception exception)
+        {
+            await PersistQueuePreparationFailedAsync(
                 request,
                 taskExecution,
                 attempt,
@@ -180,42 +173,79 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             return;
         }
 
-        var queuedOnUtc = DateTime.UtcNow;
-        dispatch.DispatchStatus = hasDeferredDispatch ? "Scheduled" : "Enqueued";
-        request.Instance.LastUpdatedOnUtc = queuedOnUtc;
-        await _attemptRepository.Update(attempt, cancellationToken);
-        await _dispatchRepository.Update(dispatch, cancellationToken);
-        await _taskRepository.Update(taskExecution, cancellationToken);
-        await _instanceRepository.Update(request.Instance, cancellationToken);
-        await _transitionRepository.Create(new ExecutionTransition
-        {
-            Id = Id.New(),
-            OrchestrationInstanceId = request.Instance.Id,
-            StageExecutionId = request.StageExecutionId,
-            TaskExecutionId = taskExecution.Id,
-            TaskExecutionAttemptId = attempt.Id,
-            TransitionType = ResolveQueuedTransitionType(request.Kind, hasDeferredDispatch),
-            FromStatus = ResolveQueuedFromStatus(request.Kind, previousStatus),
-            ToStatus = dispatch.DispatchStatus,
-            OccurredOnUtc = queuedOnUtc,
-            Message = BuildQueuedMessage(request, attemptNumber, scheduledOnUtc, dispatch.DispatchStatus),
-            Payload = requestPayload?.DeepClone(),
-            ProducedBy = nameof(TaskAttemptDispatcher)
-        }, cancellationToken);
+        var preparedOnUtc = DateTime.UtcNow;
+        dispatch.DispatchStatus = "QueuePending";
+        request.Instance.LastUpdatedOnUtc = preparedOnUtc;
+        await PersistDispatchGraphAsync(
+            request,
+            taskExecution,
+            attempt,
+            dispatch,
+            ResolveQueuePreparedTransitionType(request.Kind, hasDeferredDispatch),
+            ResolveQueuePreparedFromStatus(request.Kind, previousStatus),
+            dispatch.DispatchStatus,
+            preparedOnUtc,
+            BuildQueuePreparedMessage(request, attemptNumber),
+            preparedDispatch.RequestPayload,
+            cancellationToken);
 
         await QueueAsync(
             request,
-            adapter,
             executionPolicy,
             taskExecution,
             attempt,
             dispatch,
-            hasDeferredDispatch ? scheduledOnUtc : null,
-            requestPayload?.ToJsonString(),
+            preparedDispatch,
+            hasDeferredDispatch,
             cancellationToken);
     }
 
     private async Task QueueAsync(
+        TaskAttemptDispatchRequest request,
+        ExecutionPolicyResolutionResult executionPolicy,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        PreparedDispatch preparedDispatch,
+        bool hasDeferredDispatch,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await executionPolicy.Provider.DispatchAsync(new ExecutionEnvelope
+            {
+                TaskRequest = preparedDispatch.CommandRequest,
+                Command = preparedDispatch.Command,
+                ResolvedPolicy = executionPolicy.ResolvedPolicy
+            }, cancellationToken);
+
+            await MarkDeliveryAcceptedAsync(
+                request,
+                taskExecution,
+                attempt,
+                dispatch,
+                hasDeferredDispatch,
+                cancellationToken);
+        }
+        catch (RemoteCommandConfigurationException exception)
+        {
+            await MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
+        }
+        catch (RemoteCommandDeliveryUncertainException exception)
+        {
+            await MarkDeliveryDeferredAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
+        }
+    }
+
+    private async Task<PreparedDispatch> PrepareDispatchAsync(
         TaskAttemptDispatchRequest request,
         ITaskRuntimeAdapter adapter,
         ExecutionPolicyResolutionResult executionPolicy,
@@ -223,77 +253,134 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         TaskExecutionAttempt attempt,
         TaskDispatch dispatch,
         DateTimeOffset? scheduledOnUtc,
-        string commandPayload,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var commandRequest = new TaskRuntimeCommandRequest
+        var preparation = await _requestPayloadPreparer.PrepareAsync(
+            new TaskDispatchRequestPayloadPreparationRequest
             {
                 Instance = request.Instance,
-                StageExecutionId = request.StageExecutionId,
                 StageKey = request.StageKey,
                 Task = request.Task,
-                TaskExecution = taskExecution,
-                Attempt = attempt,
-                Dispatch = dispatch,
-                Payload = commandPayload
-            };
-            var descriptor = await adapter.BuildCommandAsync(commandRequest, cancellationToken);
-            var propagationMetadata = _propagationMetadataStore.Load(request.Instance);
-            var messageMetadata = new OrchestrationMessageMetadata
-            {
-                SagaId = GetSagaId(request.Instance),
-                OrchestrationInstanceId = request.Instance.Id.ToString(),
-                CurrentStage = request.StageKey,
-                CurrentTasks = [request.Task.Key],
-                CorrelationId = taskExecution.CorrelationId,
-                TaskExecutionId = taskExecution.Id.ToString(),
-                DispatchId = dispatch.Id.ToString(),
-                Attempt = attempt.AttemptNumber,
-                ReplyAddress = descriptor.ReplyAddress
-            };
+                Configuration = request.Task.Configuration,
+                MetadataDescriptors = request.MetadataDescriptors,
+                Payload = request.Payload
+            },
+            cancellationToken);
+        var requestPayload = preparation.Payload;
+        var commandPayload = requestPayload?.ToJsonString();
+        attempt.RequestPayload = requestPayload?.DeepClone();
+        dispatch.RequestPayload = requestPayload?.DeepClone();
+        request.Instance.SnapshotPayload = _payloadState.ApplyTaskRequestPayload(
+            request.Instance,
+            request.StageKey,
+            request.Task.Key,
+            requestPayload);
 
-            var policySnapshot = dispatch.Metadata.TryGetValue("ResolvedExecutionPolicy", out var resolvedPolicy)
-                ? resolvedPolicy?.DeepClone()
-                : null;
-            dispatch.Metadata = RemoteCommandMetadataBuilder.Build(messageMetadata, propagationMetadata);
-            if (policySnapshot is not null)
+        var commandRequest = new TaskRuntimeCommandRequest
+        {
+            Instance = request.Instance,
+            StageExecutionId = request.StageExecutionId,
+            StageKey = request.StageKey,
+            Task = request.Task,
+            TaskExecution = taskExecution,
+            Attempt = attempt,
+            Dispatch = dispatch,
+            Payload = commandPayload
+        };
+        var descriptor = await adapter.BuildCommandAsync(commandRequest, cancellationToken);
+        var propagationMetadata = _propagationMetadataStore.Load(request.Instance);
+        var messageMetadata = new OrchestrationMessageMetadata
+        {
+            SagaId = GetSagaId(request.Instance),
+            OrchestrationInstanceId = request.Instance.Id.ToString(),
+            CurrentStage = request.StageKey,
+            CurrentTasks = [request.Task.Key],
+            CorrelationId = taskExecution.CorrelationId,
+            TaskExecutionId = taskExecution.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            Attempt = attempt.AttemptNumber,
+            ReplyAddress = descriptor.ReplyAddress
+        };
+
+        var policySnapshot = dispatch.Metadata.TryGetValue("ResolvedExecutionPolicy", out var resolvedPolicy)
+            ? resolvedPolicy?.DeepClone()
+            : null;
+        dispatch.Metadata = RemoteCommandMetadataBuilder.Build(messageMetadata, propagationMetadata);
+        if (policySnapshot is not null)
+        {
+            dispatch.Metadata["ResolvedExecutionPolicy"] = policySnapshot;
+        }
+
+        var command = new RemoteCommand
+        {
+            Payload = commandPayload,
+            RemoteCommandTransport = descriptor.Transport,
+            SettingsPayload = descriptor.SettingsPayload,
+            OrchestrationInstanceId = request.Instance.Id.ToString(),
+            StageExecutionId = request.StageExecutionId.ToString(),
+            TaskExecutionId = taskExecution.Id.ToString(),
+            TaskExecutionAttemptId = attempt.Id.ToString(),
+            DispatchId = dispatch.Id.ToString(),
+            StageKey = request.StageKey,
+            TaskKey = request.Task.Key,
+            AwaitResponse = request.Task.DispatchType != TaskDispatchType.FireAndForget,
+            ScheduledOnUtc = scheduledOnUtc,
+            PropagationMetadata = propagationMetadata,
+            MessageMetadata = messageMetadata
+        };
+
+        dispatch.Metadata[DeliveryProviderKeyMetadataKey] = JsonValue.Create(executionPolicy.ResolvedPolicy.ProviderKey);
+        dispatch.Metadata[DeliveryCommandMetadataKey] = JsonSerializer.SerializeToNode(command, SerializerOptions);
+        return new PreparedDispatch(commandRequest, command, requestPayload);
+    }
+
+    private async Task PersistDispatchGraphAsync(
+        TaskAttemptDispatchRequest request,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        string transitionType,
+        string fromStatus,
+        string toStatus,
+        DateTime occurredOnUtc,
+        string message,
+        JsonNode payload,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_storageUnitOfWork.DeferAutoSave())
+        {
+            if (request.Kind == TaskAttemptDispatchKind.Initial)
             {
-                dispatch.Metadata["ResolvedExecutionPolicy"] = policySnapshot;
+                await _taskRepository.Create(taskExecution, cancellationToken);
+            }
+            else
+            {
+                await _taskRepository.Update(taskExecution, cancellationToken);
             }
 
-            await _dispatchRepository.Update(dispatch, cancellationToken);
-
-            var command = new RemoteCommand
+            await _attemptRepository.Create(attempt, cancellationToken);
+            await _dispatchRepository.Create(dispatch, cancellationToken);
+            await _instanceRepository.Update(request.Instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
             {
-                Payload = commandPayload,
-                RemoteCommandTransport = descriptor.Transport,
-                SettingsPayload = descriptor.SettingsPayload,
-                OrchestrationInstanceId = request.Instance.Id.ToString(),
-                StageExecutionId = request.StageExecutionId.ToString(),
-                TaskExecutionId = taskExecution.Id.ToString(),
-                TaskExecutionAttemptId = attempt.Id.ToString(),
-                DispatchId = dispatch.Id.ToString(),
-                StageKey = request.StageKey,
-                TaskKey = request.Task.Key,
-                AwaitResponse = request.Task.DispatchType != TaskDispatchType.FireAndForget,
-                ScheduledOnUtc = scheduledOnUtc,
-                PropagationMetadata = propagationMetadata,
-                MessageMetadata = messageMetadata
-            };
-
-            await executionPolicy.Provider.DispatchAsync(new ExecutionEnvelope
-            {
-                TaskRequest = commandRequest,
-                Command = command,
-                ResolvedPolicy = executionPolicy.ResolvedPolicy
+                Id = Id.New(),
+                OrchestrationInstanceId = request.Instance.Id,
+                StageExecutionId = request.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = transitionType,
+                FromStatus = fromStatus,
+                ToStatus = toStatus,
+                OccurredOnUtc = occurredOnUtc,
+                Message = message,
+                Payload = payload?.DeepClone(),
+                ProducedBy = nameof(TaskAttemptDispatcher)
             }, cancellationToken);
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
         }
-        catch (Exception exception)
-        {
-            await MarkQueueFailedAsync(request, taskExecution, attempt, dispatch, exception, cancellationToken);
-        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private async Task MarkDispatchConfigurationFailedAsync(
@@ -320,21 +407,28 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             request.Instance.ErrorSummary = message;
             request.Instance.LastUpdatedOnUtc = failedOnUtc;
 
-            await _taskRepository.Update(taskExecution, cancellationToken);
-            await _instanceRepository.Update(request.Instance, cancellationToken);
-            await _transitionRepository.Create(new ExecutionTransition
+            await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+            using (_storageUnitOfWork.DeferAutoSave())
             {
-                Id = Id.New(),
-                OrchestrationInstanceId = request.Instance.Id,
-                StageExecutionId = request.StageExecutionId,
-                TaskExecutionId = taskExecution.Id,
-                TransitionType = "TaskRetryConfigurationFailed",
-                FromStatus = previousStatus.ToString(),
-                ToStatus = taskExecution.Status.ToString(),
-                OccurredOnUtc = failedOnUtc,
-                Message = message,
-                ProducedBy = nameof(TaskAttemptDispatcher)
-            }, cancellationToken);
+                await _taskRepository.Update(taskExecution, cancellationToken);
+                await _instanceRepository.Update(request.Instance, cancellationToken);
+                await _transitionRepository.Create(new ExecutionTransition
+                {
+                    Id = Id.New(),
+                    OrchestrationInstanceId = request.Instance.Id,
+                    StageExecutionId = request.StageExecutionId,
+                    TaskExecutionId = taskExecution.Id,
+                    TransitionType = "TaskRetryConfigurationFailed",
+                    FromStatus = previousStatus.ToString(),
+                    ToStatus = taskExecution.Status.ToString(),
+                    OccurredOnUtc = failedOnUtc,
+                    Message = message,
+                    ProducedBy = nameof(TaskAttemptDispatcher)
+                }, cancellationToken);
+                await _storageUnitOfWork.SaveChanges(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
             return;
         }
 
@@ -354,24 +448,31 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
         request.Instance.WaitingSinceUtc = null;
 
-        await _taskRepository.Create(failedTask, cancellationToken);
-        await _instanceRepository.Update(request.Instance, cancellationToken);
-        await _transitionRepository.Create(new ExecutionTransition
+        await using var initialTransaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_storageUnitOfWork.DeferAutoSave())
         {
-            Id = Id.New(),
-            OrchestrationInstanceId = request.Instance.Id,
-            StageExecutionId = request.StageExecutionId,
-            TaskExecutionId = failedTask.Id,
-            TransitionType = initialTransitionType,
-            FromStatus = TaskExecutionStatus.Pending.ToString(),
-            ToStatus = TaskExecutionStatus.Failed.ToString(),
-            OccurredOnUtc = failedOnUtc,
-            Message = message,
-            ProducedBy = nameof(TaskAttemptDispatcher)
-        }, cancellationToken);
+            await _taskRepository.Create(failedTask, cancellationToken);
+            await _instanceRepository.Update(request.Instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = request.Instance.Id,
+                StageExecutionId = request.StageExecutionId,
+                TaskExecutionId = failedTask.Id,
+                TransitionType = initialTransitionType,
+                FromStatus = TaskExecutionStatus.Pending.ToString(),
+                ToStatus = TaskExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = failedOnUtc,
+                Message = message,
+                ProducedBy = nameof(TaskAttemptDispatcher)
+            }, cancellationToken);
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await initialTransaction.CommitAsync(cancellationToken);
     }
 
-    private async Task MarkPreparationFailedAsync(
+    private async Task PersistPreparationFailedAsync(
         TaskAttemptDispatchRequest request,
         TaskExecution taskExecution,
         TaskExecutionAttempt attempt,
@@ -403,26 +504,61 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         request.Instance.ErrorSummary = exception.Message;
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
 
-        await _dispatchRepository.Update(dispatch, cancellationToken);
-        await _taskRepository.Update(taskExecution, cancellationToken);
-        await _attemptRepository.Update(attempt, cancellationToken);
-        await _instanceRepository.Update(request.Instance, cancellationToken);
-        await _transitionRepository.Create(new ExecutionTransition
-        {
-            Id = Id.New(),
-            OrchestrationInstanceId = request.Instance.Id,
-            StageExecutionId = request.StageExecutionId,
-            TaskExecutionId = taskExecution.Id,
-            TaskExecutionAttemptId = attempt.Id,
-            TransitionType = request.Kind == TaskAttemptDispatchKind.Initial
+        await PersistDispatchGraphAsync(
+            request,
+            taskExecution,
+            attempt,
+            dispatch,
+            request.Kind == TaskAttemptDispatchKind.Initial
                 ? "TaskDispatchPreparationFailed"
                 : "TaskRetryPreparationFailed",
-            FromStatus = TaskExecutionStatus.Running.ToString(),
-            ToStatus = TaskExecutionStatus.Failed.ToString(),
-            OccurredOnUtc = failedOnUtc,
-            Message = exception.Message,
-            ProducedBy = nameof(TaskAttemptDispatcher)
-        }, cancellationToken);
+            TaskExecutionStatus.Running.ToString(),
+            TaskExecutionStatus.Failed.ToString(),
+            failedOnUtc,
+            exception.Message,
+            dispatch.RequestPayload,
+            cancellationToken);
+    }
+
+    private async Task PersistQueuePreparationFailedAsync(
+        TaskAttemptDispatchRequest request,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        var failedOnUtc = DateTime.UtcNow;
+        dispatch.DispatchStatus = "Failed";
+        dispatch.FailedOnUtc = failedOnUtc;
+        dispatch.FailureReason = exception.Message;
+        taskExecution.Status = TaskExecutionStatus.Failed;
+        taskExecution.FailedOnUtc = failedOnUtc;
+        attempt.Status = TaskExecutionStatus.Failed;
+        attempt.FailedOnUtc = failedOnUtc;
+        attempt.ErrorCode = "CommandDispatchFailed";
+        attempt.ErrorMessage = exception.Message;
+        request.Instance.Status = request.Task.OnErrorPolicy == OnErrorPolicy.Continue
+            ? OrchestrationInstanceStatus.Running
+            : OrchestrationInstanceStatus.Failed;
+        request.Instance.FailedOnUtc = request.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+        request.Instance.ErrorSummary = exception.Message;
+        request.Instance.LastUpdatedOnUtc = failedOnUtc;
+
+        await PersistDispatchGraphAsync(
+            request,
+            taskExecution,
+            attempt,
+            dispatch,
+            request.Kind == TaskAttemptDispatchKind.Initial
+                ? "TaskDispatchQueueFailed"
+                : "TaskRetryQueueFailed",
+            TaskExecutionStatus.Running.ToString(),
+            TaskExecutionStatus.Failed.ToString(),
+            failedOnUtc,
+            exception.Message,
+            dispatch.RequestPayload,
+            cancellationToken);
     }
 
     private async Task MarkQueueFailedAsync(
@@ -450,28 +586,123 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         request.Instance.ErrorSummary = exception.Message;
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
 
-        await _dispatchRepository.Update(dispatch, cancellationToken);
-        await _attemptRepository.Update(attempt, cancellationToken);
-        await _taskRepository.Update(taskExecution, cancellationToken);
-        await _instanceRepository.Update(request.Instance, cancellationToken);
-        await _transitionRepository.Create(new ExecutionTransition
+        await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_storageUnitOfWork.DeferAutoSave())
         {
-            Id = Id.New(),
-            OrchestrationInstanceId = request.Instance.Id,
-            StageExecutionId = request.StageExecutionId,
-            TaskExecutionId = taskExecution.Id,
-            TaskExecutionAttemptId = attempt.Id,
-            TransitionType = request.Kind == TaskAttemptDispatchKind.Initial
-                ? "TaskDispatchQueueFailed"
-                : "TaskRetryQueueFailed",
-            FromStatus = request.Kind == TaskAttemptDispatchKind.Initial
-                ? TaskExecutionStatus.Running.ToString()
-                : "Enqueued",
-            ToStatus = TaskExecutionStatus.Failed.ToString(),
-            OccurredOnUtc = failedOnUtc,
-            Message = exception.Message,
-            ProducedBy = nameof(TaskAttemptDispatcher)
-        }, cancellationToken);
+            await _dispatchRepository.Update(dispatch, cancellationToken);
+            await _attemptRepository.Update(attempt, cancellationToken);
+            await _taskRepository.Update(taskExecution, cancellationToken);
+            await _instanceRepository.Update(request.Instance, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = request.Instance.Id,
+                StageExecutionId = request.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = request.Kind == TaskAttemptDispatchKind.Initial
+                    ? "TaskDispatchQueueFailed"
+                    : "TaskRetryQueueFailed",
+                FromStatus = "QueuePending",
+                ToStatus = TaskExecutionStatus.Failed.ToString(),
+                OccurredOnUtc = failedOnUtc,
+                Message = exception.Message,
+                ProducedBy = nameof(TaskAttemptDispatcher)
+            }, cancellationToken);
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task MarkDeliveryDeferredAsync(
+        TaskAttemptDispatchRequest request,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        var persistedDispatch = await _dispatchRepository.TryGetById(dispatch.Id, cancellationToken);
+        if (persistedDispatch is null ||
+            !string.Equals(persistedDispatch.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var deferredOnUtc = DateTime.UtcNow;
+        persistedDispatch.Metadata["Runtime.Delivery.LastEnqueueFailure"] = JsonValue.Create(exception.Message);
+        persistedDispatch.Metadata["Runtime.Delivery.LastEnqueueAttemptOnUtc"] = JsonValue.Create(deferredOnUtc);
+
+        await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_storageUnitOfWork.DeferAutoSave())
+        {
+            await _dispatchRepository.Update(persistedDispatch, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = request.Instance.Id,
+                StageExecutionId = request.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskDispatchDeliveryDeferred",
+                FromStatus = "QueuePending",
+                ToStatus = "QueuePending",
+                OccurredOnUtc = deferredOnUtc,
+                Message = exception.Message,
+                ProducedBy = nameof(TaskAttemptDispatcher)
+            }, cancellationToken);
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task MarkDeliveryAcceptedAsync(
+        TaskAttemptDispatchRequest request,
+        TaskExecution taskExecution,
+        TaskExecutionAttempt attempt,
+        TaskDispatch dispatch,
+        bool hasDeferredDispatch,
+        CancellationToken cancellationToken)
+    {
+        var persistedDispatch = await _dispatchRepository.TryGetById(dispatch.Id, cancellationToken);
+        if (persistedDispatch is null ||
+            !string.Equals(persistedDispatch.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var acceptedOnUtc = DateTime.UtcNow;
+        persistedDispatch.DispatchStatus = hasDeferredDispatch ? "Scheduled" : "Enqueued";
+        persistedDispatch.FailedOnUtc = null;
+        persistedDispatch.FailureReason = null;
+        await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_storageUnitOfWork.DeferAutoSave())
+        {
+            await _dispatchRepository.Update(persistedDispatch, cancellationToken);
+            await _transitionRepository.Create(new ExecutionTransition
+            {
+                Id = Id.New(),
+                OrchestrationInstanceId = request.Instance.Id,
+                StageExecutionId = request.StageExecutionId,
+                TaskExecutionId = taskExecution.Id,
+                TaskExecutionAttemptId = attempt.Id,
+                TransitionType = "TaskDispatchDeliveryAccepted",
+                FromStatus = "QueuePending",
+                ToStatus = persistedDispatch.DispatchStatus,
+                OccurredOnUtc = acceptedOnUtc,
+                Message = BuildQueuedMessage(
+                    request,
+                    attempt.AttemptNumber,
+                    new DateTimeOffset(persistedDispatch.ScheduledOnUtc ?? acceptedOnUtc, TimeSpan.Zero),
+                    persistedDispatch.DispatchStatus),
+                ProducedBy = nameof(TaskAttemptDispatcher)
+            }, cancellationToken);
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static TaskExecution CreateInitialTaskExecution(TaskAttemptDispatchRequest request, DateTime now)
@@ -532,7 +763,10 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             ? "TaskDispatchEnqueued"
             : hasDeferredDispatch ? "TaskRetryScheduled" : "TaskRetryEnqueued";
 
-    private static string ResolveQueuedFromStatus(TaskAttemptDispatchKind kind, TaskExecutionStatus previousStatus)
+    private static string ResolveQueuePreparedTransitionType(TaskAttemptDispatchKind kind, bool hasDeferredDispatch)
+        => ResolveQueuedTransitionType(kind, hasDeferredDispatch);
+
+    private static string ResolveQueuePreparedFromStatus(TaskAttemptDispatchKind kind, TaskExecutionStatus previousStatus)
         => kind == TaskAttemptDispatchKind.Initial
             ? TaskExecutionStatus.Pending.ToString()
             : previousStatus.ToString();
@@ -552,6 +786,11 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             ? $"Retry attempt {attemptNumber} scheduled for task '{request.Task.Key}' at {scheduledOnUtc:O}."
             : $"Retry attempt {attemptNumber} enqueued for task '{request.Task.Key}'.";
     }
+
+    private static string BuildQueuePreparedMessage(TaskAttemptDispatchRequest request, int attemptNumber)
+        => request.Kind == TaskAttemptDispatchKind.Initial
+            ? $"Task '{request.Task.Key}' durable delivery intent prepared."
+            : $"Retry attempt {attemptNumber} durable delivery intent prepared for task '{request.Task.Key}'.";
 
     private static JsonNode ParsePayload(string payload)
         => string.IsNullOrWhiteSpace(payload) ? null : JsonNode.Parse(payload);
@@ -577,4 +816,9 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         => string.IsNullOrWhiteSpace(instance.SagaId)
             ? instance.Id.ToString()
             : instance.SagaId;
+
+    private sealed record PreparedDispatch(
+        TaskRuntimeCommandRequest CommandRequest,
+        RemoteCommand Command,
+        JsonNode RequestPayload);
 }
