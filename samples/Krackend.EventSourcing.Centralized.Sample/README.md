@@ -14,7 +14,7 @@ The sample uses:
 Run it with:
 
 ```bash
-dotnet run --framework net9.0 --project samples/Krackend.EventSourcing.Centralized.Sample/Krackend.EventSourcing.Centralized.Sample.csproj
+dotnet run --framework net10.0 --project samples/Krackend.EventSourcing.Centralized.Sample/Krackend.EventSourcing.Centralized.Sample.csproj
 ```
 
 The sample appends:

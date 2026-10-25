@@ -10,6 +10,8 @@
 
 Modular backend building blocks for .NET services and orchestration runtimes.
 
+Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
+
 ## Packages
 
 Event sourcing packages:

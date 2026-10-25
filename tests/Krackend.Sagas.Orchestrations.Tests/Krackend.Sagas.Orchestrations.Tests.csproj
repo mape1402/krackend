@@ -13,7 +13,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.7" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" />
