@@ -128,17 +128,22 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
 
     /// <inheritdoc />
     public Task<PagedResult<RuntimeNode>> Search(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
-        => SearchCore(settings, search, sort, descending, false, cancellationToken);
+        => SearchCore(settings, search, sort, descending, false, null, cancellationToken);
 
     public Task<PagedResult<RuntimeNode>> SearchEnabled(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
-        => SearchCore(settings, search, sort, descending, true, cancellationToken);
+        => SearchCore(settings, search, sort, descending, true, null, cancellationToken);
 
-    private async Task<PagedResult<RuntimeNode>> SearchCore(PagedSettings settings, string search, string sort, bool descending, bool enabledOnly, CancellationToken cancellationToken)
+    public Task<PagedResult<RuntimeNode>> SearchAllowed(PagedSettings settings, string orchestrationId, string search, CancellationToken cancellationToken = default)
+        => SearchCore(settings, search, "", false, true, orchestrationId ?? string.Empty, cancellationToken);
+
+    private async Task<PagedResult<RuntimeNode>> SearchCore(PagedSettings settings, string search, string sort, bool descending, bool enabledOnly, string orchestrationId, CancellationToken cancellationToken)
     {
         var page = Math.Max(1, settings?.PageNumber ?? 1);
         var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
         var query = _dbContext.RuntimeNodes.AsNoTracking().Include(x => x.Environment).Where(x => !x.IsDeleted);
         if (enabledOnly) query = query.Where(x => x.Status == RuntimeNodeStatus.Enabled);
+        if (orchestrationId is not null)
+            query = query.Where(x => _dbContext.OrchestrationAllowedRuntimeNodes.Any(p => p.OrchestrationDefinitionId == orchestrationId && p.RuntimeNodeId == x.Id));
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();

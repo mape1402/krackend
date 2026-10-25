@@ -118,17 +118,12 @@ else
                         <div class="row g-3">
                             <div class="col-md-12">
                                 <label asp-for="Input.ArtifactId" class="form-label"></label>
+                                <input type="search" class="form-control mb-2" id="releaseArtifactSearch" placeholder="Search artifacts" aria-label="Search artifacts" />
                                 <select asp-for="Input.ArtifactId" class="form-select" id="releaseArtifactSelect">
                                     <option value="">Select artifact</option>
-                                    @foreach (var artifact in Model.SelectedArtifacts)
-                                    {
-                                        <option value="@artifact.Id"
-                                                data-orchestration-id="@artifact.OrchestrationDefinitionId"
-                                                data-artifact-type="@artifact.ArtifactType">
-                                            @artifact.OrchestrationDisplayName - @artifact.ArtifactType, @artifact.VersionNumber - @(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)
-                                        </option>
-                                    }
                                 </select>
+                                <button type="button" class="btn btn-link btn-sm" id="releaseArtifactsMore" hidden>Load more artifacts</button>
+                                <div class="form-text" id="releaseArtifactStatus" aria-live="polite"></div>
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="Input.Strategy" class="form-label">Release strategy</label>
@@ -140,36 +135,13 @@ else
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Target runtime nodes</label>
-                                <div class="border rounded p-3" style="max-height: 260px; overflow-y: auto;">
-                                    @if (!Model.RuntimeNodes.Any())
-                                    {
-                                        <div class="text-muted small">No enabled runtime nodes found.</div>
-                                    }
-                                    else
-                                    {
-                                        <div id="releaseAllowedNodesWarning" class="alert alert-warning py-2 px-3 mb-2 d-none">
-                                            No node policy configured for this orchestration. Release is blocked by default.
-                                        </div>
-                                        <div class="od-stage-picker">
-                                            @for (var i = 0; i < Model.RuntimeNodes.Count; i++)
-                                            {
-                                                var node = Model.RuntimeNodes.ElementAt(i);
-                                                <div class="od-stage-option-wrap form-check">
-                                                    <input class="form-check-input js-runtime-node-option od-stage-checkbox"
-                                                           type="checkbox"
-                                                           name="Input.RuntimeNodeIds"
-                                                           value="@node.Id"
-                                                           data-runtime-node-id="@node.Id"
-                                                           id="runtimeNode_@i" />
-                                                    <label class="od-stage-option" for="runtimeNode_@i">
-                                                        <span class="od-stage-name">@node.Name</span>
-                                                        <span class="od-stage-meta">@node.Code</span>
-                                                    </label>
-                                                </div>
-                                            }
-                                        </div>
-                                    }
+                                <input type="search" class="form-control mb-2" id="releaseNodeSearch" placeholder="Search allowed nodes" aria-label="Search allowed nodes" />
+                                <div class="border rounded p-3" id="releaseNodeScroll" style="max-height: 260px; overflow-y: auto;">
+                                    <div id="releaseNodeItems" class="od-stage-picker"></div>
+                                    <div id="releaseNodeStatus" class="form-text" aria-live="polite"></div>
+                                    <button type="button" class="btn btn-link btn-sm" id="releaseNodesMore" hidden>Load more nodes</button>
                                 </div>
+                                <div id="releaseNodeValues"></div>
                             </div>
                         </div>
                     </div>
@@ -198,27 +170,13 @@ else
                     <div id="allowedNodesSelectionWarning" class="alert alert-warning py-2 px-3 mb-2 d-none">
                         Orchestration is required to configure runtime nodes.
                     </div>
-                    <div class="border rounded p-2" style="max-height: 260px; overflow-y: auto;">
-                        @if (!Model.RuntimeNodes.Any())
-                        {
-                            <div class="text-muted small">No enabled runtime nodes found.</div>
-                        }
-                        else
-                        {
-                            @for (var i = 0; i < Model.RuntimeNodes.Count; i++)
-                            {
-                                var node = Model.RuntimeNodes.ElementAt(i);
-                                <div class="form-check">
-                                    <input class="form-check-input js-allowed-node-option"
-                                           type="checkbox"
-                                           name="AllowedNodes.RuntimeNodeIds"
-                                           value="@node.Id"
-                                           id="allowedPolicyNode_@i" />
-                                    <label class="form-check-label" for="allowedPolicyNode_@i">@node.Name (@node.Code)</label>
-                                </div>
-                            }
-                        }
+                    <input type="search" class="form-control mb-2" id="policyNodeSearch" placeholder="Search nodes" aria-label="Search nodes" />
+                    <div class="border rounded p-2" id="policyNodeScroll" style="max-height: 260px; overflow-y: auto;">
+                        <div id="policyNodeItems"></div>
+                        <div id="policyNodeStatus" class="form-text" aria-live="polite"></div>
+                        <button type="button" class="btn btn-link btn-sm" id="policyNodesMore" hidden>Load more nodes</button>
                     </div>
+                    <div id="policyNodeValues"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" id="allowedNodesCancelButton" data-bs-dismiss="modal">Cancel</button>
@@ -272,14 +230,10 @@ else
     const artifactSelect = document.getElementById('releaseArtifactSelect');
     const strategySelect = document.getElementById('releaseStrategySelect');
     const strategyHint = document.getElementById('releaseStrategyHint');
-    const nodeCheckboxes = Array.from(document.querySelectorAll('.js-runtime-node-option'));
-    const warning = document.getElementById('releaseAllowedNodesWarning');
-    const submitButton = document.getElementById('createReleaseSubmitButton');
     const allowedNodesModalElement = document.getElementById('allowedNodesModal');
     const allowedNodesModalLabel = document.getElementById('allowedNodesModalLabel');
     const allowedNodesOrchestrationIdInput = document.getElementById('allowedNodesOrchestrationId');
     const allowedNodesWarning = document.getElementById('allowedNodesSelectionWarning');
-    const allowedNodesCheckboxes = Array.from(document.querySelectorAll('.js-allowed-node-option'));
     const saveAllowedNodesButton = document.getElementById('saveAllowedNodesButton');
     const openRuntimeNodesModalButton = document.getElementById('openRuntimeNodesModalButton');
     const releaseDetailsModalElement = document.getElementById('releaseDetailsModal');
@@ -294,40 +248,9 @@ else
         return;
     }
 
-    const allowedNodeIdsByOrchestration = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.AllowedNodeIdsByOrchestrationId));
     const allowedNodesModal = allowedNodesModalElement ? window.bootstrap.Modal.getOrCreateInstance(allowedNodesModalElement) : null;
     const releaseDetailsModal = releaseDetailsModalElement ? window.bootstrap.Modal.getOrCreateInstance(releaseDetailsModalElement) : null;
     const selectedOrchestrationId = '@Model.OrchestrationId';
-    const getSelectedOrchestrationId = () => selectedOrchestrationId;
-
-    const updateNodeVisibility = () => {
-        if (!artifactSelect || !warning || !submitButton || nodeCheckboxes.length === 0) {
-            return;
-        }
-
-        const orchestrationId = getSelectedOrchestrationId();
-        const allowedNodes = orchestrationId ? (allowedNodeIdsByOrchestration[orchestrationId] ?? []) : [];
-        const allowedSet = new Set(allowedNodes);
-
-        if (!orchestrationId || allowedNodes.length === 0) {
-            warning.classList.remove('d-none');
-            submitButton.disabled = true;
-        } else {
-            warning.classList.add('d-none');
-            submitButton.disabled = false;
-        }
-
-        nodeCheckboxes.forEach(checkbox => {
-            const nodeId = checkbox.getAttribute('data-runtime-node-id') ?? '';
-            const isAllowed = orchestrationId && allowedSet.has(nodeId);
-
-            checkbox.checked = isAllowed ? checkbox.checked : false;
-            checkbox.disabled = !isAllowed;
-            const wrapper = checkbox.closest('.form-check');
-            if (!wrapper) return;
-            wrapper.classList.toggle('d-none', !isAllowed);
-        });
-    };
 
     const updateStrategyAvailability = () => {
         if (!artifactSelect || !strategySelect || !strategyHint) {
@@ -346,7 +269,7 @@ else
             strategySelect.value = 'Direct';
         }
 
-        strategyHint.textContent = rolloutAllowed
+        strategyHint.textContent = !type ? 'Select an artifact to choose its release strategy.' : rolloutAllowed
             ? 'Direct applies immediately. Rollout replaces an existing trigger owner in a controlled handoff.'
             : 'Deprecation and archive artifacts are applied directly to preserve a deterministic runtime lifecycle.';
     };
@@ -358,9 +281,7 @@ else
 
         const url = `${window.location.pathname}?handler=AllowedNodes&orchestrationId=${encodeURIComponent(orchestrationId)}`;
         const response = await fetch(url, { method: 'GET' });
-        if (!response.ok) {
-            return allowedNodeIdsByOrchestration[orchestrationId] ?? [];
-        }
+        if (!response.ok) throw new Error('Unable to load the node policy.');
 
         const payload = await response.json();
         return payload.runtimeNodeIds ?? [];
@@ -376,10 +297,6 @@ else
         if (!orchestrationId) {
             allowedNodesWarning.classList.remove('d-none');
             saveAllowedNodesButton.disabled = true;
-            allowedNodesCheckboxes.forEach(checkbox => {
-                checkbox.checked = false;
-                checkbox.disabled = true;
-            });
             allowedNodesModal.show();
             return false;
         }
@@ -387,15 +304,111 @@ else
         allowedNodesWarning.classList.add('d-none');
         saveAllowedNodesButton.disabled = false;
 
-        const selectedNodes = new Set(await loadAllowedNodesForOrchestration(orchestrationId));
-        allowedNodesCheckboxes.forEach(checkbox => {
-            checkbox.disabled = false;
-            checkbox.checked = selectedNodes.has(checkbox.value);
-        });
-
         allowedNodesModal.show();
+        saveAllowedNodesButton.disabled = true;
+        try {
+            policyPicker.selected = new Set(await loadAllowedNodesForOrchestration(orchestrationId));
+            policyPicker.sync();
+            await policyPicker.reset();
+            saveAllowedNodesButton.disabled = false;
+        } catch {
+            document.getElementById('policyNodeStatus').textContent = 'The node policy could not be loaded. Close this dialog and try again.';
+        }
         return true;
     };
+
+    const nodePicker = (prefix, field, allowedOnly) => {
+        const search = document.getElementById(`${prefix}NodeSearch`);
+        const list = document.getElementById(`${prefix}NodeItems`);
+        const status = document.getElementById(`${prefix}NodeStatus`);
+        const values = document.getElementById(`${prefix}NodeValues`);
+        const more = document.getElementById(`${prefix}NodesMore`);
+        const scroll = document.getElementById(`${prefix}NodeScroll`);
+        if (!search || !list || !more) return null;
+        const picker = { selected: new Set(), page: 0, hasMore: true, loading: false, generation: 0 };
+        picker.sync = () => {
+            values.replaceChildren(...Array.from(picker.selected, id => {
+                const input = document.createElement('input');
+                input.type = 'hidden'; input.name = field; input.value = id;
+                return input;
+            }));
+        };
+        picker.load = async () => {
+            if (picker.loading || !picker.hasMore) return;
+            const generation = picker.generation;
+            picker.loading = true; status.textContent = 'Loading nodes...'; more.hidden = true;
+            try {
+                const url = new URL(location.pathname, location.href);
+                url.searchParams.set('handler', 'NodeOptions');
+                url.searchParams.set('orchestrationId', selectedOrchestrationId);
+                url.searchParams.set('allowedOnly', String(allowedOnly));
+                url.searchParams.set('page', String(picker.page + 1));
+                url.searchParams.set('search', search.value);
+                const response = await fetch(url);
+                if (!response.ok) throw new Error();
+                const result = await response.json();
+                if (generation !== picker.generation) return;
+                picker.page++; picker.hasMore = result.hasMore;
+                for (const node of result.items) {
+                    const label = document.createElement('label'); label.className = 'form-check d-block';
+                    const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'form-check-input';
+                    input.value = node.id; input.checked = picker.selected.has(node.id);
+                    input.addEventListener('change', () => { if (input.checked) picker.selected.add(node.id); else picker.selected.delete(node.id); picker.sync(); });
+                    const text = document.createElement('span'); text.className = 'form-check-label'; text.textContent = `${node.name} (${node.code})`;
+                    label.append(input, text); list.append(label);
+                }
+                status.textContent = picker.page === 1 && !result.items.length ? (allowedOnly ? 'No allowed enabled nodes found.' : 'No enabled nodes found.') : '';
+                more.hidden = !picker.hasMore;
+            } catch {
+                if (generation === picker.generation) { status.textContent = 'Nodes could not be loaded. Try again.'; more.hidden = false; }
+            } finally { if (generation === picker.generation) picker.loading = false; }
+        };
+        picker.reset = () => { picker.generation++; picker.page = 0; picker.hasMore = true; picker.loading = false; list.replaceChildren(); return picker.load(); };
+        let timer;
+        search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(picker.reset, 250); });
+        more.addEventListener('click', picker.load);
+        scroll.addEventListener('scroll', () => { if (scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 48) picker.load(); });
+        return picker;
+    };
+    const releasePicker = nodePicker('release', 'Input.RuntimeNodeIds', true);
+    const policyPicker = nodePicker('policy', 'AllowedNodes.RuntimeNodeIds', false);
+
+    const artifactSearch = document.getElementById('releaseArtifactSearch');
+    const artifactMore = document.getElementById('releaseArtifactsMore');
+    const artifactStatus = document.getElementById('releaseArtifactStatus');
+    let artifactPage = 0, artifactHasMore = true, artifactLoading = false, artifactGeneration = 0;
+    const loadArtifacts = async () => {
+        if (!artifactSelect || artifactLoading || !artifactHasMore) return;
+        const generation = artifactGeneration;
+        artifactLoading = true; artifactMore.hidden = true; artifactStatus.textContent = 'Loading artifacts...';
+        try {
+            const url = new URL(location.pathname, location.href);
+            url.searchParams.set('handler', 'ArtifactOptions'); url.searchParams.set('orchestrationId', selectedOrchestrationId);
+            url.searchParams.set('page', String(artifactPage + 1)); url.searchParams.set('search', artifactSearch.value);
+            const response = await fetch(url); if (!response.ok) throw new Error();
+            const result = await response.json(); if (generation !== artifactGeneration) return;
+            artifactPage++; artifactHasMore = result.hasMore;
+            for (const item of result.items) {
+                if (Array.from(artifactSelect.options).some(option => option.value === item.id)) continue;
+                const option = document.createElement('option'); option.value = item.id; option.dataset.artifactType = item.artifactType;
+                option.textContent = `${item.artifactType} - ${item.versionNumber} - ${item.versionLabel || 'Unlabeled'}`;
+                artifactSelect.append(option);
+            }
+            artifactStatus.textContent = artifactPage === 1 && !result.items.length ? 'No matching artifacts.' : '';
+            artifactMore.hidden = !artifactHasMore;
+        } catch { if (generation === artifactGeneration) { artifactStatus.textContent = 'Artifacts could not be loaded. Try again.'; artifactMore.hidden = false; } }
+        finally { if (generation === artifactGeneration) artifactLoading = false; }
+    };
+    if (artifactSearch) {
+        let timer;
+        artifactSearch.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => {
+            artifactGeneration++; artifactPage = 0; artifactHasMore = true; artifactLoading = false;
+            Array.from(artifactSelect.options).slice(1).filter(option => !option.selected).forEach(option => option.remove());
+            loadArtifacts();
+        }, 250); });
+        artifactMore.addEventListener('click', loadArtifacts);
+        document.getElementById('createReleaseModal')?.addEventListener('show.bs.modal', () => { loadArtifacts(); releasePicker?.reset(); });
+    }
 
     let detailGeneration = 0;
     const element = (tag, className, text) => {
@@ -473,11 +486,9 @@ else
 
     if (artifactSelect) {
         artifactSelect.addEventListener('change', () => {
-            updateNodeVisibility();
             updateStrategyAvailability();
         });
     }
-    updateNodeVisibility();
     updateStrategyAvailability();
 })();
 </script>

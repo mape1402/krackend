@@ -40,12 +40,21 @@ public sealed class RuntimeNodeCatalogTests
         await repository.SetStatus(ids[0], RuntimeNodeStatus.Enabled);
         await repository.SetStatus(ids[1], RuntimeNodeStatus.Enabled);
         await repository.SoftDelete(ids[1]);
+        context.OrchestrationAllowedRuntimeNodes.AddRange(
+            new OrchestrationAllowedRuntimeNodeEntity { Id = Id.New(), OrchestrationDefinitionId = "sales", RuntimeNodeId = ids[0], CreatedBy = "test" },
+            new OrchestrationAllowedRuntimeNodeEntity { Id = Id.New(), OrchestrationDefinitionId = "sales", RuntimeNodeId = ids[1], CreatedBy = "test" },
+            new OrchestrationAllowedRuntimeNodeEntity { Id = Id.New(), OrchestrationDefinitionId = "sales", RuntimeNodeId = ids[2], CreatedBy = "test" });
+        await context.SaveChangesAsync();
 
         var result = await repository.SearchEnabled(new PagedSettings(1, 1, [], []), "Node", "displayName", false);
         Assert.Equal(1, result.TotalRows);
         Assert.Equal(ids[0], Assert.Single(result.Rows).Id);
         var service = new RuntimeNodeApplicationService(repository, new DistributionEnvironmentRepository(context, Substitute.For<ISieveProcessor>()));
         Assert.Single((await service.SearchEnabled(new ApplicationPagedSettings { PageNumber = 1, PageSize = 25 }, "Node", "displayName", false)).Rows);
+        Assert.Equal(ids[0], Assert.Single((await repository.SearchAllowed(new PagedSettings(1, 1, [], []), "sales", "Node")).Rows).Id);
+        Assert.Empty((await repository.SearchAllowed(null!, "other", "Node")).Rows);
+        Assert.Empty((await repository.SearchAllowed(null!, "sales", "missing")).Rows);
+        Assert.Single((await service.SearchAllowed(new ApplicationPagedSettings { PageNumber = 1, PageSize = 25 }, "sales", "Node")).Rows);
     }
 
     [Theory]

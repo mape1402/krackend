@@ -76,4 +76,6 @@ public interface IRuntimeNodeRepository
         => throw new NotSupportedException("The configured runtime node storage does not support catalog search.");
     Task<PagedResult<RuntimeNode>> SearchEnabled(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured runtime node storage does not support enabled-node search.");
+    Task<PagedResult<RuntimeNode>> SearchAllowed(PagedSettings settings, string orchestrationId, string search, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured runtime node storage does not support allowed-node search.");
 }

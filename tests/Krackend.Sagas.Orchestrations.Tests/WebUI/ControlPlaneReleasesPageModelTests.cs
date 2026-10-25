@@ -84,7 +84,7 @@ public sealed class ControlPlaneReleasesPageModelTests
     }
 
     [Fact]
-    public async Task OnGetLoadsRowsArtifactsRuntimeNodesTargetsAndPoliciesForSelectedOrchestration()
+    public async Task OnGetLoadsOnlySelectedOrchestration()
     {
         var fixture = new Fixture();
         fixture.OrchestrationId = "sales.sale.created";
@@ -93,18 +93,42 @@ public sealed class ControlPlaneReleasesPageModelTests
 
         await page.OnGetAsync(CancellationToken.None);
 
-        Assert.Single(page.Rows);
-        Assert.Equal("release-sales", page.Rows.Single().Id);
-        Assert.Single(page.SelectedArtifacts);
-        Assert.Equal("artifact-sales", page.SelectedArtifacts.Single().Id);
-        Assert.Single(page.RuntimeNodes);
-        Assert.Equal("runtime-enabled", page.RuntimeNodes.Single().Id);
         Assert.Equal("Sales Sale Created", page.SelectedOrchestration!.Name);
-        Assert.True(page.ReleaseTargetByReleaseAndNode.ContainsKey("release-sales|runtime-enabled"));
-        Assert.Equal(["runtime-enabled"], page.AllowedNodeIdsByOrchestrationId["sales.sale.created"]);
-        Assert.Equal(1, page.GetSummary("sales.sale.created").ReleaseCount);
-        Assert.NotNull(page.GetSummary("sales.sale.created").LatestCreatedAtUtc);
-        Assert.Equal(0, page.GetSummary("missing").ReleaseCount);
+        await fixture.ReleaseService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+        await fixture.ArtifactService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+        await fixture.RuntimeNodeService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+        await fixture.ReleaseTargetService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ArtifactOptionsSearchInStorageWithNormalizedPage()
+    {
+        var fixture = new Fixture();
+        fixture.ArtifactService.Search(Arg.Any<ApplicationPagedSettings>(), "sales", "stock", "created", true, Arg.Any<CancellationToken>())
+            .Returns(Page(new ArtifactModel { Id = "artifact", ArtifactType = "new", VersionNumber = "1.0.0" }));
+        var page = fixture.CreatePage();
+        Assert.IsType<BadRequestResult>(await page.OnGetArtifactOptionsAsync("", cancellationToken: CancellationToken.None));
+        Assert.IsType<JsonResult>(await page.OnGetArtifactOptionsAsync("sales", 0, " stock ", CancellationToken.None));
+        await fixture.ArtifactService.Received(1).Search(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 25), "sales", "stock", "created", true, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task NodeOptionsUseTheAppropriatePagedStorageQuery(bool allowedOnly)
+    {
+        var fixture = new Fixture();
+        fixture.RuntimeNodeService.SearchAllowed(Arg.Any<ApplicationPagedSettings>(), "sales", "node", Arg.Any<CancellationToken>())
+            .Returns(Page(new RuntimeNodeModel { Id = "node", Name = "Node", Code = "node" }));
+        fixture.RuntimeNodeService.SearchEnabled(Arg.Any<ApplicationPagedSettings>(), "node", "name", false, Arg.Any<CancellationToken>())
+            .Returns(Page(new RuntimeNodeModel { Id = "node", Name = "Node", Code = "node" }));
+        var page = fixture.CreatePage();
+        Assert.IsType<JsonResult>(await page.OnGetNodeOptionsAsync("sales", allowedOnly, 0, " node ", CancellationToken.None));
+        if (allowedOnly)
+            await fixture.RuntimeNodeService.Received(1).SearchAllowed(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 25), "sales", "node", Arg.Any<CancellationToken>());
+        else
+            await fixture.RuntimeNodeService.Received(1).SearchEnabled(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 25), "node", "name", false, Arg.Any<CancellationToken>());
+        Assert.IsType<BadRequestResult>(await page.OnGetNodeOptionsAsync("", true, cancellationToken: CancellationToken.None));
     }
 
     [Fact]
@@ -233,8 +257,8 @@ public sealed class ControlPlaneReleasesPageModelTests
     public async Task OnPostCreateRejectsRolloutForLifecycleArtifactBeforeCallingApplicationService()
     {
         var fixture = new Fixture();
-        fixture.ArtifactService.GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
-            .Returns(Page(new ArtifactModel
+        fixture.ArtifactService.GetById("artifact-deprecated", Arg.Any<CancellationToken>())
+            .Returns(new ArtifactModel
             {
                 Id = "artifact-deprecated",
                 OrchestrationDefinitionId = "sales.sale.created",
@@ -250,7 +274,7 @@ public sealed class ControlPlaneReleasesPageModelTests
                 SourceVersion = "1.0.0",
                 Checksum = "checksum-deprecated",
                 CreatedAtUtc = DateTime.UtcNow
-            }));
+            });
         var page = fixture.CreatePage();
         page.Input = new ReleasesIndexModel.ReleaseInput
         {
@@ -296,8 +320,8 @@ public sealed class ControlPlaneReleasesPageModelTests
     {
         var fixture = new Fixture();
         CreateReleaseInput? captured = null;
-        fixture.ArtifactService.GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
-            .Returns(Page(new ArtifactModel
+        fixture.ArtifactService.GetById("artifact-new", Arg.Any<CancellationToken>())
+            .Returns(new ArtifactModel
             {
                 Id = "artifact-new",
                 OrchestrationDefinitionId = "sales.sale.created",
@@ -313,7 +337,7 @@ public sealed class ControlPlaneReleasesPageModelTests
                 SourceVersion = "1.0.1",
                 Checksum = "checksum-new",
                 CreatedAtUtc = DateTime.UtcNow
-            }));
+            });
         fixture.ReleaseService
             .Create(Arg.Do<CreateReleaseInput>(input => captured = input), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult("release-new"));
@@ -487,6 +511,10 @@ public sealed class ControlPlaneReleasesPageModelTests
                 .Returns(Page(
                     Artifact("artifact-sales", "sales.sale.created", DateTime.UtcNow),
                     Artifact("artifact-other", "other.orchestration", DateTime.UtcNow.AddMinutes(1))));
+            ArtifactService.GetById("artifact-sales", Arg.Any<CancellationToken>())
+                .Returns(Artifact("artifact-sales", "sales.sale.created", DateTime.UtcNow));
+            PolicyService.GetOrchestration("sales.sale.created", Arg.Any<CancellationToken>())
+                .Returns(new OrchestrationPolicyDefinitionModel { Id = "sales.sale.created", Key = "sales.sale.created", Name = "Sales Sale Created", IsActive = true });
             RuntimeNodeService.GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
                 .Returns(Page(
                     RuntimeNode("runtime-enabled", RuntimeNodeStatus.Enabled, false),

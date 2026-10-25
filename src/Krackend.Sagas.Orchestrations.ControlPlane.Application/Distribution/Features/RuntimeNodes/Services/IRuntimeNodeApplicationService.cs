@@ -45,6 +45,8 @@ public interface IRuntimeNodeApplicationService
     /// <summary>Searches enabled runtime nodes without loading disabled nodes.</summary>
     Task<ApplicationPagedResult<RuntimeNodeModel>> SearchEnabled(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured runtime node storage does not support enabled-node search.");
+    Task<ApplicationPagedResult<RuntimeNodeModel>> SearchAllowed(ApplicationPagedSettings settings, string orchestrationId, string search, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured runtime node storage does not support allowed-node search.");
 
     /// <summary>Gets a runtime node directly by identifier.</summary>
     Task<RuntimeNodeModel> GetById(string runtimeNodeId, CancellationToken cancellationToken = default)

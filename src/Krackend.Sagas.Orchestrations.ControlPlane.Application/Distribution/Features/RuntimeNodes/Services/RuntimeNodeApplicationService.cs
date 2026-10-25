@@ -133,6 +133,9 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
         return MapPage(result);
     }
 
+    public async Task<ApplicationPagedResult<RuntimeNodeModel>> SearchAllowed(ApplicationPagedSettings settings, string orchestrationId, string search, CancellationToken cancellationToken = default)
+        => MapPage(await _repository.SearchAllowed(new PagedSettings(settings.PageNumber, settings.PageSize, [], []), orchestrationId, search, cancellationToken));
+
     public async Task<RuntimeNodeModel> GetById(string runtimeNodeId, CancellationToken cancellationToken = default)
         => Map(await _repository.GetById(new Id(Ulid.Parse(runtimeNodeId)), cancellationToken));
 

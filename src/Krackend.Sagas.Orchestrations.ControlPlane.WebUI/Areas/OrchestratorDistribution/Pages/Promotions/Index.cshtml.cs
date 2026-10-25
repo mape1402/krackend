@@ -8,12 +8,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 
 public sealed class IndexModel : PageModel
 {
-    private const int ReleasePageSize = 100;
-    private const int ArtifactPageSize = 300;
-    private const int RuntimeNodePageSize = 200;
-    private const int ReleaseTargetPageSize = 1000;
-    private const int MaxPageReads = 50;
-
     private readonly IReleaseApplicationService _promotionService;
     private readonly IReleaseTargetApplicationService _releaseTargetService;
     private readonly IArtifactApplicationService _artifactService;
@@ -37,27 +31,10 @@ public sealed class IndexModel : PageModel
         _deliveryService = deliveryService;
     }
 
-    public IReadOnlyCollection<ReleaseModel> Rows { get; private set; } = Array.Empty<ReleaseModel>();
-    public IReadOnlyCollection<OrchestrationPolicyDefinitionModel> Orchestrations { get; private set; } = Array.Empty<OrchestrationPolicyDefinitionModel>();
-    public IReadOnlyCollection<ArtifactModel> Artifacts { get; private set; } = Array.Empty<ArtifactModel>();
-    public IReadOnlyCollection<ArtifactModel> SelectedArtifacts { get; private set; } = Array.Empty<ArtifactModel>();
-    public IReadOnlyCollection<RuntimeNodeModel> RuntimeNodes { get; private set; } = Array.Empty<RuntimeNodeModel>();
-    public IReadOnlyDictionary<string, ReleaseTargetModel> ReleaseTargetByReleaseAndNode { get; private set; } =
-        new Dictionary<string, ReleaseTargetModel>(StringComparer.Ordinal);
-    public IReadOnlyDictionary<string, IReadOnlyCollection<string>> AllowedNodeIdsByOrchestrationId { get; private set; } =
-        new Dictionary<string, IReadOnlyCollection<string>>(StringComparer.Ordinal);
-    public IReadOnlyDictionary<string, ReleaseOrchestrationSummary> ReleaseSummaryByOrchestrationId { get; private set; } =
-        new Dictionary<string, ReleaseOrchestrationSummary>(StringComparer.Ordinal);
     [BindProperty(SupportsGet = true)] public string OrchestrationId { get; set; } = string.Empty;
     public OrchestrationPolicyDefinitionModel SelectedOrchestration { get; private set; } = null!;
     [BindProperty] public ReleaseInput Input { get; set; } = new();
     [BindProperty] public AllowedNodesInput AllowedNodes { get; set; } = new();
-
-    public ReleaseOrchestrationSummary GetSummary(string orchestrationId)
-        => !string.IsNullOrWhiteSpace(orchestrationId) &&
-           ReleaseSummaryByOrchestrationId.TryGetValue(orchestrationId, out var summary)
-            ? summary
-            : ReleaseOrchestrationSummary.Empty;
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
@@ -198,10 +175,10 @@ public sealed class IndexModel : PageModel
             return RedirectToPage();
         }
 
-        var selectedArtifact = (await LoadAll(
-                settings => _artifactService.GetAll(settings, cancellationToken),
-                ArtifactPageSize))
-            .FirstOrDefault(x => string.Equals(x.Id, Input.ArtifactId, StringComparison.Ordinal));
+        ArtifactModel selectedArtifact = null;
+        try { selectedArtifact = await _artifactService.GetById(Input.ArtifactId, cancellationToken); }
+        catch (FormatException) { }
+        catch (ArgumentException) { }
         if (selectedArtifact is null || !string.Equals(selectedArtifact.OrchestrationDefinitionId, Input.OrchestrationDefinitionId, StringComparison.Ordinal))
         {
             ModelState.AddModelError(string.Empty, "Selected artifact does not belong to the selected orchestration.");
@@ -289,6 +266,31 @@ public sealed class IndexModel : PageModel
         return new JsonResult(new { orchestrationId, runtimeNodeIds = policy.RuntimeNodeIds });
     }
 
+    public async Task<IActionResult> OnGetArtifactOptionsAsync(string orchestrationId, int page = 1, string search = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
+        try
+        {
+            var result = await _artifactService.Search(new ApplicationPagedSettings { PageNumber = Math.Max(1, page), PageSize = 25 }, orchestrationId, search?.Trim() ?? string.Empty, "created", true, cancellationToken);
+            return new JsonResult(new { items = result.Rows.Select(x => new { x.Id, x.ArtifactType, x.VersionNumber, x.VersionLabel }), hasMore = result.PageNumber < result.TotalPages });
+        }
+        catch (NotSupportedException) { return StatusCode(503); }
+    }
+
+    public async Task<IActionResult> OnGetNodeOptionsAsync(string orchestrationId, bool allowedOnly = false, int page = 1, string search = null, CancellationToken cancellationToken = default)
+    {
+        if (allowedOnly && string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
+        try
+        {
+            var settings = new ApplicationPagedSettings { PageNumber = Math.Max(1, page), PageSize = 25 };
+            var result = allowedOnly
+                ? await _runtimeService.SearchAllowed(settings, orchestrationId, search?.Trim() ?? string.Empty, cancellationToken)
+                : await _runtimeService.SearchEnabled(settings, search?.Trim() ?? string.Empty, "name", false, cancellationToken);
+            return new JsonResult(new { items = result.Rows.Select(x => new { x.Id, x.Name, x.Code }), hasMore = result.PageNumber < result.TotalPages });
+        }
+        catch (NotSupportedException) { return StatusCode(503); }
+    }
+
     public async Task<IActionResult> OnPostSaveAllowedNodesAsync(CancellationToken cancellationToken = default)
     {
         ModelState.Remove("Input.OrchestrationDefinitionId");
@@ -316,85 +318,12 @@ public sealed class IndexModel : PageModel
 
     private async Task LoadPageData(CancellationToken cancellationToken)
     {
-        var allRows = await LoadAll(
-            settings => _promotionService.GetAll(settings, cancellationToken),
-            ReleasePageSize);
-        Orchestrations = await _policyService.GetOrchestrations(cancellationToken);
-        Artifacts = await LoadAll(
-            settings => _artifactService.GetAll(settings, cancellationToken),
-            ArtifactPageSize);
-        ReleaseSummaryByOrchestrationId = allRows
-            .Where(x => !string.IsNullOrWhiteSpace(x.OrchestrationDefinitionId))
-            .GroupBy(x => x.OrchestrationDefinitionId, StringComparer.Ordinal)
-            .ToDictionary(
-                g => g.Key,
-                g => new ReleaseOrchestrationSummary(g.Count(), g.Max(x => x.CreatedAtUtc)),
-                StringComparer.Ordinal);
-
-        if (string.IsNullOrWhiteSpace(OrchestrationId))
+        var id = !string.IsNullOrWhiteSpace(OrchestrationId) ? OrchestrationId : Input.OrchestrationDefinitionId;
+        if (!string.IsNullOrWhiteSpace(id))
         {
-            Rows = Array.Empty<ReleaseModel>();
-            SelectedArtifacts = Array.Empty<ArtifactModel>();
+            OrchestrationId = id;
+            SelectedOrchestration = await _policyService.GetOrchestration(id, cancellationToken);
         }
-        else
-        {
-            SelectedOrchestration = Orchestrations.FirstOrDefault(x => string.Equals(x.Id, OrchestrationId, StringComparison.Ordinal));
-            Rows = allRows
-                .Where(x => string.Equals(x.OrchestrationDefinitionId, OrchestrationId, StringComparison.Ordinal))
-                .ToArray();
-            SelectedArtifacts = Artifacts
-                .Where(x => string.Equals(x.OrchestrationDefinitionId, OrchestrationId, StringComparison.Ordinal))
-                .OrderByDescending(x => x.CreatedAtUtc)
-                .ToArray();
-        }
-        RuntimeNodes = (await LoadAll(
-                settings => _runtimeService.GetAll(settings, cancellationToken),
-                RuntimeNodePageSize))
-            .Where(x => !x.IsDeleted && string.Equals(x.Status, RuntimeNodeStatus.Enabled.ToString(), StringComparison.Ordinal))
-            .ToArray();
-        var releaseIds = Rows.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
-        var releaseTargets = (await LoadAll(
-                settings => _releaseTargetService.GetAll(settings, cancellationToken),
-                ReleaseTargetPageSize))
-            .Where(x => !string.IsNullOrWhiteSpace(x.ReleaseId) && releaseIds.Contains(x.ReleaseId))
-            .ToArray();
-        ReleaseTargetByReleaseAndNode = releaseTargets
-            .GroupBy(x => $"{x.ReleaseId}|{x.RuntimeNodeId}", StringComparer.Ordinal)
-            .ToDictionary(
-                g => g.Key,
-                g => g.OrderByDescending(x => x.AssignedAtUtc).First(),
-                StringComparer.Ordinal);
-
-        var orchestrationIds = Artifacts
-            .Select(x => x.OrchestrationDefinitionId)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        AllowedNodeIdsByOrchestrationId = await _policyService.GetByOrchestrationIds(orchestrationIds, cancellationToken);
-    }
-
-    private static async Task<TModel[]> LoadAll<TModel>(
-        Func<ApplicationPagedSettings, Task<ApplicationPagedResult<TModel>>> loadPage,
-        int pageSize)
-    {
-        var rows = new List<TModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
-        {
-            var result = await loadPage(new ApplicationPagedSettings
-            {
-                PageNumber = pageNumber,
-                PageSize = pageSize
-            });
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
-        }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-        return rows.ToArray();
     }
 
     public sealed class ReleaseInput
