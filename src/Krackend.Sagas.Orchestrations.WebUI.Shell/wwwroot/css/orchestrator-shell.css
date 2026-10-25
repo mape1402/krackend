@@ -50,7 +50,7 @@ html, body { height: 100%; margin: 0; padding: 0; }
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans, "Inter", "Aptos", "Segoe UI", sans-serif);
     font-size: 0.875rem;
     line-height: 1.6;
     color: var(--krackend-text, #171a2f);
