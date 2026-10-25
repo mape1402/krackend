@@ -1,24 +1,49 @@
 @page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Assignments.IndexModel
 @{ ViewData["Title"] = "Assignments"; }
-<h1>Assignments</h1>
-<section class="od-panel mb-3">
-<table class="table table-sm"><thead><tr><th>Id</th><th>Runtime</th><th>Release</th><th>Status</th><th>Activation</th><th></th></tr></thead><tbody>
-@foreach (var item in Model.Rows) {
-<tr>
-<td>@item.Id</td><td>@item.RuntimeNodeId</td><td>@item.ArtifactId</td><td>@item.Status</td><td>@item.ActivationStatus</td>
-<td><a class="btn btn-sm btn-outline-secondary" asp-page="/Assignments/Index" asp-route-assignmentId="@item.Id" asp-area="OrchestratorDistribution">Attempts</a></td>
-</tr>
-}
-</tbody></table>
-</section>
-@if (Model.Attempts.Any())
-{
-<section class="od-panel">
-<h3>Attempts for @Model.AssignmentId</h3>
-<table class="table table-sm"><thead><tr><th>Action</th><th>By</th><th>Start</th><th>Success</th><th>Error</th></tr></thead><tbody>
-@foreach (var attempt in Model.Attempts){ <tr><td>@attempt.Action</td><td>@attempt.InitiatedBy</td><td>@attempt.StartedAtUtc</td><td>@attempt.Succeeded</td><td>@attempt.ErrorMessage</td></tr> }
-</tbody></table>
-</section>
-}
 
+<div class="od-page-head">
+    <div><h1 class="od-page-title">Assignments</h1><p class="od-page-subtitle">Release delivery to runtime nodes.</p></div>
+</div>
+<section class="od-catalog" data-catalog="assignments" data-label="assignments" data-source="@Url.Page(null, "List")">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-catalog-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+            Id = "assignments-grid", AriaLabel = "assignments", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("runtime", "Runtime", false), new("release", "Release", false), new("status", "Status"), new("activation", "Activation", false), new("assigned", "Assigned"), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-catalog-cards hidden>
+        <div class="od-catalog-filters">
+            <label class="z-search-field"><span aria-hidden="true">⌕</span><input type="search" data-catalog-search aria-label="Search assignments" placeholder="Search assignments" autocomplete="off" /></label>
+            <select class="form-select" data-catalog-sort aria-label="Sort assignments">
+                <option value="assigned:desc">Newest first</option><option value="assigned">Oldest first</option><option value="status">Status</option>
+            </select>
+        </div>
+        <div class="od-grid" data-catalog-card-items></div>
+        <p class="od-empty" data-catalog-empty hidden>No matching assignments.</p>
+        <p data-catalog-status aria-live="polite"></p>
+        <div data-catalog-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+    </div>
+</section>
+@if (!string.IsNullOrWhiteSpace(Model.AssignmentId))
+{
+    <section class="od-panel mt-3" aria-label="Assignment attempts">
+        <h2 class="h5">Attempts for @Model.AssignmentId</h2>
+        @if (Model.Attempts.Count == 0) { <p>No attempts found.</p> }
+        else
+        {
+            <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Action</th><th>By</th><th>Start</th><th>Success</th><th>Error</th></tr></thead><tbody>
+            @foreach (var attempt in Model.Attempts) { <tr><td>@attempt.Action</td><td>@attempt.InitiatedBy</td><td>@attempt.StartedAtUtc</td><td>@attempt.Succeeded</td><td>@attempt.ErrorMessage</td></tr> }
+            </tbody></table></div>
+        }
+    </section>
+}
+@section Scripts { <script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script> }

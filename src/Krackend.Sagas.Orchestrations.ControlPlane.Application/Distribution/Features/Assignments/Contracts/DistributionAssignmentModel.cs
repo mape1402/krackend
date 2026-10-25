@@ -4,6 +4,7 @@ public sealed class ReleaseTargetModel
 {
     public string Id { get; set; }
     public string RuntimeNodeId { get; set; }
+    public string RuntimeNodeName { get; set; }
     public string ArtifactId { get; set; }
     public string ReleaseId { get; set; }
     public string RolloutGroup { get; set; }

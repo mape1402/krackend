@@ -92,6 +92,12 @@ public sealed class ReleaseCatalogTests
         Assert.Empty(await service.GetSummaries([]));
         Assert.Single((await service.GetById(row.Id.ToString())).Targets);
         var targetService = new ReleaseTargetApplicationService(targetRepository);
+        var assignments = await targetService.Search(1, 1, "Node", "status", false);
+        Assert.Equal(1, assignments.TotalRows);
+        Assert.Equal(nodeId.ToString(), Assert.Single(assignments.Rows).RuntimeNodeId);
+        Assert.Equal("Node", Assert.Single(assignments.Rows).RuntimeNodeName);
+        Assert.Single((await targetService.Search(1, 1, releaseWithTarget.ToString(), "assigned", true)).Rows);
+        Assert.Empty((await targetService.Search(1, 1, "not-found", "assigned", false)).Rows);
         Assert.Equal(releaseWithTarget.ToString(), Assert.Single(await targetService.GetByRelease(releaseWithTarget.ToString())).ReleaseId);
         Assert.Empty(await targetService.GetByRelease(Id.New().ToString()));
         Assert.Equal(releaseWithTarget.ToString(), Assert.Single(await targetService.GetByReleases([releaseWithTarget.ToString(), Id.New().ToString()])).ReleaseId);

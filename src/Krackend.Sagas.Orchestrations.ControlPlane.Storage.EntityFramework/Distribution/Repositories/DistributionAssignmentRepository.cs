@@ -152,6 +152,37 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
         return new PagedResult<ReleaseTarget>(pagedSettings.PageNumber, totalPages, totalRows, pagedSettings.PageSize, rows.Select(Map).ToArray());
     }
 
+    public async Task<PagedResult<ReleaseTargetCatalogItem>> Search(int pageNumber, int pageSize, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.ReleaseTargets.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            var hasId = Ulid.TryParse(term, out var ulid);
+            var id = hasId ? new Id(ulid) : default;
+            var hasStatus = Enum.TryParse<ReleaseTargetStatus>(term, true, out var status);
+            query = query.Where(x => (hasId && (x.Id == id || x.RuntimeNodeId == id || x.ArtifactId == id || x.ReleaseId == id))
+                || (hasStatus && x.Status == status)
+                || (x.RolloutGroup != null && x.RolloutGroup.Contains(term))
+                || (x.CorrelationId != null && x.CorrelationId.Contains(term))
+                || (x.RuntimeNode != null && (x.RuntimeNode.Name.Contains(term) || x.RuntimeNode.Code.Contains(term))));
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var page = Math.Max(1, pageNumber);
+        var size = Math.Clamp(pageSize, 1, 100);
+        var ordered = (sort, descending) switch
+        {
+            ("status", false) => query.OrderBy(x => x.Status),
+            ("status", true) => query.OrderByDescending(x => x.Status),
+            ("assigned", false) => query.OrderBy(x => x.AssignedAtUtc),
+            _ => query.OrderByDescending(x => x.AssignedAtUtc)
+        };
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size)
+            .Select(x => new { Target = x, RuntimeNodeName = x.RuntimeNode.Name }).ToArrayAsync(cancellationToken);
+        return new PagedResult<ReleaseTargetCatalogItem>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size,
+            rows.Select(x => new ReleaseTargetCatalogItem(Map(x.Target), x.RuntimeNodeName)).ToArray());
+    }
+
     public async Task<IReadOnlyCollection<ReleaseTarget>> GetByRelease(Id releaseId, CancellationToken cancellationToken = default)
     {
         var rows = await _dbContext.ReleaseTargets.AsNoTracking()

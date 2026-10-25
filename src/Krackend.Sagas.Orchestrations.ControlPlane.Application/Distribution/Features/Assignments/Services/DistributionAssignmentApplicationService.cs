@@ -39,6 +39,21 @@ public sealed class ReleaseTargetApplicationService : IReleaseTargetApplicationS
         }).ToArray();
     }
 
+    public async Task<ApplicationPagedResult<ReleaseTargetModel>> Search(int pageNumber, int pageSize, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.Search(pageNumber, pageSize, search, sort, descending, cancellationToken);
+        return new ApplicationPagedResult<ReleaseTargetModel>
+        {
+            PageNumber = result.PageNumber, PageSize = result.PageSize, TotalRows = (int)result.TotalRows,
+            TotalPages = result.TotalPages, Rows = result.Rows.Select(x =>
+            {
+                var item = MapTarget(x.Target);
+                item.RuntimeNodeName = x.RuntimeNodeName;
+                return item;
+            }).ToArray()
+        };
+    }
+
     public async Task<IReadOnlyCollection<ReleaseTargetModel>> GetByRelease(string releaseId, CancellationToken cancellationToken = default)
     {
         var rows = await _repository.GetByRelease(new Id(Ulid.Parse(releaseId)), cancellationToken);

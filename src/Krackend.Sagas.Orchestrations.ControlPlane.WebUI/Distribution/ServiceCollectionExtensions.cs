@@ -41,6 +41,7 @@ public static class ServiceCollectionExtensions
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/RuntimeNodes/Index", $"{prefix}/runtime-nodes");
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/ArtifactReleases/Index", $"{prefix}/artifacts");
             options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Promotions/Index", $"{prefix}/releases");
+            options.Conventions.AddAreaPageRoute("OrchestratorDistribution", "/Assignments/Index", $"{prefix}/assignments");
         }
     }
 }
