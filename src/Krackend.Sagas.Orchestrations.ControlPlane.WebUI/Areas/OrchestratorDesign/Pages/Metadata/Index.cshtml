@@ -1,4 +1,6 @@
 @page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Metadata.IndexModel
 @{
     ViewData["Title"] = "Metadata";
@@ -12,68 +14,41 @@
     <button type="button" class="btn btn-primary js-open-payload-schema-designer" data-id="new">Create metadata</button>
 </div>
 
-@if (!Model.Rows.Any())
-{
-    <section class="od-panel">
-        <p class="od-empty">No metadata descriptors found.</p>
-    </section>
-}
-else
-{
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-grid od-metadata-grid"
-             data-od-infinite-grid
-             data-od-infinite-label="metadata descriptors"
-             data-od-infinite-initial-count="30"
-             data-od-infinite-batch-size="30">
-            @foreach (var item in Model.Rows.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                <article class="od-item-card od-metadata-card od-infinite-item">
-                    <div class="od-metadata-card-header">
-                        <div class="od-metadata-title-block">
-                            <h2 class="od-item-title" title="@item.DisplayName">@item.DisplayName</h2>
-                            <p class="od-item-meta od-metadata-key" title="@item.Key">@item.Key</p>
-                        </div>
-                        <div class="dropdown">
-                            <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li>
-                                    <button type="button"
-                                            class="dropdown-item js-open-payload-schema-designer"
-                                            data-id="@item.Id">
-                                        Design schema
-                                    </button>
-                                </li>
-                                <li><hr class="dropdown-divider" /></li>
-                                <li>
-                                    <form method="post"
-                                          asp-page-handler="Delete"
-                                          class="od-inline-form"
-                                          data-confirm="true"
-                                          data-confirm-title="Delete metadata"
-                                          data-confirm-message="Delete this metadata descriptor? Existing orchestration snapshots keep their copied schema."
-                                          data-confirm-accept="Delete"
-                                          data-confirm-type="warning"
-                                          data-orchestrator-busy="true"
-                                          data-busy-title="Deleting metadata"
-                                          data-busy-message="Design is removing the metadata descriptor.">
-                                        <input type="hidden" name="metadataDescriptorId" value="@item.Id" />
-                                        <button type="submit" class="dropdown-item text-danger">Delete metadata</button>
-                                    </form>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                    <p class="od-item-description od-metadata-description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
-                </article>
-            }
+<section class="od-catalog" data-catalog="metadata" data-label="metadata descriptors" data-source="@Url.Page(null, "List")">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-catalog-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        {
+            Id = "metadata-grid", AriaLabel = "metadata descriptors", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("displayName", "Name"), new("key", "Key"), new("sourceKey", "Source key"), new("description", "Description"), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-catalog-cards hidden>
+        <div class="od-catalog-filters">
+            <label class="z-search-field"><span aria-hidden="true">⌕</span><input type="search" data-catalog-search aria-label="Search metadata descriptors" placeholder="Search metadata" autocomplete="off" /></label>
+            <select class="form-select" data-catalog-sort aria-label="Sort metadata descriptors">
+                <option value="displayName">Name: A to Z</option><option value="displayName:desc">Name: Z to A</option>
+                <option value="key">Key: A to Z</option><option value="key:desc">Key: Z to A</option>
+                <option value="sourceKey">Source key</option>
+            </select>
         </div>
-        <div class="od-infinite-scroll-status" data-od-infinite-status>
-            Showing <span data-od-infinite-count>@Math.Min(30, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> metadata descriptors
-        </div>
-        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-    </section>
-}
+        <div class="od-grid od-metadata-grid" data-catalog-card-items></div>
+        <p class="od-empty" data-catalog-empty hidden>No matching metadata descriptors.</p>
+        <p data-catalog-status aria-live="polite"></p>
+        <div data-catalog-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+    </div>
+    <form method="post" asp-page-handler="Delete" data-catalog-action-form data-confirm="true"
+          data-confirm-title="Delete metadata" data-confirm-message="Delete this metadata descriptor? Existing orchestration snapshots keep their copied schema."
+          data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true"
+          data-busy-title="Deleting metadata" data-busy-message="Design is removing the metadata descriptor.">
+        <input type="hidden" name="metadataDescriptorId" />
+    </form>
+</section>
 
 @section Scripts {
 <script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.3"></script>
@@ -381,8 +356,9 @@ else
         }
     };
 
-    document.querySelectorAll('.js-open-payload-schema-designer').forEach(button => {
-        button.addEventListener('click', () => openPayloadSchemaDesigner(button.getAttribute('data-id')));
+    document.addEventListener('click', event => {
+        const button = event.target.closest('.js-open-payload-schema-designer');
+        if (button) openPayloadSchemaDesigner(button.getAttribute('data-id'));
     });
 
     window.addEventListener('message', (event) => {
@@ -397,4 +373,5 @@ else
     });
 })();
 </script>
+<script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 }

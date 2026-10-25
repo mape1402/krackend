@@ -38,4 +38,32 @@ public sealed class ControlPlaneDomainsPagingIntegrationTests
         Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
         await service.Received(1).GetAll(Arg.Is<GetDomainsQuery>(q => q.PagedSettings.PageNumber == 2), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task MetadataPageQueryUsesQueryStringInsteadOfRazorRoute()
+    {
+        var service = Substitute.For<IMetadataDescriptorApplicationService>();
+        service.GetAll(Arg.Any<GetMetadataDescriptorsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var settings = call.Arg<GetMetadataDescriptorsQuery>().PagedSettings;
+                return Task.FromResult(new ApplicationPagedResult<MetadataDescriptorModel>(settings.PageNumber, 2, 30,
+                    settings.PageSize, [new MetadataDescriptorModel { Id = $"page-{settings.PageNumber}", Key = "test", DisplayName = "Test" }]));
+            });
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(service);
+        builder.Services.AddRazorPages(options =>
+            options.Conventions.AddAreaPageRoute("OrchestratorDesign", "/Metadata/Index", "metadata"))
+            .AddApplicationPart(typeof(DomainsIndexModel).Assembly);
+        await using var app = builder.Build();
+        app.MapRazorPages();
+        await app.StartAsync();
+
+        using var response = await app.GetTestClient().GetFromJsonAsync<System.Text.Json.JsonDocument>("/metadata?handler=List&page=2&pageSize=25");
+        Assert.NotNull(response);
+        Assert.Equal("page-2", response.RootElement.GetProperty("items")[0].GetProperty("id").GetString());
+        Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
+        await service.Received(1).GetAll(Arg.Is<GetMetadataDescriptorsQuery>(q => q.PagedSettings.PageNumber == 2), Arg.Any<CancellationToken>());
+    }
 }

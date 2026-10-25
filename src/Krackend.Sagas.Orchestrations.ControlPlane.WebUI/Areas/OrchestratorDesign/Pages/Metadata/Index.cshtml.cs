@@ -9,8 +9,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class IndexModel : PageModel
 {
-    private const int PageSize = 500;
-    private const int MaxPageReads = 50;
+    private const int PageSize = 25;
 
     private readonly IMetadataDescriptorApplicationService _service;
 
@@ -24,32 +23,41 @@ public sealed class IndexModel : PageModel
     }
 
     /// <summary>
-    /// Gets listed metadata descriptors.
-    /// </summary>
-    public IReadOnlyCollection<MetadataDescriptorModel> Rows { get; private set; } = Array.Empty<MetadataDescriptorModel>();
-
-    /// <summary>
     /// Handles page get request.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Loads a filtered page without transmitting schema snapshots to the catalog.</summary>
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = PageSize,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
     {
-        var rows = new List<MetadataDescriptorModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
+        var field = sort switch
         {
-            var result = await _service.GetAll(
-                new GetMetadataDescriptorsQuery(new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize }),
-                cancellationToken);
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
-        }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-        Rows = rows.ToArray();
+            "key" => "key",
+            "sourceKey" => "sourceKey",
+            "description" => "description",
+            _ => "displayName"
+        };
+        var sorts = new List<ApplicationSort> { new(field, descending) };
+        if (field != "key") sorts.Add(new ApplicationSort("key", false));
+        var result = await _service.GetAll(new GetMetadataDescriptorsQuery(new ApplicationPagedSettings
+        {
+            PageNumber = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, 100), Sorts = sorts
+        }, search?.Trim() ?? string.Empty), cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Rows.Select(row => new
+            {
+                id = row.Id, key = row.Key, sourceKey = row.SourceKey,
+                displayName = row.DisplayName, description = row.Description
+            }),
+            totalCount = result.TotalRows,
+            hasMore = result.PageNumber < result.TotalPages,
+            search = search?.Trim() ?? string.Empty,
+            sort = sort ?? string.Empty,
+            descending
+        });
     }
 
     /// <summary>

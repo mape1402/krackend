@@ -1,16 +1,20 @@
 (() => {
-    const root = document.querySelector('[data-domain-catalog]');
+    const root = document.querySelector('[data-catalog]');
     if (!root) return;
-    const grid = root.querySelector('#domains-grid');
-    const gridView = root.querySelector('[data-domain-grid]');
-    const cardView = root.querySelector('[data-domain-cards]');
-    const cards = root.querySelector('[data-domain-card-items]');
-    const search = root.querySelector('[data-domain-search]');
-    const status = root.querySelector('[data-domain-status]');
-    const empty = root.querySelector('[data-domain-empty]');
-    const more = root.querySelector('[data-domain-more]');
-    const form = root.querySelector('[data-domain-status-form]');
-    const sentinel = root.querySelector('[data-domain-sentinel]');
+    const kind = root.dataset.catalog;
+    const label = root.dataset.label;
+    const preferenceKey = `krackend-${kind}-view`;
+    const grid = root.querySelector('[data-z-data-grid]');
+    const gridView = root.querySelector('[data-catalog-grid]');
+    const cardView = root.querySelector('[data-catalog-cards]');
+    const cards = root.querySelector('[data-catalog-card-items]');
+    const search = root.querySelector('[data-catalog-search]');
+    const sort = root.querySelector('[data-catalog-sort]');
+    const status = root.querySelector('[data-catalog-status]');
+    const empty = root.querySelector('[data-catalog-empty]');
+    const more = root.querySelector('[data-catalog-more]');
+    const form = root.querySelector('[data-catalog-action-form]');
+    const sentinel = root.querySelector('[data-catalog-sentinel]');
     const gridSearch = grid.querySelector('[data-z-grid-search]');
     const records = new Map();
     let page = 0, hasMore = false, request = null, searchTimer = 0, generation = 0;
@@ -29,6 +33,35 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'metadata') {
+            const group = document.createElement('div');
+            group.className = 'dropdown';
+            const toggle = button('bi-three-dots-vertical', `Actions for ${item.displayName}`);
+            toggle.dataset.bsToggle = 'dropdown';
+            toggle.setAttribute('aria-expanded', 'false');
+            const menu = document.createElement('ul');
+            menu.className = 'dropdown-menu dropdown-menu-end';
+            const designItem = document.createElement('li');
+            const design = document.createElement('button');
+            design.type = 'button';
+            design.className = 'dropdown-item js-open-payload-schema-designer';
+            design.dataset.id = item.id;
+            design.textContent = 'Design schema';
+            designItem.append(design);
+            const deleteItem = document.createElement('li');
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'dropdown-item text-danger';
+            remove.textContent = 'Delete metadata';
+            remove.addEventListener('click', () => {
+                form.elements.metadataDescriptorId.value = item.id;
+                form.requestSubmit();
+            });
+            deleteItem.append(remove);
+            menu.append(designItem, deleteItem);
+            group.append(toggle, menu);
+            return group;
+        }
         const group = document.createElement('div');
         group.className = 'od-catalog-actions';
         const edit = button('bi-pencil', `Edit ${item.displayName}`);
@@ -79,14 +112,23 @@
         key.className = 'od-item-meta';
         key.textContent = item.key;
         identity.append(name, key);
+        if (item.sourceKey) {
+            const source = document.createElement('p');
+            source.className = 'od-item-meta';
+            source.textContent = `Source: ${item.sourceKey}`;
+            identity.append(source);
+        }
         top.append(identity, actions(item));
-        const badge = document.createElement('span');
-        badge.className = `od-status ${item.isActive ? 'od-status-active' : 'od-status-inactive'}`;
-        badge.textContent = item.status;
+        if (item.status) {
+            const badge = document.createElement('span');
+            badge.className = `od-status ${item.isActive ? 'od-status-active' : 'od-status-inactive'}`;
+            badge.textContent = item.status;
+            card.append(top, badge);
+        } else card.append(top);
         const description = document.createElement('p');
         description.className = 'od-item-description';
         description.textContent = item.description || 'No description.';
-        card.append(top, badge, description);
+        card.append(description);
         cards.append(card);
     };
     const load = async reset => {
@@ -101,15 +143,18 @@
         const currentGeneration = generation;
         const controller = new AbortController();
         request = controller;
-        status.textContent = 'Loading domains...';
+        status.textContent = `Loading ${label}...`;
         cardView.setAttribute('aria-busy', 'true');
         try {
             const url = new URL(root.dataset.source, location.href);
             url.searchParams.set('page', String(page + 1));
             url.searchParams.set('pageSize', '25');
             url.searchParams.set('search', search.value.trim());
+            const [sortField, direction] = sort.value.split(':');
+            url.searchParams.set('sort', sortField);
+            url.searchParams.set('descending', String(direction === 'desc'));
             const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
-            if (!response.ok) throw new Error('Unable to load domains.');
+            if (!response.ok) throw new Error(`Unable to load ${label}.`);
             const result = await response.json();
             if (generation !== currentGeneration) return;
             result.items.forEach(appendCard);
@@ -117,10 +162,10 @@
             hasMore = result.hasMore;
             empty.hidden = cards.childElementCount !== 0;
             more.hidden = !hasMore;
-            status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount} domains`;
+            status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount} ${label}`;
         } catch (error) {
             if (error.name !== 'AbortError') {
-                status.textContent = 'Unable to load domains. Please try again.';
+                status.textContent = `Unable to load ${label}. Please try again.`;
                 more.hidden = false;
                 hasMore = true;
             }
@@ -135,6 +180,7 @@
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => load(true), 200);
     });
+    sort.addEventListener('change', () => load(true));
     more.addEventListener('click', () => load(false));
     if ('IntersectionObserver' in window) {
         new IntersectionObserver(entries => {
@@ -142,12 +188,12 @@
         }, { rootMargin: '200px' }).observe(sentinel);
     }
     const setView = control => {
-        const showCards = control.dataset.domainView === 'cards';
+        const showCards = control.dataset.catalogView === 'cards';
         gridView.hidden = showCards;
         cardView.hidden = !showCards;
-        root.querySelectorAll('[data-domain-view]').forEach(item =>
+        root.querySelectorAll('[data-catalog-view]').forEach(item =>
             item.setAttribute('aria-pressed', String(item === control)));
-        try { localStorage.setItem('krackend-domains-view', control.dataset.domainView); } catch { /* Preference is optional. */ }
+        try { localStorage.setItem(preferenceKey, control.dataset.catalogView); } catch { /* Preference is optional. */ }
         if (showCards) {
             const changed = search.value !== gridSearch.value;
             search.value = gridSearch.value;
@@ -157,8 +203,8 @@
             gridSearch.dispatchEvent(new Event('input', { bubbles: true }));
         }
     };
-    root.querySelectorAll('[data-domain-view]').forEach(control => control.addEventListener('click', () => setView(control)));
+    root.querySelectorAll('[data-catalog-view]').forEach(control => control.addEventListener('click', () => setView(control)));
     try {
-        if (localStorage.getItem('krackend-domains-view') === 'cards') setView(root.querySelector('[data-domain-view="cards"]'));
+        if (localStorage.getItem(preferenceKey) === 'cards') setView(root.querySelector('[data-catalog-view="cards"]'));
     } catch { /* Preference is optional. */ }
 })();
