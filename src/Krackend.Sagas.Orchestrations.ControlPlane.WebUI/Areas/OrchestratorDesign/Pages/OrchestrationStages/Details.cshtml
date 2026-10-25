@@ -259,6 +259,7 @@
 
 @section Scripts {
 <script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.3"></script>
+<script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-buttermorph-contrast.js" asp-append-version="true"></script>
 <script>
 const orchestrationStageCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
 const orchestrationStageVersionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.VersionId));
