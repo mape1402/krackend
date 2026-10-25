@@ -1,5 +1,7 @@
 @page
 @using System.Text.Json
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.IndexModel
 @{
     ViewData["Title"] = "Runtime Diagnostics";
@@ -7,16 +9,13 @@
     {
         hubPath = Model.LiveHubPath,
         detailPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Detail" }),
-        snapshotPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Snapshot" }),
+        snapshotPath = (string)null,
         summaryPath = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "Summary" }),
         traffic = Model.Traffic,
         hourlyTraffic = Model.HourlyTraffic,
         instances = Model.Instances,
         summary = Model.Summary
     };
-    var initialPageSummary = Model.Instances.Count == 0
-        ? "0-0 of 0"
-        : $"1-{Math.Min(Model.Instances.Count, 25)} of {Model.Instances.Count}";
 }
 
 @section Head {
@@ -60,74 +59,40 @@
     <div class="od-section-head">
         <div>
             <h2 class="od-section-title">Instances</h2>
-            <p class="od-item-meta">Created date descending</p>
+            <p class="od-item-meta">Latest activity first</p>
         </div>
-        <span class="od-item-meta"><span data-instance-count>@Model.Instances.Count</span> visible</span>
     </div>
-
-    <div class="od-instance-controls">
-        <label class="od-instance-search">
-            <i class="bi bi-search"></i>
-            <input type="search" data-instance-search placeholder="Search orchestration key, saga id or correlation id" autocomplete="off" />
-        </label>
-        <div class="od-instance-pager">
-            <label>
-                <span>Rows</span>
-                <select data-page-size>
-                    <option value="15">15</option>
-                    <option value="25" selected>25</option>
-                    <option value="50">50</option>
-                    <option value="75">75</option>
+    <div data-runtime-catalog data-source="@Url.Page(null, "List")">
+        <div class="od-runtime-view-controls" role="group" aria-label="View mode">
+            <button type="button" class="btn btn-outline-secondary" data-runtime-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-outline-secondary" data-runtime-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-outline-secondary" data-runtime-refresh aria-label="Refresh instances" title="Refresh instances"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
+        </div>
+        <button type="button" class="btn btn-link od-runtime-updates" data-runtime-updates hidden>New activity available. Refresh instances</button>
+        <div data-runtime-grid-view>
+            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+            {
+                Id = "runtime-instances-grid", AriaLabel = "runtime instances", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
+                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
+                    new("status", "Status"), new("currentStageKey", "Stage", false), new("currentTaskKey", "Task", false),
+                    new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated"), new("actions", "Actions", false)]
+            })
+        </div>
+        <div data-runtime-card-view hidden>
+            <div class="od-runtime-catalog-filters">
+                <label class="z-search-field"><span aria-hidden="true">⌕</span><input type="search" data-runtime-search aria-label="Search instances" placeholder="Search instances" autocomplete="off" /></label>
+                <select class="form-select" data-runtime-sort aria-label="Sort instances">
+                    <option value="">Latest activity</option><option value="startedOnUtc:desc">Newest</option><option value="startedOnUtc">Oldest</option>
+                    <option value="orchestrationLabel">Orchestration</option><option value="correlationId">Correlation ID</option><option value="status">Status</option>
                 </select>
-            </label>
-            <button type="button" data-page-prev aria-label="Previous page"><i class="bi bi-chevron-left"></i></button>
-            <span data-page-summary>@initialPageSummary</span>
-            <button type="button" data-page-next aria-label="Next page"><i class="bi bi-chevron-right"></i></button>
+            </div>
+            <div class="od-runtime-cards" data-runtime-cards></div>
+            <p data-runtime-empty hidden>No matching instances.</p>
+            <p data-runtime-status aria-live="polite"></p>
+            <div data-runtime-sentinel aria-hidden="true"></div>
+            <button type="button" class="btn btn-outline-secondary" data-runtime-more hidden>Load more</button>
         </div>
-    </div>
-
-    <div class="od-instance-table-wrap">
-        <table class="od-instance-table">
-            <thead>
-                <tr>
-                    <th>Orchestration</th>
-                    <th>CorrelationId</th>
-                    <th>SagaId</th>
-                    <th>Status</th>
-                    <th>Stage</th>
-                    <th>Task</th>
-                    <th>Started</th>
-                    <th>Updated</th>
-                </tr>
-            </thead>
-            <tbody data-instance-grid>
-                @foreach (var instance in Model.Instances)
-                {
-                    <tr data-instance-id="@instance.Id" data-instance-status="@instance.Status" tabindex="0">
-                        <td>
-                            <strong>@instance.OrchestrationLabel</strong>
-                        </td>
-                        <td class="od-id-cell">
-                            <span class="od-id-copy">
-                                <span class="od-copy-value">@instance.CorrelationId</span>
-                                <button type="button" class="od-copy-button" data-copy-value="@instance.CorrelationId" aria-label="Copy correlation id" title="Copy CorrelationId"><i class="bi bi-copy"></i></button>
-                            </span>
-                        </td>
-                        <td class="od-id-cell">
-                            <span class="od-id-copy">
-                                <span class="od-copy-value">@instance.SagaId</span>
-                                <button type="button" class="od-copy-button" data-copy-value="@instance.SagaId" aria-label="Copy saga id" title="Copy SagaId"><i class="bi bi-copy"></i></button>
-                            </span>
-                        </td>
-                        <td><span class="od-status @instance.StatusClass" data-instance-status-label>@instance.Status</span></td>
-                        <td data-instance-stage>@(instance.CurrentStageKey ?? "-")</td>
-                        <td data-instance-task>@(instance.CurrentTaskKey ?? "-")</td>
-                        <td>@instance.StartedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td data-instance-updated>@instance.LastUpdatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
     </div>
 </section>
 
@@ -182,4 +147,5 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-instances.js?v=runtime-ui-20260821-09"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-catalog.js" asp-append-version="true"></script>
 }

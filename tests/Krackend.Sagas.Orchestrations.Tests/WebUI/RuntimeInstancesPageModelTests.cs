@@ -3,13 +3,15 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 public sealed class RuntimeInstancesPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsSnapshotAndResolvesDefaultHubPath()
+    public async Task OnGetLoadsSummaryWithoutLoadingAllInstances()
     {
         var reader = new FakeRuntimeDiagnosticsReader();
         var page = CreatePage(reader, routePrefix: "/runtime/");
@@ -17,10 +19,61 @@ public sealed class RuntimeInstancesPageModelTests
         await page.OnGetAsync();
 
         Assert.Equal("/runtime/live", page.LiveHubPath);
-        Assert.Single(page.Instances);
+        Assert.Empty(page.Instances);
+        Assert.False(reader.SnapshotRequested);
         Assert.Single(page.Traffic);
         Assert.Single(page.HourlyTraffic);
         Assert.Equal(1, page.Summary.Active);
+    }
+
+    [Theory]
+    [InlineData("orchestrationLabel", RuntimeInstanceCatalogSort.Orchestration)]
+    [InlineData("correlationId", RuntimeInstanceCatalogSort.CorrelationId)]
+    [InlineData("sagaId", RuntimeInstanceCatalogSort.SagaId)]
+    [InlineData("status", RuntimeInstanceCatalogSort.Status)]
+    [InlineData("startedOnUtc", RuntimeInstanceCatalogSort.Started)]
+    [InlineData("other", RuntimeInstanceCatalogSort.Updated)]
+    public async Task ListPassesBoundedQueryToStorage(string sort, RuntimeInstanceCatalogSort expected)
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = CreatePage(reader, "runtime");
+
+        Assert.IsType<JsonResult>(await page.OnGetListAsync(2, 500, " sale ", sort, true, "Running"));
+
+        Assert.Equal(new RuntimeInstanceCatalogQuery(2, 100, "sale", OrchestrationInstanceStatus.Running, expected, true), reader.LastQuery);
+    }
+
+    [Fact]
+    public async Task ListUsesLatestFirstAndRejectsInvalidStatus()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = CreatePage(reader, "runtime");
+
+        Assert.IsType<JsonResult>(await page.OnGetListAsync(-1, 0));
+        Assert.Equal(new RuntimeInstanceCatalogQuery(1, 1, string.Empty, null, RuntimeInstanceCatalogSort.Updated, true), reader.LastQuery);
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(status: "unknown"));
+    }
+
+    [Fact]
+    public async Task ListReportsUnavailableWhenStorageDoesNotSupportPaging()
+    {
+        var reader = new SummaryOnlyReader();
+        var page = new IndexModel(reader, Options.Create(new OrchestratorRuntimeWebUIOptions()));
+
+        var result = Assert.IsType<ObjectResult>(await page.OnGetListAsync());
+
+        Assert.Equal(503, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task ListReportsUnavailableWhenUnderlyingRepositoryDoesNotSupportPaging()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader { PagingUnsupported = true };
+        var page = CreatePage(reader, "runtime");
+
+        var result = Assert.IsType<ObjectResult>(await page.OnGetListAsync());
+
+        Assert.Equal(503, result.StatusCode);
     }
 
     [Fact]
@@ -50,7 +103,7 @@ public sealed class RuntimeInstancesPageModelTests
             reader,
             Options.Create(new OrchestratorRuntimeWebUIOptions { RoutePrefix = routePrefix }));
 
-    private sealed class FakeRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
+    private sealed class FakeRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader
     {
         private readonly RuntimeDashboardSnapshotModel _snapshot;
         private readonly RuntimeDashboardSummaryModel _summary;
@@ -94,9 +147,22 @@ public sealed class RuntimeInstancesPageModelTests
         }
 
         public string LastDetailInstanceId { get; private set; } = string.Empty;
+        public bool SnapshotRequested { get; private set; }
+        public bool PagingUnsupported { get; set; }
+        public RuntimeInstanceCatalogQuery LastQuery { get; private set; }
 
         public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
-            => Task.FromResult(_snapshot);
+        {
+            SnapshotRequested = true;
+            return Task.FromResult(_snapshot);
+        }
+
+        public Task<RuntimeInstancePageModel> GetInstances(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+        {
+            if (PagingUnsupported) throw new NotSupportedException();
+            LastQuery = query;
+            return Task.FromResult(new RuntimeInstancePageModel([], 0, query.PageNumber, query.PageSize));
+        }
 
         public Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default)
             => Task.FromResult(_summary);
@@ -106,5 +172,12 @@ public sealed class RuntimeInstancesPageModelTests
             LastDetailInstanceId = instanceId;
             return Task.FromResult(_detail);
         }
+    }
+
+    private sealed class SummaryOnlyReader : IRuntimeDiagnosticsReader
+    {
+        public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<InstanceDetailModel> GetDetail(string instanceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

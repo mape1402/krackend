@@ -1,4 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
@@ -58,11 +60,51 @@ public sealed class IndexModel : PageModel
     /// </summary>
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        var snapshot = await _diagnosticsReader.GetSnapshot(cancellationToken);
-        Instances = snapshot.Instances;
+        var snapshot = await _diagnosticsReader.GetSummary(cancellationToken);
         Traffic = snapshot.Traffic;
         HourlyTraffic = snapshot.HourlyTraffic;
         Summary = snapshot.Summary;
+    }
+
+    /// <summary>Loads a filtered page of instances for the runtime catalog.</summary>
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, string status = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_diagnosticsReader is not IRuntimeInstanceCatalogReader catalog)
+            return StatusCode(503, "The configured runtime storage does not support paged diagnostics.");
+        OrchestrationInstanceStatus? selectedStatus = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<OrchestrationInstanceStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
+                return BadRequest("The instance status is invalid.");
+            selectedStatus = parsed;
+        }
+        var sortField = sort switch
+        {
+            "orchestrationLabel" => RuntimeInstanceCatalogSort.Orchestration,
+            "correlationId" => RuntimeInstanceCatalogSort.CorrelationId,
+            "sagaId" => RuntimeInstanceCatalogSort.SagaId,
+            "status" => RuntimeInstanceCatalogSort.Status,
+            "startedOnUtc" => RuntimeInstanceCatalogSort.Started,
+            _ => RuntimeInstanceCatalogSort.Updated
+        };
+        RuntimeInstancePageModel result;
+        try
+        {
+            result = await catalog.GetInstances(new RuntimeInstanceCatalogQuery(Math.Max(page, 1), Math.Clamp(pageSize, 1, 100),
+                search?.Trim() ?? string.Empty, selectedStatus, sortField, string.IsNullOrEmpty(sort) || descending), cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured runtime storage does not support paged diagnostics.");
+        }
+        return new JsonResult(new
+        {
+            items = result.Items, totalCount = result.TotalCount,
+            hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount,
+            search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending, status = status ?? string.Empty
+        });
     }
 
     /// <summary>

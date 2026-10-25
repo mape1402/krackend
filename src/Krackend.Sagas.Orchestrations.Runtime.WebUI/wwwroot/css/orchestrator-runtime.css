@@ -648,6 +648,66 @@
     color: var(--krackend-on-primary, #fff) !important;
 }
 
+.od-runtime-view-controls {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+}
+
+.od-runtime-view-controls [aria-pressed="true"] {
+    background: var(--od-primary);
+    border-color: var(--od-primary);
+    color: var(--krackend-on-primary, #fff);
+}
+
+[data-runtime-catalog] .btn-outline-secondary:not([aria-pressed="true"]) {
+    color: var(--od-text);
+    border-color: var(--od-border-strong);
+}
+
+[data-runtime-catalog] .btn-outline-secondary:hover {
+    color: var(--krackend-on-primary-hover, #fff);
+    background: var(--od-primary-strong);
+}
+
+[data-runtime-catalog] .od-copy-button { color: var(--od-text); }
+[data-runtime-catalog] [data-z-grid-field="startedOnUtc"],
+[data-runtime-catalog] [data-z-grid-field="lastUpdatedOnUtc"] { white-space: nowrap; }
+
+.od-runtime-updates { margin-bottom: 0.5rem; }
+
+.od-runtime-catalog-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.od-runtime-catalog-filters .z-search-field { flex: 1 1 16rem; }
+.od-runtime-catalog-filters select { flex: 0 1 14rem; }
+
+.od-runtime-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+    gap: 0.75rem;
+}
+
+.od-runtime-instance-card {
+    background: var(--od-surface);
+    border: 1px solid var(--od-border);
+    border-radius: 8px;
+    color: var(--od-text);
+    min-width: 0;
+    padding: 1rem;
+}
+
+.od-runtime-instance-header { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
+.od-runtime-instance-header h3 { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; margin: 0 0 0.5rem; }
+.od-runtime-instance-card dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.25rem 0.75rem; margin: 0.75rem 0 0; font-size: 0.85rem; }
+.od-runtime-instance-card dt { color: var(--od-muted); font-weight: 500; }
+.od-runtime-instance-card dd { margin: 0; overflow-wrap: anywhere; }
+
 .btn-primary:hover {
     background: var(--od-primary-strong) !important;
     border-color: var(--od-primary-strong) !important;

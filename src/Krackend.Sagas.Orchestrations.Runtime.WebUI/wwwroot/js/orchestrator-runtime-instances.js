@@ -1,6 +1,6 @@
 (function () {
     const config = window.KrackendRuntimeDashboard;
-    if (!config || !window.signalR) {
+    if (!config) {
         return;
     }
 
@@ -289,32 +289,10 @@
             return;
         }
 
-        const existing = instances.get(id);
-        const row = normalizeRow({
-            id,
-            orchestrationDefinitionKey: read(eventData, "orchestrationDefinitionKey", "OrchestrationDefinitionKey") || existing?.orchestrationDefinitionKey,
-            orchestrationVersion: read(eventData, "orchestrationVersion", "OrchestrationVersion") || existing?.orchestrationVersion,
-            orchestrationLabel: read(eventData, "orchestrationLabel", "OrchestrationLabel") || existing?.orchestrationLabel,
-            correlationId: read(eventData, "correlationId", "CorrelationId") || existing?.correlationId,
-            sagaId: read(eventData, "sagaId", "SagaId") || existing?.sagaId,
-            executionKey: read(eventData, "executionKey", "ExecutionKey") || existing?.executionKey,
-            status: read(eventData, "instanceStatus", "InstanceStatus") || read(eventData, "toStatus", "ToStatus") || existing?.status,
-            currentStageKey: read(eventData, "stageKey", "StageKey") || existing?.currentStageKey,
-            currentTaskKey: read(eventData, "taskKey", "TaskKey") || existing?.currentTaskKey,
-            startedOnUtc: existing?.startedOnUtc || read(eventData, "occurredOnUtc", "OccurredOnUtc"),
-            lastUpdatedOnUtc: read(eventData, "occurredOnUtc", "OccurredOnUtc"),
-            waitingSinceUtc: existing?.waitingSinceUtc,
-            completedOnUtc: read(eventData, "instanceStatus", "InstanceStatus") === "Completed" ? read(eventData, "occurredOnUtc", "OccurredOnUtc") : existing?.completedOnUtc,
-            failedOnUtc: read(eventData, "instanceStatus", "InstanceStatus") === "Failed" ? read(eventData, "occurredOnUtc", "OccurredOnUtc") : existing?.failedOnUtc,
-            errorSummary: existing?.errorSummary
-        });
-
-        instances.set(id, row);
-
         applyTrafficEvent(traffic, read(eventData, "occurredOnUtc", "OccurredOnUtc"), "minute", eventData);
         applyTrafficEvent(hourlyTraffic, read(eventData, "occurredOnUtc", "OccurredOnUtc"), "hour", eventData);
 
-        renderGrid();
+        window.dispatchEvent(new CustomEvent("krackend:instances-changed"));
         drawTraffic();
         scheduleSummaryRefresh(250);
 
@@ -1170,6 +1148,12 @@
     });
 
     document.addEventListener("click", function (event) {
+        const openInstance = event.target.closest("[data-open-instance]");
+        if (openInstance) {
+            event.preventDefault();
+            openDetail(openInstance.getAttribute("data-open-instance"));
+            return;
+        }
         const copyButton = event.target.closest("[data-copy-value]");
         if (copyButton) {
             event.preventDefault();
@@ -1245,6 +1229,10 @@
             scheduleSnapshotRefresh(0);
         }
     });
+    if (!window.signalR) {
+        setLiveState("disconnected", "Offline");
+        return;
+    }
     window.setInterval(function () {
         if (connection.state === signalR.HubConnectionState.Connected) {
             scheduleSummaryRefresh(0);
@@ -1274,6 +1262,7 @@
             await connection.invoke("WatchInstance", selectedInstanceId);
         }
         scheduleSummaryRefresh(0);
+        window.dispatchEvent(new CustomEvent("krackend:instances-changed"));
         scheduleSnapshotRefresh(0);
     });
 
@@ -1282,6 +1271,7 @@
             setLiveState("connected", "Live");
             await connection.invoke("WatchRuntime");
             scheduleSummaryRefresh(0);
+            window.dispatchEvent(new CustomEvent("krackend:instances-changed"));
             scheduleSnapshotRefresh(0);
         })
         .catch(function () {
