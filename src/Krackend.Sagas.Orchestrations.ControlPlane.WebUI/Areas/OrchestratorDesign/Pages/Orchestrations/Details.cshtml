@@ -5,8 +5,7 @@
 @using Zoorce.Web.UI.DataGrid
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
-@{ ViewData["Title"] = "Orchestration details"; }
-<div class="od-list-context"><strong>@Model.Orchestration?.Name</strong><span>@Model.Orchestration?.Key</span></div>
+@{ ViewData["Title"] = Model.Orchestration is null ? "Orchestration details" : $"{Model.Orchestration.Name} \u00b7 {Model.Orchestration.Key}"; }
 <div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openNewVersion", Label = "New version", Icon = "+" })</div>
 
 <section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
