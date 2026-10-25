@@ -38,7 +38,7 @@ public sealed class IndexModel : PageModel
     public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     /// <summary>Searches orchestration groups in the configured storage.</summary>
-    public async Task<IActionResult> OnGetGroupsAsync(int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetGroupsAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
     {
         if (_artifactRepository is not IRuntimeArtifactUiCatalog catalog) return StatusCode(503);
         var result = await catalog.GetGroups(page, pageSize, search ?? string.Empty, cancellationToken);
@@ -51,7 +51,7 @@ public sealed class IndexModel : PageModel
     }
 
     /// <summary>Returns a page of versions belonging to one orchestration.</summary>
-    public async Task<IActionResult> OnGetVersionsAsync(string orchestrationKey, int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetVersionsAsync(string orchestrationKey, [FromQuery(Name = "page")] int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(orchestrationKey)) return BadRequest();
         if (_artifactRepository is not IRuntimeArtifactUiCatalog catalog) return StatusCode(503);
@@ -67,7 +67,7 @@ public sealed class IndexModel : PageModel
     }
 
     /// <summary>Returns a page of deployment history for an artifact.</summary>
-    public async Task<IActionResult> OnGetHistoryAsync(string artifactId, int page = 1, int pageSize = 25, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetHistoryAsync(string artifactId, [FromQuery(Name = "page")] int page = 1, int pageSize = 25, CancellationToken cancellationToken = default)
     {
         if (!TryParseId(artifactId, out var id)) return BadRequest();
         if (_deploymentHistoryRepository is not IRuntimeArtifactHistoryCatalog catalog) return StatusCode(503);

@@ -111,7 +111,7 @@ public sealed class IndexModel : PageModel
     }
 
     /// <summary>Returns a bounded catalog page without credential secrets.</summary>
-    public async Task<IActionResult> OnGetNodesAsync(int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetNodesAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
     {
         if (_repository is not IRuntimeDesignNodeUiCatalog catalog)
             return StatusCode(503, "Design node catalog is unavailable for this storage provider.");

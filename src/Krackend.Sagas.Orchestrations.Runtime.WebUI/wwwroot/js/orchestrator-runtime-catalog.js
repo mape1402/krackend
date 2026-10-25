@@ -170,6 +170,10 @@
             empty.hidden = cards.childElementCount !== 0;
             more.hidden = !hasMore;
             status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount} instances`;
+            if (hasMore && result.items.length) requestAnimationFrame(() => {
+                const rect = sentinel.getBoundingClientRect();
+                if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);
+            });
         } catch (error) {
             if (error.name !== 'AbortError') {
                 status.textContent = 'Unable to load instances. Please try again.';

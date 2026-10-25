@@ -74,7 +74,7 @@ public sealed class DetailsModel : PageModel
     }
 
     /// <summary>Returns a database-filtered page of versions for the selected orchestration.</summary>
-    public async Task<IActionResult> OnGetVersionsAsync(string orchestrationId, int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetVersionsAsync(string orchestrationId, [FromQuery(Name = "page")] int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
         var term = search?.Trim() ?? string.Empty;

@@ -10,6 +10,7 @@
     const empty = root.querySelector('[data-version-empty]');
     const status = root.querySelector('[data-version-status]');
     const more = root.querySelector('[data-version-more]');
+    const sentinel = root.querySelector('[data-version-sentinel]');
     const records = new Map();
     let page = 0, hasMore = true, generation = 0, request = null, timer;
     const make = (tag, className, text) => {
@@ -79,6 +80,10 @@
             const result = await response.json(); if (current !== generation) return;
             result.items.forEach(addCard); page++; hasMore = result.hasMore; empty.hidden = cards.childElementCount !== 0;
             more.hidden = !hasMore; status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount}`;
+            if (hasMore && result.items.length) requestAnimationFrame(() => {
+                const rect = sentinel.getBoundingClientRect();
+                if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);
+            });
         } catch (error) {
             if (error.name !== 'AbortError') { status.textContent = 'Versions could not be loaded. Try again.'; more.hidden = false; hasMore = true; }
         } finally { if (request === controller) request = null; }
@@ -87,7 +92,7 @@
     more.addEventListener('click', () => load(false));
     if ('IntersectionObserver' in window) new IntersectionObserver(entries => {
         if (!cardView.hidden && entries.some(x => x.isIntersecting)) load(false);
-    }, { rootMargin: '200px' }).observe(root.querySelector('[data-version-sentinel]'));
+    }, { rootMargin: '200px' }).observe(sentinel);
     const setView = button => {
         const showCards = button.dataset.versionView === 'cards'; gridView.hidden = showCards; cardView.hidden = !showCards;
         root.querySelectorAll('[data-version-view]').forEach(x => x.setAttribute('aria-pressed', String(x === button)));

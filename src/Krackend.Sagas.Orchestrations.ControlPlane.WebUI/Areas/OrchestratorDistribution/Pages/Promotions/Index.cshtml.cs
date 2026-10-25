@@ -266,7 +266,7 @@ public sealed class IndexModel : PageModel
         return new JsonResult(new { orchestrationId, runtimeNodeIds = policy.RuntimeNodeIds });
     }
 
-    public async Task<IActionResult> OnGetArtifactOptionsAsync(string orchestrationId, int page = 1, string search = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetArtifactOptionsAsync(string orchestrationId, [FromQuery(Name = "page")] int page = 1, string search = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
         try
@@ -277,7 +277,7 @@ public sealed class IndexModel : PageModel
         catch (NotSupportedException) { return StatusCode(503); }
     }
 
-    public async Task<IActionResult> OnGetNodeOptionsAsync(string orchestrationId, bool allowedOnly = false, int page = 1, string search = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetNodeOptionsAsync(string orchestrationId, bool allowedOnly = false, [FromQuery(Name = "page")] int page = 1, string search = null, CancellationToken cancellationToken = default)
     {
         if (allowedOnly && string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
         try
