@@ -41,3 +41,28 @@ test('unknown states are neutral and their text is not interpreted as markup', (
     assert.equal(badge.textContent, value);
     assert.equal(status(null).textContent, '');
 });
+
+test('visible grid height follows the available window space', () => {
+    let height;
+    const viewport = { getBoundingClientRect: () => ({ top: 200 }), style: { setProperty: (key, value) => { height = [key, value]; } } };
+    const grid = { getClientRects: () => [1], querySelector: () => viewport };
+    const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [grid] : [] };
+    const document = { readyState: 'complete', querySelectorAll: () => [root], createElement: () => ({}) };
+    const window = { innerHeight: 800, addEventListener() {} };
+    class MutationObserver { observe() {} }
+    vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
+    assert.deepEqual(height, ['--z-grid-viewport-height', '520px']);
+});
+
+test('grid height has a minimum and hidden grids are not resized', () => {
+    const heights = [];
+    const viewport = { getBoundingClientRect: () => ({ top: 200 }), style: { setProperty: (key, value) => heights.push(value) } };
+    const visible = { getClientRects: () => [1], querySelector: () => viewport };
+    const hidden = { getClientRects: () => [], querySelector: () => { throw new Error('hidden grid was measured'); } };
+    const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [visible, hidden] : [] };
+    const document = { readyState: 'complete', querySelectorAll: () => [root], createElement: () => ({}) };
+    const window = { innerHeight: 250, addEventListener() {} };
+    class MutationObserver { observe() {} }
+    vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
+    assert.deepEqual(heights, ['220px']);
+});
