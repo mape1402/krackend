@@ -2,6 +2,8 @@
 @using System.Text.Json
 @using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security
 @using Krackend.Sagas.Orchestrations.Runtime.Distribution
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel
 @{
     ViewData["Title"] = "Design Nodes";
@@ -19,139 +21,30 @@
     <button type="button" class="btn btn-primary js-open-design-node-setup" data-mode="create">Create design node</button>
 </div>
 
-@if (!Model.DesignNodes.Any())
-{
-    <section class="od-panel">
-        <p class="od-empty">No design nodes registered.</p>
-    </section>
-}
-else
-{
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-grid od-design-node-grid"
-             data-od-infinite-grid
-             data-od-infinite-label="design nodes"
-             data-od-infinite-initial-count="18"
-             data-od-infinite-batch-size="18">
-            @foreach (var node in Model.DesignNodes)
-            {
-                var statusClass = DesignNodeStatusClass(node.Status);
-                var statusTransitions = DesignNodeStatusTransitions(node.Status);
-                var runtimeCredentialReadiness = RuntimeCredentialReadiness(node);
-                var designCredentialReadiness = DesignCredentialReadiness(node);
-                var canCheckConnection = CanCheckConnection(node);
-                var canReviewReleases = CanReviewReleases(node);
-
-                <article class="od-item-card od-design-node-card od-infinite-item"
-                         data-design-node="true"
-                         data-id="@node.Id"
-                         data-key="@node.Key"
-                         data-name="@node.Name"
-                         data-endpoint-base-uri="@node.EndpointBaseUri"
-                         data-remote-runtime-node-id="@node.RemoteRuntimeNodeId"
-                         data-distribution-mode="@node.DistributionMode"
-                         data-distribution-mode-label="@DistributionModeLabel(node.DistributionMode.ToString())"
-                         data-distribution-mode-description="@DistributionModeDescription(node.DistributionMode.ToString())"
-                         data-status="@node.Status"
-                         data-status-label="@ReadableLabel(node.Status.ToString())"
-                         data-inbound-credential-status="@node.InboundCredentialStatus"
-                         data-inbound-credential-status-label="@ReadableLabel(node.InboundCredentialStatus.ToString())"
-                         data-inbound-client-id="@node.InboundClientId"
-                         data-inbound-key-id="@node.InboundKeyId"
-                         data-inbound-allowed-scopes="@node.InboundAllowedScopes"
-                         data-inbound-credential-created-at="@DateOrDash(node.InboundCredentialCreatedAtUtc)"
-                         data-inbound-credential-rotated-at="@DateOrDash(node.InboundCredentialRotatedAtUtc)"
-                         data-inbound-credential-revoked-at="@DateOrDash(node.InboundCredentialRevokedAtUtc)"
-                         data-inbound-last-token-issued-at="@DateOrDash(node.InboundLastTokenIssuedAtUtc)"
-                         data-inbound-last-token-failed-at="@DateOrDash(node.InboundLastTokenFailedAtUtc)"
-                         data-inbound-last-failure-reason="@node.InboundLastFailureReason"
-                         data-outbound-credential-status="@node.OutboundCredentialStatus"
-                         data-outbound-credential-status-label="@ReadableLabel(node.OutboundCredentialStatus.ToString())"
-                         data-outbound-client-id="@node.OutboundClientId"
-                         data-outbound-key-id="@node.OutboundKeyId"
-                         data-outbound-requested-scopes="@node.OutboundRequestedScopes"
-                         data-outbound-credential-imported-at="@DateOrDash(node.OutboundCredentialImportedAtUtc)"
-                         data-outbound-last-token-received-at="@DateOrDash(node.OutboundLastTokenReceivedAtUtc)"
-                         data-access-token-ttl-seconds="@node.AccessTokenTtlSeconds"
-                         data-token-refresh-skew-seconds="@node.TokenRefreshSkewSeconds"
-                         data-token-validation-cache-ttl-seconds="@node.TokenValidationCacheTtlSeconds"
-                         data-description="@node.Description"
-                         data-created-on-utc="@DateOrDash(node.CreatedOnUtc)"
-                         data-updated-on-utc="@DateOrDash(node.UpdatedOnUtc)"
-                         data-is-configured="@IsConfigured(node).ToString().ToLowerInvariant()">
-                    <div class="od-item-top">
-                        <div>
-                            <h2 class="od-item-title">@node.Name</h2>
-                            <p class="od-item-meta">@node.Key</p>
-                        </div>
-                        <div class="d-flex align-items-start gap-2">
-                            <span class="@statusClass">@ReadableLabel(node.Status.ToString())</span>
-                            <div class="dropdown">
-                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    @foreach (var transition in statusTransitions)
-                                    {
-                                        <li>
-                                            <form method="post" asp-page-handler="SetStatus" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating design node" data-busy-message="Runtime is applying the design node status change.">
-                                                <input type="hidden" name="designNodeId" value="@node.Id" />
-                                                <input type="hidden" name="status" value="@transition.Status" />
-                                                <button type="submit" class="dropdown-item">@transition.Label</button>
-                                            </form>
-                                        </li>
-                                    }
-                                    <li data-check-connection-action="true" class="@(canCheckConnection ? string.Empty : "d-none")">
-                                        <form method="post" asp-page-handler="ValidateConnection" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Checking connection" data-busy-message="Runtime is requesting a token from Design and checking the secured endpoint.">
-                                            <input type="hidden" name="designNodeId" value="@node.Id" />
-                                            <button type="submit" class="dropdown-item">Check connection</button>
-                                        </form>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="od-design-node-summary">
-                        <div>
-                            <span>Policy</span>
-                            <strong>@DistributionModeLabel(node.DistributionMode.ToString())</strong>
-                        </div>
-                        <div>
-                            <span>Runtime credentials</span>
-                            <strong class="@ReadinessClass(runtimeCredentialReadiness)">@runtimeCredentialReadiness</strong>
-                        </div>
-                        <div>
-                            <span>Design credentials</span>
-                            <strong class="@ReadinessClass(designCredentialReadiness)">@designCredentialReadiness</strong>
-                        </div>
-                        <div>
-                            <span>Design endpoint</span>
-                            <strong>@EndpointReadiness(node)</strong>
-                        </div>
-                    </div>
-
-                    <p class="od-item-description" title="@node.Description">@(string.IsNullOrWhiteSpace(node.Description) ? "No description." : node.Description)</p>
-                    <p class="od-item-meta">Updated @DateOrDash(node.UpdatedOnUtc)</p>
-
-                    <div class="od-card-actions">
-                        <button type="button" class="btn btn-outline-secondary btn-sm js-open-design-node-setup-card">Configure</button>
-                        @if (canReviewReleases)
-                        {
-                            <form method="post" asp-page-handler="CheckPending" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Checking releases" data-busy-message="Runtime is reading pending releases from Design.">
-                                <input type="hidden" name="sourceKey" value="@node.Key" />
-                                <button type="submit" class="btn btn-outline-primary btn-sm">Review releases</button>
-                            </form>
-                        }
-                        <button type="button" class="btn btn-outline-primary btn-sm js-open-design-node-view">Details</button>
-                    </div>
-                </article>
-            }
-        </div>
-        <div class="od-infinite-scroll-status" data-od-infinite-status>
-            Showing <span data-od-infinite-count>@Math.Min(18, Model.DesignNodes.Count)</span> of <span data-od-infinite-total>@Model.DesignNodes.Count</span> design nodes
-        </div>
-        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-    </section>
-}
+<section class="od-panel" data-design-node-catalog data-source="@Url.Page(null, "Nodes")"
+         data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")"
+         data-releases-url="@Url.Page(null, "CheckPending")">
+    <div class="od-runtime-view-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-node-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-node-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-node-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+            Id = "runtime-design-nodes-grid", AriaLabel = "design nodes", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "Nodes") },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("name", "Name", false), new("key", "Key", false), new("status", "Status", false), new("distributionModeLabel", "Distribution", false), new("endpointBaseUri", "Endpoint", false), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-node-cards-view hidden>
+        <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-node-search aria-label="Search design nodes" placeholder="Search name, key or endpoint" /></label>
+        <div class="od-runtime-cards" data-node-cards></div>
+        <p data-node-empty hidden>No matching design nodes.</p>
+        <p data-node-status aria-live="polite"></p>
+        <div data-node-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-node-more hidden>Load more</button>
+    </div>
+    <form method="post" id="design-node-token" hidden>@Html.AntiForgeryToken()</form>
+</section>
 
 <div class="modal fade" id="designNodeBasicModal" tabindex="-1" aria-labelledby="designNodeBasicModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -625,6 +518,7 @@ else
 }
 
 @section Scripts {
+    <script src="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-design-nodes.js" asp-append-version="true"></script>
     <script>
         (() => {
             const setupModalElement = document.getElementById('designNodeSetupModal');
@@ -1122,12 +1016,11 @@ else
                 });
             });
 
-            document.querySelectorAll('.js-open-design-node-setup-card').forEach(button => {
-                button.addEventListener('click', () => populateSetupModal(readNode(button)));
-            });
-
-            document.querySelectorAll('.js-open-design-node-view').forEach(button => {
-                button.addEventListener('click', () => populateViewModal(readNode(button)));
+            document.addEventListener('click', event => {
+                const configure = event.target.closest('.js-open-design-node-setup-card');
+                const details = event.target.closest('.js-open-design-node-view');
+                if (configure) populateSetupModal(readNode(configure));
+                if (details) populateViewModal(readNode(details));
             });
 
             document.querySelector('.js-view-edit-basic')?.addEventListener('click', () => {

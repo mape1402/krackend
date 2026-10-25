@@ -9,7 +9,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Reposito
 /// <summary>
 /// Stores runtime design nodes in Entity Framework storage.
 /// </summary>
-internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRuntimeDesignNodeRepository
+internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRuntimeDesignNodeRepository, IRuntimeDesignNodeUiCatalog
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeDesignNodeRepository"/> class.
@@ -25,6 +25,21 @@ internal sealed class RuntimeDesignNodeRepository : RuntimeRepositoryBase, IRunt
             .OrderBy(x => x.Name)
             .ThenBy(x => x.Key)
             .ToArrayAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<RuntimeDesignNodePage> GetPage(int page, int pageSize, string search, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var query = DbContext.RuntimeDesignNodes.AsNoTracking();
+        var term = search?.Trim();
+        if (!string.IsNullOrEmpty(term))
+            query = query.Where(x => x.Name.Contains(term) || x.Key.Contains(term) || x.EndpointBaseUri.Contains(term));
+        var total = await query.LongCountAsync(cancellationToken);
+        var rows = await query.OrderBy(x => x.Name).ThenBy(x => x.Key).ThenBy(x => x.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToArrayAsync(cancellationToken);
+        return new RuntimeDesignNodePage(rows, total, page, pageSize);
+    }
 
     /// <inheritdoc />
     public IReadOnlyCollection<RuntimeDesignNode> GetEnabled()

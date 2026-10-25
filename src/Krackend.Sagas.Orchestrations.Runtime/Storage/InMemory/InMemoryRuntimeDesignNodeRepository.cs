@@ -6,7 +6,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
     /// <summary>
     /// Stores runtime design nodes in memory for local runtime scenarios.
     /// </summary>
-    internal sealed class InMemoryRuntimeDesignNodeRepository : IRuntimeDesignNodeRepository
+    internal sealed class InMemoryRuntimeDesignNodeRepository : IRuntimeDesignNodeRepository, IRuntimeDesignNodeUiCatalog
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -25,6 +25,22 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                     .OrderBy(x => x.Name)
                     .ThenBy(x => x.Key)
                     .ToArray());
+
+        /// <inheritdoc />
+        public Task<RuntimeDesignNodePage> GetPage(int page, int pageSize, string search, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var term = search?.Trim();
+            var rows = _store.DesignNodes.Values
+                .Where(x => string.IsNullOrEmpty(term) || x.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    x.Key.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    (x.EndpointBaseUri?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false))
+                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Id.ToString()).ToArray();
+            return Task.FromResult(new RuntimeDesignNodePage(rows.Skip((page - 1) * pageSize).Take(pageSize).ToArray(), rows.LongLength, page, pageSize));
+        }
 
         /// <inheritdoc />
         public IReadOnlyCollection<RuntimeDesignNode> GetEnabled()

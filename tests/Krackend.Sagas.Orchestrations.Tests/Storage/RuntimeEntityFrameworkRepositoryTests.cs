@@ -747,6 +747,26 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task RuntimeDesignNodeCatalogFiltersAndPagesInRelationalStorage()
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IRuntimeDesignNodeRepository>();
+        var alpha = DesignNode("alpha", "Alpha", DistributionConnectionMode.HybridSync, RuntimeDesignNodeStatus.Pending, false, ConnectionCredentialStatus.Missing);
+        var beta = DesignNode("beta", "Beta", DistributionConnectionMode.HybridSync, RuntimeDesignNodeStatus.Pending, false, ConnectionCredentialStatus.Missing);
+        await repository.UpsertAsync(alpha);
+        await repository.UpsertAsync(beta);
+        var catalog = Assert.IsAssignableFrom<IRuntimeDesignNodeUiCatalog>(repository);
+        Assert.Equal(2, (await catalog.GetPage(1, 1, "")).TotalCount);
+        Assert.Equal("alpha", Assert.Single((await catalog.GetPage(1, 1, "")).Items).Key);
+        Assert.Equal("beta", Assert.Single((await catalog.GetPage(2, 1, "")).Items).Key);
+        Assert.Equal("beta", Assert.Single((await catalog.GetPage(1, 25, "beta")).Items).Key);
+    }
+
+    [Fact]
     public async Task RuntimeDesignNodeRepositoryUpsertUpdatesExistingNodeAndStatus()
     {
         await using var provider = CreateProvider();

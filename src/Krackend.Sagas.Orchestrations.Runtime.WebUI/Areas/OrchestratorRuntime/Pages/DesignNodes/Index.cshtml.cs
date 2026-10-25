@@ -110,6 +110,20 @@ public sealed class IndexModel : PageModel
         await LoadAsync(cancellationToken);
     }
 
+    /// <summary>Returns a bounded catalog page without credential secrets.</summary>
+    public async Task<IActionResult> OnGetNodesAsync(int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    {
+        if (_repository is not IRuntimeDesignNodeUiCatalog catalog)
+            return StatusCode(503, "Design node catalog is unavailable for this storage provider.");
+
+        var result = await catalog.GetPage(page, pageSize, search ?? string.Empty, cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Items.Select(ToClientNode),
+            totalCount = result.TotalCount, hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount
+        });
+    }
+
     /// <summary>
     /// Creates or updates the basic data of a design node.
     /// </summary>
@@ -497,11 +511,6 @@ public sealed class IndexModel : PageModel
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        DesignNodes = (await _repository.GetAllAsync(cancellationToken))
-            .OrderByDescending(x => x.UpdatedOnUtc)
-            .ThenBy(x => x.Name)
-            .ToArray();
-
         if (string.IsNullOrWhiteSpace(SourceKey))
         {
             return;

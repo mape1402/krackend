@@ -10,6 +10,26 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class InMemoryRuntimeDesignNodeRepositoryTests
 {
     [Fact]
+    public async Task CatalogSearchesAndPagesDesignNodes()
+    {
+        using var provider = CreateProvider();
+        var repository = provider.GetRequiredService<IRuntimeDesignNodeRepository>();
+        await repository.UpsertAsync(Node("alpha", "Alpha", RuntimeDesignNodeStatus.Pending, false, "a"));
+        await repository.UpsertAsync(Node("beta", "Beta", RuntimeDesignNodeStatus.Pending, false, "b"));
+        var catalog = Assert.IsAssignableFrom<IRuntimeDesignNodeUiCatalog>(repository);
+
+        var first = await catalog.GetPage(1, 1, "");
+        var second = await catalog.GetPage(2, 1, "");
+        var filtered = await catalog.GetPage(1, 25, "BETA.LOCAL");
+
+        Assert.Equal(2, first.TotalCount);
+        Assert.Equal("alpha", Assert.Single(first.Items).Key);
+        Assert.Equal("beta", Assert.Single(second.Items).Key);
+        Assert.Equal("beta", Assert.Single(filtered.Items).Key);
+        Assert.Equal(1, (await catalog.GetPage(0, 0, "missing")).PageSize);
+    }
+
+    [Fact]
     public async Task RuntimeDesignNodeRepositoryStoresQueriesAndUpdatesNodesInMemory()
     {
         using var provider = CreateProvider();

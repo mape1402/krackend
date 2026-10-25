@@ -15,7 +15,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class RuntimeDesignNodesPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsNodesAndPendingArtifactsForSelectedSource()
+    public async Task OnGetLoadsPendingArtifactsWithoutLoadingTheNodeCatalog()
     {
         var node = CreateConfiguredNode();
         var page = CreatePage([node], pending: [CreatePackage("target-1")]);
@@ -23,9 +23,23 @@ public sealed class RuntimeDesignNodesPageModelTests
 
         await page.OnGetAsync();
 
-        Assert.Single(page.DesignNodes);
+        Assert.Empty(page.DesignNodes);
         Assert.Single(page.PendingArtifacts);
         Assert.Equal("target-1", page.PendingArtifacts.Single().ReleaseTargetId);
+    }
+
+    [Fact]
+    public async Task NodeCatalogNeverReturnsCredentialSecrets()
+    {
+        var node = CreateConfiguredNode();
+        node.InboundSecretHash = "secret-hash-do-not-expose";
+        node.ProtectedOutboundSecret = "protected-secret-do-not-expose";
+        var page = CreatePage([node]);
+        var result = Assert.IsType<JsonResult>(await page.OnGetNodesAsync());
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Value);
+        Assert.Contains(node.Name, json);
+        Assert.DoesNotContain(node.InboundSecretHash, json);
+        Assert.DoesNotContain(node.ProtectedOutboundSecret, json);
     }
 
     [Fact]
@@ -85,7 +99,7 @@ public sealed class RuntimeDesignNodesPageModelTests
     }
 
     [Fact]
-    public async Task UpsertReturnsPageAndReloadsNodesWhenModelStateIsInvalid()
+    public async Task UpsertReturnsPageWithoutLoadingNodesWhenModelStateIsInvalid()
     {
         var existing = CreateConfiguredNode();
         var page = CreatePage([existing]);
@@ -94,7 +108,7 @@ public sealed class RuntimeDesignNodesPageModelTests
         var result = await page.OnPostUpsertAsync();
 
         Assert.IsType<PageResult>(result);
-        Assert.Single(page.DesignNodes);
+        Assert.Empty(page.DesignNodes);
     }
 
     [Fact]
@@ -551,7 +565,7 @@ public sealed class RuntimeDesignNodesPageModelTests
             PromotedOnUtc = DateTime.UtcNow
         };
 
-    private sealed class FakeRuntimeDesignNodeRepository : IRuntimeDesignNodeRepository
+    private sealed class FakeRuntimeDesignNodeRepository : IRuntimeDesignNodeRepository, IRuntimeDesignNodeUiCatalog
     {
         private readonly Dictionary<Id, RuntimeDesignNode> _nodes;
 
@@ -561,6 +575,9 @@ public sealed class RuntimeDesignNodesPageModelTests
         }
 
         public IReadOnlyCollection<RuntimeDesignNode> Nodes => _nodes.Values.ToArray();
+
+        public Task<RuntimeDesignNodePage> GetPage(int page, int pageSize, string search, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RuntimeDesignNodePage(Nodes, Nodes.Count, page, pageSize));
 
         public Task<IReadOnlyCollection<RuntimeDesignNode>> GetAllAsync(CancellationToken cancellationToken = default)
             => Task.FromResult((IReadOnlyCollection<RuntimeDesignNode>)_nodes.Values.ToArray());
