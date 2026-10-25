@@ -1,0 +1,31 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.RuntimeNodes.IndexModel
+<form id="runtimeNodeBasicForm" method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving runtime node" data-busy-message="Distribution is validating and storing the runtime node.">
+    <input asp-for="Input.RuntimeNodeId" type="hidden" id="runtimeNodeIdInput" />
+    <input asp-for="Input.DistributionMode" type="hidden" id="distributionModeInput" />
+    <input asp-for="Input.EndpointBaseUri" type="hidden" id="endpointBaseUriInput" />
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label asp-for="Input.Name" for="nameInput" class="form-label"></label>
+            <input asp-for="Input.Name" class="form-control" id="nameInput" />
+            <span asp-validation-for="Input.Name" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="Input.Code" for="codeInput" class="form-label"></label>
+            <input asp-for="Input.Code" class="form-control" id="codeInput" data-orchestrator-key="true" />
+            <span asp-validation-for="Input.Code" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="Input.EnvironmentId" for="environmentIdInput" class="form-label">Environment</label>
+            <input type="search" class="form-control mb-2" id="environmentSearchInput" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
+            <select asp-for="Input.EnvironmentId" class="form-select" id="environmentIdInput"><option value="">Select environment</option></select>
+            <button type="button" class="btn btn-link btn-sm px-0" id="environmentMoreButton" hidden>Load more environments</button>
+            <div id="environmentSearchStatus" class="small" role="status"></div>
+            <span asp-validation-for="Input.EnvironmentId" class="text-danger"></span>
+        </div>
+        <div class="col-md-6">
+            <label asp-for="Input.Description" for="descriptionInput" class="form-label"></label>
+            <input asp-for="Input.Description" class="form-control" id="descriptionInput" />
+            <span asp-validation-for="Input.Description" class="text-danger"></span>
+        </div>
+    </div>
+</form>

@@ -2,6 +2,8 @@
 @using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.RuntimeNodes.IndexModel
 @{
     ViewData["Title"] = "Runtime Nodes";
@@ -46,54 +48,11 @@
     </div>
 </section>
 
-<div class="modal fade" id="runtimeNodeModal" tabindex="-1" aria-labelledby="runtimeNodeModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving runtime node" data-busy-message="Distribution is validating and storing the runtime node.">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="runtimeNodeModalLabel">Create runtime node</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input asp-for="Input.RuntimeNodeId" type="hidden" id="runtimeNodeIdInput" />
-                    <input asp-for="Input.DistributionMode" type="hidden" id="distributionModeInput" />
-                    <input asp-for="Input.EndpointBaseUri" type="hidden" id="endpointBaseUriInput" />
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label asp-for="Input.Name" class="form-label"></label>
-                            <input asp-for="Input.Name" class="form-control" id="nameInput" />
-                            <span asp-validation-for="Input.Name" class="text-danger"></span>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="Input.Code" class="form-label"></label>
-                            <input asp-for="Input.Code" class="form-control" id="codeInput" data-orchestrator-key="true" />
-                            <span asp-validation-for="Input.Code" class="text-danger"></span>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="Input.EnvironmentId" class="form-label">Environment</label>
-                            <input type="search" class="form-control mb-2" id="environmentSearchInput" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
-                            <select asp-for="Input.EnvironmentId" class="form-select" id="environmentIdInput">
-                                <option value="">Select environment</option>
-                            </select>
-                            <button type="button" class="btn btn-link btn-sm px-0" id="environmentMoreButton" hidden>Load more environments</button>
-                            <div id="environmentSearchStatus" class="small" role="status"></div>
-                            <span asp-validation-for="Input.EnvironmentId" class="text-danger"></span>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="Input.Description" class="form-label"></label>
-                            <input asp-for="Input.Description" class="form-control" id="descriptionInput" />
-                            <span asp-validation-for="Input.Description" class="text-danger"></span>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="runtimeNodeModalSubmitButton">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeNodeModal", Title = "Create runtime node", Eyebrow = null, Size = "wide",
+    Body = await Html.PartialAsync("_RuntimeNodeBasic", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"runtimeNodeBasicForm\" class=\"z-button z-button-primary\" id=\"runtimeNodeModalSubmitButton\">Create</button>")
+})
 
 <div class="modal fade" id="runtimeNodeViewModal" tabindex="-1" aria-labelledby="runtimeNodeViewModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl od-runtime-detail-dialog">
@@ -377,7 +336,7 @@
 <script>
 (() => {
     const basicModalElement = document.getElementById('runtimeNodeModal');
-    const basicModal = window.bootstrap?.Modal?.getOrCreateInstance(basicModalElement);
+    const basicModal = basicModalElement;
     const viewModalElement = document.getElementById('runtimeNodeViewModal');
     const viewModal = window.bootstrap?.Modal?.getOrCreateInstance(viewModalElement);
     const setupModalElement = document.getElementById('runtimeNodeSetupModal');
@@ -654,7 +613,7 @@
     const populateBasicModal = (node, mode) => {
         if (!basicModal) return;
 
-        document.getElementById('runtimeNodeModalLabel').textContent = mode === 'edit' ? 'Edit data' : 'Create runtime node';
+        document.getElementById('runtimeNodeModal-title').textContent = mode === 'edit' ? 'Edit data' : 'Create runtime node';
         document.getElementById('runtimeNodeModalSubmitButton').textContent = mode === 'edit' ? 'Save' : 'Create';
 
         setValue('runtimeNodeIdInput', mode === 'edit' ? node?.dataset.id : '');
@@ -665,7 +624,7 @@
         setValue('endpointBaseUriInput', mode === 'edit' ? node?.dataset.endpointBaseUri : '');
         setValue('descriptionInput', mode === 'edit' ? node?.dataset.description : '');
 
-        basicModal.show();
+        basicModal.open?.();
     };
 
     const fillReadOnlyFields = node => {
