@@ -41,7 +41,8 @@ public sealed class DefaultOrchestratorThemeCssRenderer : IOrchestratorThemeCssR
         AppendColor(builder, "--krackend-primary", palette.PrimaryColor, fallback.PrimaryColor);
         AppendColor(builder, "--krackend-primary-hover", palette.PrimaryHoverColor, fallback.PrimaryHoverColor);
         var surface = NormalizeColor(palette.SurfaceColor, fallback.SurfaceColor);
-        builder.Append("--krackend-on-primary:").Append(ContrastColor(NormalizeColor(palette.PrimaryColor, fallback.PrimaryColor), surface)).Append(';');
+        var onPrimary = ContrastColor(NormalizeColor(palette.PrimaryColor, fallback.PrimaryColor), surface);
+        builder.Append("--krackend-on-primary:").Append(NormalizeColor(palette.PrimaryForegroundColor, onPrimary)).Append(';');
         builder.Append("--krackend-on-primary-hover:").Append(ContrastColor(NormalizeColor(palette.PrimaryHoverColor, fallback.PrimaryHoverColor), surface)).Append(';');
         AppendColor(builder, "--krackend-sidebar-bg", palette.SidebarBackgroundColor, fallback.SidebarBackgroundColor);
         AppendColor(builder, "--krackend-sidebar-brand-bg", palette.SidebarBrandBackgroundColor, fallback.SidebarBrandBackgroundColor);
@@ -77,6 +78,15 @@ public sealed class DefaultOrchestratorThemeCssRenderer : IOrchestratorThemeCssR
         var blue = (foregroundRgb.Blue * alpha) + (backgroundRgb.Blue * (1 - alpha));
         var luminance = (0.2126 * Linearize(red)) + (0.7152 * Linearize(green)) + (0.0722 * Linearize(blue));
         return luminance > 0.1791287847 ? "#000000" : "#ffffff";
+    }
+
+    internal static string PreferredForeground(string foreground, string background)
+    {
+        const string pattern = "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$";
+        foreground = foreground?.Trim();
+        background = background?.Trim();
+        return Regex.IsMatch(foreground ?? string.Empty, pattern) && Regex.IsMatch(background ?? string.Empty, pattern)
+            ? ContrastColor(foreground, background) : "#ffffff";
     }
 
     private static (int Red, int Green, int Blue, int Alpha) ParseColor(string color)

@@ -37,6 +37,7 @@ internal sealed class OrchestrationButterMorphThemeMapper : IOrchestrationButter
         target.SurfaceSoftColor = source.SubtleBackgroundColor;
         target.TextColor = source.TextColor;
         target.MutedTextColor = source.MutedTextColor;
+        target.DangerColor = source.DangerColor;
         target.BorderColor = BlendOrDefault(source.BorderColor, source.SurfaceColor, 0.45, source.BorderColor);
         target.StrongBorderColor = BlendOrDefault(source.PrimaryColor, source.BorderColor, 0.35, source.PrimaryColor);
         target.SidebarBackgroundColor = source.SidebarBackgroundColor;

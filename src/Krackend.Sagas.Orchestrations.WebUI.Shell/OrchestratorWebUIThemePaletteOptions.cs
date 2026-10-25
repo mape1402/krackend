@@ -5,6 +5,38 @@ namespace Krackend.Sagas.Orchestrations.WebUI.Shell;
 /// </summary>
 public sealed class OrchestratorWebUIThemePaletteOptions
 {
+    /// <summary>Optional elevated surface; defaults to a blend of the surface and accent.</summary>
+    public string ElevatedColor { get; set; }
+    /// <summary>Optional foreground on the primary accent; defaults to a contrasting color.</summary>
+    public string PrimaryForegroundColor { get; set; }
+    /// <summary>Optional low-emphasis accent surface.</summary>
+    public string PrimarySoftColor { get; set; }
+    /// <summary>Optional ambient accent color.</summary>
+    public string GlowColor { get; set; }
+    /// <summary>Positive foreground and background colors.</summary>
+    public string SuccessColor { get; set; } = "#087a57";
+    public string SuccessSoftColor { get; set; } = "#ddf4e9";
+    /// <summary>Warning foreground and background colors.</summary>
+    public string WarningColor { get; set; } = "#8a5a00";
+    public string WarningSoftColor { get; set; } = "#fff1d6";
+    /// <summary>Danger accent, foreground and background colors.</summary>
+    public string DangerColor { get; set; } = "#b4233f";
+    public string DangerForegroundColor { get; set; } = "#ffffff";
+    public string DangerSoftColor { get; set; } = "#ffe7ec";
+    /// <summary>Information foreground and background colors.</summary>
+    public string InfoColor { get; set; } = "#285eb8";
+    public string InfoSoftColor { get; set; } = "#e6eeff";
+    /// <summary>Palette used by data visualizations.</summary>
+    public string DataPrimaryColor { get; set; } = "#2563c9";
+    public string DataSecondaryColor { get; set; } = "#7253c6";
+    public string DataTertiaryColor { get; set; } = "#b9369d";
+    public string DataQuaternaryColor { get; set; } = "#c57608";
+    public string DataQuinaryColor { get; set; } = "#087d75";
+    /// <summary>Optional code control and overlay colors.</summary>
+    public string CodeBorderColor { get; set; }
+    public string CodeControlSurfaceColor { get; set; }
+    public string CodeControlTextColor { get; set; }
+    public string OverlayColor { get; set; } = "#1017238a";
     /// <summary>
     /// Gets or sets the primary accent color.
     /// </summary>
@@ -106,5 +138,27 @@ public sealed class OrchestratorWebUIThemePaletteOptions
         CodeBackgroundColor = source.CodeBackgroundColor;
         CodeTextColor = source.CodeTextColor;
         ShadowColor = source.ShadowColor;
+        ElevatedColor = source.ElevatedColor;
+        PrimaryForegroundColor = source.PrimaryForegroundColor;
+        PrimarySoftColor = source.PrimarySoftColor;
+        GlowColor = source.GlowColor;
+        SuccessColor = source.SuccessColor;
+        SuccessSoftColor = source.SuccessSoftColor;
+        WarningColor = source.WarningColor;
+        WarningSoftColor = source.WarningSoftColor;
+        DangerColor = source.DangerColor;
+        DangerForegroundColor = source.DangerForegroundColor;
+        DangerSoftColor = source.DangerSoftColor;
+        InfoColor = source.InfoColor;
+        InfoSoftColor = source.InfoSoftColor;
+        DataPrimaryColor = source.DataPrimaryColor;
+        DataSecondaryColor = source.DataSecondaryColor;
+        DataTertiaryColor = source.DataTertiaryColor;
+        DataQuaternaryColor = source.DataQuaternaryColor;
+        DataQuinaryColor = source.DataQuinaryColor;
+        CodeBorderColor = source.CodeBorderColor;
+        CodeControlSurfaceColor = source.CodeControlSurfaceColor;
+        CodeControlTextColor = source.CodeControlTextColor;
+        OverlayColor = source.OverlayColor;
     }
 }

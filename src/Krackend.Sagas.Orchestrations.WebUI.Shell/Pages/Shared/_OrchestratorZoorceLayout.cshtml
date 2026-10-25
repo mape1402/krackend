@@ -57,6 +57,7 @@
                 if (!form || (next !== 'light' && next !== 'dark')) return;
                 document.documentElement.dataset.krackendTheme = next;
                 document.documentElement.dataset.bsTheme = next;
+                window.ButterMorphHost?.setThemeMode?.(next);
                 form.elements.mode.value = next;
                 try {
                     const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });

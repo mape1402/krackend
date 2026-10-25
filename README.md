@@ -205,8 +205,16 @@ builder.Services.AddOrchestratorControlPlaneWebUI(options =>
     options.Theme.Mode = OrchestratorWebUIThemeMode.Light;
     options.Theme.Light.PrimaryColor = "#0b3d91";
     options.Theme.Light.SurfaceColor = "#ffffff";
+    options.Theme.Light.ElevatedColor = "#f7faff";
+    options.Theme.Light.PrimarySoftColor = "#e4edff";
+    options.Theme.Light.SuccessColor = "#087a57";
+    options.Theme.Light.SuccessSoftColor = "#ddf4e9";
     options.Theme.Dark.PrimaryColor = "#73a8ff";
     options.Theme.Dark.SurfaceColor = "#0d1b2f";
+    options.Theme.Dark.ElevatedColor = "#172a42";
+    options.Theme.Dark.PrimarySoftColor = "#253d62";
+    options.Theme.Dark.SuccessColor = "#55d99c";
+    options.Theme.Dark.SuccessSoftColor = "#173d30";
 });
 
 // In the separate runtime host:
@@ -219,6 +227,8 @@ builder.Services.AddOrchestratorRuntimeWebUI(options =>
 ```
 
 When using `AddOrchestratorControlPlane` instead of the standalone UI registration, set `options.Theme` on that composition. Configure both palettes with sufficient contrast; the host-provided initial mode is independent of the user's light/dark selection.
+
+Each palette can also configure `PrimaryForegroundColor`, `GlowColor`, warning, danger and information colors and their soft variants, five data visualization colors, code control colors, shadow, and overlay. Optional elevated, soft-accent, glow and primary-foreground colors are derived from the configured surface and primary color when omitted. Legacy top-level properties remain aliases for `Light`. ButterMorph receives the supported subset of both palettes; its UI is not restyled by Krackend.
 
 Spider event publishing:
 
