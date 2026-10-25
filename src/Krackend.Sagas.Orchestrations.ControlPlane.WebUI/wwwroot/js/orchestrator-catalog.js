@@ -33,6 +33,16 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'environments') {
+            const group = document.createElement('div');
+            group.dataset.environment = 'true';
+            Object.assign(group.dataset, { id: item.id, name: item.displayName, code: item.key,
+                description: item.description ?? '', isEnabled: String(item.isActive) });
+            const edit = button('bi-pencil', `Edit ${item.displayName}`);
+            edit.classList.add('js-edit-environment');
+            group.append(edit);
+            return group;
+        }
         if (kind === 'reviews') {
             const link = document.createElement('a');
             link.className = 'btn btn-sm btn-outline-secondary';
@@ -205,6 +215,12 @@
             const details = document.createElement('p');
             details.className = 'od-item-meta';
             details.textContent = `${item.approval} | ${item.application} | ${item.requested}`;
+            card.append(details);
+        }
+        if (kind === 'environments') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = `Updated ${item.updated}`;
             card.append(details);
         }
         cards.append(card);

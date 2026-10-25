@@ -79,6 +79,35 @@ public sealed class DistributionEnvironmentRepository : IDistributionEnvironment
         return new PagedResult<DistributionEnvironment>(pagedSettings.PageNumber, totalPages, totalRows, pagedSettings.PageSize, rows.Select(Map).ToArray());
     }
 
+    /// <inheritdoc />
+    public async Task<PagedResult<DistributionEnvironment>> Search(PagedSettings settings, string search, string sort, bool descending,
+        CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, settings?.PageNumber ?? 1);
+        var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
+        var query = _dbContext.DistributionEnvironments.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x => x.Name.Contains(term) || x.Code.Contains(term) ||
+                (x.Description != null && x.Description.Contains(term)));
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var ordered = (sort, descending) switch
+        {
+            ("key" or "code", false) => query.OrderBy(x => x.Code),
+            ("key" or "code", true) => query.OrderByDescending(x => x.Code),
+            ("status", false) => query.OrderBy(x => x.IsEnabled),
+            ("status", true) => query.OrderByDescending(x => x.IsEnabled),
+            ("updated", false) => query.OrderBy(x => x.UpdatedAtUtc ?? x.CreatedAtUtc),
+            ("updated", true) => query.OrderByDescending(x => x.UpdatedAtUtc ?? x.CreatedAtUtc),
+            (_, true) => query.OrderByDescending(x => x.Name),
+            _ => query.OrderBy(x => x.Name)
+        };
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<DistributionEnvironment>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size, rows.Select(Map).ToArray());
+    }
+
     private async Task EnsureCodeIsUnique(DistributionEnvironment environment, CancellationToken cancellationToken)
     {
         var exists = await _dbContext.DistributionEnvironments

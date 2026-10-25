@@ -48,4 +48,9 @@ public interface IDistributionEnvironmentRepository
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>A page of environments.</returns>
     Task<PagedResult<DistributionEnvironment>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
+
+    /// <summary>Searches and orders environments in the storage provider before paging.</summary>
+    Task<PagedResult<DistributionEnvironment>> Search(PagedSettings settings, string search, string sort, bool descending,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured environment storage does not support catalog search.");
 }

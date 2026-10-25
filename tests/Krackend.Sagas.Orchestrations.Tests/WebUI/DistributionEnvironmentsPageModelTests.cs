@@ -11,17 +11,17 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class DistributionEnvironmentsPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsDistributionEnvironments()
+    public async Task OnGetListLoadsOnlyTheRequestedPage()
     {
         var service = Substitute.For<IDistributionEnvironmentApplicationService>();
         service
-            .GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
+            .Search(Arg.Any<ApplicationPagedSettings>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(new ApplicationPagedResult<DistributionEnvironmentModel>
             {
-                PageNumber = 1,
-                PageSize = 200,
-                TotalRows = 1,
-                TotalPages = 1,
+                PageNumber = 2,
+                PageSize = 25,
+                TotalRows = 26,
+                TotalPages = 2,
                 Rows =
                 [
                     new DistributionEnvironmentModel
@@ -37,32 +37,51 @@ public sealed class DistributionEnvironmentsPageModelTests
             });
         var model = CreateModel(service);
 
-        await model.OnGetAsync();
+        model.OnGet();
+        var result = await model.OnGetListAsync(2, 25, "prod", "key", true);
 
-        Assert.Equal("Production", Assert.Single(model.Rows).Name);
-        await service.Received(1).GetAll(
-            Arg.Is<ApplicationPagedSettings>(settings => settings.PageNumber == 1 && settings.PageSize == 200),
-            Arg.Any<CancellationToken>());
+        Assert.IsType<JsonResult>(result);
+        await service.Received(1).Search(
+            Arg.Is<ApplicationPagedSettings>(settings => settings.PageNumber == 2 && settings.PageSize == 25),
+            "prod", "key", true, Arg.Any<CancellationToken>());
+        await service.DidNotReceiveWithAnyArgs().GetAll(default!, default);
     }
 
     [Fact]
     public async Task OnPostUpsertReloadsPageWhenModelStateIsInvalid()
     {
         var service = Substitute.For<IDistributionEnvironmentApplicationService>();
-        service
-            .GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
-            .Returns(new ApplicationPagedResult<DistributionEnvironmentModel>
-            {
-                Rows = [new DistributionEnvironmentModel { Id = "environment-1", Name = "QA", Code = "qa" }]
-            });
         var model = CreateModel(service);
         model.ModelState.AddModelError(nameof(EnvironmentInput.Name), "Name is required.");
 
         var result = await model.OnPostUpsertAsync();
 
         Assert.IsType<PageResult>(result);
-        Assert.Equal("QA", Assert.Single(model.Rows).Name);
+        await service.DidNotReceiveWithAnyArgs().GetAll(default!, default);
         await service.DidNotReceiveWithAnyArgs().Upsert(default!, default);
+    }
+
+    [Theory]
+    [InlineData(true, 503)]
+    [InlineData(false, 500)]
+    public async Task OnGetListReturnsFriendlyErrorWhenSearchFails(bool unsupported, int status)
+    {
+        var service = Substitute.For<IDistributionEnvironmentApplicationService>();
+        service.Search(Arg.Any<ApplicationPagedSettings>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ApplicationPagedResult<DistributionEnvironmentModel>>(
+                unsupported ? new NotSupportedException() : new InvalidOperationException()));
+        var result = await CreateModel(service).OnGetListAsync();
+
+        Assert.Equal(status, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task OnGetListPropagatesCancellation()
+    {
+        var service = Substitute.For<IDistributionEnvironmentApplicationService>();
+        service.Search(Arg.Any<ApplicationPagedSettings>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ApplicationPagedResult<DistributionEnvironmentModel>>(new OperationCanceledException()));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => CreateModel(service).OnGetListAsync());
     }
 
     [Fact]

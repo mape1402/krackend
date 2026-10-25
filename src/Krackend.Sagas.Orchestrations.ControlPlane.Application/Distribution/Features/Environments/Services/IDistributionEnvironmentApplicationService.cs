@@ -20,4 +20,9 @@ public interface IDistributionEnvironmentApplicationService
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>A page of environments.</returns>
     Task<ApplicationPagedResult<DistributionEnvironmentModel>> GetAll(ApplicationPagedSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns a filtered and ordered page of environments.</summary>
+    Task<ApplicationPagedResult<DistributionEnvironmentModel>> Search(ApplicationPagedSettings settings, string search, string sort,
+        bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured environment service does not support catalog search.");
 }

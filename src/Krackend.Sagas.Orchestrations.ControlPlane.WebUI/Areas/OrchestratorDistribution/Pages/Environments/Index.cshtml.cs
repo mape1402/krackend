@@ -6,9 +6,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 
 public sealed class IndexModel : PageModel
 {
-    private const int PageSize = 200;
-    private const int MaxPageReads = 50;
-
     private readonly IDistributionEnvironmentApplicationService _service;
 
     public IndexModel(IDistributionEnvironmentApplicationService service)
@@ -16,36 +13,46 @@ public sealed class IndexModel : PageModel
         _service = service;
     }
 
-    public IReadOnlyCollection<DistributionEnvironmentModel> Rows { get; private set; } = Array.Empty<DistributionEnvironmentModel>();
-
     [BindProperty]
     public EnvironmentInput Input { get; set; } = new();
 
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public void OnGet() { }
+
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
     {
-        var rows = new List<DistributionEnvironmentModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
+        try
         {
-            var result = await _service.GetAll(
-                new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize },
-                cancellationToken);
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
+            var result = await _service.Search(new ApplicationPagedSettings
+            {
+                PageNumber = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, 100)
+            }, search?.Trim(), sort, descending, cancellationToken);
+            return new JsonResult(new
+            {
+                items = result.Rows.Select(x => new
+                {
+                    id = x.Id, displayName = x.Name, key = x.Code, description = x.Description,
+                    isActive = x.IsEnabled, status = x.IsEnabled ? "Enabled" : "Disabled",
+                    updated = (x.UpdatedAtUtc ?? x.CreatedAtUtc).ToString("yyyy-MM-dd HH:mm:ss")
+                }),
+                totalCount = result.TotalRows, hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+            });
         }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-        Rows = rows.ToArray();
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured environment storage does not support catalog search.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Environments could not be loaded. Try again in a moment.");
+        }
     }
 
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
     {
         if (!ModelState.IsValid)
         {
-            await OnGetAsync(cancellationToken);
             return Page();
         }
 

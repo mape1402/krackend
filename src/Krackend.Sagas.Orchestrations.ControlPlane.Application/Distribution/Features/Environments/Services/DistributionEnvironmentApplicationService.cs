@@ -53,6 +53,19 @@ public sealed class DistributionEnvironmentApplicationService : IDistributionEnv
     public async Task<ApplicationPagedResult<DistributionEnvironmentModel>> GetAll(ApplicationPagedSettings settings, CancellationToken cancellationToken = default)
     {
         var result = await _repository.GetAll(new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), cancellationToken);
+        return Map(result);
+    }
+
+    /// <inheritdoc />
+    public async Task<ApplicationPagedResult<DistributionEnvironmentModel>> Search(ApplicationPagedSettings settings, string search,
+        string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.Search(new PagedSettings(settings.PageNumber, settings.PageSize, [], []), search, sort, descending, cancellationToken);
+        return Map(result);
+    }
+
+    private static ApplicationPagedResult<DistributionEnvironmentModel> Map(PagedResult<DistributionEnvironment> result)
+    {
         return new ApplicationPagedResult<DistributionEnvironmentModel>
         {
             PageNumber = result.PageNumber,
