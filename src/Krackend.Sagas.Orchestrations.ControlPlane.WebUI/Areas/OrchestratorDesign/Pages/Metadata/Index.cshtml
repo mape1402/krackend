@@ -80,6 +80,18 @@
                 return;
             }
 
+            if (frameDocument.head && !frameDocument.getElementById('krackend-schema-theme-fix')) {
+                const style = frameDocument.createElement('style');
+                style.id = 'krackend-schema-theme-fix';
+                style.textContent = '.event-editor > .platform-card-header span { color: var(--bm-sidebar-text); }' +
+                    '.btn-primary { color: var(--krackend-bm-on-primary); }' +
+                    '.btn-primary:hover { color: var(--krackend-bm-on-primary-hover); }';
+                frameDocument.head.appendChild(style);
+            }
+            const hostTheme = window.getComputedStyle(document.documentElement);
+            frameDocument.documentElement.style.setProperty('--krackend-bm-on-primary', hostTheme.getPropertyValue('--krackend-on-primary').trim() || '#ffffff');
+            frameDocument.documentElement.style.setProperty('--krackend-bm-on-primary-hover', hostTheme.getPropertyValue('--krackend-on-primary-hover').trim() || '#ffffff');
+
             const originalSync = frameWindow.ButterMorphPayloadSchemaSync;
             if (typeof originalSync !== 'function') {
                 window.setTimeout(applyPatch, 50);

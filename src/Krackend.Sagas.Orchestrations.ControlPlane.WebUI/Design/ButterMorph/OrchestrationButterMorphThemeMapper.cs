@@ -45,7 +45,7 @@ internal sealed class OrchestrationButterMorphThemeMapper : IOrchestrationButter
         target.SidebarBorderColor = BlendOrDefault(source.SidebarBackgroundColor, source.SidebarMutedTextColor, 0.20, source.SidebarBackgroundColor);
         target.SidebarTextColor = source.SidebarTextColor;
         target.SidebarMutedTextColor = source.SidebarMutedTextColor;
-        target.SidebarActiveTextColor = source.PrimaryColor;
+        target.SidebarActiveTextColor = source.SidebarTextColor;
     }
 
     private static string BlendOrDefault(string from, string to, double weight, string fallback)

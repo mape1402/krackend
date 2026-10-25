@@ -220,6 +220,7 @@ public sealed class WebUINavigationTests
             options.Theme.ContentBackgroundColor = "#f2f6fb";
             options.Theme.SurfaceColor = "#ffffff";
             options.Theme.Light.MutedTextColor = "#52657f";
+            options.Theme.Light.SidebarTextColor = "#f0f4ff";
             options.Theme.Light.BorderColor = "#cbd8e8";
             options.Theme.Light.DangerColor = "#ad3040";
             options.Theme.Light.SubtleBackgroundColor = "#eaf1fa";
@@ -227,6 +228,7 @@ public sealed class WebUINavigationTests
             options.Theme.Dark.PrimaryHoverColor = "#96beff";
             options.Theme.Dark.SidebarBackgroundColor = "#031021";
             options.Theme.Dark.SidebarMutedTextColor = "#9eb7d9";
+            options.Theme.Dark.SidebarTextColor = "#e0eaff";
             options.Theme.Dark.ContentBackgroundColor = "#07111f";
             options.Theme.Dark.SurfaceColor = "#0d1b2f";
             options.Theme.Dark.TextColor = "#edf6ff";
@@ -249,6 +251,7 @@ public sealed class WebUINavigationTests
         Assert.Equal("#e2eaf2", butterMorphOptions.Theme.Light.BorderColor);
         Assert.Equal("#ad3040", butterMorphOptions.Theme.Light.DangerColor);
         Assert.Equal("#253956", butterMorphOptions.Theme.Light.SidebarBorderColor);
+        Assert.Equal("#f0f4ff", butterMorphOptions.Theme.Light.SidebarActiveTextColor);
         Assert.Equal("#73a8ff", butterMorphOptions.Theme.Dark.PrimaryColor);
         Assert.Equal("#96beff", butterMorphOptions.Theme.Dark.PrimaryHoverColor);
         Assert.Equal("#07111f", butterMorphOptions.Theme.Dark.BackgroundColor);
@@ -257,6 +260,7 @@ public sealed class WebUINavigationTests
         Assert.Equal("#172a43", butterMorphOptions.Theme.Dark.BorderColor);
         Assert.Equal("#ffacba", butterMorphOptions.Theme.Dark.DangerColor);
         Assert.Equal("#223146", butterMorphOptions.Theme.Dark.SidebarBorderColor);
+        Assert.Equal("#e0eaff", butterMorphOptions.Theme.Dark.SidebarActiveTextColor);
     }
 
     [Fact]
