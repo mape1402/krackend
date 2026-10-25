@@ -551,6 +551,7 @@
             };
 
             const handleBasicNext = async () => {
+                if (!window.OrchestratorMessages.validateForm(document.getElementById('setupBasicForm'))) return;
                 const payload = await postWizardForm(
                     document.getElementById('setupBasicForm'),
                     'Saving basic data',
@@ -611,20 +612,6 @@
                 setText('designNodeCredentialModal-title', `Import Design credentials - ${currentNode.dataset.name || 'Design node'}`);
                 credentialsModal.open?.();
                 window.setTimeout(() => document.getElementById('credentialsJsonInput')?.focus(), 160);
-            };
-
-            const validateDesignCredentialsCapture = () => {
-                const input = document.getElementById('credentialsJsonInput');
-                const value = input?.value?.trim() || '';
-                if (!value) {
-                    throw new Error('Design credentials JSON is required.');
-                }
-
-                try {
-                    JSON.parse(value);
-                } catch {
-                    throw new Error('Design credentials must be valid JSON.');
-                }
             };
 
             const validateConnection = async () => {
@@ -749,7 +736,7 @@
                 event.stopPropagation();
 
                 try {
-                    validateDesignCredentialsCapture();
+                    if (!window.OrchestratorMessages.validateForm(event.currentTarget)) return;
                     const payload = await postWizardForm(
                         event.currentTarget,
                         'Importing credentials',

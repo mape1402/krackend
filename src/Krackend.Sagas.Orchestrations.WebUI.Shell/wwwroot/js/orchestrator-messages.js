@@ -476,7 +476,13 @@
         notify,
         confirm,
         showBusy,
-        showValidation
+        showValidation,
+        validateForm: form => {
+            if (!form) return false;
+            const errors = collectValidationErrors(form);
+            if (errors.length) focusFirstInvalid(form);
+            return errors.length === 0;
+        }
     };
 
     if (document.readyState === 'loading') {

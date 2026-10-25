@@ -27,7 +27,10 @@ function createMessages(elements = {}) {
         readyState: 'complete',
         body: { appendChild() {} },
         getElementById(id) { return elements[id] || null; },
-        createElement() { return host; },
+        createElement(tag) {
+            if (tag === 'span') return { dataset: {}, classList: { add() {}, remove() {} }, textContent: '' };
+            return host;
+        },
         querySelector() { return null; },
         querySelectorAll() { return []; },
         addEventListener(name, listener) {
@@ -67,7 +70,7 @@ test('closing a Zoorce dialog clears its previous form validation', () => {
     assert.deepEqual(calls, ['is-invalid', 'aria-invalid']);
 });
 
-test('validation opens the invalid field tab and focuses it after the message closes', async () => {
+test('validation displays the field error and immediately focuses the invalid tab', async () => {
     const calls = [];
     const ui = createMessages({ general: { click() { calls.push('tab'); } } });
     const field = {
@@ -76,7 +79,8 @@ test('validation opens the invalid field tab and focuses it after the message cl
         setAttribute() {},
         classList: { add() {}, remove() {} },
         closest(selector) { return selector === '[role="tabpanel"]' ? { getAttribute() { return 'general'; } } : null; },
-        focus() { calls.push('focus'); }
+        focus() { calls.push('focus'); },
+        insertAdjacentElement(position, element) { calls.push(element.textContent || 'error'); }
     };
     const form = {
         tagName: 'FORM', dataset: { orchestratorValidate: 'true' }, elements: [field],
@@ -84,11 +88,29 @@ test('validation opens the invalid field tab and focuses it after the message cl
         querySelector(selector) { return selector === '.is-invalid' ? field : null; }
     };
     field.form = form;
-    const result = ui.submit(form);
-    assert.deepEqual(calls, []);
-    ui.accept();
-    await result;
-    assert.deepEqual(calls, ['tab', 'focus']);
+    await ui.submit(form);
+    assert.deepEqual(calls, ['error', 'tab', 'focus']);
+});
+
+test('wizard validation returns false for missing fields and true after correction', () => {
+    const ui = createMessages();
+    let invalid = false;
+    const field = {
+        name: 'Input.Name', type: 'text', value: '', dataset: {},
+        getAttribute(name) { return name === 'data-val-required' ? 'Name is required.' : null; },
+        setAttribute() {}, removeAttribute() {},
+        classList: { add() { invalid = true; }, remove() { invalid = false; } },
+        closest() { return null; }, focus() {}, insertAdjacentElement() {}
+    };
+    const form = {
+        elements: [field], querySelectorAll(selector) { return selector === '.is-invalid' && invalid ? [field] : []; },
+        querySelector(selector) { return selector === '.is-invalid' && invalid ? field : null; }
+    };
+    field.form = form;
+    assert.equal(ui.messages.validateForm(form), false);
+    field.value = 'Example';
+    assert.equal(ui.messages.validateForm(form), true);
+    assert.equal(ui.messages.validateForm(null), false);
 });
 
 test('closing a message removes its listener before the next message', async () => {

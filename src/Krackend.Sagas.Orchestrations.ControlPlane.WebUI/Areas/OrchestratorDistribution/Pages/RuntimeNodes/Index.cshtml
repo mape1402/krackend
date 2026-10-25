@@ -524,21 +524,8 @@
         window.setTimeout(() => document.getElementById('credentialsJsonInput')?.focus(), 160);
     };
 
-    const validateRuntimeCredentialsCapture = () => {
-        const input = document.getElementById('credentialsJsonInput');
-        const value = input?.value?.trim() || '';
-        if (!value) {
-            throw new Error('Runtime credentials JSON is required.');
-        }
-
-        try {
-            JSON.parse(value);
-        } catch {
-            throw new Error('Runtime credentials must be valid JSON.');
-        }
-    };
-
     const handleBasicNext = async () => {
+        if (!window.OrchestratorMessages.validateForm(document.getElementById('setupBasicForm'))) return;
         const payload = await postWizardForm(
             document.getElementById('setupBasicForm'),
             'Saving basic data',
@@ -723,7 +710,7 @@
         event.stopPropagation();
 
         try {
-            validateRuntimeCredentialsCapture();
+            if (!window.OrchestratorMessages.validateForm(event.currentTarget)) return;
             const payload = await postWizardForm(
                 event.currentTarget,
                 'Importing credentials',
