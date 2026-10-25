@@ -96,6 +96,97 @@ public sealed class IndexModel : PageModel
         catch (NotSupportedException) { return StatusCode(503); }
     }
 
+    public async Task<IActionResult> OnGetReleaseListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string orchestrationId = null, string search = null, string sort = null, bool descending = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
+        try
+        {
+            var result = await _promotionService.Search(new ApplicationPagedSettings
+            {
+                PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100)
+            }, orchestrationId, search?.Trim() ?? string.Empty, sort ?? string.Empty, descending, cancellationToken);
+            var artifacts = (await _artifactService.GetSummariesByIds(result.Rows.Select(x => x.ArtifactId).Distinct().ToArray(), cancellationToken))
+                .ToDictionary(x => x.Id, StringComparer.Ordinal);
+            var targets = (await _releaseTargetService.GetByReleases(result.Rows.Select(x => x.Id).ToArray(), cancellationToken))
+                .GroupBy(x => x.ReleaseId, StringComparer.Ordinal)
+                .ToDictionary(x => x.Key, x => x.GroupBy(y => y.RuntimeNodeId, StringComparer.Ordinal)
+                    .Select(y => y.OrderByDescending(z => z.AssignedAtUtc).First()).ToArray(), StringComparer.Ordinal);
+            return new JsonResult(new
+            {
+                items = result.Rows.Select(item =>
+                {
+                    artifacts.TryGetValue(item.ArtifactId, out var artifact);
+                    targets.TryGetValue(item.Id, out var itemTargets);
+                    var status = ResolveReleaseStatus(item, itemTargets ?? []);
+                    var artifactLabel = artifact is null ? "No artifact linked" :
+                        $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}";
+                    return new
+                    {
+                        id = item.Id, key = item.Id, displayName = "Release", artifact = artifactLabel,
+                        status, strategy = item.Strategy, requestedBy = item.RequestedBy,
+                        created = item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm"), description = artifactLabel
+                    };
+                }).ToArray(),
+                totalCount = result.TotalRows, hasMore = result.PageNumber < result.TotalPages,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+            });
+        }
+        catch (NotSupportedException) { return StatusCode(503); }
+    }
+
+    private static string ResolveReleaseStatus(ReleaseModel release, IReadOnlyCollection<ReleaseTargetModel> targets)
+    {
+        var statuses = release.Targets.Select(plan => targets.FirstOrDefault(x => x.RuntimeNodeId == plan.RuntimeNodeId)?.Status ?? plan.Status)
+            .Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+        if (statuses.Length == 0) return release.Status;
+        if (statuses.All(x => string.Equals(x, "Activated", StringComparison.OrdinalIgnoreCase))) return "Completed";
+        if (statuses.Any(x => string.Equals(x, "Failed", StringComparison.OrdinalIgnoreCase))) return "Failed";
+        return release.Status;
+    }
+
+    public async Task<IActionResult> OnGetReleaseDetailsAsync(string releaseId, string orchestrationId, CancellationToken cancellationToken = default)
+    {
+        if (!Ulid.TryParse(releaseId, out _) || string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
+        try
+        {
+            var release = await _promotionService.GetById(releaseId, cancellationToken);
+            if (release is null || !string.Equals(release.OrchestrationDefinitionId, orchestrationId, StringComparison.Ordinal)) return NotFound();
+            var artifact = (await _artifactService.GetSummariesByIds([release.ArtifactId], cancellationToken)).FirstOrDefault();
+            var assignments = (await _releaseTargetService.GetByRelease(releaseId, cancellationToken))
+                .GroupBy(x => x.RuntimeNodeId, StringComparer.Ordinal)
+                .ToDictionary(x => x.Key, x => x.OrderByDescending(y => y.AssignedAtUtc).First(), StringComparer.Ordinal);
+            var targets = new List<object>();
+            foreach (var plan in release.Targets.OrderBy(x => x.CreatedAtUtc))
+            {
+                RuntimeNodeModel node = null;
+                try { node = await _runtimeService.GetById(plan.RuntimeNodeId, cancellationToken); }
+                catch (KeyNotFoundException) { }
+                catch (InvalidOperationException) { }
+                assignments.TryGetValue(plan.RuntimeNodeId, out var assignment);
+                var status = assignment?.Status ?? plan.Status;
+                var mode = node?.DistributionMode ?? string.Empty;
+                var activated = string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
+                targets.Add(new
+                {
+                    name = node?.Name ?? plan.RuntimeNodeId, code = node?.Code ?? "Unknown code",
+                    environment = node?.EnvironmentName ?? "Unknown environment", mode,
+                    status, targetId = assignment?.Id ?? string.Empty, activated,
+                    canPush = !activated && assignment is not null && (mode == "DesignPublishesToRuntime" || mode == "HybridSync" || mode == "Push" || mode == "Hybrid"),
+                    canPull = mode == "RuntimeFetchesFromDesign" || mode == "HybridSync" || mode == "Pull" || mode == "Hybrid"
+                });
+            }
+            return new JsonResult(new
+            {
+                release.Id, orchestration = artifact?.OrchestrationDisplayName ?? "Release",
+                artifact = artifact is null ? "No artifact linked" : $"{artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}",
+                created = release.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm"), targets
+            });
+        }
+        catch (NotSupportedException) { return StatusCode(503); }
+    }
+
     public async Task<IActionResult> OnPostCreateAsync(CancellationToken cancellationToken = default)
     {
         ModelState.Remove("AllowedNodes.OrchestrationDefinitionId");

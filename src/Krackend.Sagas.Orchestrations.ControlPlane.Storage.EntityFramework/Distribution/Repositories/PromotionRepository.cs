@@ -148,6 +148,18 @@ public sealed class ReleaseRepository : IReleaseRepository
             }).ToArray());
     }
 
+    public async Task<IReadOnlyCollection<ReleasePlanTarget>> GetTargetsByReleases(IReadOnlyCollection<Id> releaseIds, CancellationToken cancellationToken = default)
+    {
+        if (releaseIds.Count == 0) return Array.Empty<ReleasePlanTarget>();
+        var ids = releaseIds.ToArray();
+        var rows = await _dbContext.ReleasePlanTargets.AsNoTracking().Where(x => ids.Contains(x.ReleaseId)).ToArrayAsync(cancellationToken);
+        return rows.Select(x => new ReleasePlanTarget
+        {
+            Id = x.Id, ReleaseId = x.ReleaseId, RuntimeNodeId = x.RuntimeNodeId, Status = x.Status,
+            CreatedAtUtc = x.CreatedAtUtc, CompletedAtUtc = x.CompletedAtUtc, Notes = x.Notes
+        }).ToArray();
+    }
+
     public async Task<IReadOnlyCollection<ReleaseCatalogSummary>> GetSummaries(IReadOnlyCollection<string> orchestrationIds, CancellationToken cancellationToken = default)
     {
         if (orchestrationIds.Count == 0) return Array.Empty<ReleaseCatalogSummary>();

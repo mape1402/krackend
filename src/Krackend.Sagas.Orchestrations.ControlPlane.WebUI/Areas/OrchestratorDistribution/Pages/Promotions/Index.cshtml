@@ -6,109 +6,7 @@
 @{
     ViewData["Title"] = "Releases";
     var isOrchestrationSelected = !string.IsNullOrWhiteSpace(Model.OrchestrationId);
-    var catalogRows = Model.Orchestrations
-        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-        .ToArray();
-    var releaseRows = Model.Rows
-        .OrderByDescending(x => x.CreatedAtUtc)
-        .ToArray();
     var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
-    var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
-    var runtimeNodesById = Model.RuntimeNodes.ToDictionary(x => x.Id, StringComparer.Ordinal);
-
-    string DisplayStageStatus(string status)
-    {
-        var normalized = (status ?? string.Empty).Trim();
-        return normalized.ToLowerInvariant() switch
-        {
-            "inprogress" => "Queued",
-            "pushscheduled" => "Queued",
-            "pending" => "Queued",
-            "availableforpull" => "Pending",
-            _ => string.IsNullOrWhiteSpace(normalized) ? "Pending" : normalized
-        };
-    }
-
-    string ReleaseStatusClass(string status)
-    {
-        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "inprogress" or "draft" => "od-status-queued",
-            "completed" => "od-status-completed",
-            "failed" or "cancelled" => "od-status-failed",
-            _ => "od-status-queued"
-        };
-    }
-
-    string StageBadgeClass(string status)
-    {
-        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "pending" or "availableforpull" => "od-stage-badge-warning",
-            "inprogress" or "pushscheduled" => "od-stage-badge-info",
-            "delivered" or "acknowledged" or "activated" => "od-stage-badge-success",
-            "failed" or "cancelled" => "od-stage-badge-danger",
-            _ => "od-stage-badge-neutral"
-        };
-    }
-
-    bool IsActivated(string status)
-        => string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
-
-    bool IsDesignPushMode(string mode)
-        => string.Equals(mode, "DesignPublishesToRuntime", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "HybridSync", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "Push", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "Hybrid", StringComparison.OrdinalIgnoreCase);
-
-    bool IsRuntimePullMode(string mode)
-        => string.Equals(mode, "RuntimeFetchesFromDesign", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "HybridSync", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "Pull", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "Hybrid", StringComparison.OrdinalIgnoreCase);
-
-    string DisplayDistributionMode(string mode)
-    {
-        var normalized = (mode ?? string.Empty).Trim();
-        return normalized switch
-        {
-            "DesignPublishesToRuntime" => "Design publishes releases",
-            "RuntimeFetchesFromDesign" => "Runtime imports releases",
-            "HybridSync" => "Both directions",
-            _ => string.IsNullOrWhiteSpace(normalized) ? "Unknown mode" : normalized
-        };
-    }
-
-    string ResolveReleaseStatus(Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution.ReleaseModel release)
-    {
-        var targetStatuses = release.Targets
-            .Select(target =>
-            {
-                Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{release.Id}|{target.RuntimeNodeId}", out var releaseTarget);
-                return releaseTarget?.Status ?? target.Status;
-            })
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .ToArray();
-
-        if (targetStatuses.Length == 0)
-        {
-            return release.Status;
-        }
-
-        if (targetStatuses.All(x => string.Equals(x, "Activated", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "Completed";
-        }
-
-        if (targetStatuses.Any(x => string.Equals(x, "Failed", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "Failed";
-        }
-
-        return release.Status;
-    }
 }
 
 <div class="od-page-head">
@@ -175,61 +73,31 @@
 }
 else
 {
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-section-head od-release-detail-headline">
-            <div>
-                <h2 class="od-section-title">Created releases</h2>
-                <p class="od-item-meta">@releaseRows.Length release(s) found</p>
-            </div>
+    <section class="od-catalog" data-catalog="releases" data-label="releases" data-source="@Url.Page(null, "ReleaseList", new { orchestrationId = Model.OrchestrationId })" data-detail-source="@Url.Page(null, "ReleaseDetails", new { orchestrationId = Model.OrchestrationId })">
+        <div class="od-catalog-controls" role="group" aria-label="View mode">
+            <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
         </div>
-
-        @if (!releaseRows.Any())
-        {
-            <section class="od-panel od-empty-state">
-                <p class="od-empty">No releases found for this orchestration.</p>
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createReleaseModal">
-                    Create release
-                </button>
-            </section>
-        }
-        else
-        {
-            <div class="od-grid od-distribution-detail-grid od-release-detail-grid"
-                 data-od-infinite-grid
-                 data-od-infinite-label="releases"
-                 data-od-infinite-initial-count="24"
-                 data-od-infinite-batch-size="24">
-                @foreach (var item in releaseRows)
-                {
-                    var artifact = Model.Artifacts.FirstOrDefault(x => x.Id == item.ArtifactId);
-                    var releaseStatus = ResolveReleaseStatus(item);
-                    <article class="od-item-card od-release-detail-card od-infinite-item">
-                        <div class="od-item-top">
-                            <div>
-                                <h2 class="od-item-title">Release</h2>
-                                <p class="od-item-meta od-release-id">@item.Id</p>
-                            </div>
-                            <span class="od-status @ReleaseStatusClass(releaseStatus)">@DisplayStageStatus(releaseStatus)</span>
-                        </div>
-                        <div class="od-chip-row">
-                            <span class="od-meta-chip">Artifact: @(artifact is null ? "No artifact linked" : $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}")</span>
-                            <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
-                        </div>
-                        <div class="od-card-actions">
-                            <button type="button"
-                                    class="btn btn-sm od-release-details-btn js-open-release-details"
-                                    data-release-id="@item.Id">
-                                View details
-                            </button>
-                        </div>
-                    </article>
-                }
+        <div data-catalog-grid>
+            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+            {
+                Id = "releases-grid", AriaLabel = "releases", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "ReleaseList", new { orchestrationId = Model.OrchestrationId }) },
+                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Columns = [new("artifact", "Artifact", false), new("status", "Status", false), new("strategy", "Strategy"), new("requestedBy", "Requested by"), new("created", "Created"), new("actions", "Actions", false)]
+            })
+        </div>
+        <div data-catalog-cards hidden>
+            <div class="od-catalog-filters">
+                <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search releases" placeholder="Search releases" autocomplete="off" /></label>
+                <select class="form-select" data-catalog-sort aria-label="Sort releases">
+                    <option value="created:desc">Newest first</option><option value="created">Oldest first</option><option value="requestedBy">Requested by</option><option value="strategy">Strategy</option>
+                </select>
             </div>
-            <div class="od-infinite-scroll-status" data-od-infinite-status>
-                Showing <span data-od-infinite-count>@Math.Min(24, releaseRows.Length)</span> of <span data-od-infinite-total>@releaseRows.Length</span> releases
-            </div>
-            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-        }
+            <div class="od-grid" data-catalog-card-items></div>
+            <p class="od-empty" data-catalog-empty hidden>No matching releases.</p>
+            <p data-catalog-status aria-live="polite"></p><div data-catalog-sentinel aria-hidden="true"></div>
+            <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+        </div>
     </section>
 }
 
@@ -379,80 +247,16 @@ else
                         <span class="od-meta-chip" id="releaseDetailsCreated"></span>
                     </div>
                 </div>
-                <div id="releaseDetailsTargets">
-                    @foreach (var release in releaseRows)
-                    {
-                        <div class="od-stage-grid js-release-detail-targets d-none"
-                             data-release-id="@release.Id">
-                            @foreach (var target in release.Targets.OrderBy(x => x.CreatedAtUtc))
-                            {
-                                var nodeName = target.RuntimeNodeId;
-                                var nodeCode = "Unknown code";
-                                var nodeMode = "Unknown mode";
-                                var nodeEnvironment = "Unknown environment";
-                                if (runtimeNodesById.TryGetValue(target.RuntimeNodeId, out var runtimeNode))
-                                {
-                                    nodeName = runtimeNode.Name;
-                                    nodeCode = runtimeNode.Code;
-                                    nodeMode = runtimeNode.DistributionMode;
-                                    nodeEnvironment = runtimeNode.EnvironmentName;
-                                }
-
-                                Model.ReleaseTargetByReleaseAndNode.TryGetValue($"{release.Id}|{target.RuntimeNodeId}", out var releaseTarget);
-                                var targetStatus = releaseTarget?.Status ?? target.Status;
-                                var canPushTarget = IsDesignPushMode(nodeMode);
-                                var canPullTarget = IsRuntimePullMode(nodeMode);
-                                var displayNodeMode = DisplayDistributionMode(nodeMode);
-                                var isActivated = IsActivated(targetStatus);
-
-                                <article class="od-stage-card">
-                                    <div class="od-stage-card-head">
-                                        <div>
-                                            <h6 class="od-stage-card-title">@nodeName</h6>
-                                            <p class="od-stage-card-meta">@nodeCode - @nodeEnvironment</p>
-                                        </div>
-                                        <span class="od-stage-badge @StageBadgeClass(targetStatus)">@DisplayStageStatus(targetStatus)</span>
-                                    </div>
-                                    <div class="od-stage-card-body">
-                                        <div class="od-stage-kv"><span>Mode</span><strong>@displayNodeMode</strong></div>
-                                    </div>
-                                    <div class="od-stage-card-foot">
-                                        @if (canPushTarget && releaseTarget is not null && !isActivated)
-                                        {
-                                            <form method="post"
-                                                  asp-page-handler="Push"
-                                                  class="od-stage-push-form"
-                                                  data-confirm="true"
-                                                  data-confirm-title="Promote artifact"
-                                                  data-confirm-message="Push this artifact to @nodeName?"
-                                                  data-confirm-accept="Push"
-                                                  data-confirm-type="warning"
-                                                  data-orchestrator-busy="true"
-                                                  data-busy-title="Promoting artifact"
-                                                  data-busy-message="Distribution is sending the artifact to the selected runtime node.">
-                                                <input type="hidden" name="releaseTargetId" value="@releaseTarget.Id" />
-                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                                <button type="submit" class="btn btn-sm btn-primary">Push</button>
-                                            </form>
-                                        }
-                                        else if (isActivated)
-                                        {
-                                            <span class="od-stage-note">Promoted</span>
-                                        }
-                                        else if (canPullTarget)
-                                        {
-                                            <span class="od-stage-note">Pull by Runtime</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="od-stage-note">No manual action</span>
-                                        }
-                                    </div>
-                                </article>
-                            }
-                        </div>
-                    }
-                </div>
+                <div id="releaseDetailsTargets" class="od-stage-grid" aria-live="polite"></div>
+                <form method="post" asp-page-handler="Push" id="releasePushForm"
+                      data-confirm="true" data-confirm-title="Promote artifact"
+                      data-confirm-message="Push this artifact to the selected runtime node?"
+                      data-confirm-accept="Push" data-confirm-type="warning"
+                      data-orchestrator-busy="true" data-busy-title="Promoting artifact"
+                      data-busy-message="Distribution is sending the artifact to the selected runtime node.">
+                    <input type="hidden" name="releaseTargetId" />
+                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
@@ -484,8 +288,7 @@ else
     const releaseDetailsReleaseIdElement = document.getElementById('releaseDetailsReleaseId');
     const releaseDetailsArtifactElement = document.getElementById('releaseDetailsArtifact');
     const releaseDetailsCreatedElement = document.getElementById('releaseDetailsCreated');
-    const releaseDetailButtons = Array.from(document.querySelectorAll('.js-open-release-details'));
-    const releaseDetailTargetGroups = Array.from(document.querySelectorAll('.js-release-detail-targets'));
+    const releasePushForm = document.getElementById('releasePushForm');
 
     if (!window.bootstrap?.Modal) {
         return;
@@ -495,12 +298,7 @@ else
     const allowedNodesModal = allowedNodesModalElement ? window.bootstrap.Modal.getOrCreateInstance(allowedNodesModalElement) : null;
     const releaseDetailsModal = releaseDetailsModalElement ? window.bootstrap.Modal.getOrCreateInstance(releaseDetailsModalElement) : null;
     const selectedOrchestrationId = '@Model.OrchestrationId';
-    const releases = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Rows, jsonOptions));
-    const artifacts = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Artifacts, jsonOptions));
-
     const getSelectedOrchestrationId = () => selectedOrchestrationId;
-    const artifactById = new Map(artifacts.map(x => [x.id, x]));
-    const releaseById = new Map(releases.map(x => [x.id, x]));
 
     const updateNodeVisibility = () => {
         if (!artifactSelect || !warning || !submitButton || nodeCheckboxes.length === 0) {
@@ -599,23 +397,67 @@ else
         return true;
     };
 
-    const showReleaseDetails = (releaseId) => {
-        if (!releaseDetailsModal || !releaseDetailsTargetsElement || !releaseById.has(releaseId)) {
-            return;
-        }
-
-        const release = releaseById.get(releaseId);
-        const artifact = artifactById.get(release.artifactId);
-        releaseDetailsOrchestrationNameElement.textContent = artifact?.orchestrationDisplayName || 'Release';
-        releaseDetailsReleaseIdElement.textContent = `ReleaseId: ${release.id}`;
-        releaseDetailsArtifactElement.textContent = `Artifact: ${artifact ? `${artifact.versionNumber} - ${artifact.versionLabel || 'Unlabeled'}` : 'No artifact linked'}`;
-        releaseDetailsCreatedElement.textContent = `Created: ${release.createdAtUtc?.replace('T', ' ').slice(0, 16) || ''}`;
-
-        releaseDetailTargetGroups.forEach(group => {
-            group.classList.toggle('d-none', group.getAttribute('data-release-id') !== release.id);
-        });
-
+    let detailGeneration = 0;
+    const element = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text) node.textContent = text;
+        return node;
+    };
+    const showReleaseDetails = async releaseId => {
+        const catalog = document.querySelector('[data-catalog="releases"]');
+        if (!releaseDetailsModal || !catalog) return;
+        const generation = ++detailGeneration;
+        releaseDetailsOrchestrationNameElement.textContent = 'Loading release...';
+        releaseDetailsReleaseIdElement.textContent = '';
+        releaseDetailsArtifactElement.textContent = '';
+        releaseDetailsCreatedElement.textContent = '';
+        releaseDetailsTargetsElement.replaceChildren();
         releaseDetailsModal.show();
+        try {
+            const url = new URL(catalog.dataset.detailSource, location.href);
+            url.searchParams.set('releaseId', releaseId);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Release unavailable');
+            const release = await response.json();
+            if (generation !== detailGeneration) return;
+            releaseDetailsOrchestrationNameElement.textContent = release.orchestration;
+            releaseDetailsReleaseIdElement.textContent = `ReleaseId: ${release.id}`;
+            releaseDetailsArtifactElement.textContent = `Artifact: ${release.artifact}`;
+            releaseDetailsCreatedElement.textContent = `Created: ${release.created}`;
+            if (!release.targets.length) releaseDetailsTargetsElement.append(element('p', 'od-empty', 'No runtime targets.'));
+            release.targets.forEach(target => {
+                const card = element('article', 'od-stage-card');
+                const head = element('div', 'od-stage-card-head');
+                const identity = element('div');
+                identity.append(element('h6', 'od-stage-card-title', target.name), element('p', 'od-stage-card-meta', `${target.code} - ${target.environment}`));
+                const normalized = (target.status || '').toLowerCase();
+                const badgeClass = ['delivered', 'acknowledged', 'activated'].includes(normalized) ? 'success' :
+                    ['failed', 'cancelled'].includes(normalized) ? 'danger' : ['pending', 'availableforpull'].includes(normalized) ? 'warning' : 'info';
+                const label = ['inprogress', 'pushscheduled', 'pending'].includes(normalized) ? 'Queued' : normalized === 'availableforpull' ? 'Pending' : target.status;
+                head.append(identity, element('span', `od-stage-badge od-stage-badge-${badgeClass}`, label));
+                const body = element('div', 'od-stage-card-body');
+                const mode = element('div', 'od-stage-kv');
+                const modeLabel = ({ DesignPublishesToRuntime: 'Design publishes releases', RuntimeFetchesFromDesign: 'Runtime imports releases', HybridSync: 'Both directions' })[target.mode] || target.mode || 'Unknown mode';
+                mode.append(element('span', '', 'Mode'), element('strong', '', modeLabel));
+                body.append(mode);
+                const foot = element('div', 'od-stage-card-foot');
+                if (target.canPush) {
+                    const button = element('button', 'btn btn-sm btn-primary', 'Push');
+                    button.type = 'button';
+                    button.addEventListener('click', () => {
+                        releasePushForm.elements.releaseTargetId.value = target.targetId;
+                        releasePushForm.dataset.confirmMessage = `Push this artifact to ${target.name}?`;
+                        releasePushForm.requestSubmit();
+                    });
+                    foot.append(button);
+                } else foot.append(element('span', 'od-stage-note', target.activated ? 'Promoted' : target.canPull ? 'Pull by Runtime' : 'No manual action'));
+                card.append(head, body, foot);
+                releaseDetailsTargetsElement.append(card);
+            });
+        } catch {
+            if (generation === detailGeneration) releaseDetailsTargetsElement.replaceChildren(element('p', 'od-empty', 'Release details could not be loaded. Please try again.'));
+        }
     };
 
     if (openRuntimeNodesModalButton) {
@@ -624,12 +466,9 @@ else
         });
     }
 
-    releaseDetailButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const releaseId = button.getAttribute('data-release-id');
-            if (!releaseId) return;
-            showReleaseDetails(releaseId);
-        });
+    document.addEventListener('click', event => {
+        const button = event.target.closest('.js-open-release-details');
+        if (button?.dataset.releaseId) showReleaseDetails(button.dataset.releaseId);
     });
 
     if (artifactSelect) {

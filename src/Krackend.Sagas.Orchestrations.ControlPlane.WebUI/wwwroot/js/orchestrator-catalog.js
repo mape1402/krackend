@@ -33,6 +33,12 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'releases') {
+            const details = button('bi-eye', `Details for release ${item.id}`);
+            details.classList.add('js-open-release-details');
+            details.dataset.releaseId = item.id;
+            return details;
+        }
         if (kind === 'artifacts') {
             const details = button('bi-eye', `Details for ${item.displayName} version ${item.version}`);
             details.classList.add('js-open-artifact-details');
@@ -277,7 +283,7 @@
         top.append(identity, actions(item));
         if (item.status) {
             const badge = document.createElement('span');
-            badge.className = `od-status ${item.isActive ? 'od-status-active' : 'od-status-inactive'}`;
+            badge.className = `od-status ${kind === 'releases' ? (item.status === 'Completed' ? 'od-status-completed' : item.status === 'Failed' || item.status === 'Cancelled' ? 'od-status-failed' : 'od-status-queued') : item.isActive ? 'od-status-active' : 'od-status-inactive'}`;
             badge.textContent = item.status;
             card.append(top, badge);
         } else if (kind === 'artifacts') {
@@ -296,6 +302,12 @@
             const details = document.createElement('p');
             details.className = 'od-item-meta';
             details.textContent = `Releases: ${item.count}${item.latest ? ` | Latest: ${item.latest}` : ''}`;
+            card.append(details);
+        }
+        if (kind === 'releases') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = `${item.strategy} | ${item.requestedBy} | ${item.created}`;
             card.append(details);
         }
         if (kind === 'orchestrations') {

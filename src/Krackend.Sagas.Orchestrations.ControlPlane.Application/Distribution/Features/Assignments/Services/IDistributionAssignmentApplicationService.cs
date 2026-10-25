@@ -6,5 +6,7 @@ public interface IReleaseTargetApplicationService
     Task<IReadOnlyCollection<ReleaseAttemptModel>> GetAttempts(string assignmentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ReleaseTargetModel>> GetByRelease(string releaseId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release target service does not support release lookup.");
+    Task<IReadOnlyCollection<ReleaseTargetModel>> GetByReleases(IReadOnlyCollection<string> releaseIds, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release target service does not support batch release lookup.");
 }
 

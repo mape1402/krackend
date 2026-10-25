@@ -47,6 +47,42 @@ public sealed class ControlPlaneReleasesPageModelTests
         await fixture.PolicyService.Received(1).SearchOrchestrations(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 25), "Sales", "name", false, Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("Activated", "InProgress", "InProgress")]
+    [InlineData("Activated", "Activated", "Completed")]
+    [InlineData("Activated", "Failed", "Failed")]
+    public async Task ReleaseListUsesTheEffectiveStatusOfEveryPlannedTarget(string first, string second, string expected)
+    {
+        var fixture = new Fixture();
+        fixture.ReleaseService.Search(Arg.Any<ApplicationPagedSettings>(), "sales", "", "created", false, Arg.Any<CancellationToken>())
+            .Returns(Page(new ReleaseModel
+            {
+                Id = "release", ArtifactId = "artifact", OrchestrationDefinitionId = "sales", Status = "InProgress",
+                Strategy = "Direct", RequestedBy = "tester", Targets = [new() { RuntimeNodeId = "node1", Status = "InProgress" }, new() { RuntimeNodeId = "node2", Status = second }]
+            }));
+        fixture.ArtifactService.GetSummariesByIds(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new ArtifactModel { Id = "artifact", ArtifactType = "orchestration-version.new", VersionNumber = "1.0.0" }]);
+        fixture.ReleaseTargetService.GetByReleases(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new ReleaseTargetModel { ReleaseId = "release", RuntimeNodeId = "node1", Status = first }]);
+        var page = fixture.CreatePage();
+
+        var result = Assert.IsType<JsonResult>(await page.OnGetReleaseListAsync(1, 25, "sales", "", "created", false));
+
+        Assert.Contains($"\"status\":\"{expected}\"", System.Text.Json.JsonSerializer.Serialize(result.Value));
+        await fixture.ReleaseService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReleaseDetailsRejectsAnUnrelatedOrchestration()
+    {
+        var fixture = new Fixture();
+        var id = Ulid.NewUlid().ToString();
+        fixture.ReleaseService.GetById(id, Arg.Any<CancellationToken>()).Returns(new ReleaseModel { Id = id, OrchestrationDefinitionId = "other" });
+
+        Assert.IsType<NotFoundResult>(await fixture.CreatePage().OnGetReleaseDetailsAsync(id, "sales"));
+        await fixture.ReleaseTargetService.DidNotReceive().GetByRelease(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task OnGetLoadsRowsArtifactsRuntimeNodesTargetsAndPoliciesForSelectedOrchestration()
     {

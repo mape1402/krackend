@@ -16,5 +16,7 @@ public interface IReleaseTargetRepository
     Task<PagedResult<ReleaseTarget>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ReleaseTarget>> GetByRelease(Id releaseId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release target storage does not support release lookup.");
+    Task<IReadOnlyCollection<ReleaseTarget>> GetByReleases(IReadOnlyCollection<Id> releaseIds, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release target storage does not support batch release lookup.");
 }
 

@@ -161,6 +161,16 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
         return rows.Select(Map).ToArray();
     }
 
+    public async Task<IReadOnlyCollection<ReleaseTarget>> GetByReleases(IReadOnlyCollection<Id> releaseIds, CancellationToken cancellationToken = default)
+    {
+        if (releaseIds.Count == 0) return Array.Empty<ReleaseTarget>();
+        var ids = releaseIds.ToArray();
+        var rows = await _dbContext.ReleaseTargets.AsNoTracking()
+            .Where(x => x.ReleaseId.HasValue && ids.Contains(x.ReleaseId.Value))
+            .OrderByDescending(x => x.AssignedAtUtc).ToArrayAsync(cancellationToken);
+        return rows.Select(Map).ToArray();
+    }
+
     private static ReleaseTarget Map(ReleaseTargetEntity x) => new()
     {
         Id = x.Id,

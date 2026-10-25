@@ -178,10 +178,18 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
     public async Task<ApplicationPagedResult<ReleaseModel>> Search(ApplicationPagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
     {
         var result = await _repository.Search(new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), orchestrationId, search, sort, descending, cancellationToken);
+        var targets = (await _repository.GetTargetsByReleases(result.Rows.Select(x => x.Id).ToArray(), cancellationToken))
+            .GroupBy(x => x.ReleaseId).ToDictionary(x => x.Key, x => x.Select(MapTarget).ToArray());
+        var rows = result.Rows.Select(item =>
+        {
+            var model = MapSummary(item);
+            if (targets.TryGetValue(item.Id, out var items)) model.Targets = items;
+            return model;
+        }).ToArray();
         return new ApplicationPagedResult<ReleaseModel>
         {
             PageNumber = result.PageNumber, PageSize = result.PageSize, TotalRows = (int)result.TotalRows,
-            TotalPages = result.TotalPages, Rows = result.Rows.Select(MapSummary).ToArray()
+            TotalPages = result.TotalPages, Rows = rows
         };
     }
 
@@ -192,11 +200,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         if (release is null) return null;
         var result = MapSummary(release);
         var targets = await _repository.GetTargets(releaseId, cancellationToken);
-        result.Targets = targets.Select(t => new ReleasePlanTargetModel
-        {
-            Id = t.Id.ToString(), RuntimeNodeId = t.RuntimeNodeId.ToString(), Status = t.Status.ToString(),
-            CreatedAtUtc = t.CreatedAtUtc, CompletedAtUtc = t.CompletedAtUtc, Notes = t.Notes
-        }).ToArray();
+        result.Targets = targets.Select(MapTarget).ToArray();
         return result;
     }
 
@@ -206,6 +210,12 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         OrchestrationDefinitionId = item.OrchestrationDefinitionId, RequestedBy = item.RequestedBy,
         Strategy = item.Strategy, Status = item.Status.ToString(), CreatedAtUtc = item.CreatedAtUtc,
         CompletedAtUtc = item.CompletedAtUtc
+    };
+
+    private static ReleasePlanTargetModel MapTarget(ReleasePlanTarget t) => new()
+    {
+        Id = t.Id.ToString(), RuntimeNodeId = t.RuntimeNodeId.ToString(), Status = t.Status.ToString(),
+        CreatedAtUtc = t.CreatedAtUtc, CompletedAtUtc = t.CompletedAtUtc, Notes = t.Notes
     };
 
     public async Task<IReadOnlyCollection<ReleaseCatalogSummaryModel>> GetSummaries(IReadOnlyCollection<string> orchestrationIds, CancellationToken cancellationToken = default)
