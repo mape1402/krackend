@@ -25,6 +25,21 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; padding: 0; }
 
+.z-nav-icon:empty::before {
+    content: "";
+    display: block;
+    width: 14px;
+    height: 14px;
+    background: currentColor;
+    mask: var(--orchestrator-nav-icon, url("../icons/bootstrap/arrow-up-right.svg")) center / contain no-repeat;
+}
+.z-nav-link[title="Overview"] { --orchestrator-nav-icon: url("../icons/bootstrap/grid-1x2.svg"); }
+.z-nav-group-trigger[title="Design"] { --orchestrator-nav-icon: url("../icons/bootstrap/bezier2.svg"); }
+.z-nav-group-trigger[title="Distribution"] { --orchestrator-nav-icon: url("../icons/bootstrap/signpost-split.svg"); }
+.z-nav-group-trigger[title="Runtime"] { --orchestrator-nav-icon: url("../icons/bootstrap/activity.svg"); }
+.z-nav-group-trigger[title="Security"] { --orchestrator-nav-icon: url("../icons/bootstrap/shield-lock.svg"); }
+.z-nav-list-nested .z-nav-link { --orchestrator-nav-icon: url("../icons/bootstrap/arrow-up-right.svg"); }
+
 [data-krackend-theme="dark"] .btn-outline-secondary {
     --bs-btn-color: var(--krackend-text, #e8edf7);
     --bs-btn-border-color: var(--krackend-muted-text, #a4b3ca);

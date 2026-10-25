@@ -87,8 +87,8 @@ public sealed class WebUINavigationTests
 
         Assert.Equal("Orchestrator", theme.Title);
         Assert.Equal(OrchestratorWebUIThemeMode.Light, theme.Mode);
-        Assert.Equal("#405bd1", theme.PrimaryColor);
-        Assert.Equal("#a3b0ff", theme.Dark.PrimaryColor);
+        Assert.Equal("#6d28d9", theme.PrimaryColor);
+        Assert.Equal("#a78bfa", theme.Dark.PrimaryColor);
         Assert.IsType<DefaultOrchestratorThemeCssRenderer>(
             provider.GetRequiredService<IOrchestratorThemeCssRenderer>());
         Assert.IsType<DefaultOrchestratorThemeModeAccessor>(
@@ -336,8 +336,8 @@ public sealed class WebUINavigationTests
         Assert.Contains("--krackend-primary-hover:#abc;", css);
         Assert.Contains("--krackend-primary:#abcdef;", css);
         Assert.Contains("--krackend-primary-hover:#12345678;", css);
-        Assert.Contains("--krackend-surface:#171720;", css);
-        Assert.Contains("--krackend-primary:#405bd1;", defaultCss);
+        Assert.Contains("--krackend-surface:#16101f;", css);
+        Assert.Contains("--krackend-primary:#6d28d9;", defaultCss);
         Assert.DoesNotContain("red", css);
     }
 

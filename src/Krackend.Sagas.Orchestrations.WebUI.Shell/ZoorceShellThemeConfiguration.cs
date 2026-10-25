@@ -20,14 +20,21 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         var theme = _theme.Value;
         options.ApplicationName = theme.Title;
         options.BrandMark = "K";
+        options.UseThemePreset(ZoorceThemePreset.Amethyst);
         options.DefaultTheme = theme.Mode == OrchestratorWebUIThemeMode.Dark
             ? ZoorceThemeMode.Dark : ZoorceThemeMode.Light;
-        ApplyPalette(theme.Light, options.Light, false);
-        ApplyPalette(theme.Dark, options.Dark, true);
+        var defaults = new OrchestratorWebUIThemeOptions();
+        ApplyPalette(theme.Light, defaults.Light, options.Light, false);
+        ApplyPalette(theme.Dark, defaults.Dark, options.Dark, true);
     }
 
-    private static void ApplyPalette(OrchestratorWebUIThemePaletteOptions source, ZoorceThemePalette target, bool dark)
+    private static void ApplyPalette(OrchestratorWebUIThemePaletteOptions source, OrchestratorWebUIThemePaletteOptions defaults, ZoorceThemePalette target, bool dark)
     {
+        var defaultAccent = string.Equals(source.PrimaryColor, defaults.PrimaryColor, StringComparison.OrdinalIgnoreCase);
+        var defaultSurface = string.Equals(source.SurfaceColor, defaults.SurfaceColor, StringComparison.OrdinalIgnoreCase);
+        var defaultCode = string.Equals(source.CodeBackgroundColor, defaults.CodeBackgroundColor, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(source.CodeTextColor, defaults.CodeTextColor, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(source.BorderColor, defaults.BorderColor, StringComparison.OrdinalIgnoreCase);
         target.Primary = source.PrimaryColor;
         target.PrimaryHover = source.PrimaryHoverColor;
         target.Sidebar = source.SidebarBackgroundColor;
@@ -35,14 +42,14 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         target.SidebarMuted = source.SidebarMutedTextColor;
         target.Canvas = source.ContentBackgroundColor;
         target.Surface = source.SurfaceColor;
-        target.Elevated = source.ElevatedColor ?? $"color-mix(in srgb, {source.SurfaceColor} 94%, {source.PrimaryColor})";
+        target.Elevated = source.ElevatedColor ?? (defaultAccent && defaultSurface ? target.Elevated : $"color-mix(in srgb, {source.SurfaceColor} 94%, {source.PrimaryColor})");
         target.Text = source.TextColor;
         target.Muted = source.MutedTextColor;
         target.Border = source.BorderColor;
         target.Subtle = source.SubtleBackgroundColor;
-        target.PrimaryForeground = source.PrimaryForegroundColor ?? DefaultOrchestratorThemeCssRenderer.PreferredForeground(source.PrimaryColor, source.SurfaceColor);
-        target.PrimarySoft = source.PrimarySoftColor ?? $"color-mix(in srgb, {source.PrimaryColor} 12%, {source.SurfaceColor})";
-        target.Glow = source.GlowColor ?? $"color-mix(in srgb, {source.PrimaryColor} {(dark ? 24 : 10)}%, transparent)";
+        target.PrimaryForeground = source.PrimaryForegroundColor ?? (defaultAccent && defaultSurface ? target.PrimaryForeground : DefaultOrchestratorThemeCssRenderer.PreferredForeground(source.PrimaryColor, source.SurfaceColor));
+        target.PrimarySoft = source.PrimarySoftColor ?? (defaultAccent && defaultSurface ? target.PrimarySoft : $"color-mix(in srgb, {source.PrimaryColor} 12%, {source.SurfaceColor})");
+        target.Glow = source.GlowColor ?? (defaultAccent ? target.Glow : $"color-mix(in srgb, {source.PrimaryColor} {(dark ? 24 : 10)}%, transparent)");
         target.Success = source.SuccessColor;
         target.SuccessSoft = source.SuccessSoftColor;
         target.Warning = source.WarningColor;
@@ -59,10 +66,10 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         target.DataQuinary = source.DataQuinaryColor;
         target.CodeCanvas = source.CodeBackgroundColor;
         target.CodeText = source.CodeTextColor;
-        target.CodeBorder = source.CodeBorderColor ?? source.BorderColor;
-        target.CodeControlSurface = source.CodeControlSurfaceColor ?? source.CodeBackgroundColor;
-        target.CodeControlText = source.CodeControlTextColor ?? source.CodeTextColor;
-        target.Shadow = source.ShadowColor;
-        target.Overlay = source.OverlayColor;
+        target.CodeBorder = source.CodeBorderColor ?? (defaultCode ? target.CodeBorder : source.BorderColor);
+        target.CodeControlSurface = source.CodeControlSurfaceColor ?? (defaultCode ? target.CodeControlSurface : source.CodeBackgroundColor);
+        target.CodeControlText = source.CodeControlTextColor ?? (defaultCode ? target.CodeControlText : source.CodeTextColor);
+        target.Shadow = string.Equals(source.ShadowColor, defaults.ShadowColor, StringComparison.OrdinalIgnoreCase) ? target.Shadow : source.ShadowColor;
+        target.Overlay = string.Equals(source.OverlayColor, defaults.OverlayColor, StringComparison.OrdinalIgnoreCase) ? target.Overlay : source.OverlayColor;
     }
 }
