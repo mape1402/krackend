@@ -9,15 +9,23 @@ public sealed class IndexModel : PageModel
     private readonly IReleaseTargetApplicationService _service;
     public IndexModel(IReleaseTargetApplicationService service) { _service = service; }
 
-    public IReadOnlyCollection<ReleaseAttemptModel> Attempts { get; private set; } = Array.Empty<ReleaseAttemptModel>();
     [BindProperty(SupportsGet = true)] public string AssignmentId { get; set; } = string.Empty;
 
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public async Task<IActionResult> OnGetAttemptListAsync(string assignmentId, [FromQuery(Name = "page")] int page = 1,
+        int pageSize = 25, string search = "", string sort = "", bool descending = false, CancellationToken cancellationToken = default)
     {
-        if (Ulid.TryParse(AssignmentId, out _))
+        if (!Ulid.TryParse(assignmentId, out _)) return BadRequest("Assignment id is invalid.");
+        var term = search?.Trim() ?? string.Empty;
+        var result = await _service.SearchAttempts(assignmentId, Math.Max(1, page), Math.Clamp(pageSize, 1, 100), term, descending, cancellationToken);
+        return new JsonResult(new
         {
-            Attempts = await _service.GetAttempts(AssignmentId, cancellationToken);
-        }
+            items = result.Rows.Select(x => new { id = x.Id, action = x.Action, initiatedBy = x.InitiatedBy,
+                started = x.StartedAtUtc.ToString("yyyy-MM-dd HH:mm"), succeeded = x.Succeeded ? "Yes" : "No", error = x.ErrorMessage ?? string.Empty }),
+            totalCount = result.TotalRows, hasMore = result.PageNumber < result.TotalPages,
+            search = term, sort = sort ?? string.Empty, descending
+        });
     }
 
     public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,

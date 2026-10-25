@@ -12,6 +12,8 @@ public interface IReleaseTargetRepository
     Task<ReleaseTarget> GetById(Id assignmentId, CancellationToken cancellationToken = default);
     Task<ReleaseTarget> GetByArtifactAndRuntimeNode(Id artifactId, Id runtimeNodeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ReleaseAttempt>> GetAttempts(Id assignmentId, CancellationToken cancellationToken = default);
+    Task<PagedResult<ReleaseAttempt>> SearchAttempts(Id assignmentId, int pageNumber, int pageSize, string search, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release target storage does not support attempt search.");
     Task<IReadOnlyCollection<ReleaseTarget>> GetPendingForRuntimeNode(Id runtimeNodeId, CancellationToken cancellationToken = default);
     Task<PagedResult<ReleaseTarget>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
     Task<PagedResult<ReleaseTargetCatalogItem>> Search(int pageNumber, int pageSize, string search, string sort, bool descending, CancellationToken cancellationToken = default)

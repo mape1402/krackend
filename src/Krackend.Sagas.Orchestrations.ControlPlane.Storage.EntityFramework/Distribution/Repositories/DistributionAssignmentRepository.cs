@@ -114,19 +114,24 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
             .OrderByDescending(x => x.StartedAtUtc)
             .ToArrayAsync(cancellationToken);
 
-        return rows.Select(x => new ReleaseAttempt
+        return rows.Select(MapAttempt).ToArray();
+    }
+
+    public async Task<PagedResult<ReleaseAttempt>> SearchAttempts(Id assignmentId, int pageNumber, int pageSize, string search, bool descending, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.ReleaseAttempts.AsNoTracking().Where(x => x.ReleaseTargetId == assignmentId);
+        if (!string.IsNullOrWhiteSpace(search))
         {
-            Id = x.Id,
-            ReleaseTargetId = x.ReleaseTargetId,
-            Action = x.Action,
-            InitiatedBy = x.InitiatedBy,
-            StartedAtUtc = x.StartedAtUtc,
-            FinishedAtUtc = x.FinishedAtUtc,
-            Succeeded = x.Succeeded,
-            ErrorCode = x.ErrorCode,
-            ErrorMessage = x.ErrorMessage,
-            ExternalReference = x.ExternalReference
-        }).ToArray();
+            var term = search.Trim();
+            query = query.Where(x => x.Action.Contains(term) || x.InitiatedBy.Contains(term)
+                || (x.ErrorCode != null && x.ErrorCode.Contains(term)) || (x.ErrorMessage != null && x.ErrorMessage.Contains(term)));
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var page = Math.Max(1, pageNumber);
+        var size = Math.Clamp(pageSize, 1, 100);
+        var ordered = descending ? query.OrderByDescending(x => x.StartedAtUtc) : query.OrderBy(x => x.StartedAtUtc);
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<ReleaseAttempt>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size, rows.Select(MapAttempt).ToArray());
     }
 
     public async Task<IReadOnlyCollection<ReleaseTarget>> GetPendingForRuntimeNode(Id runtimeNodeId, CancellationToken cancellationToken = default)
@@ -220,6 +225,13 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
         FailureReason = x.FailureReason,
         RuntimeVersionApplied = x.RuntimeVersionApplied,
         CorrelationId = x.CorrelationId
+    };
+
+    private static ReleaseAttempt MapAttempt(ReleaseAttemptEntity x) => new()
+    {
+        Id = x.Id, ReleaseTargetId = x.ReleaseTargetId, Action = x.Action, InitiatedBy = x.InitiatedBy,
+        StartedAtUtc = x.StartedAtUtc, FinishedAtUtc = x.FinishedAtUtc, Succeeded = x.Succeeded,
+        ErrorCode = x.ErrorCode, ErrorMessage = x.ErrorMessage, ExternalReference = x.ExternalReference
     };
 }
 

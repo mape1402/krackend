@@ -8,37 +8,40 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ControlPlaneAssignmentsPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsOnlyAttemptsWhenAssignmentIsSelected()
+    public async Task OnGetDoesNotLoadAttemptsBeforeTheGridRequestsThem()
     {
         var service = Substitute.For<IReleaseTargetApplicationService>();
-        var target = new ReleaseTargetModel
-        {
-            Id = Ulid.NewUlid().ToString(),
-            RuntimeNodeId = "runtime-1",
-            ArtifactId = "artifact-1",
-            ReleaseId = "release-1",
-            RolloutGroup = "default",
-            Status = "Queued",
-            ActivationStatus = "Pending",
-            AssignedAtUtc = DateTime.UtcNow
-        };
-        var attempt = new ReleaseAttemptModel
-        {
-            Id = "attempt-1",
-            ReleaseTargetId = target.Id,
-            Action = "Push",
-            InitiatedBy = "tests",
-            StartedAtUtc = DateTime.UtcNow,
-            Succeeded = true
-        };
-        service.GetAttempts(target.Id, Arg.Any<CancellationToken>()).Returns([attempt]);
-        var page = new AssignmentsIndexModel(service) { AssignmentId = target.Id };
+        var id = Ulid.NewUlid().ToString();
+        var page = new AssignmentsIndexModel(service) { AssignmentId = id };
 
         await page.OnGetAsync();
 
-        Assert.Same(attempt, page.Attempts.Single());
         await service.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
-        await service.Received(1).GetAttempts(target.Id, Arg.Any<CancellationToken>());
+        await service.DidNotReceive().GetAttempts(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().SearchAttempts(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AttemptListForwardsSearchAndBoundedPage()
+    {
+        var service = Substitute.For<IReleaseTargetApplicationService>();
+        var id = Ulid.NewUlid().ToString();
+        service.SearchAttempts(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(new ApplicationPagedResult<ReleaseAttemptModel> { PageNumber = 1, PageSize = 100, Rows = [] });
+        var page = new AssignmentsIndexModel(service);
+
+        Assert.IsType<JsonResult>(await page.OnGetAttemptListAsync(id, 0, 500, " failed ", descending: true));
+        await service.Received(1).SearchAttempts(id, 1, 100, "failed", true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AttemptListRejectsInvalidAssignmentId()
+    {
+        var service = Substitute.For<IReleaseTargetApplicationService>();
+        var page = new AssignmentsIndexModel(service);
+
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetAttemptListAsync("invalid"));
+        await service.DidNotReceive().SearchAttempts(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

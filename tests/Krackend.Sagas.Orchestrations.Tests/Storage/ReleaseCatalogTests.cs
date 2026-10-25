@@ -55,6 +55,7 @@ public sealed class ReleaseCatalogTests
         });
         var targetRepository = new ReleaseTargetRepository(context, Substitute.For<ISieveProcessor>());
         var releaseWithTarget = default(Id);
+        var targetId = Id.New();
         for (var i = 0; i < 3; i++)
         {
             var release = new Release
@@ -73,7 +74,7 @@ public sealed class ReleaseCatalogTests
                 releaseWithTarget = release.Id;
                 await targetRepository.Create(new ReleaseTarget
                 {
-                    Id = Id.New(), ReleaseId = release.Id, ArtifactId = artifactId, RuntimeNodeId = nodeId,
+                    Id = targetId, ReleaseId = release.Id, ArtifactId = artifactId, RuntimeNodeId = nodeId,
                     RolloutGroup = "Direct", Status = ReleaseTargetStatus.PushScheduled,
                     ActivationStatus = ActivationStatus.NotActivated, AssignedAtUtc = DateTime.UtcNow
                 });
@@ -92,6 +93,23 @@ public sealed class ReleaseCatalogTests
         Assert.Empty(await service.GetSummaries([]));
         Assert.Single((await service.GetById(row.Id.ToString())).Targets);
         var targetService = new ReleaseTargetApplicationService(targetRepository);
+        for (var i = 0; i < 3; i++)
+        {
+            await targetRepository.AddAttempt(new ReleaseAttempt
+            {
+                Id = Id.New(), ReleaseTargetId = targetId, Action = "Push", InitiatedBy = "operator",
+                StartedAtUtc = new DateTime(2026, 1, 1).AddMinutes(i), Succeeded = i == 2,
+                ErrorMessage = i == 2 ? null : "failed delivery"
+            });
+        }
+        var firstAttempt = await targetService.SearchAttempts(targetId.ToString(), 1, 1, "failed", false);
+        var secondAttempt = await targetService.SearchAttempts(targetId.ToString(), 2, 1, "failed", false);
+        Assert.Equal(2, firstAttempt.TotalRows);
+        Assert.Equal(2, firstAttempt.TotalPages);
+        Assert.True(Assert.Single(firstAttempt.Rows).StartedAtUtc < Assert.Single(secondAttempt.Rows).StartedAtUtc);
+        var latestAttempt = await targetService.SearchAttempts(targetId.ToString(), 1, 1, "", true);
+        Assert.True(Assert.Single(latestAttempt.Rows).Succeeded);
+        Assert.Empty((await targetService.SearchAttempts(targetId.ToString(), 1, 25, "missing", false)).Rows);
         var assignments = await targetService.Search(1, 1, "Node", "status", false);
         Assert.Equal(1, assignments.TotalRows);
         Assert.Equal(nodeId.ToString(), Assert.Single(assignments.Rows).RuntimeNodeId);

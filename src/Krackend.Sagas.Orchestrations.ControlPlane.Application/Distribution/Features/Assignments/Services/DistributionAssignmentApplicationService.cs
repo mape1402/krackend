@@ -31,12 +31,17 @@ public sealed class ReleaseTargetApplicationService : IReleaseTargetApplicationS
     public async Task<IReadOnlyCollection<ReleaseAttemptModel>> GetAttempts(string assignmentId, CancellationToken cancellationToken = default)
     {
         var attempts = await _repository.GetAttempts(new Id(Ulid.Parse(assignmentId)), cancellationToken);
-        return attempts.Select(x => new ReleaseAttemptModel
+        return attempts.Select(MapAttempt).ToArray();
+    }
+
+    public async Task<ApplicationPagedResult<ReleaseAttemptModel>> SearchAttempts(string assignmentId, int pageNumber, int pageSize, string search, bool descending, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.SearchAttempts(new Id(Ulid.Parse(assignmentId)), pageNumber, pageSize, search, descending, cancellationToken);
+        return new ApplicationPagedResult<ReleaseAttemptModel>
         {
-            Id = x.Id.ToString(), ReleaseTargetId = x.ReleaseTargetId.ToString(), Action = x.Action,
-            InitiatedBy = x.InitiatedBy, StartedAtUtc = x.StartedAtUtc, FinishedAtUtc = x.FinishedAtUtc,
-            Succeeded = x.Succeeded, ErrorCode = x.ErrorCode, ErrorMessage = x.ErrorMessage, ExternalReference = x.ExternalReference
-        }).ToArray();
+            PageNumber = result.PageNumber, PageSize = result.PageSize, TotalRows = (int)result.TotalRows,
+            TotalPages = result.TotalPages, Rows = result.Rows.Select(MapAttempt).ToArray()
+        };
     }
 
     public async Task<ApplicationPagedResult<ReleaseTargetModel>> Search(int pageNumber, int pageSize, string search, string sort, bool descending, CancellationToken cancellationToken = default)
@@ -68,6 +73,13 @@ public sealed class ReleaseTargetApplicationService : IReleaseTargetApplicationS
         Id = x.Id.ToString(), RuntimeNodeId = x.RuntimeNodeId.ToString(), ArtifactId = x.ArtifactId.ToString(),
         ReleaseId = x.ReleaseId?.ToString() ?? string.Empty, RolloutGroup = x.RolloutGroup,
         Status = x.Status.ToString(), ActivationStatus = x.ActivationStatus.ToString(), AssignedAtUtc = x.AssignedAtUtc
+    };
+
+    private static ReleaseAttemptModel MapAttempt(Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core.ReleaseAttempt x) => new()
+    {
+        Id = x.Id.ToString(), ReleaseTargetId = x.ReleaseTargetId.ToString(), Action = x.Action,
+        InitiatedBy = x.InitiatedBy, StartedAtUtc = x.StartedAtUtc, FinishedAtUtc = x.FinishedAtUtc,
+        Succeeded = x.Succeeded, ErrorCode = x.ErrorCode, ErrorMessage = x.ErrorMessage, ExternalReference = x.ExternalReference
     };
 }
 
