@@ -1,0 +1,236 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationVersions.DetailsModel
+<form id="triggerForm" method="post" asp-page-handler="UpsertTrigger" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving trigger" data-busy-message="Design is validating and storing the trigger binding.">
+                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+                    <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+                    <input asp-for="TriggerInput.TriggerId" type="hidden" id="triggerModalTriggerId" />
+
+                    <ul class="z-tabs mb-3" id="triggerTabs" role="tablist" data-z-tabs>
+                        <li class="nav-item" role="presentation">
+                            <button class="z-tab" id="trigger-general-tab" type="button" role="tab" aria-controls="trigger-general-pane" aria-selected="true">Trigger</button>
+                        </li>
+                        <li class="nav-item" role="presentation" id="trigger-compensation-tab-item">
+                            <button class="z-tab" id="trigger-compensation-tab" type="button" role="tab" aria-controls="trigger-compensation-pane" aria-selected="false">Compensation task</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="triggerTabsContent">
+                        <div class="z-tab-panel" id="trigger-general-pane" role="tabpanel" aria-labelledby="trigger-general-tab" tabindex="0">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <label asp-for="TriggerInput.Key" class="z-form-label">Key</label>
+                                    <input asp-for="TriggerInput.Key" class="z-form-input" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label asp-for="TriggerInput.TriggerType" class="z-form-label">Trigger type</label>
+                                    <select asp-for="TriggerInput.TriggerType" class="z-form-input z-form-select" asp-items="Model.TriggerTypes" id="triggerTypeSelector"></select>
+                                </div>
+                                <div class="col-md-5">
+                                    <label asp-for="TriggerInput.Description" class="z-form-label">Description</label>
+                                    <input asp-for="TriggerInput.Description" class="z-form-input" />
+                                </div>
+                            </div>
+
+                            <div class="trigger-config-block" data-trigger-type="Event">
+                                <hr />
+                                <h6 class="mb-2">Event channel</h6>
+                                <div class="row g-2">
+                                    <div class="col-md-7">
+                                        <label asp-for="TriggerInput.EventTopic" class="z-form-label">Topic</label>
+                                        <input asp-for="TriggerInput.EventTopic" class="z-form-input" />
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label asp-for="TriggerInput.EventVersion" class="z-form-label">Version</label>
+                                        <input asp-for="TriggerInput.EventVersion" class="z-form-input" data-orchestrator-version="true" />
+                                    </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <input asp-for="TriggerInput.HasEventSchemaValidation" type="hidden" />
+                                    <div class="col-md-6">
+                                        <label asp-for="TriggerInput.EventSchemaContractKey" class="z-form-label">Contract key</label>
+                                        <input asp-for="TriggerInput.EventSchemaContractKey"
+                                               class="z-form-input"
+                                               data-schema-contract-key="true"
+                                               data-schema-contract-kind="Event"
+                                               data-schema-version-target="TriggerInput_EventSchemaContractVersion" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label asp-for="TriggerInput.EventSchemaContractVersion" class="z-form-label">Contract version</label>
+                                        <input asp-for="TriggerInput.EventSchemaContractVersion" class="z-form-input" data-orchestrator-version="true" />
+                                    </div>
+                                    <input asp-for="TriggerInput.EventSchemaRegistryProviderId" type="hidden" />
+                                    <input asp-for="TriggerInput.EventSchemaStrictMode" type="hidden" />
+                                    <input asp-for="TriggerInput.HasEventValidation" type="hidden" />
+                                    <input asp-for="TriggerInput.EventValidationErrorCode" type="hidden" />
+                                    <input asp-for="TriggerInput.EventValidationDsl" type="hidden" />
+                                </div>
+                            </div>
+
+                            <div id="triggerUnsupportedTypeWarning" class="alert alert-warning mt-3 d-none mb-0">
+                                Selected trigger type does not define specific channel fields yet.
+                            </div>
+
+                            <hr />
+                            <div class="form-check form-switch mb-0">
+                                <input asp-for="TriggerInput.HasCompensation" class="form-check-input" id="hasTriggerCompensation" />
+                                <label asp-for="TriggerInput.HasCompensation" class="form-check-label">Enable trigger compensation</label>
+                            </div>
+                        </div>
+
+                        <div class="z-tab-panel" id="trigger-compensation-pane" role="tabpanel" aria-labelledby="trigger-compensation-tab" tabindex="0" hidden>
+                            <input asp-for="TriggerInput.CompensationConditionDslExpression" type="hidden" />
+                            <input asp-for="TriggerInput.CompensationTransformationDsl" type="hidden" />
+                            <div id="triggerCompensationSection">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationKind" class="z-form-label">Task type</label>
+                                        <select asp-for="TriggerInput.CompensationKind" class="z-form-input z-form-select" asp-items="Model.CompensationTaskKinds" id="triggerCompensationKindSelector"></select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationDispatchType" class="z-form-label">Dispatch type</label>
+                                        <select asp-for="TriggerInput.CompensationDispatchType" class="z-form-input z-form-select" asp-items="Model.CompensationDispatchTypes" id="triggerCompensationDispatchTypeSelector"></select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationOnErrorPolicy" class="z-form-label">On error policy</label>
+                                        <select asp-for="TriggerInput.CompensationOnErrorPolicy" class="z-form-input z-form-select" asp-items="Model.CompensationOnErrorPolicies"></select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="TriggerInput.CompensationMessagingTopic" class="z-form-label">Topic</label>
+                                        <input asp-for="TriggerInput.CompensationMessagingTopic" class="z-form-input" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label asp-for="TriggerInput.CompensationMessagingVersion" class="z-form-label">Version</label>
+                                        <input asp-for="TriggerInput.CompensationMessagingVersion" class="z-form-input" data-orchestrator-version="true" />
+                                    </div>
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-12">
+                                        <h6 class="mb-2">Schema binding</h6>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label asp-for="TriggerInput.CompensationSchemaContractKey" class="z-form-label">Command key</label>
+                                        <input asp-for="TriggerInput.CompensationSchemaContractKey"
+                                               class="z-form-input"
+                                               data-schema-contract-key="true"
+                                               data-schema-contract-kind="Command"
+                                               data-schema-version-target="TriggerInput_CompensationSchemaContractVersion" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label asp-for="TriggerInput.CompensationSchemaContractVersion" class="z-form-label">Command version</label>
+                                        <input asp-for="TriggerInput.CompensationSchemaContractVersion" class="z-form-input" data-orchestrator-version="true" />
+                                    </div>
+                                    <input asp-for="TriggerInput.CompensationSchemaRegistryProviderId" type="hidden" />
+                                    <input asp-for="TriggerInput.CompensationSchemaStrictMode" type="hidden" />
+                                    <input asp-for="TriggerInput.HasCompensationSchemaValidation" type="hidden" />
+
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-input" id="hasTriggerCompensationExecutionCondition" />
+                                            <label asp-for="TriggerInput.HasCompensationExecutionCondition" class="form-check-label">Enable execution condition</label>
+                                        </div>
+                                        <div id="triggerCompensationConditionSection" class="mt-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="openTriggerCompensationConditionDesignerButton">Open ButterMorph condition</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationTransformation" class="form-check-input" id="hasTriggerCompensationTransformation" />
+                                            <label asp-for="TriggerInput.HasCompensationTransformation" class="form-check-label">Enable transformation</label>
+                                        </div>
+                                        <div id="triggerCompensationTransformationSection" class="mt-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="openTriggerCompensationTransformationDesignerButton">Open ButterMorph transformation</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-md-12">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationRetryPolicy" class="form-check-input" id="hasTriggerCompensationRetryPolicy" />
+                                            <label asp-for="TriggerInput.HasCompensationRetryPolicy" class="form-check-label">Enable retry policy</label>
+                                        </div>
+                                    </div>
+                                    <div id="triggerCompensationRetrySection" class="row g-2">
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationRetryStrategyType" class="z-form-label">Retry strategy</label>
+                                            <select asp-for="TriggerInput.CompensationRetryStrategyType" class="z-form-input z-form-select" asp-items="Model.RetryStrategyTypes" id="triggerCompensationRetryStrategySelector"></select>
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-retry-strategy-block" data-trigger-comp-retry="Fixed">
+                                            <label asp-for="TriggerInput.CompensationRetryDelaySeconds" class="z-form-label">Retry delay (sec)</label>
+                                            <input asp-for="TriggerInput.CompensationRetryDelaySeconds" class="z-form-input" type="number" min="0" step="0.1" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationRetryMaxRetries" class="z-form-label">Retries</label>
+                                            <input asp-for="TriggerInput.CompensationRetryMaxRetries" class="z-form-input" type="number" min="0" />
+                                        </div>
+                                        <div class="col-md-12">
+                                            <label asp-for="TriggerInput.CompensationRetryableErrorCodes" class="z-form-label">Retry errors</label>
+                                            <input asp-for="TriggerInput.CompensationRetryableErrorCodes" type="hidden" id="triggerCompensationRetryErrorCodesHidden" />
+                                            <div class="od-chip-editor" data-chip-editor-for="triggerCompensationRetryErrorCodesHidden">
+                                                <div class="od-chip-list"></div>
+                                                <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-12 form-check mt-2 ms-2">
+                                            <input asp-for="TriggerInput.CompensationRetryStopOnNonRetryableError" class="form-check-input" />
+                                            <label asp-for="TriggerInput.CompensationRetryStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12"><hr class="my-2" /></div>
+                                    <div class="col-md-12">
+                                        <div class="form-check form-switch">
+                                            <input asp-for="TriggerInput.HasCompensationTimeoutPolicy" class="form-check-input" id="hasTriggerCompensationTimeoutPolicy" />
+                                            <label asp-for="TriggerInput.HasCompensationTimeoutPolicy" class="form-check-label">Enable timeout policy</label>
+                                        </div>
+                                    </div>
+                                    <div id="triggerCompensationTimeoutSection" class="row g-2">
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationTimeoutSeconds" class="z-form-label">Timeout (sec)</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutSeconds" class="z-form-input" type="number" min="1" step="0.1" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationTimeoutBehavior" class="z-form-label">Timeout behavior</label>
+                                            <select asp-for="TriggerInput.CompensationTimeoutBehavior" class="z-form-input z-form-select" asp-items="Model.TimeoutBehaviors" id="triggerCompensationTimeoutBehaviorSelector"></select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label asp-for="TriggerInput.CompensationTimeoutAction" class="z-form-label">Action on timeout</label>
+                                            <select asp-for="TriggerInput.CompensationTimeoutAction" class="z-form-input z-form-select" asp-items="Model.TimeoutActions"></select>
+                                        </div>
+                                        <div class="col-md-6 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Fail">
+                                            <label asp-for="TriggerInput.CompensationTimeoutFailErrorCode" class="z-form-label">Fail error code</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutFailErrorCode" class="z-form-input" />
+                                        </div>
+                                        <div class="col-md-6 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Wait">
+                                            <label asp-for="TriggerInput.CompensationTimeoutWaitSeconds" class="z-form-label">Wait seconds</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutWaitSeconds" class="z-form-input" type="number" min="1" step="0.1" />
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileRetryStrategyType" class="z-form-label">Reconcile retry strategy</label>
+                                            <select asp-for="TriggerInput.CompensationTimeoutReconcileRetryStrategyType" class="z-form-input z-form-select" asp-items="Model.RetryStrategyTypes" id="triggerCompensationTimeoutReconcileRetryStrategySelector"></select>
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileRetries" class="z-form-label">Reconcile retries</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileRetries" class="z-form-input" type="number" min="0" />
+                                        </div>
+                                        <div class="col-md-3 trigger-compensation-timeout-behavior-block trigger-compensation-timeout-reconcile-strategy-block" data-trigger-comp-timeout="Reconcile" data-trigger-comp-timeout-reconcile-retry="Fixed">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileDelaySeconds" class="z-form-label">Reconcile delay (sec)</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileDelaySeconds" class="z-form-input" type="number" min="0" step="0.1" />
+                                        </div>
+                                        <div class="col-md-12 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileRetryableErrorCodes" class="z-form-label">Reconcile retry errors</label>
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileRetryableErrorCodes" type="hidden" id="triggerCompensationTimeoutReconcileRetryableErrorCodesHidden" />
+                                            <div class="od-chip-editor" data-chip-editor-for="triggerCompensationTimeoutReconcileRetryableErrorCodesHidden">
+                                                <div class="od-chip-list"></div>
+                                                <input type="text" class="od-chip-input" placeholder="Error code + Enter" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-12 form-check mt-2 ms-2 trigger-compensation-timeout-behavior-block" data-trigger-comp-timeout="Reconcile">
+                                            <input asp-for="TriggerInput.CompensationTimeoutReconcileStopOnNonRetryableError" class="form-check-input" />
+                                            <label asp-for="TriggerInput.CompensationTimeoutReconcileStopOnNonRetryableError" class="form-check-label">Stop on non-retryable</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+</form>
