@@ -471,7 +471,8 @@
                 }
 
                 document.querySelectorAll('[data-setup-step-target]').forEach(button => {
-                    const enabled = setupSequence.includes(button.dataset.setupStepTarget);
+                    const target = button.dataset.setupStepTarget;
+                    const enabled = setupSequence.includes(target) && (target === 'basic' || !!currentNode?.dataset.id);
                     button.disabled = !enabled;
                     button.classList.toggle('is-disabled', !enabled);
                 });
