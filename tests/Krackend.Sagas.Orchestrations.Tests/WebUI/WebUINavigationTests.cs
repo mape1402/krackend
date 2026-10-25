@@ -398,7 +398,28 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(22, options.Conventions.Count);
+        Assert.Equal(23, options.Conventions.Count);
+    }
+
+    [Fact]
+    public async Task DistributionWebUiMapsItsCatalogRoutes()
+    {
+        var builder = WebApplication.CreateBuilder();
+        DistributionWebUiServices.AddOrchestratorDistributionWebUI(builder.Services);
+        await using var app = builder.Build();
+        app.MapRazorPages();
+
+        var routes = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("admin/distribution/environments", routes);
+        Assert.Contains("admin/distribution/runtime-nodes", routes);
+        Assert.Contains("admin/distribution/artifacts", routes);
+        Assert.Contains("admin/distribution/releases", routes);
+        Assert.Contains("admin/distribution/assignments", routes);
     }
 
     [Fact]
