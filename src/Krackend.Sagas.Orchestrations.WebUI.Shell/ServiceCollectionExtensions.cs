@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using Zoorce.Web.UI;
 using Zoorce.Web.UI.Layout;
+using Zoorce.Web.UI.Abstractions.Navigation;
 
 namespace Krackend.Sagas.Orchestrations.WebUI.Shell;
 
@@ -36,6 +37,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configureTheme));
         }
 
+        services.TryAddScoped<INavigationProvider, ZoorceOrchestratorNavigationProvider>();
         services.AddRazorPages()
             .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly)
             .AddZoorceWebUI();
