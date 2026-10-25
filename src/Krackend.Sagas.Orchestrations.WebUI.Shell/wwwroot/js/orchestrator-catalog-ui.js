@@ -28,8 +28,13 @@
                 if (!viewport) return;
                 const footer = grid.querySelector('.z-grid-footer');
                 const footerHeight = footer?.parentElement === grid ? footer.getBoundingClientRect().height : 0;
-                const available = Math.max(220, Math.floor(window.innerHeight - viewport.getBoundingClientRect().top - footerHeight - 12));
+                let available = Math.max(220, Math.floor(window.innerHeight - viewport.getBoundingClientRect().top - footerHeight));
                 viewport.style.setProperty('--z-grid-viewport-height', `${available}px`);
+                const overflow = Math.max(0, document.documentElement.scrollHeight - document.documentElement.clientHeight);
+                if (overflow) {
+                    available = Math.max(220, available - overflow);
+                    viewport.style.setProperty('--z-grid-viewport-height', `${available}px`);
+                }
             })));
         };
         const decorate = root => root.querySelectorAll('[data-z-grid-field="status"], [data-z-grid-field="statusLabel"], [data-z-grid-field="approval"], [data-z-grid-field="application"], [data-z-grid-field="lifecycleStatus"]').forEach(cell => {

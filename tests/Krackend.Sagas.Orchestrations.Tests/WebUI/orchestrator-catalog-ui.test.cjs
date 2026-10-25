@@ -57,12 +57,12 @@ test('grid footer moves beside the toolbar and the viewport uses the available h
     const grid = { getClientRects: () => [1], querySelector: selector => ({ '[data-z-grid-viewport]': viewport, '.z-grid-footer': footer, '.z-toolbar': toolbar })[selector] };
     footer.parentElement = grid;
     const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [grid] : [] };
-    const document = { readyState: 'complete', querySelectorAll: () => [root], createElement: () => ({}) };
+    const document = { readyState: 'complete', documentElement: { clientHeight: 800, scrollHeight: 800 }, querySelectorAll: () => [root], createElement: () => ({}) };
     const window = { innerHeight: 800, addEventListener() {} };
     class MutationObserver { observe() {} }
     vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
     assert.equal(footer.parentElement, toolbar);
-    assert.deepEqual(height, ['--z-grid-viewport-height', '588px']);
+    assert.deepEqual(height, ['--z-grid-viewport-height', '600px']);
 });
 
 test('grid retains room for a footer when no toolbar is available', () => {
@@ -72,11 +72,11 @@ test('grid retains room for a footer when no toolbar is available', () => {
     const grid = { getClientRects: () => [1], querySelector: selector => ({ '[data-z-grid-viewport]': viewport, '.z-grid-footer': footer })[selector] };
     footer.parentElement = grid;
     const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [grid] : [] };
-    const document = { readyState: 'complete', querySelectorAll: () => [root], createElement: () => ({}) };
+    const document = { readyState: 'complete', documentElement: { clientHeight: 800, scrollHeight: 800 }, querySelectorAll: () => [root], createElement: () => ({}) };
     const window = { innerHeight: 800, addEventListener() {} };
     class MutationObserver { observe() {} }
     vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
-    assert.equal(height, '544px');
+    assert.equal(height, '556px');
 });
 
 test('grid height has a minimum and hidden grids are not resized', () => {
@@ -85,7 +85,7 @@ test('grid height has a minimum and hidden grids are not resized', () => {
     const visible = { getClientRects: () => [1], querySelector: selector => selector === '[data-z-grid-viewport]' ? viewport : null };
     const hidden = { getClientRects: () => [], querySelector: selector => { if (selector === '[data-z-grid-viewport]') throw new Error('hidden grid was measured'); return null; } };
     const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [visible, hidden] : [] };
-    const document = { readyState: 'complete', querySelectorAll: () => [root], createElement: () => ({}) };
+    const document = { readyState: 'complete', documentElement: { clientHeight: 250, scrollHeight: 250 }, querySelectorAll: () => [root], createElement: () => ({}) };
     const window = { innerHeight: 250, addEventListener() {} };
     class MutationObserver { observe() {} }
     vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
@@ -97,9 +97,22 @@ test('grid without a footer uses the remaining window height', () => {
     const viewport = { getBoundingClientRect: () => ({ top: 200 }), style: { setProperty: (key, value) => { height = value; } } };
     const grid = { getClientRects: () => [1], querySelector: selector => selector === '[data-z-grid-viewport]' ? viewport : null };
     const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [grid] : [] };
-    const document = { readyState: 'complete', querySelectorAll: () => [root], createElement: () => ({}) };
+    const document = { readyState: 'complete', documentElement: { clientHeight: 800, scrollHeight: 800 }, querySelectorAll: () => [root], createElement: () => ({}) };
     const window = { innerHeight: 800, addEventListener() {} };
     class MutationObserver { observe() {} }
     vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
-    assert.equal(height, '588px');
+    assert.equal(height, '600px');
+});
+
+test('grid accounts for layout space below it without causing page overflow', () => {
+    let height = 0;
+    const viewport = { getBoundingClientRect: () => ({ top: 200 }), style: { setProperty: (key, value) => { height = parseInt(value, 10); } } };
+    const grid = { getClientRects: () => [1], querySelector: selector => selector === '[data-z-grid-viewport]' ? viewport : null };
+    const root = { querySelectorAll: selector => selector === '[data-z-data-grid]' ? [grid] : [] };
+    const document = { readyState: 'complete', documentElement: { clientHeight: 800, get scrollHeight() { return Math.max(800, 200 + height + 30); } }, querySelectorAll: () => [root], createElement: () => ({}) };
+    const window = { innerHeight: 800, addEventListener() {} };
+    class MutationObserver { observe() {} }
+    vm.runInNewContext(source, { window, document, MutationObserver, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {} });
+    assert.equal(height, 570);
+    assert.equal(document.documentElement.scrollHeight, 800);
 });
