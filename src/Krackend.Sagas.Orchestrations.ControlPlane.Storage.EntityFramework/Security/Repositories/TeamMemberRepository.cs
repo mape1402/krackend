@@ -88,8 +88,22 @@ public sealed class TeamMemberRepository : ITeamMemberRepository
     public async Task<IReadOnlyDictionary<Id, int>> CountByTeams(IReadOnlyCollection<Id> teamIds, CancellationToken cancellationToken = default)
     {
         if (teamIds.Count == 0) return new Dictionary<Id, int>();
-        var rows = await _dbContext.TeamMembers.AsNoTracking().Where(x => teamIds.Contains(x.TeamId))
-            .GroupBy(x => x.TeamId).Select(x => new { Id = x.Key, Count = x.Count() }).ToArrayAsync(cancellationToken);
-        return rows.ToDictionary(x => x.Id, x => x.Count);
+        try
+        {
+            var rows = await _dbContext.TeamMembers.AsNoTracking().Where(x => teamIds.Contains(x.TeamId))
+                .GroupBy(x => x.TeamId).Select(x => new { Id = x.Key, Count = x.Count() }).ToArrayAsync(cancellationToken);
+            return rows.ToDictionary(x => x.Id, x => x.Count);
+        }
+        catch (InvalidOperationException exception) when (exception.Message.Contains("could not be translated", StringComparison.OrdinalIgnoreCase))
+        {
+            // Some EF providers cannot translate grouped aggregates; the input is a bounded catalog page.
+            var counts = new Dictionary<Id, int>();
+            foreach (var teamId in teamIds.Distinct())
+            {
+                var count = await _dbContext.TeamMembers.AsNoTracking().CountAsync(x => x.TeamId == teamId, cancellationToken);
+                if (count > 0) counts[teamId] = count;
+            }
+            return counts;
+        }
     }
 }

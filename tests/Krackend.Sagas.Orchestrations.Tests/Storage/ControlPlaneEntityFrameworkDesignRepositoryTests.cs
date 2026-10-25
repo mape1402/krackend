@@ -47,6 +47,11 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
         Assert.Equal(2, teamPage.TotalRows);
         Assert.Equal("match_2", Assert.Single(teamPage.Rows).Key);
         Assert.Equal("match_3", Assert.Single((await teams.SearchActive(2, 1, "match")).Rows).Key);
+        Assert.Equal(2, (await domains.SearchActive(settings, "MATCH")).TotalRows);
+        Assert.Equal(2, (await teams.SearchActive(1, 1, "MATCH")).TotalRows);
+        Assert.Equal(3, (await teams.GetAll(1, 10, "MATCH")).TotalRows);
+        Assert.Equal(0, (await domains.GetAll(settings, "%")).TotalRows);
+        Assert.Equal(0, (await teams.GetAll(1, 10, "%")).TotalRows);
     }
 
     [Fact]

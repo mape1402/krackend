@@ -97,11 +97,11 @@ public sealed class DomainRepository : IDomainRepository
 
         if (!string.IsNullOrWhiteSpace(searchText))
         {
-            var term = searchText.Trim();
+            var term = searchText.Trim().ToLowerInvariant();
             query = query.Where(x =>
-                EF.Functions.Like(x.Key, $"%{term}%")
-                || EF.Functions.Like(x.DisplayName, $"%{term}%")
-                || EF.Functions.Like(x.Description, $"%{term}%"));
+                x.Key.ToLower().Contains(term)
+                || x.DisplayName.ToLower().Contains(term)
+                || (x.Description != null && x.Description.ToLower().Contains(term)));
         }
 
         var filteredAndSortedQuery = _sieveProcessor.Apply(sieveModel, query, applyPagination: false);

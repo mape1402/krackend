@@ -341,6 +341,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
                 Id = seedDefinition.VersionId,
                 OrchestrationDefinitionId = definitionId,
                 Version = version,
+                DraftSlot = $"closed:{seedDefinition.VersionId}",
                 Status = OrchestrationVersionStatus.Deployed,
                 VersionLabel = version,
                 Description = $"Runtime demo artifact for {OrchestrationKey} v{version}.",
@@ -357,6 +358,7 @@ internal sealed class DesignHostSeedDataSeeder : IDesignHostSeedDataSeeder
         else
         {
             versionEntity.Status = OrchestrationVersionStatus.Deployed;
+            versionEntity.DraftSlot = $"closed:{versionEntity.Id}";
             versionEntity.VersionLabel = version;
             versionEntity.Description = $"Runtime demo artifact for {OrchestrationKey} v{version}.";
             versionEntity.Checksum = $"seeded-{OrchestrationKey}-{version}";

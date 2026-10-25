@@ -80,11 +80,11 @@ public sealed class TeamRepository : ITeamRepository
 
         if (!string.IsNullOrWhiteSpace(searchText))
         {
-            var term = searchText.Trim();
+            var term = searchText.Trim().ToLowerInvariant();
             query = query.Where(x =>
-                EF.Functions.Like(x.Key, $"%{term}%")
-                || EF.Functions.Like(x.DisplayName, $"%{term}%")
-                || EF.Functions.Like(x.Description, $"%{term}%"));
+                x.Key.ToLower().Contains(term)
+                || x.DisplayName.ToLower().Contains(term)
+                || (x.Description != null && x.Description.ToLower().Contains(term)));
         }
 
         var totalRows = await query.LongCountAsync(cancellationToken);
@@ -121,8 +121,8 @@ public sealed class TeamRepository : ITeamRepository
             query = query.Where(x => x.IsActive);
         if (!string.IsNullOrWhiteSpace(searchText))
         {
-            var term = searchText.Trim();
-            query = query.Where(x => x.Key.Contains(term) || x.DisplayName.Contains(term) || (x.Description != null && x.Description.Contains(term)));
+            var term = searchText.Trim().ToLowerInvariant();
+            query = query.Where(x => x.Key.ToLower().Contains(term) || x.DisplayName.ToLower().Contains(term) || (x.Description != null && x.Description.ToLower().Contains(term)));
         }
         var total = await query.LongCountAsync(cancellationToken);
         var page = Math.Max(1, pageNumber);
