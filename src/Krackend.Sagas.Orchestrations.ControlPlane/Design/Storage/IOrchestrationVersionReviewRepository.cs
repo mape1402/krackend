@@ -27,6 +27,12 @@ public interface IOrchestrationVersionReviewRepository
         PagedSettings pagedSettings,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Searches and orders reviews in the storage provider before paging.</summary>
+    Task<PagedResult<OrchestrationVersionReview>> Search(
+        PagedSettings pagedSettings, string search, string sort, bool descending,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured review storage does not support catalog search.");
+
     /// <summary>Persists changes to a review request.</summary>
     Task Update(OrchestrationVersionReview review, CancellationToken cancellationToken = default);
 }

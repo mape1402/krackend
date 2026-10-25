@@ -18,9 +18,10 @@ public sealed class GetAllOrchestrationVersionReviewsQueryHandler
         GetAllOrchestrationVersionReviewsQuery request,
         CancellationToken cancellationToken)
     {
-        var reviews = await _repository.GetAll(
-            PrimitiveParser.ToStoragePagedSettings(request.Settings),
-            cancellationToken);
+        var settings = PrimitiveParser.ToStoragePagedSettings(request.Settings);
+        var reviews = string.IsNullOrWhiteSpace(request.SearchText) && string.IsNullOrWhiteSpace(request.SortField)
+            ? await _repository.GetAll(settings, cancellationToken)
+            : await _repository.Search(settings, request.SearchText, request.SortField, request.Descending, cancellationToken);
 
         return new ApplicationPagedResult<OrchestrationVersionReviewModel>(
             reviews.PageNumber,

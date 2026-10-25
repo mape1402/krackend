@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Reviews;
@@ -6,7 +7,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// <summary>Lists lifecycle reviews independently from orchestration roadmaps.</summary>
 public sealed class IndexModel : PageModel
 {
-    private const int PageSize = 25;
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;
     private readonly IOrchestrationVersionApplicationService _versionService;
     private readonly IOrchestrationApplicationService _orchestrationService;
@@ -22,73 +22,53 @@ public sealed class IndexModel : PageModel
         _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
     }
 
-    /// <summary>Gets review rows for the active page.</summary>
-    public IReadOnlyCollection<ReviewRow> Rows { get; private set; } = Array.Empty<ReviewRow>();
+    /// <summary>Displays the review catalog; records are loaded on demand.</summary>
+    public void OnGet() { }
 
-    /// <summary>Gets the active page number.</summary>
-    public int PageNumber { get; private set; } = 1;
-
-    /// <summary>Gets the total available pages.</summary>
-    public int TotalPages { get; private set; } = 1;
-
-    /// <summary>Gets the user-facing load failure.</summary>
-    public string ErrorMessage { get; private set; } = string.Empty;
-
-    /// <summary>Loads the paged review queue.</summary>
-    public async Task OnGetAsync(int pageNumber = 1, CancellationToken cancellationToken = default)
+    /// <summary>Returns one storage-filtered page for the review catalog.</summary>
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await _reviewService.GetAll(
-                new GetAllOrchestrationVersionReviewsQuery(new ApplicationPagedSettings
-                {
-                    PageNumber = Math.Max(1, pageNumber),
-                    PageSize = PageSize,
-                }),
-                cancellationToken);
-
-            var rows = new List<ReviewRow>();
+            var result = await _reviewService.GetAll(new GetAllOrchestrationVersionReviewsQuery(new ApplicationPagedSettings
+            {
+                PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100)
+            }) { SearchText = search?.Trim(), SortField = sort, Descending = descending }, cancellationToken);
+            var items = new List<object>();
             foreach (var review in result.Rows)
             {
-                OrchestrationVersionModel version;
+                OrchestrationVersionModel version = null;
+                OrchestrationDefinitionModel orchestration = null;
                 try
                 {
-                    version = await _versionService.GetById(
-                        new GetOrchestrationVersionByIdQuery(review.OrchestrationVersionId),
-                        cancellationToken);
+                    version = await _versionService.GetById(new GetOrchestrationVersionByIdQuery(review.OrchestrationVersionId), cancellationToken);
+                    orchestration = await _orchestrationService.GetById(new GetOrchestrationDefinitionByIdQuery(version.OrchestrationDefinitionId), cancellationToken);
                 }
-                catch (KeyNotFoundException)
+                catch (KeyNotFoundException) { }
+                var name = orchestration?.Name ?? "Orchestration unavailable";
+                var versionLabel = string.IsNullOrWhiteSpace(version?.Version) ? "Draft roadmap" : $"Version {version.Version}";
+                items.Add(new
                 {
-                    rows.Add(new ReviewRow(review, null, null));
-                    continue;
-                }
-
-                try
-                {
-                    var orchestration = await _orchestrationService.GetById(
-                        new GetOrchestrationDefinitionByIdQuery(version.OrchestrationDefinitionId),
-                        cancellationToken);
-                    rows.Add(new ReviewRow(review, version, orchestration));
-                }
-                catch (KeyNotFoundException)
-                {
-                    rows.Add(new ReviewRow(review, version, null));
-                }
+                    id = review.Id, displayName = name, key = orchestration?.Key ?? string.Empty,
+                    operation = review.Operation.ToString(), orchestration = name, version = versionLabel,
+                    approval = review.ApprovalStatus.ToString(), application = review.ApplicationStatus.ToString(),
+                    requested = review.RequestedOnUtc.ToString("yyyy-MM-dd HH:mm"), requestedBy = review.RequestedBy,
+                    description = $"{review.Operation} | {versionLabel}",
+                    openUrl = Url.Page("/Reviews/Details", new { area = "OrchestratorDesign", reviewId = review.Id })
+                });
             }
-
-            Rows = rows;
-            PageNumber = result.PageNumber;
-            TotalPages = Math.Max(1, result.TotalPages);
+            return new JsonResult(new { items, totalCount = result.TotalRows,
+                hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending });
         }
-        catch (Exception)
+        catch (NotSupportedException)
         {
-            ErrorMessage = "Lifecycle reviews could not be loaded. Try again in a moment.";
+            return StatusCode(503, "The configured review storage does not support catalog search.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Lifecycle reviews could not be loaded. Try again in a moment.");
         }
     }
-
-    /// <summary>Represents a review enriched with its roadmap version when it still exists.</summary>
-    public sealed record ReviewRow(
-        OrchestrationVersionReviewModel Review,
-        OrchestrationVersionModel Version,
-        OrchestrationDefinitionModel Orchestration);
 }

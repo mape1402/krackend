@@ -102,6 +102,60 @@ public sealed class OrchestrationVersionReviewRepository : IOrchestrationVersion
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<OrchestrationVersionReview>> Search(
+        PagedSettings pagedSettings, string search, string sort, bool descending,
+        CancellationToken cancellationToken = default)
+    {
+        var pageNumber = Math.Max(1, pagedSettings?.PageNumber ?? 1);
+        var pageSize = Math.Clamp(pagedSettings?.PageSize ?? 25, 1, 100);
+        var query = from review in _dbContext.Set<OrchestrationVersionReviewEntity>().AsNoTracking()
+                    join version in _dbContext.Set<OrchestrationVersionEntity>().AsNoTracking()
+                        on review.OrchestrationVersionId equals version.Id into versions
+                    from version in versions.DefaultIfEmpty()
+                    join definition in _dbContext.Set<OrchestrationDefinitionEntity>().AsNoTracking()
+                        on version.OrchestrationDefinitionId equals definition.Id into definitions
+                    from definition in definitions.DefaultIfEmpty()
+                    select new { Review = review, Version = version, Definition = definition };
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            var hasOperation = Enum.TryParse<OrchestrationVersionReviewOperation>(term, true, out var operation);
+            var hasApproval = Enum.TryParse<OrchestrationVersionReviewApprovalStatus>(term, true, out var approval);
+            var hasApplication = Enum.TryParse<OrchestrationVersionReviewApplicationStatus>(term, true, out var application);
+            query = query.Where(x => x.Review.RequestedBy.Contains(term)
+                || (x.Version != null && x.Version.Version != null && x.Version.Version.Contains(term))
+                || (x.Definition != null && (x.Definition.Name.Contains(term) || x.Definition.Key.Contains(term)))
+                || (hasOperation && x.Review.Operation == operation)
+                || (hasApproval && x.Review.ApprovalStatus == approval)
+                || (hasApplication && x.Review.ApplicationStatus == application));
+        }
+
+        var totalRows = await query.LongCountAsync(cancellationToken);
+        var ordered = (sort, descending) switch
+        {
+            ("operation", false) => query.OrderBy(x => x.Review.Operation),
+            ("operation", true) => query.OrderByDescending(x => x.Review.Operation),
+            ("orchestration", false) => query.OrderBy(x => x.Definition.Name),
+            ("orchestration", true) => query.OrderByDescending(x => x.Definition.Name),
+            ("version", false) => query.OrderBy(x => x.Version.Version),
+            ("version", true) => query.OrderByDescending(x => x.Version.Version),
+            ("approval", false) => query.OrderBy(x => x.Review.ApprovalStatus),
+            ("approval", true) => query.OrderByDescending(x => x.Review.ApprovalStatus),
+            ("application", false) => query.OrderBy(x => x.Review.ApplicationStatus),
+            ("application", true) => query.OrderByDescending(x => x.Review.ApplicationStatus),
+            ("requested", false) => query.OrderBy(x => x.Review.RequestedOnUtc),
+            _ => query.OrderByDescending(x => x.Review.RequestedOnUtc)
+        };
+        var rows = await ordered.ThenByDescending(x => x.Review.Id)
+            .Skip((pageNumber - 1) * pageSize).Take(pageSize)
+            .Select(x => x.Review).ToListAsync(cancellationToken);
+        return new PagedResult<OrchestrationVersionReview>(pageNumber,
+            totalRows == 0 ? 1 : (int)Math.Ceiling(totalRows / (double)pageSize), totalRows, pageSize,
+            rows.Select(ToDomain).ToArray());
+    }
+
+    /// <inheritdoc />
     public async Task Update(OrchestrationVersionReview review, CancellationToken cancellationToken = default)
     {
         var entitySet = _dbContext.Set<OrchestrationVersionReviewEntity>();

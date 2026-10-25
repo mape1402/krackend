@@ -33,6 +33,18 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'reviews') {
+            const link = document.createElement('a');
+            link.className = 'btn btn-sm btn-outline-secondary';
+            link.href = item.openUrl;
+            link.title = 'Open review';
+            link.setAttribute('aria-label', `Open review for ${item.displayName}`);
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-eye';
+            icon.setAttribute('aria-hidden', 'true');
+            link.append(icon);
+            return link;
+        }
         if (kind === 'orchestrations') {
             const group = document.createElement('div');
             group.className = 'dropdown js-orchestration-card';
@@ -120,8 +132,18 @@
     const decorateGrid = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell) cell.replaceChildren(actions(item));
+        if (item && cell && !cell.firstElementChild) cell.replaceChildren(actions(item));
+        if (item && (kind === 'orchestrations' || kind === 'reviews')) {
+            const name = row.querySelector(kind === 'reviews' ? '[data-z-grid-field="orchestration"]' : '[data-z-grid-field="displayName"]');
+            if (name && !name.querySelector('a')) {
+                const link = document.createElement('a');
+                link.href = item.openUrl;
+                link.textContent = item.displayName;
+                name.replaceChildren(link);
+            }
+        }
     });
+    new MutationObserver(decorateGrid).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
     grid.addEventListener('zoorce:grid:loaded', event => {
         gridResult = event.detail.result;
         if (!event.detail.append) records.clear();
@@ -146,7 +168,7 @@
         const identity = document.createElement('div');
         const name = document.createElement('h2');
         name.className = 'od-item-title';
-        if (kind === 'orchestrations') {
+        if (kind === 'orchestrations' || kind === 'reviews') {
             const link = document.createElement('a');
             link.href = item.openUrl;
             link.textContent = item.displayName;
@@ -177,6 +199,12 @@
             const details = document.createElement('p');
             details.className = 'od-item-meta';
             details.textContent = [item.domain && `Domain: ${item.domain}`, item.ownerTeam && `Team: ${item.ownerTeam}`].filter(Boolean).join(' · ');
+            card.append(details);
+        }
+        if (kind === 'reviews') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = `${item.approval} | ${item.application} | ${item.requested}`;
             card.append(details);
         }
         cards.append(card);

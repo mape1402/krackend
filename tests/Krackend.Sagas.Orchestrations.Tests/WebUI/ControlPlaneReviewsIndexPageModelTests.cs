@@ -1,6 +1,10 @@
-using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Mvc.Abstractions;
 using NSubstitute;
 using ReviewsIndexModel = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Reviews.IndexModel;
 
@@ -9,82 +13,63 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ControlPlaneReviewsIndexPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsPagedReviewsWithTheirRoadmapVersions()
+    public async Task ListLoadsOnlyRequestedPageAndForwardsSearchAndSort()
     {
-        var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
-        var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
-        var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
-        var review = CreateReview("review-1", "version-1");
-        reviewService.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new ApplicationPagedResult<OrchestrationVersionReviewModel>(2, 3, 51, 25, [review])));
-        versionService.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new OrchestrationVersionModel
-            {
-                Id = "version-1",
-                OrchestrationDefinitionId = "orchestration-1",
-                Version = "1.4.0",
-                Status = OrchestrationVersionStatus.Deployed,
-            }));
-        orchestrationService.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new OrchestrationDefinitionModel
-            {
-                Id = "orchestration-1",
-                Key = "sales_sale_created",
-                Name = "Sales sale created",
-            }));
-        var page = new ReviewsIndexModel(reviewService, versionService, orchestrationService);
+        var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
+        var versions = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrations = Substitute.For<IOrchestrationApplicationService>();
+        reviews.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ApplicationPagedResult<OrchestrationVersionReviewModel>(2, 3, 51, 25, [CreateReview()]));
+        versions.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationVersionModel { OrchestrationDefinitionId = "orchestration-1", Version = "1.4.0" });
+        orchestrations.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new OrchestrationDefinitionModel { Name = "Sales", Key = "sales" });
+        var page = CreatePage(reviews, versions, orchestrations);
 
-        await page.OnGetAsync(2);
+        page.OnGet();
+        await reviews.DidNotReceive().GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>());
+        var result = Assert.IsType<JsonResult>(await page.OnGetListAsync(2, 500, " sale ", "operation", true));
 
-        var row = Assert.Single(page.Rows);
-        Assert.Equal("review-1", row.Review.Id);
-        Assert.Equal("1.4.0", row.Version.Version);
-        Assert.Equal("Sales sale created", row.Orchestration.Name);
-        Assert.Equal("sales_sale_created", row.Orchestration.Key);
-        Assert.Equal(2, page.PageNumber);
-        Assert.Equal(3, page.TotalPages);
-        await reviewService.Received(1).GetAll(
-            Arg.Is<GetAllOrchestrationVersionReviewsQuery>(x => x.Settings.PageNumber == 2 && x.Settings.PageSize == 25),
-            Arg.Any<CancellationToken>());
+        await reviews.Received(1).GetAll(Arg.Is<GetAllOrchestrationVersionReviewsQuery>(x =>
+            x.Settings.PageNumber == 2 && x.Settings.PageSize == 100 && x.SearchText == "sale" && x.SortField == "operation" && x.Descending), Arg.Any<CancellationToken>());
+        Assert.Contains("Sales", System.Text.Json.JsonSerializer.Serialize(result.Value));
     }
 
-    [Fact]
-    public async Task OnGetKeepsTheReviewVisibleWhenItsRoadmapVersionCannotBeFound()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MissingRelatedEntitiesDoNotHideReview(bool missingVersion)
     {
-        var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
-        var versionService = Substitute.For<IOrchestrationVersionApplicationService>();
-        var orchestrationService = Substitute.For<IOrchestrationApplicationService>();
-        var review = CreateReview("review-missing", "version-missing");
-        reviewService.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new ApplicationPagedResult<OrchestrationVersionReviewModel>(1, 1, 1, 25, [review])));
-        versionService.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<OrchestrationVersionModel>(new KeyNotFoundException()));
-        var page = new ReviewsIndexModel(reviewService, versionService, orchestrationService);
+        var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
+        var versions = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrations = Substitute.For<IOrchestrationApplicationService>();
+        reviews.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ApplicationPagedResult<OrchestrationVersionReviewModel>(1, 1, 1, 25, [CreateReview()]));
+        if (missingVersion)
+            versions.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>()).Returns<Task<OrchestrationVersionModel>>(_ => throw new KeyNotFoundException());
+        else
+        {
+            versions.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>()).Returns(new OrchestrationVersionModel { OrchestrationDefinitionId = "missing" });
+            orchestrations.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>()).Returns<Task<OrchestrationDefinitionModel>>(_ => throw new KeyNotFoundException());
+        }
+        var page = CreatePage(reviews, versions, orchestrations);
 
-        await page.OnGetAsync();
+        var result = Assert.IsType<JsonResult>(await page.OnGetListAsync());
 
-        var row = Assert.Single(page.Rows);
-        Assert.Equal("review-missing", row.Review.Id);
-        Assert.Null(row.Version);
-        Assert.Equal(string.Empty, page.ErrorMessage);
+        Assert.Contains("Orchestration unavailable", System.Text.Json.JsonSerializer.Serialize(result.Value));
     }
 
-    [Fact]
-    public async Task OnGetUsesFriendlyErrorWhenTheReviewQueueFails()
+    [Theory]
+    [InlineData(true, 503)]
+    [InlineData(false, 500)]
+    public async Task ListReturnsFriendlyErrors(bool unsupported, int expectedStatus)
     {
-        var reviewService = Substitute.For<IOrchestrationVersionReviewApplicationService>();
-        reviewService.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<ApplicationPagedResult<OrchestrationVersionReviewModel>>(new InvalidOperationException("storage unavailable")));
-        var page = new ReviewsIndexModel(
-            reviewService,
-            Substitute.For<IOrchestrationVersionApplicationService>(),
-            Substitute.For<IOrchestrationApplicationService>());
+        var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
+        reviews.GetAll(Arg.Any<GetAllOrchestrationVersionReviewsQuery>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ApplicationPagedResult<OrchestrationVersionReviewModel>>>(_ => throw (unsupported ? (Exception)new NotSupportedException() : new InvalidOperationException()));
+        var page = CreatePage(reviews, Substitute.For<IOrchestrationVersionApplicationService>(), Substitute.For<IOrchestrationApplicationService>());
 
-        await page.OnGetAsync(0);
-
-        Assert.Empty(page.Rows);
-        Assert.Equal(1, page.PageNumber);
-        Assert.Equal("Lifecycle reviews could not be loaded. Try again in a moment.", page.ErrorMessage);
+        Assert.Equal(expectedStatus, Assert.IsType<ObjectResult>(await page.OnGetListAsync()).StatusCode);
     }
 
     [Fact]
@@ -93,21 +78,24 @@ public sealed class ControlPlaneReviewsIndexPageModelTests
         var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
         var versions = Substitute.For<IOrchestrationVersionApplicationService>();
         var orchestrations = Substitute.For<IOrchestrationApplicationService>();
-
         Assert.Equal("reviewService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(null!, versions, orchestrations)).ParamName);
         Assert.Equal("versionService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(reviews, null!, orchestrations)).ParamName);
         Assert.Equal("orchestrationService", Assert.Throws<ArgumentNullException>(() => new ReviewsIndexModel(reviews, versions, null!)).ParamName);
     }
 
-    private static OrchestrationVersionReviewModel CreateReview(string id, string versionId)
-        => new()
-        {
-            Id = id,
-            OrchestrationVersionId = versionId,
-            Operation = OrchestrationVersionReviewOperation.Deploy,
-            ApprovalStatus = OrchestrationVersionReviewApprovalStatus.Pending,
-            ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Pending,
-            RequestedBy = "designer",
-            RequestedOnUtc = DateTime.UtcNow,
-        };
+    private static ReviewsIndexModel CreatePage(IOrchestrationVersionReviewApplicationService reviews,
+        IOrchestrationVersionApplicationService versions, IOrchestrationApplicationService orchestrations)
+    {
+        var url = Substitute.For<IUrlHelper>();
+        url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new ActionDescriptor()));
+        url.RouteUrl(Arg.Any<UrlRouteContext>()).Returns("/reviews/review-1");
+        return new ReviewsIndexModel(reviews, versions, orchestrations) { Url = url };
+    }
+
+    private static OrchestrationVersionReviewModel CreateReview() => new()
+    {
+        Id = "review-1", OrchestrationVersionId = "version-1", Operation = OrchestrationVersionReviewOperation.Deploy,
+        ApprovalStatus = OrchestrationVersionReviewApprovalStatus.Pending, ApplicationStatus = OrchestrationVersionReviewApplicationStatus.Pending,
+        RequestedBy = "designer", RequestedOnUtc = DateTime.UtcNow
+    };
 }
