@@ -1,0 +1,21 @@
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel
+<form method="post" asp-page-handler="Upsert" id="designNodeBasicForm" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving design node" data-busy-message="Runtime is saving the design node basic data.">
+                    <input asp-for="Input.DesignNodeId" type="hidden" id="designNodeIdInput" />
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.Key" for="designNodeKeyInput" class="form-label"></label>
+                            <input asp-for="Input.Key" class="form-control" id="designNodeKeyInput" data-orchestrator-key="true" autocomplete="off" />
+                            <span asp-validation-for="Input.Key" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.Name" for="designNodeNameInput" class="form-label"></label>
+                            <input asp-for="Input.Name" class="form-control" id="designNodeNameInput" autocomplete="off" />
+                            <span asp-validation-for="Input.Name" class="text-danger"></span>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="Input.Description" for="designNodeDescriptionInput" class="form-label"></label>
+                            <textarea asp-for="Input.Description" class="form-control" id="designNodeDescriptionInput" rows="2"></textarea>
+                            <span asp-validation-for="Input.Description" class="text-danger"></span>
+                        </div>
+                    </div>
+</form>

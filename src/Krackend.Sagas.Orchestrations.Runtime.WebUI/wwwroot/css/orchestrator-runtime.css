@@ -464,8 +464,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: #edf1ff;
-    color: var(--od-primary);
+    background: var(--od-surface-2);
+    color: var(--od-text);
     font-size: 0.78rem;
     font-weight: 700;
 }
@@ -476,14 +476,14 @@
 }
 
 .od-runtime-wizard-step.is-active {
-    border-color: rgba(72, 86, 215, 0.55);
-    background: #f1f3ff;
-    color: var(--od-primary);
+    border-color: var(--od-primary);
+    background: color-mix(in srgb, var(--od-primary) 14%, var(--od-surface));
+    color: var(--od-text);
 }
 
 .od-runtime-wizard-step.is-active span {
     background: var(--od-primary);
-    color: #fff;
+    color: var(--od-surface);
 }
 
 .od-runtime-wizard-step.is-disabled {
@@ -528,7 +528,18 @@
 
 .od-mode-option:has(input:checked) {
     border-color: var(--od-primary);
-    background: #f2f4ff;
+    background: color-mix(in srgb, var(--od-primary) 14%, var(--od-surface));
+}
+
+:is(#designNodeBasicModal, #designNodeViewModal, #designNodeSetupModal, #designNodeCredentialModal, #generatedCredentialsModal, #pendingReleasesModal) .z-component-dialog {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+#designNodeSetupModal .od-item-meta,
+#designNodeViewModal .od-item-meta,
+#pendingReleasesModal .od-item-meta {
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .od-mode-option input {
