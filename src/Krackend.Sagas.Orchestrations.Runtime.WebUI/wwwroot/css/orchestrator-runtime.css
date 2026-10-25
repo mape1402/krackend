@@ -645,11 +645,13 @@
 .btn-primary {
     background: var(--od-primary) !important;
     border-color: var(--od-primary) !important;
+    color: var(--krackend-on-primary, #fff) !important;
 }
 
 .btn-primary:hover {
     background: var(--od-primary-strong) !important;
     border-color: var(--od-primary-strong) !important;
+    color: var(--krackend-on-primary-hover, #fff) !important;
 }
 
 .od-live-indicator {
