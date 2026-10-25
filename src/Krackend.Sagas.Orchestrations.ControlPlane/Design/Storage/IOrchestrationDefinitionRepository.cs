@@ -38,6 +38,10 @@ public interface IOrchestrationDefinitionRepository
     /// <returns>A paged result containing orchestration definitions.</returns>
     Task<PagedResult<OrchestrationDefinition>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns a page matching a search term using the underlying storage provider.</summary>
+    Task<PagedResult<OrchestrationDefinition>> Search(PagedSettings pagedSettings, string searchText, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This storage provider does not support orchestration search.");
+
     /// <summary>
     /// Returns one orchestration definition by its identifier.
     /// </summary>

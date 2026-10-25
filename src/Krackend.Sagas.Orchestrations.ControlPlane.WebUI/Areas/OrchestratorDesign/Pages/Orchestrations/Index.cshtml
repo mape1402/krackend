@@ -1,4 +1,6 @@
 @page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.IndexModel
 @{
     ViewData["Title"] = "Orchestrations";
@@ -12,79 +14,37 @@
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrchestrationModal">Create orchestration</button>
 </div>
 
-@if (!Model.Rows.Any())
-{
-    <section class="od-panel">
-        <p class="od-empty">No orchestrations found.</p>
-    </section>
-}
-else
-{
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-grid"
-             data-od-infinite-grid
-             data-od-infinite-label="orchestrations"
-             data-od-infinite-initial-count="@Model.InitialVisibleCount"
-             data-od-infinite-batch-size="@Model.InfiniteScrollBatchSize">
-            @foreach (var item in Model.Rows)
-            {
-                var statusClass = item.IsActive ? "od-status od-status-active" : "od-status od-status-inactive";
-                var tagsValue = string.Join(',', item.Tags ?? Array.Empty<string>());
-                <article class="od-item-card js-orchestration-card od-infinite-item"
-                         data-orchestration-id="@item.Id"
-                         data-open-url="@Url.Page("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId = item.Id })"
-                         data-orchestration-key="@item.Key"
-                         data-orchestration-name="@item.Name"
-                         data-orchestration-domain-id="@item.DomainId"
-                         data-orchestration-domain-display="@(!string.IsNullOrWhiteSpace(item.DomainDisplayName) ? item.DomainDisplayName : item.Domain)"
-                         data-orchestration-owner-team-id="@item.OwnerTeamId"
-                         data-orchestration-owner-team-display="@(!string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) ? item.OwnerTeamDisplayName : item.OwnerTeam)"
-                         data-orchestration-description="@item.Description"
-                         data-orchestration-tags="@tagsValue">
-                    <div class="od-item-top">
-                        <div>
-                            <h2 class="od-item-title">@item.Name</h2>
-                            <p class="od-item-meta">@item.Key</p>
-                        </div>
-                        <div class="d-flex align-items-start gap-2">
-                            <span class="@statusClass">@(item.IsActive ? "Active" : "Inactive")</span>
-                            <div class="dropdown">
-                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <a class="dropdown-item" asp-area="OrchestratorDesign" asp-page="/Orchestrations/Details" asp-route-orchestrationId="@item.Id">Open</a>
-                                    </li>
-                                    <li>
-                                        <button type="button" class="dropdown-item js-open-orchestration-modal" data-mode="edit">Edit</button>
-                                    </li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    <li>
-                                        <form method="post" asp-page-handler="@(item.IsActive ? "SetInactive" : "SetActive")" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating orchestration" data-busy-message="Design is applying the orchestration status change.">
-                                            <input type="hidden" name="orchestrationId" value="@item.Id" />
-                                            <button type="submit" class="dropdown-item">@(item.IsActive ? "Set inactive" : "Set active")</button>
-                                        </form>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="od-item-description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
-                    <div class="od-chip-row">
-                        <span class="od-meta-chip">Domain: @(!string.IsNullOrWhiteSpace(item.DomainDisplayName) ? item.DomainDisplayName : item.Domain)</span>
-                        @if (!string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) || !string.IsNullOrWhiteSpace(item.OwnerTeam))
-                        {
-                            <span class="od-meta-chip">Team: @(!string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) ? item.OwnerTeamDisplayName : item.OwnerTeam)</span>
-                        }
-                    </div>
-                </article>
-            }
+<section class="od-catalog" data-catalog="orchestrations" data-label="orchestrations" data-source="@Url.Page(null, "List")">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-catalog-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        {
+            Id = "orchestrations-grid", AriaLabel = "orchestrations", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("displayName", "Name"), new("key", "Key"), new("domain", "Domain"), new("status", "Status"), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-catalog-cards hidden>
+        <div class="od-catalog-filters">
+            <label class="z-search-field"><span aria-hidden="true">⌕</span><input type="search" data-catalog-search aria-label="Search orchestrations" placeholder="Search orchestrations" autocomplete="off" /></label>
+            <select class="form-select" data-catalog-sort aria-label="Sort orchestrations">
+                <option value="displayName">Name: A to Z</option><option value="displayName:desc">Name: Z to A</option>
+                <option value="key">Key: A to Z</option><option value="key:desc">Key: Z to A</option><option value="domain">Domain</option><option value="status">Status</option>
+            </select>
         </div>
-        <div class="od-infinite-scroll-status" data-od-infinite-status>
-            Showing <span data-od-infinite-count>@Math.Min(Model.InitialVisibleCount, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> orchestrations
-        </div>
-        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-    </section>
-}
+        <div class="od-grid" data-catalog-card-items></div>
+        <p class="od-empty" data-catalog-empty hidden>No matching orchestrations.</p>
+        <p data-catalog-status aria-live="polite"></p>
+        <div data-catalog-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+    </div>
+    <form method="post" asp-page-handler="SetActive" data-catalog-action-form data-active-url="@Url.Page(null, "SetActive")" data-inactive-url="@Url.Page(null, "SetInactive")">
+        <input type="hidden" name="orchestrationId" />
+    </form>
+</section>
 
 <div class="modal fade" id="createOrchestrationModal" tabindex="-1" aria-labelledby="createOrchestrationModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -306,31 +266,15 @@ else
         });
     }
 
-    document.querySelectorAll('.js-open-orchestration-modal[data-mode="edit"]').forEach(button => {
-        button.addEventListener('click', event => {
-            event.preventDefault();
-            const card = button.closest('.js-orchestration-card');
-            openEditMode(card);
-        });
+    document.addEventListener('click', event => {
+        const button = event.target.closest('.js-open-orchestration-modal[data-mode="edit"]');
+        if (!button) return;
+        event.preventDefault();
+        openEditMode(button.closest('.js-orchestration-card'));
     });
 
     modalElement.addEventListener('hidden.bs.modal', () => {
         keyInput.readOnly = false;
-    });
-
-    document.querySelectorAll('.js-orchestration-card[data-open-url]').forEach(card => {
-        card.addEventListener('click', event => {
-            if (event.target.closest('a, button, input, textarea, select, label, form, .dropdown, .od-chip-editor')) {
-                return;
-            }
-
-            const openUrl = card.getAttribute('data-open-url') || '';
-            if (!openUrl) {
-                return;
-            }
-
-            window.location.href = openUrl;
-        });
     });
 
     initializeChipEditors();
@@ -452,4 +396,5 @@ else
     });
 })();
 </script>
+<script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 }

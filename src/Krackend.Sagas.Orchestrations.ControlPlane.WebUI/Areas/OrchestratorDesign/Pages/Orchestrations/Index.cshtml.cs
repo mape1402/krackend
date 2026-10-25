@@ -13,8 +13,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class IndexModel : PageModel
 {
-    private const int OrchestrationPageSize = 120;
-    private const int MaxPageReads = 50;
+    private const int OrchestrationPageSize = 25;
 
     private readonly IOrchestrationApplicationService _orchestrationService;
     private readonly IDomainApplicationService _domainService;
@@ -75,9 +74,39 @@ public sealed class IndexModel : PageModel
     /// </summary>
     /// <param name="pageNumber">Requested page number.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task OnGetAsync(int pageNumber = 1, CancellationToken cancellationToken = default)
+    public Task OnGetAsync(int pageNumber = 1, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Loads an ordered page for the orchestration catalog.</summary>
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = OrchestrationPageSize,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
     {
-        await LoadPageAsync(cancellationToken);
+        var field = sort switch
+        {
+            "key" => "key",
+            "status" => "isActive",
+            "domain" => "domain",
+            _ => "name"
+        };
+        var sorts = new List<ApplicationSort> { new(field, descending) };
+        if (field != "key") sorts.Add(new ApplicationSort("key", false));
+        var result = await _orchestrationService.GetAll(new GetOrchestrationDefinitionsQuery(new DesignPagedSettings
+        {
+            PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100), Sorts = sorts
+        }, search?.Trim() ?? string.Empty), cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Rows.Select(item => new
+            {
+                id = item.Id, key = item.Key, displayName = item.Name, description = item.Description,
+                isActive = item.IsActive, status = item.IsActive ? "Active" : "Inactive",
+                domainId = item.DomainId, domain = string.IsNullOrWhiteSpace(item.DomainDisplayName) ? item.Domain : item.DomainDisplayName,
+                ownerTeamId = item.OwnerTeamId, ownerTeam = string.IsNullOrWhiteSpace(item.OwnerTeamDisplayName) ? item.OwnerTeam : item.OwnerTeamDisplayName,
+                tags = item.Tags,
+                openUrl = Url.Page("/Orchestrations/Details", new { area = "OrchestratorDesign", orchestrationId = item.Id })
+            }),
+            totalCount = result.TotalRows, hasMore = result.PageNumber < result.TotalPages,
+            search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+        });
     }
 
     /// <summary>
@@ -89,7 +118,6 @@ public sealed class IndexModel : PageModel
     {
         if (!ModelState.IsValid)
         {
-            await LoadPageAsync(cancellationToken);
             return Page();
         }
 
@@ -197,41 +225,6 @@ public sealed class IndexModel : PageModel
             });
 
         return new JsonResult(rows);
-    }
-
-    private async Task LoadPageAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var rows = new List<OrchestrationDefinitionModel>();
-            var pageNumber = 1;
-            var totalPages = 1;
-
-            do
-            {
-                var result = await _orchestrationService.GetAll(
-                    new GetOrchestrationDefinitionsQuery(
-                        new DesignPagedSettings
-                        {
-                            PageNumber = pageNumber,
-                            PageSize = OrchestrationPageSize
-                        }),
-                    cancellationToken);
-
-                rows.AddRange(result.Rows);
-                totalPages = result.TotalPages <= 0 ? 1 : result.TotalPages;
-                pageNumber++;
-            }
-            while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-            Rows = rows.ToArray();
-            TotalPages = 1;
-            PageNumber = 1;
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = ex.Message;
-        }
     }
 
     private static IEnumerable<string> ParseTags(string tags)

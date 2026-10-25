@@ -19,6 +19,25 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
 {
     [Fact]
+    public async Task OrchestrationSearchFiltersBeforePaging()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationDefinitionRepository>();
+        foreach (var key in new[] { "alpha", "sale_one", "sale_two", "sale_three" })
+            await repository.Create(new OrchestrationDefinition
+            {
+                Id = Id.New(), Key = key, Name = key, Description = "test", Domain = "test",
+                IsActive = true, CreatedOnUtc = DateTime.UtcNow, CreatedBy = "tests"
+            });
+
+        var result = await repository.Search(new PagedSettings(2, 2, [], [new QuerySort("key", false)]), "sale");
+
+        Assert.Equal(3, result.TotalRows);
+        Assert.Equal("sale_two", Assert.Single(result.Rows).Key);
+    }
+
+    [Fact]
     public async Task DesignRepositoriesPersistAndReadCompleteMessagingDefinition()
     {
         await using var provider = CreateProvider();

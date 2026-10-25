@@ -33,6 +33,45 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'orchestrations') {
+            const group = document.createElement('div');
+            group.className = 'dropdown js-orchestration-card';
+            Object.assign(group.dataset, {
+                orchestrationId: item.id, orchestrationKey: item.key, orchestrationName: item.displayName,
+                orchestrationDomainId: item.domainId ?? '', orchestrationDomainDisplay: item.domain ?? '',
+                orchestrationOwnerTeamId: item.ownerTeamId ?? '', orchestrationOwnerTeamDisplay: item.ownerTeam ?? '',
+                orchestrationDescription: item.description ?? '', orchestrationTags: (item.tags ?? []).join(',')
+            });
+            const toggle = button('bi-three-dots-vertical', `Actions for ${item.displayName}`);
+            toggle.dataset.bsToggle = 'dropdown';
+            toggle.setAttribute('aria-expanded', 'false');
+            const menu = document.createElement('ul');
+            menu.className = 'dropdown-menu dropdown-menu-end';
+            const entry = element => { const li = document.createElement('li'); li.append(element); menu.append(li); };
+            const open = document.createElement('a');
+            open.className = 'dropdown-item';
+            open.href = item.openUrl;
+            open.textContent = 'Open';
+            entry(open);
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'dropdown-item js-open-orchestration-modal';
+            edit.dataset.mode = 'edit';
+            edit.textContent = 'Edit';
+            entry(edit);
+            const change = document.createElement('button');
+            change.type = 'button';
+            change.className = 'dropdown-item';
+            change.textContent = item.isActive ? 'Set inactive' : 'Set active';
+            change.addEventListener('click', () => {
+                form.elements.orchestrationId.value = item.id;
+                form.action = item.isActive ? form.dataset.inactiveUrl : form.dataset.activeUrl;
+                form.requestSubmit();
+            });
+            entry(change);
+            group.append(toggle, menu);
+            return group;
+        }
         if (kind === 'metadata') {
             const group = document.createElement('div');
             group.className = 'dropdown';
@@ -107,7 +146,12 @@
         const identity = document.createElement('div');
         const name = document.createElement('h2');
         name.className = 'od-item-title';
-        name.textContent = item.displayName;
+        if (kind === 'orchestrations') {
+            const link = document.createElement('a');
+            link.href = item.openUrl;
+            link.textContent = item.displayName;
+            name.append(link);
+        } else name.textContent = item.displayName;
         const key = document.createElement('p');
         key.className = 'od-item-meta';
         key.textContent = item.key;
@@ -129,6 +173,12 @@
         description.className = 'od-item-description';
         description.textContent = item.description || 'No description.';
         card.append(description);
+        if (kind === 'orchestrations') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = [item.domain && `Domain: ${item.domain}`, item.ownerTeam && `Team: ${item.ownerTeam}`].filter(Boolean).join(' · ');
+            card.append(details);
+        }
         cards.append(card);
     };
     const load = async reset => {

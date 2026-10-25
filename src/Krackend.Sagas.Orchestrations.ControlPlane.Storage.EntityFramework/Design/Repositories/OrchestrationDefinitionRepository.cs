@@ -66,7 +66,11 @@ public sealed class OrchestrationDefinitionRepository : IOrchestrationDefinition
     /// <summary>
     /// Executes GetAll.
     /// </summary>
-    public async Task<PagedResult<OrchestrationDefinition>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default)
+    public Task<PagedResult<OrchestrationDefinition>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default)
+        => Search(pagedSettings, string.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<PagedResult<OrchestrationDefinition>> Search(PagedSettings pagedSettings, string searchText, CancellationToken cancellationToken = default)
     {
         var sieveModel = pagedSettings.ToSieveModel();
         var baseQuery = _dbContext.OrchestrationDefinitions
@@ -74,6 +78,11 @@ public sealed class OrchestrationDefinitionRepository : IOrchestrationDefinition
             .Include(x => x.DomainRef)
             .Include(x => x.OwnerTeamRef)
             .AsQueryable();
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var term = searchText.Trim();
+            baseQuery = baseQuery.Where(x => x.Key.Contains(term) || x.Name.Contains(term) || (x.Description != null && x.Description.Contains(term)));
+        }
         var filteredAndSortedQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
 
         var totalRows = await filteredAndSortedQuery.LongCountAsync(cancellationToken);

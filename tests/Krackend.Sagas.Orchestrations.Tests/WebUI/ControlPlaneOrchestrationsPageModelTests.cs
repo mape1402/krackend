@@ -20,30 +20,20 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ControlPlaneOrchestrationsPageModelTests
 {
     [Fact]
-    public async Task IndexLoadsRowsAndSurfacesLoadErrors()
+    public async Task IndexLoadsOnlyRequestedPageAndForwardsSearchAndSorting()
     {
         var fixture = new Fixture();
         var page = fixture.CreateIndexPage();
 
         await page.OnGetAsync(0, CancellationToken.None);
 
-        Assert.Equal(1, page.PageNumber);
-        Assert.Equal(1, page.TotalPages);
-        Assert.Equal(20, page.InitialVisibleCount);
-        Assert.Equal(20, page.InfiniteScrollBatchSize);
-        Assert.Single(page.Rows);
+        await fixture.OrchestrationService.DidNotReceive().GetAll(Arg.Any<GetOrchestrationDefinitionsQuery>(), Arg.Any<CancellationToken>());
+        Assert.IsType<JsonResult>(await page.OnGetListAsync(2, 10, "  sale  ", "key", true, CancellationToken.None));
         await fixture.OrchestrationService.Received(1).GetAll(
             Arg.Is<GetOrchestrationDefinitionsQuery>(query =>
-                query.Settings.PageNumber == 1 &&
-                query.Settings.PageSize == 120),
+                query.Settings.PageNumber == 2 && query.Settings.PageSize == 10 && query.SearchText == "sale" &&
+                query.Settings.Sorts.Single().Field == "key" && query.Settings.Sorts.Single().Descending),
             Arg.Any<CancellationToken>());
-
-        fixture.OrchestrationService
-            .GetAll(Arg.Any<GetOrchestrationDefinitionsQuery>(), Arg.Any<CancellationToken>())
-            .Returns<DesignPagedResult>(_ => throw new InvalidOperationException("list failed"));
-        await page.OnGetAsync(1, CancellationToken.None);
-
-        Assert.Equal("list failed", page.ErrorMessage);
     }
 
     [Fact]
