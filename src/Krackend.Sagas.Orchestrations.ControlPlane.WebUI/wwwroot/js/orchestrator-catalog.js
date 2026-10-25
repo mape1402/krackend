@@ -126,6 +126,7 @@
             link.href = item.openUrl;
             link.title = kind === 'reviews' ? 'Open review' : kind === 'assignments' ? 'View attempts' : 'Open releases';
             link.setAttribute('aria-label', `${link.title} for ${item.displayName}`);
+            if (kind === 'reviews') link.dataset.reviewId = item.id;
             const icon = document.createElement('i');
             icon.className = 'bi bi-eye';
             icon.setAttribute('aria-hidden', 'true');

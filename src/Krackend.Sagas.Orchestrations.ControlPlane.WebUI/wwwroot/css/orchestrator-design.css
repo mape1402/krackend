@@ -1995,3 +1995,13 @@ main.container {
 .od-review-metadata dd { margin:.35rem 0 0; color:var(--z-text); font-size:.8125rem; overflow-wrap:anywhere; }
 .od-review-actions { max-width:62rem; padding-top:1rem; border-top:1px solid var(--z-border); }
 @media (max-width:600px) { .od-review-summary { align-items:flex-start; flex-direction:column; } }
+.od-review-dialog-identity { display:flex; flex-wrap:wrap; align-items:center; gap:.55rem; padding-bottom:1rem; border-bottom:1px solid var(--z-border); }
+.od-review-dialog-identity strong { font-size:1rem; color:var(--z-text); }
+.od-review-dialog-identity > span:last-child { color:var(--z-muted); font-size:.8rem; }
+.od-review-dialog-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem 1.5rem; margin:1rem 0 0; }
+.od-review-dialog-facts div { min-width:0; }
+.od-review-dialog-facts dt { color:var(--z-muted); font-size:.75rem; font-weight:600; }
+.od-review-dialog-facts dd { margin:.25rem 0 0; overflow-wrap:anywhere; color:var(--z-text); font-size:.875rem; }
+#reviewCatalogDialog [hidden] { display:none !important; }
+#reviewCatalogDialog .z-component-dialog-footer { flex-wrap:wrap; }
+@media (max-width: 600px) { .od-review-dialog-facts { grid-template-columns:1fr; } }

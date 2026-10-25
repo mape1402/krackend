@@ -46,6 +46,9 @@ public sealed class DetailsModel : PageModel
     [BindProperty]
     public string AbortReason { get; set; } = string.Empty;
 
+    [BindProperty]
+    public bool ReturnToCatalog { get; set; }
+
     public bool CanApprove => Review?.ApprovalStatus == OrchestrationVersionReviewApprovalStatus.Pending
         && Review.ApplicationStatus == OrchestrationVersionReviewApplicationStatus.Pending;
 
@@ -120,7 +123,9 @@ public sealed class DetailsModel : PageModel
         try
         {
             await operation(cancellationToken);
-            return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId });
+            return ReturnToCatalog
+                ? RedirectToPage("/Reviews/Index", new { area = "OrchestratorDesign" })
+                : RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId });
         }
         catch (Exception exception)
         {

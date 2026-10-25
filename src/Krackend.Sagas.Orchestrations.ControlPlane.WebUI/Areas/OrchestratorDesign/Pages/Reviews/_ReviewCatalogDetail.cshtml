@@ -1,0 +1,24 @@
+<div class="od-review-dialog-summary">
+    <div class="od-review-dialog-identity">
+        <span data-review-value="operation" class="z-status z-status-info"></span>
+        <strong data-review-value="orchestrationName"></strong>
+        <span data-review-value="orchestrationKey"></span>
+    </div>
+    <dl class="od-review-dialog-facts">
+        <div><dt>Roadmap</dt><dd data-review-value="version"></dd></div>
+        <div><dt>Version status</dt><dd data-review-value="versionStatus"></dd></div>
+        <div><dt>Approval</dt><dd><span class="z-status" data-review-value="approval"></span></dd></div>
+        <div><dt>Application</dt><dd><span class="z-status" data-review-value="application"></span></dd></div>
+        <div><dt>Requested by</dt><dd data-review-value="requestedBy"></dd></div>
+        <div><dt>Requested</dt><dd data-review-value="requestedOn"></dd></div>
+        <div data-review-optional="rejectionComment"><dt>Rejection comment</dt><dd data-review-value="rejectionComment"></dd></div>
+        <div data-review-optional="abortReason"><dt>Abort reason</dt><dd data-review-value="abortReason"></dd></div>
+        <div data-review-optional="deployedArtifactId"><dt>Artifact</dt><dd data-review-value="deployedArtifactId"></dd></div>
+    </dl>
+</div>
+<form method="post" id="catalogReviewApproveForm" data-review-post="Approve" data-orchestrator-validate="false">
+    @Html.AntiForgeryToken()<input type="hidden" name="reviewId" /><input type="hidden" name="ReturnToCatalog" value="true" />
+</form>
+<form method="post" id="catalogReviewApplyForm" data-review-post="Apply" data-orchestrator-validate="false">
+    @Html.AntiForgeryToken()<input type="hidden" name="reviewId" /><input type="hidden" name="ReturnToCatalog" value="true" />
+</form>

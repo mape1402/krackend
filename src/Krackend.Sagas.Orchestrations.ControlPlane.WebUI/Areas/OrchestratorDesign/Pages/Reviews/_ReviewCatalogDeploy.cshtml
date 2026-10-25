@@ -1,0 +1,9 @@
+<form method="post" id="catalogReviewDeployForm" data-review-post="Apply" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Deploying approved version">
+    @Html.AntiForgeryToken()<input type="hidden" name="reviewId" /><input type="hidden" name="ReturnToCatalog" value="true" />
+    <div class="row g-3">
+        <div class="col-md-4 z-form-field"><label class="z-form-label" for="catalogReviewVersion">Version</label><input id="catalogReviewVersion" name="ApplyInput.Version" class="z-form-input" data-val-required="A version is required." data-orchestrator-version="true" maxlength="64" /></div>
+        <div class="col-md-8 z-form-field"><label class="z-form-label" for="catalogReviewLabel">Label</label><input id="catalogReviewLabel" name="ApplyInput.VersionLabel" class="z-form-input" maxlength="128" /></div>
+        <div class="col-12 z-form-field"><label class="z-form-label" for="catalogReviewDescription">Description</label><textarea id="catalogReviewDescription" name="ApplyInput.Description" class="z-form-input z-form-textarea" maxlength="2000" rows="2"></textarea></div>
+        <div class="col-12 z-form-field"><label class="z-form-label" for="catalogReviewNotes">Comment</label><textarea id="catalogReviewNotes" name="ApplyInput.Notes" class="z-form-input z-form-textarea" maxlength="2000" rows="2"></textarea></div>
+    </div>
+</form>

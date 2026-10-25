@@ -1,0 +1,5 @@
+<form method="post" id="catalogReviewRejectForm" data-review-post="Reject" data-orchestrator-validate="true">
+    @Html.AntiForgeryToken()<input type="hidden" name="reviewId" /><input type="hidden" name="ReturnToCatalog" value="true" />
+    <div class="z-form-field"><label class="z-form-label" for="catalogReviewRejectionComment">Comment (optional)</label>
+        <textarea id="catalogReviewRejectionComment" name="RejectionComment" class="z-form-input z-form-textarea" maxlength="2000" rows="4"></textarea></div>
+</form>

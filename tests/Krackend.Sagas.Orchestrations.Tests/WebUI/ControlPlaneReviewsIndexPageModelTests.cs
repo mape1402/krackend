@@ -12,6 +12,41 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
 public sealed class ControlPlaneReviewsIndexPageModelTests
 {
+    [Theory]
+    [InlineData(OrchestrationVersionReviewApprovalStatus.Pending, true, false, true)]
+    [InlineData(OrchestrationVersionReviewApprovalStatus.Approved, false, true, true)]
+    [InlineData(OrchestrationVersionReviewApprovalStatus.Rejected, false, false, false)]
+    public async Task DetailReturnsReviewContextAndAvailableActions(OrchestrationVersionReviewApprovalStatus approval, bool approve, bool apply, bool abort)
+    {
+        var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
+        var versions = Substitute.For<IOrchestrationVersionApplicationService>();
+        var orchestrations = Substitute.For<IOrchestrationApplicationService>();
+        var review = CreateReview();
+        review.ApprovalStatus = approval;
+        reviews.GetById(Arg.Any<GetOrchestrationVersionReviewByIdQuery>(), Arg.Any<CancellationToken>()).Returns(review);
+        versions.GetById(Arg.Any<GetOrchestrationVersionByIdQuery>(), Arg.Any<CancellationToken>()).Returns(new OrchestrationVersionModel { OrchestrationDefinitionId = "orchestration-1", Version = "1.2.3" });
+        orchestrations.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinitionModel { Name = "Sales", Key = "sales" });
+        var result = Assert.IsType<JsonResult>(await CreatePage(reviews, versions, orchestrations).OnGetDetailAsync("review-1"));
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value));
+        Assert.Equal("Sales", json.RootElement.GetProperty("orchestrationName").GetString());
+        Assert.Equal("1.2.3", json.RootElement.GetProperty("version").GetString());
+        Assert.Equal(approve, json.RootElement.GetProperty("canApprove").GetBoolean());
+        Assert.Equal(apply, json.RootElement.GetProperty("canApply").GetBoolean());
+        Assert.Equal(abort, json.RootElement.GetProperty("canAbort").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DetailReturnsNotFoundWhenReviewOrVersionIsMissing(bool missingReview)
+    {
+        var reviews = Substitute.For<IOrchestrationVersionReviewApplicationService>();
+        var versions = Substitute.For<IOrchestrationVersionApplicationService>();
+        if (!missingReview) reviews.GetById(Arg.Any<GetOrchestrationVersionReviewByIdQuery>(), Arg.Any<CancellationToken>()).Returns(CreateReview());
+        var page = CreatePage(reviews, versions, Substitute.For<IOrchestrationApplicationService>());
+        Assert.IsType<NotFoundResult>(await page.OnGetDetailAsync("review-1"));
+    }
+
     [Fact]
     public async Task ListLoadsOnlyRequestedPageAndForwardsSearchAndSort()
     {
