@@ -35,12 +35,18 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         target.SidebarMuted = source.SidebarMutedTextColor;
         target.Canvas = source.ContentBackgroundColor;
         target.Surface = source.SurfaceColor;
+        target.Elevated = source.SurfaceColor;
         target.Text = source.TextColor;
         target.Muted = source.MutedTextColor;
         target.Border = source.BorderColor;
         target.Subtle = source.SubtleBackgroundColor;
+        target.PrimarySoft = source.SubtleBackgroundColor;
+        target.Glow = $"color-mix(in srgb, {source.PrimaryColor} 24%, transparent)";
         target.CodeCanvas = source.CodeBackgroundColor;
         target.CodeText = source.CodeTextColor;
+        target.CodeBorder = source.BorderColor;
+        target.CodeControlSurface = source.CodeBackgroundColor;
+        target.CodeControlText = source.CodeTextColor;
         target.Shadow = source.ShadowColor;
     }
 }
