@@ -12,41 +12,7 @@
 
     ViewData["Title"] = $"{Model.Orchestration?.Name ?? "Orchestration"} · {VersionLabel()}";
 
-    string ActionLabel(string action)
-        => action switch
-        {
-            "RequestDeployment" => "Send to deployment review",
-            "RequestDeprecation" => "Request deprecation",
-            "RequestArchive" => "Request archive",
-            "OpenReview" => "Open review",
-            "Abandon" => "Abandon draft",
-            _ => action
-        };
 }
-
-<div class="od-roadmap-toolbar">
-    <div class="d-flex gap-2">
-        @if (Model.GetAllowedActions(Model.SelectedVersion?.Status ?? OrchestrationVersionStatus.Abandoned).Any())
-        {
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false">Actions</button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    @foreach (var action in Model.GetAllowedActions(Model.SelectedVersion!.Status))
-                    {
-                        <li>
-                            <form method="post" asp-page-handler="TransitionVersion" class="od-inline-form" data-orchestrator-validate="false" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected lifecycle action.">
-                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                <input type="hidden" name="versionId" value="@Model.VersionId" />
-                                <input type="hidden" name="action" value="@action" />
-                                <button type="submit" class="dropdown-item @(action == "Abandon" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
-                            </form>
-                        </li>
-                    }
-                </ul>
-            </div>
-        }
-    </div>
-</div>
 
 @if (!Model.CanEdit)
 {

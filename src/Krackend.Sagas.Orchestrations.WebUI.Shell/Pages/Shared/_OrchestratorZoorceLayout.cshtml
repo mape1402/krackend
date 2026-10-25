@@ -31,6 +31,13 @@
 }
 @RenderSection("Head", required: false)
 <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/css/orchestrator-catalog.css" asp-append-version="true" />
+@if (validationErrors.Length > 0 || !string.IsNullOrWhiteSpace(pageError))
+{
+    <div class="z-message z-message-danger" role="alert">
+        @foreach (var error in validationErrors) { <div>@error</div> }
+        @if (!string.IsNullOrWhiteSpace(pageError) && !validationErrors.Contains(pageError)) { <div>@pageError</div> }
+    </div>
+}
 <form id="orchestrator-theme-sync" method="post" action="@themeUrl" hidden>
     @Html.AntiForgeryToken()
     <input name="mode" value="@mode" />
@@ -68,15 +75,6 @@
             });
         })();
     </script>
-    @if (validationErrors.Length > 0 || !string.IsNullOrWhiteSpace(pageError))
-    {
-        <script>
-            window.OrchestratorMessages?.showValidation({
-                title: 'Review the capture',
-                errors: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(validationErrors.Length > 0 ? validationErrors : new[] { pageError }))
-            });
-        </script>
-    }
     @if (TempData["OrchestratorMessage.Title"] is string messageTitle)
     {
         <script>

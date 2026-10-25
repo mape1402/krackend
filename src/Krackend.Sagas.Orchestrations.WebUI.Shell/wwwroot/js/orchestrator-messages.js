@@ -169,7 +169,6 @@
             : [];
         if (errors.length > 0) {
             event.preventDefault();
-            await showValidation({ errors });
             focusFirstInvalid(form);
             return;
         }
@@ -311,9 +310,18 @@
         field.classList.add('is-invalid');
         field.setAttribute('aria-invalid', 'true');
 
-        const validation = findValidationMessage(field);
+        let validation = findValidationMessage(field);
+        if (!validation) {
+            validation = document.createElement('span');
+            validation.className = 'z-field-error';
+            validation.dataset.orchestratorFieldError = field.name;
+            field.insertAdjacentElement('afterend', validation);
+        }
         if (validation) {
+            if (!validation.id && field.id) validation.id = `${field.id}-error`;
+            if (validation.id) field.setAttribute('aria-errormessage', validation.id);
             validation.textContent = message;
+            validation.classList.add('z-field-error');
             validation.classList.remove('field-validation-valid');
             validation.classList.add('field-validation-error');
         }
@@ -322,6 +330,8 @@
     const clearFormValidation = form => {
         form.querySelectorAll('.is-invalid').forEach(x => x.classList.remove('is-invalid'));
         form.querySelectorAll('[aria-invalid="true"]').forEach(x => x.removeAttribute('aria-invalid'));
+        form.querySelectorAll('[aria-errormessage]').forEach(x => x.removeAttribute('aria-errormessage'));
+        form.querySelectorAll('[data-orchestrator-field-error]').forEach(x => x.remove());
         form.querySelectorAll('[data-valmsg-for]').forEach(x => {
             x.textContent = '';
             x.classList.remove('field-validation-error');
@@ -333,6 +343,7 @@
         if (!field?.classList) return;
         field.classList.remove('is-invalid');
         field.removeAttribute('aria-invalid');
+        field.removeAttribute('aria-errormessage');
         const validation = findValidationMessage(field);
         if (validation) {
             validation.textContent = '';
@@ -342,6 +353,9 @@
     };
 
     const findValidationMessage = field => {
+        const generated = Array.from(field.form?.querySelectorAll('[data-orchestrator-field-error]') || [])
+            .find(element => element.dataset.orchestratorFieldError === field.name);
+        if (generated) return generated;
         const names = [field.name, field.getAttribute('asp-for')].filter(Boolean);
         for (const name of names) {
             const message = field.form?.querySelector(`[data-valmsg-for="${cssEscape(name)}"]`);

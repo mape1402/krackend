@@ -8,6 +8,33 @@
 .od-traffic-mode button.active { background:var(--od-surface, #fff); color:var(--od-text, #10233f); }
 .od-create-floating { position:fixed; right:2.5rem; bottom:2.5rem; z-index:20; }
 .od-create-floating .z-fab:focus-visible { outline:3px solid var(--od-primary, #0b3d91); outline-offset:3px; }
+
+/* Forms keep their navigation and actions in place while their content scrolls. */
+.z-component-dialog:has(form) {
+    display: flex;
+    flex-direction: column;
+    height: min(42rem, calc(100dvh - 2rem));
+    max-height: calc(100dvh - 2rem);
+    overflow: hidden;
+}
+.z-component-dialog:has(form) > .z-component-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+.z-component-dialog:has(form) > :is(.z-component-dialog-header, .z-component-dialog-footer) { flex: 0 0 auto; }
+#triggerTabs {
+    position: sticky;
+    top: -1px;
+    z-index: 2;
+    background: var(--z-surface);
+}
+:is(.z-form-input, .z-input, .z-select, .z-textarea):focus {
+    outline: 2px solid var(--z-primary);
+    outline-offset: -2px;
+    box-shadow: none;
+}
 .od-catalog-controls, .od-runtime-view-controls { margin-bottom:.5rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .z-toolbar:has(> .z-grid-footer) { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .z-toolbar > .z-grid-footer { flex:0 1 auto; min-height:0; margin-left:auto; padding:0; gap:.5rem; }
