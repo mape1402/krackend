@@ -1,0 +1,17 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Domains.IndexModel
+
+<form id="domainForm" method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving domain" data-busy-message="Design is validating and storing the domain.">
+    <input asp-for="Input.DomainId" type="hidden" id="domainIdInput" />
+    <div class="mb-2">
+        <label asp-for="Input.Key" class="form-label"></label>
+        <input asp-for="Input.Key" class="form-control" id="domainKeyInput" data-orchestrator-key="true" />
+    </div>
+    <div class="mb-2">
+        <label asp-for="Input.DisplayName" class="form-label"></label>
+        <input asp-for="Input.DisplayName" class="form-control" id="domainDisplayNameInput" />
+    </div>
+    <div class="mb-2">
+        <label asp-for="Input.Description" class="form-label"></label>
+        <textarea asp-for="Input.Description" class="form-control" rows="3" id="domainDescriptionInput"></textarea>
+    </div>
+</form>

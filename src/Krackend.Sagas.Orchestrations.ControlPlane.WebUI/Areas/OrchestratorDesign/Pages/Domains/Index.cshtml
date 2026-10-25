@@ -1,6 +1,8 @@
 @page
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Domains.IndexModel
 @{
     ViewData["Title"] = "Domains";
@@ -48,46 +50,22 @@
     </form>
 </section>
 
-<div class="modal fade" id="domainModal" tabindex="-1" aria-labelledby="domainModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving domain" data-busy-message="Design is validating and storing the domain.">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="domainModalLabel">Create domain</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input asp-for="Input.DomainId" type="hidden" id="domainIdInput" />
-                    <div class="mb-2">
-                        <label asp-for="Input.Key" class="form-label"></label>
-                        <input asp-for="Input.Key" class="form-control" id="domainKeyInput" data-orchestrator-key="true" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="Input.DisplayName" class="form-label"></label>
-                        <input asp-for="Input.DisplayName" class="form-control" id="domainDisplayNameInput" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="Input.Description" class="form-label"></label>
-                        <textarea asp-for="Input.Description" class="form-control" rows="3" id="domainDescriptionInput"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="domainModalSubmitButton">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "domainModal",
+    Title = "Create domain",
+    Eyebrow = null,
+    Body = await Html.PartialAsync("_DomainForm", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"domainForm\" class=\"z-button z-button-primary\" id=\"domainModalSubmitButton\">Create</button>")
+})
 
 @section Scripts {
 <script>
 (() => {
     const modalElement = document.getElementById('domainModal');
-    const title = document.getElementById('domainModalLabel');
+    const title = document.getElementById('domainModal-title');
     const submitButton = document.getElementById('domainModalSubmitButton');
-    const modal = window.bootstrap?.Modal?.getOrCreateInstance(modalElement);
-    if (!modalElement || !title || !submitButton || !modal) return;
+    if (!modalElement || !title || !submitButton) return;
 
     const idInput = document.getElementById('domainIdInput');
     const keyInput = document.getElementById('domainKeyInput');
@@ -108,7 +86,7 @@
                 setValue(displayNameInput, button.getAttribute('data-display-name'));
                 setValue(descriptionInput, button.getAttribute('data-description'));
                 keyInput.readOnly = true;
-                modal.show();
+                modalElement.open?.(button);
                 return;
             }
 
@@ -119,7 +97,7 @@
             setValue(displayNameInput, '');
             setValue(descriptionInput, '');
             keyInput.readOnly = false;
-            modal.show();
+            modalElement.open?.(button);
     });
 })();
 </script>
