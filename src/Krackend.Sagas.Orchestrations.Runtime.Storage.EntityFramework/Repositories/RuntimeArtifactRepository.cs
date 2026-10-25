@@ -133,11 +133,30 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
         var query = DbContext.RuntimeOrchestrationArtifacts.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.OrchestrationDefinitionKey.Contains(search.Trim()));
-        var groups = query.GroupBy(x => x.OrchestrationDefinitionKey)
-            .Select(g => new { Key = g.Key, VersionCount = g.Count(), ActiveCount = g.Count(x => x.IsActive), Latest = g.Max(x => x.DeployedOnUtc) });
-        var total = await groups.LongCountAsync(cancellationToken);
-        var rows = await groups.OrderBy(x => x.Key).Skip((page - 1) * pageSize).Take(pageSize).ToArrayAsync(cancellationToken);
-        return new RuntimeArtifactGroupPage(rows.Select(x => new RuntimeArtifactGroup(x.Key, x.VersionCount, x.ActiveCount, x.Latest)).ToArray(), total, page, pageSize);
+        try
+        {
+            var groups = query.GroupBy(x => x.OrchestrationDefinitionKey)
+                .Select(g => new { Key = g.Key, VersionCount = g.Count(), ActiveCount = g.Count(x => x.IsActive), Latest = g.Max(x => x.DeployedOnUtc) });
+            var total = await groups.LongCountAsync(cancellationToken);
+            var rows = await groups.OrderBy(x => x.Key).Skip((page - 1) * pageSize).Take(pageSize).ToArrayAsync(cancellationToken);
+            return new RuntimeArtifactGroupPage(rows.Select(x => new RuntimeArtifactGroup(x.Key, x.VersionCount, x.ActiveCount, x.Latest)).ToArray(), total, page, pageSize);
+        }
+        catch (InvalidOperationException exception) when (exception.Message.Contains("could not be translated", StringComparison.OrdinalIgnoreCase))
+        {
+            var keys = query.Select(x => x.OrchestrationDefinitionKey).Distinct();
+            var total = await keys.LongCountAsync(cancellationToken);
+            var pageKeys = await keys.OrderBy(x => x).Skip((page - 1) * pageSize).Take(pageSize).ToArrayAsync(cancellationToken);
+            var rows = new List<RuntimeArtifactGroup>(pageKeys.Length);
+            foreach (var key in pageKeys)
+            {
+                var versions = query.Where(x => x.OrchestrationDefinitionKey == key);
+                var versionCount = await versions.CountAsync(cancellationToken);
+                var activeCount = await versions.CountAsync(x => x.IsActive, cancellationToken);
+                var latest = await versions.OrderByDescending(x => x.DeployedOnUtc).Select(x => x.DeployedOnUtc).FirstAsync(cancellationToken);
+                rows.Add(new RuntimeArtifactGroup(key, versionCount, activeCount, latest));
+            }
+            return new RuntimeArtifactGroupPage(rows, total, page, pageSize);
+        }
     }
 
     public async Task<RuntimeArtifactVersionPage> GetVersions(string orchestrationKey, int page, int pageSize, string search, CancellationToken cancellationToken = default)

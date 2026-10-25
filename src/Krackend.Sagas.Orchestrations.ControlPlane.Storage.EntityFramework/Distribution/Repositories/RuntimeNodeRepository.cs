@@ -140,10 +140,13 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
     {
         var page = Math.Max(1, settings?.PageNumber ?? 1);
         var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
-        var query = _dbContext.RuntimeNodes.AsNoTracking().Include(x => x.Environment).Where(x => !x.IsDeleted);
+        var query = _dbContext.RuntimeNodes.AsNoTracking().Where(x => !x.IsDeleted);
+        if (orchestrationId is null) query = query.Include(x => x.Environment);
         if (enabledOnly) query = query.Where(x => x.Status == RuntimeNodeStatus.Enabled);
         if (orchestrationId is not null)
-            query = query.Where(x => _dbContext.OrchestrationAllowedRuntimeNodes.Any(p => p.OrchestrationDefinitionId == orchestrationId && p.RuntimeNodeId == x.Id));
+            query = query.Join(_dbContext.OrchestrationAllowedRuntimeNodes,
+                node => node.Id, policy => policy.RuntimeNodeId, (node, policy) => new { node, policy })
+                .Where(x => x.policy.OrchestrationDefinitionId == orchestrationId).Select(x => x.node);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -164,6 +167,13 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
             _ => query.OrderBy(x => x.Name)
         };
         var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        if (orchestrationId is not null && rows.Length > 0)
+        {
+            var environmentIds = rows.Select(x => x.EnvironmentId).Distinct().ToArray();
+            var environments = await _dbContext.DistributionEnvironments.AsNoTracking()
+                .Where(x => environmentIds.Contains(x.Id)).ToArrayAsync(cancellationToken);
+            foreach (var row in rows) row.Environment = environments.FirstOrDefault(x => x.Id == row.EnvironmentId);
+        }
         return new PagedResult<RuntimeNode>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size, rows.Select(Map).ToArray());
     }
 
