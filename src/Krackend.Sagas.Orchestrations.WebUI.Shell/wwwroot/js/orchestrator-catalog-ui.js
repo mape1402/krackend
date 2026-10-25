@@ -26,7 +26,8 @@
                 if (!grid.getClientRects().length) return;
                 const viewport = grid.querySelector('[data-z-grid-viewport]');
                 if (!viewport) return;
-                const available = Math.max(220, Math.floor(window.innerHeight - viewport.getBoundingClientRect().top - 80));
+                const footerHeight = grid.querySelector('.z-grid-footer')?.getBoundingClientRect().height ?? 0;
+                const available = Math.max(220, Math.floor(window.innerHeight - viewport.getBoundingClientRect().top - footerHeight - 12));
                 viewport.style.setProperty('--z-grid-viewport-height', `${available}px`);
             })));
         };
