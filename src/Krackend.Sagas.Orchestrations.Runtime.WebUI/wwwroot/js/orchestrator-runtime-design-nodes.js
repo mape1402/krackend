@@ -97,7 +97,7 @@
 
     const addCard = item => {
         const card = make('article', 'od-runtime-instance-card'); bind(card, item);
-        const header = make('div', 'od-runtime-instance-header'); header.append(make('h3', '', item.name), actions(item));
+        const header = make('div', 'od-runtime-instance-header'); header.append(window.KrackendCatalogUI.cardIcon('hdd-network'), make('h3', '', item.name), actions(item));
         card.append(header, make('p', 'od-runtime-card-meta', item.key), window.KrackendCatalogUI.status(item.status));
         cards.append(card);
     };

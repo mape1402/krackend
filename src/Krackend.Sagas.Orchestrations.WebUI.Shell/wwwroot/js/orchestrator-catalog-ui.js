@@ -10,7 +10,13 @@
         badge.textContent = label;
         return badge;
     };
-    window.KrackendCatalogUI = { status };
+    const cardIcon = name => {
+        const icon = document.createElement('i');
+        icon.className = `bi bi-${name} od-card-icon`;
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    };
+    window.KrackendCatalogUI = { status, cardIcon };
     const start = () => {
         const roots = document.querySelectorAll('[data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]');
         let frame = 0;

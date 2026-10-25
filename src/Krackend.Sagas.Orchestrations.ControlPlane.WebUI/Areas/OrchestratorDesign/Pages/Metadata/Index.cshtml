@@ -1,4 +1,5 @@
 @page
+@using Zoorce.Web.UI.Foundation.Components
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Metadata.IndexModel
@@ -6,7 +7,7 @@
     ViewData["Title"] = "Metadata";
 }
 
-<button type="button" class="od-create-floating js-open-payload-schema-designer" data-id="new"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create metadata</span></button>
+<div class="od-create-floating js-open-payload-schema-designer" data-id="new">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createMetadataButton", Label = "Create metadata", Icon = "+" })</div>
 
 <section class="od-catalog" data-catalog="metadata" data-label="metadata descriptors" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

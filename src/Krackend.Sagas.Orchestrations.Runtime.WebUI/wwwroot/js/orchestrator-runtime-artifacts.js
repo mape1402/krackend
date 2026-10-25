@@ -64,7 +64,7 @@
     const addCard = item => {
         const card = make('article', 'od-runtime-instance-card');
         const header = make('div', 'od-runtime-instance-header');
-        header.append(make('h3', '', kind === 'groups' ? item.key : `Version ${item.version}`), actions(item));
+        header.append(window.KrackendCatalogUI.cardIcon('box-seam'), make('h3', '', kind === 'groups' ? item.key : `Version ${item.version}`), actions(item));
         card.append(header);
         if (kind === 'groups') card.append(make('p', 'od-runtime-card-meta', `${item.versionCount} versions · ${item.activeCount} active`));
         else [item.lifecycleStatus, item.status].filter(Boolean).forEach(value => card.append(window.KrackendCatalogUI.status(value)));

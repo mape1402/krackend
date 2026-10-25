@@ -14,7 +14,7 @@
 @if (isOrchestrationSelected)
 {
     <div class="od-list-context"><strong>@selectedOrchestrationName</strong><button type="button" class="btn btn-outline-secondary btn-sm" id="openRuntimeNodesModalButton">Allowed Nodes</button></div>
-    <button type="button" class="btn btn-primary od-create-floating" id="openCreateRelease"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create release</span></button>
+    <div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openCreateRelease", Label = "Create release", Icon = "+" })</div>
 }
 
 @if (!isOrchestrationSelected)

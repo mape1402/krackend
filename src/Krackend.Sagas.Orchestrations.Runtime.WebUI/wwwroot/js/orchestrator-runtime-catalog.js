@@ -121,7 +121,7 @@
         header.className = 'od-runtime-instance-header';
         const title = document.createElement('h3');
         title.textContent = item.orchestrationLabel || item.orchestrationDefinitionKey;
-        header.append(title, detailButton(item));
+        header.append(window.KrackendCatalogUI.cardIcon('activity'), title, detailButton(item));
         const badge = document.createElement('span');
         badge.className = `od-status ${item.statusClass || ''}`;
         badge.textContent = item.status;

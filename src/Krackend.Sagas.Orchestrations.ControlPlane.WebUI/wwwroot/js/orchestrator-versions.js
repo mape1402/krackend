@@ -58,12 +58,10 @@
     const addCard = item => {
         const card = make('article', 'od-item-card od-version-card');
         const header = make('div', 'od-item-top'); const identity = document.createElement('div');
+        header.append(window.KrackendCatalogUI.cardIcon('layers'));
         identity.append(make('h3', 'od-item-title', item.version), make('p', 'od-item-meta', item.versionLabel || ''));
-        const controls = make('div', 'd-flex align-items-start gap-2');
-        const state = item.status.startsWith('Pending') ? 'inreview' :
-            ({ Draft: 'draft', Deployed: 'deployed', Deprecated: 'deprecated', Archived: 'archived', Abandoned: 'archived' }[item.status] || 'draft');
-        controls.append(make('span', `od-status od-status-${state}`, item.statusLabel), actions(item));
-        header.append(identity, controls); card.append(header);
+        header.append(identity, actions(item));
+        card.append(header, window.KrackendCatalogUI.status(item.statusLabel));
         card.addEventListener('click', event => { if (!event.target.closest('a,button,input,form,.dropdown')) location.href = roadmapUrl(item.id); });
         cards.append(card);
     };

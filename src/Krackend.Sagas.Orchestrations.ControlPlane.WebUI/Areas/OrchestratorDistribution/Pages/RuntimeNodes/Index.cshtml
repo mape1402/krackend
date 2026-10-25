@@ -9,7 +9,7 @@
     ViewData["Title"] = "Runtime Nodes";
 }
 
-<button type="button" class="od-create-floating js-open-runtime-node-setup" data-mode="create"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create runtime node</span></button>
+<div class="od-create-floating js-open-runtime-node-setup" data-mode="create">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createRuntimeNodeButton", Label = "Create runtime node", Icon = "+" })</div>
 
 <form method="post" asp-page-handler="SetStatus" id="runtime-node-status-form" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /><input type="hidden" name="status" /></form>
 <form method="post" asp-page-handler="ValidateConnection" id="runtime-node-check-form" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /></form>

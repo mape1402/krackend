@@ -10,11 +10,18 @@ const setup = () => {
     const document = {
         readyState: 'loading',
         addEventListener() {},
-        createElement: tag => ({ tagName: tag, className: '', textContent: '' })
+        createElement: tag => ({ tagName: tag, className: '', textContent: '', attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } })
     };
     vm.runInNewContext(source, { window, document });
     return window.KrackendCatalogUI;
 };
+
+test('card icons use the requested icon and are hidden from assistive technology', () => {
+    const icon = setup().cardIcon('diagram-3');
+    assert.equal(icon.tagName, 'i');
+    assert.equal(icon.className, 'bi bi-diagram-3 od-card-icon');
+    assert.equal(icon.attributes['aria-hidden'], 'true');
+});
 
 test('success states receive a success chip', () => {
     const { status } = setup();

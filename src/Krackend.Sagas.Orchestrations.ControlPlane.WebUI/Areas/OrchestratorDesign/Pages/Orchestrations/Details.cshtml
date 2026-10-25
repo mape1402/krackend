@@ -7,7 +7,7 @@
 @using Microsoft.AspNetCore.Html
 @{ ViewData["Title"] = "Orchestration details"; }
 <div class="od-list-context"><strong>@Model.Orchestration?.Name</strong><span>@Model.Orchestration?.Key</span></div>
-<button type="button" class="btn btn-primary od-create-floating" id="openNewVersion"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>New version</span></button>
+<div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openNewVersion", Label = "New version", Icon = "+" })</div>
 
 <section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
          data-action-url="@Url.Page(null, "VersionAction")" data-orchestration-id="@Model.OrchestrationId"

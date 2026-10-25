@@ -8,7 +8,7 @@
     ViewData["Title"] = "Environments";
 }
 
-<button type="button" class="od-create-floating" id="createEnvironmentButton"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create environment</span></button>
+<div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createEnvironmentButton", Label = "Create environment", Icon = "+" })</div>
 
 <section class="od-catalog" data-catalog="environments" data-label="environments" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

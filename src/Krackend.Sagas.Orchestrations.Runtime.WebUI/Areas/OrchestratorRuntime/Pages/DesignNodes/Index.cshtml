@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260826-design-nodes-01" />
 }
 
-<button type="button" class="od-create-floating js-open-design-node-setup" data-mode="create"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create design node</span></button>
+<div class="od-create-floating js-open-design-node-setup" data-mode="create">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createDesignNodeButton", Label = "Create design node", Icon = "+" })</div>
 
 <section class="od-panel" data-design-node-catalog data-source="@Url.Page(null, "Nodes")"
          data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")">

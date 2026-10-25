@@ -8,7 +8,7 @@
     ViewData["Title"] = "Domains";
 }
 
-<button type="button" class="od-create-floating js-open-domain-modal" data-mode="create"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create domain</span></button>
+<div class="od-create-floating js-open-domain-modal" data-mode="create">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createDomainButton", Label = "Create domain", Icon = "+" })</div>
 
 <section class="od-catalog" data-catalog="domains" data-label="domains" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

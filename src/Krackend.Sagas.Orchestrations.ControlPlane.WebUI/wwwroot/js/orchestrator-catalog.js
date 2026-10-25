@@ -289,7 +289,8 @@
         key.className = 'od-item-meta';
         key.textContent = item.key;
         identity.append(name, key);
-        top.append(identity, compactActions(item));
+        const icons = { orchestrations:'diagram-3', domains:'collection', metadata:'braces', environments:'layers', 'runtime-nodes':'hdd-network', teams:'people', reviews:'clipboard-check', artifacts:'box-seam', releases:'rocket-takeoff', 'release-orchestrations':'diagram-3', assignments:'list-check' };
+        top.append(window.KrackendCatalogUI.cardIcon(icons[kind] || 'grid'), identity, compactActions(item));
         if (item.status) {
             const badge = window.KrackendCatalogUI.status(item.status);
             card.append(top, badge);

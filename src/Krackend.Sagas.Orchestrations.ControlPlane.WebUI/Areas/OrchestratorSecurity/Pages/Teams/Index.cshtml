@@ -8,7 +8,7 @@
     ViewData["Title"] = "Teams";
 }
 
-<button type="button" class="od-create-floating js-open-team-modal" data-mode="create"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create team</span></button>
+<div class="od-create-floating js-open-team-modal" data-mode="create">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createTeamButton", Label = "Create team", Icon = "+" })</div>
 
 <form method="post" asp-page-handler="SetIsActive" id="team-status-form" data-orchestrator-busy="true" hidden>
     <input type="hidden" name="teamId" /><input type="hidden" name="isActive" />
