@@ -1,6 +1,8 @@
 @page
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel
 @{ ViewData["Title"] = "Artifacts"; }
 
@@ -39,63 +41,20 @@
     </div>
 </section>
 
-<div class="modal fade" id="artifactDetailsModal" tabindex="-1" aria-labelledby="artifactDetailsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content artifact-modal">
-            <div class="modal-header artifact-modal-header">
-                <h5 class="modal-title" id="artifactDetailsModalLabel">Artifact details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body artifact-modal-body">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label artifact-label">Orchestration</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailDisplayName" readonly />
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label artifact-label">Artifact Type</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailType" readonly />
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label artifact-label">Version Id</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailVersionId" readonly />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label artifact-label">Version Number</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailVersionNumber" readonly />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label artifact-label">Version Label</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailVersionLabel" readonly />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label artifact-label">Created At</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailCreatedAt" readonly />
-                    </div>
-                    <div class="col-md-12">
-                        <label class="form-label artifact-label">Checksum</label>
-                        <input class="form-control artifact-readonly" id="artifactDetailChecksum" readonly />
-                    </div>
-                    <div class="col-md-12">
-                        <label class="form-label artifact-label">Payload (JSON)</label>
-                        <pre id="artifactDetailPayload" class="od-json-block"></pre>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "artifactDetailsModal", Title = "Artifact details", Eyebrow = null, Size = "wide",
+    Body = await Html.PartialAsync("_ArtifactDetails"),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
+})
 
 @section Scripts {
 <script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const modalElement = document.getElementById('artifactDetailsModal');
-    const modal = window.bootstrap?.Modal?.getOrCreateInstance(modalElement);
-    if (!modalElement || !modal) return;
+    if (!modalElement) return;
+    let currentRequest = 0;
 
     const fields = {
         displayName: document.getElementById('artifactDetailDisplayName'),
@@ -132,20 +91,22 @@
     document.addEventListener('click', async event => {
         const button = event.target.closest('.js-open-artifact-details');
         if (!button) return;
+        const request = ++currentRequest;
         Object.values(fields).forEach(element => { if (element !== fields.payload) setValue(element, ''); });
         fields.payload.textContent = 'Loading artifact...';
-        modal.show();
+        modalElement.open?.(button);
         try {
             const url = new URL(document.querySelector('[data-catalog="artifacts"]').dataset.detailSource, location.href);
             url.searchParams.set('artifactId', button.dataset.id);
             const response = await fetch(url);
             if (!response.ok) throw new Error('Artifact details are unavailable.');
             const item = await response.json();
+            if (request !== currentRequest) return;
             for (const key of ['displayName', 'artifactType', 'versionId', 'versionNumber', 'versionLabel', 'createdAt', 'checksum'])
                 setValue(fields[key], item[key]);
             setPrettyJson(fields.payload, item.payload);
         } catch {
-            fields.payload.textContent = 'Artifact details could not be loaded. Please try again.';
+            if (request === currentRequest) fields.payload.textContent = 'Artifact details could not be loaded. Please try again.';
         }
     });
 })();
@@ -166,33 +127,10 @@
     white-space: pre;
 }
 
-.artifact-modal {
-    border: 1px solid var(--od-border);
-    background: var(--od-surface);
-    color: var(--od-text);
-    box-shadow: 0 14px 36px var(--krackend-shadow-color, rgba(24, 39, 74, 0.16));
-}
-
-.artifact-modal-header {
-    background: var(--od-surface-2);
-    color: var(--od-text);
-    border-bottom: 1px solid var(--od-border);
-}
-
-.artifact-modal-header .modal-title {
-    font-weight: 600;
-    letter-spacing: 0.01em;
-}
-
-.artifact-modal-body {
-    background: var(--od-surface);
-}
-
 .artifact-label {
     color: var(--od-muted);
     font-weight: 600;
     font-size: 0.83rem;
-    letter-spacing: 0.005em;
 }
 
 .artifact-readonly {
