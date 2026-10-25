@@ -175,6 +175,39 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         throw new InvalidOperationException("Release strategy must be Direct or Rollout.");
     }
 
+    public async Task<ApplicationPagedResult<ReleaseModel>> Search(ApplicationPagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.Search(new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), orchestrationId, search, sort, descending, cancellationToken);
+        return new ApplicationPagedResult<ReleaseModel>
+        {
+            PageNumber = result.PageNumber, PageSize = result.PageSize, TotalRows = (int)result.TotalRows,
+            TotalPages = result.TotalPages, Rows = result.Rows.Select(MapSummary).ToArray()
+        };
+    }
+
+    public async Task<ReleaseModel> GetById(string id, CancellationToken cancellationToken = default)
+    {
+        var releaseId = new Id(Ulid.Parse(id));
+        var release = await _repository.GetById(releaseId, cancellationToken);
+        if (release is null) return null;
+        var result = MapSummary(release);
+        var targets = await _repository.GetTargets(releaseId, cancellationToken);
+        result.Targets = targets.Select(t => new ReleasePlanTargetModel
+        {
+            Id = t.Id.ToString(), RuntimeNodeId = t.RuntimeNodeId.ToString(), Status = t.Status.ToString(),
+            CreatedAtUtc = t.CreatedAtUtc, CompletedAtUtc = t.CompletedAtUtc, Notes = t.Notes
+        }).ToArray();
+        return result;
+    }
+
+    private static ReleaseModel MapSummary(Release item) => new()
+    {
+        Id = item.Id.ToString(), ArtifactId = item.ArtifactId.ToString(),
+        OrchestrationDefinitionId = item.OrchestrationDefinitionId, RequestedBy = item.RequestedBy,
+        Strategy = item.Strategy, Status = item.Status.ToString(), CreatedAtUtc = item.CreatedAtUtc,
+        CompletedAtUtc = item.CompletedAtUtc
+    };
+
     private static void EnsureStrategyIsSupportedForArtifact(ReleaseStrategy strategy, string artifactType)
     {
         var isNewVersion = string.Equals(

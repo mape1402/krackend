@@ -12,6 +12,8 @@ public interface IReleaseRepository
     Task<Release> GetById(Id promotionId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ReleasePlanTarget>> GetTargets(Id promotionId, CancellationToken cancellationToken = default);
     Task<PagedResult<Release>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
+    Task<PagedResult<Release>> Search(PagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release storage does not support catalog search.");
 }
 
 

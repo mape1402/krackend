@@ -147,6 +147,42 @@ public sealed class ReleaseRepository : IReleaseRepository
                 CompletedAtUtc = x.CompletedAtUtc
             }).ToArray());
     }
+
+    public async Task<PagedResult<Release>> Search(PagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, settings?.PageNumber ?? 1);
+        var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
+        var query = _dbContext.Releases.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(orchestrationId))
+            query = query.Where(x => x.OrchestrationDefinitionId == orchestrationId);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x => x.RequestedBy.Contains(term) || x.Strategy.Contains(term) ||
+                x.OrchestrationDefinitionId.Contains(term));
+        }
+
+        var total = await query.LongCountAsync(cancellationToken);
+        var ordered = (sort, descending) switch
+        {
+            ("requestedBy", false) => query.OrderBy(x => x.RequestedBy),
+            ("requestedBy", true) => query.OrderByDescending(x => x.RequestedBy),
+            ("strategy", false) => query.OrderBy(x => x.Strategy),
+            ("strategy", true) => query.OrderByDescending(x => x.Strategy),
+            ("status", false) => query.OrderBy(x => x.Status),
+            ("status", true) => query.OrderByDescending(x => x.Status),
+            ("created", false) => query.OrderBy(x => x.CreatedAtUtc),
+            _ => query.OrderByDescending(x => x.CreatedAtUtc)
+        };
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<Release>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size,
+            rows.Select(x => new Release
+            {
+                Id = x.Id, ArtifactId = x.ArtifactId, OrchestrationDefinitionId = x.OrchestrationDefinitionId,
+                RequestedBy = x.RequestedBy, Strategy = x.Strategy, Status = x.Status,
+                CreatedAtUtc = x.CreatedAtUtc, CompletedAtUtc = x.CompletedAtUtc
+            }).ToArray());
+    }
 }
 
 
