@@ -1970,7 +1970,8 @@ main.container {
     max-width: 24rem;
 }
 
-.od-catalog-filters .form-select { width: auto; min-width: 10rem; }
+.od-catalog-filters .form-select,
+.od-catalog-filters .z-form-select { width: auto; min-width: 10rem; }
 
 .od-catalog .od-item-card > .od-status { align-self: flex-start; }
 

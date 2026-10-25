@@ -21,18 +21,18 @@
                                 <input asp-for="Input.DesignNodeId" type="hidden" id="setupDesignNodeId" />
                                 <div class="row g-3">
                                     <div class="col-md-6">
-                                        <label asp-for="Input.Key" for="setupDesignNodeKey" class="form-label"></label>
-                                        <input asp-for="Input.Key" class="form-control" id="setupDesignNodeKey" data-orchestrator-key="true" autocomplete="off" />
+                                        <label asp-for="Input.Key" for="setupDesignNodeKey" class="z-form-label"></label>
+                                        <input asp-for="Input.Key" class="z-form-input" id="setupDesignNodeKey" data-orchestrator-key="true" autocomplete="off" />
                                         <span asp-validation-for="Input.Key" class="text-danger"></span>
                                     </div>
                                     <div class="col-md-6">
-                                        <label asp-for="Input.Name" for="setupDesignNodeName" class="form-label"></label>
-                                        <input asp-for="Input.Name" class="form-control" id="setupDesignNodeName" autocomplete="off" />
+                                        <label asp-for="Input.Name" for="setupDesignNodeName" class="z-form-label"></label>
+                                        <input asp-for="Input.Name" class="z-form-input" id="setupDesignNodeName" autocomplete="off" />
                                         <span asp-validation-for="Input.Name" class="text-danger"></span>
                                     </div>
                                     <div class="col-12">
-                                        <label asp-for="Input.Description" for="setupDesignNodeDescription" class="form-label"></label>
-                                        <textarea asp-for="Input.Description" class="form-control" id="setupDesignNodeDescription" rows="3"></textarea>
+                                        <label asp-for="Input.Description" for="setupDesignNodeDescription" class="z-form-label"></label>
+                                        <textarea asp-for="Input.Description" class="z-form-input" id="setupDesignNodeDescription" rows="3"></textarea>
                                         <span asp-validation-for="Input.Description" class="text-danger"></span>
                                     </div>
                                 </div>

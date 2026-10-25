@@ -6,14 +6,13 @@
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
 @{
-    ViewData["Title"] = "Releases";
     var isOrchestrationSelected = !string.IsNullOrWhiteSpace(Model.OrchestrationId);
     var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
+    ViewData["Title"] = isOrchestrationSelected ? $"{selectedOrchestrationName} · Releases" : "Releases";
 }
 
 @if (isOrchestrationSelected)
 {
-    <div class="od-list-context"><strong>@selectedOrchestrationName</strong><button type="button" class="btn btn-outline-secondary btn-sm" id="openRuntimeNodesModalButton">Allowed Nodes</button></div>
     <div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openCreateRelease", Label = "Create release", Icon = "+" })</div>
 }
 
@@ -35,7 +34,7 @@
         <div data-catalog-cards hidden>
             <div class="od-catalog-filters">
                 <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search orchestrations" placeholder="Search orchestrations" autocomplete="off" /></label>
-                <select class="form-select" data-catalog-sort aria-label="Sort orchestrations">
+                <select class="z-form-input z-form-select" data-catalog-sort aria-label="Sort orchestrations">
                     <option value="name">Name</option><option value="name:desc">Name descending</option><option value="key">Key</option><option value="status">Status</option>
                 </select>
             </div>
@@ -49,7 +48,8 @@
 else
 {
     <section class="od-catalog" data-catalog="releases" data-label="releases" data-source="@Url.Page(null, "ReleaseList", new { orchestrationId = Model.OrchestrationId })" data-detail-source="@Url.Page(null, "ReleaseDetails", new { orchestrationId = Model.OrchestrationId })">
-        <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <div class="od-catalog-controls" role="group" aria-label="Release controls">
+            <button type="button" class="z-button z-button-secondary" id="openRuntimeNodesModalButton">Allowed nodes</button>
             <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
             <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
         </div>
@@ -64,7 +64,7 @@ else
         <div data-catalog-cards hidden>
             <div class="od-catalog-filters">
                 <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search releases" placeholder="Search releases" autocomplete="off" /></label>
-                <select class="form-select" data-catalog-sort aria-label="Sort releases">
+                <select class="z-form-input z-form-select" data-catalog-sort aria-label="Sort releases">
                     <option value="created:desc">Newest first</option><option value="created">Oldest first</option><option value="requestedBy">Requested by</option><option value="strategy">Strategy</option>
                 </select>
             </div>

@@ -3,7 +3,7 @@
     <input asp-for="AllowedNodes.OrchestrationDefinitionId" type="hidden" id="allowedNodesOrchestrationId" /><input asp-for="AllowedNodes.UpdatedBy" type="hidden" />
     <p class="small mb-2">Only selected nodes will be eligible for releases of this orchestration.</p>
     <div id="allowedNodesSelectionWarning" class="alert alert-warning py-2 px-3 mb-2 d-none">Orchestration is required to configure runtime nodes.</div>
-    <input type="search" class="form-control mb-2" id="policyNodeSearch" placeholder="Search nodes" aria-label="Search nodes" />
+    <input type="search" class="z-form-input mb-2" id="policyNodeSearch" placeholder="Search nodes" aria-label="Search nodes" />
     <div class="border rounded p-2" id="policyNodeScroll" style="max-height: 260px; overflow-y: auto;"><div id="policyNodeItems"></div><div id="policyNodeStatus" class="form-text" aria-live="polite"></div><button type="button" class="btn btn-link btn-sm" id="policyNodesMore" hidden>Load more nodes</button></div>
     <div id="policyNodeValues"></div>
 </form>

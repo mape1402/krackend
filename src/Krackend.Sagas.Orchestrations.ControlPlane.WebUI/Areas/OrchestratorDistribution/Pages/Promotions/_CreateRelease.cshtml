@@ -4,9 +4,9 @@
     <input asp-for="Input.OrchestrationDefinitionId" type="hidden" value="@Model.OrchestrationId" /><input asp-for="Input.RequestedBy" type="hidden" /><input asp-for="Input.Notes" type="hidden" />
     <div class="row g-3">
         <div class="col-12">
-            <label asp-for="Input.ArtifactId" for="releaseArtifactSelect" class="form-label"></label>
-            <input type="search" class="form-control mb-2" id="releaseArtifactSearch" placeholder="Search artifacts" aria-label="Search artifacts" />
-            <select asp-for="Input.ArtifactId" class="form-select" id="releaseArtifactSelect">
+            <label asp-for="Input.ArtifactId" for="releaseArtifactSelect" class="z-form-label"></label>
+            <input type="search" class="z-form-input mb-2" id="releaseArtifactSearch" placeholder="Search artifacts" aria-label="Search artifacts" />
+            <select asp-for="Input.ArtifactId" class="z-form-input z-form-select" id="releaseArtifactSelect">
                 <option value="">Select artifact</option>
                 @if (Model.SelectedArtifact is not null)
                 {
@@ -16,12 +16,12 @@
             <button type="button" class="btn btn-link btn-sm" id="releaseArtifactsMore" hidden>Load more artifacts</button><div class="form-text" id="releaseArtifactStatus" aria-live="polite"></div>
         </div>
         <div class="col-md-6">
-            <label asp-for="Input.Strategy" for="releaseStrategySelect" class="form-label">Release strategy</label>
-            <select asp-for="Input.Strategy" class="form-select" id="releaseStrategySelect"><option value="@ReleaseStrategy.Direct">Direct</option><option value="@ReleaseStrategy.Rollout">Rollout</option></select>
+            <label asp-for="Input.Strategy" for="releaseStrategySelect" class="z-form-label">Release strategy</label>
+            <select asp-for="Input.Strategy" class="z-form-input z-form-select" id="releaseStrategySelect"><option value="@ReleaseStrategy.Direct">Direct</option><option value="@ReleaseStrategy.Rollout">Rollout</option></select>
             <div class="form-text" id="releaseStrategyHint">Direct applies this artifact to the selected runtime nodes.</div>
         </div>
         <div class="col-12">
-            <label class="form-label" for="releaseNodeSearch">Target runtime nodes</label><input type="search" class="form-control mb-2" id="releaseNodeSearch" placeholder="Search allowed nodes" />
+            <label class="z-form-label" for="releaseNodeSearch">Target runtime nodes</label><input type="search" class="z-form-input mb-2" id="releaseNodeSearch" placeholder="Search allowed nodes" />
             <div class="border rounded p-3" id="releaseNodeScroll" style="max-height: 260px; overflow-y: auto;"><div id="releaseNodeItems" class="od-stage-picker"></div><div id="releaseNodeStatus" class="form-text" aria-live="polite"></div><button type="button" class="btn btn-link btn-sm" id="releaseNodesMore" hidden>Load more nodes</button></div>
             <div id="releaseNodeValues"></div>
         </div>

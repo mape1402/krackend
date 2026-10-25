@@ -4,52 +4,48 @@
     ViewData["Title"] = "Create orchestration";
 }
 
-<div class="od-page-head">
-    <h1 class="od-page-title">Create orchestration</h1>
-</div>
-
 <form method="post" class="od-form-shell" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Creating orchestration" data-busy-message="Design is validating and storing the orchestration.">
     <div class="row g-3">
         <div class="col-md-6 position-relative">
-            <label asp-for="Input.Key" class="form-label"></label>
-            <input asp-for="Input.Key" class="form-control" data-orchestrator-key="true" />
+            <label asp-for="Input.Key" class="z-form-label"></label>
+            <input asp-for="Input.Key" class="z-form-input" data-orchestrator-key="true" />
             <span asp-validation-for="Input.Key" class="text-danger"></span>
         </div>
         <div class="col-md-6">
-            <label asp-for="Input.Name" class="form-label"></label>
-            <input asp-for="Input.Name" class="form-control" />
+            <label asp-for="Input.Name" class="z-form-label"></label>
+            <input asp-for="Input.Name" class="z-form-input" />
             <span asp-validation-for="Input.Name" class="text-danger"></span>
         </div>
         <div class="col-md-6 position-relative">
-            <label asp-for="Input.DomainText" class="form-label"></label>
-            <input asp-for="Input.DomainText" class="form-control js-domain-autocomplete-input" autocomplete="off" data-domain-suggestions-container="createDomainSuggestions" />
+            <label asp-for="Input.DomainText" class="z-form-label"></label>
+            <input asp-for="Input.DomainText" class="z-form-input js-domain-autocomplete-input" autocomplete="off" data-domain-suggestions-container="createDomainSuggestions" />
             <input asp-for="Input.DomainId" type="hidden" class="js-domain-id-input" />
             <div id="createDomainSuggestions" class="od-autocomplete-list d-none"></div>
             <span asp-validation-for="Input.DomainId" class="text-danger"></span>
         </div>
         <div class="col-md-6 position-relative">
-            <label asp-for="Input.OwnerTeamText" class="form-label"></label>
-            <input asp-for="Input.OwnerTeamText" class="form-control js-team-autocomplete-input" autocomplete="off" data-team-suggestions-container="createTeamSuggestions" />
+            <label asp-for="Input.OwnerTeamText" class="z-form-label"></label>
+            <input asp-for="Input.OwnerTeamText" class="z-form-input js-team-autocomplete-input" autocomplete="off" data-team-suggestions-container="createTeamSuggestions" />
             <input asp-for="Input.OwnerTeamId" type="hidden" class="js-team-id-input" />
             <div id="createTeamSuggestions" class="od-autocomplete-list d-none"></div>
             <span asp-validation-for="Input.OwnerTeamId" class="text-danger"></span>
         </div>
         <div class="col-12">
-            <label asp-for="Input.Description" class="form-label"></label>
-            <textarea asp-for="Input.Description" rows="3" class="form-control"></textarea>
+            <label asp-for="Input.Description" class="z-form-label"></label>
+            <textarea asp-for="Input.Description" rows="3" class="z-form-input"></textarea>
         </div>
         <div class="col-12">
-            <label asp-for="Input.Tags" class="form-label"></label>
-            <input asp-for="Input.Tags" class="form-control" />
+            <label asp-for="Input.Tags" class="z-form-label"></label>
+            <input asp-for="Input.Tags" class="z-form-input" />
         </div>
         <div class="col-md-6">
-            <label asp-for="Input.CreatedBy" class="form-label"></label>
-            <input asp-for="Input.CreatedBy" class="form-control" />
+            <label asp-for="Input.CreatedBy" class="z-form-label"></label>
+            <input asp-for="Input.CreatedBy" class="z-form-input" />
         </div>
     </div>
 
     <div class="od-form-actions">
-        <button type="submit" class="btn btn-primary">Create</button>
+        <button type="submit" class="z-button z-button-primary">Create</button>
     </div>
 </form>
 

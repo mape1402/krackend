@@ -654,7 +654,9 @@ body {
 }
 
 .form-control.is-invalid,
-.form-select.is-invalid {
+.form-select.is-invalid,
+.z-form-input.is-invalid,
+.z-form-select.is-invalid {
     border-color: #c83d4f;
     box-shadow: 0 0 0 0.16rem rgba(200, 61, 79, 0.14);
 }

@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function createMessages() {
+function createMessages(elements = {}) {
     const listeners = new Map();
     const buttons = new Map();
     const host = {
@@ -26,8 +26,9 @@ function createMessages() {
     const document = {
         readyState: 'complete',
         body: { appendChild() {} },
-        getElementById() { return null; },
+        getElementById(id) { return elements[id] || null; },
         createElement() { return host; },
+        querySelector() { return null; },
         querySelectorAll() { return []; },
         addEventListener(name, listener) {
             if (!listeners.has(name)) listeners.set(name, new Set());
@@ -40,6 +41,8 @@ function createMessages() {
     vm.runInNewContext(fs.readFileSync(script, 'utf8'), { document, window });
     return {
         messages: window.OrchestratorMessages,
+        submit(form) { return [...(listeners.get('submit') || [])][0]({ target: form, preventDefault() {} }); },
+        closeDialog(dialog) { for (const listener of listeners.get('zoorce:dialog:close') || []) listener({ target: dialog }); },
         key(key) { for (const listener of [...(listeners.get('keydown') || [])]) listener({ key, preventDefault() {} }); },
         accept() { host.querySelector('.orchestrator-message-accept').click(); },
         keyListeners() { return listeners.get('keydown')?.size || 0; }
@@ -53,6 +56,39 @@ test('Escape still closes a confirmation after other keys', async () => {
     ui.key('Escape');
     assert.equal(await result, false);
     assert.equal(ui.keyListeners(), 0);
+});
+
+test('closing a Zoorce dialog clears its previous form validation', () => {
+    const ui = createMessages();
+    const calls = [];
+    const invalid = { classList: { remove(value) { calls.push(value); } }, removeAttribute(value) { calls.push(value); } };
+    const form = { querySelectorAll(selector) { return selector === '.is-invalid' || selector === '[aria-invalid="true"]' ? [invalid] : []; } };
+    ui.closeDialog({ querySelectorAll(selector) { return selector === 'form' ? [form] : []; } });
+    assert.deepEqual(calls, ['is-invalid', 'aria-invalid']);
+});
+
+test('validation opens the invalid field tab and focuses it after the message closes', async () => {
+    const calls = [];
+    const ui = createMessages({ general: { click() { calls.push('tab'); } } });
+    const field = {
+        name: 'Input.Name', type: 'text', value: '', dataset: {},
+        getAttribute(name) { return name === 'data-val-required' ? 'Name is required.' : null; },
+        setAttribute() {},
+        classList: { add() {}, remove() {} },
+        closest(selector) { return selector === '[role="tabpanel"]' ? { getAttribute() { return 'general'; } } : null; },
+        focus() { calls.push('focus'); }
+    };
+    const form = {
+        tagName: 'FORM', dataset: { orchestratorValidate: 'true' }, elements: [field],
+        setAttribute() {}, querySelectorAll() { return []; },
+        querySelector(selector) { return selector === '.is-invalid' ? field : null; }
+    };
+    field.form = form;
+    const result = ui.submit(form);
+    assert.deepEqual(calls, []);
+    ui.accept();
+    await result;
+    assert.deepEqual(calls, ['tab', 'focus']);
 });
 
 test('closing a message removes its listener before the next message', async () => {

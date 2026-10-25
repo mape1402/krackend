@@ -24,25 +24,25 @@
                                 <input type="hidden" name="Input.EndpointBaseUri" id="setupBasicEndpointBaseUri" />
                                 <div class="row g-3">
                                     <div class="col-md-6">
-                                        <label for="setupBasicName" class="form-label">Name</label>
-                                        <input name="Input.Name" class="form-control" id="setupBasicName" autocomplete="off" />
+                                        <label for="setupBasicName" class="z-form-label">Name</label>
+                                        <input name="Input.Name" class="z-form-input" id="setupBasicName" autocomplete="off" />
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="setupBasicCode" class="form-label">Code</label>
-                                        <input name="Input.Code" class="form-control" id="setupBasicCode" data-orchestrator-key="true" autocomplete="off" />
+                                        <label for="setupBasicCode" class="z-form-label">Code</label>
+                                        <input name="Input.Code" class="z-form-input" id="setupBasicCode" data-orchestrator-key="true" autocomplete="off" />
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="setupBasicEnvironmentId" class="form-label">Environment</label>
-                                        <input type="search" class="form-control mb-2" id="setupEnvironmentSearch" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
-                                        <select name="Input.EnvironmentId" class="form-select" id="setupBasicEnvironmentId">
+                                        <label for="setupBasicEnvironmentId" class="z-form-label">Environment</label>
+                                        <input type="search" class="z-form-input mb-2" id="setupEnvironmentSearch" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
+                                        <select name="Input.EnvironmentId" class="z-form-input z-form-select" id="setupBasicEnvironmentId">
                                             <option value="">Select environment</option>
                                         </select>
                                         <button type="button" class="btn btn-link btn-sm px-0" id="setupEnvironmentMore" hidden>Load more environments</button>
                                         <div id="setupEnvironmentStatus" class="small" role="status"></div>
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="setupBasicDescription" class="form-label">Description</label>
-                                        <input name="Input.Description" class="form-control" id="setupBasicDescription" autocomplete="off" />
+                                        <label for="setupBasicDescription" class="z-form-label">Description</label>
+                                        <input name="Input.Description" class="z-form-input" id="setupBasicDescription" autocomplete="off" />
                                     </div>
                                 </div>
                             </form>

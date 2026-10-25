@@ -143,6 +143,9 @@
         document.addEventListener('submit', handleFormSubmit);
         document.addEventListener('input', event => clearFieldValidation(event.target));
         document.addEventListener('change', event => clearFieldValidation(event.target));
+        document.addEventListener('zoorce:dialog:close', event => {
+            event.target.querySelectorAll('form').forEach(clearFormValidation);
+        });
     };
 
     const prepareForm = form => {
@@ -166,8 +169,8 @@
             : [];
         if (errors.length > 0) {
             event.preventDefault();
-            focusFirstInvalid(form);
             await showValidation({ errors });
+            focusFirstInvalid(form);
             return;
         }
 
@@ -350,6 +353,9 @@
 
     const focusFirstInvalid = form => {
         const invalid = form.querySelector('.is-invalid');
+        const panel = invalid?.closest('[role="tabpanel"]');
+        const tabId = panel?.getAttribute('aria-labelledby');
+        if (tabId) document.getElementById(tabId)?.click();
         invalid?.focus({ preventScroll: false });
     };
 

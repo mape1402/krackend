@@ -504,6 +504,7 @@
 }
 
 .od-setup-inner-form .form-label,
+.od-setup-inner-form .z-form-label,
 .od-mode-option small,
 .od-credentials-textarea {
     font-size: 0.82rem;
@@ -568,7 +569,8 @@
     border-top: 1px solid var(--od-border);
 }
 
-.od-compact-form .form-label {
+.od-compact-form .form-label,
+.od-compact-form .z-form-label {
     color: var(--od-muted);
     font-size: 0.76rem;
     font-weight: 650;
@@ -716,7 +718,7 @@
 }
 
 .od-runtime-instance-header { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
-.od-runtime-instance-header h3 { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; margin: 0 0 0.5rem; }
+.od-runtime-instance-header h3 { flex: 1; min-width: 0; font-size: 0.9rem; font-weight: 650; overflow-wrap: anywhere; margin: 0 0 0.5rem; }
 .od-runtime-instance-card dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.25rem 0.75rem; margin: 0.75rem 0 0; font-size: 0.85rem; }
 .od-runtime-instance-card dt { color: var(--od-muted); font-weight: 500; }
 .od-runtime-instance-card dd { margin: 0; overflow-wrap: anywhere; }

@@ -3,18 +3,18 @@
 <form id="environmentForm" method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving environment" data-busy-message="Control Plane is storing the environment.">
     <input asp-for="Input.EnvironmentId" type="hidden" id="environmentIdInput" />
     <div class="mb-3">
-        <label asp-for="Input.Name" class="form-label"></label>
-        <input asp-for="Input.Name" class="form-control" id="environmentNameInput" />
+        <label asp-for="Input.Name" class="z-form-label"></label>
+        <input asp-for="Input.Name" class="z-form-input" id="environmentNameInput" />
         <span asp-validation-for="Input.Name" class="text-danger"></span>
     </div>
     <div class="mb-3">
-        <label asp-for="Input.Code" class="form-label"></label>
-        <input asp-for="Input.Code" class="form-control" id="environmentCodeInput" data-orchestrator-key="true" />
+        <label asp-for="Input.Code" class="z-form-label"></label>
+        <input asp-for="Input.Code" class="z-form-input" id="environmentCodeInput" data-orchestrator-key="true" />
         <span asp-validation-for="Input.Code" class="text-danger"></span>
     </div>
     <div class="mb-3">
-        <label asp-for="Input.Description" class="form-label"></label>
-        <textarea asp-for="Input.Description" class="form-control" id="environmentDescriptionInput" rows="3"></textarea>
+        <label asp-for="Input.Description" class="z-form-label"></label>
+        <textarea asp-for="Input.Description" class="z-form-input" id="environmentDescriptionInput" rows="3"></textarea>
         <span asp-validation-for="Input.Description" class="text-danger"></span>
     </div>
     <div class="form-check">

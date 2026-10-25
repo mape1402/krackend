@@ -3,23 +3,23 @@
     <input asp-for="NewOrchestration.OrchestrationId" type="hidden" id="orchestrationModalOrchestrationId" />
     <input asp-for="NewOrchestration.UpdatedBy" type="hidden" id="orchestrationModalUpdatedBy" />
     <div class="row g-3">
-        <div class="col-md-6"><label asp-for="NewOrchestration.Key" for="orchestrationModalKey" class="form-label"></label><input asp-for="NewOrchestration.Key" class="form-control" id="orchestrationModalKey" data-orchestrator-key="true" /></div>
-        <div class="col-md-6"><label asp-for="NewOrchestration.Name" for="orchestrationModalName" class="form-label"></label><input asp-for="NewOrchestration.Name" class="form-control" id="orchestrationModalName" /></div>
+        <div class="col-md-6"><label asp-for="NewOrchestration.Key" for="orchestrationModalKey" class="z-form-label"></label><input asp-for="NewOrchestration.Key" class="z-form-input" id="orchestrationModalKey" data-orchestrator-key="true" /></div>
+        <div class="col-md-6"><label asp-for="NewOrchestration.Name" for="orchestrationModalName" class="z-form-label"></label><input asp-for="NewOrchestration.Name" class="z-form-input" id="orchestrationModalName" /></div>
         <div class="col-md-6 position-relative">
-            <label asp-for="NewOrchestration.DomainText" for="orchestrationModalDomainText" class="form-label"></label>
-            <input asp-for="NewOrchestration.DomainText" class="form-control js-domain-autocomplete-input" id="orchestrationModalDomainText" autocomplete="off" data-domain-suggestions-container="orchestrationDomainSuggestions" />
+            <label asp-for="NewOrchestration.DomainText" for="orchestrationModalDomainText" class="z-form-label"></label>
+            <input asp-for="NewOrchestration.DomainText" class="z-form-input js-domain-autocomplete-input" id="orchestrationModalDomainText" autocomplete="off" data-domain-suggestions-container="orchestrationDomainSuggestions" />
             <input asp-for="NewOrchestration.DomainId" type="hidden" id="orchestrationModalDomainId" class="js-domain-id-input" />
             <div id="orchestrationDomainSuggestions" class="od-autocomplete-list d-none"></div><span asp-validation-for="NewOrchestration.DomainId" class="text-danger"></span>
         </div>
         <div class="col-md-6 position-relative">
-            <label asp-for="NewOrchestration.OwnerTeamText" for="orchestrationModalOwnerTeamText" class="form-label"></label>
-            <input asp-for="NewOrchestration.OwnerTeamText" class="form-control js-team-autocomplete-input" id="orchestrationModalOwnerTeamText" autocomplete="off" data-team-suggestions-container="orchestrationTeamSuggestions" />
+            <label asp-for="NewOrchestration.OwnerTeamText" for="orchestrationModalOwnerTeamText" class="z-form-label"></label>
+            <input asp-for="NewOrchestration.OwnerTeamText" class="z-form-input js-team-autocomplete-input" id="orchestrationModalOwnerTeamText" autocomplete="off" data-team-suggestions-container="orchestrationTeamSuggestions" />
             <input asp-for="NewOrchestration.OwnerTeamId" type="hidden" id="orchestrationModalOwnerTeamId" class="js-team-id-input" />
             <div id="orchestrationTeamSuggestions" class="od-autocomplete-list d-none"></div><span asp-validation-for="NewOrchestration.OwnerTeamId" class="text-danger"></span>
         </div>
-        <div class="col-12"><label asp-for="NewOrchestration.Description" for="orchestrationModalDescription" class="form-label"></label><textarea asp-for="NewOrchestration.Description" rows="3" class="form-control" id="orchestrationModalDescription"></textarea></div>
+        <div class="col-12"><label asp-for="NewOrchestration.Description" for="orchestrationModalDescription" class="z-form-label"></label><textarea asp-for="NewOrchestration.Description" rows="3" class="z-form-input" id="orchestrationModalDescription"></textarea></div>
         <div class="col-12">
-            <label for="orchestrationTagsInput" class="form-label">Tags</label><input asp-for="NewOrchestration.Tags" type="hidden" id="orchestrationModalTagsHidden" />
+            <label for="orchestrationTagsInput" class="z-form-label">Tags</label><input asp-for="NewOrchestration.Tags" type="hidden" id="orchestrationModalTagsHidden" />
             <div class="od-chip-editor" data-chip-editor-for="orchestrationModalTagsHidden"><div class="od-chip-list"></div><input type="text" id="orchestrationTagsInput" class="od-chip-input" placeholder="Tag + Enter" /></div>
         </div>
     </div>
