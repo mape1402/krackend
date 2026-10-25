@@ -1,4 +1,6 @@
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +22,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<MuleRemoteCommandDispatcher> _logger;
         private readonly ITaskDispatchRepository? _dispatchRepository;
+        private readonly IOrchestrationDispatchCancellationRecoveryCoordinator? _cancellationRecoveryCoordinator;
+        private readonly IOrchestrationInstanceCoordinator? _instanceCoordinator;
 
         public MuleRemoteCommandDispatcher(
             IMuleClient muleClient,
@@ -28,7 +32,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             IMuleCommitNotifier commitNotifier,
             IServiceScopeFactory scopeFactory,
             ILogger<MuleRemoteCommandDispatcher> logger,
-            ITaskDispatchRepository? dispatchRepository = null)
+            ITaskDispatchRepository? dispatchRepository = null,
+            IOrchestrationDispatchCancellationRecoveryCoordinator? cancellationRecoveryCoordinator = null,
+            IOrchestrationInstanceCoordinator? instanceCoordinator = null)
         {
             _muleClient = muleClient ?? throw new ArgumentNullException(nameof(muleClient));
             _muleStorage = muleStorage ?? throw new ArgumentNullException(nameof(muleStorage));
@@ -37,6 +43,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _dispatchRepository = dispatchRepository;
+            _cancellationRecoveryCoordinator = cancellationRecoveryCoordinator;
+            _instanceCoordinator = instanceCoordinator;
         }
 
         public async Task DispatchAsync(RemoteCommand command, CancellationToken cancellationToken = default)
@@ -153,15 +161,35 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             try
             {
-                var dispatch = await dispatchRepository.TryGetById(new Id(dispatchValue), cancellationToken);
-                if (dispatch is null)
+                async Task CaptureAsync(CancellationToken token)
                 {
-                    return;
+                    var dispatch = await dispatchRepository.TryGetById(new Id(dispatchValue), token);
+                    if (dispatch is null)
+                    {
+                        return;
+                    }
+
+                    dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
+                    dispatch.Metadata["Mule.Lane"] = JsonValue.Create(lane);
+                    await dispatchRepository.Update(dispatch, token);
+                    if (dispatch.PhysicalCancellationPending && _cancellationRecoveryCoordinator is not null)
+                    {
+                        await _cancellationRecoveryCoordinator.ReconcileAsync(dispatch.Id, token);
+                    }
                 }
 
-                dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
-                dispatch.Metadata["Mule.Lane"] = JsonValue.Create(lane);
-                await dispatchRepository.Update(dispatch, cancellationToken);
+                if (_instanceCoordinator is not null && System.Ulid.TryParse(command.OrchestrationInstanceId, out var instanceId))
+                {
+                    await _instanceCoordinator.TryExecuteAsync(new Id(instanceId), CaptureAsync, cancellationToken);
+                }
+                else
+                {
+                    await CaptureAsync(cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception exception)
             {

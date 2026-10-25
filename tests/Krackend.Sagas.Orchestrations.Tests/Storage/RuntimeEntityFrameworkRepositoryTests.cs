@@ -58,6 +58,81 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task OrchestrationInstanceRepositoryFindsCancellationIntentsOnTerminalInstances()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var intents = Assert.IsAssignableFrom<IOrchestrationDispatchCancellationIntentRepository>(repository);
+        var pending = Instance(Id.New(), OrchestrationInstanceStatus.DeadLettered, DateTime.UtcNow.AddMinutes(-1));
+        pending.DispatchCancellationPending = true;
+        var next = Instance(Id.New(), OrchestrationInstanceStatus.Completed, DateTime.UtcNow);
+        next.DispatchCancellationPending = true;
+        await repository.Create(pending);
+        await repository.Create(next);
+        await repository.Create(Instance(Id.New(), OrchestrationInstanceStatus.Completed, DateTime.UtcNow));
+
+        var recovered = await intents.GetDispatchCancellationPending(10, 0);
+
+        Assert.Equal([pending.Id, next.Id], recovered.Select(instance => instance.Id).ToArray());
+        Assert.Equal([next.Id], (await intents.GetDispatchCancellationPending(1, 1)).Select(instance => instance.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task TaskDispatchRepositoryReturnsOnlyPhysicalCancellationsStillPending()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<ITaskDispatchRepository>();
+        var cancellationRepository = Assert.IsAssignableFrom<ITaskDispatchCancellationRepository>(repository);
+        var pending = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Cancelled",
+            PhysicalCancellationPending = true,
+            PhysicalCancellationLastAttemptOnUtc = DateTime.UtcNow.AddMinutes(-2)
+        };
+        var completed = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Cancelled",
+            PhysicalCancellationPending = false
+        };
+        var recentlyAttempted = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Cancelled",
+            PhysicalCancellationPending = true,
+            PhysicalCancellationLastAttemptOnUtc = DateTime.UtcNow
+        };
+        var next = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Cancelled",
+            PhysicalCancellationPending = true,
+            PhysicalCancellationLastAttemptOnUtc = DateTime.UtcNow.AddMinutes(-1)
+        };
+        await repository.Create(pending);
+        await repository.Create(completed);
+        await repository.Create(recentlyAttempted);
+        await repository.Create(next);
+
+        var pendingCancellations = await cancellationRepository.GetPhysicalCancellationPending(10, 0, DateTime.UtcNow.AddSeconds(-5));
+
+        Assert.Equal([pending.Id, next.Id], pendingCancellations.Select(dispatch => dispatch.Id).ToArray());
+        Assert.Equal([next.Id], (await cancellationRepository.GetPhysicalCancellationPending(1, 1, DateTime.UtcNow.AddSeconds(-5)))
+            .Select(dispatch => dispatch.Id).ToArray());
+    }
+
+    [Fact]
     public async Task RuntimeExecutionRepositoriesPersistQueryAndUpdateExecutionGraph()
     {
         await using var provider = CreateProvider();

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -122,6 +122,15 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         => await DbContext.OrchestrationInstances.AsNoTracking()
             .OrderByDescending(x => x.LastUpdatedOnUtc)
             .Take(take)
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetDispatchCancellationPending(int take, int skip, CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.DispatchCancellationPending)
+            .OrderBy(x => x.LastUpdatedOnUtc)
+            .ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip))
+            .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecoverable(int take = 100, CancellationToken cancellationToken = default)

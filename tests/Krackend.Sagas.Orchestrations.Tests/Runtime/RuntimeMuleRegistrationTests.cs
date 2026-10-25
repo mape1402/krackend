@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -59,6 +60,9 @@ public sealed class RuntimeMuleRegistrationTests
         Assert.Equal(int.MaxValue, projectionLane.MaxDrainBatchesPerCycle);
         Assert.Equal(0, projectionLane.MaxDrainActionsPerCycle);
         Assert.True(projectionLane.DrainUntilEmpty);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(ITaskDispatchCancellationService) &&
+            descriptor.ImplementationFactory is not null);
     }
 
     [Fact]

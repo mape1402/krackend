@@ -50,6 +50,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             builder.Services.Replace(ServiceDescriptor.Scoped<IIntakeBuffer, IntakeBufferMule>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IRemoteCommandDispatcher, MuleRemoteCommandDispatcher>());
             builder.Services.Replace(ServiceDescriptor.Scoped<ITaskDispatchReplayService, MuleTaskDispatchReplayService>());
+            builder.Services.Replace(ServiceDescriptor.Scoped<ITaskDispatchCancellationService>(provider =>
+                new MuleTaskDispatchCancellationService(
+                    provider.GetRequiredService<IMuleCancellationService>(),
+                    () => provider.GetRequiredService<IMuleReplayService>(),
+                    provider.GetRequiredService<IMuleStorage>())));
             builder.Services.TryAddSingleton<IMuleTerminalFailureMarker, DefaultMuleTerminalFailureMarker>();
             builder.Services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IConfigureOptions<MuleSettings>, MuleRuntimeArtifactLifecycleOptionsConfigurer>());

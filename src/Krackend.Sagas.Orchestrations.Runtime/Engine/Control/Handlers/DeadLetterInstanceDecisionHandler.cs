@@ -46,6 +46,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 : decision.Reason;
 
             instance.Status = OrchestrationInstanceStatus.DeadLettered;
+            instance.DispatchCancellationPending = true;
             instance.FailedOnUtc ??= now;
             instance.WaitingSinceUtc = null;
             instance.ErrorSummary = string.IsNullOrWhiteSpace(instance.ErrorSummary) ? reason : instance.ErrorSummary;

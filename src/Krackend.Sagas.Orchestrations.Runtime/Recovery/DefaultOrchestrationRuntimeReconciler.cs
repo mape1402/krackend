@@ -18,6 +18,7 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
     private readonly IRuntimeAdmissionController _admissionController;
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IOrchestrationTimeoutProcessor _timeoutProcessor;
+    private readonly IOrchestrationDispatchCancellationRecoveryCoordinator _dispatchCancellationRecoveryCoordinator;
     private readonly IOrchestrationDispatchRecoveryCoordinator _dispatchRecoveryCoordinator;
     private readonly IOrchestrationCompensationRecoveryCoordinator _compensationRecoveryCoordinator;
     private readonly ISagaEngine _sagaEngine;
@@ -30,13 +31,15 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
         ISagaEngine sagaEngine,
         IOptions<RuntimeReconciliationOptions> options,
         IOrchestrationDispatchRecoveryCoordinator dispatchRecoveryCoordinator = null,
-        IOrchestrationCompensationRecoveryCoordinator compensationRecoveryCoordinator = null)
+        IOrchestrationCompensationRecoveryCoordinator compensationRecoveryCoordinator = null,
+        IOrchestrationDispatchCancellationRecoveryCoordinator dispatchCancellationRecoveryCoordinator = null)
     {
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _timeoutProcessor = timeoutProcessor ?? throw new ArgumentNullException(nameof(timeoutProcessor));
         _dispatchRecoveryCoordinator = dispatchRecoveryCoordinator;
         _compensationRecoveryCoordinator = compensationRecoveryCoordinator;
+        _dispatchCancellationRecoveryCoordinator = dispatchCancellationRecoveryCoordinator;
         _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
@@ -52,6 +55,11 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
 
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, cancellationToken);
 
+        var reconciledCancellations = _dispatchCancellationRecoveryCoordinator is null
+            ? 0
+            : await _dispatchCancellationRecoveryCoordinator.ReconcilePendingAsync(
+                Math.Max(1, _options.BatchSize),
+                cancellationToken);
         var recoveredDispatches = _dispatchRecoveryCoordinator is null
             ? 0
             : await _dispatchRecoveryCoordinator.RecoverPendingDispatchesAsync(
@@ -89,7 +97,8 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
             timeoutsProcessed,
             false,
             DeliveriesRecovered: recoveredDispatches,
-            CompensationsRecovered: recoveredCompensations);
+            CompensationsRecovered: recoveredCompensations,
+            DispatchCancellationsReconciled: reconciledCancellations);
     }
 
     private static OrchestrationMessageMetadata BuildMetadata(OrchestrationInstance instance)

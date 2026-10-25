@@ -74,6 +74,26 @@ public sealed class TaskDispatch
     public string FailureReason { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether a physical cancellation request still needs to reach the delivery provider.
+    /// </summary>
+    public bool PhysicalCancellationPending { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of physical cancellation attempts made for this dispatch.
+    /// </summary>
+    public int PhysicalCancellationAttemptCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC time at which the physical cancellation was last attempted.
+    /// </summary>
+    public DateTime? PhysicalCancellationLastAttemptOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC time at which the physical cancellation reached a terminal provider outcome.
+    /// </summary>
+    public DateTime? PhysicalCancellationCompletedOnUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets metadata.
     /// </summary>
     public Dictionary<string, JsonNode> Metadata { get; set; } = new();

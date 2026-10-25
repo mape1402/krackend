@@ -277,6 +277,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<bool>("DispatchCancellationPending")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ErrorSummary")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
@@ -352,6 +355,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("StartIdempotencyKey")
                         .IsUnique()
                         .HasFilter("[StartIdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("DispatchCancellationPending", "LastUpdatedOnUtc");
 
                     b.ToTable("OrchestrationInstances", "Runtime");
                 });
@@ -649,6 +654,18 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<string>("Metadata")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("PhysicalCancellationAttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PhysicalCancellationCompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PhysicalCancellationLastAttemptOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("PhysicalCancellationPending")
+                        .HasColumnType("bit");
+
                     b.Property<string>("RequestPayload")
                         .HasColumnType("nvarchar(max)");
 
@@ -667,6 +684,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("CommandId");
 
                     b.HasIndex("DispatchStatus");
+
+                    b.HasIndex("PhysicalCancellationPending");
 
                     b.HasIndex("TaskExecutionAttemptId")
                         .IsUnique();
@@ -1119,6 +1138,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<int>("Attempts")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("CancelledOnUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset?>("CompletedOnUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1196,7 +1218,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                 {
                     b.Property<string>("RequestId")
                         .HasMaxLength(26)
-                        .HasColumnType("nvarchar(26)");
+                        .HasColumnType("nvarchar(26)")
+                        .HasAnnotation("Mongo:ElementName", "_id");
 
                     b.Property<string>("ActionKey")
                         .IsRequired()
@@ -1210,6 +1233,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .IsRequired()
                         .HasMaxLength(26)
                         .HasColumnType("nvarchar(26)");
+
+                    b.Property<DateTimeOffset?>("CancelledOnUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ConcurrencyToken")
                         .IsConcurrencyToken()

@@ -13,6 +13,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using NSubstitute;
 
@@ -226,6 +227,27 @@ public sealed class CompensateInstanceDecisionHandlerTests
         Assert.Equal(OrchestrationInstanceStatus.Compensating, instance.Status);
         Assert.Contains(fixture.Transitions, transition => transition.TransitionType == "CompensationDispatchDeferred");
         Assert.DoesNotContain(fixture.Transitions, transition => transition.TransitionType == "InstanceCompensated");
+    }
+
+    [Fact]
+    public async Task HandleAsyncCancelsUndeliveredForwardDispatchesBeforeStartingCompensation()
+    {
+        var fixture = new CompensationFixture();
+        var instance = CreateInstance();
+        var stage = StageExecution(instance.Id);
+        fixture.Arrange(instance, [], [stage], CreateResolvedArtifact(
+            instance.RuntimeOrchestrationArtifactId,
+            Stage("stage-one")));
+
+        await fixture.Handler.HandleAsync(new CompensateInstanceDecision(
+            instance.Id,
+            instance.RuntimeOrchestrationArtifactId.ToString(),
+            "{}"));
+
+        await fixture.DispatchCancellationCoordinator.Received(1).CancelPendingAsync(
+            instance,
+            Arg.Is<string>(reason => reason.Contains("entered compensation", StringComparison.OrdinalIgnoreCase)),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -449,7 +471,8 @@ public sealed class CompensateInstanceDecisionHandlerTests
                 AdapterRegistry,
                 ConditionEvaluator,
                 PayloadContextFactory,
-                TransformationExecutor);
+                TransformationExecutor,
+                dispatchCancellationCoordinator: DispatchCancellationCoordinator);
         }
 
         public IRuntimeArtifactResolver ArtifactResolver { get; } =
@@ -483,6 +506,9 @@ public sealed class CompensateInstanceDecisionHandlerTests
 
         public IOrchestrationTransformationExecutor TransformationExecutor { get; } =
             Substitute.For<IOrchestrationTransformationExecutor>();
+
+        public IOrchestrationDispatchCancellationCoordinator DispatchCancellationCoordinator { get; } =
+            Substitute.For<IOrchestrationDispatchCancellationCoordinator>();
 
         public CompensateInstanceDecisionHandler Handler { get; }
 

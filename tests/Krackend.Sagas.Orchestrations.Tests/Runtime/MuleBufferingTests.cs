@@ -341,6 +341,49 @@ public sealed class MuleBufferingTests
     }
 
     [Fact]
+    public async Task MuleRemoteCommandDispatcher_ReconcilesCancellationAfterCapturingAnActionReference()
+    {
+        var actionId = MuleUlid.NewUlid();
+        var muleClient = Substitute.For<IMuleClient>();
+        muleClient
+            .EnqueueAsync(
+                Arg.Any<ActionKey>(),
+                Arg.Any<RemoteCommand>(),
+                Arg.Any<Action<EnqueueOptions>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleUlid>(actionId));
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Cancelled",
+            PhysicalCancellationPending = true
+        };
+        var dispatchRepository = Substitute.For<ITaskDispatchRepository>();
+        dispatchRepository.TryGetById(dispatch.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(dispatch));
+        var cancellationRecovery = Substitute.For<IOrchestrationDispatchCancellationRecoveryCoordinator>();
+        await using var services = BuildServiceProvider(
+            muleClient,
+            Substitute.For<IMuleStorage>(),
+            Substitute.For<IMuleSerializer>(),
+            Substitute.For<IMuleCommitNotifier>(),
+            dispatchRepository,
+            cancellationRecovery);
+        var dispatcher = services.GetRequiredService<IRemoteCommandDispatcher>();
+
+        await dispatcher.DispatchAsync(new RemoteCommand
+        {
+            OrchestrationInstanceId = "instance-1",
+            TaskExecutionAttemptId = dispatch.TaskExecutionAttemptId.ToString(),
+            DispatchId = dispatch.Id.ToString()
+        });
+
+        Assert.Equal(actionId.ToString(), dispatch.Metadata["Mule.ActionId"]!.GetValue<string>());
+        await cancellationRecovery.Received(1).ReconcileAsync(dispatch.Id, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task MuleTaskDispatchReplayService_SchedulesFailedMuleDeliveryWithThePersistedRequestId()
     {
         var replayService = Substitute.For<IMuleReplayService>();
@@ -677,7 +720,9 @@ public sealed class MuleBufferingTests
         IMuleClient muleClient,
         IMuleStorage? muleStorage = null,
         IMuleSerializer? muleSerializer = null,
-        IMuleCommitNotifier? commitNotifier = null)
+        IMuleCommitNotifier? commitNotifier = null,
+        ITaskDispatchRepository? dispatchRepository = null,
+        IOrchestrationDispatchCancellationRecoveryCoordinator? cancellationRecovery = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -686,8 +731,18 @@ public sealed class MuleBufferingTests
             .AddMule(_ => { });
         services.AddSingleton(muleClient);
         services.AddSingleton(muleStorage ?? Substitute.For<IMuleStorage>());
+        services.AddSingleton(Substitute.For<IMuleCancellationService>());
         services.AddSingleton(muleSerializer ?? Substitute.For<IMuleSerializer>());
         services.AddSingleton(commitNotifier ?? Substitute.For<IMuleCommitNotifier>());
+        if (dispatchRepository is not null)
+        {
+            services.AddSingleton(dispatchRepository);
+        }
+
+        if (cancellationRecovery is not null)
+        {
+            services.AddSingleton(cancellationRecovery);
+        }
         return services.BuildServiceProvider();
     }
 

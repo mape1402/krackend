@@ -27,6 +27,17 @@ using StackExchange.Redis;
 
 public sealed class RuntimeDisasterRecoveryTests
 {
+    [Fact]
+    public void ReconciliationResultPreservesItsOriginalConstructorAndDeconstruction()
+    {
+        var result = new RuntimeReconciliationResult(1, 2, 3, false, "reason", 4, 5);
+        var (observed, advanced, timeouts, skipped, reason, deliveries, compensations) = result;
+
+        Assert.Equal((1, 2, 3, false, "reason", 4, 5),
+            (observed, advanced, timeouts, skipped, reason, deliveries, compensations));
+        Assert.Equal(0, result.DispatchCancellationsReconciled);
+    }
+
     [Theory]
     [InlineData(RuntimeOperationalState.Healthy, RuntimeAdmissionOperation.TriggerIntake, true)]
     [InlineData(RuntimeOperationalState.Degraded, RuntimeAdmissionOperation.Dispatch, true)]
@@ -443,6 +454,56 @@ public sealed class RuntimeDisasterRecoveryTests
 
         Assert.Equal(2, result.DeliveriesRecovered);
         Assert.Equal(["deliveries", "timeouts"], calls);
+    }
+
+    [Fact]
+    public async Task ReconcilerFinalizesPhysicalCancellationsBeforeRecoveringDeliveriesOrTimeouts()
+    {
+        var now = DateTime.UtcNow;
+        var calls = new List<string>();
+        var admission = Substitute.For<IRuntimeAdmissionController>();
+        var repository = Substitute.For<IOrchestrationInstanceRepository>();
+        var timeoutProcessor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var cancellationRecovery = Substitute.For<IOrchestrationDispatchCancellationRecoveryCoordinator>();
+        var dispatchRecovery = Substitute.For<IOrchestrationDispatchRecoveryCoordinator>();
+        var sagaEngine = Substitute.For<ISagaEngine>();
+        admission.CanAccept(RuntimeAdmissionOperation.Reconciliation).Returns(true);
+        admission.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        cancellationRecovery.ReconcilePendingAsync(4, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("cancellations");
+                return Task.FromResult(1);
+            });
+        dispatchRecovery.RecoverPendingDispatchesAsync(4, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("deliveries");
+                return Task.FromResult(2);
+            });
+        timeoutProcessor.ProcessDueTimeoutsAsync(now, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("timeouts");
+                return Task.FromResult(0);
+            });
+        repository.GetRecoverable(4, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(Array.Empty<OrchestrationInstance>()));
+        var reconciler = new DefaultOrchestrationRuntimeReconciler(
+            admission,
+            repository,
+            timeoutProcessor,
+            sagaEngine,
+            Options.Create(new RuntimeReconciliationOptions { BatchSize = 4 }),
+            dispatchRecovery,
+            dispatchCancellationRecoveryCoordinator: cancellationRecovery);
+
+        var result = await reconciler.ReconcileAsync(now);
+
+        Assert.Equal(1, result.DispatchCancellationsReconciled);
+        Assert.Equal(2, result.DeliveriesRecovered);
+        Assert.Equal(["cancellations", "deliveries", "timeouts"], calls);
     }
 
     [Fact]

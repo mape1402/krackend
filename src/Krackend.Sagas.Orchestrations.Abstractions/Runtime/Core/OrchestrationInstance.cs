@@ -78,6 +78,9 @@ public sealed class OrchestrationInstance
     /// </summary>
     public DateTime LastUpdatedOnUtc { get; set; }
 
+    /// <summary>Gets or sets whether pending dispatches still require a logical cancellation fence.</summary>
+    public bool DispatchCancellationPending { get; set; }
+
     /// <summary>
     /// Gets or sets waiting since utc.
     /// </summary>

@@ -602,6 +602,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             : reason.Trim();
 
         instance.Status = OrchestrationInstanceStatus.Aborted;
+        instance.DispatchCancellationPending = true;
         instance.FailedOnUtc ??= now;
         instance.StoppedOnUtc ??= now;
         instance.WaitingSinceUtc = null;

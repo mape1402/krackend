@@ -5,8 +5,12 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Mule;
 using System.Text.Json.Nodes;
 using static Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure.RealMessagingArtifactFactory;
 
@@ -18,6 +22,49 @@ public sealed class RuntimeRealInfrastructureE2ETests
     public RuntimeRealInfrastructureE2ETests(RuntimeRealInfrastructureFixture infrastructure)
     {
         _infrastructure = infrastructure;
+    }
+
+    [Fact(Timeout = 180_000)]
+    public async Task RuntimeCancelsScheduledMuleDispatchUsingRealSqlAndRedis()
+    {
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
+        await using var scope = runtime.Services.CreateAsyncScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IMuleStorage>();
+        var cancellation = scope.ServiceProvider.GetRequiredService<ITaskDispatchCancellationService>();
+        var verifier = scope.ServiceProvider.GetRequiredService<IMuleCancellationService>();
+        await using var otherScope = runtime.Services.CreateAsyncScope();
+        var otherCancellation = otherScope.ServiceProvider.GetRequiredService<ITaskDispatchCancellationService>();
+        var actionId = Mule.Ulid.NewUlid();
+        var dispatch = new TaskDispatch
+        {
+            Id = Id.New(),
+            TaskExecutionAttemptId = Id.New(),
+            DispatchType = "Messaging",
+            DispatchStatus = "Cancelled"
+        };
+        dispatch.Metadata["Mule.ActionId"] = JsonValue.Create(actionId.ToString());
+        await storage.AddAsync(new DurableAction
+        {
+            Id = actionId,
+            Key = ActionKey.From("RemoteCommandDispatch"),
+            Lane = MuleSettings.DefaultLane,
+            Payload = "{}",
+            PayloadType = typeof(string).AssemblyQualifiedName!,
+            DeduplicationKey = dispatch.Id.ToString(),
+            Status = DurableActionStatus.Pending,
+            CreatedOnUtc = DateTimeOffset.UtcNow,
+            NextAttemptOnUtc = DateTimeOffset.UtcNow.AddMinutes(5)
+        });
+        await storage.SaveChangesAsync();
+
+        var results = await Task.WhenAll(
+            cancellation.CancelAsync(new TaskDispatchCancellationRequest { Dispatch = dispatch, Reason = "integration test" }),
+            otherCancellation.CancelAsync(new TaskDispatchCancellationRequest { Dispatch = dispatch, Reason = "integration test" }));
+
+        Assert.Single(results, result => result.Status == "Cancelled" && result.Requested);
+        Assert.Single(results, result => result.Status == "AlreadyCancelled" && result.IsTerminal);
+        var repeated = await verifier.CancelAsync(actionId);
+        Assert.Equal(MuleCancellationOutcome.AlreadyCancelled, repeated.Outcome);
     }
 
     [Fact(Timeout = 180_000)]

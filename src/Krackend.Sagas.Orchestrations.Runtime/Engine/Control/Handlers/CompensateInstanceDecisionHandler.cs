@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
 using System.Text.Json;
@@ -36,6 +37,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IOrchestrationTransformationExecutor _transformationExecutor;
         private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
         private readonly IRuntimeStateTransaction _stateTransaction;
+        private readonly IOrchestrationDispatchCancellationCoordinator _dispatchCancellationCoordinator;
 
         public CompensateInstanceDecisionHandler(
             IRuntimeArtifactResolver artifactResolver,
@@ -50,7 +52,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IOrchestrationPayloadContextFactory payloadContextFactory,
             IOrchestrationTransformationExecutor transformationExecutor,
             IOrchestrationPropagationMetadataStore propagationMetadataStore = null,
-            IRuntimeStateTransaction stateTransaction = null)
+            IRuntimeStateTransaction stateTransaction = null,
+            IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -65,6 +68,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _transformationExecutor = transformationExecutor ?? throw new ArgumentNullException(nameof(transformationExecutor));
             _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
             _stateTransaction = stateTransaction;
+            _dispatchCancellationCoordinator = dispatchCancellationCoordinator;
         }
 
         public async Task HandleAsync(CompensateInstanceDecision decision, CancellationToken cancellationToken = default)
@@ -89,10 +93,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             if (instance.Status != OrchestrationInstanceStatus.Compensating)
             {
                 instance.Status = OrchestrationInstanceStatus.Compensating;
+                instance.DispatchCancellationPending = true;
                 instance.CompensationStartedOnUtc = now;
                 instance.LastUpdatedOnUtc = now;
                 await PersistStateAsync(
                     token => _instanceRepository.Update(instance, token),
+                    cancellationToken);
+            }
+
+            if (_dispatchCancellationCoordinator is not null)
+            {
+                await _dispatchCancellationCoordinator.CancelPendingAsync(
+                    instance,
+                    "Orchestration instance entered compensation before this durable dispatch was published.",
                     cancellationToken);
             }
 

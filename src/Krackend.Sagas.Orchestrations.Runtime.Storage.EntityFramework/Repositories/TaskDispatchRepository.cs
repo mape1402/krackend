@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispatchRepository
+internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispatchRepository, ITaskDispatchCancellationRepository
 {
     public TaskDispatchRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -75,6 +75,20 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
         => await DbContext.TaskDispatches.AsNoTracking()
             .Where(x => x.DispatchStatus == "QueuePending")
             .OrderBy(x => x.ScheduledOnUtc)
+            .Take(Math.Max(1, take))
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskDispatch>> GetPhysicalCancellationPending(
+        int take,
+        int skip,
+        DateTime attemptedBeforeUtc,
+        CancellationToken cancellationToken = default)
+        => await DbContext.TaskDispatches.AsNoTracking()
+            .Where(x => x.PhysicalCancellationPending &&
+                (x.PhysicalCancellationLastAttemptOnUtc == null || x.PhysicalCancellationLastAttemptOnUtc <= attemptedBeforeUtc))
+            .OrderBy(x => x.PhysicalCancellationLastAttemptOnUtc)
+            .ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip))
             .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
 

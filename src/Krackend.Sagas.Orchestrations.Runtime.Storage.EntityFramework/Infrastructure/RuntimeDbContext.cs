@@ -218,6 +218,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.SnapshotPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.LastUpdatedOnUtc);
+        builder.HasIndex(x => new { x.DispatchCancellationPending, x.LastUpdatedOnUtc });
         builder.HasIndex(x => x.StartIdempotencyKey).IsUnique();
         builder.HasIndex(x => x.CorrelationId);
         builder.HasIndex(x => x.SagaId);
@@ -294,10 +295,12 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.CommandId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.FailureReason).HasMaxLength(4000).IsRequired(false);
+        builder.Property(x => x.PhysicalCancellationPending).IsRequired();
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.TaskExecutionAttemptId).IsUnique();
         builder.HasIndex(x => x.CommandId);
         builder.HasIndex(x => x.DispatchStatus);
+        builder.HasIndex(x => x.PhysicalCancellationPending);
     }
 
     private static void ConfigureTransitions(ModelBuilder modelBuilder)

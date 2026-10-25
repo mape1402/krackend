@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository
+    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -92,6 +92,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(_store.Instances.Values
                 .OrderByDescending(x => x.LastUpdatedOnUtc)
                 .Take(take)
+                .ToArray());
+
+        public Task<IReadOnlyCollection<OrchestrationInstance>> GetDispatchCancellationPending(int take, int skip, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(_store.Instances.Values
+                .Where(x => x.DispatchCancellationPending)
+                .OrderBy(x => x.LastUpdatedOnUtc)
+                .ThenBy(x => x.Id)
+                .Skip(Math.Max(0, skip))
+                .Take(Math.Max(1, take))
                 .ToArray());
 
         public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecoverable(int take = 100, CancellationToken cancellationToken = default)

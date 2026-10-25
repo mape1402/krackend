@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryTaskDispatchRepository : ITaskDispatchRepository
+    internal sealed class InMemoryTaskDispatchRepository : ITaskDispatchRepository, ITaskDispatchCancellationRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -71,6 +71,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(_store.Dispatches.Values
                 .Where(x => string.Equals(x.DispatchStatus, "QueuePending", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(x => x.ScheduledOnUtc)
+                .Take(Math.Max(1, take))
+                .ToArray());
+
+        public Task<IReadOnlyCollection<TaskDispatch>> GetPhysicalCancellationPending(
+            int take,
+            int skip,
+            DateTime attemptedBeforeUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<TaskDispatch>>(_store.Dispatches.Values
+                .Where(x => x.PhysicalCancellationPending &&
+                    (x.PhysicalCancellationLastAttemptOnUtc is null || x.PhysicalCancellationLastAttemptOnUtc <= attemptedBeforeUtc))
+                .OrderBy(x => x.PhysicalCancellationLastAttemptOnUtc)
+                .ThenBy(x => x.Id)
+                .Skip(Math.Max(0, skip))
                 .Take(Math.Max(1, take))
                 .ToArray());
 
