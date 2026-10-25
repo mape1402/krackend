@@ -40,6 +40,9 @@ public sealed class DefaultOrchestratorThemeCssRenderer : IOrchestratorThemeCssR
     {
         AppendColor(builder, "--krackend-primary", palette.PrimaryColor, fallback.PrimaryColor);
         AppendColor(builder, "--krackend-primary-hover", palette.PrimaryHoverColor, fallback.PrimaryHoverColor);
+        var surface = NormalizeColor(palette.SurfaceColor, fallback.SurfaceColor);
+        builder.Append("--krackend-on-primary:").Append(ContrastColor(NormalizeColor(palette.PrimaryColor, fallback.PrimaryColor), surface)).Append(';');
+        builder.Append("--krackend-on-primary-hover:").Append(ContrastColor(NormalizeColor(palette.PrimaryHoverColor, fallback.PrimaryHoverColor), surface)).Append(';');
         AppendColor(builder, "--krackend-sidebar-bg", palette.SidebarBackgroundColor, fallback.SidebarBackgroundColor);
         AppendColor(builder, "--krackend-sidebar-brand-bg", palette.SidebarBrandBackgroundColor, fallback.SidebarBrandBackgroundColor);
         AppendColor(builder, "--krackend-sidebar-text", palette.SidebarTextColor, fallback.SidebarTextColor);
@@ -63,4 +66,38 @@ public sealed class DefaultOrchestratorThemeCssRenderer : IOrchestratorThemeCssR
         => !string.IsNullOrWhiteSpace(value) && _cssColorRegex.IsMatch(value.Trim())
             ? value.Trim()
             : fallback;
+
+    private static string ContrastColor(string foreground, string background)
+    {
+        var foregroundRgb = ParseColor(foreground);
+        var backgroundRgb = ParseColor(background);
+        var alpha = foregroundRgb.Alpha / 255d;
+        var red = (foregroundRgb.Red * alpha) + (backgroundRgb.Red * (1 - alpha));
+        var green = (foregroundRgb.Green * alpha) + (backgroundRgb.Green * (1 - alpha));
+        var blue = (foregroundRgb.Blue * alpha) + (backgroundRgb.Blue * (1 - alpha));
+        var luminance = (0.2126 * Linearize(red)) + (0.7152 * Linearize(green)) + (0.0722 * Linearize(blue));
+        return luminance > 0.1791287847 ? "#000000" : "#ffffff";
+    }
+
+    private static (int Red, int Green, int Blue, int Alpha) ParseColor(string color)
+    {
+        var hex = color.AsSpan(1);
+        if (hex.Length == 3)
+        {
+            return (Convert.ToInt32(hex[..1].ToString(), 16) * 17,
+                Convert.ToInt32(hex.Slice(1, 1).ToString(), 16) * 17,
+                Convert.ToInt32(hex.Slice(2, 1).ToString(), 16) * 17, 255);
+        }
+
+        return (Convert.ToInt32(hex[..2].ToString(), 16),
+            Convert.ToInt32(hex.Slice(2, 2).ToString(), 16),
+            Convert.ToInt32(hex.Slice(4, 2).ToString(), 16),
+            hex.Length == 8 ? Convert.ToInt32(hex.Slice(6, 2).ToString(), 16) : 255);
+    }
+
+    private static double Linearize(double value)
+    {
+        var channel = value / 255d;
+        return channel <= 0.04045 ? channel / 12.92 : Math.Pow((channel + 0.055) / 1.055, 2.4);
+    }
 }

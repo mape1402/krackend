@@ -1838,11 +1838,13 @@ main.container {
 .btn-primary {
     background: var(--od-primary) !important;
     border-color: var(--od-primary) !important;
+    color: var(--krackend-on-primary, #fff) !important;
 }
 
 .btn-primary:hover {
     background: var(--od-primary-strong) !important;
     border-color: var(--od-primary-strong) !important;
+    color: var(--krackend-on-primary-hover, #fff) !important;
 }
 
 @media (max-width: 991px) {
@@ -1942,7 +1944,7 @@ main.container {
 .od-catalog-controls [aria-pressed="true"] {
     background: var(--z-primary);
     border-color: var(--z-primary);
-    color: #fff;
+    color: var(--krackend-on-primary, #fff);
 }
 
 .od-catalog-actions {
