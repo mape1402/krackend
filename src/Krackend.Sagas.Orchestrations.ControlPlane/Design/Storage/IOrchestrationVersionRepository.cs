@@ -39,6 +39,10 @@ public interface IOrchestrationVersionRepository
     /// <returns>A paged result containing orchestration versions.</returns>
     Task<PagedResult<OrchestrationVersion>> GetAll(Id orchestrationDefinitionId, PagedSettings pagedSettings, CancellationToken cancellationToken = default);
 
+    /// <summary>Searches versions by version number or label before applying pagination.</summary>
+    Task<PagedResult<OrchestrationVersion>> Search(Id orchestrationDefinitionId, PagedSettings pagedSettings, string search, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This storage provider does not support version search.");
+
     /// <summary>
     /// Determines whether an orchestration definition already has the requested semantic version in a non-archived lifecycle state.
     /// </summary>

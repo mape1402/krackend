@@ -1,57 +1,9 @@
 @page
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.DetailsModel
 @using Krackend.Sagas.Orchestrations.Abstractions.Primitives
-@{
-    ViewData["Title"] = "Orchestration details";
-
-    string StatusClass(OrchestrationVersionStatus status)
-    {
-        return status switch
-        {
-            OrchestrationVersionStatus.Draft => "od-status od-status-draft",
-            OrchestrationVersionStatus.PendingDeployment or OrchestrationVersionStatus.PendingDeprecation or OrchestrationVersionStatus.PendingArchive => "od-status od-status-inreview",
-            OrchestrationVersionStatus.Deployed => "od-status od-status-deployed",
-            OrchestrationVersionStatus.Deprecated => "od-status od-status-deprecated",
-            OrchestrationVersionStatus.Archived or OrchestrationVersionStatus.Abandoned => "od-status od-status-archived",
-            _ => "od-status od-status-draft"
-        };
-    }
-
-    string StatusLabel(OrchestrationVersionStatus status)
-    {
-        return status switch
-        {
-            OrchestrationVersionStatus.PendingDeployment => "Pending deployment review",
-            OrchestrationVersionStatus.PendingDeprecation => "Pending deprecation review",
-            OrchestrationVersionStatus.PendingArchive => "Pending archive review",
-            _ => status.ToString()
-        };
-    }
-
-    string ActionLabel(string action)
-    {
-        return action switch
-        {
-            "RequestDeployment" => "Send to deployment review",
-            "RequestDeprecation" => "Request deprecation",
-            "RequestArchive" => "Request archive",
-            "OpenReview" => "Open review",
-            "Abandon" => "Abandon draft",
-            _ => action
-        };
-    }
-
-    string FormatTimestamp(string value)
-    {
-        if (DateTimeOffset.TryParse(value, out var parsed))
-        {
-            return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-        }
-
-        return value;
-    }
-}
-
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
+@{ ViewData["Title"] = "Orchestration details"; }
 <div class="od-page-head">
     <div>
         <h1 class="od-page-title">@Model.Orchestration?.Name</h1>
@@ -63,58 +15,29 @@
     </div>
 </div>
 
-<section class="od-list-shell">
-    @if (!Model.Versions.Any())
-    {
-        <p class="od-empty">No versions yet.</p>
-    }
-    else
-    {
-        <div class="od-grid od-versions-grid">
-            @foreach (var version in Model.Versions)
-            {
-                <article class="od-item-card od-version-card"
-                         data-version-id="@version.Id"
-                         data-open-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = version.Id })">
-                    <div class="od-item-top">
-                        <div>
-                            <h3 class="od-item-title">@(string.IsNullOrWhiteSpace(version.Version) ? "Draft" : version.Version)</h3>
-                            <p class="od-item-meta">@version.VersionLabel</p>
-                        </div>
-                        <div class="d-flex align-items-start gap-2">
-                            <span class="@StatusClass(version.Status)">@StatusLabel(version.Status)</span>
-                            <div class="dropdown">
-                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Version actions">&#8942;</button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <a class="dropdown-item"
-                                           asp-area="OrchestratorDesign"
-                                           asp-page="/OrchestrationVersions/Details"
-                                           asp-route-orchestrationId="@Model.OrchestrationId"
-                                           asp-route-versionId="@version.Id">Open roadmap</a>
-                                    </li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    @foreach (var action in Model.GetAllowedActions(version.Status))
-                                    {
-                                        <li>
-                                            <form method="post" asp-page-handler="VersionAction" class="od-inline-form" data-orchestrator-validate="false" data-orchestrator-busy="true" data-busy-title="Updating version" data-busy-message="Design is applying the selected version transition.">
-                                                <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                                                <input type="hidden" name="versionId" value="@version.Id" />
-                                                <input type="hidden" name="action" value="@action" />
-                                                <button type="submit" formnovalidate class="dropdown-item @(action == "Abandon" ? "text-danger" : string.Empty)">@ActionLabel(action)</button>
-                                            </form>
-                                        </li>
-                                    }
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="od-item-description">@version.Description</p>
-                    <p class="od-item-meta od-item-time mt-auto">Created: @FormatTimestamp(version.CreatedOnUtc)</p>
-                </article>
-            }
-        </div>
-    }
+<section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
+         data-action-url="@Url.Page(null, "VersionAction")" data-orchestration-id="@Model.OrchestrationId"
+         data-roadmap-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = "__versionId__" })">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-version-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-version-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-version-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+            Id = "orchestration-versions-grid", AriaLabel = "orchestration versions", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId }) },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("version", "Version", false), new("versionLabel", "Label", false), new("statusLabel", "Status", false), new("createdOnUtc", "Created", false), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-version-cards-view hidden>
+        <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-version-search aria-label="Search versions" placeholder="Search version or label" /></label>
+        <div class="od-grid od-versions-grid" data-version-cards></div>
+        <p data-version-empty hidden>No matching versions.</p>
+        <p data-version-status aria-live="polite"></p>
+        <div data-version-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-version-more hidden>Load more</button>
+    </div>
+    <form method="post" id="version-catalog-token" hidden>@Html.AntiForgeryToken()</form>
 </section>
 
 <div class="modal fade" id="newVersionModal" tabindex="-1" aria-labelledby="newVersionModalLabel" aria-hidden="true">
@@ -139,13 +62,6 @@
 </div>
 
 @section Scripts {
-<script>
-document.querySelectorAll('.od-version-card[data-open-url]').forEach(card => {
-    card.addEventListener('click', event => {
-        if (event.target.closest('a, button, input, textarea, select, label, form, .dropdown')) return;
-        window.location.href = card.getAttribute('data-open-url') || window.location.href;
-    });
-});
-</script>
+<script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-versions.js" asp-append-version="true"></script>
 }
 

@@ -30,10 +30,12 @@ public sealed class GetOrchestrationVersionsQueryHandler : IRequestHandler<GetOr
     /// <returns>Paged interaction result.</returns>
     public async Task<ApplicationPagedResult<OrchestrationVersionModel>> Handle(GetOrchestrationVersionsQuery request, CancellationToken cancellationToken)
     {
-        PagedResult<global::Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.OrchestrationVersion> rows = await _repository.GetAll(
-            PrimitiveParser.ParseId(request.OrchestrationDefinitionId),
-            PrimitiveParser.ToStoragePagedSettings(request.Settings),
-            cancellationToken);
+        var definitionId = PrimitiveParser.ParseId(request.OrchestrationDefinitionId);
+        var settings = PrimitiveParser.ToStoragePagedSettings(request.Settings);
+        PagedResult<global::Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.OrchestrationVersion> rows =
+            string.IsNullOrWhiteSpace(request.SearchText)
+                ? await _repository.GetAll(definitionId, settings, cancellationToken)
+                : await _repository.Search(definitionId, settings, request.SearchText, cancellationToken);
 
         return _mapper.ToPagedModel(rows);
     }

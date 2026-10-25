@@ -87,11 +87,23 @@ public sealed class OrchestrationVersionRepository : IOrchestrationVersionReposi
     /// Executes GetAll.
     /// </summary>
     public async Task<PagedResult<OrchestrationVersion>> GetAll(Id orchestrationDefinitionId, PagedSettings pagedSettings, CancellationToken cancellationToken = default)
+        => await Search(orchestrationDefinitionId, pagedSettings, string.Empty, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<PagedResult<OrchestrationVersion>> Search(Id orchestrationDefinitionId, PagedSettings pagedSettings, string search, CancellationToken cancellationToken = default)
     {
         var sieveModel = pagedSettings.ToSieveModel();
         var baseQuery = _dbContext.OrchestrationVersions
             .AsNoTracking()
             .Where(x => x.OrchestrationDefinitionId == orchestrationDefinitionId);
+
+        var term = search?.Trim();
+        if (!string.IsNullOrEmpty(term))
+        {
+            var matchesDraft = "Draft".Contains(term, StringComparison.OrdinalIgnoreCase);
+            baseQuery = baseQuery.Where(x => x.Version.Contains(term) || x.VersionLabel.Contains(term) ||
+                (matchesDraft && (x.Version == null || x.Version == string.Empty)));
+        }
 
         var filteredAndSortedQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
 

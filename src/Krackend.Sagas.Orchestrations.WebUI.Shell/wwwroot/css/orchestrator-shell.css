@@ -25,6 +25,19 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; padding: 0; }
 
+[data-krackend-theme="dark"] .btn-outline-secondary {
+    --bs-btn-color: var(--krackend-text, #e8edf7);
+    --bs-btn-border-color: var(--krackend-muted-text, #a4b3ca);
+    --bs-btn-hover-color: var(--krackend-content-bg, #101827);
+    --bs-btn-hover-bg: var(--krackend-text, #e8edf7);
+    --bs-btn-hover-border-color: var(--krackend-text, #e8edf7);
+    --bs-btn-active-color: var(--krackend-content-bg, #101827);
+    --bs-btn-active-bg: var(--krackend-text, #e8edf7);
+    --bs-btn-active-border-color: var(--krackend-text, #e8edf7);
+    --bs-btn-disabled-color: var(--krackend-muted-text, #a4b3ca);
+    --bs-btn-disabled-border-color: var(--krackend-muted-text, #a4b3ca);
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
     font-size: 0.875rem;

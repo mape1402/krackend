@@ -162,7 +162,12 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         Assert.IsType<RedirectToPageResult>(await page.OnGetAsync("", CancellationToken.None));
         Assert.IsType<PageResult>(await page.OnGetAsync("orch-1", CancellationToken.None));
         Assert.Equal("orch-1", page.Orchestration.Id);
-        Assert.Equal(["version-new", "version-old"], page.Versions.Select(x => x.Id).ToArray());
+        Assert.Empty(page.Versions);
+        await fixture.VersionService.DidNotReceive().GetAll(Arg.Any<GetOrchestrationVersionsQuery>(), Arg.Any<CancellationToken>());
+        Assert.IsType<JsonResult>(await page.OnGetVersionsAsync("orch-1", 2, 10, " sales ", CancellationToken.None));
+        await fixture.VersionService.Received(1).GetAll(Arg.Is<GetOrchestrationVersionsQuery>(query =>
+            query.Settings.PageNumber == 2 && query.Settings.PageSize == 10 &&
+            query.SearchText == "sales" && query.Settings.Sorts.First().Field == "createdOnUtc"), Arg.Any<CancellationToken>());
 
         fixture.OrchestrationService.GetById(Arg.Any<GetOrchestrationDefinitionByIdQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<OrchestrationDefinitionModel>(null!));

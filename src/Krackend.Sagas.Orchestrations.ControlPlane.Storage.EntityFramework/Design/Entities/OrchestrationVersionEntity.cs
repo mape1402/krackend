@@ -11,6 +11,7 @@ public sealed class OrchestrationVersionEntity
     /// <summary>
     /// Gets or sets Id.
     /// </summary>
+    [Sieve(CanSort = true, Name = "id")]
     public Id Id { get; set; }
     /// <summary>
     /// Gets or sets OrchestrationDefinitionId.

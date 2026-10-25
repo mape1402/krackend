@@ -73,6 +73,30 @@ public sealed class DetailsModel : PageModel
         return Orchestration is null ? NotFound() : Page();
     }
 
+    /// <summary>Returns a database-filtered page of versions for the selected orchestration.</summary>
+    public async Task<IActionResult> OnGetVersionsAsync(string orchestrationId, int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orchestrationId)) return BadRequest();
+        var term = search?.Trim() ?? string.Empty;
+        var settings = new DesignPagedSettings
+        {
+            PageNumber = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, 100),
+            Sorts = [new ApplicationSort("createdOnUtc", true), new ApplicationSort("id", true)]
+        };
+        var result = await _versionService.GetAll(new GetOrchestrationVersionsQuery(orchestrationId, settings, term), cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Rows.Select(x => new { id = x.Id, version = string.IsNullOrWhiteSpace(x.Version) ? "Draft" : x.Version,
+                x.VersionLabel, x.Description, status = x.Status.ToString(), statusLabel = x.Status switch {
+                    OrchestrationVersionStatus.PendingDeployment => "Pending deployment review",
+                    OrchestrationVersionStatus.PendingDeprecation => "Pending deprecation review",
+                    OrchestrationVersionStatus.PendingArchive => "Pending archive review",
+                    _ => x.Status.ToString() },
+                createdOnUtc = FormatTimestamp(x.CreatedOnUtc), actions = GetAllowedActions(x.Status).ToArray() }),
+            totalCount = result.TotalRows, hasMore = result.PageNumber < result.TotalPages
+        });
+    }
+
     /// <summary>
     /// Handles orchestration active state changes.
     /// </summary>
@@ -236,19 +260,6 @@ public sealed class DetailsModel : PageModel
                 return;
             }
 
-            var versionsResult = await _versionService.GetAll(
-                new GetOrchestrationVersionsQuery(
-                    OrchestrationId,
-                    new DesignPagedSettings
-                    {
-                        PageNumber = 1,
-                        PageSize = 200
-                    }),
-                cancellationToken);
-
-            Versions = versionsResult.Rows
-                .OrderByDescending(x => x.CreatedOnUtc, StringComparer.Ordinal)
-                .ToArray();
         }
         catch (Exception ex)
         {
@@ -265,6 +276,9 @@ public sealed class DetailsModel : PageModel
                 invalidOperation.Message,
             _ => "The operation could not be completed. Review the captured data and try again."
         };
+
+    private static string FormatTimestamp(string value)
+        => DateTimeOffset.TryParse(value, out var parsed) ? parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : value;
 
     /// <summary>
     /// Represents UI input for creating orchestration version.

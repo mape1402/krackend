@@ -5,7 +5,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 /// <summary>
 /// Represents get orchestration versions query.
 /// </summary>
-public sealed record GetOrchestrationVersionsQuery(string OrchestrationDefinitionId, ApplicationPagedSettings Settings)
+public sealed record GetOrchestrationVersionsQuery(string OrchestrationDefinitionId, ApplicationPagedSettings Settings, string SearchText = "")
     : IRequest<ApplicationPagedResult<OrchestrationVersionModel>>;
 
 

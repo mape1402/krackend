@@ -9,6 +9,7 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,40 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
 public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
 {
+    [Fact]
+    public async Task VersionSearchAndOrderingAreAppliedBeforeRelationalPaging()
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var services = new ServiceCollection();
+        services.AddOptions();
+        services.Configure<Sieve.Models.SieveOptions>(_ => { });
+        services.AddOrchestratorControlPlaneStorageEntityFramework(options => options.UseSqlite(connection));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationVersionRepository>();
+        var definitionId = Id.New();
+        var first = Version(definitionId, 1); first.Status = OrchestrationVersionStatus.Deployed; first.VersionLabel = "First release";
+        var second = Version(definitionId, 2); second.Status = OrchestrationVersionStatus.Deployed; second.VersionLabel = "Second release";
+        var draft = Version(definitionId, 3); draft.Version = null; draft.VersionLabel = string.Empty;
+        first.CreatedOnUtc = DateTime.UtcNow.AddMinutes(-1); second.CreatedOnUtc = DateTime.UtcNow;
+        await repository.Create(first);
+        await repository.Create(second);
+        await repository.Create(draft);
+        var settings = new PagedSettings(1, 1, [],
+            [new QuerySort("createdOnUtc", true), new QuerySort("id", true)]);
+        var result = await repository.Search(definitionId, settings, "release");
+        Assert.Equal(2, result.TotalRows);
+        Assert.Equal(second.Id, Assert.Single(result.Rows).Id);
+        var byVersion = await repository.Search(definitionId, new PagedSettings(1, 10,
+            [], [new QuerySort("createdOnUtc", true)]), "1.0");
+        Assert.Equal(first.Id, Assert.Single(byVersion.Rows).Id);
+        var byDraft = await repository.Search(definitionId, new PagedSettings(1, 10, [], [new QuerySort("createdOnUtc", true)]), "dra");
+        Assert.Equal(draft.Id, Assert.Single(byDraft.Rows).Id);
+    }
+
     [Fact]
     public async Task OrchestrationSearchFiltersBeforePaging()
     {
