@@ -52,4 +52,8 @@ public interface ITeamRepository
     /// <summary>Searches and orders a page of teams in the backing store.</summary>
     Task<PagedResult<Team>> Search(int pageNumber, int pageSize, string searchText, string sort, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured team storage does not support catalog search.");
+
+    /// <summary>Searches active teams before applying paging.</summary>
+    Task<PagedResult<Team>> SearchActive(int pageNumber, int pageSize, string searchText, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured team storage does not support active team search.");
 }

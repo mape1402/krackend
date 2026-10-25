@@ -185,11 +185,9 @@ public sealed class IndexModel : PageModel
     {
         var rows = (await _domainService.GetAll(
             new GetDomainsQuery(
-                new DesignPagedSettings { PageNumber = 1, PageSize = 20 },
-                term ?? string.Empty),
+                new DesignPagedSettings { PageNumber = 1, PageSize = 20, Sorts = [new ApplicationSort("displayName", false), new ApplicationSort("key", false)] },
+                term ?? string.Empty, ActiveOnly: true),
             cancellationToken)).Rows
-            .Where(x => x.IsActive)
-            .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Select(x => new
             {
                 x.Id,
@@ -212,11 +210,9 @@ public sealed class IndexModel : PageModel
         var rows = (await _teamService.GetAll(
                 new GetTeamsQuery(
                     new SecurityPagedSettings { PageNumber = 1, PageSize = 20 },
-                    term ?? string.Empty),
+                    term ?? string.Empty, ActiveOnly: true),
                 cancellationToken))
             .Rows
-            .Where(x => x.IsActive)
-            .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Select(x => new
             {
                 x.Id,

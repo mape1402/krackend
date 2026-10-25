@@ -20,6 +20,36 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
 {
     [Fact]
+    public async Task ActiveSuggestionsFilterBeforeRelationalPaging()
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var services = new ServiceCollection();
+        services.AddOptions();
+        services.Configure<Sieve.Models.SieveOptions>(_ => { });
+        services.AddOrchestratorControlPlaneStorageEntityFramework(options => options.UseSqlite(connection));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>().Database.EnsureCreatedAsync();
+        var domains = scope.ServiceProvider.GetRequiredService<IDomainRepository>();
+        var teams = scope.ServiceProvider.GetRequiredService<Krackend.Sagas.Orchestrations.ControlPlane.Security.Storage.ITeamRepository>();
+        foreach (var (key, active) in new[] { ("match_1", false), ("match_2", true), ("match_3", true), ("other", true) })
+        {
+            await domains.Upsert(new Domain { Id = Id.New(), Key = key, DisplayName = key, Description = "", IsActive = active, CreatedOnUtc = DateTime.UtcNow });
+            await teams.Upsert(new Krackend.Sagas.Orchestrations.ControlPlane.Security.Core.Team { Id = Id.New(), Key = key, DisplayName = key, Description = "", IsActive = active, CreatedOnUtc = DateTime.UtcNow });
+        }
+
+        var settings = new PagedSettings(1, 1, [], [new QuerySort("displayName", false), new QuerySort("key", false)]);
+        var domainPage = await domains.SearchActive(settings, "match");
+        var teamPage = await teams.SearchActive(1, 1, "match");
+        Assert.Equal(2, domainPage.TotalRows);
+        Assert.Equal("match_2", Assert.Single(domainPage.Rows).Key);
+        Assert.Equal(2, teamPage.TotalRows);
+        Assert.Equal("match_2", Assert.Single(teamPage.Rows).Key);
+        Assert.Equal("match_3", Assert.Single((await teams.SearchActive(2, 1, "match")).Rows).Key);
+    }
+
+    [Fact]
     public async Task VersionSearchAndOrderingAreAppliedBeforeRelationalPaging()
     {
         await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");

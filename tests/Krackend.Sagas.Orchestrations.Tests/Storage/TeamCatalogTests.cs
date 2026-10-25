@@ -10,6 +10,28 @@ using Microsoft.EntityFrameworkCore;
 
 public sealed class TeamCatalogTests
 {
+    [Fact]
+    public async Task ActiveSuggestionsUsePagedSearchAndBatchedMemberCounts()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ControlPlaneDbContext>().UseSqlite(connection).Options;
+        await using var context = new ControlPlaneDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        var teams = new TeamRepository(context);
+        var members = new TeamMemberRepository(context);
+        var activeId = Id.New();
+        await teams.Upsert(new Team { Id = Id.New(), Key = "a", DisplayName = "Sale inactive", IsActive = false });
+        await teams.Upsert(new Team { Id = activeId, Key = "b", DisplayName = "Sale active", IsActive = true });
+        await members.Add(new TeamMember { Id = Id.New(), TeamId = activeId, ExternalUserId = "user" });
+
+        var handler = new GetTeamsQueryHandler(teams, members);
+        var result = await handler.Handle(new GetTeamsQuery(new ApplicationPagedSettings { PageNumber = 1, PageSize = 1 }, "Sale", ActiveOnly: true), default);
+        Assert.Equal(1, result.TotalRows);
+        Assert.Equal(1, Assert.Single(result.Rows).MemberCount);
+        Assert.Equal("b", result.Rows.Single().Key);
+    }
+
     [Theory]
     [InlineData("key", false)]
     [InlineData("key", true)]

@@ -25,20 +25,23 @@ public sealed class GetTeamsQueryHandler : IRequestHandler<GetTeamsQuery, Applic
     /// <inheritdoc />
     public async Task<ApplicationPagedResult<TeamModel>> Handle(GetTeamsQuery request, CancellationToken cancellationToken)
     {
-        var paged = request.Catalog
+        var paged = request.ActiveOnly
+            ? await _teamRepository.SearchActive(request.PagedSettings.PageNumber, request.PagedSettings.PageSize,
+                request.SearchText, cancellationToken)
+            : request.Catalog
             ? await _teamRepository.Search(request.PagedSettings.PageNumber, request.PagedSettings.PageSize,
                 request.SearchText, request.Sort, request.Descending, cancellationToken)
             : await _teamRepository.GetAll(request.PagedSettings.PageNumber, request.PagedSettings.PageSize,
                 request.SearchText, cancellationToken);
 
-        var counts = request.Catalog
+        var counts = request.Catalog || request.ActiveOnly
             ? await _teamMemberRepository.CountByTeams(paged.Rows.Select(team => team.Id).ToArray(), cancellationToken)
             : null;
 
         var rows = new List<TeamModel>();
         foreach (var team in paged.Rows)
         {
-            var count = request.Catalog
+            var count = request.Catalog || request.ActiveOnly
                 ? counts.GetValueOrDefault(team.Id)
                 : (await _teamMemberRepository.GetByTeam(team.Id, cancellationToken)).Count;
             rows.Add(new TeamModel

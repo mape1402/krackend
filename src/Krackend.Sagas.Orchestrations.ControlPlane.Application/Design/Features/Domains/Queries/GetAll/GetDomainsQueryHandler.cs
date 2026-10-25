@@ -25,16 +25,16 @@ public sealed class GetDomainsQueryHandler : IRequestHandler<GetDomainsQuery, Ap
     /// <inheritdoc />
     public async Task<ApplicationPagedResult<DomainModel>> Handle(GetDomainsQuery request, CancellationToken cancellationToken)
     {
-        var paged = await _repository.GetAll(
-            new PagedSettings(
+        var settings = new PagedSettings(
                 request.PagedSettings.PageNumber,
                 request.PagedSettings.PageSize,
                 request.PagedSettings.Filters?.Select(x => new QueryFilter(x.Field, x.Operator, x.Value)).ToArray()
                     ?? Array.Empty<QueryFilter>(),
                 request.PagedSettings.Sorts?.Select(x => new QuerySort(x.Field, x.Descending)).ToArray()
-                    ?? Array.Empty<QuerySort>()),
-            request.SearchText,
-            cancellationToken);
+                    ?? Array.Empty<QuerySort>());
+        var paged = request.ActiveOnly
+            ? await _repository.SearchActive(settings, request.SearchText, cancellationToken)
+            : await _repository.GetAll(settings, request.SearchText, cancellationToken);
 
         return _mapper.ToPagedModel(paged);
     }

@@ -10,4 +10,5 @@ public sealed record GetTeamsQuery(
     string SearchText = "",
     bool Catalog = false,
     string Sort = "",
-    bool Descending = false) : IRequest<ApplicationPagedResult<TeamModel>>;
+    bool Descending = false,
+    bool ActiveOnly = false) : IRequest<ApplicationPagedResult<TeamModel>>;

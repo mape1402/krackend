@@ -626,6 +626,21 @@ public sealed class ControlPlaneApplicationHandlersTests
     }
 
     [Fact]
+    public async Task GetDomainsQueryHandlerForwardsActiveSearchToStorage()
+    {
+        var repository = Substitute.For<IDomainRepository>();
+        repository.SearchActive(Arg.Any<PagedSettings>(), "sale", Arg.Any<CancellationToken>())
+            .Returns(new Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage.PagedResult<Domain>(1, 1, 1, 20,
+                [new Domain { Id = Id.New(), Key = "sales", DisplayName = "Sales", IsActive = true }]));
+        var handler = new GetDomainsQueryHandler(repository, new DomainApplicationMapper());
+        var result = await handler.Handle(new GetDomainsQuery(
+            new Krackend.Sagas.Orchestrations.ControlPlane.Application.Design.ApplicationPagedSettings { PageNumber = 1, PageSize = 20 }, "sale", true), CancellationToken.None);
+        Assert.Equal("sales", Assert.Single(result.Rows).Key);
+        await repository.Received(1).SearchActive(Arg.Any<PagedSettings>(), "sale", Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().GetAll(Arg.Any<PagedSettings>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void DefinitionMappersProjectStageTaskVariableTriggerParallelGroupAndBranchRuleModels()
     {
         var versionId = Id.New();

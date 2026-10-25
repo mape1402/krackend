@@ -47,4 +47,8 @@ public interface IDomainRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged result.</returns>
     Task<PagedResult<Domain>> GetAll(PagedSettings pagedSettings, string searchText = "", CancellationToken cancellationToken = default);
+
+    /// <summary>Searches active domains before applying paging.</summary>
+    Task<PagedResult<Domain>> SearchActive(PagedSettings pagedSettings, string searchText = "", CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured domain storage does not support active domain search.");
 }

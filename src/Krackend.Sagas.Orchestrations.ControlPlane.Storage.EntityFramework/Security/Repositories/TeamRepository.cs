@@ -107,9 +107,18 @@ public sealed class TeamRepository : ITeamRepository
     }
 
     /// <inheritdoc />
-    public async Task<PagedResult<Team>> Search(int pageNumber, int pageSize, string searchText, string sort, bool descending, CancellationToken cancellationToken = default)
+    public Task<PagedResult<Team>> Search(int pageNumber, int pageSize, string searchText, string sort, bool descending, CancellationToken cancellationToken = default)
+        => Search(pageNumber, pageSize, searchText, sort, descending, false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<PagedResult<Team>> SearchActive(int pageNumber, int pageSize, string searchText, CancellationToken cancellationToken = default)
+        => Search(pageNumber, pageSize, searchText, "", false, true, cancellationToken);
+
+    private async Task<PagedResult<Team>> Search(int pageNumber, int pageSize, string searchText, string sort, bool descending, bool activeOnly, CancellationToken cancellationToken)
     {
         var query = _dbContext.Teams.AsNoTracking();
+        if (activeOnly)
+            query = query.Where(x => x.IsActive);
         if (!string.IsNullOrWhiteSpace(searchText))
         {
             var term = searchText.Trim();

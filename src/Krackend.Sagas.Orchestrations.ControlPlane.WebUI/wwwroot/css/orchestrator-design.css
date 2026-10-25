@@ -474,7 +474,7 @@ main.container {
     overflow-y: auto;
     border: 1px solid var(--od-border);
     border-radius: 0.5rem;
-    background: #fff;
+    background: var(--od-surface);
     padding: 0.4rem 0.5rem;
 }
 
@@ -1577,7 +1577,7 @@ main.container {
     margin-top: 0.25rem;
     border: 1px solid var(--od-border);
     border-radius: 0.5rem;
-    background: #fff;
+    background: var(--od-surface);
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.13);
     max-height: 240px;
     overflow-y: auto;
@@ -1595,12 +1595,12 @@ main.container {
 }
 
 .od-autocomplete-item:hover {
-    background: #eef2ff;
+    background: var(--od-surface-2);
 }
 
 .od-autocomplete-item:focus {
     outline: none;
-    background: #eef2ff;
+    background: var(--od-surface-2);
 }
 
 .od-autocomplete-status {

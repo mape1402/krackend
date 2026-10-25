@@ -7,4 +7,5 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 /// </summary>
 public sealed record GetDomainsQuery(
     ApplicationPagedSettings PagedSettings,
-    string SearchText = "") : IRequest<ApplicationPagedResult<DomainModel>>;
+    string SearchText = "",
+    bool ActiveOnly = false) : IRequest<ApplicationPagedResult<DomainModel>>;

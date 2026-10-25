@@ -80,10 +80,20 @@ public sealed class DomainRepository : IDomainRepository
     }
 
     /// <inheritdoc />
-    public async Task<PagedResult<Domain>> GetAll(PagedSettings pagedSettings, string searchText = "", CancellationToken cancellationToken = default)
+    public Task<PagedResult<Domain>> GetAll(PagedSettings pagedSettings, string searchText = "", CancellationToken cancellationToken = default)
+        => Search(pagedSettings, searchText, false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<PagedResult<Domain>> SearchActive(PagedSettings pagedSettings, string searchText = "", CancellationToken cancellationToken = default)
+        => Search(pagedSettings, searchText, true, cancellationToken);
+
+    private async Task<PagedResult<Domain>> Search(PagedSettings pagedSettings, string searchText, bool activeOnly, CancellationToken cancellationToken)
     {
         var sieveModel = pagedSettings.ToSieveModel();
         var query = _dbContext.Domains.AsNoTracking().AsQueryable();
+
+        if (activeOnly)
+            query = query.Where(x => x.IsActive);
 
         if (!string.IsNullOrWhiteSpace(searchText))
         {

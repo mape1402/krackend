@@ -98,6 +98,8 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         Assert.Equal("sales", domainJson.RootElement[0].GetProperty("Key").GetString());
         Assert.Single(teamJson.RootElement.EnumerateArray());
         Assert.Equal("team-a", teamJson.RootElement[0].GetProperty("Key").GetString());
+        await fixture.DomainService.Received().GetAll(Arg.Is<GetDomainsQuery>(q => q.ActiveOnly && q.SearchText == "sa" && q.PagedSettings.Sorts.First().Field == "displayName"), Arg.Any<CancellationToken>());
+        await fixture.TeamService.Received().GetAll(Arg.Is<GetTeamsQuery>(q => q.ActiveOnly && q.SearchText == "te"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -384,13 +386,9 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
                 .Returns("review-1");
 
             DomainService.GetAll(Arg.Any<GetDomainsQuery>(), Arg.Any<CancellationToken>())
-                .Returns(DomainsPage(
-                    new DomainModel { Id = "domain-1", Key = "sales", DisplayName = "Sales", Description = "Sales domain", IsActive = true },
-                    new DomainModel { Id = "domain-2", Key = "inactive", DisplayName = "Inactive", IsActive = false }));
+                .Returns(DomainsPage(new DomainModel { Id = "domain-1", Key = "sales", DisplayName = "Sales", Description = "Sales domain", IsActive = true }));
             TeamService.GetAll(Arg.Any<GetTeamsQuery>(), Arg.Any<CancellationToken>())
-                .Returns(TeamsPage(
-                    new TeamModel { Id = "team-1", Key = "team-a", DisplayName = "Team A", IsActive = true },
-                    new TeamModel { Id = "team-2", Key = "team-b", DisplayName = "Team B", IsActive = false }));
+                .Returns(TeamsPage(new TeamModel { Id = "team-1", Key = "team-a", DisplayName = "Team A", IsActive = true }));
         }
 
         public OrchestrationsIndexPageModel CreateIndexPage()
