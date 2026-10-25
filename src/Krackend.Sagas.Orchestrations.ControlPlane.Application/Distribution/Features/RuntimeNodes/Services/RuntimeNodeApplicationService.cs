@@ -118,13 +118,31 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
     public async Task<ApplicationPagedResult<RuntimeNodeModel>> GetAll(ApplicationPagedSettings settings, CancellationToken cancellationToken = default)
     {
         var result = await _repository.GetAll(new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), cancellationToken);
+        return MapPage(result);
+    }
+
+    public async Task<ApplicationPagedResult<RuntimeNodeModel>> Search(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.Search(new PagedSettings(settings.PageNumber, settings.PageSize, [], []), search, sort, descending, cancellationToken);
+        return MapPage(result);
+    }
+
+    public async Task<RuntimeNodeModel> GetById(string runtimeNodeId, CancellationToken cancellationToken = default)
+        => Map(await _repository.GetById(new Id(Ulid.Parse(runtimeNodeId)), cancellationToken));
+
+    private static ApplicationPagedResult<RuntimeNodeModel> MapPage(PagedResult<RuntimeNode> result)
+    {
         return new ApplicationPagedResult<RuntimeNodeModel>
         {
             PageNumber = result.PageNumber,
             PageSize = result.PageSize,
             TotalRows = (int)result.TotalRows,
             TotalPages = result.TotalPages,
-            Rows = result.Rows.Select(x => new RuntimeNodeModel
+            Rows = result.Rows.Select(Map).ToArray()
+        };
+    }
+
+    private static RuntimeNodeModel Map(RuntimeNode x) => new()
             {
                 Id = x.Id.ToString(), Name = x.Name, Code = x.Code,
                 EnvironmentId = x.EnvironmentId.ToString(), EnvironmentName = x.EnvironmentName, EnvironmentCode = x.EnvironmentCode,
@@ -141,9 +159,7 @@ public sealed class RuntimeNodeApplicationService : IRuntimeNodeApplicationServi
                 OutboundClientId = x.OutboundClientId, OutboundKeyId = x.OutboundKeyId, OutboundRequestedScopes = x.OutboundRequestedScopes,
                 OutboundCredentialImportedAtUtc = x.OutboundCredentialImportedAtUtc, OutboundLastTokenReceivedAtUtc = x.OutboundLastTokenReceivedAtUtc,
                 LastUpdatedAtUtc = x.LastUpdatedAtUtc
-            }).ToArray()
-        };
-    }
+            };
 
     private static Id ResolveEnvironmentId(string environmentId, RuntimeNode existing)
     {

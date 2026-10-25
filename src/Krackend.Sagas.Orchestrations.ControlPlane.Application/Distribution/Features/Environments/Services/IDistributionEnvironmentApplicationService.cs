@@ -25,4 +25,8 @@ public interface IDistributionEnvironmentApplicationService
     Task<ApplicationPagedResult<DistributionEnvironmentModel>> Search(ApplicationPagedSettings settings, string search, string sort,
         bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured environment service does not support catalog search.");
+
+    /// <summary>Searches enabled environments for selection.</summary>
+    Task<ApplicationPagedResult<DistributionEnvironmentModel>> SearchEnabled(ApplicationPagedSettings settings, string search, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured environment service does not support enabled environment search.");
 }

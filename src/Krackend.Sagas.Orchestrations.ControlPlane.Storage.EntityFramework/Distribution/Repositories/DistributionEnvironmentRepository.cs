@@ -80,12 +80,21 @@ public sealed class DistributionEnvironmentRepository : IDistributionEnvironment
     }
 
     /// <inheritdoc />
-    public async Task<PagedResult<DistributionEnvironment>> Search(PagedSettings settings, string search, string sort, bool descending,
+    public Task<PagedResult<DistributionEnvironment>> Search(PagedSettings settings, string search, string sort, bool descending,
         CancellationToken cancellationToken = default)
+        => SearchCore(settings, search, sort, descending, false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<PagedResult<DistributionEnvironment>> SearchEnabled(PagedSettings settings, string search, CancellationToken cancellationToken = default)
+        => SearchCore(settings, search, null, false, true, cancellationToken);
+
+    private async Task<PagedResult<DistributionEnvironment>> SearchCore(PagedSettings settings, string search, string sort, bool descending,
+        bool enabledOnly, CancellationToken cancellationToken)
     {
         var page = Math.Max(1, settings?.PageNumber ?? 1);
         var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
         var query = _dbContext.DistributionEnvironments.AsNoTracking();
+        if (enabledOnly) query = query.Where(x => x.IsEnabled);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();

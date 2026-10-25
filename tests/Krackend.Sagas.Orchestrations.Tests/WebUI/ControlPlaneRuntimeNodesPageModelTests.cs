@@ -13,14 +13,33 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ControlPlaneRuntimeNodesPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsRuntimeNodes()
+    public async Task OnGetListLoadsRuntimeNodes()
     {
         var page = CreatePage([CreateNode("node-1")]);
 
         await page.OnGetAsync();
 
-        Assert.Single(page.Rows);
-        Assert.Equal("node-1", page.Rows.Single().Id);
+        Assert.IsType<JsonResult>(await page.OnGetListAsync());
+        Assert.IsType<JsonResult>(await page.OnGetEnvironmentOptionsAsync(1, "Dev"));
+    }
+
+    [Theory]
+    [InlineData("HybridSync", "Active", "Active", "Ready")]
+    [InlineData("HybridSync", "Missing", "Missing", "Missing both")]
+    [InlineData("HybridSync", "Active", "Missing", "Missing Runtime")]
+    [InlineData("HybridSync", "Missing", "Active", "Missing Design")]
+    [InlineData("RuntimeFetchesFromDesign", "Active", "Missing", "Ready")]
+    [InlineData("RuntimeFetchesFromDesign", "Missing", "Active", "Missing Design")]
+    [InlineData("DesignPublishesToRuntime", "Missing", "Active", "Ready")]
+    [InlineData("DesignPublishesToRuntime", "Active", "Missing", "Missing Runtime")]
+    [InlineData("Unknown", "Missing", "Missing", "Not required")]
+    public void CatalogShowsCredentialReadiness(string mode, string inbound, string outbound, string expected)
+    {
+        var node = CreateNode("node-1");
+        node.DistributionMode = mode;
+        node.InboundCredentialStatus = inbound;
+        node.OutboundCredentialStatus = outbound;
+        Assert.Equal(expected, InvokePrivateStatic<string>(typeof(RuntimeNodesIndexModel), "CredentialReadinessLabel", node));
     }
 
     [Fact]
@@ -67,7 +86,6 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
         var invalid = await page.OnPostUpsertAsync();
 
         Assert.IsType<PageResult>(invalid);
-        Assert.Single(page.Rows);
     }
 
     [Fact]
@@ -463,6 +481,12 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
                 TotalPages = 1,
                 Rows = _nodes.ToArray()
             });
+
+        public Task<ApplicationPagedResult<RuntimeNodeModel>> Search(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+            => GetAll(settings, cancellationToken);
+
+        public Task<RuntimeNodeModel> GetById(string runtimeNodeId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_nodes.FirstOrDefault(x => x.Id == runtimeNodeId));
     }
 
     private sealed class FakeRuntimeNodeConnectionApplicationService : IRuntimeNodeConnectionApplicationService
@@ -556,6 +580,9 @@ public sealed class ControlPlaneRuntimeNodesPageModelTests
                     }
                 ]
             });
+
+        public Task<ApplicationPagedResult<DistributionEnvironmentModel>> SearchEnabled(ApplicationPagedSettings settings, string search, CancellationToken cancellationToken = default)
+            => GetAll(settings, cancellationToken);
     }
 
     private sealed class InMemoryTempDataProvider : ITempDataProvider

@@ -66,6 +66,7 @@ public sealed class ControlPlaneRuntimeNodeTests
         var mapped = await service.GetAll(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 });
         Assert.Single(mapped.Rows);
         Assert.Equal("Enabled", mapped.Rows.Single().Status);
+        Assert.Equal("Enabled", (await service.GetById(id)).Status);
 
         await service.SetStatus(id, RuntimeNodeStatus.Suspend);
         await service.SetStatus(id, RuntimeNodeStatus.Pending);

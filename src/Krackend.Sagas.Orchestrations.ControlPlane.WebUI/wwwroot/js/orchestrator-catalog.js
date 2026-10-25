@@ -33,6 +33,50 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'runtime-nodes') {
+            const group = document.createElement('div');
+            group.className = 'od-catalog-actions';
+            group.dataset.runtimeNode = 'true';
+            Object.entries(item.node).forEach(([key, value]) => { group.dataset[key] = value ?? ''; });
+            const configure = button('bi-gear', `Configure ${item.displayName}`);
+            configure.classList.add('js-open-runtime-node-setup-card');
+            const details = button('bi-eye', `Details for ${item.displayName}`);
+            details.classList.add('js-open-runtime-node-view');
+            const dropdown = document.createElement('div');
+            dropdown.className = 'dropdown';
+            const toggle = button('bi-three-dots-vertical', `Actions for ${item.displayName}`);
+            toggle.dataset.bsToggle = 'dropdown';
+            toggle.setAttribute('aria-expanded', 'false');
+            const menu = document.createElement('ul');
+            menu.className = 'dropdown-menu dropdown-menu-end';
+            const entry = (text, formId, fields = {}, danger = false) => {
+                const li = document.createElement('li');
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = `dropdown-item${danger ? ' text-danger' : ''}`;
+                action.textContent = text;
+                action.addEventListener('click', () => {
+                    const target = document.getElementById(formId);
+                    target.elements.runtimeNodeId.value = item.id;
+                    Object.entries(fields).forEach(([key, value]) => { target.elements[key].value = value; });
+                    target.requestSubmit();
+                });
+                li.append(action);
+                menu.append(li);
+            };
+            if (item.node.status === 'Pending' || item.node.status === 'Enabled')
+                entry('Suspend node', 'runtime-node-status-form', { status: 'Suspend' });
+            if (item.node.status === 'Suspend') {
+                entry('Mark pending', 'runtime-node-status-form', { status: 'Pending' });
+                entry('Enable node', 'runtime-node-status-form', { status: 'Enabled' });
+            }
+            if (item.node.status === 'Enabled' && ['DesignPublishesToRuntime', 'HybridSync'].includes(item.node.distributionMode))
+                entry('Check connection', 'runtime-node-check-form');
+            entry('Delete node', 'runtime-node-delete-form', {}, true);
+            dropdown.append(toggle, menu);
+            group.append(configure, details, dropdown);
+            return group;
+        }
         if (kind === 'teams') {
             const group = document.createElement('div');
             group.className = 'od-catalog-actions';
@@ -232,6 +276,16 @@
             details.textContent = [item.domain && `Domain: ${item.domain}`, item.ownerTeam && `Team: ${item.ownerTeam}`].filter(Boolean).join(' · ');
             card.append(details);
         }
+        if (kind === 'runtime-nodes') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = [item.environment, item.node.distributionModeLabel].filter(Boolean).join(' | ');
+            card.append(details);
+            const readiness = document.createElement('p');
+            readiness.className = 'od-item-meta';
+            readiness.textContent = `Credentials: ${item.credentials} | Endpoint: ${item.endpoint}`;
+            card.append(readiness);
+        }
         if (kind === 'reviews') {
             const details = document.createElement('p');
             details.className = 'od-item-meta';
@@ -302,6 +356,11 @@
         searchTimer = setTimeout(() => load(true), 200);
     });
     sort.addEventListener('change', () => load(true));
+    if (kind === 'runtime-nodes') document.addEventListener('krackend:runtime-node-updated', () => {
+        grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
+        if (!cardView.hidden) load(true);
+        else page = 0;
+    });
     more.addEventListener('click', () => load(false));
     if ('IntersectionObserver' in window) {
         new IntersectionObserver(entries => {

@@ -7,10 +7,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.Or
 
 public sealed class IndexModel : PageModel
 {
-    private const int RuntimeNodePageSize = 100;
-    private const int EnvironmentPageSize = 200;
-    private const int MaxPageReads = 50;
-
     private readonly IRuntimeNodeApplicationService _service;
     private readonly IRuntimeNodeConnectionApplicationService _connectionService;
     private readonly IDistributionEnvironmentApplicationService _environmentService;
@@ -25,8 +21,6 @@ public sealed class IndexModel : PageModel
         _environmentService = environmentService;
     }
 
-    public IReadOnlyCollection<RuntimeNodeModel> Rows { get; private set; } = Array.Empty<RuntimeNodeModel>();
-    public IReadOnlyCollection<DistributionEnvironmentModel> Environments { get; private set; } = Array.Empty<DistributionEnvironmentModel>();
     [BindProperty] public RuntimeNodeInput Input { get; set; } = new();
     [BindProperty] public RuntimeNodeCredentialsInput Credentials { get; set; } = new();
     public IReadOnlyCollection<RuntimeNodeDistributionModeOption> DistributionModeOptions { get; } =
@@ -53,14 +47,50 @@ public sealed class IndexModel : PageModel
     public string GeneratedCredentialsJson { get; private set; } = string.Empty;
     public string GeneratedCredentialsNodeName { get; private set; } = string.Empty;
 
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public async Task<IActionResult> OnGetEnvironmentOptionsAsync([FromQuery(Name = "page")] int page = 1, string search = null, CancellationToken cancellationToken = default)
     {
-        Rows = await LoadAll(
-            settings => _service.GetAll(settings, cancellationToken),
-            RuntimeNodePageSize);
-        Environments = await LoadAll(
-            settings => _environmentService.GetAll(settings, cancellationToken),
-            EnvironmentPageSize);
+        try
+        {
+            var result = await _environmentService.SearchEnabled(new ApplicationPagedSettings { PageNumber = Math.Max(1, page), PageSize = 25 }, search?.Trim(), cancellationToken);
+            return new JsonResult(new { items = result.Rows.Select(x => new { id = x.Id, name = x.Name, code = x.Code }),
+                hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows });
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured environment storage does not support searching enabled environments.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Environments could not be loaded. Try again in a moment.");
+        }
+    }
+
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await _service.Search(new ApplicationPagedSettings { PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100) },
+                search?.Trim(), sort, descending, cancellationToken);
+            return new JsonResult(new
+            {
+                items = result.Rows.Select(x => new { id = x.Id, key = x.Code, displayName = x.Name, environment = x.EnvironmentName,
+                    description = x.Description, status = ReadableLabel(x.Status), isActive = x.IsEnabled,
+                    credentials = CredentialReadinessLabel(x), endpoint = EndpointReadinessLabel(x), node = ToClientNode(x) }),
+                totalCount = result.TotalRows, hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+            });
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured runtime node storage does not support catalog search.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Runtime nodes could not be loaded. Try again in a moment.");
+        }
     }
 
     public async Task<IActionResult> OnPostUpsertAsync(CancellationToken cancellationToken = default)
@@ -125,6 +155,7 @@ public sealed class IndexModel : PageModel
                 ResolveCurrentBaseUrl(),
                 cancellationToken);
             GeneratedCredentialsJson = credentials.Json;
+            GeneratedCredentialsNodeName = (await _service.GetById(runtimeNodeId, cancellationToken))?.Name ?? "Runtime node";
             SetMessage("Credentials generated", "Copy these credentials now. The secret is shown only in this response.", "success");
         }
         catch (Exception ex)
@@ -133,7 +164,6 @@ public sealed class IndexModel : PageModel
         }
 
         await OnGetAsync(cancellationToken);
-        GeneratedCredentialsNodeName = Rows.FirstOrDefault(x => x.Id == runtimeNodeId)?.Name ?? "Runtime node";
         return Page();
     }
 
@@ -345,35 +375,8 @@ public sealed class IndexModel : PageModel
 
     private async Task<RuntimeNodeModel> GetRuntimeNode(string runtimeNodeId, CancellationToken cancellationToken)
     {
-        var rows = await LoadAll(
-            settings => _service.GetAll(settings, cancellationToken),
-            RuntimeNodePageSize);
-        return rows.FirstOrDefault(x => string.Equals(x.Id, runtimeNodeId, StringComparison.Ordinal))
+        return await _service.GetById(runtimeNodeId, cancellationToken)
             ?? throw new InvalidOperationException("Runtime node was not found.");
-    }
-
-    private static async Task<TModel[]> LoadAll<TModel>(
-        Func<ApplicationPagedSettings, Task<ApplicationPagedResult<TModel>>> loadPage,
-        int pageSize)
-    {
-        var rows = new List<TModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
-        {
-            var result = await loadPage(new ApplicationPagedSettings
-            {
-                PageNumber = pageNumber,
-                PageSize = pageSize
-            });
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
-        }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-        return rows.ToArray();
     }
 
     private string BuildModelStateMessage()
@@ -433,6 +436,23 @@ public sealed class IndexModel : PageModel
             registeredAt = DateOrDash(node.RegisteredAtUtc),
             lastUpdatedAt = DateOrDash(node.LastUpdatedAtUtc)
         };
+
+    private static string CredentialReadinessLabel(RuntimeNodeModel item)
+    {
+        var needsDesign = item.DistributionMode is "RuntimeFetchesFromDesign" or "HybridSync";
+        var needsRuntime = item.DistributionMode is "DesignPublishesToRuntime" or "HybridSync";
+        var designReady = item.InboundCredentialStatus == "Active";
+        var runtimeReady = item.OutboundCredentialStatus == "Active";
+        if (needsDesign && needsRuntime)
+            return designReady && runtimeReady ? "Ready" : !designReady && !runtimeReady ? "Missing both" : designReady ? "Missing Runtime" : "Missing Design";
+        if (needsDesign) return designReady ? "Ready" : "Missing Design";
+        if (needsRuntime) return runtimeReady ? "Ready" : "Missing Runtime";
+        return "Not required";
+    }
+
+    private static string EndpointReadinessLabel(RuntimeNodeModel item)
+        => item.DistributionMode == "RuntimeFetchesFromDesign" ? "Not required" :
+            string.IsNullOrWhiteSpace(item.EndpointBaseUri) ? "-" : item.EndpointBaseUri;
 
     private static string DateOrDash(DateTime? value)
         => value.HasValue ? value.Value.ToString("yyyy-MM-dd HH:mm:ss") : "-";

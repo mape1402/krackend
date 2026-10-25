@@ -126,6 +126,35 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
         return new PagedResult<RuntimeNode>(pagedSettings.PageNumber, totalPages, totalRows, pagedSettings.PageSize, rows.Select(Map).ToArray());
     }
 
+    /// <inheritdoc />
+    public async Task<PagedResult<RuntimeNode>> Search(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, settings?.PageNumber ?? 1);
+        var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
+        var query = _dbContext.RuntimeNodes.AsNoTracking().Include(x => x.Environment).Where(x => !x.IsDeleted);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x => x.Name.Contains(term) || x.Code.Contains(term) ||
+                (x.Description != null && x.Description.Contains(term)) ||
+                (x.Environment != null && (x.Environment.Name.Contains(term) || x.Environment.Code.Contains(term))));
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var ordered = (sort, descending) switch
+        {
+            ("key", false) => query.OrderBy(x => x.Code),
+            ("key", true) => query.OrderByDescending(x => x.Code),
+            ("environment", false) => query.OrderBy(x => x.Environment.Name),
+            ("environment", true) => query.OrderByDescending(x => x.Environment.Name),
+            ("status", false) => query.OrderBy(x => x.Status),
+            ("status", true) => query.OrderByDescending(x => x.Status),
+            (_, true) => query.OrderByDescending(x => x.Name),
+            _ => query.OrderBy(x => x.Name)
+        };
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<RuntimeNode>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size, rows.Select(Map).ToArray());
+    }
+
     private async Task EnsureActiveRuntimeNodeIsUnique(RuntimeNode runtimeNode, CancellationToken cancellationToken)
     {
         if (runtimeNode is null || runtimeNode.IsDeleted)

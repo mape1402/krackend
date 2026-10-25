@@ -64,6 +64,10 @@ public sealed class DistributionEnvironmentApplicationService : IDistributionEnv
         return Map(result);
     }
 
+    /// <inheritdoc />
+    public async Task<ApplicationPagedResult<DistributionEnvironmentModel>> SearchEnabled(ApplicationPagedSettings settings, string search, CancellationToken cancellationToken = default)
+        => Map(await _repository.SearchEnabled(new PagedSettings(settings.PageNumber, settings.PageSize, [], []), search, cancellationToken));
+
     private static ApplicationPagedResult<DistributionEnvironmentModel> Map(PagedResult<DistributionEnvironment> result)
     {
         return new ApplicationPagedResult<DistributionEnvironmentModel>

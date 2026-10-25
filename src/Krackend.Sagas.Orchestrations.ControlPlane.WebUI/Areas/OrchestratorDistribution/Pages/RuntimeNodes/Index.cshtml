@@ -1,5 +1,7 @@
 @page
 @using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.RuntimeNodes.IndexModel
 @{
     ViewData["Title"] = "Runtime Nodes";
@@ -13,143 +15,36 @@
     <button type="button" class="btn btn-primary js-open-runtime-node-setup" data-mode="create">Create runtime node</button>
 </div>
 
-@if (!Model.Rows.Any())
-{
-    <section class="od-panel">
-        <p class="od-empty">No runtime nodes found.</p>
-    </section>
-}
-else
-{
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-grid od-runtime-node-grid"
-             data-od-infinite-grid
-             data-od-infinite-label="runtime nodes"
-             data-od-infinite-initial-count="18"
-             data-od-infinite-batch-size="18">
-            @foreach (var item in Model.Rows)
-            {
-                var statusClass = RuntimeNodeStatusClass(item.Status);
-                var canCheckConnection = item.Status == "Enabled" && (item.DistributionMode is "DesignPublishesToRuntime" or "HybridSync");
-                var statusTransitions = RuntimeNodeStatusTransitions(item.Status);
-                var credentialReadiness = CredentialReadinessLabel(item);
-                var endpointReadiness = EndpointReadinessLabel(item);
-
-                <article class="od-item-card od-runtime-node-card od-infinite-item"
-                         data-runtime-node="true"
-                         data-id="@item.Id"
-                         data-name="@item.Name"
-                         data-code="@item.Code"
-                         data-environment-id="@item.EnvironmentId"
-                         data-environment-name="@item.EnvironmentName"
-                         data-environment-code="@item.EnvironmentCode"
-                         data-distribution-mode="@item.DistributionMode"
-                         data-distribution-mode-label="@DistributionModeLabel(item.DistributionMode)"
-                         data-distribution-mode-description="@DistributionModeDescription(item.DistributionMode)"
-                         data-endpoint-base-uri="@item.EndpointBaseUri"
-                         data-endpoint-api-path="@item.EndpointApiPath"
-                         data-status="@item.Status"
-                         data-status-label="@ReadableLabel(item.Status)"
-                         data-inbound-credential-status="@item.InboundCredentialStatus"
-                         data-inbound-credential-status-label="@ReadableLabel(item.InboundCredentialStatus)"
-                         data-outbound-credential-status="@item.OutboundCredentialStatus"
-                         data-outbound-credential-status-label="@ReadableLabel(item.OutboundCredentialStatus)"
-                         data-access-token-ttl-seconds="@item.AccessTokenTtlSeconds"
-                         data-token-refresh-skew-seconds="@item.TokenRefreshSkewSeconds"
-                         data-token-validation-cache-ttl-seconds="@item.TokenValidationCacheTtlSeconds"
-                         data-inbound-client-id="@item.InboundClientId"
-                         data-inbound-key-id="@item.InboundKeyId"
-                         data-inbound-allowed-scopes="@item.InboundAllowedScopes"
-                         data-inbound-credential-created-at="@DateOrDash(item.InboundCredentialCreatedAtUtc)"
-                         data-inbound-credential-rotated-at="@DateOrDash(item.InboundCredentialRotatedAtUtc)"
-                         data-inbound-credential-revoked-at="@DateOrDash(item.InboundCredentialRevokedAtUtc)"
-                         data-inbound-last-token-issued-at="@DateOrDash(item.InboundLastTokenIssuedAtUtc)"
-                         data-inbound-last-token-failed-at="@DateOrDash(item.InboundLastTokenFailedAtUtc)"
-                         data-inbound-last-failure-reason="@item.InboundLastFailureReason"
-                         data-outbound-client-id="@item.OutboundClientId"
-                         data-outbound-key-id="@item.OutboundKeyId"
-                         data-outbound-requested-scopes="@item.OutboundRequestedScopes"
-                         data-outbound-credential-imported-at="@DateOrDash(item.OutboundCredentialImportedAtUtc)"
-                         data-outbound-last-token-received-at="@DateOrDash(item.OutboundLastTokenReceivedAtUtc)"
-                         data-is-enabled="@item.IsEnabled"
-                         data-is-deleted="@item.IsDeleted"
-                         data-deleted-at="@DateOrDash(item.DeletedAtUtc)"
-                         data-description="@item.Description"
-                         data-registered-at="@DateOrDash(item.RegisteredAtUtc)"
-                         data-last-updated-at="@DateOrDash(item.LastUpdatedAtUtc)">
-                    <div class="od-item-top">
-                        <div>
-                            <h2 class="od-item-title">@item.Name</h2>
-                            <p class="od-item-meta">@item.Code | @TextOrDash(item.EnvironmentName)</p>
-                        </div>
-                        <div class="d-flex align-items-start gap-2">
-                            <span class="@statusClass">@ReadableLabel(item.Status)</span>
-                            <div class="dropdown">
-                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    @foreach (var transition in statusTransitions)
-                                    {
-                                        <li>
-                                            <form method="post" asp-page-handler="SetStatus" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating runtime node" data-busy-message="Distribution is applying the runtime node status change.">
-                                                <input type="hidden" name="runtimeNodeId" value="@item.Id" />
-                                                <input type="hidden" name="status" value="@transition.Status" />
-                                                <button type="submit" class="dropdown-item">@transition.Label</button>
-                                            </form>
-                                        </li>
-                                    }
-                                    <li data-check-connection-action="true" class="@(canCheckConnection ? string.Empty : "d-none")">
-                                        <form method="post" asp-page-handler="ValidateConnection" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Checking connection" data-busy-message="Design is requesting a token from Runtime and checking the secured endpoint.">
-                                            <input type="hidden" name="runtimeNodeId" value="@item.Id" />
-                                            <button type="submit" class="dropdown-item">Check connection</button>
-                                        </form>
-                                    </li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    <li>
-                                        <form method="post" asp-page-handler="Delete" class="od-inline-form" data-confirm="true" data-confirm-title="Delete runtime node" data-confirm-message="Delete this runtime node from active configuration? Existing release references will be preserved." data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting runtime node" data-busy-message="Distribution is removing the runtime node from active configuration.">
-                                            <input type="hidden" name="runtimeNodeId" value="@item.Id" />
-                                            <button type="submit" class="dropdown-item text-danger">Delete node</button>
-                                        </form>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="od-runtime-card-summary">
-                        <div>
-                            <span>Environment</span>
-                            <strong>@TextOrDash(item.EnvironmentName)</strong>
-                        </div>
-                        <div>
-                            <span>Policy</span>
-                            <strong>@DistributionModeLabel(item.DistributionMode)</strong>
-                        </div>
-                        <div>
-                            <span>Credentials</span>
-                            <strong class="@CredentialReadinessClass(credentialReadiness)">@credentialReadiness</strong>
-                        </div>
-                        <div>
-                            <span>Endpoint</span>
-                            <strong>@endpointReadiness</strong>
-                        </div>
-                    </div>
-
-                    <p class="od-item-description" title="@item.Description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
-                    <p class="od-item-meta">Updated @DateOrDash(item.LastUpdatedAtUtc ?? item.RegisteredAtUtc)</p>
-
-                    <div class="od-card-actions">
-                        <button type="button" class="btn btn-outline-secondary btn-sm js-open-runtime-node-setup-card">Configure</button>
-                        <button type="button" class="btn btn-outline-primary btn-sm js-open-runtime-node-view">Details</button>
-                    </div>
-                </article>
-            }
+<form method="post" asp-page-handler="SetStatus" id="runtime-node-status-form" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /><input type="hidden" name="status" /></form>
+<form method="post" asp-page-handler="ValidateConnection" id="runtime-node-check-form" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /></form>
+<form method="post" asp-page-handler="Delete" id="runtime-node-delete-form" data-confirm="true" data-confirm-title="Delete runtime node" data-confirm-message="Delete this runtime node from active configuration? Existing release references will be preserved." data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /></form>
+<section class="od-catalog" data-catalog="runtime-nodes" data-label="runtime nodes" data-source="@Url.Page(null, "List")">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-catalog-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        {
+            Id = "runtime-nodes-grid", AriaLabel = "runtime nodes", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("displayName", "Name"), new("key", "Code"), new("environment", "Environment"), new("status", "Status"), new("credentials", "Credentials", false), new("endpoint", "Endpoint", false), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-catalog-cards hidden>
+        <div class="od-catalog-filters">
+            <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search runtime nodes" placeholder="Search runtime nodes" autocomplete="off" /></label>
+            <select class="form-select" data-catalog-sort aria-label="Sort runtime nodes">
+                <option value="displayName">Name: A to Z</option><option value="displayName:desc">Name: Z to A</option>
+                <option value="key">Code</option><option value="environment">Environment</option><option value="status">Status</option>
+            </select>
         </div>
-        <div class="od-infinite-scroll-status" data-od-infinite-status>
-            Showing <span data-od-infinite-count>@Math.Min(18, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> runtime nodes
-        </div>
-        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-    </section>
-}
+        <div class="od-grid" data-catalog-card-items></div>
+        <p class="od-empty" data-catalog-empty hidden>No matching runtime nodes.</p>
+        <p data-catalog-status aria-live="polite"></p><div data-catalog-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+    </div>
+</section>
 
 <div class="modal fade" id="runtimeNodeModal" tabindex="-1" aria-labelledby="runtimeNodeModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -176,13 +71,12 @@ else
                         </div>
                         <div class="col-md-6">
                             <label asp-for="Input.EnvironmentId" class="form-label">Environment</label>
+                            <input type="search" class="form-control mb-2" id="environmentSearchInput" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
                             <select asp-for="Input.EnvironmentId" class="form-select" id="environmentIdInput">
                                 <option value="">Select environment</option>
-                                @foreach (var environment in Model.Environments.Where(x => x.IsEnabled))
-                                {
-                                    <option value="@environment.Id">@environment.Name (@environment.Code)</option>
-                                }
                             </select>
+                            <button type="button" class="btn btn-link btn-sm px-0" id="environmentMoreButton" hidden>Load more environments</button>
+                            <div id="environmentSearchStatus" class="small" role="status"></div>
                             <span asp-validation-for="Input.EnvironmentId" class="text-danger"></span>
                         </div>
                         <div class="col-md-6">
@@ -321,13 +215,12 @@ else
                                     </div>
                                     <div class="col-md-6">
                                         <label for="setupBasicEnvironmentId" class="form-label">Environment</label>
+                                        <input type="search" class="form-control mb-2" id="setupEnvironmentSearch" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
                                         <select name="Input.EnvironmentId" class="form-select" id="setupBasicEnvironmentId">
                                             <option value="">Select environment</option>
-                                            @foreach (var environment in Model.Environments.Where(x => x.IsEnabled))
-                                            {
-                                                <option value="@environment.Id">@environment.Name (@environment.Code)</option>
-                                            }
                                         </select>
+                                        <button type="button" class="btn btn-link btn-sm px-0" id="setupEnvironmentMore" hidden>Load more environments</button>
+                                        <div id="setupEnvironmentStatus" class="small" role="status"></div>
                                     </div>
                                     <div class="col-md-6">
                                         <label for="setupBasicDescription" class="form-label">Description</label>
@@ -478,120 +371,9 @@ else
     </div>
 </div>
 
-@functions {
-    private static string TextOrDash(string value)
-        => string.IsNullOrWhiteSpace(value) ? "-" : value;
-
-    private static string DateOrDash(DateTime? value)
-        => value.HasValue ? value.Value.ToString("yyyy-MM-dd HH:mm:ss") : "-";
-
-    private static string DateOrDash(DateTime value)
-        => value.ToString("yyyy-MM-dd HH:mm:ss");
-
-    private static string DistributionModeLabel(string mode)
-        => mode switch
-        {
-            "DesignPublishesToRuntime" => "Design publishes releases",
-            "RuntimeFetchesFromDesign" => "Runtime imports releases",
-            "HybridSync" => "Both directions",
-            _ => TextOrDash(mode)
-        };
-
-    private static string DistributionModeDescription(string mode)
-        => mode switch
-        {
-            "DesignPublishesToRuntime" => "Design sends approved releases to Runtime using the Runtime credentials.",
-            "RuntimeFetchesFromDesign" => "Runtime owners import approved releases using credentials generated by Design.",
-            "HybridSync" => "Design can publish releases and Runtime can import them manually.",
-            _ => string.Empty
-        };
-
-    private static string ReadableLabel(string value)
-        => value switch
-        {
-            "NotActivated" => "Not activated",
-            "ActivationFailed" => "Activation failed",
-            _ => TextOrDash(value)
-        };
-
-    private static string RuntimeNodeStatusClass(string status)
-        => status switch
-        {
-            "Enabled" => "od-status od-status-active",
-            "Pending" => "od-status od-status-inreview",
-            "Suspend" => "od-status od-status-inactive",
-            _ => "od-status od-status-inactive"
-        };
-
-    private static IReadOnlyCollection<(string Status, string Label)> RuntimeNodeStatusTransitions(string status)
-        => status switch
-        {
-            "Pending" =>
-            [
-                ("Suspend", "Suspend node")
-            ],
-            "Suspend" =>
-            [
-                ("Pending", "Mark pending"),
-                ("Enabled", "Enable node")
-            ],
-            "Enabled" =>
-            [
-                ("Suspend", "Suspend node")
-            ],
-            _ => Array.Empty<(string Status, string Label)>()
-        };
-
-    private static string CredentialReadinessLabel(RuntimeNodeModel item)
-    {
-        var needsDesignCredentials = item.DistributionMode is "RuntimeFetchesFromDesign" or "HybridSync";
-        var needsRuntimeCredentials = item.DistributionMode is "DesignPublishesToRuntime" or "HybridSync";
-        var hasDesignCredentials = item.InboundCredentialStatus == "Active";
-        var hasRuntimeCredentials = item.OutboundCredentialStatus == "Active";
-
-        if (needsDesignCredentials && needsRuntimeCredentials)
-        {
-            return hasDesignCredentials && hasRuntimeCredentials
-                ? "Ready"
-                : !hasDesignCredentials && !hasRuntimeCredentials
-                    ? "Missing both"
-                    : hasDesignCredentials ? "Missing Runtime" : "Missing Design";
-        }
-
-        if (needsDesignCredentials)
-        {
-            return hasDesignCredentials ? "Ready" : "Missing Design";
-        }
-
-        if (needsRuntimeCredentials)
-        {
-            return hasRuntimeCredentials ? "Ready" : "Missing Runtime";
-        }
-
-        return "Not required";
-    }
-
-    private static string CredentialReadinessClass(string value)
-        => value switch
-        {
-            "Ready" => "od-runtime-card-ready",
-            "Not required" => "od-runtime-card-muted",
-            _ => "od-runtime-card-warning"
-        };
-
-    private static string EndpointReadinessLabel(RuntimeNodeModel item)
-    {
-        if (item.DistributionMode == "RuntimeFetchesFromDesign")
-        {
-            return "Not required";
-        }
-
-        return TextOrDash(item.EndpointBaseUri);
-    }
-
-}
 
 @section Scripts {
+<script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const basicModalElement = document.getElementById('runtimeNodeModal');
@@ -725,6 +507,60 @@ else
     const canCheckConnectionFor = (status, mode) =>
         status === 'Enabled' && (mode === 'DesignPublishesToRuntime' || mode === 'HybridSync');
 
+    const environmentPicker = (searchId, selectId, moreId, statusId) => {
+        const search = document.getElementById(searchId);
+        const select = document.getElementById(selectId);
+        const more = document.getElementById(moreId);
+        const status = document.getElementById(statusId);
+        let page = 0, request = null, timer = 0;
+        const load = async reset => {
+            if (reset) {
+                request?.abort();
+                page = 0;
+                const selected = select.selectedOptions[0];
+                select.replaceChildren(new Option('Select environment', ''));
+                if (selected?.value) select.add(selected);
+            }
+            const controller = new AbortController();
+            request = controller;
+            status.textContent = 'Loading environments...';
+            try {
+                const url = new URL(search.dataset.source, location.href);
+                url.searchParams.set('page', String(page + 1));
+                url.searchParams.set('search', search.value.trim());
+                const response = await fetch(url, { signal: controller.signal });
+                if (!response.ok) throw new Error('Environments could not be loaded.');
+                const result = await response.json();
+                if (request !== controller) return;
+                result.items.forEach(item => {
+                    if (![...select.options].some(option => option.value === item.id))
+                        select.add(new Option(`${item.name} (${item.code})`, item.id));
+                });
+                page++;
+                more.hidden = !result.hasMore;
+                status.textContent = result.items.length ? '' : 'No matching environments.';
+            } catch (error) {
+                if (error.name !== 'AbortError') status.textContent = 'Environments could not be loaded. Try again.';
+            } finally {
+                if (request === controller) request = null;
+            }
+        };
+        search.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => load(true), 250);
+        });
+        more.addEventListener('click', () => { if (!request) load(false); });
+        return node => {
+            select.replaceChildren(new Option('Select environment', ''));
+            if (node?.dataset.environmentId)
+                select.add(new Option(`${node.dataset.environmentName} (${node.dataset.environmentCode})`, node.dataset.environmentId, true, true));
+            search.value = '';
+            load(true);
+        };
+    };
+    const loadBasicEnvironments = environmentPicker('environmentSearchInput', 'environmentIdInput', 'environmentMoreButton', 'environmentSearchStatus');
+    const loadSetupEnvironments = environmentPicker('setupEnvironmentSearch', 'setupBasicEnvironmentId', 'setupEnvironmentMore', 'setupEnvironmentStatus');
+
     const updateCardChrome = () => {
         if (!currentNode) return;
 
@@ -767,6 +603,7 @@ else
         updateCardChrome();
         fillReadOnlyFields(currentNode);
         fillSetupFields(currentNode);
+        document.dispatchEvent(new CustomEvent('krackend:runtime-node-updated'));
     };
 
     const getSelectedMode = () =>
@@ -823,7 +660,7 @@ else
         setValue('runtimeNodeIdInput', mode === 'edit' ? node?.dataset.id : '');
         setValue('nameInput', mode === 'edit' ? node?.dataset.name : '');
         setValue('codeInput', mode === 'edit' ? node?.dataset.code : '');
-        setValue('environmentIdInput', mode === 'edit' ? node?.dataset.environmentId : '');
+        loadBasicEnvironments(mode === 'edit' ? node : null);
         setValue('distributionModeInput', mode === 'edit' ? node?.dataset.distributionMode : 'HybridSync');
         setValue('endpointBaseUriInput', mode === 'edit' ? node?.dataset.endpointBaseUri : '');
         setValue('descriptionInput', mode === 'edit' ? node?.dataset.description : '');
@@ -872,7 +709,7 @@ else
         setValue('setupBasicRuntimeNodeId', node?.dataset.id);
         setValue('setupBasicName', node?.dataset.name);
         setValue('setupBasicCode', node?.dataset.code);
-        setValue('setupBasicEnvironmentId', node?.dataset.environmentId);
+        loadSetupEnvironments(node);
         setValue('setupBasicDescription', node?.dataset.description);
         setValue('setupBasicDistributionMode', mode);
         setValue('setupBasicEndpointBaseUri', node?.dataset.endpointBaseUri);
@@ -1157,12 +994,11 @@ else
         }
     };
 
-    document.querySelectorAll('.js-open-runtime-node-view').forEach(button => {
-        button.addEventListener('click', () => populateViewModal(readNode(button)));
-    });
-
-    document.querySelectorAll('.js-open-runtime-node-setup-card').forEach(button => {
-        button.addEventListener('click', () => populateSetupModal(readNode(button)));
+    document.addEventListener('click', event => {
+        const view = event.target.closest('.js-open-runtime-node-view');
+        const setup = event.target.closest('.js-open-runtime-node-setup-card');
+        if (view) populateViewModal(readNode(view));
+        if (setup) populateSetupModal(readNode(setup));
     });
 
     document.querySelectorAll('.js-open-runtime-node-setup').forEach(button => {

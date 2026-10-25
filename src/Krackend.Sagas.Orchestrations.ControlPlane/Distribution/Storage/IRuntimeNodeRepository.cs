@@ -70,4 +70,8 @@ public interface IRuntimeNodeRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged runtime node result.</returns>
     Task<PagedResult<RuntimeNode>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
+
+    /// <summary>Searches and orders runtime nodes in the backing store.</summary>
+    Task<PagedResult<RuntimeNode>> Search(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured runtime node storage does not support catalog search.");
 }

@@ -53,4 +53,8 @@ public interface IDistributionEnvironmentRepository
     Task<PagedResult<DistributionEnvironment>> Search(PagedSettings settings, string search, string sort, bool descending,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured environment storage does not support catalog search.");
+
+    /// <summary>Searches enabled environments in the backing store.</summary>
+    Task<PagedResult<DistributionEnvironment>> SearchEnabled(PagedSettings settings, string search, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured environment storage does not support enabled environment search.");
 }

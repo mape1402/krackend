@@ -64,6 +64,7 @@ public sealed class DistributionEnvironmentCatalogTests
         Assert.Equal(2, result.PageNumber);
         Assert.Equal(3, (await repository.Search(null!, "env_", sort, descending)).TotalRows);
         Assert.Equal(3, (await repository.Search(null!, "testing", sort, descending)).TotalRows);
+        Assert.Equal(2, (await repository.SearchEnabled(null!, "testing")).TotalRows);
         Assert.Empty((await repository.Search(null!, "missing", sort, descending)).Rows);
     }
 }

@@ -37,4 +37,12 @@ public interface IRuntimeNodeApplicationService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged runtime nodes.</returns>
     Task<ApplicationPagedResult<RuntimeNodeModel>> GetAll(ApplicationPagedSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Searches a page of runtime nodes.</summary>
+    Task<ApplicationPagedResult<RuntimeNodeModel>> Search(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured runtime node storage does not support catalog search.");
+
+    /// <summary>Gets a runtime node directly by identifier.</summary>
+    Task<RuntimeNodeModel> GetById(string runtimeNodeId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured runtime node storage does not support direct lookup.");
 }
