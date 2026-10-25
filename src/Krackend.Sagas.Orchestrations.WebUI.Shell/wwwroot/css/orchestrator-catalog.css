@@ -10,6 +10,8 @@
 body:has(:is([data-catalog-cards], [data-version-cards-view], [data-node-cards-view]):not([hidden])) .od-create-floating { bottom:1.5rem; }
 .od-create-floating .z-fab:focus-visible { outline:3px solid var(--od-primary, #0b3d91); outline-offset:3px; }
 .od-catalog-controls, .od-runtime-view-controls { margin-bottom:.5rem; }
+:is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .z-toolbar:has(> .z-grid-footer) { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+:is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .z-toolbar > .z-grid-footer { flex:0 1 auto; min-height:0; margin-left:auto; padding:0; gap:.5rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.od-grid, .od-runtime-cards) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%, 250px), 1fr)); gap:.75rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.od-item-card, .od-runtime-card, .od-runtime-instance-card) { width:100%; min-width:0; min-height:88px; padding:.75rem .875rem; border:1px solid var(--od-border, #d5dfea); border-radius:8px; background:var(--od-surface, #fff); box-shadow:0 2px 7px #0000000a; font-size:.75rem; gap:.45rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.od-item-card, .od-runtime-instance-card):hover { border-color:color-mix(in srgb, var(--od-primary) 30%, var(--od-border)); box-shadow:0 5px 14px #00000012; transform:none; }

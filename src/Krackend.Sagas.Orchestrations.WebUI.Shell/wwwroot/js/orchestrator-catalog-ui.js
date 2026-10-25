@@ -26,7 +26,8 @@
                 if (!grid.getClientRects().length) return;
                 const viewport = grid.querySelector('[data-z-grid-viewport]');
                 if (!viewport) return;
-                const footerHeight = grid.querySelector('.z-grid-footer')?.getBoundingClientRect().height ?? 0;
+                const footer = grid.querySelector('.z-grid-footer');
+                const footerHeight = footer?.parentElement === grid ? footer.getBoundingClientRect().height : 0;
                 const available = Math.max(220, Math.floor(window.innerHeight - viewport.getBoundingClientRect().top - footerHeight - 12));
                 viewport.style.setProperty('--z-grid-viewport-height', `${available}px`);
             })));
@@ -36,6 +37,11 @@
             cell.replaceChildren(status(cell.textContent));
         });
         roots.forEach(root => {
+            root.querySelectorAll('[data-z-data-grid]').forEach(grid => {
+                const toolbar = grid.querySelector('.z-toolbar');
+                const footer = grid.querySelector('.z-grid-footer');
+                if (toolbar && footer && footer.parentElement === grid) toolbar.append(footer);
+            });
             new MutationObserver(() => { decorate(root); resize(); }).observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['hidden'] });
             decorate(root);
         });
