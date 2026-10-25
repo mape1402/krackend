@@ -1,6 +1,8 @@
 @page
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.IndexModel
 @{
     ViewData["Title"] = "Orchestrations";
@@ -11,7 +13,7 @@
         <h1 class="od-page-title">Orchestrations</h1>
         <p class="od-page-subtitle">Roadmaps and versions managed by Design Core.</p>
     </div>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createOrchestrationModal">Create orchestration</button>
+    <button type="button" class="btn btn-primary" id="createOrchestrationButton">Create orchestration</button>
 </div>
 
 <section class="od-catalog" data-catalog="orchestrations" data-label="orchestrations" data-source="@Url.Page(null, "List")">
@@ -46,68 +48,18 @@
     </form>
 </section>
 
-<div class="modal fade" id="createOrchestrationModal" tabindex="-1" aria-labelledby="createOrchestrationModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving orchestration" data-busy-message="Design is validating and storing the orchestration.">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="createOrchestrationModalLabel">Create orchestration</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input asp-for="NewOrchestration.OrchestrationId" type="hidden" id="orchestrationModalOrchestrationId" />
-                    <input asp-for="NewOrchestration.UpdatedBy" type="hidden" id="orchestrationModalUpdatedBy" />
-                    <div class="row g-3">
-                        <div class="col-md-6 position-relative">
-                            <label asp-for="NewOrchestration.Key" class="form-label"></label>
-                            <input asp-for="NewOrchestration.Key" class="form-control" id="orchestrationModalKey" data-orchestrator-key="true" />
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="NewOrchestration.Name" class="form-label"></label>
-                            <input asp-for="NewOrchestration.Name" class="form-control" id="orchestrationModalName" />
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="NewOrchestration.DomainText" class="form-label"></label>
-                            <input asp-for="NewOrchestration.DomainText" class="form-control js-domain-autocomplete-input" id="orchestrationModalDomainText" autocomplete="off" data-domain-suggestions-container="orchestrationDomainSuggestions" />
-                            <input asp-for="NewOrchestration.DomainId" type="hidden" id="orchestrationModalDomainId" class="js-domain-id-input" />
-                            <div id="orchestrationDomainSuggestions" class="od-autocomplete-list d-none"></div>
-                            <span asp-validation-for="NewOrchestration.DomainId" class="text-danger"></span>
-                        </div>
-                        <div class="col-md-6 position-relative">
-                            <label asp-for="NewOrchestration.OwnerTeamText" class="form-label"></label>
-                            <input asp-for="NewOrchestration.OwnerTeamText" class="form-control js-team-autocomplete-input" id="orchestrationModalOwnerTeamText" autocomplete="off" data-team-suggestions-container="orchestrationTeamSuggestions" />
-                            <input asp-for="NewOrchestration.OwnerTeamId" type="hidden" id="orchestrationModalOwnerTeamId" class="js-team-id-input" />
-                            <div id="orchestrationTeamSuggestions" class="od-autocomplete-list d-none"></div>
-                            <span asp-validation-for="NewOrchestration.OwnerTeamId" class="text-danger"></span>
-                        </div>
-                        <div class="col-12">
-                            <label asp-for="NewOrchestration.Description" class="form-label"></label>
-                            <textarea asp-for="NewOrchestration.Description" rows="3" class="form-control" id="orchestrationModalDescription"></textarea>
-                        </div>
-                        <div class="col-12">
-                            <label asp-for="NewOrchestration.Tags" class="form-label"></label>
-                            <input asp-for="NewOrchestration.Tags" type="hidden" id="orchestrationModalTagsHidden" />
-                            <div class="od-chip-editor" data-chip-editor-for="orchestrationModalTagsHidden">
-                                <div class="od-chip-list"></div>
-                                <input type="text" class="od-chip-input" placeholder="Tag + Enter" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="orchestrationModalSubmitButton">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "createOrchestrationModal", Title = "Create orchestration", Eyebrow = null, Size = "wide",
+    Body = await Html.PartialAsync("_OrchestrationForm", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"orchestrationForm\" class=\"z-button z-button-primary\" id=\"orchestrationModalSubmitButton\">Create</button>")
+})
 
 @section Scripts {
 <script>
 (() => {
     const modalElement = document.getElementById('createOrchestrationModal');
-    const modalTitle = document.getElementById('createOrchestrationModalLabel');
+    const modalTitle = document.getElementById('createOrchestrationModal-title');
     const submitButton = document.getElementById('orchestrationModalSubmitButton');
     const orchestrationIdInput = document.getElementById('orchestrationModalOrchestrationId');
     const updatedByInput = document.getElementById('orchestrationModalUpdatedBy');
@@ -119,12 +71,11 @@
     const ownerTeamIdInput = document.getElementById('orchestrationModalOwnerTeamId');
     const descriptionInput = document.getElementById('orchestrationModalDescription');
     const tagsHiddenInput = document.getElementById('orchestrationModalTagsHidden');
-    if (!modalElement || !modalTitle || !submitButton || !orchestrationIdInput || !updatedByInput || !keyInput || !nameInput || !domainInput || !domainIdInput || !ownerTeamTextInput || !ownerTeamIdInput || !descriptionInput || !tagsHiddenInput || !window.bootstrap?.Modal) {
+    if (!modalElement || !modalTitle || !submitButton || !orchestrationIdInput || !updatedByInput || !keyInput || !nameInput || !domainInput || !domainIdInput || !ownerTeamTextInput || !ownerTeamIdInput || !descriptionInput || !tagsHiddenInput) {
         return;
     }
 
-    const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
-    const createButton = document.querySelector('[data-bs-target="#createOrchestrationModal"]');
+    const createButton = document.getElementById('createOrchestrationButton');
 
     function normalize(value) {
         return (value || '').trim();
@@ -219,7 +170,7 @@
         });
     }
 
-    function openCreateMode() {
+    function openCreateMode(opener) {
         modalTitle.textContent = 'Create orchestration';
         submitButton.textContent = 'Create';
         orchestrationIdInput.value = '';
@@ -234,10 +185,10 @@
         descriptionInput.value = '';
         tagsHiddenInput.value = '';
         tagsHiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-        modal.show();
+        modalElement.open?.(opener);
     }
 
-    function openEditMode(card) {
+    function openEditMode(card, opener) {
         if (!card) {
             return;
         }
@@ -256,13 +207,13 @@
         descriptionInput.value = card.getAttribute('data-orchestration-description') || '';
         tagsHiddenInput.value = normalize(card.getAttribute('data-orchestration-tags'));
         tagsHiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-        modal.show();
+        modalElement.open?.(opener);
     }
 
     if (createButton) {
         createButton.addEventListener('click', event => {
             event.preventDefault();
-            openCreateMode();
+            openCreateMode(createButton);
         });
     }
 
@@ -270,14 +221,22 @@
         const button = event.target.closest('.js-open-orchestration-modal[data-mode="edit"]');
         if (!button) return;
         event.preventDefault();
-        openEditMode(button.closest('.js-orchestration-card'));
-    });
-
-    modalElement.addEventListener('hidden.bs.modal', () => {
-        keyInput.readOnly = false;
+        openEditMode(button.closest('.js-orchestration-card'), button);
     });
 
     initializeChipEditors();
+
+    @if (HttpContext.Request.Method == "POST" && string.Equals(HttpContext.Request.Query["handler"], "Upsert", StringComparison.OrdinalIgnoreCase) && !ViewData.ModelState.IsValid)
+    {
+        <text>
+        if (orchestrationIdInput.value) {
+            modalTitle.textContent = 'Edit orchestration';
+            submitButton.textContent = 'Save';
+            keyInput.readOnly = true;
+        }
+        modalElement.open?.();
+        </text>
+    }
 
     const domainSuggestions = document.getElementById(domainInput.getAttribute('data-domain-suggestions-container') || '');
     const teamSuggestions = document.getElementById(ownerTeamTextInput.getAttribute('data-team-suggestions-container') || '');
@@ -316,17 +275,20 @@
     let domainSearchToken = 0;
     const fetchDomainSuggestions = async () => {
         const q = domainInput.value.trim();
+        const currentToken = ++domainSearchToken;
         if (!q) {
             domainIdInput.value = '';
             hideSuggestions();
             return;
         }
 
-        const currentToken = ++domainSearchToken;
         const url = `${window.location.pathname}?handler=DomainSuggestions&term=${encodeURIComponent(q)}`;
-        const response = await fetch(url);
-        if (!response.ok || currentToken !== domainSearchToken) return;
-        renderSuggestions(await response.json());
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Domain suggestions unavailable');
+            const rows = await response.json();
+            if (currentToken === domainSearchToken) renderSuggestions(rows);
+        } catch { if (currentToken === domainSearchToken) hideSuggestions(); }
     };
 
     domainInput.addEventListener('input', () => {
@@ -334,11 +296,12 @@
         fetchDomainSuggestions();
     });
 
-    domainInput.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+    domainInput.addEventListener('blur', () => { domainSearchToken++; setTimeout(hideSuggestions, 150); });
 
     domainSuggestions.addEventListener('click', event => {
         const item = event.target.closest('.od-autocomplete-item');
         if (!item) return;
+        domainSearchToken++;
         domainIdInput.value = item.getAttribute('data-id') || '';
         domainInput.value = item.getAttribute('data-value') || '';
         hideSuggestions();
@@ -367,17 +330,20 @@
     let teamSearchToken = 0;
     const fetchTeamSuggestions = async () => {
         const q = ownerTeamTextInput.value.trim();
+        const currentToken = ++teamSearchToken;
         if (!q) {
             ownerTeamIdInput.value = '';
             hideTeamSuggestions();
             return;
         }
 
-        const currentToken = ++teamSearchToken;
         const url = `${window.location.pathname}?handler=TeamSuggestions&term=${encodeURIComponent(q)}`;
-        const response = await fetch(url);
-        if (!response.ok || currentToken !== teamSearchToken) return;
-        renderTeamSuggestions(await response.json());
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Team suggestions unavailable');
+            const rows = await response.json();
+            if (currentToken === teamSearchToken) renderTeamSuggestions(rows);
+        } catch { if (currentToken === teamSearchToken) hideTeamSuggestions(); }
     };
 
     ownerTeamTextInput.addEventListener('input', () => {
@@ -385,11 +351,12 @@
         fetchTeamSuggestions();
     });
 
-    ownerTeamTextInput.addEventListener('blur', () => setTimeout(hideTeamSuggestions, 150));
+    ownerTeamTextInput.addEventListener('blur', () => { teamSearchToken++; setTimeout(hideTeamSuggestions, 150); });
 
     teamSuggestions.addEventListener('click', event => {
         const item = event.target.closest('.od-autocomplete-item');
         if (!item) return;
+        teamSearchToken++;
         ownerTeamIdInput.value = item.getAttribute('data-id') || '';
         ownerTeamTextInput.value = item.getAttribute('data-value') || '';
         hideTeamSuggestions();
