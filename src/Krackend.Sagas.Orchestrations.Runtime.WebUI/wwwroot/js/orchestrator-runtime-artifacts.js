@@ -65,13 +65,10 @@
         const card = make('article', 'od-runtime-instance-card');
         const header = make('div', 'od-runtime-instance-header');
         header.append(make('h3', '', kind === 'groups' ? item.key : `Version ${item.version}`), actions(item));
-        const details = make('dl');
-        const fields = kind === 'groups'
-            ? [['Versions', item.versionCount], ['Active versions', item.activeCount], ['Latest deployment', item.latest]]
-            : [['Lifecycle', item.lifecycleStatus], ['Runtime state', item.status], ['Ingress', item.isActive ? 'Active' : 'Removed'],
-                ['Deployed', item.deployed], ['Release', item.lastReleaseId || 'No release reference']];
-        fields.forEach(([label, value]) => details.append(make('dt', '', label), make('dd', '', String(value ?? '-'))));
-        card.append(header, details); cards.append(card);
+        card.append(header);
+        if (kind === 'groups') card.append(make('p', 'od-runtime-card-meta', `${item.versionCount} versions · ${item.activeCount} active`));
+        else [item.lifecycleStatus, item.status].filter(Boolean).forEach(value => card.append(window.KrackendCatalogUI.status(value)));
+        cards.append(card);
     };
     const load = async reset => {
         if (reset) { generation++; request?.abort(); request = null; page = 0; hasMore = true; cards.replaceChildren(); }

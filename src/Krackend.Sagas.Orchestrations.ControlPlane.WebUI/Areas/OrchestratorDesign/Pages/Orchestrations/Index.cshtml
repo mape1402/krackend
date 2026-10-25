@@ -8,13 +8,7 @@
     ViewData["Title"] = "Orchestrations";
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Orchestrations</h1>
-        <p class="od-page-subtitle">Roadmaps and versions managed by Design Core.</p>
-    </div>
-    <button type="button" class="btn btn-primary" id="createOrchestrationButton">Create orchestration</button>
-</div>
+<button type="button" class="od-create-floating" id="createOrchestrationButton"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create orchestration</span></button>
 
 <section class="od-catalog" data-catalog="orchestrations" data-label="orchestrations" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

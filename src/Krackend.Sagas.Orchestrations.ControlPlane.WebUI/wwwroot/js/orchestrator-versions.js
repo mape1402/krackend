@@ -63,8 +63,7 @@
         const state = item.status.startsWith('Pending') ? 'inreview' :
             ({ Draft: 'draft', Deployed: 'deployed', Deprecated: 'deprecated', Archived: 'archived', Abandoned: 'archived' }[item.status] || 'draft');
         controls.append(make('span', `od-status od-status-${state}`, item.statusLabel), actions(item));
-        header.append(identity, controls); card.append(header, make('p', 'od-item-description', item.description || ''),
-            make('p', 'od-item-meta od-item-time mt-auto', `Created: ${item.createdOnUtc || '-'}`));
+        header.append(identity, controls); card.append(header);
         card.addEventListener('click', event => { if (!event.target.closest('a,button,input,form,.dropdown')) location.href = roadmapUrl(item.id); });
         cards.append(card);
     };

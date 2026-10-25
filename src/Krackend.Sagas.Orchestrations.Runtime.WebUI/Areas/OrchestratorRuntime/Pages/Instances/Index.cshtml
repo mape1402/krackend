@@ -24,11 +24,7 @@
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260821-09" />
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Runtime Diagnostics</h1>
-        <p class="od-page-subtitle">Runtime node diagnostics</p>
-    </div>
+<div class="od-list-context od-runtime-live-context">
     <div class="od-live-indicator" data-live-state="connecting">
         <span class="od-live-dot"></span>
         <span data-live-label>Connecting</span>
@@ -58,12 +54,6 @@
 </section>
 
 <section class="od-panel od-instances-panel">
-    <div class="od-section-head">
-        <div>
-            <h2 class="od-section-title">Instances</h2>
-            <p class="od-item-meta">Latest activity first</p>
-        </div>
-    </div>
     <div data-runtime-catalog data-source="@Url.Page(null, "List")">
         <div class="od-runtime-view-controls" role="group" aria-label="View mode">
             <button type="button" class="btn btn-outline-secondary" data-runtime-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>

@@ -216,10 +216,39 @@
         group.append(edit, toggle);
         return group;
     };
+    const compactActions = item => {
+        const group = actions(item);
+        if (!['teams', 'domains', 'environments', 'runtime-nodes'].includes(kind)) return group;
+        const dropdown = document.createElement('div');
+        dropdown.className = 'dropdown';
+        const toggle = button('bi-three-dots-vertical', `Actions for ${item.displayName}`);
+        toggle.dataset.bsToggle = 'dropdown';
+        toggle.setAttribute('aria-expanded', 'false');
+        const menu = document.createElement('ul');
+        menu.className = 'dropdown-menu dropdown-menu-end';
+        Array.from(group.children).forEach(child => {
+            if (child.classList.contains('dropdown')) {
+                const existing = child.querySelector('.dropdown-menu');
+                if (existing) menu.append(...Array.from(existing.children));
+                return;
+            }
+            const entry = document.createElement('li');
+            child.classList.remove('btn', 'btn-sm', 'btn-outline-secondary');
+            child.classList.add('dropdown-item');
+            const label = document.createElement('span');
+            label.textContent = child.title;
+            child.append(label);
+            entry.append(child);
+            menu.append(entry);
+        });
+        dropdown.append(toggle, menu);
+        group.replaceChildren(dropdown);
+        return group;
+    };
     const decorateGrid = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell && !cell.firstElementChild) cell.replaceChildren(actions(item));
+        if (item && cell && !cell.firstElementChild) cell.replaceChildren(compactActions(item));
         if (item && kind === 'artifacts') {
             const type = row.querySelector('[data-z-grid-field="artifactType"]');
             if (type && !type.firstElementChild) {
@@ -227,15 +256,6 @@
                 badge.className = `od-status ${item.typeClass}`;
                 badge.textContent = item.typeLabel;
                 type.replaceChildren(badge);
-            }
-        }
-        if (item && (kind === 'orchestrations' || kind === 'reviews' || kind === 'release-orchestrations')) {
-            const name = row.querySelector(kind === 'reviews' ? '[data-z-grid-field="orchestration"]' : '[data-z-grid-field="displayName"]');
-            if (name && !name.querySelector('a')) {
-                const link = document.createElement('a');
-                link.href = item.openUrl;
-                link.textContent = item.displayName;
-                name.replaceChildren(link);
             }
         }
     });
@@ -264,27 +284,14 @@
         const identity = document.createElement('div');
         const name = document.createElement('h2');
         name.className = 'od-item-title';
-        if (kind === 'orchestrations' || kind === 'reviews' || kind === 'release-orchestrations') {
-            const link = document.createElement('a');
-            link.href = item.openUrl;
-            link.textContent = item.displayName;
-            name.append(link);
-        } else name.textContent = item.displayName;
+        name.textContent = item.displayName;
         const key = document.createElement('p');
         key.className = 'od-item-meta';
         key.textContent = item.key;
         identity.append(name, key);
-        if (item.sourceKey) {
-            const source = document.createElement('p');
-            source.className = 'od-item-meta';
-            source.textContent = `Source: ${item.sourceKey}`;
-            identity.append(source);
-        }
-        top.append(identity, actions(item));
+        top.append(identity, compactActions(item));
         if (item.status) {
-            const badge = document.createElement('span');
-            badge.className = `od-status ${kind === 'releases' || kind === 'assignments' ? (item.status === 'Completed' || item.status === 'Acknowledged' ? 'od-status-completed' : item.status === 'Failed' || item.status === 'Cancelled' ? 'od-status-failed' : 'od-status-queued') : item.isActive ? 'od-status-active' : 'od-status-inactive'}`;
-            badge.textContent = item.status;
+            const badge = window.KrackendCatalogUI.status(item.status);
             card.append(top, badge);
         } else if (kind === 'artifacts') {
             const badge = document.createElement('span');
@@ -292,69 +299,11 @@
             badge.textContent = item.typeLabel;
             card.append(top, badge);
         } else card.append(top);
-        const description = document.createElement('p');
-        description.className = 'od-item-description';
-        if (kind !== 'release-orchestrations' && kind !== 'assignments') {
-            description.textContent = item.description || 'No description.';
-            card.append(description);
-        }
-        if (kind === 'release-orchestrations') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `Releases: ${item.count}${item.latest ? ` | Latest: ${item.latest}` : ''}`;
-            card.append(details);
-        }
-        if (kind === 'releases') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `${item.strategy} | ${item.requestedBy} | ${item.created}`;
-            card.append(details);
-        }
-        if (kind === 'assignments') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `Release: ${item.release || '-'} | Activation: ${item.activation} | ${item.assigned}`;
-            card.append(details);
-        }
-        if (kind === 'orchestrations') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = [item.domain && `Domain: ${item.domain}`, item.ownerTeam && `Team: ${item.ownerTeam}`].filter(Boolean).join(' · ');
-            card.append(details);
-        }
-        if (kind === 'runtime-nodes') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = [item.environment, item.node.distributionModeLabel].filter(Boolean).join(' | ');
-            card.append(details);
-            const readiness = document.createElement('p');
-            readiness.className = 'od-item-meta';
-            readiness.textContent = `Credentials: ${item.credentials} | Endpoint: ${item.endpoint}`;
-            card.append(readiness);
-        }
-        if (kind === 'artifacts') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `Created ${item.created} | Checksum: ${item.checksum}`;
-            card.append(details);
-        }
         if (kind === 'reviews') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `${item.approval} | ${item.application} | ${item.requested}`;
-            card.append(details);
-        }
-        if (kind === 'environments') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `Updated ${item.updated}`;
-            card.append(details);
-        }
-        if (kind === 'teams') {
-            const details = document.createElement('p');
-            details.className = 'od-item-meta';
-            details.textContent = `Members: ${item.members}`;
-            card.append(details);
+            const states = document.createElement('div');
+            states.className = 'od-card-states';
+            [item.approval, item.application].filter(Boolean).forEach(value => states.append(window.KrackendCatalogUI.status(value)));
+            card.append(states);
         }
         cards.append(card);
     };

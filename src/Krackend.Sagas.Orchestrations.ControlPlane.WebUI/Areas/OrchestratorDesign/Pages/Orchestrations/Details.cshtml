@@ -6,16 +6,8 @@
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @{ ViewData["Title"] = "Orchestration details"; }
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">@Model.Orchestration?.Name</h1>
-        <p class="od-page-subtitle">@Model.Orchestration?.Key</p>
-    </div>
-    <div class="d-flex gap-2">
-        <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Index" class="btn btn-outline-secondary">Back</a>
-        <button type="button" class="btn btn-primary" id="openNewVersion">New version</button>
-    </div>
-</div>
+<div class="od-list-context"><strong>@Model.Orchestration?.Name</strong><span>@Model.Orchestration?.Key</span></div>
+<button type="button" class="btn btn-primary od-create-floating" id="openNewVersion"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>New version</span></button>
 
 <section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
          data-action-url="@Url.Page(null, "VersionAction")" data-orchestration-id="@Model.OrchestrationId"

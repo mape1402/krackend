@@ -8,13 +8,7 @@
     ViewData["Title"] = "Domains";
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Domains</h1>
-        <p class="od-page-subtitle">Catalog used by orchestration definitions.</p>
-    </div>
-    <button type="button" class="btn btn-primary js-open-domain-modal" data-mode="create">Create domain</button>
-</div>
+<button type="button" class="od-create-floating js-open-domain-modal" data-mode="create"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create domain</span></button>
 
 <section class="od-catalog" data-catalog="domains" data-label="domains" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

@@ -6,13 +6,7 @@
     ViewData["Title"] = "Metadata";
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Metadata</h1>
-        <p class="od-page-subtitle">Transversal schemas available to orchestration mappings and execution conditions.</p>
-    </div>
-    <button type="button" class="btn btn-primary js-open-payload-schema-designer" data-id="new">Create metadata</button>
-</div>
+<button type="button" class="od-create-floating js-open-payload-schema-designer" data-id="new"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create metadata</span></button>
 
 <section class="od-catalog" data-catalog="metadata" data-label="metadata descriptors" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

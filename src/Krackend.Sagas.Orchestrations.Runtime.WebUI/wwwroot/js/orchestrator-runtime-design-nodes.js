@@ -73,7 +73,14 @@
                 button.type = 'button'; button.dataset.sourceKey = item.key; li.append(button); menu.append(li);
             }
         }
-        if (menu.childElementCount) { dropdown.append(toggle, menu); group.append(dropdown); }
+        Array.from(group.children).reverse().forEach(child => {
+            const entry = document.createElement('li');
+            child.classList.remove('btn', 'btn-sm', 'btn-outline-secondary');
+            child.classList.add('dropdown-item');
+            const label = document.createElement('span'); label.textContent = child.title; child.append(label);
+            entry.append(child); menu.prepend(entry);
+        });
+        dropdown.append(toggle, menu); group.replaceChildren(dropdown);
         return group;
     };
     const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
@@ -91,11 +98,8 @@
     const addCard = item => {
         const card = make('article', 'od-runtime-instance-card'); bind(card, item);
         const header = make('div', 'od-runtime-instance-header'); header.append(make('h3', '', item.name), actions(item));
-        const details = make('dl');
-        [['Key', item.key], ['Status', item.status], ['Distribution', item.distributionModeLabel],
-            ['Endpoint', item.endpointBaseUri || '-'], ['Updated', date(item.updatedOnUtc)]]
-            .forEach(([label, value]) => details.append(make('dt', '', label), make('dd', '', value)));
-        card.append(header, details); cards.append(card);
+        card.append(header, make('p', 'od-runtime-card-meta', item.key), window.KrackendCatalogUI.status(item.status));
+        cards.append(card);
     };
     const load = async reset => {
         if (reset) { generation++; request?.abort(); request = null; page = 0; hasMore = true; cards.replaceChildren(); }

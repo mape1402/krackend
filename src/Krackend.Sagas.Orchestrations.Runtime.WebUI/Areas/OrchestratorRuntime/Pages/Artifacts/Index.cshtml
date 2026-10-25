@@ -14,13 +14,7 @@
     <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">@(hasSelection ? Model.OrchestrationKey : "Runtime Artifacts")</h1>
-        <p class="od-page-subtitle">@(hasSelection ? "Deployed versions and release history" : "Orchestration versions on this runtime node")</p>
-    </div>
-    @if (hasSelection) { <a class="btn btn-outline-secondary" asp-page="/Artifacts/Index" asp-area="OrchestratorRuntime">All orchestrations</a> }
-</div>
+@if (hasSelection) { <div class="od-list-context"><strong>@Model.OrchestrationKey</strong></div> }
 
 <section class="od-panel" data-artifact-catalog data-source="@source" data-kind="@(hasSelection ? "versions" : "groups")"
          data-history-source="@Url.Page(null, "History")" data-index-url="@Url.Page(null, new { area = "OrchestratorRuntime" })">

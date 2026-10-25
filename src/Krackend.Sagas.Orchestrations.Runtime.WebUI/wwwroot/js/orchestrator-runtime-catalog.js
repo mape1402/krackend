@@ -125,17 +125,10 @@
         const badge = document.createElement('span');
         badge.className = `od-status ${item.statusClass || ''}`;
         badge.textContent = item.status;
-        const details = document.createElement('dl');
-        for (const [label, value] of [['Correlation ID', item.correlationId], ['Saga ID', item.sagaId],
-            ['Stage', item.currentStageKey], ['Task', item.currentTaskKey], ['Updated', item.lastUpdatedOnUtc]]) {
-            const term = document.createElement('dt');
-            term.textContent = label;
-            const description = document.createElement('dd');
-            if (label === 'Correlation ID' || label === 'Saga ID') description.append(copyable(value, label));
-            else description.textContent = label === 'Updated' ? formatDate(value) : value || '-';
-            details.append(term, description);
-        }
-        card.append(header, badge, details);
+        const correlation = document.createElement('p');
+        correlation.className = 'od-runtime-card-meta';
+        correlation.append(copyable(item.correlationId, 'Correlation ID'));
+        card.append(header, correlation, badge);
         cards.append(card);
     };
     const load = async reset => {

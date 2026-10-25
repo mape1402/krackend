@@ -8,13 +8,7 @@
     ViewData["Title"] = "Environments";
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Environments</h1>
-        <p class="od-page-subtitle">Logical deployment groups for runtime nodes.</p>
-    </div>
-    <button type="button" class="btn btn-primary" id="createEnvironmentButton">Create environment</button>
-</div>
+<button type="button" class="od-create-floating" id="createEnvironmentButton"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create environment</span></button>
 
 <section class="od-catalog" data-catalog="environments" data-label="environments" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">

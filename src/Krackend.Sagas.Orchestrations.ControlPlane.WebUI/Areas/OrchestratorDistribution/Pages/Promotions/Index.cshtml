@@ -11,38 +11,11 @@
     var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">
-            @(!isOrchestrationSelected
-                ? "Releases"
-                : $"Releases - {selectedOrchestrationName}")
-        </h1>
-        <p class="od-page-subtitle">
-            @(!isOrchestrationSelected
-                ? "Select an orchestration to view and create releases."
-                : "Releases created for the selected orchestration.")
-        </p>
-    </div>
-    <div class="d-flex gap-2">
-        @if (isOrchestrationSelected)
-        {
-            <a class="btn btn-outline-secondary"
-               asp-area="OrchestratorDistribution"
-               asp-page="/Promotions/Index">
-                All orchestrations
-            </a>
-        }
-        @if (isOrchestrationSelected)
-        {
-            <button type="button" class="btn btn-outline-secondary" id="openRuntimeNodesModalButton">Allowed Nodes</button>
-        }
-        @if (isOrchestrationSelected)
-        {
-            <button type="button" class="btn btn-primary" id="openCreateRelease">Create release</button>
-        }
-    </div>
-</div>
+@if (isOrchestrationSelected)
+{
+    <div class="od-list-context"><strong>@selectedOrchestrationName</strong><button type="button" class="btn btn-outline-secondary btn-sm" id="openRuntimeNodesModalButton">Allowed Nodes</button></div>
+    <button type="button" class="btn btn-primary od-create-floating" id="openCreateRelease"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create release</span></button>
+}
 
 @if (!isOrchestrationSelected)
 {

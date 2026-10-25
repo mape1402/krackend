@@ -6,13 +6,6 @@
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel
 @{ ViewData["Title"] = "Artifacts"; }
 
-<div class="od-page-head">
-    <div><h1 class="od-page-title">Artifacts</h1><p class="od-page-subtitle">Deployed orchestration artifacts.</p></div>
-    @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
-    {
-        <a class="btn btn-outline-secondary" asp-page="/ArtifactReleases/Index">All artifacts</a>
-    }
-</div>
 <section class="od-catalog" data-catalog="artifacts" data-label="artifacts" data-source="@Url.Page(null, "List", new { orchestrationId = Model.OrchestrationId })" data-detail-source="@Url.Page(null, "Details")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">
         <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>

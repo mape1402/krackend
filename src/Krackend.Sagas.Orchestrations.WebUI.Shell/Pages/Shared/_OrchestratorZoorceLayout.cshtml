@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/css/orchestrator-design.css" asp-append-version="true" />
 }
 @RenderSection("Head", required: false)
+<link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/css/orchestrator-catalog.css" asp-append-version="true" />
 <form id="orchestrator-theme-sync" method="post" action="@themeUrl" hidden>
     @Html.AntiForgeryToken()
     <input name="mode" value="@mode" />
@@ -42,6 +43,7 @@
             asp-fallback-src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/vendor/bootstrap/bootstrap.bundle.min.js"
             asp-fallback-test="window.bootstrap && window.bootstrap.Modal"></script>
     <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-messages.js" asp-append-version="true"></script>
+    <script src="~/_content/Krackend.Sagas.Orchestrations.WebUI.Shell/js/orchestrator-catalog-ui.js" asp-append-version="true"></script>
     @if (!isRuntime)
     {
         <script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/schema-contract-autocomplete.js" asp-append-version="true"></script>

@@ -9,13 +9,7 @@
     ViewData["Title"] = "Runtime Nodes";
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">Runtime Nodes</h1>
-        <p class="od-page-subtitle">Execution engines available for releases.</p>
-    </div>
-    <button type="button" class="btn btn-primary js-open-runtime-node-setup" data-mode="create">Create runtime node</button>
-</div>
+<button type="button" class="od-create-floating js-open-runtime-node-setup" data-mode="create"><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Create runtime node</span></button>
 
 <form method="post" asp-page-handler="SetStatus" id="runtime-node-status-form" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /><input type="hidden" name="status" /></form>
 <form method="post" asp-page-handler="ValidateConnection" id="runtime-node-check-form" data-orchestrator-busy="true" hidden><input type="hidden" name="runtimeNodeId" /></form>
