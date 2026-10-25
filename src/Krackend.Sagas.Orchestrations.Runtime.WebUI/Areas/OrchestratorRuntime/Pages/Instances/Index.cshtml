@@ -2,6 +2,8 @@
 @using System.Text.Json
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.IndexModel
 @{
     ViewData["Title"] = "Runtime Diagnostics";
@@ -96,50 +98,18 @@
     </div>
 </section>
 
-<div class="modal fade od-detail-modal" id="runtimeInstanceModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable od-runtime-detail-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h2 class="modal-title" data-detail-title>Instance detail</h2>
-                    <p class="od-item-meta" data-detail-subtitle></p>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" data-detail-body></div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade od-stage-modal" id="runtimeStageModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h2 class="modal-title" data-stage-title>Stage detail</h2>
-                    <p class="od-item-meta" data-stage-subtitle></p>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" data-stage-body></div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade od-timeline-modal" id="runtimeTimelineModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-fullscreen-md-down modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h2 class="modal-title" data-timeline-title>Timeline</h2>
-                    <p class="od-item-meta" data-timeline-subtitle></p>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" data-timeline-body></div>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeInstanceModal", Title = "Instance detail", Eyebrow = null, Size = "full",
+    Body = new HtmlString("<div class=\"od-detail-modal\"><p class=\"od-item-meta\" data-detail-subtitle></p><div class=\"modal-body\" data-detail-body></div></div>")
+})
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeStageModal", Title = "Stage detail", Eyebrow = null, Size = "full",
+    Body = new HtmlString("<div class=\"od-stage-modal\"><p class=\"od-item-meta\" data-stage-subtitle></p><div class=\"modal-body\" data-stage-body></div></div>")
+})
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeTimelineModal", Title = "Timeline", Eyebrow = null, Size = "wide",
+    Body = new HtmlString("<div class=\"od-timeline-modal\"><p class=\"od-item-meta\" data-timeline-subtitle></p><div class=\"modal-body\" data-timeline-body></div></div>")
+})
 
 @section Scripts {
     <script>

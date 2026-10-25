@@ -17,22 +17,22 @@
     const trafficModeButtons = document.querySelectorAll("[data-traffic-mode]");
 
     const detailModalElement = document.getElementById("runtimeInstanceModal");
-    const detailTitle = document.querySelector("[data-detail-title]");
+    const detailTitle = document.getElementById("runtimeInstanceModal-title");
     const detailSubtitle = document.querySelector("[data-detail-subtitle]");
     const detailBody = document.querySelector("[data-detail-body]");
-    const detailModal = detailModalElement && window.bootstrap ? new bootstrap.Modal(detailModalElement) : null;
+    const detailModal = detailModalElement;
 
     const stageModalElement = document.getElementById("runtimeStageModal");
-    const stageTitle = document.querySelector("[data-stage-title]");
+    const stageTitle = document.getElementById("runtimeStageModal-title");
     const stageSubtitle = document.querySelector("[data-stage-subtitle]");
     const stageBody = document.querySelector("[data-stage-body]");
-    const stageModal = stageModalElement && window.bootstrap ? new bootstrap.Modal(stageModalElement) : null;
+    const stageModal = stageModalElement;
 
     const timelineModalElement = document.getElementById("runtimeTimelineModal");
-    const timelineTitle = document.querySelector("[data-timeline-title]");
+    const timelineTitle = document.getElementById("runtimeTimelineModal-title");
     const timelineSubtitle = document.querySelector("[data-timeline-subtitle]");
     const timelineBody = document.querySelector("[data-timeline-body]");
-    const timelineModal = timelineModalElement && window.bootstrap ? new bootstrap.Modal(timelineModalElement) : null;
+    const timelineModal = timelineModalElement;
 
     const instances = new Map();
     const traffic = new Map();
@@ -558,7 +558,7 @@
             detailBody.innerHTML = `<p class="od-empty">Loading full execution trace...</p>`;
         }
 
-        detailModal?.show();
+        detailModal?.open?.();
         await loadDetail(instanceId);
     }
 
@@ -671,7 +671,7 @@
             stageSubtitle.textContent = `Stage ${stage.order} | ${stage.status} | ${formatDate(stage.startedOnUtc)} -> ${formatDate(stage.completedOnUtc || stage.failedOnUtc)}`;
         }
         stageBody.innerHTML = renderStageDetail(stage);
-        stageModal?.show();
+        stageModal?.open?.();
     }
 
     function renderStageDetail(stage) {
@@ -789,7 +789,7 @@
                     </div>
                 </section>
             </section>`;
-        stageModal?.show();
+        stageModal?.open?.();
     }
 
     function renderAttemptDetail(attempt) {
@@ -880,7 +880,7 @@
             <section class="od-timeline-control">
                 ${transitions.map(renderTimelineEntry).join("") || `<p class="od-empty">No transitions recorded.</p>`}
             </section>`;
-        timelineModal?.show();
+        timelineModal?.open?.();
     }
 
     function renderTimelineEntry(transition, index) {

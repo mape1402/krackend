@@ -1636,7 +1636,7 @@
     padding: 0.38rem 0.7rem;
     border: 1px solid var(--od-border-strong);
     border-radius: 999px;
-    background: #fff;
+    background: var(--od-surface);
     color: var(--od-primary);
     font-size: 0.82rem;
     font-weight: 700;
@@ -1645,7 +1645,7 @@
 
 .od-runtime-detail-dialog .od-timeline-action:hover {
     border-color: var(--od-primary);
-    background: #f7f8ff;
+    background: var(--od-surface-2);
 }
 
 .od-runtime-detail-dialog .od-execution-key {
@@ -1864,7 +1864,7 @@
     gap: 1rem;
     padding: 0.9rem;
     border-bottom: 1px solid var(--od-border);
-    background: #f8f9ff;
+    background: var(--od-surface-2);
 }
 
 .od-stage-focus-head h3 {
@@ -1902,7 +1902,7 @@
 .od-stage-payload-strip details {
     border: 1px solid var(--od-border);
     border-radius: 8px;
-    background: #fcfdff;
+    background: var(--od-surface);
 }
 
 .od-stage-payload-strip summary,
@@ -1943,14 +1943,14 @@
     padding: 0.75rem;
     border: 1px solid var(--od-border);
     border-radius: 8px;
-    background: #fcfdff;
+    background: var(--od-surface);
     color: var(--od-text);
     text-align: left;
 }
 
 .od-task-card:hover {
     border-color: var(--od-primary);
-    background: #f5f7ff;
+    background: var(--od-surface-2);
 }
 
 .od-task-main,
@@ -2194,7 +2194,7 @@
     flex: 0 0 auto;
     border: 1px solid var(--od-border);
     border-radius: 8px;
-    background: #fcfdff;
+    background: var(--od-surface);
     overflow: hidden;
 }
 
@@ -2210,7 +2210,7 @@
     gap: 0.8rem;
     padding: 0.75rem;
     border-bottom: 1px solid transparent;
-    background: #f8f9ff;
+    background: var(--od-surface-2);
     cursor: pointer;
     list-style: none;
 }
@@ -2234,7 +2234,7 @@
     gap: 0.8rem;
     padding: 0.75rem;
     border-bottom: 1px solid var(--od-border);
-    background: #f8f9ff;
+    background: var(--od-surface-2);
 }
 
 .od-attempt-card > header strong,
@@ -2399,7 +2399,7 @@
     margin-top: 0.6rem;
     border: 1px solid var(--od-border);
     border-radius: 8px;
-    background: #fcfdff;
+    background: var(--od-surface);
 }
 
 :is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) .modal-header {
@@ -2874,6 +2874,15 @@
     .od-timeline-content header {
         display: grid;
     }
+}
+
+:is(#runtimeInstanceModal, #runtimeStageModal, #runtimeTimelineModal) .z-component-dialog {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+:is(.od-detail-modal, .od-stage-modal, .od-timeline-modal) > .od-item-meta {
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .od-artifact-group {
