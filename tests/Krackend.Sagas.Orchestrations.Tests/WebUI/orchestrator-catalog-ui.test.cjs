@@ -26,6 +26,9 @@ test('success states receive a success chip', () => {
 test('pending states and failed states have distinct semantic colors', () => {
     const { status } = setup();
     assert.match(status('In Review').className, /od-list-status--warning/);
+    for (const value of ['Pending deployment', 'Pending deprecation', 'Pending archive']) {
+        assert.match(status(value).className, /od-list-status--warning/);
+    }
     assert.match(status('DeadLettered').className, /od-list-status--danger/);
     assert.match(status('Rejected').className, /od-list-status--danger/);
 });

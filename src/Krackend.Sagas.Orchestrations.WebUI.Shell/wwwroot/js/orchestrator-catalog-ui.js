@@ -3,7 +3,7 @@
         const label = String(value ?? '').trim();
         const normalized = label.replace(/[^a-z]/gi, '').toLowerCase();
         const success = ['active', 'enabled', 'completed', 'deployed', 'applied', 'approved', 'ready', 'acknowledged', 'succeeded'];
-        const warning = ['pending', 'inreview', 'inprogress', 'running', 'waiting', 'queued', 'processing', 'todeploy', 'todeprecate', 'toarchive'];
+        const warning = ['pending', 'pendingdeployment', 'pendingdeprecation', 'pendingarchive', 'inreview', 'inprogress', 'running', 'waiting', 'queued', 'processing', 'todeploy', 'todeprecate', 'toarchive'];
         const danger = ['failed', 'deadlettered', 'rejected', 'error', 'cancelled'];
         const badge = document.createElement('span');
         badge.className = `od-list-status${success.includes(normalized) ? ' od-list-status--success' : warning.includes(normalized) ? ' od-list-status--warning' : danger.includes(normalized) ? ' od-list-status--danger' : ''}`;
