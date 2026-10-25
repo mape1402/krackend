@@ -1,0 +1,5 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.DetailsModel
+<form id="createDraftForm" method="post" asp-page-handler="CreateVersion" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Creating draft" data-busy-message="Design is creating the orchestration draft.">
+    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+    <p class="mb-0">Create a new editable draft from the latest non-archived roadmap. Its version number, label, and description are set only when an approved deployment review is applied.</p>
+</form>
