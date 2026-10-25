@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -123,6 +123,40 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .OrderByDescending(x => x.LastUpdatedOnUtc)
             .Take(take)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<RuntimeInstanceCatalogPage> GetPage(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var page = Math.Max(1, query.PageNumber);
+        var size = Math.Clamp(query.PageSize, 1, 100);
+        var skip = (int)Math.Min((long)(page - 1) * size, int.MaxValue);
+        var source = DbContext.OrchestrationInstances.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            var term = query.SearchText.Trim();
+            source = source.Where(x => x.OrchestrationDefinitionKey.Contains(term) || x.CorrelationId.Contains(term)
+                || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
+        }
+        if (query.Status is { } status) source = source.Where(x => x.Status == status);
+        var count = await source.LongCountAsync(cancellationToken);
+        var ordered = (query.Sort, query.Descending) switch
+        {
+            (RuntimeInstanceCatalogSort.Started, false) => source.OrderBy(x => x.StartedOnUtc),
+            (RuntimeInstanceCatalogSort.Started, true) => source.OrderByDescending(x => x.StartedOnUtc),
+            (RuntimeInstanceCatalogSort.Orchestration, false) => source.OrderBy(x => x.OrchestrationDefinitionKey),
+            (RuntimeInstanceCatalogSort.Orchestration, true) => source.OrderByDescending(x => x.OrchestrationDefinitionKey),
+            (RuntimeInstanceCatalogSort.CorrelationId, false) => source.OrderBy(x => x.CorrelationId),
+            (RuntimeInstanceCatalogSort.CorrelationId, true) => source.OrderByDescending(x => x.CorrelationId),
+            (RuntimeInstanceCatalogSort.SagaId, false) => source.OrderBy(x => x.SagaId),
+            (RuntimeInstanceCatalogSort.SagaId, true) => source.OrderByDescending(x => x.SagaId),
+            (RuntimeInstanceCatalogSort.Status, false) => source.OrderBy(x => x.Status),
+            (RuntimeInstanceCatalogSort.Status, true) => source.OrderByDescending(x => x.Status),
+            (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
+            _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
+        };
+        var items = await ordered.ThenBy(x => x.Id).Skip(skip).Take(size).ToArrayAsync(cancellationToken);
+        return new RuntimeInstanceCatalogPage(items, count, page, size);
+    }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetDispatchCancellationPending(int take, int skip, CancellationToken cancellationToken = default)
         => await DbContext.OrchestrationInstances.AsNoTracking()

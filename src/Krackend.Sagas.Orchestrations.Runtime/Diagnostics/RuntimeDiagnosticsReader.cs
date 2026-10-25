@@ -12,7 +12,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 /// <summary>
 /// Reads runtime storage and builds diagnostics models for dashboards and trace views.
 /// </summary>
-public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
+public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader
 {
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new(JsonSerializerDefaults.Web);
@@ -78,6 +78,31 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader
             summary,
             traffic.Select(ToTraffic).ToArray(),
             hourlyTraffic.Select(ToTraffic).ToArray());
+    }
+
+    /// <inheritdoc />
+    public async Task<RuntimeInstancePageModel> GetInstances(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+    {
+        if (_instanceRepository is not IRuntimeInstanceCatalogRepository catalog)
+            throw new NotSupportedException("The configured runtime storage does not support paged instance diagnostics.");
+
+        var result = await catalog.GetPage(query, cancellationToken);
+        var versions = new Dictionary<Id, string>();
+        foreach (var artifactId in result.Items.Select(x => x.RuntimeOrchestrationArtifactId).Distinct())
+        {
+            try
+            {
+                var artifact = await _runtimeArtifactRepository.GetById(artifactId, cancellationToken);
+                versions[artifactId] = artifact?.Version.ToString();
+            }
+            catch (KeyNotFoundException)
+            {
+                versions[artifactId] = null;
+            }
+        }
+
+        return new RuntimeInstancePageModel(result.Items.Select(x => ToRow(x, versions.GetValueOrDefault(x.RuntimeOrchestrationArtifactId))).ToArray(),
+            result.TotalCount, result.PageNumber, result.PageSize);
     }
 
     /// <inheritdoc />
