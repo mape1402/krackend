@@ -11,6 +11,34 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class InMemoryRuntimeArtifactRepositoryTests
 {
     [Fact]
+    public async Task CatalogPagesGroupsVersionsAndHistory()
+    {
+        using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
+        var catalog = Assert.IsAssignableFrom<IRuntimeArtifactUiCatalog>(repository);
+        var history = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactDeploymentHistoryRepository>();
+        var historyCatalog = Assert.IsAssignableFrom<IRuntimeArtifactHistoryCatalog>(history);
+        var first = RuntimeArtifact(new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
+        var second = RuntimeArtifact(new SemanticVersion(2, 0, 0), RuntimeOrchestrationArtifactStatus.Pending);
+        first.DeployedOnUtc = DateTime.UtcNow.AddMinutes(-1); second.DeployedOnUtc = DateTime.UtcNow;
+        second.LastReleaseId = "release-current";
+        await repository.Upsert(first); await repository.Upsert(second);
+        var group = Assert.Single((await catalog.GetGroups(1, 25, "sales")).Items);
+        Assert.Equal(2, group.VersionCount); Assert.Equal(2, group.ActiveCount);
+        Assert.Empty((await catalog.GetGroups(1, 25, "missing")).Items);
+        var versions = await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 1, "");
+        Assert.Equal(2, versions.TotalCount); Assert.Equal(second.Id, Assert.Single(versions.Items).Id);
+        Assert.Equal(first.Id, Assert.Single((await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 25, "1.0.0")).Items).Id);
+        Assert.Equal(second.Id, Assert.Single((await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 25, "current")).Items).Id);
+        await history.Append(new RuntimeArtifactDeploymentRecord { Id = Id.New(), RuntimeOrchestrationArtifactId = first.Id,
+            OrchestrationDefinitionKey = first.OrchestrationDefinitionKey, OrchestrationVersion = "1.0.0", ControlPlaneArtifactId = "artifact",
+            ArtifactType = "orchestration-version.new", ReleaseId = "release-1", ReleaseStrategy = "Direct", AppliedOnUtc = DateTime.UtcNow });
+        Assert.Equal("release-1", Assert.Single((await historyCatalog.GetPage(first.Id, 1, 1)).Items).ReleaseId);
+        Assert.Empty((await historyCatalog.GetPage(second.Id, 1, 25)).Items);
+    }
+
+    [Fact]
     public async Task ProjectionStateMethodsOnlyUpdateMatchingGeneration()
     {
         using var provider = CreateProvider();

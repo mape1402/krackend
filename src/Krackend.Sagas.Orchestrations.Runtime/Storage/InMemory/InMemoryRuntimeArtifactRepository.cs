@@ -5,7 +5,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryRuntimeArtifactRepository : IRuntimeArtifactRepository
+    internal sealed class InMemoryRuntimeArtifactRepository : IRuntimeArtifactRepository, IRuntimeArtifactUiCatalog
     {
         private readonly InMemoryRuntimeStore _store;
         private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
@@ -109,6 +109,35 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(
                 _store.Artifacts.Values.ToArray());
+
+        public Task<RuntimeArtifactGroupPage> GetGroups(int page, int pageSize, string search, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
+            var groups = _store.Artifacts.Values.Where(x => string.IsNullOrWhiteSpace(search) || x.OrchestrationDefinitionKey.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+                .GroupBy(x => x.OrchestrationDefinitionKey, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new RuntimeArtifactGroup(g.Key, g.Count(), g.Count(x => x.IsActive), g.Max(x => x.DeployedOnUtc)))
+                .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray();
+            return Task.FromResult(new RuntimeArtifactGroupPage(groups.Skip((page - 1) * pageSize).Take(pageSize).ToArray(), groups.LongLength, page, pageSize));
+        }
+
+        public Task<RuntimeArtifactVersionPage> GetVersions(string orchestrationKey, int page, int pageSize, string search, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
+            var versions = _store.Artifacts.Values.Where(x => string.Equals(x.OrchestrationDefinitionKey, orchestrationKey, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(search) || x.Id.ToString().Equals(search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    x.Version.ToString().Equals(search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    (x.LastReleaseId?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (x.LastControlPlaneArtifactId?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)))
+                .OrderByDescending(x => x.DeployedOnUtc).ThenBy(x => x.Id.ToString()).ToArray();
+            var rows = versions.Skip((page - 1) * pageSize).Take(pageSize).Select(x => new RuntimeArtifactCatalogItem(
+                x.Id, x.OrchestrationDefinitionKey, x.Version.ToString(), x.Status.ToString(), x.LifecycleStatus.ToString(),
+                x.LastReleaseId, x.LastControlPlaneArtifactId, x.ReleaseStrategy, x.IsActive, x.IngressGeneration,
+                x.ArtifactChecksum.Value, x.DeployedOnUtc, x.ActivatedOnUtc, x.ProjectionStartedOnUtc,
+                x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError)).ToArray();
+            return Task.FromResult(new RuntimeArtifactVersionPage(rows, versions.LongLength, page, pageSize));
+        }
 
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(

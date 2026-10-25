@@ -13,24 +13,19 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class RuntimeArtifactsIndexPageModelTests
 {
     [Fact]
-    public async Task OnGetAsync_LoadsSortedAndSearchableArtifacts()
+    public async Task OnGetAsync_DoesNotLoadAllArtifacts()
     {
         var repository = new ArtifactRepositoryStub(
             Artifact("sales.sale.created", new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow.AddHours(-2), checksum: "checksum-old"),
             Artifact("sales.sale.created", new SemanticVersion(1, 1, 0), RuntimeOrchestrationArtifactStatus.Pending, DateTime.UtcNow, checksum: "checksum-new"),
             Artifact("payments.sale.created", new SemanticVersion(2, 0, 0), RuntimeOrchestrationArtifactStatus.Failed, DateTime.UtcNow.AddHours(-1), checksum: "payments-checksum", error: "projection failed"));
         var model = CreateModel(repository);
-        model.Search = "sales";
-
         await model.OnGetAsync();
-
-        Assert.Equal(["1.1.0", "1.0.0"], model.Artifacts.Select(x => x.Version).ToArray());
-        Assert.All(model.Artifacts, row => Assert.Equal("sales.sale.created", row.OrchestrationDefinitionKey));
-        Assert.Contains(model.Artifacts, row => row.Checksum == "checksum-new" && row.Status == RuntimeOrchestrationArtifactStatus.Pending.ToString());
+        Assert.Equal(0, repository.GetAllCalls);
     }
 
     [Fact]
-    public async Task OnGetAsync_GroupsDeploymentTimelineByRuntimeArtifact()
+    public async Task CatalogEndpointsReturnUnavailableForStorageWithoutCatalogSupport()
     {
         var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);
         var history = new DeploymentHistoryRepositoryStub(
@@ -40,31 +35,18 @@ public sealed class RuntimeArtifactsIndexPageModelTests
         ]);
         var model = CreateModel(new ArtifactRepositoryStub(artifact), history: history);
 
-        await model.OnGetAsync();
-
-        var timeline = Assert.Single(model.HistoryByArtifactId).Value;
-        Assert.Equal(2, timeline.Count);
-        Assert.Contains(timeline, item => item.ArtifactType == "orchestration-version.new" && item.LifecycleStatus == "Active");
-        Assert.Contains(timeline, item => item.ArtifactType == "orchestration-version.deprecated" && item.LifecycleStatus == "Deprecated");
+        Assert.Equal(503, Assert.IsType<StatusCodeResult>(await model.OnGetGroupsAsync()).StatusCode);
+        Assert.Equal(503, Assert.IsType<StatusCodeResult>(await model.OnGetVersionsAsync("sales")).StatusCode);
+        Assert.Equal(503, Assert.IsType<StatusCodeResult>(await model.OnGetHistoryAsync(artifact.Id.ToString())).StatusCode);
     }
 
     [Fact]
-    public async Task OnGetAsync_NormalizesMissingLifecycleReferencesForDisplay()
+    public async Task CatalogEndpointsRejectMissingKeysAndInvalidArtifactIds()
     {
         var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);
-        artifact.LastReleaseId = null;
-        artifact.LastControlPlaneArtifactId = null;
-        artifact.ReleaseStrategy = null;
-        artifact.ProjectionError = null;
         var model = CreateModel(new ArtifactRepositoryStub(artifact));
-
-        await model.OnGetAsync();
-
-        var row = Assert.Single(model.Artifacts);
-        Assert.Equal(string.Empty, row.LastReleaseId);
-        Assert.Equal(string.Empty, row.LastControlPlaneArtifactId);
-        Assert.Equal(string.Empty, row.ReleaseStrategy);
-        Assert.Equal(string.Empty, row.ProjectionError);
+        Assert.IsType<BadRequestResult>(await model.OnGetVersionsAsync(""));
+        Assert.IsType<BadRequestResult>(await model.OnGetHistoryAsync("invalid"));
     }
 
     [Fact]
@@ -136,19 +118,6 @@ public sealed class RuntimeArtifactsIndexPageModelTests
         Assert.Equal("error", model.TempData["OrchestratorMessage.Type"]);
     }
 
-    [Fact]
-    public void ContainsTreatsNullValuesAsNotMatchingSearchText()
-    {
-        var method = typeof(IndexModel).GetMethod(
-            "Contains",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-        Assert.NotNull(method);
-
-        var result = (bool)method.Invoke(null, [null, "sales"])!;
-
-        Assert.False(result);
-    }
-
     private static IndexModel CreateModel(
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeArtifactReadyNotifier? notifier = null,
@@ -215,6 +184,7 @@ public sealed class RuntimeArtifactsIndexPageModelTests
         public bool ThrowOnGetById { get; set; }
 
         public int GetByIdCalls { get; private set; }
+        public int GetAllCalls { get; private set; }
 
         public Task Upsert(RuntimeOrchestrationArtifact artifact, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
@@ -240,7 +210,10 @@ public sealed class RuntimeArtifactsIndexPageModelTests
         public Task<RuntimeOrchestrationArtifact> GetByVersion(string orchestrationDefinitionKey, SemanticVersion version, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetAll(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(_artifacts.Values.ToArray());
+        {
+            GetAllCalls++;
+            return Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(_artifacts.Values.ToArray());
+        }
 
         public Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 

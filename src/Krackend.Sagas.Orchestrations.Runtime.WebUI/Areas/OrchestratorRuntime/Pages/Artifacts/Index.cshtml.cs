@@ -29,29 +29,56 @@ public sealed class IndexModel : PageModel
         _artifactReadyNotifier = artifactReadyNotifier ?? throw new ArgumentNullException(nameof(artifactReadyNotifier));
     }
 
-    /// <summary>
-    /// Gets artifact rows.
-    /// </summary>
-    public IReadOnlyCollection<ArtifactRowViewModel> Artifacts { get; private set; } = Array.Empty<ArtifactRowViewModel>();
-
-    /// <summary>
-    /// Gets deployment history indexed by runtime artifact for the timeline shown in each orchestration group.
-    /// </summary>
-    public IReadOnlyDictionary<string, IReadOnlyCollection<ArtifactDeploymentHistoryRowViewModel>> HistoryByArtifactId { get; private set; } =
-        new Dictionary<string, IReadOnlyCollection<ArtifactDeploymentHistoryRowViewModel>>(StringComparer.Ordinal);
-
-    /// <summary>
-    /// Gets or sets the search text.
-    /// </summary>
-    [BindProperty(SupportsGet = true)]
-    public string Search { get; set; } = string.Empty;
+    /// <summary>Orchestration selected for version details.</summary>
+    [BindProperty(SupportsGet = true)] public string OrchestrationKey { get; set; } = string.Empty;
 
     /// <summary>
     /// Handles the initial page request.
     /// </summary>
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Searches orchestration groups in the configured storage.</summary>
+    public async Task<IActionResult> OnGetGroupsAsync(int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
     {
-        await LoadAsync(cancellationToken);
+        if (_artifactRepository is not IRuntimeArtifactUiCatalog catalog) return StatusCode(503);
+        var result = await catalog.GetGroups(page, pageSize, search ?? string.Empty, cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Items.Select(x => new { id = x.Key, key = x.Key, displayName = x.Key, versionCount = x.VersionCount,
+                activeCount = x.ActiveCount, latest = x.LatestDeployedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") }),
+            totalCount = result.TotalCount, hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount
+        });
+    }
+
+    /// <summary>Returns a page of versions belonging to one orchestration.</summary>
+    public async Task<IActionResult> OnGetVersionsAsync(string orchestrationKey, int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orchestrationKey)) return BadRequest();
+        if (_artifactRepository is not IRuntimeArtifactUiCatalog catalog) return StatusCode(503);
+        var result = await catalog.GetVersions(orchestrationKey, page, pageSize, search ?? string.Empty, cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Items.Select(x => new { id = x.Id.ToString(), key = x.Id.ToString(), x.Version, x.Status, x.LifecycleStatus,
+                x.LastReleaseId, x.LastControlPlaneArtifactId, x.ReleaseStrategy, x.IsActive, x.IngressGeneration, x.Checksum,
+                deployed = x.DeployedOnUtc.ToString("yyyy-MM-dd HH:mm:ss"), x.ActivatedOnUtc, x.ProjectionStartedOnUtc,
+                x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError }),
+            totalCount = result.TotalCount, hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount
+        });
+    }
+
+    /// <summary>Returns a page of deployment history for an artifact.</summary>
+    public async Task<IActionResult> OnGetHistoryAsync(string artifactId, int page = 1, int pageSize = 25, CancellationToken cancellationToken = default)
+    {
+        if (!TryParseId(artifactId, out var id)) return BadRequest();
+        if (_deploymentHistoryRepository is not IRuntimeArtifactHistoryCatalog catalog) return StatusCode(503);
+        var result = await catalog.GetPage(id, page, pageSize, cancellationToken);
+        return new JsonResult(new
+        {
+            items = result.Items.Select(x => new { x.ArtifactType, x.ReleaseId, x.ReleaseStrategy,
+                lifecycleStatus = x.LifecycleStatus.ToString(), runtimeStatus = x.RuntimeStatus.ToString(),
+                applied = x.AppliedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") }),
+            totalCount = result.TotalCount, hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount
+        });
     }
 
     /// <summary>
@@ -88,73 +115,6 @@ public sealed class IndexModel : PageModel
 
         return RedirectToPage();
     }
-
-    private async Task LoadAsync(CancellationToken cancellationToken)
-    {
-        var artifacts = await _artifactRepository.GetAll(cancellationToken);
-        var history = await _deploymentHistoryRepository.GetAll(cancellationToken);
-        Artifacts = artifacts
-            .Where(MatchesSearch)
-            .OrderByDescending(x => x.DeployedOnUtc)
-            .Select(ToRow)
-            .ToArray();
-        HistoryByArtifactId = history
-            .GroupBy(x => x.RuntimeOrchestrationArtifactId.ToString(), StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => (IReadOnlyCollection<ArtifactDeploymentHistoryRowViewModel>)group
-                    .OrderBy(x => x.AppliedOnUtc)
-                    .Select(x => new ArtifactDeploymentHistoryRowViewModel
-                    {
-                        ArtifactType = x.ArtifactType,
-                        ReleaseId = x.ReleaseId,
-                        ReleaseStrategy = x.ReleaseStrategy,
-                        LifecycleStatus = x.LifecycleStatus.ToString(),
-                        RuntimeStatus = x.RuntimeStatus.ToString(),
-                        AppliedOnUtc = x.AppliedOnUtc
-                    })
-                    .ToArray(),
-                StringComparer.Ordinal);
-    }
-
-    private bool MatchesSearch(RuntimeOrchestrationArtifact artifact)
-    {
-        if (string.IsNullOrWhiteSpace(Search))
-        {
-            return true;
-        }
-
-        var search = Search.Trim();
-        return Contains(artifact.Id.ToString(), search) ||
-            Contains(artifact.OrchestrationDefinitionKey, search) ||
-            Contains(artifact.Version.ToString(), search) ||
-            Contains(artifact.ArtifactChecksum.Value, search);
-    }
-
-    private static ArtifactRowViewModel ToRow(RuntimeOrchestrationArtifact artifact)
-        => new()
-        {
-            ArtifactId = artifact.Id.ToString(),
-            OrchestrationDefinitionKey = artifact.OrchestrationDefinitionKey,
-            Version = artifact.Version.ToString(),
-            Status = artifact.Status.ToString(),
-            LifecycleStatus = artifact.LifecycleStatus.ToString(),
-            LastReleaseId = artifact.LastReleaseId ?? string.Empty,
-            LastControlPlaneArtifactId = artifact.LastControlPlaneArtifactId ?? string.Empty,
-            ReleaseStrategy = artifact.ReleaseStrategy ?? string.Empty,
-            IsActive = artifact.IsActive,
-            IngressGeneration = artifact.IngressGeneration,
-            Checksum = artifact.ArtifactChecksum.Value,
-            DeployedOnUtc = artifact.DeployedOnUtc,
-            ActivatedOnUtc = artifact.ActivatedOnUtc,
-            ProjectionStartedOnUtc = artifact.ProjectionStartedOnUtc,
-            ProjectionCompletedOnUtc = artifact.ProjectionCompletedOnUtc,
-            ProjectionFailedOnUtc = artifact.ProjectionFailedOnUtc,
-            ProjectionError = artifact.ProjectionError ?? string.Empty
-        };
-
-    private static bool Contains(string value, string search)
-        => value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
 
     private void SetMessage(string title, string body, string type)
     {

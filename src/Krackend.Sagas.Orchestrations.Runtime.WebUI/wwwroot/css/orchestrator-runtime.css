@@ -19,6 +19,7 @@
 
 .od-page-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
@@ -30,6 +31,7 @@
 
 .od-page-title {
     margin: 0;
+    overflow-wrap: anywhere;
     font-size: 2rem;
     font-weight: 700;
 }

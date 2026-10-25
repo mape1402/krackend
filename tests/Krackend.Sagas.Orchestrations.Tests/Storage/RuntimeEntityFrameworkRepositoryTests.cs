@@ -629,6 +629,41 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task RuntimeArtifactCatalogPagesGroupsVersionsAndHistoryInStorage()
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        await services.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = services.GetRequiredService<IRuntimeArtifactRepository>();
+        var catalog = Assert.IsAssignableFrom<IRuntimeArtifactUiCatalog>(repository);
+        var historyRepository = services.GetRequiredService<IRuntimeArtifactDeploymentHistoryRepository>();
+        var historyCatalog = Assert.IsAssignableFrom<IRuntimeArtifactHistoryCatalog>(historyRepository);
+        var first = RuntimeArtifact(new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
+        var second = RuntimeArtifact(new SemanticVersion(2, 0, 0), RuntimeOrchestrationArtifactStatus.Pending);
+        first.DeployedOnUtc = DateTime.UtcNow.AddMinutes(-1); second.DeployedOnUtc = DateTime.UtcNow;
+        second.LastReleaseId = "release-current";
+        var other = RuntimeArtifact(new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
+        other.OrchestrationDefinitionKey = "billing.created";
+        await repository.Upsert(first); await repository.Upsert(second); await repository.Upsert(other);
+        var groups = await catalog.GetGroups(1, 1, "sales");
+        Assert.Equal(1, groups.TotalCount); Assert.Equal(2, Assert.Single(groups.Items).VersionCount);
+        var versions = await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 1, "");
+        Assert.Equal(2, versions.TotalCount); Assert.Equal(second.Id, Assert.Single(versions.Items).Id);
+        Assert.Equal(first.Id, Assert.Single((await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 25, "1.0.0")).Items).Id);
+        Assert.Equal(second.Id, Assert.Single((await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 25, "current")).Items).Id);
+        Assert.Equal(first.Id, Assert.Single((await catalog.GetVersions(first.OrchestrationDefinitionKey, 1, 25, first.Id.ToString())).Items).Id);
+        await historyRepository.Append(new RuntimeArtifactDeploymentRecord { Id = Id.New(), RuntimeOrchestrationArtifactId = first.Id,
+            OrchestrationDefinitionKey = first.OrchestrationDefinitionKey, OrchestrationVersion = "1.0.0", ControlPlaneArtifactId = "artifact",
+            ArtifactType = "orchestration-version.new", ReleaseId = "release-1", ReleaseStrategy = "Direct", AppliedOnUtc = DateTime.UtcNow });
+        var history = await historyCatalog.GetPage(first.Id, 1, 1);
+        Assert.Equal(1, history.TotalCount); Assert.Equal("release-1", Assert.Single(history.Items).ReleaseId);
+        Assert.Empty((await historyCatalog.GetPage(second.Id, 1, 25)).Items);
+    }
+
+    [Fact]
     public async Task RuntimeArtifactRepositoryTracksProjectionLifecycleAndRetiresPreviousArtifacts()
     {
         await using var provider = CreateProvider();

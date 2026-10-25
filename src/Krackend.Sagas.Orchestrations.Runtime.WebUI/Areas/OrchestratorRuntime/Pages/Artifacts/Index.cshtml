@@ -1,162 +1,77 @@
 @page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel
 @{
     ViewData["Title"] = "Runtime Artifacts";
+    var hasSelection = !string.IsNullOrWhiteSpace(Model.OrchestrationKey);
+    var source = hasSelection ? Url.Page(null, "Versions", new { orchestrationKey = Model.OrchestrationKey }) : Url.Page(null, "Groups");
 }
 
 @section Head {
-    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css?v=runtime-ui-20260908-artifacts-version-01" />
+    <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
 }
 
 <div class="od-page-head">
     <div>
-        <h1 class="od-page-title">Runtime Artifacts</h1>
-        <p class="od-page-subtitle">Runtime node artifact lifecycle</p>
+        <h1 class="od-page-title">@(hasSelection ? Model.OrchestrationKey : "Runtime Artifacts")</h1>
+        <p class="od-page-subtitle">@(hasSelection ? "Deployed versions and release history" : "Orchestration versions on this runtime node")</p>
     </div>
+    @if (hasSelection) { <a class="btn btn-outline-secondary" asp-page="/Artifacts/Index" asp-area="OrchestratorRuntime">All orchestrations</a> }
 </div>
 
-<section class="od-panel">
-    <div class="od-section-head">
-        <div>
-            <h2 class="od-section-title">Artifacts</h2>
-            <p class="od-item-meta">Newest deployed first</p>
-        </div>
-        <span class="od-item-meta">@Model.Artifacts.Count visible</span>
+<section class="od-panel" data-artifact-catalog data-source="@source" data-kind="@(hasSelection ? "versions" : "groups")"
+         data-history-source="@Url.Page(null, "History")" data-index-url="@Url.Page(null, new { area = "OrchestratorRuntime" })">
+    <div class="od-runtime-view-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-artifact-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-artifact-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
-
-    <form method="get" class="od-instance-controls mb-3">
-        <label class="od-instance-search">
-            <i class="bi bi-search"></i>
-            <input asp-for="Search" type="search" placeholder="Search key, version, artifact id or checksum" autocomplete="off" />
-        </label>
-        <button type="submit" class="btn btn-primary">
-            <i class="bi bi-search"></i>
-            Search
-        </button>
-    </form>
-
-    @if (Model.Artifacts.Count == 0)
-    {
-        <p class="od-empty">No runtime artifacts found.</p>
-    }
-    else
-    {
-        @foreach (var orchestration in Model.Artifacts.GroupBy(x => x.OrchestrationDefinitionKey, StringComparer.OrdinalIgnoreCase).OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+    <div data-artifact-grid>
+        @if (!hasSelection)
         {
-            <section class="od-artifact-group" aria-label="@orchestration.Key artifact history">
-                <div class="od-artifact-group-head">
-                    <strong>@orchestration.Key</strong>
-                    <span>@orchestration.Count() version@(orchestration.Count() == 1 ? string.Empty : "s") in runtime</span>
-                </div>
-                <div class="od-instance-table-wrap">
-                    <table class="od-instance-table">
-                <thead>
-                    <tr>
-                        <th>Version</th>
-                        <th>Runtime state</th>
-                        <th>Generation</th>
-                        <th>Deployed</th>
-                        <th>Release</th>
-                        <th>Projection</th>
-                        <th>Artifact</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var artifact in orchestration.OrderByDescending(x => x.DeployedOnUtc))
-                    {
-                        var isReady = string.Equals(artifact.Status, "Ready", StringComparison.OrdinalIgnoreCase) && artifact.IsActive;
-                        var statusClass = artifact.Status switch
-                        {
-                            "Ready" => "od-status-completed",
-                            "Pending" => "od-status-waiting",
-                            "Failed" => "od-status-danger",
-                            "Retired" => "od-status-muted",
-                            _ => "od-status-inactive"
-                        };
-                        <tr>
-                            <td>
-                                <span class="od-version-badge">v@(artifact.Version)</span>
-                            </td>
-                            <td>
-                                <span class="od-status @statusClass">@artifact.LifecycleStatus</span>
-                                <small>@artifact.Status · @(artifact.IsActive ? "Ingress active" : "Ingress removed")</small>
-                            </td>
-                            <td>@artifact.IngressGeneration</td>
-                            <td>
-                                @artifact.DeployedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC
-                                @if (artifact.ActivatedOnUtc is not null)
-                                {
-                                    <small>Activated @artifact.ActivatedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</small>
-                                }
-                            </td>
-                            <td>
-                                <small>@(string.IsNullOrWhiteSpace(artifact.ReleaseStrategy) ? "-" : artifact.ReleaseStrategy)</small>
-                                <small>@(string.IsNullOrWhiteSpace(artifact.LastReleaseId) ? "No release reference" : artifact.LastReleaseId)</small>
-                            </td>
-                            <td>
-                                @if (artifact.ProjectionCompletedOnUtc is not null)
-                                {
-                                    <span>@artifact.ProjectionCompletedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
-                                }
-                                else if (artifact.ProjectionFailedOnUtc is not null)
-                                {
-                                    <span>@artifact.ProjectionFailedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
-                                    <small>@artifact.ProjectionError</small>
-                                }
-                                else if (artifact.ProjectionStartedOnUtc is not null)
-                                {
-                                    <span>@artifact.ProjectionStartedOnUtc.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
-                                }
-                                else
-                                {
-                                    <span>-</span>
-                                }
-                            </td>
-                            <td>
-                                <small>Version @artifact.Version</small>
-                                <small>@artifact.ArtifactId</small>
-                                <small>@artifact.Checksum</small>
-                                @if (!string.IsNullOrWhiteSpace(artifact.LastControlPlaneArtifactId))
-                                {
-                                    <small>Control artifact @artifact.LastControlPlaneArtifactId</small>
-                                }
-                            </td>
-                            <td>
-                                <form method="post" asp-page-handler="RequestStandup" data-orchestrator-busy="true" data-busy-title="Requesting standup" data-busy-message="Runtime is scheduling local standup and notifying peer replicas when gossip is enabled.">
-                                    <input type="hidden" name="artifactId" value="@artifact.ArtifactId" />
-                                    <button type="submit" class="btn btn-sm btn-primary" disabled="@(!isReady)">
-                                        <i class="bi bi-broadcast-pin"></i>
-                                        Request standup
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        @if (Model.HistoryByArtifactId.TryGetValue(artifact.ArtifactId, out var history) && history.Count > 0)
-                        {
-                            <tr class="od-artifact-history-row">
-                                <td colspan="7">
-                                    <div class="od-artifact-timeline">
-                                        @foreach (var item in history)
-                                        {
-                                            <span>
-                                                <strong>@item.ArtifactType</strong>
-                                                @item.LifecycleStatus · @item.ReleaseStrategy · @item.AppliedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC
-                                                @if (!string.IsNullOrWhiteSpace(item.ReleaseId))
-                                                {
-                                                    <small>Release @item.ReleaseId</small>
-                                                }
-                                            </span>
-                                        }
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-                    </table>
-                </div>
-            </section>
+            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+                Id = "runtime-artifact-groups-grid", AriaLabel = "runtime orchestrations", Binding = new ZoorceDataBindingOptions { Source = source },
+                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Columns = [new("displayName", "Orchestration", false), new("versionCount", "Versions", false), new("activeCount", "Active", false), new("latest", "Latest deployment", false), new("actions", "Actions", false)]
+            })
         }
-    }
+        else
+        {
+            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+                Id = "runtime-artifact-versions-grid", AriaLabel = "runtime artifact versions", Binding = new ZoorceDataBindingOptions { Source = source },
+                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Columns = [new("version", "Version", false), new("lifecycleStatus", "Lifecycle", false), new("status", "Runtime state", false), new("deployed", "Deployed", false), new("lastReleaseId", "Release", false), new("actions", "Actions", false)]
+            })
+        }
+    </div>
+    <div data-artifact-cards-view hidden>
+        <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-artifact-search aria-label="Search artifacts" placeholder="@(hasSelection ? "Search version or release ID" : "Search orchestrations")" /></label>
+        <div class="od-runtime-cards" data-artifact-cards></div>
+        <p data-artifact-empty hidden>No matching artifacts.</p>
+        <p data-artifact-status aria-live="polite"></p>
+        <div data-artifact-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-artifact-more hidden>Load more</button>
+    </div>
 </section>
+
+<form method="post" asp-page-handler="RequestStandup" id="artifact-standup-form" data-orchestrator-busy="true" data-busy-title="Requesting standup">
+    <input type="hidden" name="artifactId" />
+</form>
+
+<div class="modal fade" id="artifactHistoryModal" tabindex="-1" aria-labelledby="artifactHistoryTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h2 class="modal-title fs-5" id="artifactHistoryTitle">Artifact history</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="artifactHistoryDetails"></div>
+            <h3 class="fs-6 mt-3">Release history</h3>
+            <div id="artifactHistoryItems" class="od-artifact-timeline"></div>
+            <p id="artifactHistoryStatus" aria-live="polite"></p>
+            <button type="button" class="btn btn-outline-secondary" id="artifactHistoryMore" hidden>Load more history</button>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div></div>
+</div>
+
+@section Scripts {
+    <script src="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-artifacts.js" asp-append-version="true"></script>
+}

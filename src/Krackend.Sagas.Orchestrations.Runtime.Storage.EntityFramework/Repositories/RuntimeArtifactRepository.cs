@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntimeArtifactRepository
+internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntimeArtifactRepository, IRuntimeArtifactUiCatalog
 {
     private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
 
@@ -127,6 +127,55 @@ internal sealed class RuntimeArtifactRepository : RuntimeRepositoryBase, IRuntim
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
             .OrderByDescending(x => x.DeployedOnUtc)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<RuntimeArtifactGroupPage> GetGroups(int page, int pageSize, string search, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
+        var query = DbContext.RuntimeOrchestrationArtifacts.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.OrchestrationDefinitionKey.Contains(search.Trim()));
+        var groups = query.GroupBy(x => x.OrchestrationDefinitionKey)
+            .Select(g => new { Key = g.Key, VersionCount = g.Count(), ActiveCount = g.Count(x => x.IsActive), Latest = g.Max(x => x.DeployedOnUtc) });
+        var total = await groups.LongCountAsync(cancellationToken);
+        var rows = await groups.OrderBy(x => x.Key).Skip((page - 1) * pageSize).Take(pageSize).ToArrayAsync(cancellationToken);
+        return new RuntimeArtifactGroupPage(rows.Select(x => new RuntimeArtifactGroup(x.Key, x.VersionCount, x.ActiveCount, x.Latest)).ToArray(), total, page, pageSize);
+    }
+
+    public async Task<RuntimeArtifactVersionPage> GetVersions(string orchestrationKey, int page, int pageSize, string search, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
+        var query = DbContext.RuntimeOrchestrationArtifacts.AsNoTracking().Where(x => x.OrchestrationDefinitionKey == orchestrationKey);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            if (Ulid.TryParse(term, out var parsedId))
+            {
+                var id = new Id(parsedId);
+                query = query.Where(x => x.Id == id || x.LastReleaseId.Contains(term) || x.LastControlPlaneArtifactId.Contains(term));
+            }
+            else
+            {
+                var parts = term.Split('.');
+                if (parts.Length == 3 && int.TryParse(parts[0], out var major) && int.TryParse(parts[1], out var minor) && int.TryParse(parts[2], out var patch))
+                {
+                    var version = new SemanticVersion(major, minor, patch);
+                    query = query.Where(x => x.Version.Equals(version) || x.LastReleaseId.Contains(term) || x.LastControlPlaneArtifactId.Contains(term));
+                }
+                else query = query.Where(x => x.LastReleaseId.Contains(term) || x.LastControlPlaneArtifactId.Contains(term));
+            }
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var rows = await query.OrderByDescending(x => x.DeployedOnUtc).ThenBy(x => x.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(x => new { x.Id, x.OrchestrationDefinitionKey, x.Version, x.Status, x.LifecycleStatus,
+                x.LastReleaseId, x.LastControlPlaneArtifactId, x.ReleaseStrategy, x.IsActive, x.IngressGeneration,
+                x.ArtifactChecksum, x.DeployedOnUtc, x.ActivatedOnUtc, x.ProjectionStartedOnUtc,
+                x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError }).ToArrayAsync(cancellationToken);
+        return new RuntimeArtifactVersionPage(rows.Select(x => new RuntimeArtifactCatalogItem(
+            x.Id, x.OrchestrationDefinitionKey, x.Version.ToString(), x.Status.ToString(), x.LifecycleStatus.ToString(),
+            x.LastReleaseId, x.LastControlPlaneArtifactId, x.ReleaseStrategy, x.IsActive, x.IngressGeneration,
+            x.ArtifactChecksum.Value, x.DeployedOnUtc, x.ActivatedOnUtc, x.ProjectionStartedOnUtc,
+            x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError)).ToArray(), total, page, pageSize);
+    }
 
     public async Task<IReadOnlyCollection<RuntimeOrchestrationArtifact>> GetReady(CancellationToken cancellationToken = default)
         => await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
