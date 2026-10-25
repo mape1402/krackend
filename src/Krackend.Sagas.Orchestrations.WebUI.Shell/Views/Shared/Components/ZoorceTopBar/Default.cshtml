@@ -1,0 +1,35 @@
+@model Zoorce.Web.UI.Layout.Components.ZoorceTopBarModel
+<header class="z-topbar">
+    <div class="z-topbar-start">
+        <button class="z-icon-button z-sidebar-toggle" type="button" data-z-sidebar-toggle aria-label="Collapse navigation" aria-controls="zoorce-sidebar" aria-expanded="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <div class="z-topbar-context"><span class="z-topbar-title">@Model.Title</span></div>
+    </div>
+    <div class="z-topbar-actions">
+        <button class="z-command-trigger" type="button" data-z-command-open aria-haspopup="dialog">
+            <span aria-hidden="true">⌕</span><span>Quick search</span><kbd>Ctrl K</kbd>
+        </button>
+        <button class="z-theme-toggle" type="button" data-z-theme-toggle aria-label="Switch color mode" aria-pressed="@Model.StartsDark.ToString().ToLowerInvariant()">
+            <span class="z-theme-icon" aria-hidden="true">☼</span><span data-z-theme-label>Light</span>
+        </button>
+        @if (Model.NotificationCenter is not null)
+        {
+            @await Component.InvokeAsync("ZoorceNotificationCenter", Model.NotificationCenter)
+        }
+        @if (Model.Profile is not null)
+        {
+            <details class="z-user-menu" data-z-user-menu>
+                <summary class="z-user-trigger" aria-label="Open user menu">
+                    @if (!string.IsNullOrWhiteSpace(Model.Profile.AvatarUrl)) { <img src="@Model.Profile.AvatarUrl" alt="" /> }
+                    else { <span class="z-avatar">@Model.Initials</span> }
+                    <span class="z-user-copy"><strong>@Model.Profile.DisplayName</strong><small>@Model.Profile.Email</small></span>
+                    <svg class="z-user-menu-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5" /></svg>
+                </summary>
+                <div class="z-user-popover">
+                    @foreach (var action in Model.Profile.Actions ?? []) { <a href="@action.Url"><span aria-hidden="true">@action.Icon</span>@action.Text</a> }
+                </div>
+            </details>
+        }
+    </div>
+</header>

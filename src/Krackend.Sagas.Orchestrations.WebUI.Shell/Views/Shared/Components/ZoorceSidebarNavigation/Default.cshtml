@@ -1,0 +1,37 @@
+@using Microsoft.AspNetCore.Mvc.ViewFeatures
+@model Zoorce.Web.UI.Layout.Components.ZoorceSidebarNavigationModel
+<aside class="z-sidebar" id="zoorce-sidebar" data-z-sidebar aria-label="Primary navigation">
+    <div class="z-sidebar-brand">
+        <a class="z-brand" href="@Url.Content("~/admin")" aria-label="@Model.Shell.ApplicationName home">
+            <span class="z-brand-mark" aria-hidden="true">@Model.Shell.BrandMark</span>
+            <span class="z-brand-copy"><strong>@Model.Shell.ApplicationName</strong><small>Orchestrations</small></span>
+        </a>
+        <button class="z-icon-button z-sidebar-close" type="button" data-z-sidebar-close aria-label="Close navigation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+    </div>
+    <nav class="z-nav" aria-label="Workspace">
+        <p class="z-nav-label">Workspace</p>
+        @await Html.PartialAsync("_ZoorceNavigation", Model.Items, new ViewDataDictionary(ViewData)
+        {
+            ["ZoorceNavigationDepth"] = 0,
+            ["ZoorceNavigationPath"] = "root",
+            ["ZoorceNavigationExpansion"] = Model.Shell.NavigationExpansion
+        })
+    </nav>
+</aside>
+<script>
+    (() => {
+        const shell = document.querySelector('[data-z-shell]');
+        const sidebar = document.querySelector('[data-z-sidebar]');
+        if (!shell || !sidebar || shell.dataset.navigationPersist !== 'true') return;
+        try {
+            const saved = JSON.parse(localStorage.getItem('zoorce-navigation-expanded') ?? '{}');
+            if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return;
+            sidebar.querySelectorAll('[data-z-nav-group][data-z-nav-key]').forEach(group => {
+                const expanded = saved[group.dataset.zNavKey];
+                if (typeof expanded === 'boolean') group.setAttribute('aria-expanded', String(expanded));
+            });
+        } catch { /* Navigation remains usable if storage is unavailable. */ }
+    })();
+</script>

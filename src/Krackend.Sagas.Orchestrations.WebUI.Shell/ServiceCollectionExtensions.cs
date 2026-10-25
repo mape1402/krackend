@@ -6,6 +6,8 @@ using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using Zoorce.Web.UI;
 using Zoorce.Web.UI.Layout;
 using Zoorce.Web.UI.Abstractions.Navigation;
+using Zoorce.Web.UI.Abstractions.UserContext;
+using Krackend.Sagas.Orchestrations.WebUI.Shell.Authentication;
 
 namespace Krackend.Sagas.Orchestrations.WebUI.Shell;
 
@@ -38,6 +40,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.TryAddScoped<INavigationProvider, ZoorceOrchestratorNavigationProvider>();
+        services.TryAddScoped<IUserMenuProvider, ZoorceOrchestratorUserMenuProvider>();
         services.AddRazorPages()
             .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly)
             .AddZoorceWebUI();
