@@ -1,5 +1,8 @@
 using System.Net.Http.Json;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +10,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using RuntimeNodesPage = Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel;
+using RuntimeArtifactsPage = Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -56,5 +60,47 @@ public sealed class RuntimePagingIntegrationTests
         Assert.NotNull(response);
         Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
         await catalog.Received(1).GetPage(2, 25, "example", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ArtifactListsAndHistoryBindPageFromQuery()
+    {
+        var repository = Substitute.For<IRuntimeArtifactRepository, IRuntimeArtifactUiCatalog>();
+        var catalog = (IRuntimeArtifactUiCatalog)repository;
+        catalog.GetGroups(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new RuntimeArtifactGroupPage([], 30, call.ArgAt<int>(0), call.ArgAt<int>(1)));
+        catalog.GetVersions(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new RuntimeArtifactVersionPage([], 30, call.ArgAt<int>(1), call.ArgAt<int>(2)));
+        var historyRepository = Substitute.For<IRuntimeArtifactDeploymentHistoryRepository, IRuntimeArtifactHistoryCatalog>();
+        var history = (IRuntimeArtifactHistoryCatalog)historyRepository;
+        history.GetPage(Arg.Any<Id>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call => new RuntimeArtifactHistoryPage([], 30, call.ArgAt<int>(1), call.ArgAt<int>(2)));
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(repository);
+        builder.Services.AddSingleton(historyRepository);
+        builder.Services.AddSingleton(Substitute.For<IRuntimeArtifactReadyNotifier>());
+        builder.Services.AddRazorPages(options =>
+            options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Artifacts/Index", "artifacts"))
+            .AddApplicationPart(typeof(RuntimeArtifactsPage).Assembly);
+        await using var app = builder.Build();
+        app.MapRazorPages();
+        await app.StartAsync();
+        var id = Id.New();
+
+        foreach (var url in new[]
+        {
+            "/artifacts?handler=Groups&page=2&pageSize=25&search=sale",
+            "/artifacts?handler=Versions&page=2&pageSize=25&orchestrationKey=sales&search=sale",
+            $"/artifacts?handler=History&page=2&pageSize=25&artifactId={id}"
+        })
+        {
+            using var response = await app.GetTestClient().GetFromJsonAsync<System.Text.Json.JsonDocument>(url);
+            Assert.NotNull(response);
+            Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
+        }
+        await catalog.Received(1).GetGroups(2, 25, "sale", Arg.Any<CancellationToken>());
+        await catalog.Received(1).GetVersions("sales", 2, 25, "sale", Arg.Any<CancellationToken>());
+        await history.Received(1).GetPage(id, 2, 25, Arg.Any<CancellationToken>());
     }
 }

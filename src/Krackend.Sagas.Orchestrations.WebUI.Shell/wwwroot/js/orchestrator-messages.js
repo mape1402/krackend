@@ -57,6 +57,7 @@
         const acceptButton = host.querySelector('.orchestrator-message-accept');
         const cancelButton = host.querySelector('.orchestrator-message-cancel');
         const close = value => {
+            document.removeEventListener('keydown', onKeyDown);
             host.classList.remove('orchestrator-message-modal-host-open');
             host.innerHTML = '';
             activeMessage = null;
@@ -75,7 +76,7 @@
                 close(!isConfirm);
             }
         };
-        document.addEventListener('keydown', onKeyDown, { once: true });
+        document.addEventListener('keydown', onKeyDown);
     };
 
     const notify = ({ title, message, type, okText }) => showMessage({
