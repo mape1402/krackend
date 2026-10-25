@@ -10,8 +10,8 @@ public sealed class OrchestratorWebUIThemeOptions
     /// </summary>
     public OrchestratorWebUIThemeOptions()
     {
-        Light.PrimaryColor = "#405bd1";
-        Light.PrimaryHoverColor = "#3048ae";
+        Light.PrimaryColor = "#0087d1";
+        Light.PrimaryHoverColor = "#006aab";
         Light.SidebarBackgroundColor = "#f0f0f8";
         Light.SidebarBrandBackgroundColor = "#ededf6";
         Light.SidebarTextColor = "#292b3c";
@@ -22,8 +22,8 @@ public sealed class OrchestratorWebUIThemeOptions
         Light.MutedTextColor = "#5e6171";
         Light.BorderColor = "#dedeea";
         Light.SubtleBackgroundColor = "#f1f1f8";
-        Dark.PrimaryColor = "#a3b0ff";
-        Dark.PrimaryHoverColor = "#c2caff";
+        Dark.PrimaryColor = "#0087d1";
+        Dark.PrimaryHoverColor = "#47b3ea";
         Dark.SidebarBackgroundColor = "#13131b";
         Dark.SidebarBrandBackgroundColor = "#101017";
         Dark.SidebarTextColor = "#f1f0f8";
