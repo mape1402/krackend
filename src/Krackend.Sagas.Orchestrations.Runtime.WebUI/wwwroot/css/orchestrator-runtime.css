@@ -2912,6 +2912,30 @@
     gap: 0.45rem;
 }
 
+.od-artifact-details {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+.od-artifact-details dt {
+    color: var(--od-muted);
+    font-weight: 600;
+}
+
+.od-artifact-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+    .od-artifact-details {
+        grid-template-columns: max-content minmax(0, 1fr);
+    }
+}
+
 .od-artifact-timeline span {
     display: inline-flex;
     align-items: baseline;

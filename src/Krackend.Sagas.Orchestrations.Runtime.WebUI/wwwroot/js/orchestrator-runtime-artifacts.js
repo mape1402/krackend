@@ -115,6 +115,7 @@
     const historyItems = document.getElementById('artifactHistoryItems');
     const historyStatus = document.getElementById('artifactHistoryStatus');
     const historyMore = document.getElementById('artifactHistoryMore');
+    const historyScroll = historyModalElement.querySelector('[data-z-dialog-focus]');
     let historyId = '', historyPage = 0, historyHasMore = true, historyLoading = false, historyGeneration = 0;
     const loadHistory = async () => {
         if (historyLoading || !historyHasMore) return;
@@ -132,14 +133,18 @@
             });
             historyPage++; historyHasMore = result.hasMore; historyMore.hidden = !historyHasMore;
             historyStatus.textContent = historyPage === 1 && !result.items.length ? 'No release history available.' : '';
+            if (result.items.length && historyHasMore) requestAnimationFrame(() => {
+                if (current === historyGeneration && !historyModalElement.hidden &&
+                    historyScroll.scrollTop + historyScroll.clientHeight >= historyScroll.scrollHeight - 48) loadHistory();
+            });
         } catch { if (current === historyGeneration) { historyStatus.textContent = 'History could not be loaded. Try again.'; historyMore.hidden = false; } }
         finally { if (current === historyGeneration) historyLoading = false; }
     };
     const showHistory = item => {
-        if (!window.bootstrap?.Modal) return;
+        if (!historyModalElement?.open) return;
         historyId = item.id; historyPage = 0; historyHasMore = true; historyLoading = false; historyGeneration++;
         historyItems.replaceChildren(); historyDetails.replaceChildren();
-        const details = make('dl');
+        const details = make('dl', 'od-artifact-details');
         [['Version', item.version], ['Lifecycle', item.lifecycleStatus], ['Runtime state', item.status], ['Ingress', item.isActive ? 'Active' : 'Removed'],
             ['Generation', item.ingressGeneration], ['Deployed', `${item.deployed} UTC`], ['Latest release', item.lastReleaseId || '-'],
             ['Control artifact', item.lastControlPlaneArtifactId || '-'], ['Checksum', item.checksum],
@@ -147,10 +152,10 @@
             ['Projection completed', item.projectionCompletedOnUtc || '-'], ['Projection failed', item.projectionFailedOnUtc || '-'],
             ['Projection error', item.projectionError || '-']]
             .forEach(([label, value]) => details.append(make('dt', '', label), make('dd', '', String(value ?? '-'))));
-        historyDetails.append(details); window.bootstrap.Modal.getOrCreateInstance(historyModalElement).show(); loadHistory();
+        historyDetails.append(details); historyModalElement.open(); loadHistory();
     };
     historyMore.addEventListener('click', loadHistory);
-    historyModalElement.querySelector('.modal-body').addEventListener('scroll', event => {
+    historyScroll.addEventListener('scroll', event => {
         const body = event.currentTarget; if (body.scrollTop + body.clientHeight >= body.scrollHeight - 48) loadHistory();
     });
 })();
