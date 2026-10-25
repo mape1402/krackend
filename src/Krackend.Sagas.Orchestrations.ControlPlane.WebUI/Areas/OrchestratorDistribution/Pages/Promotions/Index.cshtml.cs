@@ -35,6 +35,7 @@ public sealed class IndexModel : PageModel
     public OrchestrationPolicyDefinitionModel SelectedOrchestration { get; private set; } = null!;
     [BindProperty] public ReleaseInput Input { get; set; } = new();
     [BindProperty] public AllowedNodesInput AllowedNodes { get; set; } = new();
+    public ArtifactModel SelectedArtifact { get; private set; }
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
@@ -166,9 +167,7 @@ public sealed class IndexModel : PageModel
 
     public async Task<IActionResult> OnPostCreateAsync(CancellationToken cancellationToken = default)
     {
-        ModelState.Remove("AllowedNodes.OrchestrationDefinitionId");
-        ModelState.Remove("AllowedNodes.RuntimeNodeIds");
-        ModelState.Remove("AllowedNodes.UpdatedBy");
+        KeepModelStateFor("Input");
 
         if (string.IsNullOrWhiteSpace(Input.OrchestrationDefinitionId))
         {
@@ -185,6 +184,7 @@ public sealed class IndexModel : PageModel
             await LoadPageData(cancellationToken);
             return Page();
         }
+        SelectedArtifact = selectedArtifact;
 
         var strategy = NormalizeReleaseStrategy(Input.Strategy);
         if (strategy is null)
@@ -206,7 +206,7 @@ public sealed class IndexModel : PageModel
         if (ids.Length == 0)
         {
             ModelState.AddModelError(nameof(Input.RuntimeNodeIds), "Select at least one runtime node.");
-            await OnGetAsync(cancellationToken);
+            await LoadPageData(cancellationToken);
             return Page();
         }
 
@@ -293,12 +293,7 @@ public sealed class IndexModel : PageModel
 
     public async Task<IActionResult> OnPostSaveAllowedNodesAsync(CancellationToken cancellationToken = default)
     {
-        ModelState.Remove("Input.OrchestrationDefinitionId");
-        ModelState.Remove("Input.ArtifactId");
-        ModelState.Remove("Input.RequestedBy");
-        ModelState.Remove("Input.Strategy");
-        ModelState.Remove("Input.RuntimeNodeIds");
-        ModelState.Remove("Input.Notes");
+        KeepModelStateFor("AllowedNodes");
 
         if (string.IsNullOrWhiteSpace(AllowedNodes.OrchestrationDefinitionId))
         {
@@ -324,6 +319,14 @@ public sealed class IndexModel : PageModel
             OrchestrationId = id;
             SelectedOrchestration = await _policyService.GetOrchestration(id, cancellationToken);
         }
+    }
+
+    private void KeepModelStateFor(string prefix)
+    {
+        foreach (var key in ModelState.Keys.Where(key =>
+                     !key.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
+                     !key.StartsWith(prefix + ".", StringComparison.OrdinalIgnoreCase)).ToArray())
+            ModelState.Remove(key);
     }
 
     public sealed class ReleaseInput

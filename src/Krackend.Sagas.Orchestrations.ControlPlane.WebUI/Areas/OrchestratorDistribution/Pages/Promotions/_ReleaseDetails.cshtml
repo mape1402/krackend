@@ -1,0 +1,9 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
+<div class="od-release-detail-head">
+    <div><div class="od-release-detail-title" id="releaseDetailsOrchestrationName"></div><div class="od-release-detail-sub" id="releaseDetailsReleaseId"></div></div>
+    <div class="od-release-detail-meta"><span class="od-meta-chip" id="releaseDetailsArtifact"></span><span class="od-meta-chip" id="releaseDetailsCreated"></span></div>
+</div>
+<div id="releaseDetailsTargets" class="od-stage-grid" aria-live="polite"></div>
+<form method="post" asp-page-handler="Push" id="releasePushForm" data-confirm="true" data-confirm-title="Promote artifact" data-confirm-message="Push this artifact to the selected runtime node?" data-confirm-accept="Push" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Promoting artifact" data-busy-message="Distribution is sending the artifact to the selected runtime node.">
+    <input type="hidden" name="releaseTargetId" /><input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+</form>

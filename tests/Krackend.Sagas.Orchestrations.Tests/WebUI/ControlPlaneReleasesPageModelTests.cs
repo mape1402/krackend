@@ -234,6 +234,45 @@ public sealed class ControlPlaneReleasesPageModelTests
     }
 
     [Fact]
+    public async Task FailedReleaseRetainsSelectionWithoutUnrelatedFormErrors()
+    {
+        var fixture = new Fixture();
+        fixture.ReleaseService.Create(Arg.Any<CreateReleaseInput>(), Arg.Any<CancellationToken>())
+            .Returns<Task<string>>(_ => throw new InvalidOperationException("Release already exists"));
+        var page = fixture.CreatePage();
+        page.Input = new ReleasesIndexModel.ReleaseInput
+        {
+            OrchestrationDefinitionId = "sales.sale.created", ArtifactId = "artifact-sales",
+            Strategy = "Rollout", RuntimeNodeIds = ["runtime-enabled"]
+        };
+        page.ModelState.AddModelError("OrchestrationDefinitionId", "Unrelated required field");
+        page.ModelState.AddModelError("AllowedNodes.OrchestrationDefinitionId", "Unrelated policy field");
+
+        Assert.IsType<PageResult>(await page.OnPostCreateAsync());
+
+        Assert.Equal("artifact-sales", page.SelectedArtifact.Id);
+        Assert.Equal("Rollout", page.Input.Strategy);
+        Assert.Equal(["runtime-enabled"], page.Input.RuntimeNodeIds);
+        Assert.False(page.ModelState.ContainsKey("OrchestrationDefinitionId"));
+        Assert.False(page.ModelState.ContainsKey("AllowedNodes.OrchestrationDefinitionId"));
+        Assert.Contains(page.ModelState[string.Empty]!.Errors, error => error.ErrorMessage == "Release already exists");
+    }
+
+    [Fact]
+    public async Task AllowedNodeValidationExcludesErrorsFromReleaseForm()
+    {
+        var page = new Fixture().CreatePage();
+        page.ModelState.AddModelError("Input.ArtifactId", "Unrelated release field");
+        page.ModelState.AddModelError("ArtifactId", "Unrelated unprefixed release field");
+
+        Assert.IsType<PageResult>(await page.OnPostSaveAllowedNodesAsync());
+
+        Assert.False(page.ModelState.ContainsKey("Input.ArtifactId"));
+        Assert.False(page.ModelState.ContainsKey("ArtifactId"));
+        Assert.Contains(page.ModelState[string.Empty]!.Errors, error => error.ErrorMessage.Contains("Select an orchestration"));
+    }
+
+    [Fact]
     public async Task OnPostCreateRejectsUnknownReleaseStrategyBeforeCallingApplicationService()
     {
         var fixture = new Fixture();
