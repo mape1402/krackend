@@ -46,6 +46,34 @@
         }
         return group;
     };
+    const cardActions = item => {
+        const dropdown = make('div', 'dropdown');
+        const toggle = make('button', 'z-button z-button-ghost');
+        toggle.type = 'button'; toggle.title = 'Artifact actions';
+        toggle.setAttribute('aria-label', `Actions for ${kind === 'groups' ? item.key : `version ${item.version}`}`);
+        toggle.setAttribute('data-bs-toggle', 'dropdown'); toggle.setAttribute('aria-expanded', 'false');
+        const dots = make('i', 'bi bi-three-dots-vertical'); dots.setAttribute('aria-hidden', 'true'); toggle.append(dots);
+        const menu = make('ul', 'dropdown-menu dropdown-menu-end');
+        const entry = document.createElement('li');
+        if (kind === 'groups') {
+            const link = make('a', 'dropdown-item', 'View versions');
+            const url = new URL(root.dataset.indexUrl, location.href); url.searchParams.set('orchestrationKey', item.key);
+            link.href = url.toString(); entry.append(link);
+        } else {
+            const history = make('button', 'dropdown-item', 'View history');
+            history.type = 'button'; history.addEventListener('click', () => showHistory(item)); entry.append(history);
+        }
+        menu.append(entry);
+        if (kind !== 'groups' && item.isActive && item.status === 'Ready') {
+            const standupEntry = document.createElement('li');
+            const standup = make('button', 'dropdown-item', 'Request standup'); standup.type = 'button';
+            standup.addEventListener('click', () => {
+                const form = document.getElementById('artifact-standup-form'); form.elements.artifactId.value = item.id; form.requestSubmit();
+            });
+            standupEntry.append(standup); menu.append(standupEntry);
+        }
+        dropdown.append(toggle, menu); return dropdown;
+    };
     const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         const cell = row.querySelector('[data-z-grid-field="actions"]');
@@ -64,7 +92,7 @@
     const addCard = item => {
         const card = make('article', 'od-runtime-instance-card');
         const header = make('div', 'od-runtime-instance-header');
-        header.append(window.KrackendCatalogUI.cardIcon('box-seam'), make('h3', '', kind === 'groups' ? item.key : `Version ${item.version}`), actions(item));
+        header.append(window.KrackendCatalogUI.cardIcon('box-seam'), make('h3', '', kind === 'groups' ? item.key : `Version ${item.version}`), cardActions(item));
         card.append(header);
         if (kind === 'groups') card.append(make('p', 'od-runtime-card-meta', `${item.versionCount} versions · ${item.activeCount} active`));
         else [item.lifecycleStatus, item.status].filter(Boolean).forEach(value => card.append(window.KrackendCatalogUI.status(value)));

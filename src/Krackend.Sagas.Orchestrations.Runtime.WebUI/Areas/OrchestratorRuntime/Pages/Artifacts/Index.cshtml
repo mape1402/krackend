@@ -5,16 +5,14 @@
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel
 @{
-    ViewData["Title"] = "Runtime Artifacts";
     var hasSelection = !string.IsNullOrWhiteSpace(Model.OrchestrationKey);
+    ViewData["Title"] = hasSelection ? $"{Model.OrchestrationKey} · Runtime Artifacts" : "Runtime Artifacts";
     var source = hasSelection ? Url.Page(null, "Versions", new { orchestrationKey = Model.OrchestrationKey }) : Url.Page(null, "Groups");
 }
 
 @section Head {
     <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
 }
-
-@if (hasSelection) { <div class="od-list-context"><strong>@Model.OrchestrationKey</strong></div> }
 
 <section class="od-panel" data-artifact-catalog data-source="@source" data-kind="@(hasSelection ? "versions" : "groups")"
          data-history-source="@Url.Page(null, "History")" data-index-url="@Url.Page(null, new { area = "OrchestratorRuntime" })">

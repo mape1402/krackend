@@ -66,6 +66,21 @@
         button.append(icon);
         return button;
     };
+    const cardActions = item => {
+        const dropdown = document.createElement('div');
+        dropdown.className = 'dropdown';
+        const toggle = document.createElement('button');
+        toggle.type = 'button'; toggle.className = 'z-button z-button-ghost';
+        toggle.title = 'Instance actions'; toggle.setAttribute('aria-label', `Actions for ${item.correlationId || item.id}`);
+        toggle.setAttribute('data-bs-toggle', 'dropdown'); toggle.setAttribute('aria-expanded', 'false');
+        const dots = document.createElement('i'); dots.className = 'bi bi-three-dots-vertical'; dots.setAttribute('aria-hidden', 'true');
+        toggle.append(dots);
+        const menu = document.createElement('ul'); menu.className = 'dropdown-menu dropdown-menu-end';
+        const entry = document.createElement('li');
+        const detail = detailButton(item); detail.className = 'dropdown-item'; detail.textContent = 'View instance';
+        entry.append(detail); menu.append(entry); dropdown.append(toggle, menu);
+        return dropdown;
+    };
     const decorateGrid = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         const cell = row.querySelector('[data-z-grid-field="actions"]');
@@ -121,7 +136,7 @@
         header.className = 'od-runtime-instance-header';
         const title = document.createElement('h3');
         title.textContent = item.orchestrationLabel || item.orchestrationDefinitionKey;
-        header.append(window.KrackendCatalogUI.cardIcon('activity'), title, detailButton(item));
+        header.append(window.KrackendCatalogUI.cardIcon('activity'), title, cardActions(item));
         const badge = document.createElement('span');
         badge.className = `od-status ${item.statusClass || ''}`;
         badge.textContent = item.status;
