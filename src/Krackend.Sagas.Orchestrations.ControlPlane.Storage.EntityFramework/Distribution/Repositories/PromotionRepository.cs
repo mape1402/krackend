@@ -94,7 +94,8 @@ public sealed class ReleaseRepository : IReleaseRepository
 
     public async Task<Release> GetById(Id releaseId, CancellationToken cancellationToken = default)
     {
-        var x = await _dbContext.Releases.AsNoTracking().FirstAsync(y => y.Id == releaseId, cancellationToken);
+        var x = await _dbContext.Releases.AsNoTracking().FirstOrDefaultAsync(y => y.Id == releaseId, cancellationToken);
+        if (x is null) return null;
         return new Release
         {
             Id = x.Id,
@@ -168,6 +169,51 @@ public sealed class ReleaseRepository : IReleaseRepository
             .GroupBy(x => x.OrchestrationDefinitionId)
             .Select(group => new ReleaseCatalogSummary(group.Key, group.Count(), group.Max(x => x.CreatedAtUtc)))
             .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<PagedResult<ReleaseTargetDetail>> SearchTargetDetails(Id releaseId, PagedSettings settings, CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, settings?.PageNumber ?? 1);
+        var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
+        var query = _dbContext.ReleasePlanTargets.AsNoTracking().Where(x => x.ReleaseId == releaseId);
+        var total = await query.LongCountAsync(cancellationToken);
+        var rows = await query.OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id)
+            .Skip((page - 1) * size).Take(size)
+            .Select(x => new
+            {
+                x.RuntimeNodeId, x.Status,
+                Name = x.RuntimeNode.Name, Code = x.RuntimeNode.Code,
+                Environment = x.RuntimeNode.Environment.Name, Mode = x.RuntimeNode.DistributionMode,
+                Assignment = _dbContext.ReleaseTargets.Where(a => a.ReleaseId == releaseId && a.RuntimeNodeId == x.RuntimeNodeId)
+                    .OrderByDescending(a => a.AssignedAtUtc).ThenByDescending(a => a.Id)
+                    .Select(a => new { a.Id, a.Status }).FirstOrDefault()
+            }).ToArrayAsync(cancellationToken);
+        return new PagedResult<ReleaseTargetDetail>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size,
+            rows.Select(x => new ReleaseTargetDetail(x.RuntimeNodeId.ToString(), x.Name ?? x.RuntimeNodeId.ToString(),
+                x.Code ?? "Unknown code", x.Environment ?? "Unknown environment", x.Mode.ToString(),
+                x.Assignment?.Status.ToString() ?? x.Status.ToString(), x.Assignment?.Id.ToString() ?? string.Empty)).ToArray());
+    }
+
+    public async Task<IReadOnlyCollection<ReleaseEffectiveStatus>> GetEffectiveStatuses(IReadOnlyCollection<Id> releaseIds, CancellationToken cancellationToken = default)
+    {
+        if (releaseIds.Count == 0) return Array.Empty<ReleaseEffectiveStatus>();
+        var ids = releaseIds.ToArray();
+        var rows = await _dbContext.Releases.AsNoTracking()
+            .Where(r => ids.Contains(r.Id) && _dbContext.ReleasePlanTargets.Any(p => p.ReleaseId == r.Id))
+            .Select(r => new
+        {
+            r.Id,
+            AllActivated = !_dbContext.ReleasePlanTargets.Where(p => p.ReleaseId == r.Id).Any(p =>
+                _dbContext.ReleaseTargets.Where(a => a.ReleaseId == r.Id && a.RuntimeNodeId == p.RuntimeNodeId)
+                    .OrderByDescending(a => a.AssignedAtUtc).ThenByDescending(a => a.Id)
+                    .Select(a => (ReleaseTargetStatus?)a.Status).FirstOrDefault() != ReleaseTargetStatus.Activated),
+            AnyFailed = _dbContext.ReleasePlanTargets.Where(p => p.ReleaseId == r.Id).Any(p =>
+                _dbContext.ReleaseTargets.Where(a => a.ReleaseId == r.Id && a.RuntimeNodeId == p.RuntimeNodeId)
+                    .OrderByDescending(a => a.AssignedAtUtc).ThenByDescending(a => a.Id)
+                    .Select(a => (ReleaseTargetStatus?)a.Status).FirstOrDefault() == ReleaseTargetStatus.Failed ||
+                (!_dbContext.ReleaseTargets.Any(a => a.ReleaseId == r.Id && a.RuntimeNodeId == p.RuntimeNodeId) && p.Status == ReleaseStatus.Failed))
+        }).ToArrayAsync(cancellationToken);
+        return rows.Select(x => new ReleaseEffectiveStatus(x.Id, x.AllActivated, x.AnyFailed)).ToArray();
     }
 
     public async Task<PagedResult<Release>> Search(PagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)

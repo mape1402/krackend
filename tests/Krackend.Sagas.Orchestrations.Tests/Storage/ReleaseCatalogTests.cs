@@ -92,6 +92,26 @@ public sealed class ReleaseCatalogTests
         Assert.Equal(3, Assert.Single(await service.GetSummaries(["sales", "other"])).Count);
         Assert.Empty(await service.GetSummaries([]));
         Assert.Single((await service.GetById(row.Id.ToString())).Targets);
+        var details = await service.SearchTargetDetails(releaseWithTarget.ToString(), new ApplicationPagedSettings { PageNumber = 1, PageSize = 1 });
+        Assert.Equal(1, details.TotalRows);
+        var detail = Assert.Single(details.Rows);
+        Assert.Equal("Node", detail.Name);
+        Assert.Equal("Testing", detail.Environment);
+        Assert.Equal(targetId.ToString(), detail.TargetId);
+        Assert.Equal("PushScheduled", detail.Status);
+        Assert.Empty((await service.SearchTargetDetails(releaseWithTarget.ToString(), new ApplicationPagedSettings { PageNumber = 2, PageSize = 1 })).Rows);
+        var catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
+        Assert.Equal("InProgress", catalog.Rows.Single(x => x.Id == releaseWithTarget.ToString()).Status);
+        var storedTarget = await context.ReleaseTargets.SingleAsync(x => x.Id == targetId);
+        storedTarget.Status = ReleaseTargetStatus.Activated;
+        await context.SaveChangesAsync();
+        catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
+        Assert.Equal("Completed", catalog.Rows.Single(x => x.Id == releaseWithTarget.ToString()).Status);
+        storedTarget.Status = ReleaseTargetStatus.Failed;
+        await context.SaveChangesAsync();
+        catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
+        Assert.Equal("Failed", catalog.Rows.Single(x => x.Id == releaseWithTarget.ToString()).Status);
+        Assert.Empty(await repository.GetEffectiveStatuses([]));
         var targetService = new ReleaseTargetApplicationService(targetRepository);
         for (var i = 0; i < 3; i++)
         {
@@ -121,5 +141,41 @@ public sealed class ReleaseCatalogTests
         Assert.Equal(releaseWithTarget.ToString(), Assert.Single(await targetService.GetByReleases([releaseWithTarget.ToString(), Id.New().ToString()])).ReleaseId);
         Assert.Empty(await targetService.GetByReleases([]));
         Assert.Empty((await repository.Search(null!, "other", null!, sort, descending)).Rows);
+        var unassigned = await context.ReleasePlanTargets.FirstAsync(x => x.ReleaseId != releaseWithTarget);
+        unassigned.Status = ReleaseStatus.Failed;
+        await context.SaveChangesAsync();
+        catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
+        Assert.Equal("Failed", catalog.Rows.Single(x => x.Id == unassigned.ReleaseId.ToString()).Status);
+
+        context.ReleaseTargets.Add(new ReleaseTargetEntity
+        {
+            Id = Id.New(), ReleaseId = releaseWithTarget, ArtifactId = artifactId, RuntimeNodeId = nodeId,
+            Status = ReleaseTargetStatus.Activated, ActivationStatus = ActivationStatus.NotActivated,
+            AssignedAtUtc = DateTime.UtcNow.AddMinutes(10)
+        });
+        await context.SaveChangesAsync();
+        catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
+        Assert.Equal("Completed", catalog.Rows.Single(x => x.Id == releaseWithTarget.ToString()).Status);
+        details = await service.SearchTargetDetails(releaseWithTarget.ToString(), new ApplicationPagedSettings { PageNumber = 1, PageSize = 1 });
+        Assert.Equal("Activated", Assert.Single(details.Rows).Status);
+
+        var secondNodeId = Id.New();
+        await new RuntimeNodeRepository(context, Substitute.For<ISieveProcessor>()).Create(new RuntimeNode
+        {
+            Id = secondNodeId, Name = "Second node", Code = "test.second", EnvironmentId = environmentId,
+            Description = "Test", RegisteredAtUtc = DateTime.UtcNow
+        });
+        context.ReleasePlanTargets.Add(new ReleasePlanTargetEntity
+        {
+            Id = Id.New(), ReleaseId = releaseWithTarget, RuntimeNodeId = secondNodeId,
+            Status = ReleaseStatus.InProgress, CreatedAtUtc = DateTime.UtcNow.AddMinutes(10), Notes = string.Empty
+        });
+        await context.SaveChangesAsync();
+        var secondPage = await service.SearchTargetDetails(releaseWithTarget.ToString(), new ApplicationPagedSettings { PageNumber = 2, PageSize = 1 });
+        Assert.Equal(2, secondPage.TotalPages);
+        Assert.Equal("Second node", Assert.Single(secondPage.Rows).Name);
+        Assert.Equal("InProgress", Assert.Single(secondPage.Rows).Status);
+        catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
+        Assert.Equal("InProgress", catalog.Rows.Single(x => x.Id == releaseWithTarget.ToString()).Status);
     }
 }

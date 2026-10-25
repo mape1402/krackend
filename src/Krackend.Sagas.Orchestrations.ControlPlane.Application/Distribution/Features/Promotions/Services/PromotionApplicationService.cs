@@ -193,6 +193,25 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         };
     }
 
+    public async Task<ApplicationPagedResult<ReleaseModel>> SearchCatalog(ApplicationPagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.Search(new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), orchestrationId, search, sort, descending, cancellationToken);
+        var statuses = (await _repository.GetEffectiveStatuses(result.Rows.Select(x => x.Id).ToArray(), cancellationToken))
+            .ToDictionary(x => x.ReleaseId);
+        var rows = result.Rows.Select(item =>
+        {
+            var model = MapSummary(item);
+            if (statuses.TryGetValue(item.Id, out var status))
+                model.Status = status.AllActivated ? "Completed" : status.AnyFailed ? "Failed" : model.Status;
+            return model;
+        }).ToArray();
+        return new ApplicationPagedResult<ReleaseModel>
+        {
+            PageNumber = result.PageNumber, PageSize = result.PageSize, TotalRows = (int)result.TotalRows,
+            TotalPages = result.TotalPages, Rows = rows
+        };
+    }
+
     public async Task<ReleaseModel> GetById(string id, CancellationToken cancellationToken = default)
     {
         var releaseId = new Id(Ulid.Parse(id));
@@ -202,6 +221,24 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         var targets = await _repository.GetTargets(releaseId, cancellationToken);
         result.Targets = targets.Select(MapTarget).ToArray();
         return result;
+    }
+
+    public async Task<ReleaseModel> GetSummaryById(string id, CancellationToken cancellationToken = default)
+    {
+        var release = await _repository.GetById(new Id(Ulid.Parse(id)), cancellationToken);
+        return release is null ? null : MapSummary(release);
+    }
+
+    public async Task<ApplicationPagedResult<ReleaseTargetDetailModel>> SearchTargetDetails(string id, ApplicationPagedSettings settings, CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.SearchTargetDetails(new Id(Ulid.Parse(id)),
+            new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), cancellationToken);
+        return new ApplicationPagedResult<ReleaseTargetDetailModel>
+        {
+            PageNumber = result.PageNumber, PageSize = result.PageSize, TotalRows = (int)result.TotalRows,
+            TotalPages = result.TotalPages,
+            Rows = result.Rows.Select(x => new ReleaseTargetDetailModel(x.RuntimeNodeId, x.Name, x.Code, x.Environment, x.Mode, x.Status, x.TargetId)).ToArray()
+        };
     }
 
     private static ReleaseModel MapSummary(Release item) => new()

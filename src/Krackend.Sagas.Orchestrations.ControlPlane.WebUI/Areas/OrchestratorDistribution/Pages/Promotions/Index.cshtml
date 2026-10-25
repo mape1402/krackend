@@ -319,6 +319,12 @@ else
     }
 
     let detailGeneration = 0;
+    const detailsMore = document.getElementById('releaseDetailsMore');
+    let loadMoreDetails = null;
+    detailsMore?.addEventListener('click', () => loadMoreDetails?.());
+    const detailObserver = 'IntersectionObserver' in window && detailsMore
+        ? new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadMoreDetails?.(); }) : null;
+    if (detailObserver) detailObserver.observe(detailsMore);
     const element = (tag, className, text) => {
         const node = document.createElement(tag);
         if (className) node.className = className;
@@ -334,10 +340,19 @@ else
         releaseDetailsArtifactElement.textContent = '';
         releaseDetailsCreatedElement.textContent = '';
         releaseDetailsTargetsElement.replaceChildren();
+        detailsMore.hidden = true;
         releaseDetailsModal.open?.(opener);
+        let page = 1;
+        let loading = false;
+        let hasMore = true;
+        loadMoreDetails = async () => {
+        if (loading || !hasMore || generation !== detailGeneration) return;
+        loading = true;
+        detailsMore.disabled = true;
         try {
             const url = new URL(catalog.dataset.detailSource, location.href);
             url.searchParams.set('releaseId', releaseId);
+            url.searchParams.set('page', page);
             const response = await fetch(url);
             if (!response.ok) throw new Error('Release unavailable');
             const release = await response.json();
@@ -346,7 +361,7 @@ else
             releaseDetailsReleaseIdElement.textContent = `ReleaseId: ${release.id}`;
             releaseDetailsArtifactElement.textContent = `Artifact: ${release.artifact}`;
             releaseDetailsCreatedElement.textContent = `Created: ${release.created}`;
-            if (!release.targets.length) releaseDetailsTargetsElement.append(element('p', 'od-empty', 'No runtime targets.'));
+            if (page === 1 && !release.targets.length) releaseDetailsTargetsElement.append(element('p', 'od-empty', 'No runtime targets.'));
             release.targets.forEach(target => {
                 const card = element('article', 'od-stage-card');
                 const head = element('div', 'od-stage-card-head');
@@ -376,9 +391,22 @@ else
                 card.append(head, body, foot);
                 releaseDetailsTargetsElement.append(card);
             });
+            hasMore = release.hasMore;
+            page++;
+            detailsMore.hidden = !hasMore;
+            detailsMore.textContent = 'Load more targets';
         } catch {
-            if (generation === detailGeneration) releaseDetailsTargetsElement.replaceChildren(element('p', 'od-empty', 'Release details could not be loaded. Please try again.'));
+            if (generation === detailGeneration) {
+                detailsMore.hidden = false;
+                detailsMore.textContent = 'Retry loading targets';
+                if (page === 1) releaseDetailsOrchestrationNameElement.textContent = 'Release details could not be loaded.';
+            }
+        } finally {
+            loading = false;
+            if (generation === detailGeneration) detailsMore.disabled = false;
         }
+        };
+        await loadMoreDetails();
     };
 
     if (openRuntimeNodesModalButton) {

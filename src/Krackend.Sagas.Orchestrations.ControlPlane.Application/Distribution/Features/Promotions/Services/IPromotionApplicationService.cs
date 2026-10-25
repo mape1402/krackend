@@ -6,11 +6,19 @@ public interface IReleaseApplicationService
     Task<ApplicationPagedResult<ReleaseModel>> GetAll(ApplicationPagedSettings settings, CancellationToken cancellationToken = default);
     Task<ApplicationPagedResult<ReleaseModel>> Search(ApplicationPagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release service does not support catalog search.");
+    Task<ApplicationPagedResult<ReleaseModel>> SearchCatalog(ApplicationPagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release service does not support catalog search.");
     Task<ReleaseModel> GetById(string id, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release service does not support detail lookup.");
+    Task<ReleaseModel> GetSummaryById(string id, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release service does not support summary lookup.");
+    Task<ApplicationPagedResult<ReleaseTargetDetailModel>> SearchTargetDetails(string id, ApplicationPagedSettings settings, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release service does not support paged release details.");
     Task<IReadOnlyCollection<ReleaseCatalogSummaryModel>> GetSummaries(IReadOnlyCollection<string> orchestrationIds, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release service does not support summary lookup.");
 }
 
 public sealed record ReleaseCatalogSummaryModel(string OrchestrationId, int Count, DateTime LatestCreatedAtUtc);
+public sealed record ReleaseTargetDetailModel(string RuntimeNodeId, string Name, string Code, string Environment,
+    string Mode, string Status, string TargetId);
 

@@ -54,10 +54,10 @@ public sealed class ControlPlaneReleasesPageModelTests
     public async Task ReleaseListUsesTheEffectiveStatusOfEveryPlannedTarget(string first, string second, string expected)
     {
         var fixture = new Fixture();
-        fixture.ReleaseService.Search(Arg.Any<ApplicationPagedSettings>(), "sales", "", "created", false, Arg.Any<CancellationToken>())
+        fixture.ReleaseService.SearchCatalog(Arg.Any<ApplicationPagedSettings>(), "sales", "", "created", false, Arg.Any<CancellationToken>())
             .Returns(Page(new ReleaseModel
             {
-                Id = "release", ArtifactId = "artifact", OrchestrationDefinitionId = "sales", Status = "InProgress",
+                Id = "release", ArtifactId = "artifact", OrchestrationDefinitionId = "sales", Status = expected,
                 Strategy = "Direct", RequestedBy = "tester", Targets = [new() { RuntimeNodeId = "node1", Status = "InProgress" }, new() { RuntimeNodeId = "node2", Status = second }]
             }));
         fixture.ArtifactService.GetSummariesByIds(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
@@ -77,9 +77,32 @@ public sealed class ControlPlaneReleasesPageModelTests
     {
         var fixture = new Fixture();
         var id = Ulid.NewUlid().ToString();
-        fixture.ReleaseService.GetById(id, Arg.Any<CancellationToken>()).Returns(new ReleaseModel { Id = id, OrchestrationDefinitionId = "other" });
+        fixture.ReleaseService.GetSummaryById(id, Arg.Any<CancellationToken>()).Returns(new ReleaseModel { Id = id, OrchestrationDefinitionId = "other" });
 
         Assert.IsType<NotFoundResult>(await fixture.CreatePage().OnGetReleaseDetailsAsync(id, "sales"));
+        await fixture.ReleaseTargetService.DidNotReceive().GetByRelease(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReleaseDetailsPagesTargetsAndKeepsPushAndPullActions()
+    {
+        var fixture = new Fixture();
+        var id = Ulid.NewUlid().ToString();
+        fixture.ReleaseService.GetSummaryById(id, Arg.Any<CancellationToken>())
+            .Returns(new ReleaseModel { Id = id, ArtifactId = "artifact", OrchestrationDefinitionId = "sales" });
+        fixture.ReleaseService.SearchTargetDetails(id, Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>())
+            .Returns(new ApplicationPagedResult<ReleaseTargetDetailModel>
+            {
+                PageNumber = 1, PageSize = 1, TotalPages = 2, TotalRows = 2,
+                Rows = [new("node", "Node", "node", "Dev", "HybridSync", "PushScheduled", "target")]
+            });
+        var result = Assert.IsType<JsonResult>(await fixture.CreatePage().OnGetReleaseDetailsAsync(id, "sales", 0, 1));
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Value);
+        Assert.Contains("\"canPush\":true", json);
+        Assert.Contains("\"canPull\":true", json);
+        Assert.Contains("\"hasMore\":true", json);
+        await fixture.ReleaseService.Received(1).SearchTargetDetails(id,
+            Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 1), Arg.Any<CancellationToken>());
         await fixture.ReleaseTargetService.DidNotReceive().GetByRelease(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
