@@ -1,4 +1,6 @@
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Storage;
 
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
@@ -12,13 +14,31 @@ public sealed class ArtifactApplicationService : IArtifactApplicationService
     public async Task<ApplicationPagedResult<ArtifactModel>> GetAll(ApplicationPagedSettings settings, CancellationToken cancellationToken = default)
     {
         var result = await _repository.GetAll(new PagedSettings(settings.PageNumber, settings.PageSize, Array.Empty<QueryFilter>(), Array.Empty<QuerySort>()), cancellationToken);
+        return MapPage(result);
+    }
+
+    public async Task<ApplicationPagedResult<ArtifactModel>> Search(ApplicationPagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => MapPage(await _repository.Search(new PagedSettings(settings.PageNumber, settings.PageSize, [], []), orchestrationId, search, sort, descending, cancellationToken));
+
+    public async Task<ArtifactModel> GetById(string artifactId, CancellationToken cancellationToken = default)
+    {
+        var artifact = await _repository.GetById(new Id(Ulid.Parse(artifactId)), cancellationToken);
+        return artifact is null ? null : Map(artifact);
+    }
+
+    private static ApplicationPagedResult<ArtifactModel> MapPage(PagedResult<Artifact> result)
+    {
         return new ApplicationPagedResult<ArtifactModel>
         {
             PageNumber = result.PageNumber,
             PageSize = result.PageSize,
             TotalRows = (int)result.TotalRows,
             TotalPages = result.TotalPages,
-            Rows = result.Rows.Select(x => new ArtifactModel
+            Rows = result.Rows.Select(Map).ToArray()
+        };
+    }
+
+    private static ArtifactModel Map(Artifact x) => new()
             {
                 Id = x.Id.ToString(),
                 OrchestrationDefinitionId = x.OrchestrationDefinitionId,
@@ -36,8 +56,6 @@ public sealed class ArtifactApplicationService : IArtifactApplicationService
                 IsPublished = x.IsPublished,
                 CreatedAtUtc = x.CreatedAtUtc,
                 PublishedAtUtc = x.PublishedAtUtc
-            }).ToArray()
-        };
-    }
+            };
 }
 

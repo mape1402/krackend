@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Distribution;
+using Microsoft.AspNetCore.Mvc;
 using ArtifactsIndexModel = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel;
 using NSubstitute;
 
@@ -25,33 +26,46 @@ public sealed class ControlPlaneArtifactsPageModelTests
     }
 
     [Fact]
-    public async Task OnGetWithoutSelectedOrchestrationLoadsOrchestrationsButNoRows()
+    public async Task OnGetDoesNotLoadTheEntireCatalog()
     {
         var fixture = new Fixture();
         var page = fixture.CreatePage();
 
         await page.OnGetAsync(CancellationToken.None);
 
-        Assert.Single(page.Orchestrations);
-        Assert.Empty(page.Rows);
-        Assert.Null(page.SelectedOrchestration);
-        Assert.Equal(2, page.GetSummary("sales.sale.created").ArtifactCount);
-        Assert.NotNull(page.GetSummary("sales.sale.created").LatestCreatedAtUtc);
-        Assert.Equal(0, page.GetSummary("missing").ArtifactCount);
+        await fixture.Artifacts.DidNotReceiveWithAnyArgs().GetAll(default!, default);
     }
 
     [Fact]
-    public async Task OnGetFiltersArtifactsBySelectedOrchestrationAndSortsNewestFirst()
+    public async Task ListPassesFilteringAndPagingToTheStorageService()
     {
         var fixture = new Fixture();
         var page = fixture.CreatePage();
         page.OrchestrationId = "sales.sale.created";
 
-        await page.OnGetAsync(CancellationToken.None);
+        var result = await page.OnGetListAsync(2, 25, "sale", "created", true);
 
-        Assert.Equal("Sales Sale Created", page.SelectedOrchestration!.Name);
-        Assert.Equal(["artifact-new", "artifact-old"], page.Rows.Select(x => x.Id).ToArray());
-        Assert.All(page.Rows, artifact => Assert.Equal("sales.sale.created", artifact.OrchestrationDefinitionId));
+        Assert.IsType<JsonResult>(result);
+        await fixture.Artifacts.Received(1).Search(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 2 && x.PageSize == 25),
+            "sales.sale.created", "sale", "created", true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DetailsLoadsFullArtifactOnlyWhenRequested()
+    {
+        var fixture = new Fixture();
+        var id = Ulid.NewUlid().ToString();
+        fixture.Artifacts.GetById(id, Arg.Any<CancellationToken>()).Returns(new ArtifactModel
+        {
+            Id = id, OrchestrationDisplayName = "Sales", Payload = "{\"sample\":true}"
+        });
+        var page = fixture.CreatePage();
+
+        var result = await page.OnGetDetailsAsync(id);
+
+        Assert.IsType<JsonResult>(result);
+        await fixture.Artifacts.Received(1).GetById(id, Arg.Any<CancellationToken>());
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetDetailsAsync("invalid"));
     }
 
     private static ApplicationPagedResult<T> Page<T>(params T[] rows)
@@ -68,6 +82,7 @@ public sealed class ControlPlaneArtifactsPageModelTests
     {
         private readonly IArtifactApplicationService _artifactService = Substitute.For<IArtifactApplicationService>();
         private readonly IOrchestrationNodePolicyApplicationService _policyService = Substitute.For<IOrchestrationNodePolicyApplicationService>();
+        public IArtifactApplicationService Artifacts => _artifactService;
 
         public Fixture()
         {
@@ -86,6 +101,8 @@ public sealed class ControlPlaneArtifactsPageModelTests
                     Artifact("artifact-old", "sales.sale.created", DateTime.UtcNow.AddMinutes(-10)),
                     Artifact("artifact-other", "other.orchestration", DateTime.UtcNow),
                     Artifact("artifact-new", "sales.sale.created", DateTime.UtcNow.AddMinutes(10))));
+            _artifactService.Search(Arg.Any<ApplicationPagedSettings>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                .Returns(Page(Artifact("artifact-new", "sales.sale.created", DateTime.UtcNow)));
         }
 
         public ArtifactsIndexModel CreatePage()

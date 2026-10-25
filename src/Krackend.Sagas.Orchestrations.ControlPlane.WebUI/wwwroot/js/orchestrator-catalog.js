@@ -33,6 +33,12 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'artifacts') {
+            const details = button('bi-eye', `Details for ${item.displayName} version ${item.version}`);
+            details.classList.add('js-open-artifact-details');
+            details.dataset.id = item.id;
+            return details;
+        }
         if (kind === 'runtime-nodes') {
             const group = document.createElement('div');
             group.className = 'od-catalog-actions';
@@ -208,6 +214,15 @@
         const item = records.get(row.dataset.zGridKey);
         const cell = row.querySelector('[data-z-grid-field="actions"]');
         if (item && cell && !cell.firstElementChild) cell.replaceChildren(actions(item));
+        if (item && kind === 'artifacts') {
+            const type = row.querySelector('[data-z-grid-field="artifactType"]');
+            if (type && !type.firstElementChild) {
+                const badge = document.createElement('span');
+                badge.className = `od-status ${item.typeClass}`;
+                badge.textContent = item.typeLabel;
+                type.replaceChildren(badge);
+            }
+        }
         if (item && (kind === 'orchestrations' || kind === 'reviews')) {
             const name = row.querySelector(kind === 'reviews' ? '[data-z-grid-field="orchestration"]' : '[data-z-grid-field="displayName"]');
             if (name && !name.querySelector('a')) {
@@ -265,6 +280,11 @@
             badge.className = `od-status ${item.isActive ? 'od-status-active' : 'od-status-inactive'}`;
             badge.textContent = item.status;
             card.append(top, badge);
+        } else if (kind === 'artifacts') {
+            const badge = document.createElement('span');
+            badge.className = `od-status ${item.typeClass}`;
+            badge.textContent = item.typeLabel;
+            card.append(top, badge);
         } else card.append(top);
         const description = document.createElement('p');
         description.className = 'od-item-description';
@@ -285,6 +305,12 @@
             readiness.className = 'od-item-meta';
             readiness.textContent = `Credentials: ${item.credentials} | Endpoint: ${item.endpoint}`;
             card.append(readiness);
+        }
+        if (kind === 'artifacts') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = `Created ${item.created} | Checksum: ${item.checksum}`;
+            card.append(details);
         }
         if (kind === 'reviews') {
             const details = document.createElement('p');

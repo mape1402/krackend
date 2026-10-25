@@ -10,32 +10,16 @@ public sealed class IndexModel : PageModel
     private const string DeprecatedArtifactType = "orchestration-version.deprecated";
     private const string ArchivedArtifactType = "orchestration-version.archived";
     private const string LegacySnapshotArtifactType = "orchestration-version-snapshot";
-    private const int PageSize = 300;
-    private const int MaxPageReads = 50;
-
     private readonly IArtifactApplicationService _service;
-    private readonly IOrchestrationNodePolicyApplicationService _policyService;
 
     public IndexModel(
         IArtifactApplicationService service,
         IOrchestrationNodePolicyApplicationService policyService)
     {
         _service = service;
-        _policyService = policyService;
     }
 
-    public IReadOnlyCollection<OrchestrationPolicyDefinitionModel> Orchestrations { get; private set; } = Array.Empty<OrchestrationPolicyDefinitionModel>();
-    public IReadOnlyCollection<ArtifactModel> Rows { get; private set; } = Array.Empty<ArtifactModel>();
-    public IReadOnlyDictionary<string, ArtifactOrchestrationSummary> ArtifactSummaryByOrchestrationId { get; private set; } =
-        new Dictionary<string, ArtifactOrchestrationSummary>(StringComparer.Ordinal);
     [BindProperty(SupportsGet = true)] public string OrchestrationId { get; set; } = string.Empty;
-    public OrchestrationPolicyDefinitionModel SelectedOrchestration { get; private set; } = null!;
-
-    public ArtifactOrchestrationSummary GetSummary(string orchestrationId)
-        => !string.IsNullOrWhiteSpace(orchestrationId) &&
-           ArtifactSummaryByOrchestrationId.TryGetValue(orchestrationId, out var summary)
-            ? summary
-            : ArtifactOrchestrationSummary.Empty;
 
     /// <summary>Returns a concise, color-distinct presentation for an artifact lifecycle type.</summary>
     public ArtifactTypePresentation GetArtifactTypePresentation(string artifactType)
@@ -48,54 +32,54 @@ public sealed class IndexModel : PageModel
             _ => new ArtifactTypePresentation(string.IsNullOrWhiteSpace(artifactType) ? "Unknown" : artifactType, "od-artifact-type-legacy"),
         };
 
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
     {
-        Orchestrations = await _policyService.GetOrchestrations(cancellationToken);
-        var rows = await LoadArtifacts(cancellationToken);
-        ArtifactSummaryByOrchestrationId = rows
-            .Where(x => !string.IsNullOrWhiteSpace(x.OrchestrationDefinitionId))
-            .GroupBy(x => x.OrchestrationDefinitionId, StringComparer.Ordinal)
-            .ToDictionary(
-                g => g.Key,
-                g => new ArtifactOrchestrationSummary(g.Count(), g.Max(x => x.CreatedAtUtc)),
-                StringComparer.Ordinal);
-
-        if (string.IsNullOrWhiteSpace(OrchestrationId))
+        try
         {
-            Rows = Array.Empty<ArtifactModel>();
-            return;
+            var result = await _service.Search(new ApplicationPagedSettings { PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100) },
+                OrchestrationId, search?.Trim(), sort, descending, cancellationToken);
+            return new JsonResult(new
+            {
+                items = result.Rows.Select(x => new { id = x.Id, key = x.VersionNumber, displayName = x.OrchestrationDisplayName,
+                    version = x.VersionNumber, artifactType = x.ArtifactType, typeLabel = GetArtifactTypePresentation(x.ArtifactType).Label,
+                    typeClass = GetArtifactTypePresentation(x.ArtifactType).CssClass, created = x.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"),
+                    description = x.VersionLabel, checksum = x.Checksum }),
+                totalCount = result.TotalRows, hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+            });
         }
-
-        SelectedOrchestration = Orchestrations.FirstOrDefault(x => string.Equals(x.Id, OrchestrationId, StringComparison.Ordinal));
-        Rows = rows
-            .Where(x => string.Equals(x.OrchestrationDefinitionId, OrchestrationId, StringComparison.Ordinal))
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .ToArray();
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured artifact storage does not support catalog search.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Artifacts could not be loaded. Try again in a moment.");
+        }
     }
 
-    private async Task<ArtifactModel[]> LoadArtifacts(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetDetailsAsync(string artifactId, CancellationToken cancellationToken = default)
     {
-        var rows = new List<ArtifactModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
+        if (!Ulid.TryParse(artifactId, out _)) return BadRequest("Artifact id is invalid.");
+        try
         {
-            var result = await _service.GetAll(
-                new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize },
-                cancellationToken);
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
+            var item = await _service.GetById(artifactId, cancellationToken);
+            if (item is null) return NotFound("Artifact was not found.");
+            return new JsonResult(new { displayName = item.OrchestrationDisplayName, artifactType = item.ArtifactType,
+                versionId = item.OrchestrationVersionId, versionNumber = item.VersionNumber, versionLabel = item.VersionLabel,
+                createdAt = item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm"), checksum = item.Checksum, payload = item.Payload });
         }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-        return rows.ToArray();
-    }
-
-    public sealed record ArtifactOrchestrationSummary(int ArtifactCount, DateTime? LatestCreatedAtUtc)
-    {
-        public static ArtifactOrchestrationSummary Empty { get; } = new(0, null);
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured artifact storage does not support detail lookup.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Artifact details are unavailable. Try again in a moment.");
+        }
     }
 
     /// <summary>Describes the visible label and theme-safe class for an artifact type.</summary>

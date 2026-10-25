@@ -1,163 +1,43 @@
 @page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel
-@{
-    ViewData["Title"] = "Artifacts";
-    var isOrchestrationSelected = !string.IsNullOrWhiteSpace(Model.OrchestrationId);
-    var catalogRows = Model.Orchestrations
-        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-        .ToArray();
-    var artifactRows = Model.Rows
-        .OrderByDescending(x => x.CreatedAtUtc)
-        .ToArray();
-    var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
-}
+@{ ViewData["Title"] = "Artifacts"; }
 
 <div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">
-            @(!isOrchestrationSelected
-                ? "Artifacts"
-                : $"Artifacts - {selectedOrchestrationName}")
-        </h1>
-        <p class="od-page-subtitle">
-            @(!isOrchestrationSelected
-                ? "Select an orchestration to view deployed artifacts."
-                : "Artifacts already deployed for the selected orchestration.")
-        </p>
-    </div>
-    @if (isOrchestrationSelected)
+    <div><h1 class="od-page-title">Artifacts</h1><p class="od-page-subtitle">Deployed orchestration artifacts.</p></div>
+    @if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
     {
-        <a class="btn btn-outline-secondary"
-           asp-area="OrchestratorDistribution"
-           asp-page="/ArtifactReleases/Index">
-            All orchestrations
-        </a>
+        <a class="btn btn-outline-secondary" asp-page="/ArtifactReleases/Index">All artifacts</a>
     }
 </div>
-
-@if (!isOrchestrationSelected)
-{
-    @if (!catalogRows.Any())
-    {
-        <section class="od-panel">
-            <p class="od-empty">No orchestrations available in distribution mirror.</p>
-        </section>
-    }
-    else
-    {
-        <section class="od-list-shell" data-od-infinite-list>
-            <div class="od-grid"
-                 data-od-infinite-grid
-                 data-od-infinite-label="orchestrations"
-                 data-od-infinite-initial-count="24"
-                 data-od-infinite-batch-size="24">
-                @foreach (var orchestration in catalogRows)
-                {
-                    var summary = Model.GetSummary(orchestration.Id);
-                    <a class="od-item-card od-orch-card od-infinite-item text-decoration-none"
-                       asp-area="OrchestratorDistribution"
-                       asp-page="/ArtifactReleases/Index"
-                       asp-route-orchestrationId="@orchestration.Id">
-                        <div class="od-item-top">
-                            <div>
-                                <h2 class="od-item-title od-orch-title">@orchestration.Name</h2>
-                                <p class="od-item-meta">@orchestration.Key</p>
-                            </div>
-                            <span class="od-status @(orchestration.IsActive ? "od-status-active" : "od-status-inactive")">
-                                @(orchestration.IsActive ? "Active" : "Inactive")
-                            </span>
-                        </div>
-                        <div class="od-chip-row">
-                            <span class="od-meta-chip">Artifacts: @summary.ArtifactCount</span>
-                            @if (summary.LatestCreatedAtUtc.HasValue)
-                            {
-                                <span class="od-meta-chip">Latest: @summary.LatestCreatedAtUtc.Value.ToString("yyyy-MM-dd HH:mm")</span>
-                            }
-                        </div>
-                    </a>
-                }
-            </div>
-            <div class="od-infinite-scroll-status" data-od-infinite-status>
-                Showing <span data-od-infinite-count>@Math.Min(24, catalogRows.Length)</span> of <span data-od-infinite-total>@catalogRows.Length</span> orchestrations
-            </div>
-            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-        </section>
-    }
-}
-else
-{
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-section-head od-release-detail-headline">
-            <div>
-                <h2 class="od-section-title">Deployed artifacts</h2>
-                <p class="od-item-meta">@artifactRows.Length artifact(s) found</p>
-            </div>
+<section class="od-catalog" data-catalog="artifacts" data-label="artifacts" data-source="@Url.Page(null, "List", new { orchestrationId = Model.OrchestrationId })" data-detail-source="@Url.Page(null, "Details")">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-catalog-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        {
+            Id = "artifacts-grid", AriaLabel = "artifacts", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List", new { orchestrationId = Model.OrchestrationId }) },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("displayName", "Orchestration"), new("version", "Version", false), new("artifactType", "Type"), new("created", "Created"), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-catalog-cards hidden>
+        <div class="od-catalog-filters">
+            <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search artifacts" placeholder="Search artifacts" autocomplete="off" /></label>
+            <select class="form-select" data-catalog-sort aria-label="Sort artifacts">
+                <option value="created:desc">Newest first</option><option value="created">Oldest first</option>
+                <option value="displayName">Orchestration</option><option value="artifactType">Type</option>
+            </select>
         </div>
-
-        @if (!artifactRows.Any())
-        {
-            <section class="od-panel">
-                <p class="od-empty">No artifacts found for this orchestration.</p>
-            </section>
-        }
-        else
-        {
-            <div class="od-grid od-distribution-detail-grid"
-                 data-od-infinite-grid
-                 data-od-infinite-label="artifacts"
-                 data-od-infinite-initial-count="30"
-                 data-od-infinite-batch-size="30">
-                @foreach (var item in artifactRows)
-                {
-                    var artifactPresentation = Model.GetArtifactTypePresentation(item.ArtifactType);
-                    <article class="od-item-card od-artifact-detail-card od-infinite-item"
-                             data-display-name="@item.OrchestrationDisplayName"
-                             data-version-id="@item.OrchestrationVersionId"
-                             data-version-label="@item.VersionLabel"
-                             data-version-number="@item.VersionNumber"
-                             data-artifact-type="@item.ArtifactType"
-                             data-checksum="@item.Checksum"
-                             data-created-at="@item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")"
-                             data-payload="@item.Payload">
-                        <div class="od-item-top">
-                            <div>
-                                <h2 class="od-item-title">Version @item.VersionNumber</h2>
-                                <p class="od-item-meta od-release-id">@item.Id</p>
-                            </div>
-                            <span class="od-status @artifactPresentation.CssClass">@artifactPresentation.Label</span>
-                        </div>
-                        <div class="od-chip-row">
-                            <span class="od-meta-chip">Label: @(string.IsNullOrWhiteSpace(item.VersionLabel) ? "Unlabeled" : item.VersionLabel)</span>
-                            <span class="od-meta-chip">Created: @item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
-                        </div>
-                        <div class="od-detail-kv">
-                            <span>Checksum</span>
-                            <strong>@item.Checksum</strong>
-                        </div>
-                        <div class="od-card-actions">
-                            <button type="button"
-                                    class="btn btn-sm od-release-details-btn js-open-artifact-details"
-                                    data-display-name="@item.OrchestrationDisplayName"
-                                    data-version-id="@item.OrchestrationVersionId"
-                                    data-version-number="@item.VersionNumber"
-                                    data-version-label="@item.VersionLabel"
-                                    data-artifact-type="@item.ArtifactType"
-                                    data-checksum="@item.Checksum"
-                                    data-created-at="@item.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")"
-                                    data-payload="@item.Payload">
-                                View details
-                            </button>
-                        </div>
-                    </article>
-                }
-            </div>
-            <div class="od-infinite-scroll-status" data-od-infinite-status>
-                Showing <span data-od-infinite-count>@Math.Min(30, artifactRows.Length)</span> of <span data-od-infinite-total>@artifactRows.Length</span> artifacts
-            </div>
-            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-        }
-    </section>
-}
+        <div class="od-grid" data-catalog-card-items></div>
+        <p class="od-empty" data-catalog-empty hidden>No matching artifacts.</p>
+        <p data-catalog-status aria-live="polite"></p><div data-catalog-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+    </div>
+</section>
 
 <div class="modal fade" id="artifactDetailsModal" tabindex="-1" aria-labelledby="artifactDetailsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -210,6 +90,7 @@ else
 </div>
 
 @section Scripts {
+<script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const modalElement = document.getElementById('artifactDetailsModal');
@@ -248,19 +129,24 @@ else
         }
     };
 
-    document.querySelectorAll('.js-open-artifact-details').forEach(button => {
-        button.addEventListener('click', () => {
-            setValue(fields.displayName, button.getAttribute('data-display-name'));
-            setValue(fields.artifactType, button.getAttribute('data-artifact-type'));
-            setValue(fields.versionId, button.getAttribute('data-version-id'));
-            setValue(fields.versionNumber, button.getAttribute('data-version-number'));
-            setValue(fields.versionLabel, button.getAttribute('data-version-label'));
-            setValue(fields.createdAt, button.getAttribute('data-created-at'));
-            setValue(fields.checksum, button.getAttribute('data-checksum'));
-            setPrettyJson(fields.payload, button.getAttribute('data-payload'));
-
-            modal.show();
-        });
+    document.addEventListener('click', async event => {
+        const button = event.target.closest('.js-open-artifact-details');
+        if (!button) return;
+        Object.values(fields).forEach(element => { if (element !== fields.payload) setValue(element, ''); });
+        fields.payload.textContent = 'Loading artifact...';
+        modal.show();
+        try {
+            const url = new URL(document.querySelector('[data-catalog="artifacts"]').dataset.detailSource, location.href);
+            url.searchParams.set('artifactId', button.dataset.id);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Artifact details are unavailable.');
+            const item = await response.json();
+            for (const key of ['displayName', 'artifactType', 'versionId', 'versionNumber', 'versionLabel', 'createdAt', 'checksum'])
+                setValue(fields[key], item[key]);
+            setPrettyJson(fields.payload, item.payload);
+        } catch {
+            fields.payload.textContent = 'Artifact details could not be loaded. Please try again.';
+        }
     });
 })();
 </script>

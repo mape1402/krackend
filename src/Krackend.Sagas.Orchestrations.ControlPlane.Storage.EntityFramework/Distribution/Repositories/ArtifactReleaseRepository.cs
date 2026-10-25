@@ -143,5 +143,40 @@ public sealed class ArtifactRepository : IArtifactRepository
                 PublishedAtUtc = x.PublishedAtUtc
             }).ToArray());
     }
+
+    /// <inheritdoc />
+    public async Task<PagedResult<Artifact>> Search(PagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, settings?.PageNumber ?? 1);
+        var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
+        var query = _dbContext.Artifacts.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(orchestrationId)) query = query.Where(x => x.OrchestrationDefinitionId == orchestrationId);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x => x.OrchestrationDisplayName.Contains(term) || x.VersionNumber.Contains(term) ||
+                x.VersionLabel.Contains(term) || x.ArtifactType.Contains(term) || x.Checksum.Contains(term));
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var ordered = (sort, descending) switch
+        {
+            ("displayName", false) => query.OrderBy(x => x.OrchestrationDisplayName),
+            ("displayName", true) => query.OrderByDescending(x => x.OrchestrationDisplayName),
+            ("version", false) => query.OrderBy(x => x.VersionNumber),
+            ("version", true) => query.OrderByDescending(x => x.VersionNumber),
+            ("artifactType", false) => query.OrderBy(x => x.ArtifactType),
+            ("artifactType", true) => query.OrderByDescending(x => x.ArtifactType),
+            ("created", false) => query.OrderBy(x => x.CreatedAtUtc),
+            _ => query.OrderByDescending(x => x.CreatedAtUtc)
+        };
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size)
+            .Select(x => new { x.Id, x.OrchestrationDefinitionId, x.OrchestrationVersionId, x.OrchestrationDisplayName,
+                x.VersionLabel, x.VersionNumber, x.ArtifactType, x.Checksum, x.IsPublished, x.CreatedAtUtc }).ToArrayAsync(cancellationToken);
+        return new PagedResult<Artifact>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size,
+            rows.Select(x => new Artifact { Id = x.Id, OrchestrationDefinitionId = x.OrchestrationDefinitionId,
+                OrchestrationVersionId = x.OrchestrationVersionId, OrchestrationDisplayName = x.OrchestrationDisplayName,
+                VersionLabel = x.VersionLabel, VersionNumber = x.VersionNumber, ArtifactType = x.ArtifactType,
+                Checksum = x.Checksum, IsPublished = x.IsPublished, CreatedAtUtc = x.CreatedAtUtc }).ToArray());
+    }
 }
 
