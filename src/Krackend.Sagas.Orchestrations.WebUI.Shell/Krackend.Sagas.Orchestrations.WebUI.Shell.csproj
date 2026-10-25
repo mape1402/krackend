@@ -13,4 +13,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Zoorce.Web.UI" Version="1.0.0" />
+  </ItemGroup>
 </Project>

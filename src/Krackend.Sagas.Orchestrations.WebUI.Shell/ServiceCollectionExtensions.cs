@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
+using Zoorce.Web.UI;
+using Zoorce.Web.UI.Layout;
 
 namespace Krackend.Sagas.Orchestrations.WebUI.Shell;
 
@@ -35,13 +37,15 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddRazorPages()
-            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly);
+            .AddApplicationPart(typeof(ServiceCollectionExtensions).Assembly)
+            .AddZoorceWebUI();
         services.TryAddSingleton<OrchestratorNavigationRegistry>();
         services.TryAddSingleton<IOrchestratorThemeCssRenderer, DefaultOrchestratorThemeCssRenderer>();
         services.TryAddScoped<IOrchestratorThemeModeAccessor, DefaultOrchestratorThemeModeAccessor>();
         services.AddHttpContextAccessor();
         services.AddOptions<OrchestratorThemeModeCookieOptions>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureShellAreaRoutes>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<ZoorceShellOptions>, ZoorceShellThemeConfiguration>());
         services.Configure(configureTheme);
         return services;
     }
