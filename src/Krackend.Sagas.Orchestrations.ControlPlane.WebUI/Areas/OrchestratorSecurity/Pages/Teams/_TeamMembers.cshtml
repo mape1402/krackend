@@ -6,4 +6,7 @@
     <div class="col-md-5"><label for="memberDisplayNameInput" class="form-label">Display Name</label><input asp-for="MemberInput.DisplayName" class="form-control" id="memberDisplayNameInput" /></div>
     <div class="col-md-2 d-flex align-items-end"><button type="submit" class="z-button z-button-primary w-100">Add</button></div>
 </form>
-<div id="membersList" class="d-flex flex-column gap-2"><div class="text-muted small">No members loaded.</div></div>
+<label class="z-search-field mb-3"><span aria-hidden="true">&#x2315;</span><input type="search" id="membersSearch" aria-label="Search team members" placeholder="Search members" autocomplete="off" /></label>
+<div id="membersList" class="d-flex flex-column gap-2"></div>
+<p id="membersStatus" class="text-muted small mt-2" aria-live="polite"></p>
+<button type="button" id="membersMore" class="btn btn-outline-secondary" hidden>Load more</button>

@@ -52,4 +52,8 @@ public interface ITeamApplicationService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Team members.</returns>
     Task<IReadOnlyCollection<TeamMemberModel>> GetMembers(GetTeamMembersQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a filtered page of members for a team.</summary>
+    Task<ApplicationPagedResult<TeamMemberModel>> SearchMembers(SearchTeamMembersQuery query, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured team service does not support member search.");
 }

@@ -41,4 +41,8 @@ public sealed class TeamApplicationService : ITeamApplicationService
     /// <inheritdoc />
     public Task<IReadOnlyCollection<TeamMemberModel>> GetMembers(GetTeamMembersQuery query, CancellationToken cancellationToken = default)
         => _mediator.Send(query, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ApplicationPagedResult<TeamMemberModel>> SearchMembers(SearchTeamMembersQuery query, CancellationToken cancellationToken = default)
+        => _mediator.Send(query, cancellationToken);
 }

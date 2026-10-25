@@ -11,6 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using RuntimeNodesPage = Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel;
 using RuntimeArtifactsPage = Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel;
+using TeamsPage = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.OrchestratorSecurity.Pages.Teams.IndexModel;
+using Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -24,7 +26,8 @@ public sealed class RuntimePagingIntegrationTests
         { typeof(Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel), "OnGetHistoryAsync" },
         { typeof(Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.DetailsModel), "OnGetVersionsAsync" },
         { typeof(Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel), "OnGetArtifactOptionsAsync" },
-        { typeof(Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel), "OnGetNodeOptionsAsync" }
+        { typeof(Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel), "OnGetNodeOptionsAsync" },
+        { typeof(TeamsPage), "OnGetMemberListAsync" }
     };
 
     [Theory]
@@ -34,6 +37,30 @@ public sealed class RuntimePagingIntegrationTests
         var parameter = Assert.Single(model.GetMethod(handler)!.GetParameters(), p => p.Name == "page");
         var binding = Assert.Single(parameter.GetCustomAttributes(typeof(FromQueryAttribute), false).Cast<FromQueryAttribute>());
         Assert.Equal("page", binding.Name);
+    }
+
+    [Fact]
+    public async Task TeamMemberListBindsPageAndSearchFromQuery()
+    {
+        var service = Substitute.For<ITeamApplicationService>();
+        service.SearchMembers(Arg.Any<SearchTeamMembersQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => new ApplicationPagedResult<TeamMemberModel>(call.Arg<SearchTeamMembersQuery>().PageNumber, 2, 30, 25, []));
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(service);
+        builder.Services.AddRazorPages(options =>
+            options.Conventions.AddAreaPageRoute("OrchestratorSecurity", "/Teams/Index", "teams"))
+            .AddApplicationPart(typeof(TeamsPage).Assembly);
+        await using var app = builder.Build();
+        app.MapRazorPages();
+        await app.StartAsync();
+
+        using var response = await app.GetTestClient().GetFromJsonAsync<System.Text.Json.JsonDocument>(
+            "/teams?handler=MemberList&teamId=example&page=2&pageSize=25&search=alice");
+        Assert.NotNull(response);
+        Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
+        await service.Received(1).SearchMembers(Arg.Is<SearchTeamMembersQuery>(x =>
+            x.TeamId == "example" && x.PageNumber == 2 && x.PageSize == 25 && x.SearchText == "alice"), Arg.Any<CancellationToken>());
     }
 
     [Fact]

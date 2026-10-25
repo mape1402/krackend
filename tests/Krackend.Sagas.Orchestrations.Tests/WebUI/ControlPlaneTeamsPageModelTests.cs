@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using NSubstitute;
 using TeamsIndexModel = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.OrchestratorSecurity.Pages.Teams.IndexModel;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
@@ -143,6 +144,33 @@ public sealed class ControlPlaneTeamsPageModelTests
     }
 
     [Fact]
+    public async Task MemberListClampsPageSizeAndTrimsSearch()
+    {
+        var service = new FakeTeamApplicationService();
+        var page = new TeamsIndexModel(service);
+
+        Assert.IsType<JsonResult>(await page.OnGetMemberListAsync("team-1", -2, 200, " User "));
+        Assert.Equal(1, service.LastMemberSearch.PageNumber);
+        Assert.Equal(100, service.LastMemberSearch.PageSize);
+        Assert.Equal("User", service.LastMemberSearch.SearchText);
+    }
+
+    [Theory]
+    [InlineData(true, 503)]
+    [InlineData(false, 500)]
+    public async Task MemberListReturnsFriendlyFailureWhenStorageFails(bool unsupported, int status)
+    {
+        var service = Substitute.For<ITeamApplicationService>();
+        service.SearchMembers(Arg.Any<SearchTeamMembersQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ApplicationPagedResult<TeamMemberModel>>(
+                unsupported ? new NotSupportedException() : new InvalidOperationException()));
+        var page = new TeamsIndexModel(service);
+
+        var result = Assert.IsType<ObjectResult>(await page.OnGetMemberListAsync("team-1"));
+        Assert.Equal(status, result.StatusCode);
+    }
+
+    [Fact]
     public async Task ListUsesCatalogSearchAndPaging()
     {
         var service = new FakeTeamApplicationService();
@@ -169,6 +197,7 @@ public sealed class ControlPlaneTeamsPageModelTests
         public RemoveTeamMemberCommand LastRemoveMember { get; private set; } = new(string.Empty, string.Empty);
 
         public GetTeamMembersQuery LastMembersQuery { get; private set; } = new(string.Empty);
+        public SearchTeamMembersQuery LastMemberSearch { get; private set; } = new(string.Empty, 1, 25, string.Empty);
         public GetTeamsQuery LastTeamsQuery { get; private set; } = new(new ApplicationPagedSettings());
 
         public Task<string> Upsert(UpsertTeamCommand command, CancellationToken cancellationToken = default)
@@ -229,6 +258,13 @@ public sealed class ControlPlaneTeamsPageModelTests
                     CreatedOnUtc = "2026-08-20T12:00:00Z"
                 }
             ]);
+        }
+
+        public async Task<ApplicationPagedResult<TeamMemberModel>> SearchMembers(SearchTeamMembersQuery query, CancellationToken cancellationToken = default)
+        {
+            LastMemberSearch = query;
+            var rows = await GetMembers(new GetTeamMembersQuery(query.TeamId), cancellationToken);
+            return new ApplicationPagedResult<TeamMemberModel>(query.PageNumber, 1, rows.Count, query.PageSize, rows);
         }
     }
 }

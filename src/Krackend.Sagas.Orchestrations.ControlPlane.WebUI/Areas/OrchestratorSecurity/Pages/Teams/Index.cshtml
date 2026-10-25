@@ -79,6 +79,11 @@
     const membersLabel = document.getElementById('membersModal-title');
     const membersList = document.getElementById('membersList');
     const memberTeamIdInput = document.getElementById('memberTeamIdInput');
+    const membersSearch = document.getElementById('membersSearch');
+    const membersStatus = document.getElementById('membersStatus');
+    const membersMore = document.getElementById('membersMore');
+    const membersScroll = membersModalElement?.querySelector('[data-z-dialog-focus]');
+    let membersPage = 1, membersHasMore = false, membersLoading = false, membersGeneration = 0, searchTimer;
 
     const setValue = (el, value) => { if (el) el.value = value ?? ''; };
     const escapeHtml = (value) => (value || '')
@@ -116,26 +121,20 @@
         }
     });
 
-    const loadMembers = async (teamId) => {
-        if (!membersList || !teamId) return;
-        const response = await fetch(`${window.location.pathname}?handler=Members&teamId=${encodeURIComponent(teamId)}`);
-        if (!response.ok) {
-            membersList.innerHTML = '<div class="text-muted small">Members could not be loaded.</div>';
-            window.OrchestratorMessages?.notify({
-                title: 'Members unavailable',
-                message: 'Security could not load the selected team members.',
-                type: 'error'
-            });
-            return;
-        }
-
-        const rows = await response.json();
-        if (!Array.isArray(rows) || rows.length === 0) {
-            membersList.innerHTML = '<div class="text-muted small">No members found.</div>';
-            return;
-        }
-
-        membersList.innerHTML = rows.map(x => `
+    const loadMembers = async () => {
+        const teamId = memberTeamIdInput?.value;
+        if (!membersList || !teamId || membersLoading) return;
+        const generation = membersGeneration;
+        membersLoading = true;
+        membersStatus.textContent = 'Loading members...';
+        membersMore.hidden = true;
+        try {
+            const query = new URLSearchParams({ handler: 'MemberList', teamId, page: membersPage, pageSize: 25, search: membersSearch.value.trim() });
+            const response = await fetch(`${window.location.pathname}?${query}`);
+            if (!response.ok) throw new Error('Members unavailable');
+            const result = await response.json();
+            if (generation !== membersGeneration) return;
+            membersList.insertAdjacentHTML('beforeend', result.items.map(x => `
             <div class="d-flex align-items-center justify-content-between border rounded p-2">
                 <div>
                     <div>${escapeHtml(x.displayName || '')}</div>
@@ -147,8 +146,40 @@
                     <input type="hidden" name="externalUserId" value="${escapeHtml(x.externalUserId || '')}" />
                     <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
                 </form>
-            </div>`).join('');
+            </div>`).join(''));
+            membersHasMore = result.hasMore;
+            membersPage++;
+            membersStatus.textContent = result.totalCount === 0 ? 'No matching members.' : `${result.totalCount} members`;
+            membersMore.hidden = !membersHasMore;
+            if (result.items.length && membersHasMore) requestAnimationFrame(() => {
+                if (generation === membersGeneration && membersScroll && membersScroll.scrollTop + membersScroll.clientHeight >= membersScroll.scrollHeight - 48) loadMembers();
+            });
+        } catch {
+            if (generation === membersGeneration) {
+                membersStatus.textContent = 'Members could not be loaded. Try again.';
+                membersMore.hidden = false;
+            }
+        } finally {
+            if (generation === membersGeneration) membersLoading = false;
+        }
     };
+
+    const resetMembers = () => {
+        membersGeneration++;
+        membersPage = 1;
+        membersHasMore = false;
+        membersLoading = false;
+        membersList.replaceChildren();
+        loadMembers();
+    };
+    membersScroll?.addEventListener('scroll', () => {
+        if (membersHasMore && membersScroll.scrollTop + membersScroll.clientHeight >= membersScroll.scrollHeight - 48) loadMembers();
+    });
+    membersMore?.addEventListener('click', loadMembers);
+    membersSearch?.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(resetMembers, 250);
+    });
 
     document.addEventListener('click', async event => {
             const button = event.target.closest('.js-open-members-modal');
@@ -159,8 +190,10 @@
 
             membersLabel.textContent = `Team members - ${teamName}`;
             memberTeamIdInput.value = teamId;
-            await loadMembers(teamId);
+            clearTimeout(searchTimer);
+            membersSearch.value = '';
             membersModalElement.open?.(button);
+            resetMembers();
     });
 })();
 </script>

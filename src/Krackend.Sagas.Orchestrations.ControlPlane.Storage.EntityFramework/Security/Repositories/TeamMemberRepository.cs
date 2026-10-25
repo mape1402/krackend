@@ -66,6 +66,25 @@ public sealed class TeamMemberRepository : ITeamMemberRepository
     }
 
     /// <inheritdoc />
+    public async Task<PagedResult<TeamMember>> Search(Id teamId, int pageNumber, int pageSize, string searchText, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.TeamMembers.AsNoTracking().Where(x => x.TeamId == teamId);
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var term = searchText.Trim();
+            query = query.Where(x => x.ExternalUserId.Contains(term) || (x.DisplayName != null && x.DisplayName.Contains(term)));
+        }
+
+        var total = await query.LongCountAsync(cancellationToken);
+        var page = Math.Max(1, pageNumber);
+        var size = Math.Clamp(pageSize, 1, 100);
+        var rows = await query.OrderBy(x => x.DisplayName).ThenBy(x => x.ExternalUserId).ThenBy(x => x.Id)
+            .Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<TeamMember>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size,
+            rows.Select(x => x.ToDefinition()));
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<Id, int>> CountByTeams(IReadOnlyCollection<Id> teamIds, CancellationToken cancellationToken = default)
     {
         if (teamIds.Count == 0) return new Dictionary<Id, int>();

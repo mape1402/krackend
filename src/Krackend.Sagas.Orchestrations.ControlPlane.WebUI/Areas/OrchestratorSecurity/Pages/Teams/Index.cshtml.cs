@@ -168,6 +168,27 @@ public sealed class IndexModel : PageModel
         return new JsonResult(rows);
     }
 
+    /// <summary>Returns one filtered page of team members.</summary>
+    public async Task<IActionResult> OnGetMemberListAsync(string teamId, [FromQuery(Name = "page")] int page = 1,
+        int pageSize = 25, string search = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await _service.SearchMembers(new SearchTeamMembersQuery(teamId, Math.Max(1, page),
+                Math.Clamp(pageSize, 1, 100), search?.Trim() ?? string.Empty), cancellationToken);
+            return new JsonResult(new { items = result.Rows, totalCount = result.TotalRows,
+                hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows });
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured team storage does not support member search.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Team members could not be loaded. Try again in a moment.");
+        }
+    }
+
     private void KeepOnlyModelStateEntries(params string[] keysOrPrefixes)
     {
         foreach (var key in ModelState.Keys.ToArray())
@@ -198,7 +219,7 @@ public sealed class IndexModel : PageModel
     {
         if (!string.IsNullOrWhiteSpace(TeamId))
         {
-            TeamMembers = await _service.GetMembers(new GetTeamMembersQuery(TeamId), cancellationToken);
+            TeamMembers = (await _service.SearchMembers(new SearchTeamMembersQuery(TeamId, 1, 25, string.Empty), cancellationToken)).Rows.ToArray();
         }
     }
 

@@ -11,6 +11,31 @@ using Microsoft.EntityFrameworkCore;
 public sealed class TeamCatalogTests
 {
     [Fact]
+    public async Task MemberSearchFiltersAndPagesWithinTheSelectedTeam()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ControlPlaneDbContext>().UseSqlite(connection).Options;
+        await using var context = new ControlPlaneDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        var teams = new TeamRepository(context);
+        var members = new TeamMemberRepository(context);
+        var teamId = Id.New();
+        var otherTeamId = Id.New();
+        await teams.Upsert(new Team { Id = teamId, Key = "selected", DisplayName = "Selected", IsActive = true });
+        await teams.Upsert(new Team { Id = otherTeamId, Key = "other", DisplayName = "Other", IsActive = true });
+        for (var i = 0; i < 5; i++)
+            await members.Add(new TeamMember { Id = Id.New(), TeamId = teamId, ExternalUserId = $"user-{i}", DisplayName = $"Member {i}" });
+        await members.Add(new TeamMember { Id = Id.New(), TeamId = otherTeamId, ExternalUserId = "user-other", DisplayName = "Member other" });
+
+        var result = await new SearchTeamMembersQueryHandler(members).Handle(new SearchTeamMembersQuery(teamId.ToString(), 2, 2, " Member "), default);
+        Assert.Equal(5, result.TotalRows);
+        Assert.Equal(new[] { "user-2", "user-3" }, result.Rows.Select(x => x.ExternalUserId));
+        Assert.Equal("user-4", Assert.Single((await members.Search(teamId, 1, 25, "user-4")).Rows).ExternalUserId);
+        Assert.Empty((await members.Search(teamId, 1, 25, "absent")).Rows);
+    }
+
+    [Fact]
     public async Task ActiveSuggestionsUsePagedSearchAndBatchedMemberCounts()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
