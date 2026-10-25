@@ -1,6 +1,8 @@
 @page
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.OrchestratorSecurity.Pages.Teams.IndexModel
 @{
     ViewData["Title"] = "Teams";
@@ -46,83 +48,27 @@
     </div>
 </section>
 
-<div class="modal fade" id="teamModal" tabindex="-1" aria-labelledby="teamModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving team" data-busy-message="Security is validating and storing the team.">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="teamModalLabel">Create team</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input asp-for="Input.TeamId" type="hidden" id="teamIdInput" />
-                    <div class="mb-2">
-                        <label for="teamKeyInput" class="form-label">Key</label>
-                        <input asp-for="Input.Key" class="form-control" id="teamKeyInput" data-orchestrator-key="true" />
-                    </div>
-                    <div class="mb-2">
-                        <label for="teamDisplayNameInput" class="form-label">Display Name</label>
-                        <input asp-for="Input.DisplayName" class="form-control" id="teamDisplayNameInput" />
-                    </div>
-                    <div class="mb-2">
-                        <label for="teamDescriptionInput" class="form-label">Description</label>
-                        <textarea asp-for="Input.Description" class="form-control" rows="3" id="teamDescriptionInput"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="teamModalSubmitButton">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="membersModal" tabindex="-1" aria-labelledby="membersModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="membersModalLabel">Team members</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form method="post" asp-page-handler="AddMember" class="row g-2 mb-3" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Adding member" data-busy-message="Security is validating and storing the team member.">
-                    <input asp-for="MemberInput.TeamId" type="hidden" id="memberTeamIdInput" />
-                    <div class="col-md-5">
-                        <label for="memberExternalUserInput" class="form-label">External User Id</label>
-                        <input asp-for="MemberInput.ExternalUserId" class="form-control" id="memberExternalUserInput" />
-                    </div>
-                    <div class="col-md-5">
-                        <label for="memberDisplayNameInput" class="form-label">Display Name</label>
-                        <input asp-for="MemberInput.DisplayName" class="form-control" id="memberDisplayNameInput" />
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button type="submit" class="btn btn-primary w-100">Add</button>
-                    </div>
-                </form>
-
-                <div class="border rounded p-2">
-                    <div id="membersList" class="d-flex flex-column gap-2">
-                        <div class="text-muted small">No members loaded.</div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "teamModal", Title = "Create team", Eyebrow = null,
+    Body = await Html.PartialAsync("_TeamForm", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"teamForm\" class=\"z-button z-button-primary\" id=\"teamModalSubmitButton\">Create</button>")
+})
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "membersModal", Title = "Team members", Eyebrow = null, Size = "wide",
+    Body = await Html.PartialAsync("_TeamMembers", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
+})
 
 @section Scripts {
 <script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const teamModalElement = document.getElementById('teamModal');
-    const teamModal = window.bootstrap?.Modal?.getOrCreateInstance(teamModalElement);
-    if (!teamModalElement || !teamModal) return;
+    if (!teamModalElement) return;
 
-    const title = document.getElementById('teamModalLabel');
+    const title = document.getElementById('teamModal-title');
     const submitButton = document.getElementById('teamModalSubmitButton');
     const idInput = document.getElementById('teamIdInput');
     const keyInput = document.getElementById('teamKeyInput');
@@ -130,8 +76,7 @@
     const descriptionInput = document.getElementById('teamDescriptionInput');
 
     const membersModalElement = document.getElementById('membersModal');
-    const membersModal = window.bootstrap?.Modal?.getOrCreateInstance(membersModalElement);
-    const membersLabel = document.getElementById('membersModalLabel');
+    const membersLabel = document.getElementById('membersModal-title');
     const membersList = document.getElementById('membersList');
     const memberTeamIdInput = document.getElementById('memberTeamIdInput');
 
@@ -156,7 +101,7 @@
                 setValue(displayNameInput, button.getAttribute('data-display-name'));
                 setValue(descriptionInput, button.getAttribute('data-description'));
                 keyInput.readOnly = true;
-                teamModal.show();
+                teamModalElement.open?.(button);
                 return;
             }
 
@@ -167,7 +112,7 @@
             setValue(displayNameInput, '');
             setValue(descriptionInput, '');
             keyInput.readOnly = false;
-            teamModal.show();
+            teamModalElement.open?.(button);
         }
     });
 
@@ -197,6 +142,7 @@
                     <div class="text-muted small">${escapeHtml(x.externalUserId || '')}</div>
                 </div>
                 <form method="post" action="${window.location.pathname}?handler=RemoveMember" data-confirm="true" data-confirm-title="Remove member" data-confirm-message="Remove this member from the team?" data-confirm-accept="Remove" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Removing member" data-busy-message="Security is removing the team member.">
+                    <input type="hidden" name="__RequestVerificationToken" value="${escapeHtml(document.querySelector('#team-status-form input[name="__RequestVerificationToken"]')?.value || '')}" />
                     <input type="hidden" name="teamId" value="${escapeHtml(x.teamId || '')}" />
                     <input type="hidden" name="externalUserId" value="${escapeHtml(x.externalUserId || '')}" />
                     <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
@@ -209,12 +155,12 @@
             if (!button) return;
             const teamId = button.getAttribute('data-team-id') || '';
             const teamName = button.getAttribute('data-team-name') || '';
-            if (!teamId || !membersModal || !memberTeamIdInput || !membersLabel) return;
+            if (!teamId || !membersModalElement || !memberTeamIdInput || !membersLabel) return;
 
             membersLabel.textContent = `Team members - ${teamName}`;
             memberTeamIdInput.value = teamId;
             await loadMembers(teamId);
-            membersModal.show();
+            membersModalElement.open?.(button);
     });
 })();
 </script>

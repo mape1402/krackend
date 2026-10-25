@@ -1,0 +1,9 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.OrchestratorSecurity.Pages.Teams.IndexModel
+
+<form method="post" asp-page-handler="AddMember" class="row g-2 mb-3" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Adding member" data-busy-message="Security is validating and storing the team member.">
+    <input asp-for="MemberInput.TeamId" type="hidden" id="memberTeamIdInput" />
+    <div class="col-md-5"><label for="memberExternalUserInput" class="form-label">External User Id</label><input asp-for="MemberInput.ExternalUserId" class="form-control" id="memberExternalUserInput" /></div>
+    <div class="col-md-5"><label for="memberDisplayNameInput" class="form-label">Display Name</label><input asp-for="MemberInput.DisplayName" class="form-control" id="memberDisplayNameInput" /></div>
+    <div class="col-md-2 d-flex align-items-end"><button type="submit" class="z-button z-button-primary w-100">Add</button></div>
+</form>
+<div id="membersList" class="d-flex flex-column gap-2"><div class="text-muted small">No members loaded.</div></div>

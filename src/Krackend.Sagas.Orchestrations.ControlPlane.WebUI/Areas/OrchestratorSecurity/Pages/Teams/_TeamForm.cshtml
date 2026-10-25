@@ -1,0 +1,8 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.OrchestratorSecurity.Pages.Teams.IndexModel
+
+<form id="teamForm" method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving team" data-busy-message="Security is validating and storing the team.">
+    <input asp-for="Input.TeamId" type="hidden" id="teamIdInput" />
+    <div class="mb-2"><label for="teamKeyInput" class="form-label">Key</label><input asp-for="Input.Key" class="form-control" id="teamKeyInput" data-orchestrator-key="true" /></div>
+    <div class="mb-2"><label for="teamDisplayNameInput" class="form-label">Display Name</label><input asp-for="Input.DisplayName" class="form-control" id="teamDisplayNameInput" /></div>
+    <div class="mb-2"><label for="teamDescriptionInput" class="form-label">Description</label><textarea asp-for="Input.Description" class="form-control" rows="3" id="teamDescriptionInput"></textarea></div>
+</form>
