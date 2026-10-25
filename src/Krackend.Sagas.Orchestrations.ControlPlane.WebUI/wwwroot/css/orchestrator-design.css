@@ -825,8 +825,8 @@ main.container {
     padding: 0.56rem 0.62rem;
     border: 1px solid var(--od-border);
     border-radius: 10px;
-    background: #ffffff;
-    color: #303a66;
+    background: var(--od-surface);
+    color: var(--od-text);
     text-align: left;
 }
 
@@ -837,8 +837,8 @@ main.container {
     width: 28px;
     height: 28px;
     border-radius: 999px;
-    background: #edf1ff;
-    color: var(--od-primary);
+    background: var(--od-surface-2);
+    color: var(--od-text);
     font-size: 0.78rem;
     font-weight: 700;
 }
@@ -849,14 +849,18 @@ main.container {
 }
 
 .od-runtime-wizard-step.is-active {
-    border-color: #aeb9ee;
-    background: #f2f5ff;
-    color: var(--od-primary-strong);
+    border-color: var(--od-primary);
+    background: color-mix(in srgb, var(--od-primary) 14%, var(--od-surface));
+    color: var(--od-text);
 }
 
 .od-runtime-wizard-step.is-active span {
     background: var(--od-primary);
-    color: #ffffff;
+    color: var(--od-surface);
+}
+
+:is(#runtimeNodeViewModal, #runtimeNodeSetupModal, #runtimeNodeCredentialModal, #generatedCredentialsModal) .z-component-dialog {
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .od-runtime-wizard-step.is-disabled {

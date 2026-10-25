@@ -54,281 +54,26 @@
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"runtimeNodeBasicForm\" class=\"z-button z-button-primary\" id=\"runtimeNodeModalSubmitButton\">Create</button>")
 })
 
-<div class="modal fade" id="runtimeNodeViewModal" tabindex="-1" aria-labelledby="runtimeNodeViewModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl od-runtime-detail-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h5 class="modal-title" id="runtimeNodeViewModalLabel">Runtime node</h5>
-                    <p class="od-item-meta mb-0" id="runtimeNodeViewSubtitle"></p>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body od-runtime-detail-body od-runtime-node-view-body">
-                <section class="od-detail-section od-runtime-view-section">
-                    <div class="od-section-head">
-                        <div>
-                            <h2 class="od-section-title">Identity</h2>
-                        </div>
-                        <button type="button" class="btn btn-outline-primary btn-sm js-view-edit-basic">Edit data</button>
-                    </div>
-                    <div class="od-info-grid">
-                        <div class="od-info-tile"><span>Name</span><strong id="viewName">-</strong></div>
-                        <div class="od-info-tile"><span>Code</span><strong id="viewCode">-</strong></div>
-                        <div class="od-info-tile"><span>Environment</span><strong id="viewEnvironment">-</strong></div>
-                        <div class="od-info-tile"><span>Status</span><strong id="viewStatus">-</strong></div>
-                        <div class="od-info-tile"><span>Registered</span><strong id="viewRegisteredAt">-</strong></div>
-                        <div class="od-info-tile"><span>Last update</span><strong id="viewLastUpdatedAt">-</strong></div>
-                        <div class="od-info-tile"><span>Policy</span><strong id="viewDistributionModeLabel">-</strong></div>
-                        <div class="od-info-tile"><span>Runtime endpoint</span><strong id="viewEndpointBaseUri">-</strong></div>
-                        <div class="od-info-tile"><span>API path</span><strong id="viewEndpointApiPath">-</strong></div>
-                        <div class="od-info-tile"><span>Access token TTL</span><strong id="viewAccessTokenTtl">-</strong></div>
-                        <div class="od-info-tile"><span>Validation cache TTL</span><strong id="viewTokenValidationCacheTtl">-</strong></div>
-                    </div>
-                    <div class="od-info-block">
-                        <span>Description</span>
-                        <p id="viewDescription">-</p>
-                    </div>
-                </section>
-
-                <section class="od-detail-section od-runtime-view-section">
-                    <div class="od-section-head">
-                        <div>
-                            <h2 class="od-section-title">Credentials</h2>
-                        </div>
-                    </div>
-                    <div class="od-credential-columns">
-                        <div class="od-credential-panel" data-credential-section="design">
-                            <h3>Design credentials</h3>
-                            <div class="od-info-grid od-info-grid-compact">
-                                <div class="od-info-tile"><span>Status</span><strong id="viewInboundCredentialStatus">-</strong></div>
-                                <div class="od-info-tile"><span>Client ID</span><strong id="viewInboundClientId">-</strong></div>
-                                <div class="od-info-tile"><span>Key ID</span><strong id="viewInboundKeyId">-</strong></div>
-                                <div class="od-info-tile"><span>Scopes</span><strong id="viewInboundAllowedScopes">-</strong></div>
-                                <div class="od-info-tile"><span>Created</span><strong id="viewInboundCredentialCreatedAt">-</strong></div>
-                                <div class="od-info-tile"><span>Last token</span><strong id="viewInboundLastTokenIssuedAt">-</strong></div>
-                            </div>
-                        </div>
-                        <div class="od-credential-panel" data-credential-section="runtime">
-                            <h3>Runtime credentials</h3>
-                            <div class="od-info-grid od-info-grid-compact">
-                                <div class="od-info-tile"><span>Status</span><strong id="viewOutboundCredentialStatus">-</strong></div>
-                                <div class="od-info-tile"><span>Client ID</span><strong id="viewOutboundClientId">-</strong></div>
-                                <div class="od-info-tile"><span>Key ID</span><strong id="viewOutboundKeyId">-</strong></div>
-                                <div class="od-info-tile"><span>Scopes</span><strong id="viewOutboundRequestedScopes">-</strong></div>
-                                <div class="od-info-tile"><span>Imported</span><strong id="viewOutboundCredentialImportedAt">-</strong></div>
-                                <div class="od-info-tile"><span>Last token</span><strong id="viewOutboundLastTokenReceivedAt">-</strong></div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-primary js-open-runtime-node-setup">Configure</button>
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="runtimeNodeSetupModal" tabindex="-1" aria-labelledby="runtimeNodeSetupModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl od-runtime-detail-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h5 class="modal-title" id="runtimeNodeSetupModalLabel">Configure runtime node</h5>
-                    <p class="od-item-meta mb-0" id="runtimeNodeSetupSubtitle"></p>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body od-runtime-detail-body">
-                <div class="od-runtime-detail-layout">
-                    <nav class="od-runtime-wizard-nav" aria-label="Runtime node setup">
-                        <button type="button" class="od-runtime-wizard-step is-active" data-setup-step-target="basic"><span>1</span><strong>Basic data</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="policy"><span>2</span><strong>Policy</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="runtimeCredentials"><span>3</span><strong>Runtime credentials</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="designCredentials"><span>4</span><strong>Design credentials</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="verify"><span>5</span><strong>Verify</strong></button>
-                    </nav>
-
-                    <div class="od-runtime-wizard-content">
-                        <section class="od-setup-step is-active" data-setup-step="basic">
-                            <div class="od-section-head">
-                                <div>
-                                    <h2 class="od-section-title">Basic data</h2>
-                                    <p class="od-item-meta">Design-local identity for the Runtime node.</p>
-                                </div>
-                            </div>
-                            <form method="post" asp-page-handler="WizardUpsert" id="setupBasicForm" data-wizard-form="true">
-                                <input type="hidden" name="Input.RuntimeNodeId" id="setupBasicRuntimeNodeId" />
-                                <input type="hidden" name="Input.DistributionMode" id="setupBasicDistributionMode" value="HybridSync" />
-                                <input type="hidden" name="Input.EndpointBaseUri" id="setupBasicEndpointBaseUri" />
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label for="setupBasicName" class="form-label">Name</label>
-                                        <input name="Input.Name" class="form-control" id="setupBasicName" autocomplete="off" />
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="setupBasicCode" class="form-label">Code</label>
-                                        <input name="Input.Code" class="form-control" id="setupBasicCode" data-orchestrator-key="true" autocomplete="off" />
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="setupBasicEnvironmentId" class="form-label">Environment</label>
-                                        <input type="search" class="form-control mb-2" id="setupEnvironmentSearch" aria-label="Search environments" placeholder="Search environments" autocomplete="off" data-source="@Url.Page(null, "EnvironmentOptions")" />
-                                        <select name="Input.EnvironmentId" class="form-select" id="setupBasicEnvironmentId">
-                                            <option value="">Select environment</option>
-                                        </select>
-                                        <button type="button" class="btn btn-link btn-sm px-0" id="setupEnvironmentMore" hidden>Load more environments</button>
-                                        <div id="setupEnvironmentStatus" class="small" role="status"></div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="setupBasicDescription" class="form-label">Description</label>
-                                        <input name="Input.Description" class="form-control" id="setupBasicDescription" autocomplete="off" />
-                                    </div>
-                                </div>
-                            </form>
-                        </section>
-
-                        <section class="od-setup-step" data-setup-step="policy">
-                            <div class="od-section-head">
-                                <div>
-                                    <h2 class="od-section-title">Policy</h2>
-                                    <p class="od-item-meta">Choose who starts release movement.</p>
-                                </div>
-                            </div>
-                            <form method="post" asp-page-handler="WizardUpsert" id="setupPolicyForm" data-wizard-form="true">
-                                <input type="hidden" name="Input.RuntimeNodeId" id="setupPolicyRuntimeNodeId" />
-                                <input type="hidden" name="Input.Name" id="setupPolicyName" />
-                                <input type="hidden" name="Input.Code" id="setupPolicyCode" />
-                                <input type="hidden" name="Input.EnvironmentId" id="setupPolicyEnvironmentId" />
-                                <input type="hidden" name="Input.Description" id="setupPolicyDescription" />
-                                <input type="hidden" name="Input.EndpointBaseUri" id="setupPolicyEndpointBaseUri" />
-                                <div class="od-policy-options">
-                                    @foreach (var mode in Model.DistributionModeOptions)
-                                    {
-                                        <label class="od-policy-option">
-                                            <input type="radio" name="Input.DistributionMode" value="@mode.Value" />
-                                            <span>
-                                                <strong>@mode.Label</strong>
-                                                <small>@mode.Description</small>
-                                            </span>
-                                        </label>
-                                    }
-                                </div>
-                            </form>
-                        </section>
-
-                        <section class="od-setup-step" data-setup-step="runtimeCredentials">
-                            <div class="od-section-head">
-                                <div>
-                                    <h2 class="od-section-title">Runtime credentials</h2>
-                                    <p class="od-item-meta">Required when Design publishes releases.</p>
-                                </div>
-                                <button type="button" class="btn btn-outline-primary btn-sm js-setup-import-credentials">Import credentials</button>
-                            </div>
-                            <div class="od-info-grid od-info-grid-compact">
-                                <div class="od-info-tile"><span>Status</span><strong id="setupOutboundCredentialStatus">-</strong></div>
-                                <div class="od-info-tile"><span>Runtime endpoint</span><strong id="setupEndpointBaseUri">-</strong></div>
-                                <div class="od-info-tile"><span>Client ID</span><strong id="setupOutboundClientId">-</strong></div>
-                                <div class="od-info-tile"><span>Key ID</span><strong id="setupOutboundKeyId">-</strong></div>
-                                <div class="od-info-tile"><span>Scopes</span><strong id="setupOutboundRequestedScopes">-</strong></div>
-                                <div class="od-info-tile"><span>Imported</span><strong id="setupOutboundCredentialImportedAt">-</strong></div>
-                            </div>
-                        </section>
-
-                        <section class="od-setup-step" data-setup-step="designCredentials">
-                            <div class="od-section-head">
-                                <div>
-                                    <h2 class="od-section-title">Design credentials</h2>
-                                    <p class="od-item-meta">Required when Runtime imports releases.</p>
-                                </div>
-                                <form method="post" asp-page-handler="WizardGenerateCredentials" id="setupGenerateCredentialsForm" class="od-inline-form d-none" data-wizard-form="true">
-                                    <input type="hidden" name="runtimeNodeId" id="setupGenerateRuntimeNodeId" />
-                                </form>
-                                <button type="button" class="btn btn-outline-primary btn-sm js-setup-generate-credentials">Generate credentials</button>
-                            </div>
-                            <div class="od-info-grid od-info-grid-compact">
-                                <div class="od-info-tile"><span>Status</span><strong id="setupInboundCredentialStatus">-</strong></div>
-                                <div class="od-info-tile"><span>Client ID</span><strong id="setupInboundClientId">-</strong></div>
-                                <div class="od-info-tile"><span>Key ID</span><strong id="setupInboundKeyId">-</strong></div>
-                                <div class="od-info-tile"><span>Scopes</span><strong id="setupInboundAllowedScopes">-</strong></div>
-                                <div class="od-info-tile"><span>Created</span><strong id="setupInboundCredentialCreatedAt">-</strong></div>
-                                <div class="od-info-tile"><span>Last token</span><strong id="setupInboundLastTokenIssuedAt">-</strong></div>
-                            </div>
-                        </section>
-
-                        <section class="od-setup-step" data-setup-step="verify">
-                            <div class="od-section-head">
-                                <div>
-                                    <h2 class="od-section-title">Verify</h2>
-                                    <p class="od-item-meta">Connection check.</p>
-                                </div>
-                                <form method="post" asp-page-handler="WizardValidateConnection" id="setupValidateConnectionForm" class="od-inline-form d-none" data-wizard-form="true">
-                                    <input type="hidden" name="runtimeNodeId" id="setupValidateRuntimeNodeId" />
-                                </form>
-                                <button type="button" class="btn btn-outline-primary btn-sm js-setup-validate-connection">Check connection</button>
-                            </div>
-                        </section>
-                    </div>
-                </div>
-            </div>
-            <form method="post" asp-page-handler="WizardSetStatus" id="setupStatusForm" class="d-none" data-wizard-form="true">
-                <input type="hidden" name="runtimeNodeId" id="setupStatusRuntimeNodeId" />
-                <input type="hidden" name="status" id="setupStatusValue" value="Enabled" />
-            </form>
-            <div class="modal-footer od-runtime-wizard-footer">
-                <button type="button" class="btn btn-outline-secondary" id="setupBackButton">Back</button>
-                <button type="button" class="btn btn-primary" id="setupNextButton">Next</button>
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="runtimeNodeCredentialModal" tabindex="-1" aria-labelledby="runtimeNodeCredentialModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="WizardImportCredentials" id="runtimeNodeCredentialForm" data-wizard-form="true">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="runtimeNodeCredentialModalLabel">Import Runtime credentials</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input asp-for="Credentials.RuntimeNodeId" type="hidden" id="credentialRuntimeNodeIdInput" />
-                    <label asp-for="Credentials.CredentialsJson" class="form-label">Runtime credentials JSON</label>
-                    <textarea asp-for="Credentials.CredentialsJson" class="form-control od-credentials-textarea" id="credentialsJsonInput" rows="12" data-val-required="Runtime credentials JSON is required."></textarea>
-                    <span asp-validation-for="Credentials.CredentialsJson" class="text-danger"></span>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="runtimeNodeCredentialSubmitButton">Import and continue</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="generatedCredentialsModal" tabindex="-1" aria-labelledby="generatedCredentialsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h5 class="modal-title" id="generatedCredentialsModalLabel">Generated credentials</h5>
-                    <p class="od-item-meta mb-0" id="generatedCredentialsNodeName">@Model.GeneratedCredentialsNodeName</p>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p class="od-item-meta">Copy these JSON credentials now. The secret is shown only in this response.</p>
-                <textarea class="form-control od-credentials-textarea" id="generatedCredentialsJsonOutput" rows="14" readonly>@Model.GeneratedCredentialsJson</textarea>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-primary" id="copyGeneratedCredentialsButton">Copy</button>
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
-            </div>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeNodeViewModal", Title = "Runtime node", Eyebrow = null, Size = "full",
+    Body = await Html.PartialAsync("_RuntimeNodeView", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-primary js-open-runtime-node-setup\">Configure</button><button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
+})
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeNodeSetupModal", Title = "Configure runtime node", Eyebrow = null, Size = "full",
+    Body = await Html.PartialAsync("_RuntimeNodeSetup", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"setupBackButton\">Back</button><button type=\"button\" class=\"z-button z-button-primary\" id=\"setupNextButton\">Next</button><button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
+})
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "runtimeNodeCredentialModal", Title = "Import Runtime credentials", Eyebrow = null, Size = "wide",
+    Body = await Html.PartialAsync("_RuntimeNodeCredentials", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"runtimeNodeCredentialForm\" class=\"z-button z-button-primary\" id=\"runtimeNodeCredentialSubmitButton\">Import and continue</button>")
+})
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "generatedCredentialsModal", Title = "Generated credentials", Eyebrow = null, Size = "wide",
+    Body = await Html.PartialAsync("_GeneratedCredentials", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"copyGeneratedCredentialsButton\">Copy</button><button type=\"button\" class=\"z-button z-button-primary\" data-z-dialog-close>Done</button>")
+})
 
 
 @section Scripts {
@@ -338,13 +83,13 @@
     const basicModalElement = document.getElementById('runtimeNodeModal');
     const basicModal = basicModalElement;
     const viewModalElement = document.getElementById('runtimeNodeViewModal');
-    const viewModal = window.bootstrap?.Modal?.getOrCreateInstance(viewModalElement);
+    const viewModal = viewModalElement;
     const setupModalElement = document.getElementById('runtimeNodeSetupModal');
-    const setupModal = window.bootstrap?.Modal?.getOrCreateInstance(setupModalElement);
+    const setupModal = setupModalElement;
     const credentialsModalElement = document.getElementById('runtimeNodeCredentialModal');
-    const credentialsModal = window.bootstrap?.Modal?.getOrCreateInstance(credentialsModalElement);
+    const credentialsModal = credentialsModalElement;
     const generatedCredentialsModalElement = document.getElementById('generatedCredentialsModal');
-    const generatedCredentialsModal = window.bootstrap?.Modal?.getOrCreateInstance(generatedCredentialsModalElement);
+    const generatedCredentialsModal = generatedCredentialsModalElement;
     const hasGeneratedCredentials = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(!string.IsNullOrWhiteSpace(Model.GeneratedCredentialsJson)));
 
     const setValue = (id, value) => {
@@ -368,47 +113,7 @@
         HybridSync: ['basic', 'policy', 'runtimeCredentials', 'designCredentials']
     };
 
-    const stackChildModal = modalElement => {
-        if (!modalElement) return;
-
-        let childBackdrop = null;
-
-        modalElement.addEventListener('show.bs.modal', () => {
-            const openBackdropCount = document.querySelectorAll('.modal-backdrop').length;
-            const nextLayer = openBackdropCount + 1;
-            modalElement.style.zIndex = 1065 + nextLayer * 20;
-
-            window.setTimeout(() => {
-                const backdrops = Array.from(document.querySelectorAll('.modal-backdrop'));
-                childBackdrop = backdrops[backdrops.length - 1] || null;
-                if (!childBackdrop) return;
-                childBackdrop.style.zIndex = 1060 + nextLayer * 20;
-                childBackdrop.classList.add('od-modal-backdrop-stacked');
-            }, 0);
-        });
-
-        modalElement.addEventListener('hidden.bs.modal', () => {
-            modalElement.style.zIndex = '';
-            childBackdrop = null;
-            window.setTimeout(repairModalState, 0);
-        });
-    };
-
-    const repairModalState = () => {
-        if (document.querySelectorAll('.modal.show').length > 0) {
-            document.body.classList.add('modal-open');
-            return;
-        }
-
-        document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
-        document.body.classList.remove('modal-open');
-        document.body.style.removeProperty('overflow');
-        document.body.style.removeProperty('padding-right');
-    };
-
-    stackChildModal(credentialsModalElement);
-    stackChildModal(generatedCredentialsModalElement);
-    setupModalElement?.addEventListener('hidden.bs.modal', () => {
+    setupModalElement?.addEventListener('zoorce:dialog:close', () => {
         if (currentNode && !currentNode.isConnected) {
             window.location.reload();
         }
@@ -662,7 +367,7 @@
     const fillSetupFields = node => {
         const isNew = !node;
         const mode = node?.dataset.distributionMode || 'HybridSync';
-        setText('runtimeNodeSetupModalLabel', isNew ? 'Create runtime node' : 'Configure runtime node');
+        setText('runtimeNodeSetupModal-title', isNew ? 'Create runtime node' : 'Configure runtime node');
         setText('runtimeNodeSetupSubtitle', isNew ? 'New Design-side Runtime node' : `${node.dataset.name || '-'} | ${node.dataset.environmentName || '-'} | ${node.dataset.code || '-'}`);
 
         setValue('setupBasicRuntimeNodeId', node?.dataset.id);
@@ -708,10 +413,10 @@
     const populateViewModal = node => {
         if (!viewModal || !node) return;
         currentNode = node;
-        setText('runtimeNodeViewModalLabel', node.dataset.name);
+        setText('runtimeNodeViewModal-title', node.dataset.name);
         setText('runtimeNodeViewSubtitle', `${node.dataset.environmentName || '-'} | ${node.dataset.code || '-'} | ${node.dataset.distributionModeLabel || '-'}`);
         fillReadOnlyFields(node);
-        viewModal.show();
+        viewModal.open?.();
     };
 
     const populateSetupModal = node => {
@@ -719,7 +424,7 @@
         currentNode = node || null;
         fillSetupFields(node);
         showSetupStep('basic');
-        setupModal.show();
+        setupModal.open?.();
     };
 
     const applySetupPolicy = mode => {
@@ -757,7 +462,13 @@
 
         setupStep = step;
         document.querySelectorAll('[data-setup-step-target]').forEach(button => {
-            button.classList.toggle('is-active', button.dataset.setupStepTarget === setupStep);
+            const active = button.dataset.setupStepTarget === setupStep;
+            button.classList.toggle('is-active', active);
+            if (active) button.setAttribute('aria-current', 'step');
+            else button.removeAttribute('aria-current');
+            if (active && window.matchMedia('(max-width: 991px)').matches) {
+                button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
         });
         document.querySelectorAll('[data-setup-step]').forEach(panel => {
             panel.classList.toggle('is-active', panel.dataset.setupStep === setupStep);
@@ -798,7 +509,7 @@
 
     const completeSetup = async () => {
         await enablePendingNodeIfReady();
-        setupModal?.hide();
+        setupModal?.close?.();
         if (currentNode && !currentNode.isConnected) {
             window.location.reload();
         }
@@ -814,8 +525,8 @@
         if (!currentNode || !credentialsModal) return;
         setValue('credentialRuntimeNodeIdInput', currentNode.dataset.id);
         setValue('credentialsJsonInput', '');
-        setText('runtimeNodeCredentialModalLabel', `Import Runtime credentials - ${currentNode.dataset.name || 'Runtime node'}`);
-        credentialsModal.show();
+        setText('runtimeNodeCredentialModal-title', `Import Runtime credentials - ${currentNode.dataset.name || 'Runtime node'}`);
+        credentialsModal.open?.();
         window.setTimeout(() => document.getElementById('credentialsJsonInput')?.focus(), 160);
     };
 
@@ -883,7 +594,7 @@
         updateCurrentNode(payload.node);
         setText('generatedCredentialsNodeName', currentNode?.dataset.name || 'Runtime node');
         setValue('generatedCredentialsJsonOutput', payload.credentialsJson);
-        generatedCredentialsModal?.show();
+        generatedCredentialsModal?.open?.();
     };
 
     const handleVerifyNext = async () => {
@@ -964,7 +675,7 @@
         button.addEventListener('click', () => {
             const node = button.dataset.mode === 'create' ? null : (readNode(button) || currentNode);
             if (button.dataset.mode !== 'create' && !node) return;
-            viewModal?.hide();
+            viewModal?.close?.();
             populateSetupModal(node);
         });
     });
@@ -1009,7 +720,7 @@
     });
 
     document.querySelector('.js-view-edit-basic')?.addEventListener('click', () => {
-        viewModal?.hide();
+        viewModal?.close?.();
         populateBasicModal(currentNode, 'edit');
     });
 
@@ -1024,14 +735,14 @@
                 'Importing credentials',
                 'Design is protecting the Runtime credentials.');
             updateCurrentNode(payload.node);
-            credentialsModal?.hide();
+            credentialsModal?.close?.();
         } catch (error) {
             await showWizardError(error);
         }
     });
 
     if (hasGeneratedCredentials) {
-        generatedCredentialsModal?.show();
+        generatedCredentialsModal?.open?.();
     }
 })();
 </script>

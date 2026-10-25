@@ -1,0 +1,61 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.RuntimeNodes.IndexModel
+<p class="od-item-meta mb-2" id="runtimeNodeViewSubtitle"></p>
+<div class="od-runtime-detail-body od-runtime-node-view-body">
+                <section class="od-detail-section od-runtime-view-section">
+                    <div class="od-section-head">
+                        <div>
+                            <h2 class="od-section-title">Identity</h2>
+                        </div>
+                        <button type="button" class="z-button z-button-ghost js-view-edit-basic">Edit data</button>
+                    </div>
+                    <div class="od-info-grid">
+                        <div class="od-info-tile"><span>Name</span><strong id="viewName">-</strong></div>
+                        <div class="od-info-tile"><span>Code</span><strong id="viewCode">-</strong></div>
+                        <div class="od-info-tile"><span>Environment</span><strong id="viewEnvironment">-</strong></div>
+                        <div class="od-info-tile"><span>Status</span><strong id="viewStatus">-</strong></div>
+                        <div class="od-info-tile"><span>Registered</span><strong id="viewRegisteredAt">-</strong></div>
+                        <div class="od-info-tile"><span>Last update</span><strong id="viewLastUpdatedAt">-</strong></div>
+                        <div class="od-info-tile"><span>Policy</span><strong id="viewDistributionModeLabel">-</strong></div>
+                        <div class="od-info-tile"><span>Runtime endpoint</span><strong id="viewEndpointBaseUri">-</strong></div>
+                        <div class="od-info-tile"><span>API path</span><strong id="viewEndpointApiPath">-</strong></div>
+                        <div class="od-info-tile"><span>Access token TTL</span><strong id="viewAccessTokenTtl">-</strong></div>
+                        <div class="od-info-tile"><span>Validation cache TTL</span><strong id="viewTokenValidationCacheTtl">-</strong></div>
+                    </div>
+                    <div class="od-info-block">
+                        <span>Description</span>
+                        <p id="viewDescription">-</p>
+                    </div>
+                </section>
+
+                <section class="od-detail-section od-runtime-view-section">
+                    <div class="od-section-head">
+                        <div>
+                            <h2 class="od-section-title">Credentials</h2>
+                        </div>
+                    </div>
+                    <div class="od-credential-columns">
+                        <div class="od-credential-panel" data-credential-section="design">
+                            <h3>Design credentials</h3>
+                            <div class="od-info-grid od-info-grid-compact">
+                                <div class="od-info-tile"><span>Status</span><strong id="viewInboundCredentialStatus">-</strong></div>
+                                <div class="od-info-tile"><span>Client ID</span><strong id="viewInboundClientId">-</strong></div>
+                                <div class="od-info-tile"><span>Key ID</span><strong id="viewInboundKeyId">-</strong></div>
+                                <div class="od-info-tile"><span>Scopes</span><strong id="viewInboundAllowedScopes">-</strong></div>
+                                <div class="od-info-tile"><span>Created</span><strong id="viewInboundCredentialCreatedAt">-</strong></div>
+                                <div class="od-info-tile"><span>Last token</span><strong id="viewInboundLastTokenIssuedAt">-</strong></div>
+                            </div>
+                        </div>
+                        <div class="od-credential-panel" data-credential-section="runtime">
+                            <h3>Runtime credentials</h3>
+                            <div class="od-info-grid od-info-grid-compact">
+                                <div class="od-info-tile"><span>Status</span><strong id="viewOutboundCredentialStatus">-</strong></div>
+                                <div class="od-info-tile"><span>Client ID</span><strong id="viewOutboundClientId">-</strong></div>
+                                <div class="od-info-tile"><span>Key ID</span><strong id="viewOutboundKeyId">-</strong></div>
+                                <div class="od-info-tile"><span>Scopes</span><strong id="viewOutboundRequestedScopes">-</strong></div>
+                                <div class="od-info-tile"><span>Imported</span><strong id="viewOutboundCredentialImportedAt">-</strong></div>
+                                <div class="od-info-tile"><span>Last token</span><strong id="viewOutboundLastTokenReceivedAt">-</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+</div>
