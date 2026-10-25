@@ -253,6 +253,24 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         Assert.Null(state.Target.AvailableAtUtc);
     }
 
+    [Theory]
+    [InlineData(DistributionMode.HybridSync, true)]
+    [InlineData(DistributionMode.RuntimeFetchesFromDesign, false)]
+    public async Task PendingPageIncludesOnlyEligibleTargetsAndOmitsPayload(DistributionMode mode, bool included)
+    {
+        var state = CreateState(mode);
+        state.Target.Status = ReleaseTargetStatus.PushScheduled;
+        var page = await CreateService(state).GetPendingForPullPage(state.Node.Id.ToString(), 1, 25);
+        Assert.Equal(included ? 1 : 0, page.TotalRows);
+        if (included)
+        {
+            Assert.Equal(state.Target.Id.ToString(), Assert.Single(page.Items).ReleaseTargetId);
+            Assert.Equal(ReleaseTargetStatus.PushScheduled, state.Target.Status);
+            Assert.DoesNotContain("Payload", System.Text.Json.JsonSerializer.Serialize(page));
+        }
+        else Assert.Empty(page.Items);
+    }
+
     [Fact]
     public async Task GetForPullRejectsTargetsThatAreNotAvailableForPull()
     {
@@ -650,6 +668,14 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         public Task<IReadOnlyCollection<ReleaseTarget>> GetPendingForRuntimeNode(Id runtimeNodeId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyCollection<ReleaseTarget>>(
                 _state.Targets.Values.Where(x => x.RuntimeNodeId == runtimeNodeId && x.Status is ReleaseTargetStatus.Pending or ReleaseTargetStatus.PushScheduled or ReleaseTargetStatus.AvailableForPull).ToArray());
+
+        public Task<PagedResult<ReleaseTarget>> SearchPendingForRuntimeNode(Id runtimeNodeId, bool includeScheduled, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        {
+            var rows = _state.Targets.Values.Where(x => x.RuntimeNodeId == runtimeNodeId &&
+                (x.Status is ReleaseTargetStatus.Pending or ReleaseTargetStatus.AvailableForPull || includeScheduled && x.Status == ReleaseTargetStatus.PushScheduled)).ToArray();
+            return Task.FromResult(new PagedResult<ReleaseTarget>(pageNumber, Math.Max(1, (int)Math.Ceiling(rows.Length / (double)pageSize)), rows.Length, pageSize,
+                rows.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToArray()));
+        }
 
         public Task<PagedResult<ReleaseTarget>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }

@@ -321,9 +321,10 @@ else
     let detailGeneration = 0;
     const detailsMore = document.getElementById('releaseDetailsMore');
     let loadMoreDetails = null;
+    let autoLoadDetails = false;
     detailsMore?.addEventListener('click', () => loadMoreDetails?.());
     const detailObserver = 'IntersectionObserver' in window && detailsMore
-        ? new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadMoreDetails?.(); }) : null;
+        ? new IntersectionObserver(entries => { if (autoLoadDetails && entries.some(entry => entry.isIntersecting)) loadMoreDetails?.(); }) : null;
     if (detailObserver) detailObserver.observe(detailsMore);
     const element = (tag, className, text) => {
         const node = document.createElement(tag);
@@ -341,6 +342,7 @@ else
         releaseDetailsCreatedElement.textContent = '';
         releaseDetailsTargetsElement.replaceChildren();
         detailsMore.hidden = true;
+        autoLoadDetails = false;
         releaseDetailsModal.open?.(opener);
         let page = 1;
         let loading = false;
@@ -395,8 +397,16 @@ else
             page++;
             detailsMore.hidden = !hasMore;
             detailsMore.textContent = 'Load more targets';
+            autoLoadDetails = true;
+            requestAnimationFrame(() => {
+                const rect = detailsMore.getBoundingClientRect();
+                if (generation === detailGeneration && autoLoadDetails && !detailsMore.hidden &&
+                    detailsMore.getClientRects().length && rect.top <= window.innerHeight + 200 && rect.bottom >= -200)
+                    loadMoreDetails?.();
+            });
         } catch {
             if (generation === detailGeneration) {
+                autoLoadDetails = false;
                 detailsMore.hidden = false;
                 detailsMore.textContent = 'Retry loading targets';
                 if (page === 1) releaseDetailsOrchestrationNameElement.textContent = 'Release details could not be loaded.';

@@ -1,27 +1,12 @@
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel
-<p class="od-item-meta mb-2">@(string.IsNullOrWhiteSpace(Model.SourceKey) ? "Select a Design node." : $"Source: {Model.SourceKey}")</p>
-                @if (!string.IsNullOrWhiteSpace(Model.SourceKey) && Model.PendingArtifacts.Count == 0)
-                {
-                    <p class="od-empty">No pending releases for this design node.</p>
-                }
-                else if (Model.PendingArtifacts.Count > 0)
-                {
-                    <div class="od-pending-release-grid">
-                        @foreach (var artifact in Model.PendingArtifacts)
-                        {
-                            <article class="od-pending-release-card">
-                                <div>
-                                    <h3>@artifact.OrchestrationDefinitionKey v@artifact.Version</h3>
-                                    <p class="od-item-meta">Promoted by @artifact.PromotedBy on @artifact.PromotedOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC</p>
-                                    <p class="od-item-meta">Correlation: @artifact.CorrelationId</p>
-                                    <p class="od-item-meta">Checksum: @artifact.Checksum</p>
-                                </div>
-                                <form method="post" asp-page-handler="ApplyRelease" data-confirm="true" data-confirm-title="Apply release" data-confirm-message="Pull and install this release in the runtime?" data-confirm-accept="Apply" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Applying release" data-busy-message="Runtime is pulling the artifact, installing it, and projecting ingress configuration.">
-                                    <input type="hidden" name="sourceKey" value="@Model.SourceKey" />
-                                    <input type="hidden" name="releaseTargetId" value="@artifact.ReleaseTargetId" />
-                                    <button type="submit" class="btn btn-primary">Apply</button>
-                                </form>
-                            </article>
-                        }
-                    </div>
-                }
+<div id="pendingReleasesCatalog" data-source="@Url.Page(null, "PendingPage")" data-initial-source="@Model.SourceKey">
+    <p class="od-item-meta mb-2" data-pending-source-label></p>
+    <p class="od-empty" data-pending-status role="status"></p>
+    <div class="od-pending-release-grid" data-pending-items></div>
+    <div class="text-center mt-3"><button type="button" class="z-button z-button-ghost" data-pending-more hidden>Load more releases</button></div>
+    <div data-pending-sentinel aria-hidden="true"></div>
+</div>
+<form method="post" asp-page-handler="ApplyRelease" id="pendingReleaseApplyForm" data-confirm="true" data-confirm-title="Apply release" data-confirm-message="Pull and install this release in the runtime?" data-confirm-accept="Apply" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Applying release" data-busy-message="Runtime is pulling the artifact, installing it, and projecting ingress configuration.">
+    <input type="hidden" name="sourceKey" />
+    <input type="hidden" name="releaseTargetId" />
+</form>

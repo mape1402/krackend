@@ -175,6 +175,27 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
         return packages;
     }
 
+    public async Task<PendingArtifactPage> GetPendingForPullPage(string runtimeNodeId, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var node = await _runtimeNodeRepository.GetById(ParseId(runtimeNodeId), cancellationToken);
+        EnsureRuntimeNodeCanPull(node);
+        var result = await _releaseTargetRepository.SearchPendingForRuntimeNode(node.Id, node.DistributionMode == DistributionMode.HybridSync,
+            pageNumber, pageSize, cancellationToken);
+        var items = new List<PendingArtifactSummary>();
+        foreach (var target in result.Rows)
+        {
+            var artifact = await _artifactRepository.GetById(target.ArtifactId, cancellationToken);
+            var package = await BuildPackage(target, node, artifact, cancellationToken);
+            items.Add(new PendingArtifactSummary
+            {
+                ReleaseTargetId = package.ReleaseTargetId, OrchestrationDefinitionKey = package.OrchestrationDefinitionKey,
+                Version = package.Version, CorrelationId = package.CorrelationId, Checksum = package.Checksum,
+                PromotedBy = package.PromotedBy, PromotedOnUtc = package.PromotedOnUtc
+            });
+        }
+        return new PendingArtifactPage { PageNumber = result.PageNumber, TotalPages = result.TotalPages, TotalRows = result.TotalRows, Items = items };
+    }
+
     public async Task<RuntimeArtifactDeliveryPackage> GetForPull(
         string runtimeNodeId,
         string releaseTargetId,

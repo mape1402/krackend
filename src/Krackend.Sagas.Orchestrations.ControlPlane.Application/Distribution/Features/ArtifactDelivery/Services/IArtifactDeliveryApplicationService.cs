@@ -17,6 +17,10 @@ public interface IArtifactDeliveryApplicationService
     /// </summary>
     Task<IReadOnlyCollection<RuntimeArtifactDeliveryPackage>> GetPendingForPull(string runtimeNodeId, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns a page of pending releases without transferring artifact payloads.</summary>
+    Task<PendingArtifactPage> GetPendingForPullPage(string runtimeNodeId, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured artifact service does not support paged pending releases.");
+
     /// <summary>
     /// Returns one artifact package waiting for manual pull by a runtime node.
     /// </summary>

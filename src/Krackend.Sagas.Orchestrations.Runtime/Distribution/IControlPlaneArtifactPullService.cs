@@ -19,6 +19,10 @@ public interface IControlPlaneArtifactPullService
         string sourceKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Returns a page of pending releases from one control plane.</summary>
+    Task<PendingArtifactPage> GetPendingPageAsync(string sourceKey, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured pull client does not support paged pending releases.");
+
     /// <summary>
     /// Pulls and installs one release target from one source.
     /// </summary>

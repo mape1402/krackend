@@ -42,6 +42,36 @@ public sealed class ControlPlaneArtifactPullServiceTests
     }
 
     [Fact]
+    public async Task GetPendingPageUsesReleaseScopeAndBoundsPageSize()
+    {
+        var source = Source();
+        var tokens = new RecordingAccessTokenProvider();
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new PendingArtifactPage
+            {
+                PageNumber = 1, TotalPages = 2, TotalRows = 101,
+                Items = [new PendingArtifactSummary { ReleaseTargetId = "target-1" }]
+            }))
+        });
+        var service = CreateService(handler, new SingleSourceProvider(source), tokens);
+        var result = await service.GetPendingPageAsync(source.Key, 0, 500);
+        Assert.Equal("target-1", Assert.Single(result.Items).ReleaseTargetId);
+        Assert.Equal("/orchestrator/distribution/runtime-nodes/runtime-node-1/artifacts/pending/page", handler.Requests.Single().RequestUri!.AbsolutePath);
+        Assert.Equal("?page=1&pageSize=100", handler.Requests.Single().RequestUri!.Query);
+        Assert.Contains(ArtifactDeliveryScope.ReleaseRead, tokens.RequestedScopes.Single());
+    }
+
+    [Fact]
+    public async Task GetPendingPageRejectsUnavailableOrEmptyResponse()
+    {
+        var unavailable = CreateService(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+        await Assert.ThrowsAsync<HttpRequestException>(() => unavailable.GetPendingPageAsync("design", 1, 25));
+        var empty = CreateService(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("null") }));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => empty.GetPendingPageAsync("design", 1, 25));
+    }
+
+    [Fact]
     public async Task ApplyAsyncDownloadsPackageDeploysAndAcknowledgesReleaseTarget()
     {
         var source = Source();

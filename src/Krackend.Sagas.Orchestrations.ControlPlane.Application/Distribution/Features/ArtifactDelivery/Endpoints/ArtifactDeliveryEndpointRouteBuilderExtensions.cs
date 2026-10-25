@@ -74,6 +74,20 @@ public static class ArtifactDeliveryEndpointRouteBuilderExtensions
             return Results.Ok(packages);
         });
 
+        endpoints.MapGet("/distribution/runtime-nodes/{runtimeNodeId}/artifacts/pending/page", async (
+            string runtimeNodeId,
+            int? page,
+            int? pageSize,
+            HttpContext httpContext,
+            IArtifactDeliveryApplicationService service,
+            IArtifactDeliveryEndpointAuthenticator authenticator,
+            CancellationToken cancellationToken) =>
+        {
+            var authentication = await authenticator.AuthenticateRuntimeNodeAsync(httpContext.Request, runtimeNodeId, string.Empty, cancellationToken);
+            if (!authentication.Succeeded) return Results.Unauthorized();
+            return Results.Ok(await service.GetPendingForPullPage(runtimeNodeId, Math.Max(1, page ?? 1), Math.Clamp(pageSize ?? 25, 1, 100), cancellationToken));
+        });
+
         endpoints.MapGet("/distribution/runtime-nodes/{runtimeNodeId}/artifacts/{releaseTargetId}", async (
             string runtimeNodeId,
             string releaseTargetId,

@@ -37,6 +37,7 @@ public sealed class IndexModel : PageModel
     /// Gets pending artifacts for the selected design node.
     /// </summary>
     public IReadOnlyCollection<PendingArtifactViewModel> PendingArtifacts { get; private set; } = Array.Empty<PendingArtifactViewModel>();
+    public long PendingArtifactCount { get; private set; }
 
     /// <summary>
     /// Gets distribution mode options displayed by the setup wizard.
@@ -105,10 +106,7 @@ public sealed class IndexModel : PageModel
     /// <summary>
     /// Handles the initial page request.
     /// </summary>
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
-    {
-        await LoadAsync(cancellationToken);
-    }
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     /// <summary>Returns a bounded catalog page without credential secrets.</summary>
     public async Task<IActionResult> OnGetNodesAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)
@@ -196,7 +194,7 @@ public sealed class IndexModel : PageModel
 
         if (string.IsNullOrWhiteSpace(ErrorMessage))
         {
-            SetMessage("Pending releases refreshed", $"{PendingArtifacts.Count} pending release(s) found.", "success");
+            SetMessage("Pending releases refreshed", $"{PendingArtifactCount} pending release(s) found.", "success");
         }
         else
         {
@@ -204,6 +202,25 @@ public sealed class IndexModel : PageModel
         }
 
         return Page();
+    }
+
+    /// <summary>Returns one page of releases available from a design node.</summary>
+    public async Task<IActionResult> OnGetPendingPageAsync(string sourceKey, [FromQuery(Name = "page")] int page = 1, int pageSize = 25, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceKey)) return BadRequest();
+        try
+        {
+            var result = await _pullService.GetPendingPageAsync(sourceKey, Math.Max(1, page), Math.Clamp(pageSize, 1, 100), cancellationToken);
+            return new JsonResult(new { items = result.Items, totalCount = result.TotalRows, hasMore = result.PageNumber < result.TotalPages });
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return StatusCode(503, new { message = "This control plane does not support paged releases. Update it and try again." });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return StatusCode(503);
+        }
     }
 
     /// <summary>
@@ -518,7 +535,9 @@ public sealed class IndexModel : PageModel
 
         try
         {
-            PendingArtifacts = (await _pullService.GetPendingAsync(SourceKey, cancellationToken))
+            var result = await _pullService.GetPendingPageAsync(SourceKey, 1, 25, cancellationToken);
+            PendingArtifactCount = result.TotalRows;
+            PendingArtifacts = result.Items
                 .Select(x => new PendingArtifactViewModel
                 {
                     ReleaseTargetId = x.ReleaseTargetId,
@@ -529,7 +548,6 @@ public sealed class IndexModel : PageModel
                     PromotedBy = x.PromotedBy,
                     PromotedOnUtc = x.PromotedOnUtc
                 })
-                .OrderByDescending(x => x.PromotedOnUtc)
                 .ToArray();
         }
         catch (Exception ex)

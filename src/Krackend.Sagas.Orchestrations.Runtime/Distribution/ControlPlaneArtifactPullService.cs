@@ -59,6 +59,21 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
     }
 
     /// <inheritdoc />
+    public async Task<PendingArtifactPage> GetPendingPageAsync(string sourceKey, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var source = _sourceProvider.GetByKey(sourceKey);
+        var page = Math.Max(1, pageNumber);
+        var size = Math.Clamp(pageSize, 1, 100);
+        using var request = await CreateAuthenticatedRequest(HttpMethod.Get,
+            BuildControlPlaneUri(source, $"distribution/runtime-nodes/{source.RemoteRuntimeNodeId}/artifacts/pending/page?page={page}&pageSize={size}"),
+            source, [ArtifactDeliveryScope.ReleaseRead], cancellationToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return JsonSerializer.Deserialize<PendingArtifactPage>(await response.Content.ReadAsStringAsync(cancellationToken), JsonOptions())
+            ?? throw new InvalidOperationException("Control plane returned an empty pending release page.");
+    }
+
+    /// <inheritdoc />
     public async Task<RuntimeArtifactDeploymentResult> ApplyAsync(
         string sourceKey,
         string releaseTargetId,

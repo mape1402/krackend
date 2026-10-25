@@ -100,6 +100,11 @@ public sealed class ReleaseCatalogTests
         Assert.Equal(targetId.ToString(), detail.TargetId);
         Assert.Equal("PushScheduled", detail.Status);
         Assert.Empty((await service.SearchTargetDetails(releaseWithTarget.ToString(), new ApplicationPagedSettings { PageNumber = 2, PageSize = 1 })).Rows);
+        var pending = await targetRepository.SearchPendingForRuntimeNode(nodeId, true, 0, 1);
+        Assert.Equal(1, pending.TotalRows);
+        Assert.Equal(targetId, Assert.Single(pending.Rows).Id);
+        Assert.Empty((await targetRepository.SearchPendingForRuntimeNode(nodeId, false, 1, 25)).Rows);
+        Assert.Empty((await targetRepository.SearchPendingForRuntimeNode(Id.New(), true, 1, 25)).Rows);
         var catalog = await service.SearchCatalog(new ApplicationPagedSettings { PageNumber = 1, PageSize = 10 }, "sales", "", "created", true);
         Assert.Equal("InProgress", catalog.Rows.Single(x => x.Id == releaseWithTarget.ToString()).Status);
         var storedTarget = await context.ReleaseTargets.SingleAsync(x => x.Id == targetId);

@@ -24,8 +24,7 @@
 </div>
 
 <section class="od-panel" data-design-node-catalog data-source="@Url.Page(null, "Nodes")"
-         data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")"
-         data-releases-url="@Url.Page(null, "CheckPending")">
+         data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")">
     <div class="od-runtime-view-controls" role="group" aria-label="View mode">
         <button type="button" class="btn btn-outline-secondary" data-node-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
         <button type="button" class="btn btn-outline-secondary" data-node-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
@@ -220,9 +219,6 @@
             const credentialsModal = credentialsModalElement;
             const generatedCredentialsModalElement = document.getElementById('generatedCredentialsModal');
             const generatedCredentialsModal = generatedCredentialsModalElement;
-            const pendingModalElement = document.getElementById('pendingReleasesModal');
-            const pendingModal = pendingModalElement;
-            const shouldOpenPending = @Html.Raw(JsonSerializer.Serialize(!string.IsNullOrWhiteSpace(Model.SourceKey)));
             const hasGeneratedCredentials = @Html.Raw(JsonSerializer.Serialize(!string.IsNullOrWhiteSpace(Model.GeneratedCredentialJson)));
             const notify = options => window.OrchestratorMessages?.notify(options) || Promise.resolve();
             const showBusy = options => window.OrchestratorMessages?.showBusy(options) || (() => {});
@@ -778,10 +774,6 @@
                     await showWizardError(error);
                 }
             });
-
-            if (shouldOpenPending) {
-                pendingModal?.open?.();
-            }
 
             if (hasGeneratedCredentials) {
                 generatedCredentialsModal?.open?.();

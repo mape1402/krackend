@@ -15,6 +15,8 @@ public interface IReleaseTargetRepository
     Task<PagedResult<ReleaseAttempt>> SearchAttempts(Id assignmentId, int pageNumber, int pageSize, string search, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release target storage does not support attempt search.");
     Task<IReadOnlyCollection<ReleaseTarget>> GetPendingForRuntimeNode(Id runtimeNodeId, CancellationToken cancellationToken = default);
+    Task<PagedResult<ReleaseTarget>> SearchPendingForRuntimeNode(Id runtimeNodeId, bool includeScheduled, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release target storage does not support paged pending releases.");
     Task<PagedResult<ReleaseTarget>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
     Task<PagedResult<ReleaseTargetCatalogItem>> Search(int pageNumber, int pageSize, string search, string sort, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release target storage does not support catalog search.");

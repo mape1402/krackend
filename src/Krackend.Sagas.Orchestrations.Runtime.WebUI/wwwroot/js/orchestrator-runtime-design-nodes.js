@@ -67,8 +67,11 @@
         const pull = item.distributionMode === 'RuntimeFetchesFromDesign' || item.distributionMode === 'HybridSync';
         if (item.status === 'Enabled' && pull) {
             add(actionForm(root.dataset.checkUrl, { designNodeId: item.id }, 'Check connection'));
-            if (item.outboundCredentialStatus === 'Active' && item.endpointBaseUri && item.remoteRuntimeNodeId)
-                add(actionForm(root.dataset.releasesUrl, { sourceKey: item.key }, 'Review releases'));
+            if (item.outboundCredentialStatus === 'Active' && item.endpointBaseUri && item.remoteRuntimeNodeId) {
+                const li = document.createElement('li');
+                const button = make('button', 'dropdown-item js-review-pending-releases', 'Review releases');
+                button.type = 'button'; button.dataset.sourceKey = item.key; li.append(button); menu.append(li);
+            }
         }
         if (menu.childElementCount) { dropdown.append(toggle, menu); group.append(dropdown); }
         return group;
@@ -130,4 +133,72 @@
     };
     root.querySelectorAll('[data-node-view]').forEach(button => button.addEventListener('click', () => setView(button)));
     try { if (localStorage.getItem('krackend-runtime-design-node-view') === 'cards') setView(root.querySelector('[data-node-view="cards"]')); } catch { }
+
+    const pending = document.getElementById('pendingReleasesCatalog');
+    const pendingDialog = document.getElementById('pendingReleasesModal');
+    const pendingItems = pending?.querySelector('[data-pending-items]');
+    const pendingStatus = pending?.querySelector('[data-pending-status]');
+    const pendingMore = pending?.querySelector('[data-pending-more]');
+    const pendingSentinel = pending?.querySelector('[data-pending-sentinel]');
+    const applyForm = document.getElementById('pendingReleaseApplyForm');
+    let pendingSource = '', pendingPage = 0, pendingHasMore = false, pendingLoading = false, pendingGeneration = 0;
+    const loadPending = async () => {
+        if (!pendingSource || pendingLoading || !pendingHasMore) return;
+        const current = pendingGeneration;
+        let loaded = false;
+        pendingLoading = true; pendingMore.disabled = true; pendingStatus.textContent = 'Loading releases...';
+        try {
+            const url = new URL(pending.dataset.source, location.href);
+            url.searchParams.set('sourceKey', pendingSource); url.searchParams.set('page', String(pendingPage + 1));
+            const response = await fetch(url);
+            if (!response.ok) {
+                let message = 'Pending releases could not be loaded. Please try again.';
+                try { message = (await response.json()).message || message; } catch { }
+                throw new Error(message);
+            }
+            const result = await response.json(); if (current !== pendingGeneration) return;
+            result.items.forEach(item => {
+                const card = make('article', 'od-pending-release-card');
+                const details = document.createElement('div');
+                details.append(make('h3', '', `${item.orchestrationDefinitionKey} v${item.version}`),
+                    make('p', 'od-item-meta', `Promoted by ${item.promotedBy} on ${date(item.promotedOnUtc)} UTC`),
+                    make('p', 'od-item-meta', `Correlation: ${item.correlationId}`),
+                    make('p', 'od-item-meta', `Checksum: ${item.checksum}`));
+                const button = make('button', 'z-button z-button-primary', 'Apply'); button.type = 'button';
+                button.addEventListener('click', () => {
+                    applyForm.elements.sourceKey.value = pendingSource;
+                    applyForm.elements.releaseTargetId.value = item.releaseTargetId;
+                    applyForm.requestSubmit();
+                });
+                card.append(details, button); pendingItems.append(card);
+            });
+            pendingPage++; pendingHasMore = result.hasMore; pendingMore.hidden = !pendingHasMore; loaded = true;
+            pendingMore.textContent = 'Load more releases';
+            pendingStatus.textContent = result.totalCount ? `Showing ${pendingItems.childElementCount} of ${result.totalCount}` : 'No pending releases for this design node.';
+        } catch (error) {
+            if (current === pendingGeneration) { pendingStatus.textContent = error.message || 'Pending releases could not be loaded. Please try again.'; pendingMore.hidden = false; pendingMore.textContent = 'Retry'; }
+        } finally {
+            if (current === pendingGeneration) {
+                pendingLoading = false; pendingMore.disabled = false;
+                if (loaded && pendingHasMore && pendingSentinel) requestAnimationFrame(() => {
+                    const rect = pendingSentinel.getBoundingClientRect();
+                    if (current === pendingGeneration && rect.width && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) loadPending();
+                });
+            }
+        }
+    };
+    const openPending = (sourceKey, opener) => {
+        pendingGeneration++; pendingSource = sourceKey; pendingPage = 0; pendingHasMore = true; pendingLoading = false;
+        pendingItems.replaceChildren(); pendingMore.hidden = true;
+        pending.querySelector('[data-pending-source-label]').textContent = `Source: ${sourceKey}`;
+        pendingDialog?.open?.(opener); loadPending();
+    };
+    root.addEventListener('click', event => {
+        const button = event.target.closest('.js-review-pending-releases');
+        if (button && pending) openPending(button.dataset.sourceKey, button);
+    });
+    pendingMore?.addEventListener('click', loadPending);
+    if (pendingSentinel && 'IntersectionObserver' in window)
+        new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadPending(); }, { rootMargin: '200px' }).observe(pendingSentinel);
+    if (pending?.dataset.initialSource) openPending(pending.dataset.initialSource);
 })();

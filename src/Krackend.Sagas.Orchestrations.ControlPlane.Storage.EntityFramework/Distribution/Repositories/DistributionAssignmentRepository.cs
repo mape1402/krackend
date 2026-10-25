@@ -197,6 +197,19 @@ public sealed class ReleaseTargetRepository : IReleaseTargetRepository
         return rows.Select(Map).ToArray();
     }
 
+    public async Task<PagedResult<ReleaseTarget>> SearchPendingForRuntimeNode(Id runtimeNodeId, bool includeScheduled, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, pageNumber);
+        var size = Math.Clamp(pageSize, 1, 100);
+        var query = _dbContext.ReleaseTargets.AsNoTracking().Where(x => x.RuntimeNodeId == runtimeNodeId &&
+            (x.Status == ReleaseTargetStatus.AvailableForPull || x.Status == ReleaseTargetStatus.Pending ||
+             (includeScheduled && x.Status == ReleaseTargetStatus.PushScheduled)));
+        var total = await query.LongCountAsync(cancellationToken);
+        var rows = await query.OrderBy(x => x.AssignedAtUtc).ThenBy(x => x.Id)
+            .Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<ReleaseTarget>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size, rows.Select(Map).ToArray());
+    }
+
     public async Task<IReadOnlyCollection<ReleaseTarget>> GetByReleases(IReadOnlyCollection<Id> releaseIds, CancellationToken cancellationToken = default)
     {
         if (releaseIds.Count == 0) return Array.Empty<ReleaseTarget>();

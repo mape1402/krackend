@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
@@ -21,6 +22,7 @@ public sealed class RuntimePagingIntegrationTests
     public static TheoryData<Type, string> PaginatedHandlers => new()
     {
         { typeof(RuntimeNodesPage), "OnGetNodesAsync" },
+        { typeof(RuntimeNodesPage), "OnGetPendingPageAsync" },
         { typeof(Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel), "OnGetGroupsAsync" },
         { typeof(Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel), "OnGetVersionsAsync" },
         { typeof(Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel), "OnGetHistoryAsync" },
@@ -87,6 +89,31 @@ public sealed class RuntimePagingIntegrationTests
         Assert.NotNull(response);
         Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
         await catalog.Received(1).GetPage(2, 25, "example", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PendingReleasesBindPageFromQueryInsteadOfRazorRoute()
+    {
+        var pull = Substitute.For<IControlPlaneArtifactPullService>();
+        pull.GetPendingPageAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call => new PendingArtifactPage { PageNumber = call.ArgAt<int>(1), TotalPages = 2, TotalRows = 30 });
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(Substitute.For<IRuntimeDesignNodeRepository>());
+        builder.Services.AddSingleton(pull);
+        builder.Services.AddSingleton(Substitute.For<IRuntimeDesignNodeConnectionService>());
+        builder.Services.AddRazorPages(options =>
+            options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/DesignNodes/Index", "nodes"))
+            .AddApplicationPart(typeof(RuntimeNodesPage).Assembly);
+        await using var app = builder.Build();
+        app.MapRazorPages();
+        await app.StartAsync();
+
+        using var response = await app.GetTestClient().GetFromJsonAsync<System.Text.Json.JsonDocument>(
+            "/nodes?handler=PendingPage&sourceKey=example&page=2&pageSize=25");
+        Assert.NotNull(response);
+        Assert.False(response.RootElement.GetProperty("hasMore").GetBoolean());
+        await pull.Received(1).GetPendingPageAsync("example", 2, 25, Arg.Any<CancellationToken>());
     }
 
     [Fact]

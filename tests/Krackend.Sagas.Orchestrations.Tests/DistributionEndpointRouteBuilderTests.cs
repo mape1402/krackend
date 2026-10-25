@@ -43,6 +43,7 @@ public sealed class DistributionEndpointRouteBuilderTests
             .Returns(ConnectionTokenValidationResult.Success(new ConnectionTokenPrincipal { NodeKey = "runtime" }));
         service.Push("release-1", "api", Arg.Any<CancellationToken>()).Returns(delivery);
         service.GetPendingForPull("runtime-1", Arg.Any<CancellationToken>()).Returns([package]);
+        service.GetPendingForPullPage("runtime-1", 1, 25, Arg.Any<CancellationToken>()).Returns(new PendingArtifactPage());
         service.GetForPull("runtime-1", "release-1", Arg.Any<CancellationToken>()).Returns(package);
         service.AcknowledgePull("runtime-1", "release-1", "runtime-artifact-1", "Ready", Arg.Any<CancellationToken>())
             .Returns(delivery);
@@ -74,6 +75,10 @@ public sealed class DistributionEndpointRouteBuilderTests
             ["releaseTargetId"] = "release-1"
         })).StatusCode);
         Assert.Equal(StatusCodes.Status200OK, (await Invoke(app, "GET", "/distribution/runtime-nodes/{runtimeNodeId}/artifacts/pending", routeValues: new Dictionary<string, object?>
+        {
+            ["runtimeNodeId"] = "runtime-1"
+        })).StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, (await Invoke(app, "GET", "/distribution/runtime-nodes/{runtimeNodeId}/artifacts/pending/page", routeValues: new Dictionary<string, object?>
         {
             ["runtimeNodeId"] = "runtime-1"
         })).StatusCode);
@@ -132,6 +137,10 @@ public sealed class DistributionEndpointRouteBuilderTests
             ["releaseTargetId"] = "release-1"
         })).StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, (await Invoke(app, "GET", "/distribution/runtime-nodes/{runtimeNodeId}/artifacts/pending", routeValues: new Dictionary<string, object?>
+        {
+            ["runtimeNodeId"] = "runtime-1"
+        })).StatusCode);
+        Assert.Equal(StatusCodes.Status401Unauthorized, (await Invoke(app, "GET", "/distribution/runtime-nodes/{runtimeNodeId}/artifacts/pending/page", routeValues: new Dictionary<string, object?>
         {
             ["runtimeNodeId"] = "runtime-1"
         })).StatusCode);

@@ -15,7 +15,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class RuntimeDesignNodesPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsPendingArtifactsWithoutLoadingTheNodeCatalog()
+    public async Task OnGetDefersPendingArtifactsAndNodeCatalogToPagedRequests()
     {
         var node = CreateConfiguredNode();
         var page = CreatePage([node], pending: [CreatePackage("target-1")]);
@@ -24,8 +24,38 @@ public sealed class RuntimeDesignNodesPageModelTests
         await page.OnGetAsync();
 
         Assert.Empty(page.DesignNodes);
-        Assert.Single(page.PendingArtifacts);
-        Assert.Equal("target-1", page.PendingArtifacts.Single().ReleaseTargetId);
+        Assert.Empty(page.PendingArtifacts);
+    }
+
+    [Fact]
+    public async Task PendingReleaseEndpointReturnsOnlyRequestedPage()
+    {
+        var node = CreateConfiguredNode();
+        var packages = Enumerable.Range(1, 26).Select(i => CreatePackage($"target-{i}")).ToArray();
+        var page = CreatePage([node], pending: packages);
+        var result = Assert.IsType<JsonResult>(await page.OnGetPendingPageAsync(node.Key, 2, 25));
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Value);
+        Assert.Contains("target-26", json);
+        Assert.DoesNotContain("target-1\"", json);
+        Assert.Contains("\"totalCount\":26", json);
+        Assert.IsType<BadRequestResult>(await page.OnGetPendingPageAsync(""));
+    }
+
+    [Fact]
+    public async Task PendingReleaseEndpointReportsAnOutdatedControlPlaneWithoutLeakingErrors()
+    {
+        var pull = new FakeControlPlaneArtifactPullService
+        {
+            PendingException = new HttpRequestException("internal detail", null, System.Net.HttpStatusCode.NotFound)
+        };
+        var page = CreatePage(pull: pull);
+        var outdated = Assert.IsType<ObjectResult>(await page.OnGetPendingPageAsync("design"));
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, outdated.StatusCode);
+        Assert.Contains("Update it", System.Text.Json.JsonSerializer.Serialize(outdated.Value));
+        pull.PendingException = new InvalidOperationException("internal detail");
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, Assert.IsType<StatusCodeResult>(await page.OnGetPendingPageAsync("design")).StatusCode);
+        pull.PendingException = new OperationCanceledException();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => page.OnGetPendingPageAsync("design"));
     }
 
     [Fact]
@@ -644,6 +674,18 @@ public sealed class RuntimeDesignNodesPageModelTests
             }
 
             return Task.FromResult(Pending);
+        }
+
+        public Task<PendingArtifactPage> GetPendingPageAsync(string sourceKey, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        {
+            if (PendingException is not null) throw PendingException;
+            var items = Pending.Skip((pageNumber - 1) * pageSize).Take(pageSize).Select(x => new PendingArtifactSummary
+            {
+                ReleaseTargetId = x.ReleaseTargetId, OrchestrationDefinitionKey = x.OrchestrationDefinitionKey,
+                Version = x.Version, CorrelationId = x.CorrelationId, Checksum = x.Checksum,
+                PromotedBy = x.PromotedBy, PromotedOnUtc = x.PromotedOnUtc
+            }).ToArray();
+            return Task.FromResult(new PendingArtifactPage { PageNumber = pageNumber, TotalPages = Math.Max(1, (Pending.Count + pageSize - 1) / pageSize), TotalRows = Pending.Count, Items = items });
         }
 
         public Task<RuntimeArtifactDeploymentResult> ApplyAsync(
