@@ -19,6 +19,7 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         ArgumentNullException.ThrowIfNull(options);
         var theme = _theme.Value;
         options.ApplicationName = theme.Title;
+        options.BrandMark = "K";
         options.DefaultTheme = theme.Mode == OrchestratorWebUIThemeMode.Dark
             ? ZoorceThemeMode.Dark : ZoorceThemeMode.Light;
         ApplyPalette(theme.Light, options.Light);

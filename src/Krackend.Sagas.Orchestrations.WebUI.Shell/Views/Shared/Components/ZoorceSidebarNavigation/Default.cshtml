@@ -1,10 +1,19 @@
 @using Microsoft.AspNetCore.Mvc.ViewFeatures
+@using Microsoft.Extensions.Options
+@using Krackend.Sagas.Orchestrations.WebUI.Shell
+@inject IOptions<OrchestratorWebUIThemeOptions> ThemeOptions
 @model Zoorce.Web.UI.Layout.Components.ZoorceSidebarNavigationModel
+@{
+    var isRuntime = string.Equals(ViewContext.RouteData.Values["area"]?.ToString(), "OrchestratorRuntime", StringComparison.OrdinalIgnoreCase);
+    var home = isRuntime
+        ? Url.Page("/Instances/Index", new { area = "OrchestratorRuntime" })
+        : Url.Page("/Index", new { area = "OrchestratorDesign" });
+}
 <aside class="z-sidebar" id="zoorce-sidebar" data-z-sidebar aria-label="Primary navigation">
     <div class="z-sidebar-brand">
-        <a class="z-brand" href="@Url.Content("~/admin")" aria-label="@Model.Shell.ApplicationName home">
+        <a class="z-brand" href="@(home ?? Url.Content("~/"))" aria-label="@Model.Shell.ApplicationName home">
             <span class="z-brand-mark" aria-hidden="true">@Model.Shell.BrandMark</span>
-            <span class="z-brand-copy"><strong>@Model.Shell.ApplicationName</strong><small>Orchestrations</small></span>
+            <span class="z-brand-copy"><strong>@Model.Shell.ApplicationName</strong><small>@ThemeOptions.Value.Subtitle</small></span>
         </a>
         <button class="z-icon-button z-sidebar-close" type="button" data-z-sidebar-close aria-label="Close navigation">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>

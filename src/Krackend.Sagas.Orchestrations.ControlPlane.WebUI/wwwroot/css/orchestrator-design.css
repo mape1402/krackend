@@ -1932,3 +1932,30 @@ main.container {
         padding-right: 1.6rem;
     }
 }
+.od-catalog-controls {
+    display: flex;
+    justify-content: flex-end;
+    gap: .35rem;
+    margin-bottom: .75rem;
+}
+
+.od-catalog-controls [aria-pressed="true"] {
+    background: var(--z-primary);
+    border-color: var(--z-primary);
+    color: #fff;
+}
+
+.od-catalog-actions {
+    display: flex;
+    gap: .35rem;
+    white-space: nowrap;
+}
+
+.od-catalog [data-domain-cards] > .z-search-field {
+    margin-bottom: 1rem;
+    max-width: 24rem;
+}
+
+.od-catalog [data-domain-status] {
+    margin-top: .75rem;
+}

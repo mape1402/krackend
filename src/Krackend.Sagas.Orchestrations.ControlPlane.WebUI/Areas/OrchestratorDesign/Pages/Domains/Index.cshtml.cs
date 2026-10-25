@@ -10,8 +10,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class IndexModel : PageModel
 {
-    private const int PageSize = 200;
-    private const int MaxPageReads = 50;
+    private const int PageSize = 25;
 
     private readonly IDomainApplicationService _service;
 
@@ -25,11 +24,6 @@ public sealed class IndexModel : PageModel
     }
 
     /// <summary>
-    /// Gets listed domain entries.
-    /// </summary>
-    public IReadOnlyCollection<DomainModel> Rows { get; private set; } = Array.Empty<DomainModel>();
-
-    /// <summary>
     /// Gets or sets modal input.
     /// </summary>
     [BindProperty]
@@ -39,24 +33,46 @@ public sealed class IndexModel : PageModel
     /// Handles page get request.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Loads a filtered page for the grid and cards views.</summary>
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = PageSize, string search = null,
+        string sort = null, bool descending = false, CancellationToken cancellationToken = default)
     {
-        var rows = new List<DomainModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
+        var result = await GetPageAsync(page, pageSize, search, sort, descending, cancellationToken);
+        return new JsonResult(new
         {
-            var result = await _service.GetAll(
-                new GetDomainsQuery(new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize }),
-                cancellationToken);
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
-        }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
+            items = result.Rows.Select(row => new
+            {
+                id = row.Id, key = row.Key, displayName = row.DisplayName, description = row.Description,
+                isActive = row.IsActive, status = row.IsActive ? "Active" : "Inactive"
+            }),
+            totalCount = result.TotalRows,
+            hasMore = result.PageNumber < result.TotalPages,
+            search = search?.Trim() ?? string.Empty,
+            sort = sort ?? string.Empty,
+            descending
+        });
+    }
 
-        Rows = rows.ToArray();
+    private Task<ApplicationPagedResult<DomainModel>> GetPageAsync(int page, int pageSize, string search,
+        string sort, bool descending, CancellationToken cancellationToken)
+    {
+        var field = sort switch
+        {
+            "key" => "key",
+            "status" => "isActive",
+            "description" => "description",
+            _ => "displayName"
+        };
+        var sorts = new List<ApplicationSort> { new(field, descending) };
+        if (field != "key") sorts.Add(new ApplicationSort("key", false));
+        return _service.GetAll(new GetDomainsQuery(new ApplicationPagedSettings
+        {
+            PageNumber = Math.Max(page, 1),
+            PageSize = Math.Clamp(pageSize, 1, 100),
+            Sorts = sorts
+        }, search?.Trim() ?? string.Empty), cancellationToken);
     }
 
     /// <summary>

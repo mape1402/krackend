@@ -29,6 +29,7 @@ public sealed class ZoorceShellThemeConfigurationTests
 
         var theme = provider.GetRequiredService<IOptions<ZoorceShellOptions>>().Value;
         Assert.Equal("My orchestration", theme.ApplicationName);
+        Assert.Equal("K", theme.BrandMark);
         Assert.Equal(expected, theme.DefaultTheme);
         Assert.Equal("#123456", theme.Light.Primary);
         Assert.Equal("#abcdef", theme.Light.Surface);
