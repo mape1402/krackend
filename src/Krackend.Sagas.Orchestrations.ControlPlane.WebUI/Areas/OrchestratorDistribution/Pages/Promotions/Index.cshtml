@@ -1,5 +1,7 @@
 @page
 @using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
 @{
     ViewData["Title"] = "Releases";
@@ -144,52 +146,32 @@
 
 @if (!isOrchestrationSelected)
 {
-    @if (!catalogRows.Any())
-    {
-        <section class="od-panel">
-            <p class="od-empty">No orchestrations available in distribution mirror.</p>
-        </section>
-    }
-    else
-    {
-        <section class="od-list-shell" data-od-infinite-list>
-            <div class="od-grid"
-                 data-od-infinite-grid
-                 data-od-infinite-label="orchestrations"
-                 data-od-infinite-initial-count="24"
-                 data-od-infinite-batch-size="24">
-                @foreach (var orchestration in catalogRows)
-                {
-                    var summary = Model.GetSummary(orchestration.Id);
-                    <a class="od-item-card od-orch-card od-infinite-item text-decoration-none"
-                       asp-area="OrchestratorDistribution"
-                       asp-page="/Promotions/Index"
-                       asp-route-orchestrationId="@orchestration.Id">
-                        <div class="od-item-top">
-                            <div>
-                                <h2 class="od-item-title od-orch-title">@orchestration.Name</h2>
-                                <p class="od-item-meta">@orchestration.Key</p>
-                            </div>
-                            <span class="od-status @(orchestration.IsActive ? "od-status-active" : "od-status-inactive")">
-                                @(orchestration.IsActive ? "Active" : "Inactive")
-                            </span>
-                        </div>
-                        <div class="od-chip-row">
-                            <span class="od-meta-chip">Releases: @summary.ReleaseCount</span>
-                            @if (summary.LatestCreatedAtUtc.HasValue)
-                            {
-                                <span class="od-meta-chip">Latest: @summary.LatestCreatedAtUtc.Value.ToString("yyyy-MM-dd HH:mm")</span>
-                            }
-                        </div>
-                    </a>
-                }
+    <section class="od-catalog" data-catalog="release-orchestrations" data-label="orchestrations" data-source="@Url.Page(null, "OrchestrationList")">
+        <div class="od-catalog-controls" role="group" aria-label="View mode">
+            <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+        </div>
+        <div data-catalog-grid>
+            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+            {
+                Id = "release-orchestrations-grid", AriaLabel = "orchestrations", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "OrchestrationList") },
+                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Columns = [new("displayName", "Orchestration"), new("key", "Key"), new("status", "Status"), new("count", "Releases", false), new("latest", "Latest release", false), new("actions", "Actions", false)]
+            })
+        </div>
+        <div data-catalog-cards hidden>
+            <div class="od-catalog-filters">
+                <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search orchestrations" placeholder="Search orchestrations" autocomplete="off" /></label>
+                <select class="form-select" data-catalog-sort aria-label="Sort orchestrations">
+                    <option value="name">Name</option><option value="name:desc">Name descending</option><option value="key">Key</option><option value="status">Status</option>
+                </select>
             </div>
-            <div class="od-infinite-scroll-status" data-od-infinite-status>
-                Showing <span data-od-infinite-count>@Math.Min(24, catalogRows.Length)</span> of <span data-od-infinite-total>@catalogRows.Length</span> orchestrations
-            </div>
-            <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-        </section>
-    }
+            <div class="od-grid" data-catalog-card-items></div>
+            <p class="od-empty" data-catalog-empty hidden>No matching orchestrations.</p>
+            <p data-catalog-status aria-live="polite"></p><div data-catalog-sentinel aria-hidden="true"></div>
+            <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+        </div>
+    </section>
 }
 else
 {
@@ -480,6 +462,7 @@ else
 </div>
 
 @section Scripts {
+<script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const artifactSelect = document.getElementById('releaseArtifactSelect');

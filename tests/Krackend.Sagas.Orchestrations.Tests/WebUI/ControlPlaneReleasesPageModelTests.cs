@@ -13,6 +13,41 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ControlPlaneReleasesPageModelTests
 {
     [Fact]
+    public async Task OnGetWithoutSelectionDoesNotLoadAllCatalogs()
+    {
+        var fixture = new Fixture();
+        var page = fixture.CreatePage();
+
+        await page.OnGetAsync();
+
+        await fixture.ReleaseService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+        await fixture.PolicyService.DidNotReceive().GetOrchestrations(Arg.Any<CancellationToken>());
+        await fixture.ArtifactService.DidNotReceive().GetAll(Arg.Any<ApplicationPagedSettings>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OrchestrationListReturnsOnePageWithDatabaseSummaries()
+    {
+        var fixture = new Fixture();
+        fixture.PolicyService.SearchOrchestrations(Arg.Any<ApplicationPagedSettings>(), "Sales", "name", false, Arg.Any<CancellationToken>())
+            .Returns(Page(new OrchestrationPolicyDefinitionModel { Id = "sales", Key = "sales", Name = "Sales", IsActive = true }));
+        fixture.ReleaseService.GetSummaries(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new ReleaseCatalogSummaryModel("sales", 3, new DateTime(2026, 1, 1))]);
+        var page = fixture.CreatePage();
+        page.PageContext.RouteData = new Microsoft.AspNetCore.Routing.RouteData();
+        page.Url = Substitute.For<IUrlHelper>();
+        page.Url.ActionContext.Returns(page.PageContext);
+        page.Url.RouteUrl(Arg.Any<Microsoft.AspNetCore.Mvc.Routing.UrlRouteContext>()).Returns("/releases/sales");
+
+        var result = Assert.IsType<JsonResult>(await page.OnGetOrchestrationListAsync(1, 25, "Sales", "name", false));
+
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Value);
+        Assert.Contains("Sales", json);
+        Assert.Contains("\"count\":3", json);
+        await fixture.PolicyService.Received(1).SearchOrchestrations(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 25), "Sales", "name", false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task OnGetLoadsRowsArtifactsRuntimeNodesTargetsAndPoliciesForSelectedOrchestration()
     {
         var fixture = new Fixture();

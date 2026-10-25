@@ -1968,6 +1968,8 @@ main.container {
 
 .od-catalog-filters .form-select { width: auto; min-width: 10rem; }
 
+.od-catalog .od-item-card > .od-status { align-self: flex-start; }
+
 .od-catalog [data-catalog-status] {
     margin-top: .75rem;
 }

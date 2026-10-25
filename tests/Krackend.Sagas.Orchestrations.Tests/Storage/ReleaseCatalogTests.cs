@@ -88,6 +88,8 @@ public sealed class ReleaseCatalogTests
         var summaries = await service.Search(new ApplicationPagedSettings { PageNumber = 1, PageSize = 2 }, "sales", "operator", sort, descending);
         Assert.Equal(3, summaries.TotalRows);
         Assert.All(summaries.Rows, item => Assert.Empty(item.Targets));
+        Assert.Equal(3, Assert.Single(await service.GetSummaries(["sales", "other"])).Count);
+        Assert.Empty(await service.GetSummaries([]));
         Assert.Single((await service.GetById(row.Id.ToString())).Targets);
         var targetService = new ReleaseTargetApplicationService(targetRepository);
         Assert.Equal(releaseWithTarget.ToString(), Assert.Single(await targetService.GetByRelease(releaseWithTarget.ToString())).ReleaseId);

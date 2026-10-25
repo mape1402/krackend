@@ -144,6 +144,20 @@ public sealed class ArtifactRepository : IArtifactRepository
             }).ToArray());
     }
 
+    public async Task<IReadOnlyCollection<Artifact>> GetSummariesByIds(IReadOnlyCollection<Id> artifactIds, CancellationToken cancellationToken = default)
+    {
+        if (artifactIds.Count == 0) return Array.Empty<Artifact>();
+        var ids = artifactIds.ToArray();
+        var rows = await _dbContext.Artifacts.AsNoTracking().Where(x => ids.Contains(x.Id))
+            .Select(x => new { x.Id, x.OrchestrationDefinitionId, x.OrchestrationVersionId, x.OrchestrationDisplayName,
+                x.VersionLabel, x.VersionNumber, x.ArtifactType, x.Checksum, x.IsPublished, x.CreatedAtUtc })
+            .ToArrayAsync(cancellationToken);
+        return rows.Select(x => new Artifact { Id = x.Id, OrchestrationDefinitionId = x.OrchestrationDefinitionId,
+            OrchestrationVersionId = x.OrchestrationVersionId, OrchestrationDisplayName = x.OrchestrationDisplayName,
+            VersionLabel = x.VersionLabel, VersionNumber = x.VersionNumber, ArtifactType = x.ArtifactType,
+            Checksum = x.Checksum, IsPublished = x.IsPublished, CreatedAtUtc = x.CreatedAtUtc }).ToArray();
+    }
+
     /// <inheritdoc />
     public async Task<PagedResult<Artifact>> Search(PagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
     {

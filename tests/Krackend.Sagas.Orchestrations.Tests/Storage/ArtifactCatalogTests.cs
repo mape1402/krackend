@@ -45,6 +45,9 @@ public sealed class ArtifactCatalogTests
         Assert.Null(summary.Payload);
         var service = new ArtifactApplicationService(repository);
         Assert.Equal("{\"test\":true}", (await service.GetById(summary.Id.ToString())).Payload);
+        var summaries = await service.GetSummariesByIds([summary.Id.ToString(), summary.Id.ToString()]);
+        Assert.Null(Assert.Single(summaries).Payload);
+        Assert.Empty(await service.GetSummariesByIds([]));
         Assert.Equal(3, (await service.Search(new ApplicationPagedSettings { PageNumber = 1, PageSize = 25 }, "sales", "Sales", sort, descending)).TotalRows);
         Assert.Empty((await repository.Search(null!, "other", null!, sort, descending)).Rows);
     }

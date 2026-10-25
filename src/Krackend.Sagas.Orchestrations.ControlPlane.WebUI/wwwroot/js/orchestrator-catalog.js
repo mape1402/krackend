@@ -114,12 +114,12 @@
             group.append(edit);
             return group;
         }
-        if (kind === 'reviews') {
+        if (kind === 'reviews' || kind === 'release-orchestrations') {
             const link = document.createElement('a');
             link.className = 'btn btn-sm btn-outline-secondary';
             link.href = item.openUrl;
-            link.title = 'Open review';
-            link.setAttribute('aria-label', `Open review for ${item.displayName}`);
+            link.title = kind === 'reviews' ? 'Open review' : 'Open releases';
+            link.setAttribute('aria-label', `${link.title} for ${item.displayName}`);
             const icon = document.createElement('i');
             icon.className = 'bi bi-eye';
             icon.setAttribute('aria-hidden', 'true');
@@ -223,7 +223,7 @@
                 type.replaceChildren(badge);
             }
         }
-        if (item && (kind === 'orchestrations' || kind === 'reviews')) {
+        if (item && (kind === 'orchestrations' || kind === 'reviews' || kind === 'release-orchestrations')) {
             const name = row.querySelector(kind === 'reviews' ? '[data-z-grid-field="orchestration"]' : '[data-z-grid-field="displayName"]');
             if (name && !name.querySelector('a')) {
                 const link = document.createElement('a');
@@ -258,7 +258,7 @@
         const identity = document.createElement('div');
         const name = document.createElement('h2');
         name.className = 'od-item-title';
-        if (kind === 'orchestrations' || kind === 'reviews') {
+        if (kind === 'orchestrations' || kind === 'reviews' || kind === 'release-orchestrations') {
             const link = document.createElement('a');
             link.href = item.openUrl;
             link.textContent = item.displayName;
@@ -288,8 +288,16 @@
         } else card.append(top);
         const description = document.createElement('p');
         description.className = 'od-item-description';
-        description.textContent = item.description || 'No description.';
-        card.append(description);
+        if (kind !== 'release-orchestrations') {
+            description.textContent = item.description || 'No description.';
+            card.append(description);
+        }
+        if (kind === 'release-orchestrations') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = `Releases: ${item.count}${item.latest ? ` | Latest: ${item.latest}` : ''}`;
+            card.append(details);
+        }
         if (kind === 'orchestrations') {
             const details = document.createElement('p');
             details.className = 'od-item-meta';

@@ -26,6 +26,12 @@ public sealed class ArtifactApplicationService : IArtifactApplicationService
         return artifact is null ? null : Map(artifact);
     }
 
+    public async Task<IReadOnlyCollection<ArtifactModel>> GetSummariesByIds(IReadOnlyCollection<string> artifactIds, CancellationToken cancellationToken = default)
+    {
+        var ids = artifactIds.Select(x => new Id(Ulid.Parse(x))).Distinct().ToArray();
+        return (await _repository.GetSummariesByIds(ids, cancellationToken)).Select(Map).ToArray();
+    }
+
     private static ApplicationPagedResult<ArtifactModel> MapPage(PagedResult<Artifact> result)
     {
         return new ApplicationPagedResult<ArtifactModel>

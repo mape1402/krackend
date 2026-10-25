@@ -148,6 +148,16 @@ public sealed class ReleaseRepository : IReleaseRepository
             }).ToArray());
     }
 
+    public async Task<IReadOnlyCollection<ReleaseCatalogSummary>> GetSummaries(IReadOnlyCollection<string> orchestrationIds, CancellationToken cancellationToken = default)
+    {
+        if (orchestrationIds.Count == 0) return Array.Empty<ReleaseCatalogSummary>();
+        var ids = orchestrationIds.ToArray();
+        return await _dbContext.Releases.AsNoTracking().Where(x => ids.Contains(x.OrchestrationDefinitionId))
+            .GroupBy(x => x.OrchestrationDefinitionId)
+            .Select(group => new ReleaseCatalogSummary(group.Key, group.Count(), group.Max(x => x.CreatedAtUtc)))
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task<PagedResult<Release>> Search(PagedSettings settings, string orchestrationId, string search, string sort, bool descending, CancellationToken cancellationToken = default)
     {
         var page = Math.Max(1, settings?.PageNumber ?? 1);

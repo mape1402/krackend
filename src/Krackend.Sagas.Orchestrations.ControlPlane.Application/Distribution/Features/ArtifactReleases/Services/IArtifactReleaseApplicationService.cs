@@ -9,5 +9,7 @@ public interface IArtifactApplicationService
     /// <summary>Gets the full artifact including its payload.</summary>
     Task<ArtifactModel> GetById(string artifactId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured artifact service does not support direct lookup.");
+    Task<IReadOnlyCollection<ArtifactModel>> GetSummariesByIds(IReadOnlyCollection<string> artifactIds, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured artifact service does not support summary lookup.");
 }
 

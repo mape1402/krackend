@@ -208,6 +208,10 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
         CompletedAtUtc = item.CompletedAtUtc
     };
 
+    public async Task<IReadOnlyCollection<ReleaseCatalogSummaryModel>> GetSummaries(IReadOnlyCollection<string> orchestrationIds, CancellationToken cancellationToken = default)
+        => (await _repository.GetSummaries(orchestrationIds, cancellationToken))
+            .Select(x => new ReleaseCatalogSummaryModel(x.OrchestrationId, x.Count, x.LatestCreatedAtUtc)).ToArray();
+
     private static void EnsureStrategyIsSupportedForArtifact(ReleaseStrategy strategy, string artifactType)
     {
         var isNewVersion = string.Equals(

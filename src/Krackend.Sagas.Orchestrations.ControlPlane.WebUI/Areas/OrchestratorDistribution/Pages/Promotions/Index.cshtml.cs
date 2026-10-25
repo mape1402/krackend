@@ -61,7 +61,39 @@ public sealed class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
-        await LoadPageData(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(OrchestrationId))
+            await LoadPageData(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnGetOrchestrationListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await _policyService.SearchOrchestrations(new ApplicationPagedSettings
+            {
+                PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100)
+            }, search?.Trim() ?? string.Empty, sort ?? string.Empty, descending, cancellationToken);
+            var summaries = (await _promotionService.GetSummaries(result.Rows.Select(x => x.Id).ToArray(), cancellationToken))
+                .ToDictionary(x => x.OrchestrationId, StringComparer.Ordinal);
+            return new JsonResult(new
+            {
+                items = result.Rows.Select(item =>
+                {
+                    summaries.TryGetValue(item.Id, out var summary);
+                    return new
+                    {
+                        id = item.Id, key = item.Key, displayName = item.Name, isActive = item.IsActive,
+                        status = item.IsActive ? "Active" : "Inactive", count = summary?.Count ?? 0,
+                        latest = summary?.LatestCreatedAtUtc.ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
+                        openUrl = Url.Page("/Promotions/Index", new { area = "OrchestratorDistribution", orchestrationId = item.Id })
+                    };
+                }).ToArray(),
+                totalCount = result.TotalRows, hasMore = result.PageNumber < result.TotalPages,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+            });
+        }
+        catch (NotSupportedException) { return StatusCode(503); }
     }
 
     public async Task<IActionResult> OnPostCreateAsync(CancellationToken cancellationToken = default)

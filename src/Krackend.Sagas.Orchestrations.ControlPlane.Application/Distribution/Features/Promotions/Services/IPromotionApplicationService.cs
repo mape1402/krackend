@@ -8,5 +8,9 @@ public interface IReleaseApplicationService
         => throw new NotSupportedException("The configured release service does not support catalog search.");
     Task<ReleaseModel> GetById(string id, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured release service does not support detail lookup.");
+    Task<IReadOnlyCollection<ReleaseCatalogSummaryModel>> GetSummaries(IReadOnlyCollection<string> orchestrationIds, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release service does not support summary lookup.");
 }
+
+public sealed record ReleaseCatalogSummaryModel(string OrchestrationId, int Count, DateTime LatestCreatedAtUtc);
 
