@@ -1,0 +1,6 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Reviews.DetailsModel
+<form id="abortReviewForm" method="post" asp-page-handler="Abort">
+    <input type="hidden" name="reviewId" value="@Model.ReviewId" />
+    <label asp-for="AbortReason" class="form-label">Reason</label>
+    <textarea asp-for="AbortReason" class="form-control" rows="3"></textarea>
+</form>
