@@ -190,6 +190,36 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.WolfAuth` adds optional WebUI authentication gates over host-owned WolfAuth/ASP.NET Core authentication. Krackend no longer ships its own subject, role, permission, or security storage packages.
 - Control Plane and runtime ButterMorph integration is aligned with ButterMorph `2.1.3` for schema design, mapping, execution-condition authoring, runtime transforms, and runtime validations.
 
+### Web UI and themes
+
+The Control Plane and Runtime UIs use the Zoorce application shell and data grids. Catalogs offer grid and card views, retain the selected view in the browser, and load additional results as the user scrolls. Search, sorting, and paging are performed by the configured storage provider.
+
+Configure the light and dark palettes when registering the UI in each host. The same configuration supplies the Zoorce shell and, in the Control Plane, the embedded ButterMorph designers. Existing top-level color properties are aliases for the light palette.
+
+```csharp
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
+
+builder.Services.AddOrchestratorControlPlaneWebUI(options =>
+{
+    options.Theme.Title = "Krackend";
+    options.Theme.Mode = OrchestratorWebUIThemeMode.Light;
+    options.Theme.Light.PrimaryColor = "#0b3d91";
+    options.Theme.Light.SurfaceColor = "#ffffff";
+    options.Theme.Dark.PrimaryColor = "#73a8ff";
+    options.Theme.Dark.SurfaceColor = "#0d1b2f";
+});
+
+// In the separate runtime host:
+builder.Services.AddOrchestratorRuntimeWebUI(options =>
+{
+    options.Theme.Mode = OrchestratorWebUIThemeMode.Light;
+    options.Theme.Light.PrimaryColor = "#0b3d91";
+    options.Theme.Dark.PrimaryColor = "#73a8ff";
+});
+```
+
+When using `AddOrchestratorControlPlane` instead of the standalone UI registration, set `options.Theme` on that composition. Configure both palettes with sufficient contrast; the host-provided initial mode is independent of the user's light/dark selection.
+
 Spider event publishing:
 
 Use `EmitEvent` when a service should publish an orchestration trigger event without reporting that publication as a saga reply. Keep `UseOrchestration` on the same pipeline when the service is also handling a command from an existing saga and must answer the runtime backchannel.
