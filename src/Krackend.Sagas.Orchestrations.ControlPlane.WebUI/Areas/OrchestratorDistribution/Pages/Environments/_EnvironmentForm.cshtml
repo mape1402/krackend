@@ -1,0 +1,24 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Environments.IndexModel
+
+<form id="environmentForm" method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving environment" data-busy-message="Control Plane is storing the environment.">
+    <input asp-for="Input.EnvironmentId" type="hidden" id="environmentIdInput" />
+    <div class="mb-3">
+        <label asp-for="Input.Name" class="form-label"></label>
+        <input asp-for="Input.Name" class="form-control" id="environmentNameInput" />
+        <span asp-validation-for="Input.Name" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="Input.Code" class="form-label"></label>
+        <input asp-for="Input.Code" class="form-control" id="environmentCodeInput" data-orchestrator-key="true" />
+        <span asp-validation-for="Input.Code" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="Input.Description" class="form-label"></label>
+        <textarea asp-for="Input.Description" class="form-control" id="environmentDescriptionInput" rows="3"></textarea>
+        <span asp-validation-for="Input.Description" class="text-danger"></span>
+    </div>
+    <div class="form-check">
+        <input asp-for="Input.IsEnabled" class="form-check-input" id="environmentEnabledInput" />
+        <label asp-for="Input.IsEnabled" class="form-check-label">Enabled</label>
+    </div>
+</form>

@@ -1,6 +1,8 @@
 @page
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Environments.IndexModel
 @{
     ViewData["Title"] = "Environments";
@@ -11,7 +13,7 @@
         <h1 class="od-page-title">Environments</h1>
         <p class="od-page-subtitle">Logical deployment groups for runtime nodes.</p>
     </div>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#environmentModal">Create environment</button>
+    <button type="button" class="btn btn-primary" id="createEnvironmentButton">Create environment</button>
 </div>
 
 <section class="od-catalog" data-catalog="environments" data-label="environments" data-source="@Url.Page(null, "List")">
@@ -43,51 +45,20 @@
     </div>
 </section>
 
-<div class="modal fade" id="environmentModal" tabindex="-1" aria-labelledby="environmentModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="Upsert" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving environment" data-busy-message="Control Plane is storing the environment.">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="environmentModalLabel">Create environment</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input asp-for="Input.EnvironmentId" type="hidden" id="environmentIdInput" />
-                    <div class="mb-3">
-                        <label asp-for="Input.Name" class="form-label"></label>
-                        <input asp-for="Input.Name" class="form-control" id="environmentNameInput" />
-                        <span asp-validation-for="Input.Name" class="text-danger"></span>
-                    </div>
-                    <div class="mb-3">
-                        <label asp-for="Input.Code" class="form-label"></label>
-                        <input asp-for="Input.Code" class="form-control" id="environmentCodeInput" data-orchestrator-key="true" />
-                        <span asp-validation-for="Input.Code" class="text-danger"></span>
-                    </div>
-                    <div class="mb-3">
-                        <label asp-for="Input.Description" class="form-label"></label>
-                        <textarea asp-for="Input.Description" class="form-control" id="environmentDescriptionInput" rows="3"></textarea>
-                        <span asp-validation-for="Input.Description" class="text-danger"></span>
-                    </div>
-                    <div class="form-check">
-                        <input asp-for="Input.IsEnabled" class="form-check-input" id="environmentEnabledInput" />
-                        <label asp-for="Input.IsEnabled" class="form-check-label">Enabled</label>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="environmentSubmitButton">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "environmentModal",
+    Title = "Create environment",
+    Eyebrow = null,
+    Body = await Html.PartialAsync("_EnvironmentForm", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"environmentForm\" class=\"z-button z-button-primary\" id=\"environmentSubmitButton\">Create</button>")
+})
 
 @section Scripts {
 <script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const modalElement = document.getElementById('environmentModal');
-    const modal = window.bootstrap?.Modal?.getOrCreateInstance(modalElement);
 
     const setValue = (id, value) => {
         const element = document.getElementById(id);
@@ -99,30 +70,31 @@
         if (element) element.checked = value === 'True' || value === 'true';
     };
 
-    document.querySelector('[data-bs-target="#environmentModal"]')?.addEventListener('click', () => {
-        document.getElementById('environmentModalLabel').textContent = 'Create environment';
+    document.getElementById('createEnvironmentButton')?.addEventListener('click', event => {
+        document.getElementById('environmentModal-title').textContent = 'Create environment';
         document.getElementById('environmentSubmitButton').textContent = 'Create';
         setValue('environmentIdInput', '');
         setValue('environmentNameInput', '');
         setValue('environmentCodeInput', '');
         setValue('environmentDescriptionInput', '');
         setChecked('environmentEnabledInput', 'true');
+        modalElement?.open?.(event.currentTarget);
     });
 
     document.addEventListener('click', event => {
             const button = event.target.closest('.js-edit-environment');
             if (!button) return;
             const environment = button.closest('[data-environment]');
-            if (!environment || !modal) return;
+            if (!environment || !modalElement) return;
 
-            document.getElementById('environmentModalLabel').textContent = 'Edit environment';
+            document.getElementById('environmentModal-title').textContent = 'Edit environment';
             document.getElementById('environmentSubmitButton').textContent = 'Save';
             setValue('environmentIdInput', environment.dataset.id);
             setValue('environmentNameInput', environment.dataset.name);
             setValue('environmentCodeInput', environment.dataset.code);
             setValue('environmentDescriptionInput', environment.dataset.description);
             setChecked('environmentEnabledInput', environment.dataset.isEnabled);
-            modal.show();
+            modalElement.open?.(button);
     });
 })();
 </script>
