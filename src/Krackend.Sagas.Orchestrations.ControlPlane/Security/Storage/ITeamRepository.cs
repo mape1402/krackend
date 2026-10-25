@@ -48,4 +48,8 @@ public interface ITeamRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged teams.</returns>
     Task<PagedResult<Team>> GetAll(int pageNumber, int pageSize, string searchText = "", CancellationToken cancellationToken = default);
+
+    /// <summary>Searches and orders a page of teams in the backing store.</summary>
+    Task<PagedResult<Team>> Search(int pageNumber, int pageSize, string searchText, string sort, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured team storage does not support catalog search.");
 }

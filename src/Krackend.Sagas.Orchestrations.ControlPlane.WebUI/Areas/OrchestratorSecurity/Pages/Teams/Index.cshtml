@@ -1,4 +1,6 @@
 @page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.OrchestratorSecurity.Pages.Teams.IndexModel
 @{
     ViewData["Title"] = "Teams";
@@ -12,78 +14,37 @@
     <button type="button" class="btn btn-primary js-open-team-modal" data-mode="create">Create team</button>
 </div>
 
-@if (!Model.Rows.Any())
-{
-    <section class="od-panel">
-        <p class="od-empty">No teams found.</p>
-    </section>
-}
-else
-{
-    <section class="od-list-shell" data-od-infinite-list>
-        <div class="od-grid"
-             data-od-infinite-grid
-             data-od-infinite-label="teams"
-             data-od-infinite-initial-count="24"
-             data-od-infinite-batch-size="24">
-            @foreach (var item in Model.Rows.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))
-            {
-                var statusClass = item.IsActive ? "od-status od-status-active" : "od-status od-status-inactive";
-                <article class="od-item-card od-infinite-item">
-                    <div class="od-item-top">
-                        <div>
-                            <h2 class="od-item-title">@item.DisplayName</h2>
-                            <p class="od-item-meta">@item.Key</p>
-                        </div>
-                        <div class="d-flex align-items-start gap-2">
-                            <span class="@statusClass">@(item.IsActive ? "Active" : "Inactive")</span>
-                            <div class="dropdown">
-                                <button class="od-kebab" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions">&#8942;</button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <button type="button"
-                                                class="dropdown-item js-open-team-modal"
-                                                data-mode="edit"
-                                                data-id="@item.Id"
-                                                data-key="@item.Key"
-                                                data-display-name="@item.DisplayName"
-                                                data-description="@item.Description">
-                                            Edit
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button type="button"
-                                                class="dropdown-item js-open-members-modal"
-                                                data-team-id="@item.Id"
-                                                data-team-name="@item.DisplayName">
-                                            Members
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    <li>
-                                        <form method="post" asp-page-handler="SetIsActive" class="od-inline-form" data-orchestrator-busy="true" data-busy-title="Updating team" data-busy-message="Security is applying the team status change.">
-                                            <input type="hidden" name="teamId" value="@item.Id" />
-                                            <input type="hidden" name="isActive" value="@(item.IsActive ? "false" : "true")" />
-                                            <button type="submit" class="dropdown-item">@(item.IsActive ? "Disable team" : "Enable team")</button>
-                                        </form>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="od-item-description">@(string.IsNullOrWhiteSpace(item.Description) ? "No description." : item.Description)</p>
-                    <div class="od-chip-row">
-                        <span class="od-meta-chip">Members: @item.MemberCount</span>
-                    </div>
-                </article>
-            }
+<form method="post" asp-page-handler="SetIsActive" id="team-status-form" data-orchestrator-busy="true" hidden>
+    <input type="hidden" name="teamId" /><input type="hidden" name="isActive" />
+</form>
+<section class="od-catalog" data-catalog="teams" data-label="teams" data-source="@Url.Page(null, "List")">
+    <div class="od-catalog-controls" role="group" aria-label="View mode">
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+    </div>
+    <div data-catalog-grid>
+        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        {
+            Id = "teams-grid", AriaLabel = "teams", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
+            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Columns = [new("displayName", "Name"), new("key", "Key"), new("status", "Status"), new("members", "Members", false), new("actions", "Actions", false)]
+        })
+    </div>
+    <div data-catalog-cards hidden>
+        <div class="od-catalog-filters">
+            <label class="z-search-field"><span aria-hidden="true">&#x2315;</span><input type="search" data-catalog-search aria-label="Search teams" placeholder="Search teams" autocomplete="off" /></label>
+            <select class="form-select" data-catalog-sort aria-label="Sort teams">
+                <option value="displayName">Name: A to Z</option><option value="displayName:desc">Name: Z to A</option>
+                <option value="key">Key</option><option value="status">Status</option>
+            </select>
         </div>
-        <div class="od-infinite-scroll-status" data-od-infinite-status>
-            Showing <span data-od-infinite-count>@Math.Min(24, Model.Rows.Count)</span> of <span data-od-infinite-total>@Model.Rows.Count</span> teams
-        </div>
-        <div class="od-infinite-scroll-sentinel" data-od-infinite-sentinel aria-hidden="true"></div>
-    </section>
-}
+        <div class="od-grid" data-catalog-card-items></div>
+        <p class="od-empty" data-catalog-empty hidden>No matching teams.</p>
+        <p data-catalog-status aria-live="polite"></p>
+        <div data-catalog-sentinel aria-hidden="true"></div>
+        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+    </div>
+</section>
 
 <div class="modal fade" id="teamModal" tabindex="-1" aria-labelledby="teamModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -154,6 +115,7 @@ else
 </div>
 
 @section Scripts {
+<script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-catalog.js" asp-append-version="true"></script>
 <script>
 (() => {
     const teamModalElement = document.getElementById('teamModal');
@@ -182,8 +144,9 @@ else
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 
-    document.querySelectorAll('.js-open-team-modal').forEach(button => {
-        button.addEventListener('click', () => {
+    document.addEventListener('click', event => {
+        const button = event.target.closest('.js-open-team-modal');
+        if (button) {
             const mode = button.getAttribute('data-mode');
             if (mode === 'edit') {
                 title.textContent = 'Edit team';
@@ -205,7 +168,7 @@ else
             setValue(descriptionInput, '');
             keyInput.readOnly = false;
             teamModal.show();
-        });
+        }
     });
 
     const loadMembers = async (teamId) => {
@@ -241,8 +204,9 @@ else
             </div>`).join('');
     };
 
-    document.querySelectorAll('.js-open-members-modal').forEach(button => {
-        button.addEventListener('click', async () => {
+    document.addEventListener('click', async event => {
+            const button = event.target.closest('.js-open-members-modal');
+            if (!button) return;
             const teamId = button.getAttribute('data-team-id') || '';
             const teamName = button.getAttribute('data-team-name') || '';
             if (!teamId || !membersModal || !memberTeamIdInput || !membersLabel) return;
@@ -251,7 +215,6 @@ else
             memberTeamIdInput.value = teamId;
             await loadMembers(teamId);
             membersModal.show();
-        });
     });
 })();
 </script>

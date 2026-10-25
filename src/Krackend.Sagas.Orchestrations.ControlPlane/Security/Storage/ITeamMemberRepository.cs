@@ -39,4 +39,8 @@ public interface ITeamMemberRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Team members.</returns>
     Task<IReadOnlyCollection<TeamMember>> GetByTeam(Id teamId, CancellationToken cancellationToken = default);
+
+    /// <summary>Counts members for the requested teams in the backing store.</summary>
+    Task<IReadOnlyDictionary<Id, int>> CountByTeams(IReadOnlyCollection<Id> teamIds, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured team storage does not support catalog counts.");
 }

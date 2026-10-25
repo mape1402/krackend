@@ -33,6 +33,27 @@
         return element;
     };
     const actions = item => {
+        if (kind === 'teams') {
+            const group = document.createElement('div');
+            group.className = 'od-catalog-actions';
+            const edit = button('bi-pencil', `Edit ${item.displayName}`);
+            edit.classList.add('js-open-team-modal');
+            Object.assign(edit.dataset, { mode: 'edit', id: item.id, key: item.key,
+                displayName: item.displayName, description: item.description ?? '' });
+            const members = button('bi-people', `Members of ${item.displayName}`);
+            members.classList.add('js-open-members-modal');
+            Object.assign(members.dataset, { teamId: item.id, teamName: item.displayName });
+            const change = button(item.isActive ? 'bi-pause-circle' : 'bi-play-circle',
+                `${item.isActive ? 'Disable' : 'Enable'} ${item.displayName}`);
+            change.addEventListener('click', () => {
+                const statusForm = document.getElementById('team-status-form');
+                statusForm.elements.teamId.value = item.id;
+                statusForm.elements.isActive.value = String(!item.isActive);
+                statusForm.requestSubmit();
+            });
+            group.append(edit, members, change);
+            return group;
+        }
         if (kind === 'environments') {
             const group = document.createElement('div');
             group.dataset.environment = 'true';
@@ -221,6 +242,12 @@
             const details = document.createElement('p');
             details.className = 'od-item-meta';
             details.textContent = `Updated ${item.updated}`;
+            card.append(details);
+        }
+        if (kind === 'teams') {
+            const details = document.createElement('p');
+            details.className = 'od-item-meta';
+            details.textContent = `Members: ${item.members}`;
             card.append(details);
         }
         cards.append(card);

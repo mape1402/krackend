@@ -10,9 +10,6 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Security.Areas.Orches
 /// </summary>
 public sealed class IndexModel : PageModel
 {
-    private const int PageSize = 200;
-    private const int MaxPageReads = 50;
-
     private readonly ITeamApplicationService _service;
 
     /// <summary>
@@ -23,11 +20,6 @@ public sealed class IndexModel : PageModel
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
     }
-
-    /// <summary>
-    /// Gets team list rows.
-    /// </summary>
-    public IReadOnlyCollection<TeamModel> Rows { get; private set; } = Array.Empty<TeamModel>();
 
     /// <summary>
     /// Gets current team members loaded for modal.
@@ -59,6 +51,33 @@ public sealed class IndexModel : PageModel
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
         await LoadAsync(cancellationToken);
+    }
+
+    /// <summary>Returns one filtered page for the team catalog.</summary>
+    public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
+        string search = null, string sort = null, bool descending = false, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await _service.GetAll(new GetTeamsQuery(
+                new ApplicationPagedSettings { PageNumber = Math.Max(1, page), PageSize = Math.Clamp(pageSize, 1, 100) },
+                search?.Trim() ?? string.Empty, true, sort ?? string.Empty, descending), cancellationToken);
+            return new JsonResult(new
+            {
+                items = result.Rows.Select(x => new { id = x.Id, key = x.Key, displayName = x.DisplayName,
+                    description = x.Description, isActive = x.IsActive, status = x.IsActive ? "Active" : "Inactive", members = x.MemberCount }),
+                totalCount = result.TotalRows, hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
+                search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
+            });
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured team storage does not support catalog search.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(500, "Teams could not be loaded. Try again in a moment.");
+        }
     }
 
     /// <summary>
@@ -177,22 +196,6 @@ public sealed class IndexModel : PageModel
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        var rows = new List<TeamModel>();
-        var pageNumber = 1;
-        var totalPages = 1;
-
-        do
-        {
-            var result = await _service.GetAll(new GetTeamsQuery(
-                new ApplicationPagedSettings { PageNumber = pageNumber, PageSize = PageSize }), cancellationToken);
-            rows.AddRange(result.Rows);
-            totalPages = Math.Max(result.TotalPages, 1);
-            pageNumber++;
-        }
-        while (pageNumber <= totalPages && pageNumber <= MaxPageReads);
-
-        Rows = rows.ToArray();
-
         if (!string.IsNullOrWhiteSpace(TeamId))
         {
             TeamMembers = await _service.GetMembers(new GetTeamMembersQuery(TeamId), cancellationToken);

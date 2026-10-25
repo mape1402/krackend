@@ -14,14 +14,13 @@ public sealed class ControlPlaneTeamsPageModelTests
     }
 
     [Fact]
-    public async Task OnGetLoadsTeamsAndSelectedMembers()
+    public async Task OnGetLoadsOnlySelectedMembers()
     {
         var service = new FakeTeamApplicationService();
         var page = new TeamsIndexModel(service) { TeamId = "team-1" };
 
         await page.OnGetAsync();
 
-        Assert.Single(page.Rows);
         Assert.Single(page.TeamMembers);
         Assert.Equal("team-1", service.LastMembersQuery.TeamId);
     }
@@ -47,7 +46,6 @@ public sealed class ControlPlaneTeamsPageModelTests
         var invalid = await page.OnPostUpsertAsync();
 
         Assert.IsType<PageResult>(invalid);
-        Assert.Single(page.Rows);
     }
 
     [Fact]
@@ -144,6 +142,22 @@ public sealed class ControlPlaneTeamsPageModelTests
         Assert.Single(rows);
     }
 
+    [Fact]
+    public async Task ListUsesCatalogSearchAndPaging()
+    {
+        var service = new FakeTeamApplicationService();
+        var page = new TeamsIndexModel(service);
+
+        var result = await page.OnGetListAsync(2, 25, " sales ", "key", true);
+
+        Assert.IsType<JsonResult>(result);
+        Assert.True(service.LastTeamsQuery.Catalog);
+        Assert.Equal("sales", service.LastTeamsQuery.SearchText);
+        Assert.Equal("key", service.LastTeamsQuery.Sort);
+        Assert.True(service.LastTeamsQuery.Descending);
+        Assert.Equal(2, service.LastTeamsQuery.PagedSettings.PageNumber);
+    }
+
     private sealed class FakeTeamApplicationService : ITeamApplicationService
     {
         public UpsertTeamCommand LastUpsert { get; private set; } = new(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
@@ -155,6 +169,7 @@ public sealed class ControlPlaneTeamsPageModelTests
         public RemoveTeamMemberCommand LastRemoveMember { get; private set; } = new(string.Empty, string.Empty);
 
         public GetTeamMembersQuery LastMembersQuery { get; private set; } = new(string.Empty);
+        public GetTeamsQuery LastTeamsQuery { get; private set; } = new(new ApplicationPagedSettings());
 
         public Task<string> Upsert(UpsertTeamCommand command, CancellationToken cancellationToken = default)
         {
@@ -181,7 +196,9 @@ public sealed class ControlPlaneTeamsPageModelTests
         }
 
         public Task<ApplicationPagedResult<TeamModel>> GetAll(GetTeamsQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult(new ApplicationPagedResult<TeamModel>(
+        {
+            LastTeamsQuery = query;
+            return Task.FromResult(new ApplicationPagedResult<TeamModel>(
                 1,
                 1,
                 1,
@@ -196,6 +213,7 @@ public sealed class ControlPlaneTeamsPageModelTests
                         MemberCount = 1
                     }
                 ]));
+        }
 
         public Task<IReadOnlyCollection<TeamMemberModel>> GetMembers(GetTeamMembersQuery query, CancellationToken cancellationToken = default)
         {

@@ -105,4 +105,29 @@ public sealed class TeamRepository : ITeamRepository
             safePageSize,
             rows.Select(x => x.ToDefinition()));
     }
+
+    /// <inheritdoc />
+    public async Task<PagedResult<Team>> Search(int pageNumber, int pageSize, string searchText, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Teams.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var term = searchText.Trim();
+            query = query.Where(x => x.Key.Contains(term) || x.DisplayName.Contains(term) || (x.Description != null && x.Description.Contains(term)));
+        }
+        var total = await query.LongCountAsync(cancellationToken);
+        var page = Math.Max(1, pageNumber);
+        var size = Math.Clamp(pageSize, 1, 100);
+        var ordered = (sort, descending) switch
+        {
+            ("key", false) => query.OrderBy(x => x.Key),
+            ("key", true) => query.OrderByDescending(x => x.Key),
+            ("status", false) => query.OrderBy(x => x.IsActive),
+            ("status", true) => query.OrderByDescending(x => x.IsActive),
+            (_, true) => query.OrderByDescending(x => x.DisplayName),
+            _ => query.OrderBy(x => x.DisplayName)
+        };
+        var rows = await ordered.ThenBy(x => x.Id).Skip((page - 1) * size).Take(size).ToArrayAsync(cancellationToken);
+        return new PagedResult<Team>(page, total == 0 ? 1 : (int)Math.Ceiling(total / (double)size), total, size, rows.Select(x => x.ToDefinition()));
+    }
 }

@@ -7,4 +7,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
 /// </summary>
 public sealed record GetTeamsQuery(
     ApplicationPagedSettings PagedSettings,
-    string SearchText = "") : IRequest<ApplicationPagedResult<TeamModel>>;
+    string SearchText = "",
+    bool Catalog = false,
+    string Sort = "",
+    bool Descending = false) : IRequest<ApplicationPagedResult<TeamModel>>;

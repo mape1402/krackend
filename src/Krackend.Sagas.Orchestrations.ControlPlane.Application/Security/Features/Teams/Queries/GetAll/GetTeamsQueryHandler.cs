@@ -25,16 +25,22 @@ public sealed class GetTeamsQueryHandler : IRequestHandler<GetTeamsQuery, Applic
     /// <inheritdoc />
     public async Task<ApplicationPagedResult<TeamModel>> Handle(GetTeamsQuery request, CancellationToken cancellationToken)
     {
-        var paged = await _teamRepository.GetAll(
-            request.PagedSettings.PageNumber,
-            request.PagedSettings.PageSize,
-            request.SearchText,
-            cancellationToken);
+        var paged = request.Catalog
+            ? await _teamRepository.Search(request.PagedSettings.PageNumber, request.PagedSettings.PageSize,
+                request.SearchText, request.Sort, request.Descending, cancellationToken)
+            : await _teamRepository.GetAll(request.PagedSettings.PageNumber, request.PagedSettings.PageSize,
+                request.SearchText, cancellationToken);
+
+        var counts = request.Catalog
+            ? await _teamMemberRepository.CountByTeams(paged.Rows.Select(team => team.Id).ToArray(), cancellationToken)
+            : null;
 
         var rows = new List<TeamModel>();
         foreach (var team in paged.Rows)
         {
-            var members = await _teamMemberRepository.GetByTeam(team.Id, cancellationToken);
+            var count = request.Catalog
+                ? counts.GetValueOrDefault(team.Id)
+                : (await _teamMemberRepository.GetByTeam(team.Id, cancellationToken)).Count;
             rows.Add(new TeamModel
             {
                 Id = team.Id.ToString(),
@@ -42,7 +48,7 @@ public sealed class GetTeamsQueryHandler : IRequestHandler<GetTeamsQuery, Applic
                 DisplayName = team.DisplayName,
                 Description = team.Description ?? string.Empty,
                 IsActive = team.IsActive,
-                MemberCount = members.Count,
+                MemberCount = count,
             });
         }
 

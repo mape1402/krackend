@@ -64,4 +64,13 @@ public sealed class TeamMemberRepository : ITeamMemberRepository
 
         return rows.Select(x => x.ToDefinition()).ToArray();
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Id, int>> CountByTeams(IReadOnlyCollection<Id> teamIds, CancellationToken cancellationToken = default)
+    {
+        if (teamIds.Count == 0) return new Dictionary<Id, int>();
+        var rows = await _dbContext.TeamMembers.AsNoTracking().Where(x => teamIds.Contains(x.TeamId))
+            .GroupBy(x => x.TeamId).Select(x => new { Id = x.Key, Count = x.Count() }).ToArrayAsync(cancellationToken);
+        return rows.ToDictionary(x => x.Id, x => x.Count);
+    }
 }
