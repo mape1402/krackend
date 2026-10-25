@@ -1,14 +1,16 @@
 @page
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationVersions.DetailsModel
 @using Krackend.Sagas.Orchestrations.Abstractions.Primitives
+@using Zoorce.Web.UI.Foundation.Components
+@using Microsoft.AspNetCore.Html
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
-    ViewData["Title"] = "Version roadmap";
-
     string VersionLabel()
         => string.IsNullOrWhiteSpace(Model.SelectedVersion?.Version)
             ? "Draft roadmap"
             : $"Roadmap {Model.SelectedVersion.Version}";
+
+    ViewData["Title"] = $"{Model.Orchestration?.Name ?? "Orchestration"} · {VersionLabel()}";
 
     string ActionLabel(string action)
         => action switch
@@ -22,11 +24,7 @@
         };
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">@Model.Orchestration?.Name</h1>
-        <p class="od-page-subtitle">@VersionLabel()</p>
-    </div>
+<div class="od-roadmap-toolbar">
     <div class="d-flex gap-2">
         @if (Model.GetAllowedActions(Model.SelectedVersion?.Status ?? OrchestrationVersionStatus.Abandoned).Any())
         {
@@ -47,7 +45,6 @@
                 </ul>
             </div>
         }
-        <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Details" asp-route-orchestrationId="@Model.OrchestrationId" class="btn btn-outline-secondary">Back</a>
     </div>
 </div>
 
@@ -221,43 +218,11 @@
     </section>
 </div>
 
-<div class="modal fade" id="newStageModal" tabindex="-1" aria-labelledby="newStageModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" asp-page-handler="UpsertStage" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving stage" data-busy-message="Design is validating and storing the stage definition.">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="newStageModalLabel">Create stage</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
-                    <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
-                    <input asp-for="NewStage.StageId" type="hidden" id="stageModalStageId" />
-                    <div class="mb-2">
-                        <label asp-for="NewStage.Key" class="form-label"></label>
-                        <input asp-for="NewStage.Key" class="form-control" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="NewStage.Name" class="form-label"></label>
-                        <input asp-for="NewStage.Name" class="form-control" />
-                    </div>
-                    <div class="mb-2">
-                        <label asp-for="NewStage.Description" class="form-label"></label>
-                        <textarea asp-for="NewStage.Description" class="form-control" rows="2"></textarea>
-                    </div>
-                    <div class="form-check form-switch mb-2">
-                        <input asp-for="NewStage.HasExecutionCondition" class="form-check-input" />
-                        <label asp-for="NewStage.HasExecutionCondition" class="form-check-label">Enable execution condition</label>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="stageModalSubmitButton">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "newStageModal", Title = "Create stage", Eyebrow = null,
+    Body = await Html.PartialAsync("_StageForm", Model),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"stageForm\" class=\"z-button z-button-primary\" id=\"stageModalSubmitButton\">Create</button>")
+})
 
 <div class="modal fade" id="triggerModal" tabindex="-1" aria-labelledby="triggerModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -544,7 +509,7 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
         submitButton.disabled = readOnly;
     }
 
-    const dismissButton = modalElement.querySelector('.modal-footer [data-bs-dismiss="modal"]');
+    const dismissButton = modalElement.querySelector('footer [data-z-dialog-close], .modal-footer [data-bs-dismiss="modal"]');
     if (dismissButton) {
         dismissButton.textContent = readOnly ? 'Close' : 'Cancel';
     }
@@ -662,7 +627,7 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
 
 (() => {
     const stageModalElement = document.getElementById('newStageModal');
-    const stageModalTitle = document.getElementById('newStageModalLabel');
+    const stageModalTitle = document.getElementById('newStageModal-title');
     const stageSubmitButton = document.getElementById('stageModalSubmitButton');
     const stageIdInput = document.getElementById('stageModalStageId');
     const stageForm = stageModalElement?.querySelector('form');
@@ -715,11 +680,7 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
     }
 
     function openModal() {
-        if (!window.bootstrap || !window.bootstrap.Modal) {
-            return;
-        }
-
-        window.bootstrap.Modal.getOrCreateInstance(stageModalElement).show();
+        stageModalElement.open?.();
     }
 
     document.querySelectorAll('.js-open-stage-modal').forEach(button => {

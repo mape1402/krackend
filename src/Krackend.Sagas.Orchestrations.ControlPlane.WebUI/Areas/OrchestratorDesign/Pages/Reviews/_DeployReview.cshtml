@@ -3,10 +3,10 @@
     <p class="small">This is the only step that assigns the immutable version and creates the deployed artifact.</p>
     <input type="hidden" name="reviewId" value="@Model.ReviewId" />
     <div class="row g-3">
-        <div class="col-md-4"><label asp-for="ApplyInput.Version" class="form-label">Version</label><input asp-for="ApplyInput.Version" class="form-control" placeholder="1.0.0" required pattern="\d+\.\d+\.\d+" data-val-required="A version is required to deploy a draft." data-orchestrator-version="true" /></div>
-        <div class="col-md-8"><label asp-for="ApplyInput.VersionLabel" class="form-label">Label</label><input asp-for="ApplyInput.VersionLabel" class="form-control" /></div>
-        <div class="col-12"><label asp-for="ApplyInput.Description" class="form-label">Description</label><textarea asp-for="ApplyInput.Description" rows="2" class="form-control"></textarea></div>
-        <div class="col-12"><label asp-for="ApplyInput.Notes" class="form-label">Comment</label><textarea asp-for="ApplyInput.Notes" rows="2" class="form-control"></textarea></div>
+        <div class="col-md-4 z-form-field"><label asp-for="ApplyInput.Version" class="z-form-label">Version</label><input asp-for="ApplyInput.Version" class="z-form-input" placeholder="1.0.0" required pattern="\d+\.\d+\.\d+" data-val-required="A version is required to deploy a draft." data-orchestrator-version="true" /></div>
+        <div class="col-md-8 z-form-field"><label asp-for="ApplyInput.VersionLabel" class="z-form-label">Label</label><input asp-for="ApplyInput.VersionLabel" class="z-form-input" /></div>
+        <div class="col-12 z-form-field"><label asp-for="ApplyInput.Description" class="z-form-label">Description</label><textarea asp-for="ApplyInput.Description" rows="2" class="z-form-input z-form-textarea"></textarea></div>
+        <div class="col-12 z-form-field"><label asp-for="ApplyInput.Notes" class="z-form-label">Comment</label><textarea asp-for="ApplyInput.Notes" rows="2" class="z-form-input z-form-textarea"></textarea></div>
     </div>
     <span asp-validation-for="ApplyInput.Version" class="text-danger d-block mt-2"></span>
 </form>

@@ -1,6 +1,6 @@
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Reviews.DetailsModel
 <form id="rejectReviewForm" method="post" asp-page-handler="Reject">
     <input type="hidden" name="reviewId" value="@Model.ReviewId" />
-    <label asp-for="RejectionComment" class="form-label">Comment</label>
-    <textarea asp-for="RejectionComment" class="form-control" rows="3"></textarea>
+    <div class="z-form-field"><label asp-for="RejectionComment" class="z-form-label">Comment</label>
+    <textarea asp-for="RejectionComment" class="z-form-input z-form-textarea" rows="3"></textarea></div>
 </form>

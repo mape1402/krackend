@@ -1,0 +1,10 @@
+@model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.OrchestrationVersions.DetailsModel
+<form id="stageForm" method="post" asp-page-handler="UpsertStage" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Saving stage" data-busy-message="Design is validating and storing the stage definition.">
+    <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+    <input type="hidden" name="versionId" value="@Model.SelectedVersion?.Id" />
+    <input asp-for="NewStage.StageId" type="hidden" id="stageModalStageId" />
+    <div class="z-form-field mb-3"><label asp-for="NewStage.Key" class="z-form-label"></label><input asp-for="NewStage.Key" class="z-form-input" /></div>
+    <div class="z-form-field mb-3"><label asp-for="NewStage.Name" class="z-form-label"></label><input asp-for="NewStage.Name" class="z-form-input" /></div>
+    <div class="z-form-field mb-3"><label asp-for="NewStage.Description" class="z-form-label"></label><textarea asp-for="NewStage.Description" class="z-form-input z-form-textarea" rows="2"></textarea></div>
+    <label class="z-toggle-switch"><input asp-for="NewStage.HasExecutionCondition" /><span class="z-toggle-track" aria-hidden="true"><span></span></span><span>Enable execution condition</span></label>
+</form>

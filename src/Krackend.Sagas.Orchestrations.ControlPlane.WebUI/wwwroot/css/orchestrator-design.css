@@ -1433,14 +1433,14 @@ main.container {
 
 .od-add-item .od-pipeline-card {
     border: 1px dashed var(--od-border-strong);
-    background: #fbfcff;
+    background: var(--z-surface);
     align-items: center;
     justify-content: center;
 }
 
 .od-add-group-item .od-pipeline-card {
-    border: 1px dashed #9fb1ee;
-    background: #f6f8ff;
+    border: 1px dashed var(--od-border-strong);
+    background: var(--z-surface);
     align-items: center;
     justify-content: center;
 }
@@ -1977,3 +1977,20 @@ main.container {
 .od-catalog [data-catalog-status] {
     margin-top: .75rem;
 }
+
+.od-review-detail { max-width: 62rem; }
+.od-roadmap-toolbar { display:flex; justify-content:flex-end; margin-bottom:.75rem; }
+.od-roadmap-toolbar:has(> div:empty) { display:none; }
+.od-review-summary { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.25rem 0 1.25rem; border-bottom:1px solid var(--z-border); }
+.od-review-summary .z-button { text-decoration:none; }
+.od-review-summary h1 { margin:.25rem 0; font-size:1.2rem; font-weight:700; color:var(--z-text); }
+.od-review-summary p, .od-review-eyebrow { margin:0; color:var(--z-muted); font-size:.75rem; }
+.od-review-eyebrow { color:var(--z-primary); font-weight:700; text-transform:uppercase; }
+.od-review-states { display:flex; flex-wrap:wrap; gap:1.5rem 3rem; padding:1.25rem 0; border-bottom:1px solid var(--z-border); }
+.od-review-states > div { display:grid; align-content:start; justify-items:start; gap:.4rem; }
+.od-review-states > div > span, .od-review-metadata dt { color:var(--z-muted); font-size:.75rem; font-weight:600; }
+.od-review-states strong { font-size:.8125rem; }
+.od-review-metadata { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 13rem),1fr)); gap:1.25rem 2rem; margin:0; padding:1.25rem 0; }
+.od-review-metadata dd { margin:.35rem 0 0; color:var(--z-text); font-size:.8125rem; overflow-wrap:anywhere; }
+.od-review-actions { max-width:62rem; padding-top:1rem; border-top:1px solid var(--z-border); }
+@media (max-width:600px) { .od-review-summary { align-items:flex-start; flex-direction:column; } }

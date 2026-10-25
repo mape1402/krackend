@@ -4,9 +4,11 @@
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @{
-    ViewData["Title"] = "Lifecycle review";
     var isDeployment = Model.Review?.Operation == OrchestrationVersionReviewOperation.Deploy;
     var reviewTarget = Model.Orchestration?.Name ?? "Orchestration";
+    ViewData["Title"] = $"Review · {reviewTarget}";
+    var approvalTone = Model.Review?.ApprovalStatus.ToString() switch { "Approved" => "success", "Rejected" => "danger", _ => "warning" };
+    var applicationTone = Model.Review?.ApplicationStatus.ToString() switch { "Applied" => "success", "Aborted" => "danger", _ => "warning" };
     var applyLabel = Model.Review?.Operation switch
     {
         OrchestrationVersionReviewOperation.Deploy => "Deploy approved version",
@@ -16,65 +18,59 @@
     };
 }
 
-<div class="od-page-head">
-    <div>
-        <h1 class="od-page-title">@reviewTarget</h1>
-        <p class="od-page-subtitle">Lifecycle review: @Model.Review?.Operation for @(string.IsNullOrWhiteSpace(Model.Version?.Version) ? "Draft roadmap" : $"version {Model.Version.Version}")</p>
-    </div>
-    <div class="d-flex flex-wrap gap-2">
-        <a asp-area="OrchestratorDesign" asp-page="/OrchestrationVersions/Details" asp-route-orchestrationId="@Model.OrchestrationId" asp-route-versionId="@Model.Review?.OrchestrationVersionId" class="btn btn-outline-secondary">Open roadmap</a>
-    </div>
-</div>
-
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
-    <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+    <div class="z-message z-message-danger" role="alert">@Model.ErrorMessage</div>
 }
 
-<section class="od-list-shell p-3">
-    <dl class="row mb-0">
-        <dt class="col-sm-3">Orchestration</dt>
-        <dd class="col-sm-9">
-            <a asp-area="OrchestratorDesign" asp-page="/Orchestrations/Details" asp-route-orchestrationId="@Model.OrchestrationId">@Model.Orchestration?.Name</a>
-            <div class="od-item-meta">@Model.Orchestration?.Key</div>
-        </dd>
-        <dt class="col-sm-3">Requested operation</dt><dd class="col-sm-9">@Model.Review?.Operation</dd>
-        <dt class="col-sm-3">Version state</dt><dd class="col-sm-9">@Model.Version?.Status</dd>
-        <dt class="col-sm-3">Approval</dt><dd class="col-sm-9">@Model.Review?.ApprovalStatus</dd>
-        <dt class="col-sm-3">Application</dt><dd class="col-sm-9">@Model.Review?.ApplicationStatus</dd>
-        <dt class="col-sm-3">Requested by</dt><dd class="col-sm-9">@Model.Review?.RequestedBy</dd>
-        <dt class="col-sm-3">Requested on</dt><dd class="col-sm-9">@Model.Review?.RequestedOnUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd>
+<section class="od-review-detail" aria-label="Review details">
+    <div class="od-review-summary">
+        <div>
+            <span class="od-review-eyebrow">@Model.Review?.Operation review</span>
+            <h1>@(string.IsNullOrWhiteSpace(Model.Version?.Version) ? "Draft roadmap" : $"Version {Model.Version.Version}")</h1>
+            <p>@Model.Orchestration?.Key</p>
+        </div>
+        <a asp-area="OrchestratorDesign" asp-page="/OrchestrationVersions/Details" asp-route-orchestrationId="@Model.OrchestrationId" asp-route-versionId="@Model.Review?.OrchestrationVersionId" class="z-button z-button-secondary">Open roadmap</a>
+    </div>
+    <div class="od-review-states">
+        <div><span>Approval</span><strong class="z-status z-status-@approvalTone">@Model.Review?.ApprovalStatus</strong></div>
+        <div><span>Application</span><strong class="z-status z-status-@applicationTone">@Model.Review?.ApplicationStatus</strong></div>
+        <div><span>Version state</span><strong>@Model.Version?.Status</strong></div>
+    </div>
+    <dl class="od-review-metadata">
+        <div><dt>Requested by</dt><dd>@Model.Review?.RequestedBy</dd></div>
+        <div><dt>Requested on</dt><dd>@Model.Review?.RequestedOnUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
         @if (!string.IsNullOrWhiteSpace(Model.Review?.RejectionComment))
         {
-            <dt class="col-sm-3">Rejection comment</dt><dd class="col-sm-9">@Model.Review.RejectionComment</dd>
+            <div><dt>Rejection comment</dt><dd>@Model.Review.RejectionComment</dd></div>
         }
         @if (!string.IsNullOrWhiteSpace(Model.Review?.AbortReason))
         {
-            <dt class="col-sm-3">Abort reason</dt><dd class="col-sm-9">@Model.Review.AbortReason</dd>
+            <div><dt>Abort reason</dt><dd>@Model.Review.AbortReason</dd></div>
         }
         @if (!string.IsNullOrWhiteSpace(Model.Review?.DeployedArtifactId))
         {
-            <dt class="col-sm-3">Deployed artifact</dt><dd class="col-sm-9"><code>@Model.Review.DeployedArtifactId</code></dd>
+            <div><dt>Deployed artifact</dt><dd><code>@Model.Review.DeployedArtifactId</code></dd></div>
         }
     </dl>
 </section>
 
 @if (Model.CanApprove || Model.CanAbort || Model.CanApply)
 {
-    <section class="od-list-shell p-3 mt-3">
+    <section class="od-review-actions">
         <h2 class="od-panel-title">Review actions</h2>
         <div class="d-flex flex-wrap gap-2 mt-3">
             @if (Model.CanApprove)
             {
                 <form method="post" asp-page-handler="Approve" class="od-inline-form" data-orchestrator-validate="false">
                     <input type="hidden" name="reviewId" value="@Model.ReviewId" />
-                    <button type="submit" class="btn btn-primary">Approve</button>
+                    <button type="submit" class="z-button z-button-primary">Approve</button>
                 </form>
-                <button type="button" class="btn btn-outline-danger" data-review-dialog="rejectModal">Reject</button>
+                <button type="button" class="z-button z-button-danger" data-review-dialog="rejectModal">Reject</button>
             }
             @if (Model.CanAbort)
             {
-                <button type="button" class="btn btn-outline-secondary" data-review-dialog="abortModal">Abort</button>
+                <button type="button" class="z-button z-button-secondary" data-review-dialog="abortModal">Abort</button>
             }
         </div>
 
@@ -83,13 +79,13 @@
             <p class="od-item-meta mt-3 mb-0">Approval is complete. The lifecycle change and its deployed artifact will be created only when this action is applied.</p>
             @if (isDeployment)
             {
-                <button type="button" class="btn btn-primary mt-3" data-review-dialog="deployModal">@applyLabel</button>
+                <button type="button" class="z-button z-button-primary mt-3" data-review-dialog="deployModal">@applyLabel</button>
             }
             else
             {
                 <form method="post" asp-page-handler="Apply" class="mt-3" data-orchestrator-validate="false" data-orchestrator-busy="true" data-busy-title="Applying review" data-busy-message="Design is creating the deployed artifact.">
                     <input type="hidden" name="reviewId" value="@Model.ReviewId" />
-                    <button type="submit" class="btn btn-primary">@applyLabel</button>
+                    <button type="submit" class="z-button z-button-primary">@applyLabel</button>
                 </form>
             }
         }
@@ -102,7 +98,7 @@
     {
         Id = "rejectModal", Title = "Reject review", Eyebrow = null,
         Body = await Html.PartialAsync("_RejectReview", Model),
-        Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"rejectReviewForm\" class=\"btn btn-danger\">Reject</button>")
+        Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"rejectReviewForm\" class=\"z-button z-button-danger\">Reject</button>")
     })
 }
 @if (Model.CanAbort)
@@ -111,7 +107,7 @@
     {
         Id = "abortModal", Title = "Abort review", Eyebrow = null,
         Body = await Html.PartialAsync("_AbortReview", Model),
-        Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"abortReviewForm\" class=\"btn btn-outline-danger\">Abort</button>")
+        Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"abortReviewForm\" class=\"z-button z-button-danger\">Abort</button>")
     })
 }
 @if (Model.CanApply && isDeployment)
