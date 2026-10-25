@@ -23,16 +23,15 @@
     const actionLabels = { RequestDeployment: 'Send to deployment review', RequestDeprecation: 'Request deprecation',
         RequestArchive: 'Request archive', OpenReview: 'Open review', Abandon: 'Abandon draft' };
     const actions = item => {
-        const group = make('div', 'd-flex gap-2'); group.dataset.versionActions = '';
-        const link = make('a', 'btn btn-sm btn-outline-secondary'); link.href = roadmapUrl(item.id);
-        link.title = 'Open roadmap'; link.setAttribute('aria-label', `Open roadmap for ${item.version}`);
-        const icon = make('i', 'bi bi-diagram-3'); icon.setAttribute('aria-hidden', 'true'); link.append(icon); group.append(link);
-        if (!item.actions.length) return group;
+        const group = make('div', 'd-flex'); group.dataset.versionActions = '';
         const dropdown = make('div', 'dropdown'); const toggle = make('button', 'btn btn-sm btn-outline-secondary');
         toggle.type = 'button'; toggle.title = 'Version actions'; toggle.setAttribute('aria-label', `Actions for ${item.version}`);
         toggle.setAttribute('data-bs-toggle', 'dropdown'); toggle.setAttribute('aria-expanded', 'false');
         const dots = make('i', 'bi bi-three-dots-vertical'); dots.setAttribute('aria-hidden', 'true'); toggle.append(dots);
         const menu = make('ul', 'dropdown-menu dropdown-menu-end');
+        const roadmapEntry = document.createElement('li');
+        const link = make('a', 'dropdown-item', 'Open roadmap'); link.href = roadmapUrl(item.id);
+        roadmapEntry.append(link); menu.append(roadmapEntry);
         item.actions.forEach(action => {
             const li = document.createElement('li'); const form = document.createElement('form');
             form.method = 'post'; form.action = root.dataset.actionUrl;

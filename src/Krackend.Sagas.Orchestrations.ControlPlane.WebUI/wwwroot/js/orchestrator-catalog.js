@@ -253,7 +253,7 @@
             const type = row.querySelector('[data-z-grid-field="artifactType"]');
             if (type && !type.firstElementChild) {
                 const badge = document.createElement('span');
-                badge.className = `od-status ${item.typeClass}`;
+                badge.className = `z-badge ${item.typeClass}`;
                 badge.textContent = item.typeLabel;
                 type.replaceChildren(badge);
             }
@@ -296,7 +296,7 @@
             card.append(top, badge);
         } else if (kind === 'artifacts') {
             const badge = document.createElement('span');
-            badge.className = `od-status ${item.typeClass}`;
+            badge.className = `z-badge ${item.typeClass}`;
             badge.textContent = item.typeLabel;
             card.append(top, badge);
         } else card.append(top);
