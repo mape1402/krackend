@@ -9,18 +9,17 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ZoorceShellThemeConfigurationTests
 {
     [Fact]
-    public void DefaultPalettesMatchZoorceAmethystPreset()
+    public void DefaultPalettesUseCoordinatedBlueTokens()
     {
         var actual = new ZoorceShellOptions();
         new ZoorceShellThemeConfiguration(Options.Create(new OrchestratorWebUIThemeOptions())).Configure(actual);
-        var expected = new ZoorceShellOptions();
-        expected.UseThemePreset(ZoorceThemePreset.Amethyst);
-
-        foreach (var (actualPalette, expectedPalette) in new[] { (actual.Light, expected.Light), (actual.Dark, expected.Dark) })
-        {
-            foreach (var property in typeof(ZoorceThemePalette).GetProperties().Where(p => p.PropertyType == typeof(string)))
-                Assert.Equal(property.GetValue(expectedPalette), property.GetValue(actualPalette));
-        }
+        Assert.Equal("#245fc7", actual.Light.Primary);
+        Assert.Equal("#edf3ff", actual.Light.Sidebar);
+        Assert.Equal("#e4efff", actual.Light.PrimarySoft);
+        Assert.Equal("#8dbaff", actual.Dark.Primary);
+        Assert.Equal("#111624", actual.Dark.Sidebar);
+        Assert.Equal("#1c2433", actual.Dark.Elevated);
+        Assert.Equal("#263a55", actual.Dark.PrimarySoft);
     }
 
     [Theory]

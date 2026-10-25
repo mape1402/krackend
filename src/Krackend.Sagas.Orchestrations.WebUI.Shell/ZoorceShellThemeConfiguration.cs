@@ -20,7 +20,7 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         var theme = _theme.Value;
         options.ApplicationName = theme.Title;
         options.BrandMark = "K";
-        options.UseThemePreset(ZoorceThemePreset.Amethyst);
+        options.UseThemePreset(ZoorceThemePreset.Neutral);
         options.DefaultTheme = theme.Mode == OrchestratorWebUIThemeMode.Dark
             ? ZoorceThemeMode.Dark : ZoorceThemeMode.Light;
         var defaults = new OrchestratorWebUIThemeOptions();
@@ -35,6 +35,13 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         var defaultCode = string.Equals(source.CodeBackgroundColor, defaults.CodeBackgroundColor, StringComparison.OrdinalIgnoreCase)
             && string.Equals(source.CodeTextColor, defaults.CodeTextColor, StringComparison.OrdinalIgnoreCase)
             && string.Equals(source.BorderColor, defaults.BorderColor, StringComparison.OrdinalIgnoreCase);
+        if (defaultAccent && defaultSurface)
+        {
+            target.Elevated = dark ? "#1c2433" : "#ffffff";
+            target.PrimaryForeground = dark ? "#102038" : "#ffffff";
+            target.PrimarySoft = dark ? "#263a55" : "#e4efff";
+        }
+        if (defaultAccent) target.Glow = dark ? "rgba(94, 155, 245, 0.20)" : "rgba(36, 95, 199, 0.10)";
         target.Primary = source.PrimaryColor;
         target.PrimaryHover = source.PrimaryHoverColor;
         target.Sidebar = source.SidebarBackgroundColor;
