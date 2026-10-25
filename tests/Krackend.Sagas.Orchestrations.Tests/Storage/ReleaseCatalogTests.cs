@@ -53,6 +53,8 @@ public sealed class ReleaseCatalogTests
             ArtifactType = "orchestration-version.new", SchemaVersion = "1", Payload = "{}", Metadata = "{}",
             SourceEvent = "test", SourceVersion = "1", Checksum = "checksum", CreatedAtUtc = DateTime.UtcNow
         });
+        var targetRepository = new ReleaseTargetRepository(context, Substitute.For<ISieveProcessor>());
+        var releaseWithTarget = default(Id);
         for (var i = 0; i < 3; i++)
         {
             var release = new Release
@@ -66,6 +68,16 @@ public sealed class ReleaseCatalogTests
                 Id = Id.New(), ReleaseId = release.Id, RuntimeNodeId = nodeId, Status = ReleaseStatus.InProgress,
                 CreatedAtUtc = DateTime.UtcNow, Notes = string.Empty
             }]);
+            if (i == 0)
+            {
+                releaseWithTarget = release.Id;
+                await targetRepository.Create(new ReleaseTarget
+                {
+                    Id = Id.New(), ReleaseId = release.Id, ArtifactId = artifactId, RuntimeNodeId = nodeId,
+                    RolloutGroup = "Direct", Status = ReleaseTargetStatus.PushScheduled,
+                    ActivationStatus = ActivationStatus.NotActivated, AssignedAtUtc = DateTime.UtcNow
+                });
+            }
         }
 
         var result = await repository.Search(new PagedSettings(2, 2, [], []), "sales", "operator", sort, descending);
@@ -77,6 +89,9 @@ public sealed class ReleaseCatalogTests
         Assert.Equal(3, summaries.TotalRows);
         Assert.All(summaries.Rows, item => Assert.Empty(item.Targets));
         Assert.Single((await service.GetById(row.Id.ToString())).Targets);
+        var targetService = new ReleaseTargetApplicationService(targetRepository);
+        Assert.Equal(releaseWithTarget.ToString(), Assert.Single(await targetService.GetByRelease(releaseWithTarget.ToString())).ReleaseId);
+        Assert.Empty(await targetService.GetByRelease(Id.New().ToString()));
         Assert.Empty((await repository.Search(null!, "other", null!, sort, descending)).Rows);
     }
 }

@@ -14,5 +14,7 @@ public interface IReleaseTargetRepository
     Task<IReadOnlyCollection<ReleaseAttempt>> GetAttempts(Id assignmentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ReleaseTarget>> GetPendingForRuntimeNode(Id runtimeNodeId, CancellationToken cancellationToken = default);
     Task<PagedResult<ReleaseTarget>> GetAll(PagedSettings pagedSettings, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<ReleaseTarget>> GetByRelease(Id releaseId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured release target storage does not support release lookup.");
 }
 

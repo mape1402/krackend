@@ -42,6 +42,10 @@ public interface IRuntimeNodeApplicationService
     Task<ApplicationPagedResult<RuntimeNodeModel>> Search(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured runtime node storage does not support catalog search.");
 
+    /// <summary>Searches enabled runtime nodes without loading disabled nodes.</summary>
+    Task<ApplicationPagedResult<RuntimeNodeModel>> SearchEnabled(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured runtime node storage does not support enabled-node search.");
+
     /// <summary>Gets a runtime node directly by identifier.</summary>
     Task<RuntimeNodeModel> GetById(string runtimeNodeId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("The configured runtime node storage does not support direct lookup.");

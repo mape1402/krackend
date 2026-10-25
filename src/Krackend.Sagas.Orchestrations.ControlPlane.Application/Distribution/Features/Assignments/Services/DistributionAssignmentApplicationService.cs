@@ -38,5 +38,16 @@ public sealed class ReleaseTargetApplicationService : IReleaseTargetApplicationS
             Succeeded = x.Succeeded, ErrorCode = x.ErrorCode, ErrorMessage = x.ErrorMessage, ExternalReference = x.ExternalReference
         }).ToArray();
     }
+
+    public async Task<IReadOnlyCollection<ReleaseTargetModel>> GetByRelease(string releaseId, CancellationToken cancellationToken = default)
+    {
+        var rows = await _repository.GetByRelease(new Id(Ulid.Parse(releaseId)), cancellationToken);
+        return rows.Select(x => new ReleaseTargetModel
+        {
+            Id = x.Id.ToString(), RuntimeNodeId = x.RuntimeNodeId.ToString(), ArtifactId = x.ArtifactId.ToString(),
+            ReleaseId = x.ReleaseId?.ToString() ?? string.Empty, RolloutGroup = x.RolloutGroup,
+            Status = x.Status.ToString(), ActivationStatus = x.ActivationStatus.ToString(), AssignedAtUtc = x.AssignedAtUtc
+        }).ToArray();
+    }
 }
 

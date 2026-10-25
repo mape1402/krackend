@@ -37,6 +37,26 @@ public sealed class OrchestrationNodePolicyApplicationService : IOrchestrationNo
         }).ToArray();
     }
 
+    public async Task<ApplicationPagedResult<OrchestrationPolicyDefinitionModel>> SearchOrchestrations(ApplicationPagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    {
+        var field = sort == "key" ? "key" : sort == "status" ? "isActive" : "name";
+        var sorts = field == "key" ? new[] { new QuerySort(field, descending) } : new[] { new QuerySort(field, descending), new QuerySort("key", false) };
+        var rows = await _orchestrationRepository.Search(new PagedSettings(Math.Max(1, settings.PageNumber), Math.Clamp(settings.PageSize, 1, 100), Array.Empty<QueryFilter>(), sorts), search ?? string.Empty, cancellationToken);
+        return new ApplicationPagedResult<OrchestrationPolicyDefinitionModel>
+        {
+            PageNumber = rows.PageNumber, PageSize = rows.PageSize, TotalRows = (int)rows.TotalRows,
+            TotalPages = rows.TotalPages, Rows = rows.Rows.Select(MapDefinition).ToArray()
+        };
+    }
+
+    public async Task<OrchestrationPolicyDefinitionModel> GetOrchestration(string id, CancellationToken cancellationToken = default)
+        => MapDefinition(await _orchestrationRepository.GetById(new Id(Ulid.Parse(id)), cancellationToken));
+
+    private static OrchestrationPolicyDefinitionModel MapDefinition(Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.OrchestrationDefinition item) => new()
+    {
+        Id = item.Id.ToString(), Key = item.Key, Name = item.Name, IsActive = item.IsActive
+    };
+
     public async Task<OrchestrationNodePolicyModel> Get(string orchestrationDefinitionId, CancellationToken cancellationToken = default)
     {
         var nodeIds = await _repository.GetAllowedRuntimeNodeIds(orchestrationDefinitionId, cancellationToken);

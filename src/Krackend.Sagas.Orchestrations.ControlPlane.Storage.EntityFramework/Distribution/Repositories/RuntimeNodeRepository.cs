@@ -127,11 +127,18 @@ public sealed class RuntimeNodeRepository : IRuntimeNodeRepository
     }
 
     /// <inheritdoc />
-    public async Task<PagedResult<RuntimeNode>> Search(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+    public Task<PagedResult<RuntimeNode>> Search(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => SearchCore(settings, search, sort, descending, false, cancellationToken);
+
+    public Task<PagedResult<RuntimeNode>> SearchEnabled(PagedSettings settings, string search, string sort, bool descending, CancellationToken cancellationToken = default)
+        => SearchCore(settings, search, sort, descending, true, cancellationToken);
+
+    private async Task<PagedResult<RuntimeNode>> SearchCore(PagedSettings settings, string search, string sort, bool descending, bool enabledOnly, CancellationToken cancellationToken)
     {
         var page = Math.Max(1, settings?.PageNumber ?? 1);
         var size = Math.Clamp(settings?.PageSize ?? 25, 1, 100);
         var query = _dbContext.RuntimeNodes.AsNoTracking().Include(x => x.Environment).Where(x => !x.IsDeleted);
+        if (enabledOnly) query = query.Where(x => x.Status == RuntimeNodeStatus.Enabled);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
