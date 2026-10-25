@@ -1,16 +1,25 @@
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.RuntimeNodes.IndexModel
+@using Zoorce.Web.UI.Navigation.Wizard
+@using Zoorce.Web.UI.Navigation.Stepper
+@addTagHelper *, Zoorce.Web.UI
+@{
+    var setupWizard = new ZoorceWizardOptions {
+        Id = "runtimeNodeSetupWizard", AriaLabel = "Runtime node setup",
+        Layout = ZoorceWizardLayout.Sidebar, ExecutionMode = ZoorceWizardExecutionMode.Manual,
+        PanelHeaderMode = ZoorceWizardPanelHeaderMode.Hidden, AllowFutureNavigation = true,
+        Steps = [
+            new("basic", "Basic data", State: ZoorceStepperState.Active, FormId: "setupBasicForm"),
+            new("policy", "Policy", FormId: "setupPolicyForm"),
+            new("runtimeCredentials", "Runtime credentials"),
+            new("designCredentials", "Design credentials"),
+            new("verify", "Verify")
+        ]
+    };
+}
 <p class="od-item-meta mb-2" id="runtimeNodeSetupSubtitle"></p>
 <div class="od-runtime-detail-body">
-                <div class="od-runtime-detail-layout">
-                    <nav class="od-runtime-wizard-nav" aria-label="Runtime node setup">
-                        <button type="button" class="od-runtime-wizard-step is-active" data-setup-step-target="basic"><span>1</span><strong>Basic data</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="policy"><span>2</span><strong>Policy</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="runtimeCredentials"><span>3</span><strong>Runtime credentials</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="designCredentials"><span>4</span><strong>Design credentials</strong></button>
-                        <button type="button" class="od-runtime-wizard-step" data-setup-step-target="verify"><span>5</span><strong>Verify</strong></button>
-                    </nav>
-
-                    <div class="od-runtime-wizard-content">
+                <zoorce-wizard options="setupWizard" css-class="od-node-setup-wizard">
+                    <zoorce-wizard-panel step-id="basic">
                         <section class="od-setup-step is-active" data-setup-step="basic">
                             <div class="od-section-head">
                                 <div>
@@ -48,6 +57,8 @@
                             </form>
                         </section>
 
+                    </zoorce-wizard-panel>
+                    <zoorce-wizard-panel step-id="policy">
                         <section class="od-setup-step" data-setup-step="policy">
                             <div class="od-section-head">
                                 <div>
@@ -77,6 +88,8 @@
                             </form>
                         </section>
 
+                    </zoorce-wizard-panel>
+                    <zoorce-wizard-panel step-id="runtimeCredentials">
                         <section class="od-setup-step" data-setup-step="runtimeCredentials">
                             <div class="od-section-head">
                                 <div>
@@ -95,6 +108,8 @@
                             </div>
                         </section>
 
+                    </zoorce-wizard-panel>
+                    <zoorce-wizard-panel step-id="designCredentials">
                         <section class="od-setup-step" data-setup-step="designCredentials">
                             <div class="od-section-head">
                                 <div>
@@ -116,6 +131,8 @@
                             </div>
                         </section>
 
+                    </zoorce-wizard-panel>
+                    <zoorce-wizard-panel step-id="verify">
                         <section class="od-setup-step" data-setup-step="verify">
                             <div class="od-section-head">
                                 <div>
@@ -128,8 +145,8 @@
                                 <button type="button" class="z-button z-button-ghost js-setup-validate-connection">Check connection</button>
                             </div>
                         </section>
-                    </div>
-                </div>
+                    </zoorce-wizard-panel>
+                </zoorce-wizard>
             <form method="post" asp-page-handler="WizardSetStatus" id="setupStatusForm" class="d-none" data-wizard-form="true">
                 <input type="hidden" name="runtimeNodeId" id="setupStatusRuntimeNodeId" />
                 <input type="hidden" name="status" id="setupStatusValue" value="Enabled" />

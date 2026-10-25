@@ -2005,3 +2005,6 @@ main.container {
 #reviewCatalogDialog [hidden] { display:none !important; }
 #reviewCatalogDialog .z-component-dialog-footer { flex-wrap:wrap; }
 @media (max-width: 600px) { .od-review-dialog-facts { grid-template-columns:1fr; } }
+#runtimeNodeSetupWizard > .z-wizard-footer {
+    display: none;
+}

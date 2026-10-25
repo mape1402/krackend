@@ -470,13 +470,6 @@
                     setupStep = 'basic';
                 }
 
-                document.querySelectorAll('[data-setup-step-target]').forEach(button => {
-                    const target = button.dataset.setupStepTarget;
-                    const enabled = setupSequence.includes(target) && (target === 'basic' || !!currentNode?.dataset.id);
-                    button.disabled = !enabled;
-                    button.classList.toggle('is-disabled', !enabled);
-                });
-
                 const validateButton = document.querySelector('.js-setup-validate-connection');
                 if (validateButton) {
                     validateButton.disabled = !canVerifyConnection;
@@ -491,15 +484,15 @@
                 }
 
                 setupStep = step;
-                document.querySelectorAll('[data-setup-step-target]').forEach(button => {
-                    const active = button.dataset.setupStepTarget === setupStep;
-                    button.classList.toggle('is-active', active);
-                    if (active) button.setAttribute('aria-current', 'step');
-                    else button.removeAttribute('aria-current');
-                    if (active && window.matchMedia('(max-width: 900px)').matches) {
-                        button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                    }
+                const steps = Array.from(document.querySelectorAll('#designNodeSetupWizard [data-z-wizard-step]'), item => {
+                    const target = item.dataset.zStepId;
+                    return {
+                        id: target,
+                        isNavigable: setupSequence.includes(target) && (target === 'basic' || !!currentNode?.dataset.id),
+                        state: !setupSequence.includes(target) ? 'Disabled' : target === step ? 'Active' : target === 'basic' && currentNode?.dataset.id ? 'Completed' : 'Pending'
+                    };
                 });
+                window.ZoorceWizards?.get('designNodeSetupWizard')?.applySnapshot({ currentStepId: setupStep, steps });
                 document.querySelectorAll('[data-setup-step]').forEach(panel => {
                     panel.classList.toggle('is-active', panel.dataset.setupStep === setupStep);
                 });
@@ -510,7 +503,7 @@
                 if (backButton) backButton.disabled = index <= 0;
                 if (nextButton) {
                     nextButton.disabled = false;
-                    nextButton.textContent = 'Next';
+                    nextButton.textContent = index === setupSequence.length - 1 ? 'Finish' : 'Next';
                 }
             };
 
@@ -701,10 +694,9 @@
                 basicModal?.open?.();
             });
 
-            document.querySelectorAll('[data-setup-step-target]').forEach(button => {
-                button.addEventListener('click', () => {
-                    if (!button.disabled) showSetupStep(button.dataset.setupStepTarget);
-                });
+            document.getElementById('designNodeSetupWizard')?.addEventListener('zoorce:wizard:request-change', event => {
+                const target = event.detail.targetStepId;
+                if (setupSequence.includes(target) && (target === 'basic' || currentNode?.dataset.id)) showSetupStep(target);
             });
 
             document.querySelectorAll('#designNodeSetupModal input[name="Policy.DistributionMode"]').forEach(input => {

@@ -429,6 +429,10 @@
     padding: 0;
 }
 
+#designNodeSetupWizard > .z-wizard-footer {
+    display: none;
+}
+
 .od-runtime-wizard-layout {
     display: grid;
     grid-template-columns: 220px minmax(0, 1fr);
