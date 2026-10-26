@@ -1,0 +1,31 @@
+@page
+@using Zoorce.Web.UI.Abstractions.Data
+@using Zoorce.Web.UI.DataGrid
+@{
+    ViewData["Title"] = "Instance history";
+    var from = DateTime.UtcNow.Date.AddDays(-30).ToString("yyyy-MM-dd");
+    var source = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List", startedFrom = DateTime.UtcNow.Date.AddDays(-30).ToString("O") });
+}
+
+@section Head {
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+}
+
+<section data-instance-history data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+    <form class="od-history-filters" data-history-filters>
+        <label>From <input class="z-form-input" type="date" data-history-from value="@from" aria-label="From (UTC)" /></label>
+        <label>Through <input class="z-form-input" type="date" data-history-through aria-label="Through (UTC)" /></label>
+        <button class="z-button z-button-primary" type="submit">Apply</button>
+        <span class="od-trace-error" data-history-error role="alert" hidden>From must not be after through.</span>
+    </form>
+    @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+        Id = "runtime-history-grid", AriaLabel = "Instance history", Binding = new ZoorceDataBindingOptions { Source = source },
+        LoadMode = ZoorceDataLoadMode.Pagination, PageSize = 25,
+        Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
+            new("status", "Status"), new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated"), new("actions", "Actions", false)]
+    })
+</section>
+
+@section Scripts {
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-history.js" asp-append-version="true"></script>
+}

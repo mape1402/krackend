@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<SignalRRuntimeReactiveEventDispatcher>();
         services.TryAddScoped<IRuntimeDiagnosticsReader, RuntimeDiagnosticsReader>();
         services.Replace(ServiceDescriptor.Singleton<IRuntimeReactiveEventPublisher, SignalRRuntimeReactiveEventPublisher>());
+        services.TryAddSingleton<IRuntimeStatisticsUpdatePublisher, SignalRStatisticsUpdatePublisher>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<RazorPagesOptions>, ConfigureRuntimeAreaRoutes>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOrchestratorNavigationContributor, RuntimeNavigationContributor>());
         return services;

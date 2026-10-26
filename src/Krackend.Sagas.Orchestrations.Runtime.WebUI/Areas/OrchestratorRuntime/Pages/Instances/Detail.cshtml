@@ -1,0 +1,145 @@
+@page
+@using Zoorce.Web.UI.Timelines
+@using Krackend.Sagas.Orchestrations.Runtime.Diagnostics
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.DetailModel
+@{
+    var detail = Model.Detail;
+    var instance = detail.Instance;
+    var id = instance.Id;
+    var section = Model.Section;
+    ViewData["Title"] = instance.OrchestrationLabel;
+    var active = section is "stage" or "task" or "attempt" ? "execution" : section;
+    string Timestamp(DateTime? value) => value.HasValue ? $"{value.Value:yyyy-MM-dd HH:mm:ss} UTC" : "Not started";
+    DateTimeOffset TimelineTime(DateTime? value, int order) => new(DateTime.SpecifyKind(value ?? instance.LastUpdatedOnUtc.AddTicks(Math.Max(0, order) + 1), DateTimeKind.Utc));
+    ZoorceTimelineTone Tone(string status) => status?.ToLowerInvariant() switch {
+        "completed" or "succeeded" => ZoorceTimelineTone.Success,
+        "failed" or "timedout" or "deadlettered" => ZoorceTimelineTone.Danger,
+        "running" or "waiting" or "waitingresponse" => ZoorceTimelineTone.Info,
+        "skipped" => ZoorceTimelineTone.Warning,
+        _ => ZoorceTimelineTone.Neutral
+    };
+    ZoorceTimelineItem[] Timeline(IEnumerable<RuntimeTimelineEntryModel> entries) => entries.Select(item => new ZoorceTimelineItem(
+        item.Id, new DateTimeOffset(DateTime.SpecifyKind(item.OccurredOnUtc, DateTimeKind.Utc)),
+        item.TransitionType, $"{Timestamp(item.OccurredOnUtc)} · {item.Message}",
+        Metadata: new Dictionary<string, string> { ["Status"] = $"{item.FromStatus} → {item.ToStatus}" })).ToArray();
+}
+@section Head {
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+}
+<main class="od-instance-trace">
+    <div class="od-instance-context"><span class="od-status @instance.StatusClass">@instance.Status</span><span class="od-trace-id">@instance.SagaId</span></div>
+    <nav class="od-instance-nav" aria-label="Instance sections">
+        <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution" aria-current="@(active == "execution" ? "page" : null)">Execution</a>
+        <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="activity" aria-current="@(active == "activity" ? "page" : null)">Activity</a>
+        <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="overview" aria-current="@(active == "overview" ? "page" : null)">Overview</a>
+        <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="data" aria-current="@(active == "data" ? "page" : null)">Data</a>
+        <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="compensations" aria-current="@(active == "compensations" ? "page" : null)">Compensations</a>
+    </nav>
+    <div class="od-trace-content">
+    @if (section == "overview")
+    {
+        <section class="od-trace-section" aria-label="Instance overview">
+            <h2>Instance overview</h2>
+            <div class="od-trace-summary">
+                <div><span>Orchestration</span><strong>@instance.OrchestrationLabel</strong></div>
+                <div><span>Correlation ID</span><strong class="od-trace-id">@instance.CorrelationId</strong></div>
+                <div><span>Started (UTC)</span><strong>@instance.StartedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</strong></div>
+                <div><span>Updated (UTC)</span><strong>@instance.LastUpdatedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")</strong></div>
+                <div><span>Stages</span><strong>@detail.Stages.Count</strong></div>
+            </div>
+        </section>
+    }
+    else if (section == "activity")
+    {
+        <div class="od-trace-layout">
+            <section class="od-trace-section" aria-label="Instance activity">
+                <h2>Activity</h2>
+                <details open><summary>Functional timeline</summary>@await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "instance-functional-timeline", AriaLabel = "Functional activity", Variant = ZoorceTimelineVariant.Activity, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = false, Interaction = ZoorceTimelineInteraction.Select, Items = Timeline(detail.FunctionalTimeline) })</details>
+                <details><summary>Technical timeline</summary>@await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "instance-technical-timeline", AriaLabel = "Technical activity", Variant = ZoorceTimelineVariant.Journal, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = false, Interaction = ZoorceTimelineInteraction.Select, Items = Timeline(detail.TechnicalTimeline) })</details>
+            </section>
+            <section class="od-trace-section od-transition-selection" aria-live="polite">
+                <h2>Transition details</h2><p data-transition-placeholder>Select an activity to see its details.</p>
+                @foreach (var transition in detail.Transitions.OrderBy(x => x.OccurredOnUtc))
+                {
+                    <div data-transition-details="@transition.Id" hidden><strong>@transition.TransitionType · @transition.OccurredOnUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC</strong>
+                        <dl class="od-trace-fields"><dt>Status</dt><dd>@transition.FromStatus → @transition.ToStatus</dd>@if (!string.IsNullOrWhiteSpace(transition.StageKey)) { <dt>Stage</dt><dd>@transition.StageKey</dd> } @if (!string.IsNullOrWhiteSpace(transition.TaskKey)) { <dt>Task</dt><dd>@transition.TaskKey</dd> } @if (!string.IsNullOrWhiteSpace(transition.TaskExecutionAttemptId)) { <dt>Attempt ID</dt><dd>@transition.TaskExecutionAttemptId</dd> } @if (!string.IsNullOrWhiteSpace(transition.ProducedBy)) { <dt>Source</dt><dd>@transition.ProducedBy</dd> } @if (!string.IsNullOrWhiteSpace(transition.Message)) { <dt>Message</dt><dd>@transition.Message</dd> }</dl>
+                        @if (!string.IsNullOrEmpty(transition.StageKey)) { <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="@(string.IsNullOrEmpty(transition.TaskKey) ? "stage" : "task")" asp-route-stageKey="@transition.StageKey" asp-route-taskKey="@transition.TaskKey">View execution</a> }
+                        <details><summary>Payload</summary><pre>@transition.Payload</pre></details>
+                    </div>
+                }
+            </section>
+        </div>
+    }
+    else if (section == "execution")
+    {
+        var stages = detail.Stages.OrderBy(x => x.Order).Select((stage, index) => new ZoorceTimelineItem(
+            $"stage-{index}", TimelineTime(stage.StartedOnUtc, index), stage.ConfiguredName ?? stage.StageKey,
+            $"{stage.Status} · {Timestamp(stage.StartedOnUtc)}", Tone: Tone(stage.Status),
+            TargetUrl: Url.Page("./Detail", new { instanceId = id, section = "stage", stageKey = stage.StageKey }))).ToArray();
+        <section class="od-trace-section od-trace-timeline"><div class="od-trace-heading"><div><h2>Stages</h2><p>Execution order</p></div><span class="od-trace-count">@stages.Length @(stages.Length == 1 ? "stage" : "stages")</span></div>
+            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "instance-stages-timeline", AriaLabel = "Stages", Variant = ZoorceTimelineVariant.Milestones, Orientation = ZoorceTimelineOrientation.Vertical, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = false, ShowMetadata = false, Interaction = ZoorceTimelineInteraction.Navigate, Items = stages, EmptyMessage = "No stages have been recorded." })
+        </section>
+    }
+    else if (section == "stage")
+    {
+        var stage = Model.Stage;
+        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution">Stages</a><span>/</span><span>@(stage.ConfiguredName ?? stage.StageKey)</span></nav>
+        <section class="od-trace-section od-trace-context-panel"><h2>@(stage.ConfiguredName ?? stage.StageKey) <span class="od-status @stage.StatusClass">@stage.Status</span></h2>
+            <div class="od-trace-summary"><div><span>Started</span><strong>@Timestamp(stage.StartedOnUtc)</strong></div><div><span>Completed</span><strong>@(stage.CompletedOnUtc.HasValue ? Timestamp(stage.CompletedOnUtc) : "—")</strong></div><div><span>Tasks</span><strong>@stage.Tasks.Count</strong></div></div>
+            @if (!string.IsNullOrWhiteSpace(stage.ErrorSummary)) { <p class="od-trace-error">@stage.ErrorSummary</p> }
+            <details><summary>Stage details and metadata</summary><dl class="od-trace-fields"><dt>Key</dt><dd>@stage.StageKey</dd><dt>Execution ID</dt><dd>@stage.Id</dd><dt>Condition result</dt><dd>@stage.ExecutionConditionResult</dd>@if (stage.FailedOnUtc.HasValue) { <dt>Failed</dt><dd>@Timestamp(stage.FailedOnUtc)</dd> } @if (!string.IsNullOrWhiteSpace(stage.SkipReason)) { <dt>Skip reason</dt><dd>@stage.SkipReason</dd> }</dl><pre>@stage.Metadata</pre></details>
+        </section>
+        var tasks = stage.Tasks.OrderBy(x => x.Order).Select((task, index) => new ZoorceTimelineItem(
+            $"task-{index}", TimelineTime(task.StartedOnUtc, index), task.ConfiguredName ?? task.TaskKey,
+            $"{task.Status} · {Timestamp(task.StartedOnUtc)}", Tone: Tone(task.Status),
+            TargetUrl: Url.Page("./Detail", new { instanceId = id, section = "task", stageKey = stage.StageKey, taskKey = task.TaskKey }))).ToArray();
+        <section class="od-trace-section od-trace-timeline"><div class="od-trace-heading"><div><h2>Tasks</h2><p>Execution order</p></div><span class="od-trace-count">@tasks.Length @(tasks.Length == 1 ? "task" : "tasks")</span></div>
+            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "stage-tasks-timeline", AriaLabel = "Tasks", Variant = ZoorceTimelineVariant.Rail, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = false, ShowMetadata = false, Interaction = ZoorceTimelineInteraction.Navigate, Items = tasks, EmptyMessage = "No tasks have been recorded." })
+        </section>
+    }
+    else if (section == "task")
+    {
+        var stage = Model.Stage; var task = Model.Task;
+        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution">Stages</a><span>/</span><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey">@(stage.ConfiguredName ?? stage.StageKey)</a><span>/</span><span>@(task.ConfiguredName ?? task.TaskKey)</span></nav>
+        <section class="od-trace-section od-trace-context-panel"><h2>@(task.ConfiguredName ?? task.TaskKey) <span class="od-status @RuntimeDiagnosticsReader.StatusClass(task.Status)">@task.Status</span></h2>
+            <div class="od-trace-summary"><div><span>Started</span><strong>@Timestamp(task.StartedOnUtc)</strong></div><div><span>Completed</span><strong>@(task.CompletedOnUtc.HasValue ? Timestamp(task.CompletedOnUtc) : "—")</strong></div><div><span>Attempts</span><strong>@task.Attempts.Count</strong></div></div>
+            @if (!string.IsNullOrWhiteSpace(task.ErrorSummary)) { <p class="od-trace-error">@task.ErrorSummary</p> }
+            <details><summary>Task details and data</summary><dl class="od-trace-fields"><dt>Key</dt><dd>@task.TaskKey</dd><dt>Execution ID</dt><dd>@task.Id</dd><dt>Kind</dt><dd>@task.TaskKind</dd><dt>Mode</dt><dd>@task.ExecutionMode</dd><dt>Await response</dt><dd>@task.AwaitResponse</dd><dt>Condition result</dt><dd>@task.ExecutionConditionResult</dd><dt>Error policy</dt><dd>@task.OnErrorPolicy</dd>@if (task.WaitingSinceUtc.HasValue) { <dt>Waiting since</dt><dd>@Timestamp(task.WaitingSinceUtc)</dd> } @if (task.FailedOnUtc.HasValue) { <dt>Failed</dt><dd>@Timestamp(task.FailedOnUtc)</dd> } @if (task.TimedOutOnUtc.HasValue) { <dt>Timed out</dt><dd>@Timestamp(task.TimedOutOnUtc)</dd> } @if (!string.IsNullOrWhiteSpace(task.SkipReason)) { <dt>Skip reason</dt><dd>@task.SkipReason</dd> }</dl><details><summary>Task metadata</summary><pre>@task.Metadata</pre></details><details><summary>Output variables</summary><pre>@task.OutputVariablesPayload</pre></details></details>
+        </section>
+        var attempts = task.Attempts.OrderBy(x => x.AttemptNumber).Select(attempt => new ZoorceTimelineItem(
+            $"attempt-{attempt.AttemptNumber}", TimelineTime(attempt.StartedOnUtc, attempt.AttemptNumber), $"Attempt {attempt.AttemptNumber}",
+            $"{attempt.Status} · {Timestamp(attempt.StartedOnUtc)}", Tone: Tone(attempt.Status),
+            TargetUrl: Url.Page("./Detail", new { instanceId = id, section = "attempt", stageKey = stage.StageKey, taskKey = task.TaskKey, attempt = attempt.AttemptNumber }))).ToArray();
+        <section class="od-trace-section od-trace-timeline"><div class="od-trace-heading"><div><h2>Attempts</h2><p>Execution history</p></div><span class="od-trace-count">@attempts.Length @(attempts.Length == 1 ? "attempt" : "attempts")</span></div>
+            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "task-attempts-timeline", AriaLabel = "Attempts", Variant = ZoorceTimelineVariant.Agenda, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = false, ShowMetadata = false, Interaction = ZoorceTimelineInteraction.Navigate, Items = attempts, EmptyMessage = "No attempts have been recorded." })
+        </section>
+    }
+    else if (section == "attempt")
+    {
+        var stage = Model.Stage; var task = Model.Task; var attempt = Model.Attempt;
+        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution">Stages</a><span>/</span><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey">@(stage.ConfiguredName ?? stage.StageKey)</a><span>/</span><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@task.TaskKey">@(task.ConfiguredName ?? task.TaskKey)</a><span>/</span><span>Attempt @attempt.AttemptNumber</span></nav>
+        <div class="od-trace-layout">
+        <section class="od-trace-section"><h2>Attempt @attempt.AttemptNumber <span class="od-status @RuntimeDiagnosticsReader.StatusClass(attempt.Status)">@attempt.Status</span></h2>
+            <dl class="od-trace-fields"><dt>Attempt ID</dt><dd>@attempt.Id</dd><dt>Started</dt><dd>@Timestamp(attempt.StartedOnUtc)</dd>@if (attempt.WaitingSinceUtc.HasValue) { <dt>Waiting since</dt><dd>@Timestamp(attempt.WaitingSinceUtc)</dd> } @if (attempt.CompletedOnUtc.HasValue) { <dt>Completed</dt><dd>@Timestamp(attempt.CompletedOnUtc)</dd> } @if (attempt.FailedOnUtc.HasValue) { <dt>Failed</dt><dd>@Timestamp(attempt.FailedOnUtc)</dd> } @if (attempt.TimedOutOnUtc.HasValue) { <dt>Timed out</dt><dd>@Timestamp(attempt.TimedOutOnUtc)</dd> } @if (!string.IsNullOrWhiteSpace(attempt.ErrorCode)) { <dt>Error code</dt><dd>@attempt.ErrorCode</dd> } @if (!string.IsNullOrWhiteSpace(attempt.ErrorMessage)) { <dt>Error</dt><dd class="od-trace-error">@attempt.ErrorMessage</dd> }</dl>
+            <details><summary>Request</summary><pre>@attempt.RequestPayload</pre></details><details><summary>Response</summary><pre>@attempt.ResponsePayload</pre></details><details><summary>Attempt metadata</summary><pre>@attempt.Metadata</pre></details>
+        </section>
+        @if (attempt.Dispatch is { } dispatch) { <section class="od-trace-section"><h2>Dispatch</h2><dl class="od-trace-fields"><dt>Dispatch ID</dt><dd>@dispatch.Id</dd><dt>Type</dt><dd>@dispatch.DispatchType</dd><dt>Destination</dt><dd>@dispatch.Destination</dd><dt>Status</dt><dd>@dispatch.DispatchStatus</dd><dt>Command ID</dt><dd>@dispatch.CommandId</dd><dt>Correlation ID</dt><dd>@dispatch.CorrelationId</dd>@if (dispatch.SentOnUtc.HasValue) { <dt>Sent</dt><dd>@Timestamp(dispatch.SentOnUtc)</dd> } @if (dispatch.AcknowledgedOnUtc.HasValue) { <dt>Acknowledged</dt><dd>@Timestamp(dispatch.AcknowledgedOnUtc)</dd> } @if (dispatch.FailedOnUtc.HasValue) { <dt>Failed</dt><dd>@Timestamp(dispatch.FailedOnUtc)</dd> } @if (!string.IsNullOrWhiteSpace(dispatch.FailureReason)) { <dt>Failure</dt><dd class="od-trace-error">@dispatch.FailureReason</dd> }</dl><details><summary>Payload</summary><pre>@dispatch.RequestPayload</pre></details><details><summary>Dispatch metadata</summary><pre>@dispatch.Metadata</pre></details></section> }
+        </div>
+    }
+    else if (section == "data")
+    {
+        <section class="od-trace-section"><h2>Instance data</h2><details open><summary>Metadata</summary><pre>@detail.Metadata</pre></details><details><summary>Snapshot payload</summary><pre>@detail.SnapshotPayload</pre></details></section>
+    }
+    else if (section == "compensations")
+    {
+        <section class="od-trace-section"><h2>Compensations</h2>
+            @if (!detail.Compensations.Any()) { <p class="od-item-meta">No compensations recorded.</p> }
+            @foreach (var compensation in detail.Compensations) { <details><summary>@compensation.CompensationTaskKey · @compensation.Status</summary><dl class="od-trace-fields"><dt>Source task</dt><dd>@compensation.SourceTaskKey</dd><dt>Started</dt><dd>@compensation.StartedOnUtc</dd><dt>Completed</dt><dd>@compensation.CompletedOnUtc</dd><dt>Failed</dt><dd>@compensation.FailedOnUtc</dd><dt>Error</dt><dd>@compensation.ErrorMessage</dd></dl><details><summary>Request</summary><pre>@compensation.RequestPayload</pre></details><details><summary>Response</summary><pre>@compensation.ResponsePayload</pre></details><details><summary>Metadata</summary><pre>@compensation.Metadata</pre></details></details> }
+        </section>
+    }
+    </div>
+</main>
+@section Scripts {
+    <script src="/_content/Zoorce.Web.UI.Timelines/js/zoorce-timeline.js" asp-append-version="true"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-detail.js" asp-append-version="true"></script>
+}

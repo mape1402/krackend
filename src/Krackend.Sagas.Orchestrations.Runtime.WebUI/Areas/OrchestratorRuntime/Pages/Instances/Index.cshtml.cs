@@ -58,28 +58,19 @@ public sealed class IndexModel : PageModel
     /// <summary>
     /// Handles the initial dashboard page request.
     /// </summary>
-    public async Task OnGetAsync(CancellationToken cancellationToken = default)
-    {
-        var snapshot = await _diagnosticsReader.GetSummary(cancellationToken);
-        Traffic = snapshot.Traffic;
-        HourlyTraffic = snapshot.HourlyTraffic;
-        Summary = snapshot.Summary;
-    }
+    public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     /// <summary>Loads a filtered page of instances for the runtime catalog.</summary>
     public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
         string search = null, string sort = null, bool descending = false, string status = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, DateTimeOffset? startedFrom = null,
+        DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null)
     {
         if (_diagnosticsReader is not IRuntimeInstanceCatalogReader catalog)
             return StatusCode(503, "The configured runtime storage does not support paged diagnostics.");
-        OrchestrationInstanceStatus? selectedStatus = null;
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            if (!Enum.TryParse<OrchestrationInstanceStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
-                return BadRequest("The instance status is invalid.");
-            selectedStatus = parsed;
-        }
+        var error = ValidateFilters(status, startedFrom, startedBefore, recentHours, out var selectedStatus);
+        if (error is not null) return BadRequest(error);
+        if (recentHours.HasValue) startedFrom = DateTimeOffset.UtcNow.AddHours(-recentHours.Value);
         var sortField = sort switch
         {
             "orchestrationLabel" => RuntimeInstanceCatalogSort.Orchestration,
@@ -93,7 +84,8 @@ public sealed class IndexModel : PageModel
         try
         {
             result = await catalog.GetInstances(new RuntimeInstanceCatalogQuery(Math.Max(page, 1), Math.Clamp(pageSize, 1, 100),
-                search?.Trim() ?? string.Empty, selectedStatus, sortField, string.IsNullOrEmpty(sort) || descending), cancellationToken);
+                search?.Trim() ?? string.Empty, selectedStatus, sortField, string.IsNullOrEmpty(sort) || descending,
+                startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly), cancellationToken);
         }
         catch (NotSupportedException)
         {
@@ -105,6 +97,44 @@ public sealed class IndexModel : PageModel
             hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount,
             search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending, status = status ?? string.Empty
         });
+    }
+
+    /// <summary>Counts instances by status using the same filters as the catalog.</summary>
+    public async Task<IActionResult> OnGetCountsAsync(string search = null, string status = null,
+        DateTimeOffset? startedFrom = null, DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_diagnosticsReader is not IRuntimeInstanceStatusCountsReader countsReader)
+            return StatusCode(503, "The configured runtime storage does not support status counts.");
+        var error = ValidateFilters(status, startedFrom, startedBefore, recentHours, out var selectedStatus);
+        if (error is not null) return BadRequest(error);
+        if (recentHours.HasValue) startedFrom = DateTimeOffset.UtcNow.AddHours(-recentHours.Value);
+
+        var query = new RuntimeInstanceCatalogQuery(1, 1, search?.Trim() ?? string.Empty, selectedStatus,
+            RuntimeInstanceCatalogSort.Updated, true, startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly);
+        try
+        {
+            return new JsonResult(await countsReader.GetStatusCounts(query, cancellationToken));
+        }
+        catch (NotSupportedException)
+        {
+            return StatusCode(503, "The configured runtime storage does not support status counts.");
+        }
+    }
+
+    private static string ValidateFilters(string status, DateTimeOffset? startedFrom, DateTimeOffset? startedBefore, int? recentHours,
+        out OrchestrationInstanceStatus? selectedStatus)
+    {
+        selectedStatus = null;
+        if (recentHours is < 1 or > 168 || (recentHours.HasValue && (startedFrom.HasValue || startedBefore.HasValue)))
+            return "The recent time range must be between 1 and 168 hours and cannot be combined with explicit dates.";
+        if (startedFrom.HasValue && startedBefore.HasValue && startedFrom.Value >= startedBefore.Value)
+            return "The start of the time range must be earlier than its end.";
+        if (string.IsNullOrWhiteSpace(status)) return null;
+        if (!Enum.TryParse<OrchestrationInstanceStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
+            return "The instance status is invalid.";
+        selectedStatus = parsed;
+        return null;
     }
 
     /// <summary>

@@ -127,6 +127,43 @@ public sealed class RuntimeReactiveEventMessageTests
     }
 
     [Fact]
+    public async Task FanoutFailureDoesNotPreventLocalDelivery()
+    {
+        var queue = new SignalRRuntimeReactiveEventQueue();
+        var fanout = new FakeFanout { FailPublish = true };
+        var publisher = new SignalRRuntimeReactiveEventPublisher(queue, fanout, NullLogger<SignalRRuntimeReactiveEventPublisher>.Instance);
+        var eventData = CreateEvent();
+        await publisher.Publish(eventData);
+        Assert.Same(eventData, fanout.LastPublished);
+        Assert.True(queue.Reader.TryRead(out var message));
+        Assert.Equal(eventData.Id.ToString(), message.Id);
+    }
+
+    [Fact]
+    public async Task RemoteEventsReachLocalQueueAndReconnectionRequestsResync()
+    {
+        var queue = new SignalRRuntimeReactiveEventQueue();
+        var hub = Substitute.For<IHubContext<RuntimeReactiveHub>>();
+        var clients = Substitute.For<IHubClients>();
+        var proxy = Substitute.For<IClientProxy>();
+        hub.Clients.Returns(clients);
+        clients.Group("runtime:node").Returns(proxy);
+        proxy.SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var fanout = new FakeFanout();
+        var dispatcher = new SignalRRuntimeReactiveEventDispatcher(queue, hub, NullLogger<SignalRRuntimeReactiveEventDispatcher>.Instance, fanout);
+        var eventData = CreateEvent();
+
+        fanout.Deliver(eventData);
+        Assert.True(queue.Reader.TryRead(out var message));
+        Assert.Equal(eventData.Id.ToString(), message.Id);
+        fanout.Resync();
+        await proxy.Received(1).SendCoreAsync("runtime.resync", Arg.Any<object?[]>(), Arg.Any<CancellationToken>());
+        dispatcher.Dispose();
+        fanout.Deliver(eventData);
+        Assert.False(queue.Reader.TryRead(out _));
+    }
+
+    [Fact]
     public async Task DispatcherSendsRuntimeEventsToRuntimeAndInstanceGroups()
     {
         var queue = new SignalRRuntimeReactiveEventQueue();
@@ -287,6 +324,43 @@ public sealed class RuntimeReactiveEventMessageTests
         await groups.DidNotReceive().AddToGroupAsync("connection-1", "runtime:instance: ", Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RuntimeSubscriptionReportsReplicaSynchronization(bool synchronized)
+    {
+        var context = Substitute.For<HubCallerContext>();
+        context.ConnectionId.Returns("connection-1");
+        var groups = Substitute.For<IGroupManager>();
+        groups.AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var fanout = new FakeHealthFanout { IsSynchronized = synchronized };
+        var hub = new RuntimeReactiveHub(fanout) { Context = context, Groups = groups };
+
+        Assert.Equal(synchronized, await hub.WatchRuntime());
+    }
+
+    [Fact]
+    public async Task DispatcherReportsSynchronizationChangesAndUnsubscribesOnDispose()
+    {
+        var hub = Substitute.For<IHubContext<RuntimeReactiveHub>>();
+        var clients = Substitute.For<IHubClients>();
+        var proxy = Substitute.For<IClientProxy>();
+        hub.Clients.Returns(clients);
+        clients.Group("runtime:node").Returns(proxy);
+        proxy.SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var fanout = new FakeHealthFanout();
+        var dispatcher = new SignalRRuntimeReactiveEventDispatcher(new SignalRRuntimeReactiveEventQueue(), hub,
+            NullLogger<SignalRRuntimeReactiveEventDispatcher>.Instance, fanout);
+
+        fanout.ChangeSynchronization(false);
+        fanout.ChangeSynchronization(true);
+        await proxy.Received(1).SendCoreAsync("runtime.fanout.health", Arg.Is<object?[]>(args => args.Length == 1 && Equals(args[0], false)), Arg.Any<CancellationToken>());
+        await proxy.Received(1).SendCoreAsync("runtime.fanout.health", Arg.Is<object?[]>(args => args.Length == 1 && Equals(args[0], true)), Arg.Any<CancellationToken>());
+        dispatcher.Dispose();
+        fanout.ChangeSynchronization(false);
+        await proxy.Received(1).SendCoreAsync("runtime.fanout.health", Arg.Is<object?[]>(args => args.Length == 1 && Equals(args[0], false)), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void RuntimeReactiveEndpointMapsConfiguredHubRoute()
     {
@@ -309,5 +383,37 @@ public sealed class RuntimeReactiveEventMessageTests
             "Dispatch",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
         return (Task)method.Invoke(dispatcher, [message, cancellationToken])!;
+    }
+
+    private static RuntimeReactiveEvent CreateEvent() => new()
+    {
+        Id = Id.New(), EventName = "runtime.transition.created", TransitionType = "TaskCompleted",
+        OrchestrationDefinitionKey = "sales", OrchestrationInstanceId = Id.New(), CorrelationId = "correlation",
+        SagaId = "saga", ExecutionKey = "execution", InstanceStatus = "Running", ProducedBy = "tests"
+    };
+
+    private sealed class FakeFanout : IRuntimeReactiveFanout
+    {
+        public event Action<RuntimeReactiveEvent> Received;
+        public event Action ResyncRequired;
+        public bool FailPublish { get; init; }
+        public RuntimeReactiveEvent LastPublished { get; private set; }
+        public Task PublishAsync(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default)
+        {
+            LastPublished = eventData;
+            return FailPublish ? Task.FromException(new InvalidOperationException("offline")) : Task.CompletedTask;
+        }
+        public void Deliver(RuntimeReactiveEvent eventData) => Received?.Invoke(eventData);
+        public void Resync() => ResyncRequired?.Invoke();
+    }
+
+    private sealed class FakeHealthFanout : IRuntimeReactiveFanout, IRuntimeReactiveFanoutHealth
+    {
+        public event Action<RuntimeReactiveEvent> Received;
+        public event Action ResyncRequired;
+        public event Action<bool> SynchronizationChanged;
+        public bool IsSynchronized { get; init; }
+        public Task PublishAsync(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void ChangeSynchronization(bool synchronized) => SynchronizationChanged?.Invoke(synchronized);
     }
 }

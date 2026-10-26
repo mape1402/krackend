@@ -6,12 +6,13 @@ using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 
 public sealed class RuntimeInstancesPageModelTests
 {
     [Fact]
-    public async Task OnGetLoadsSummaryWithoutLoadingAllInstances()
+    public async Task OnGetDoesNotLoadDashboardOrAllInstances()
     {
         var reader = new FakeRuntimeDiagnosticsReader();
         var page = CreatePage(reader, routePrefix: "/runtime/");
@@ -21,9 +22,9 @@ public sealed class RuntimeInstancesPageModelTests
         Assert.Equal("/runtime/live", page.LiveHubPath);
         Assert.Empty(page.Instances);
         Assert.False(reader.SnapshotRequested);
-        Assert.Single(page.Traffic);
-        Assert.Single(page.HourlyTraffic);
-        Assert.Equal(1, page.Summary.Active);
+        Assert.False(reader.SummaryRequested);
+        Assert.Empty(page.Traffic);
+        Assert.Empty(page.HourlyTraffic);
     }
 
     [Theory]
@@ -55,6 +56,38 @@ public sealed class RuntimeInstancesPageModelTests
     }
 
     [Fact]
+    public async Task ListPassesTimeRangeInUtcAndRejectsInvalidRange()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = CreatePage(reader, "runtime");
+        var start = new DateTimeOffset(2026, 10, 1, 6, 0, 0, TimeSpan.FromHours(-6));
+        var end = start.AddDays(1);
+
+        Assert.IsType<JsonResult>(await page.OnGetListAsync(startedFrom: start, startedBefore: end, activeOnly: true));
+        Assert.Equal(start.UtcDateTime, reader.LastQuery.StartedFromUtc);
+        Assert.Equal(end.UtcDateTime, reader.LastQuery.StartedBeforeUtc);
+        Assert.True(reader.LastQuery.ActiveOnly);
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(startedFrom: end, startedBefore: start));
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(startedFrom: start, startedBefore: start));
+    }
+
+    [Fact]
+    public async Task RecentRangeIsBoundedAndCannotBeCombinedWithExplicitDates()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = CreatePage(reader, "runtime");
+        var before = DateTime.UtcNow.AddHours(-6);
+
+        Assert.IsType<JsonResult>(await page.OnGetListAsync(recentHours: 6));
+        Assert.InRange(reader.LastQuery.StartedFromUtc.Value, before, DateTime.UtcNow.AddHours(-6));
+        Assert.IsType<JsonResult>(await page.OnGetCountsAsync(recentHours: 24));
+        Assert.InRange(reader.LastQuery.StartedFromUtc.Value, DateTime.UtcNow.AddHours(-24).AddSeconds(-2), DateTime.UtcNow.AddHours(-24));
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(recentHours: 0));
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(recentHours: 169));
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(startedFrom: DateTimeOffset.UtcNow, recentHours: 1));
+    }
+
+    [Fact]
     public async Task ListReportsUnavailableWhenStorageDoesNotSupportPaging()
     {
         var reader = new SummaryOnlyReader();
@@ -77,6 +110,32 @@ public sealed class RuntimeInstancesPageModelTests
     }
 
     [Fact]
+    public async Task CountsUseTheSameScopedFiltersAsTheCatalog()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = CreatePage(reader, "runtime");
+        var start = new DateTimeOffset(2026, 10, 1, 6, 0, 0, TimeSpan.FromHours(-6));
+        var end = start.AddHours(3);
+
+        var result = Assert.IsType<JsonResult>(await page.OnGetCountsAsync(" sale ", "Running", start, end, true));
+
+        Assert.Equal(2, Assert.IsAssignableFrom<IReadOnlyDictionary<OrchestrationInstanceStatus, long>>(result.Value)[OrchestrationInstanceStatus.Running]);
+        Assert.Equal(new RuntimeInstanceCatalogQuery(1, 1, "sale", OrchestrationInstanceStatus.Running,
+            RuntimeInstanceCatalogSort.Updated, true, start.UtcDateTime, end.UtcDateTime, true), reader.LastQuery);
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(status: "missing"));
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(startedFrom: end, startedBefore: start));
+    }
+
+    [Fact]
+    public async Task CountsReportUnavailableWhenNotSupported()
+    {
+        var page = new IndexModel(new SummaryOnlyReader(), Options.Create(new OrchestratorRuntimeWebUIOptions()));
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetCountsAsync()).StatusCode);
+        var reader = new FakeRuntimeDiagnosticsReader { PagingUnsupported = true };
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await CreatePage(reader, "runtime").OnGetCountsAsync()).StatusCode);
+    }
+
+    [Fact]
     public async Task JsonEndpointsReturnSnapshotSummaryAndDetail()
     {
         var reader = new FakeRuntimeDiagnosticsReader();
@@ -96,6 +155,60 @@ public sealed class RuntimeInstancesPageModelTests
         Assert.Equal("od-status-active", IndexModel.StatusClass("Completed"));
     }
 
+    [Fact]
+    public async Task DetailPageLoadsTheRequestedInstanceAndRejectsInvalidIds()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = new DetailModel(reader);
+        var id = Ulid.NewUlid().ToString();
+
+        Assert.IsType<PageResult>(await page.OnGetAsync(id));
+        Assert.Equal(id, reader.LastDetailInstanceId);
+        Assert.NotNull(page.Detail);
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync("invalid"));
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync(null));
+        reader.DetailMissing = true;
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync(id));
+    }
+
+    [Theory]
+    [InlineData(null, "execution")]
+    [InlineData("overview", "overview")]
+    [InlineData("activity", "activity")]
+    [InlineData("EXECUTION", "execution")]
+    [InlineData("data", "data")]
+    [InlineData("compensations", "compensations")]
+    public async Task DetailPageLoadsIndependentSections(string requested, string expected)
+    {
+        var page = new DetailModel(new FakeRuntimeDiagnosticsReader());
+        Assert.IsType<PageResult>(await page.OnGetAsync(Ulid.NewUlid().ToString(), section: requested));
+        Assert.Equal(expected, page.Section);
+    }
+
+    [Fact]
+    public async Task DetailPageRejectsUnknownSectionAndMissingExecutionLevels()
+    {
+        var page = new DetailModel(new FakeRuntimeDiagnosticsReader());
+        var id = Ulid.NewUlid().ToString();
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync(id, section: "unknown"));
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync(id, section: "stage", stageKey: "missing"));
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync(id, section: "task", stageKey: "stage-one", taskKey: "missing"));
+        Assert.IsType<NotFoundResult>(await page.OnGetAsync(id, section: "attempt", stageKey: "stage-one", taskKey: "task-one", attempt: 2));
+    }
+
+    [Fact]
+    public async Task DetailPageResolvesStageTaskAndAttemptIndependently()
+    {
+        var page = new DetailModel(new FakeRuntimeDiagnosticsReader());
+        var id = Ulid.NewUlid().ToString();
+        Assert.IsType<PageResult>(await page.OnGetAsync(id, section: "stage", stageKey: "stage-one"));
+        Assert.Equal("stage-one", page.Stage.StageKey);
+        Assert.IsType<PageResult>(await page.OnGetAsync(id, section: "task", stageKey: "stage-one", taskKey: "task-one"));
+        Assert.Equal("task-one", page.Task.TaskKey);
+        Assert.IsType<PageResult>(await page.OnGetAsync(id, section: "attempt", stageKey: "stage-one", taskKey: "task-one", attempt: 1));
+        Assert.Equal(1, page.Attempt.AttemptNumber);
+    }
+
     private static IndexModel CreatePage(
         FakeRuntimeDiagnosticsReader reader,
         string routePrefix)
@@ -103,7 +216,7 @@ public sealed class RuntimeInstancesPageModelTests
             reader,
             Options.Create(new OrchestratorRuntimeWebUIOptions { RoutePrefix = routePrefix }));
 
-    private sealed class FakeRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader
+    private sealed class FakeRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader, IRuntimeInstanceStatusCountsReader
     {
         private readonly RuntimeDashboardSnapshotModel _snapshot;
         private readonly RuntimeDashboardSummaryModel _summary;
@@ -134,10 +247,13 @@ public sealed class RuntimeInstancesPageModelTests
 
             _snapshot = new RuntimeDashboardSnapshotModel(summary, [row], [traffic], [traffic]);
             _summary = new RuntimeDashboardSummaryModel(summary, [traffic], [traffic]);
+            var attempt = new TaskAttemptDetailModel("attempt", 1, "Completed", now, null, now, null, null, "{}", "{}", null, null, null, "{}");
+            var task = new TaskDetailModel("task", "stage", "task-one", "Messaging", "Sequential", "Completed", true, "correlation-1", now, null, now, null, null, 1, "{}", "{}", [attempt]);
+            var stage = new StageDetailModel("stage", "stage-one", 1, "Completed", "badge-info", now, now, null, null, "{}", [task]);
             _detail = new InstanceDetailModel(
                 row,
-                [],
-                [],
+                [stage],
+                [task],
                 [],
                 "{}",
                 "{}",
@@ -148,7 +264,9 @@ public sealed class RuntimeInstancesPageModelTests
 
         public string LastDetailInstanceId { get; private set; } = string.Empty;
         public bool SnapshotRequested { get; private set; }
+        public bool SummaryRequested { get; private set; }
         public bool PagingUnsupported { get; set; }
+        public bool DetailMissing { get; set; }
         public RuntimeInstanceCatalogQuery LastQuery { get; private set; }
 
         public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
@@ -164,12 +282,24 @@ public sealed class RuntimeInstancesPageModelTests
             return Task.FromResult(new RuntimeInstancePageModel([], 0, query.PageNumber, query.PageSize));
         }
 
+        public Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+        {
+            if (PagingUnsupported) throw new NotSupportedException();
+            LastQuery = query;
+            return Task.FromResult<IReadOnlyDictionary<OrchestrationInstanceStatus, long>>(
+                new Dictionary<OrchestrationInstanceStatus, long> { [OrchestrationInstanceStatus.Running] = 2 });
+        }
+
         public Task<RuntimeDashboardSummaryModel> GetSummary(CancellationToken cancellationToken = default)
-            => Task.FromResult(_summary);
+        {
+            SummaryRequested = true;
+            return Task.FromResult(_summary);
+        }
 
         public Task<InstanceDetailModel> GetDetail(string instanceId, CancellationToken cancellationToken = default)
         {
             LastDetailInstanceId = instanceId;
+            if (DetailMissing) throw new KeyNotFoundException();
             return Task.FromResult(_detail);
         }
     }

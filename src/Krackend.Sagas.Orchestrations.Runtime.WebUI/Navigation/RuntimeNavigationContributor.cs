@@ -14,9 +14,11 @@ public sealed class RuntimeNavigationContributor : IOrchestratorNavigationContri
     {
         return
         [
-            new OrchestratorNavigationItem { Label = "Diagnostics", Area = "OrchestratorRuntime", Page = "/Instances/Index", Order = 35 },
-            new OrchestratorNavigationItem { Label = "Artifacts", Area = "OrchestratorRuntime", Page = "/Artifacts/Index", Order = 36 },
-            new OrchestratorNavigationItem { Label = "Design Nodes", Area = "OrchestratorRuntime", Page = "/DesignNodes/Index", Order = 37 }
+            new OrchestratorNavigationItem { Label = "Dashboard", Area = "OrchestratorRuntime", Page = "/Dashboard/Index", Order = 34 },
+            new OrchestratorNavigationItem { Label = "Instances", Area = "OrchestratorRuntime", Page = "/Instances/Index", Order = 35 },
+            new OrchestratorNavigationItem { Label = "History", Area = "OrchestratorRuntime", Page = "/Instances/History", Order = 36 },
+            new OrchestratorNavigationItem { Label = "Artifacts", Area = "OrchestratorRuntime", Page = "/Artifacts/Index", Order = 37 },
+            new OrchestratorNavigationItem { Label = "Design Nodes", Area = "OrchestratorRuntime", Page = "/DesignNodes/Index", Order = 38 }
         ];
     }
 }

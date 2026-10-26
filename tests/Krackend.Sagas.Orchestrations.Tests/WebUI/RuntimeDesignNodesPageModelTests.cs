@@ -59,6 +59,53 @@ public sealed class RuntimeDesignNodesPageModelTests
     }
 
     [Fact]
+    public async Task ApplyReleaseJsonSeparatesAcknowledgementFromDeployment()
+    {
+        var deployment = new RuntimeArtifactDeploymentResult { Accepted = true, Status = "Pending", RuntimeArtifactId = "artifact", Message = "Accepted" };
+        var pull = new FakeControlPlaneArtifactPullService { ApplyResult = deployment };
+        var page = CreatePage(pull: pull);
+        Assert.IsType<BadRequestObjectResult>(await page.OnPostApplyReleaseJsonAsync("", "target"));
+        var success = Assert.IsType<JsonResult>(await page.OnPostApplyReleaseJsonAsync("design", "target"));
+        Assert.Contains("\"acknowledgementPending\":false", System.Text.Json.JsonSerializer.Serialize(success.Value));
+        pull.ApplyResult = new RuntimeArtifactDeploymentResult { Accepted = false, Status = "Rejected", Message = "Invalid artifact" };
+        var rejected = Assert.IsType<JsonResult>(await page.OnPostApplyReleaseJsonAsync("design", "target"));
+        Assert.Contains("\"Accepted\":false", System.Text.Json.JsonSerializer.Serialize(rejected.Value));
+        pull.ApplyException = new ArtifactPullAcknowledgementException(deployment, new HttpRequestException());
+        var pending = Assert.IsType<JsonResult>(await page.OnPostApplyReleaseJsonAsync("design", "target"));
+        Assert.Contains("\"acknowledgementPending\":true", System.Text.Json.JsonSerializer.Serialize(pending.Value));
+        pull.ApplyException = new InvalidOperationException("secret detail");
+        var error = Assert.IsType<ObjectResult>(await page.OnPostApplyReleaseJsonAsync("design", "target"));
+        Assert.Equal(503, error.StatusCode);
+        Assert.DoesNotContain("secret detail", System.Text.Json.JsonSerializer.Serialize(error.Value));
+        pull.ApplyException = new OperationCanceledException();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => page.OnPostApplyReleaseJsonAsync("design", "target"));
+    }
+
+    [Fact]
+    public void PendingReleaseViewRequiresSource()
+    {
+        var page = new Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.PendingReleasesModel();
+        Assert.IsType<BadRequestResult>(page.OnGet());
+        page.SourceKey = "design";
+        Assert.IsType<PageResult>(page.OnGet());
+    }
+
+    [Fact]
+    public async Task RetryAcknowledgementEndpointValidatesAndDoesNotExposeErrors()
+    {
+        var pull = new FakeControlPlaneArtifactPullService();
+        var page = CreatePage(pull: pull);
+        Assert.IsType<BadRequestObjectResult>(await page.OnPostRetryAcknowledgementAsync("", "target", "artifact"));
+        Assert.IsType<JsonResult>(await page.OnPostRetryAcknowledgementAsync("design", "target", "artifact"));
+        pull.ApplyException = new InvalidOperationException("secret detail");
+        var error = Assert.IsType<ObjectResult>(await page.OnPostRetryAcknowledgementAsync("design", "target", "artifact"));
+        Assert.Equal(503, error.StatusCode);
+        Assert.DoesNotContain("secret detail", System.Text.Json.JsonSerializer.Serialize(error.Value));
+        pull.ApplyException = new OperationCanceledException();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => page.OnPostRetryAcknowledgementAsync("design", "target", "artifact"));
+    }
+
+    [Fact]
     public async Task NodeCatalogNeverReturnsCredentialSecrets()
     {
         var node = CreateConfiguredNode();
@@ -699,6 +746,12 @@ public sealed class RuntimeDesignNodesPageModelTests
                 throw ApplyException;
             }
 
+            return Task.FromResult(ApplyResult);
+        }
+
+        public Task<RuntimeArtifactDeploymentResult> RetryAcknowledgementAsync(string sourceKey, string releaseTargetId, string runtimeArtifactId, CancellationToken cancellationToken = default)
+        {
+            if (ApplyException is not null) throw ApplyException;
             return Task.FromResult(ApplyResult);
         }
     }

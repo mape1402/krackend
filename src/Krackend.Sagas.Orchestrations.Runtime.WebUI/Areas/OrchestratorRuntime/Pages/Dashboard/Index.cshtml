@@ -1,0 +1,77 @@
+@page
+@using System.Text.Json
+@using Krackend.Sagas.Orchestrations.Abstractions.Runtime
+@using Microsoft.AspNetCore.Html
+@using Zoorce.Web.UI.Charts
+@using Zoorce.Web.UI.Foundation.Components
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Dashboard.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+    var report = Model.Report;
+    long Count(OrchestrationInstanceStatus status) => report?.CurrentStatuses.GetValueOrDefault(status) ?? 0;
+    long Reached(OrchestrationInstanceStatus status) => report?.ReachedStatuses.GetValueOrDefault(status) ?? 0;
+    var days = report is null ? Array.Empty<DateTime>() : Enumerable.Range(0, Model.Days).Select(day => report.FromUtc.AddDays(day)).ToArray();
+    ZoorceChartSeries Activity(string name, OrchestrationInstanceStatus status) => new(name, days.Select(day =>
+        new ZoorceChartPoint(day.ToString("MMM d"), report.Activity.Where(item => item.DayUtc.Date == day.Date && item.Status == status).Sum(item => item.Count))).ToArray());
+    var metrics = new[] {
+        ("Total instances", report?.Total ?? 0),
+        ("Running", Count(OrchestrationInstanceStatus.Created) + Count(OrchestrationInstanceStatus.Running)),
+        ("Waiting", Count(OrchestrationInstanceStatus.Waiting)),
+        ("Completed", Count(OrchestrationInstanceStatus.Completed)),
+        ("Dead lettered", Count(OrchestrationInstanceStatus.DeadLettered)),
+        ("Failed", Count(OrchestrationInstanceStatus.Failed))
+    };
+    var metricIcons = new[] { "layers", "activity", "hourglass-split", "check2-circle", "inbox", "exclamation-circle" };
+}
+@section Head {
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+}
+<div class="od-dashboard-heading">
+@if (report is not null)
+{
+    <div class="od-dashboard-metrics">
+        @for (var index = 0; index < metrics.Length; index++)
+        {
+            var metric = metrics[index];
+            @await Component.InvokeAsync("ZoorceCard", new ZoorceCardOptions { Id = $"runtime-metric-{index}", Title = metric.Item1, Body = new HtmlString($"<strong class=\"od-dashboard-metric-value\" data-dashboard-metric=\"{index}\">{metric.Item2:N0}</strong><span class=\"od-metric-icon\" aria-hidden=\"true\"><i class=\"bi bi-{metricIcons[index]}\"></i></span>") })
+        }
+    </div>
+}
+</div>
+@if (report is null)
+{
+    <div class="z-empty-state" role="status">The configured runtime storage does not provide statistics.</div>
+}
+else
+{
+    <div class="od-dashboard-charts">
+        <div class="od-dashboard-activity">
+            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-activity-chart", Title = "Observed activity", Summary = "Status changes during the selected period", Kind = ZoorceChartKind.Area, Size = ZoorceChartSize.Wide, Series = new[] { Activity("Completed", OrchestrationInstanceStatus.Completed), Activity("Dead lettered", OrchestrationInstanceStatus.DeadLettered), Activity("Failed", OrchestrationInstanceStatus.Failed) } })
+            <div class="od-dashboard-toolbar">
+                <form method="get" class="od-dashboard-filters">
+                    <label><span class="visually-hidden">Period</span><select name="days" class="z-form-input z-form-select" aria-label="Statistics period">
+                        @foreach (var period in new[] { 1, 7, 30, 90 }) { <option value="@period" selected="@(period == Model.Days)">Last @period @(period == 1 ? "day" : "days")</option> }
+                    </select></label>
+                    <label><span class="visually-hidden">Orchestration</span><select name="orchestrationKey" class="z-form-input z-form-select" aria-label="Orchestration">
+                        <option value="">All orchestrations</option>
+                        @foreach (var item in report.Orchestrations) { <option value="@item.Key" selected="@(item.Key == Model.OrchestrationKey)">@item.Key</option> }
+                    </select></label>
+                    <button type="submit" class="z-button z-button-primary" aria-label="Apply filters" title="Apply filters"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+                </form>
+                <span class="od-dashboard-freshness" data-dashboard-freshness>@(report.BackfillCompleted ? $"{report.PendingObservations} pending observations" : "Preparing historical baseline")</span>
+            </div>
+        </div>
+        @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-status-chart", Title = "Current status", Summary = "Instances started in the selected period", Kind = ZoorceChartKind.Donut, Series = new[] { new ZoorceChartSeries("Instances", report.CurrentStatuses.Select(item => new ZoorceChartPoint(item.Key.ToString(), item.Value)).ToArray()) } })
+        @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-funnel-chart", Title = "Completion", Summary = "Instances that have reached completion", Kind = ZoorceChartKind.Funnel, ShowLegend = false, Series = new[] { new ZoorceChartSeries("Instances", new[] { new ZoorceChartPoint("Started", report.Total), new ZoorceChartPoint("Completed", Reached(OrchestrationInstanceStatus.Completed)) }) } })
+        <section class="od-dashboard-live" aria-label="Live activity">
+            <div class="od-dashboard-live-heading"><h2>Live activity</h2><span class="od-live-indicator" data-dashboard-live-state="connecting"><span class="od-live-dot"></span><span data-dashboard-live-label>Connecting</span></span></div>
+            <p class="od-dashboard-live-empty" data-dashboard-live-empty>No activity received yet.</p>
+            <ol class="od-dashboard-live-list" data-dashboard-live-list></ol>
+        </section>
+    </div>
+}
+@section Scripts {
+    <script>window.KrackendRuntimeDashboard = { hubPath: @Html.Raw(JsonSerializer.Serialize(Model.LiveHubPath)), statsPath: @Html.Raw(JsonSerializer.Serialize(Url.Page(null, "Stats", new { days = Model.Days, orchestrationKey = Model.OrchestrationKey }))), instancePath: @Html.Raw(JsonSerializer.Serialize(Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" }))), orchestrationKey: @Html.Raw(JsonSerializer.Serialize(Model.OrchestrationKey)) };</script>
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-dashboard.js" asp-append-version="true"></script>
+}

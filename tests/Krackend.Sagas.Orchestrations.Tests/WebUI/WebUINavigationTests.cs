@@ -55,9 +55,11 @@ public sealed class WebUINavigationTests
             item => AssertNavigation(item, "Releases", "OrchestratorDistribution", "/Promotions/Index", 23),
             item => AssertNavigation(item, "Metadata", "OrchestratorDesign", "/Metadata/Index", 30),
             item => AssertNavigation(item, "Teams", "OrchestratorSecurity", "/Teams/Index", 30),
-            item => AssertNavigation(item, "Diagnostics", "OrchestratorRuntime", "/Instances/Index", 35),
-            item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 36),
-            item => AssertNavigation(item, "Design Nodes", "OrchestratorRuntime", "/DesignNodes/Index", 37));
+            item => AssertNavigation(item, "Dashboard", "OrchestratorRuntime", "/Dashboard/Index", 34),
+            item => AssertNavigation(item, "Instances", "OrchestratorRuntime", "/Instances/Index", 35),
+            item => AssertNavigation(item, "History", "OrchestratorRuntime", "/Instances/History", 36),
+            item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 37),
+            item => AssertNavigation(item, "Design Nodes", "OrchestratorRuntime", "/DesignNodes/Index", 38));
     }
 
     [Fact]
@@ -407,7 +409,7 @@ public sealed class WebUINavigationTests
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<RazorPagesOptions>>().Value;
 
-        Assert.Equal(23, options.Conventions.Count);
+        Assert.Equal(27, options.Conventions.Count);
     }
 
     [Fact]
@@ -455,8 +457,12 @@ public sealed class WebUINavigationTests
 
         Assert.Contains("runtime", routes);
         Assert.Contains("runtime/instances", routes);
+        Assert.Contains("runtime/dashboard", routes);
+        Assert.Contains("runtime/instances/{instanceId}", routes);
+        Assert.Contains("runtime/history", routes);
         Assert.Contains("runtime/artifacts", routes);
         Assert.Contains("runtime/design-nodes", routes);
+        Assert.Contains("runtime/design-nodes/releases", routes);
     }
 
     [Fact]

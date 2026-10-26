@@ -255,6 +255,44 @@ public sealed class IndexModel : PageModel
         return RedirectToPage(new { sourceKey });
     }
 
+    /// <summary>Applies a release and reports the deployment and acknowledgement separately.</summary>
+    public async Task<IActionResult> OnPostApplyReleaseJsonAsync(string sourceKey, string releaseTargetId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceKey) || string.IsNullOrWhiteSpace(releaseTargetId))
+            return BadRequest(new { message = "Select a pending release." });
+
+        try
+        {
+            var result = await _pullService.ApplyAsync(sourceKey, releaseTargetId, cancellationToken);
+            return new JsonResult(new { result.Accepted, result.Status, result.Message, result.RuntimeArtifactId, acknowledgementPending = false });
+        }
+        catch (ArtifactPullAcknowledgementException exception)
+        {
+            var result = exception.Deployment;
+            return new JsonResult(new { result.Accepted, result.Status, result.Message, result.RuntimeArtifactId, acknowledgementPending = true });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(503, new { message = "The release could not be applied. Check the connection and runtime history before retrying." });
+        }
+    }
+
+    /// <summary>Retries only the acknowledgement of an installed release.</summary>
+    public async Task<IActionResult> OnPostRetryAcknowledgementAsync(string sourceKey, string releaseTargetId, string runtimeArtifactId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceKey) || string.IsNullOrWhiteSpace(releaseTargetId) || string.IsNullOrWhiteSpace(runtimeArtifactId))
+            return BadRequest(new { message = "A release and installed artifact are required." });
+        try
+        {
+            var result = await _pullService.RetryAcknowledgementAsync(sourceKey, releaseTargetId, runtimeArtifactId, cancellationToken);
+            return new JsonResult(new { result.Accepted, result.Status, result.Message, result.RuntimeArtifactId });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return StatusCode(503, new { message = "Confirmation could not be retried. Check the runtime artifact and connection." });
+        }
+    }
+
     /// <summary>
     /// Creates or updates the basic data of a design node from the setup wizard.
     /// </summary>

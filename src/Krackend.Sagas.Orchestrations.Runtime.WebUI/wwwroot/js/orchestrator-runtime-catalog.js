@@ -1,243 +1,112 @@
 (() => {
     const root = document.querySelector('[data-runtime-catalog]');
     if (!root) return;
-    const gridView = root.querySelector('[data-runtime-grid-view]');
-    const cardView = root.querySelector('[data-runtime-card-view]');
     const grid = root.querySelector('[data-z-data-grid]');
-    const gridSearch = grid.querySelector('[data-z-grid-search]');
-    const search = root.querySelector('[data-runtime-search]');
-    const sort = root.querySelector('[data-runtime-sort]');
-    const cards = root.querySelector('[data-runtime-cards]');
-    const empty = root.querySelector('[data-runtime-empty]');
-    const status = root.querySelector('[data-runtime-status]');
-    const more = root.querySelector('[data-runtime-more]');
-    const sentinel = root.querySelector('[data-runtime-sentinel]');
+    const search = grid.querySelector('[data-z-grid-search]');
+    const scope = root.querySelector('[data-runtime-scope]');
+    const controls = root.querySelector('.od-runtime-view-controls');
     const updates = root.querySelector('[data-runtime-updates]');
     const records = new Map();
-    let page = 0, hasMore = false, request = null, generation = 0, searchTimer = 0, refreshTimer = 0;
-    let gridResult = null, gridRetryTimer = 0, gridRefreshing = false, gridRefreshPending = false;
+    let refreshTimer, countsRequest, refreshing = false, refreshPending = false;
+    grid.querySelector('.z-toolbar').append(controls);
 
-    const formatDate = value => {
-        const date = new Date(value);
-        return value && !Number.isNaN(date.getTime()) ? date.toISOString().replace('T', ' ').substring(0, 19) : '-';
+    const scopedUrl = source => {
+        const url = new URL(source, location.href);
+        if (scope.value === 'active') url.searchParams.set('activeOnly', 'true');
+        else url.searchParams.set('recentHours', scope.value);
+        return url;
+    };
+    const refreshCounts = async () => {
+        countsRequest?.abort();
+        const controller = new AbortController();
+        countsRequest = controller;
+        const url = scopedUrl(root.dataset.countsSource);
+        url.searchParams.set('search', search.value.trim());
+        try {
+            const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+            if (!response.ok) throw new Error('Counts unavailable');
+            const counts = await response.json();
+            const value = key => Number(counts[key] || 0);
+            const totals = { running: value('Created') + value('Running') + value('Compensating'), waiting: value('Waiting'),
+                completed: value('Completed'), deadLettered: value('DeadLettered'),
+                failed: value('Failed') + value('Aborted') + value('CompletedWithErrors') };
+            Object.entries(totals).forEach(([key, count]) => { root.querySelector(`[data-monitor-count="${key}"]`).textContent = count.toLocaleString(); });
+        } catch (error) {
+            if (error.name !== 'AbortError') root.querySelectorAll('[data-monitor-count]').forEach(element => { element.textContent = '—'; });
+        } finally { if (countsRequest === controller) countsRequest = null; }
+    };
+    const refresh = () => {
+        updates.hidden = true;
+        if (refreshing || grid.getAttribute('aria-busy') === 'true') { refreshPending = true; return; }
+        refreshing = true;
+        grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
     };
     const copyable = (value, label) => {
-        const container = document.createElement('span');
-        container.className = 'od-id-copy';
-        const text = document.createElement('span');
-        text.className = 'od-copy-value';
-        text.textContent = value || '-';
-        container.append(text);
+        const container = document.createElement('span'); container.className = 'od-id-copy';
+        const text = document.createElement('span'); text.className = 'od-copy-value'; text.textContent = value || '-'; container.append(text);
         if (value) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'od-copy-button';
-            button.dataset.copyValue = value;
-            button.title = `Copy ${label}`;
-            button.setAttribute('aria-label', `Copy ${label}`);
-            const icon = document.createElement('i');
-            icon.className = 'bi bi-copy';
-            icon.setAttribute('aria-hidden', 'true');
-            button.append(icon);
-            container.append(button);
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'od-copy-button';
+            button.dataset.copyValue = value; button.title = `Copy ${label}`; button.setAttribute('aria-label', `Copy ${label}`);
+            const icon = document.createElement('i'); icon.className = 'bi bi-copy'; icon.setAttribute('aria-hidden', 'true');
+            button.append(icon); container.append(button);
         }
         return container;
     };
-
-    const refreshGrid = () => {
-        if (gridRefreshing || grid.getAttribute('aria-busy') === 'true') {
-            gridRefreshPending = true;
-            return;
-        }
-        gridRefreshing = true;
-        grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
-    };
-
-    const detailButton = item => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'btn btn-outline-secondary btn-sm';
-        button.dataset.openInstance = item.id;
-        button.title = 'View instance';
-        button.setAttribute('aria-label', `View instance ${item.correlationId || item.id}`);
-        const icon = document.createElement('i');
-        icon.className = 'bi bi-eye';
-        icon.setAttribute('aria-hidden', 'true');
-        button.append(icon);
-        return button;
-    };
-    const cardActions = item => {
-        const dropdown = document.createElement('div');
-        dropdown.className = 'dropdown';
-        const toggle = document.createElement('button');
-        toggle.type = 'button'; toggle.className = 'z-button z-button-ghost';
-        toggle.title = 'Instance actions'; toggle.setAttribute('aria-label', `Actions for ${item.correlationId || item.id}`);
-        toggle.setAttribute('data-bs-toggle', 'dropdown'); toggle.setAttribute('aria-expanded', 'false');
-        const dots = document.createElement('i'); dots.className = 'bi bi-three-dots-vertical'; dots.setAttribute('aria-hidden', 'true');
-        toggle.append(dots);
-        const menu = document.createElement('ul'); menu.className = 'dropdown-menu dropdown-menu-end';
-        const entry = document.createElement('li');
-        const detail = detailButton(item); detail.className = 'dropdown-item'; detail.textContent = 'View instance';
-        entry.append(detail); menu.append(entry); dropdown.append(toggle, menu);
-        return dropdown;
-    };
-    const decorateGrid = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
+    const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
-        const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell && !cell.querySelector('[data-open-instance]')) cell.replaceChildren(detailButton(item));
         if (!item) return;
+        const actions = row.querySelector('[data-z-grid-field="actions"]');
+        if (actions && !actions.querySelector('[data-instance-link]')) {
+            const link = document.createElement('a'); link.className = 'z-button z-button-ghost';
+            link.href = root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(item.id));
+            link.dataset.instanceLink = item.id; link.title = 'View instance'; link.setAttribute('aria-label', `View instance ${item.correlationId || item.id}`);
+            const icon = document.createElement('i'); icon.className = 'bi bi-eye'; icon.setAttribute('aria-hidden', 'true');
+            link.append(icon); actions.replaceChildren(link);
+        }
         for (const [field, label] of [['correlationId', 'correlation ID'], ['sagaId', 'saga ID']]) {
-            const target = row.querySelector(`[data-z-grid-field="${field}"]`);
-            if (target && !target.querySelector('.od-id-copy')) target.replaceChildren(copyable(item[field], label));
+            const cell = row.querySelector(`[data-z-grid-field="${field}"]`);
+            if (cell && !cell.querySelector('.od-id-copy')) cell.replaceChildren(copyable(item[field], label));
         }
         for (const field of ['startedOnUtc', 'lastUpdatedOnUtc']) {
-            const target = row.querySelector(`[data-z-grid-field="${field}"]`);
-            if (target && target.textContent !== formatDate(item[field])) target.textContent = formatDate(item[field]);
+            const cell = row.querySelector(`[data-z-grid-field="${field}"]`), value = item[field];
+            const text = typeof value === 'string' && !/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? `${value}Z` : value;
+            const date = new Date(text);
+            if (cell && value && !Number.isNaN(date.getTime())) {
+                const formatted = date.toISOString().replace('T', ' ').substring(0, 19);
+                if (cell.textContent !== formatted) cell.textContent = formatted;
+            }
         }
-        const statusCell = row.querySelector('[data-z-grid-field="status"]');
-        if (statusCell && !statusCell.querySelector('.od-status')) {
-            const badge = document.createElement('span');
-            badge.className = `od-status ${item.statusClass || ''}`;
-            badge.textContent = item.status;
-            statusCell.replaceChildren(badge);
+        const status = row.querySelector('[data-z-grid-field="status"]');
+        if (status && !status.querySelector('.od-status')) {
+            const badge = document.createElement('span'); badge.className = `od-status ${item.statusClass || ''}`; badge.textContent = item.status;
+            status.replaceChildren(badge);
         }
     });
-    new MutationObserver(decorateGrid).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
-    grid.addEventListener('zoorce:grid:error', () => {
-        gridRefreshing = false;
-        if (gridRefreshPending) updates.hidden = false;
-        gridRefreshPending = false;
-    });
+    new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
+    grid.addEventListener('zoorce:grid:error', () => { refreshing = false; if (refreshPending) updates.hidden = false; refreshPending = false; });
     grid.addEventListener('zoorce:grid:loaded', event => {
-        gridRefreshing = false;
-        gridResult = event.detail.result;
+        refreshing = false;
         if (!event.detail.append) records.clear();
         event.detail.result.items.forEach(item => records.set(String(item.id), item));
-        decorateGrid();
-        clearTimeout(gridRetryTimer);
-        gridRetryTimer = setTimeout(() => {
-            const sorted = grid.querySelector('[data-z-grid-sort][aria-sort="ascending"], [data-z-grid-sort][aria-sort="descending"]');
-            const field = sorted?.dataset.zGridSort ?? '';
-            const descending = sorted?.getAttribute('aria-sort') === 'descending';
-            if (gridResult && (gridResult.search !== gridSearch.value.trim() || gridResult.sort !== field || gridResult.descending !== descending))
-                refreshGrid();
-            else if (gridRefreshPending) {
-                gridRefreshPending = false;
-                refreshGrid();
-            }
-        }, 220);
+        decorate();
+        if (!event.detail.append) refreshCounts();
+        if (refreshPending) { refreshPending = false; refresh(); }
     });
-    grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
-
-    const appendCard = item => {
-        const card = document.createElement('article');
-        card.className = 'od-runtime-instance-card';
-        const header = document.createElement('div');
-        header.className = 'od-runtime-instance-header';
-        const title = document.createElement('h3');
-        title.textContent = item.orchestrationLabel || item.orchestrationDefinitionKey;
-        header.append(window.KrackendCatalogUI.cardIcon('activity'), title, cardActions(item));
-        const badge = document.createElement('span');
-        badge.className = `od-status ${item.statusClass || ''}`;
-        badge.textContent = item.status;
-        const correlation = document.createElement('p');
-        correlation.className = 'od-runtime-card-meta';
-        correlation.append(copyable(item.correlationId, 'Correlation ID'));
-        card.append(header, correlation, badge);
-        cards.append(card);
-    };
-    const load = async reset => {
-        if (reset) {
-            generation++;
-            request?.abort();
-            request = null;
-            page = 0;
-            cards.replaceChildren();
-        }
-        if (request || (!reset && !hasMore)) return;
-        const current = generation;
-        const controller = new AbortController();
-        request = controller;
-        status.textContent = 'Loading instances...';
-        cardView.setAttribute('aria-busy', 'true');
-        try {
-            const url = new URL(root.dataset.source, location.href);
-            url.searchParams.set('page', String(page + 1));
-            url.searchParams.set('pageSize', '25');
-            url.searchParams.set('search', search.value.trim());
-            const [field, direction] = sort.value.split(':');
-            url.searchParams.set('sort', field);
-            url.searchParams.set('descending', String(direction === 'desc'));
-            const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
-            if (!response.ok) throw new Error('Unable to load instances.');
-            const result = await response.json();
-            if (current !== generation) return;
-            result.items.forEach(appendCard);
-            page++;
-            hasMore = result.hasMore;
-            empty.hidden = cards.childElementCount !== 0;
-            more.hidden = !hasMore;
-            status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount} instances`;
-            if (hasMore && result.items.length) requestAnimationFrame(() => {
-                const rect = sentinel.getBoundingClientRect();
-                if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);
-            });
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                status.textContent = 'Unable to load instances. Please try again.';
-                more.hidden = false;
-                hasMore = true;
-            }
-        } finally {
-            if (request === controller) {
-                request = null;
-                cardView.removeAttribute('aria-busy');
-            }
-        }
-    };
-    search.addEventListener('input', () => {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => load(true), 200);
+    scope.addEventListener('change', () => {
+        const configElement = grid.querySelector('[data-z-grid-config]');
+        const config = JSON.parse(configElement.textContent); config.binding.source = scopedUrl(root.dataset.source).toString();
+        window.ZoorceDataGrid.dispose(grid); configElement.textContent = JSON.stringify(config);
+        refreshing = false; refreshPending = false; window.ZoorceDataGrid.mount(grid);
+        if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    sort.addEventListener('change', () => load(true));
-    more.addEventListener('click', () => load(false));
-    if ('IntersectionObserver' in window) new IntersectionObserver(entries => {
-        if (!cardView.hidden && entries.some(entry => entry.isIntersecting)) load(false);
-    }, { rootMargin: '200px' }).observe(sentinel);
-    const setView = control => {
-        const showCards = control.dataset.runtimeView === 'cards';
-        gridView.hidden = showCards;
-        cardView.hidden = !showCards;
-        root.querySelectorAll('[data-runtime-view]').forEach(item => item.setAttribute('aria-pressed', String(item === control)));
-        try { localStorage.setItem('krackend-runtime-instances-view', control.dataset.runtimeView); } catch { /* Preference is optional. */ }
-        if (showCards) {
-            const changed = search.value !== gridSearch.value;
-            search.value = gridSearch.value;
-            if (changed || (page === 0 && !request)) load(true);
-        } else if (gridSearch.value !== search.value) {
-            gridSearch.value = search.value;
-            gridSearch.dispatchEvent(new Event('input', { bubbles: true }));
-        } else {
-            refreshGrid();
-        }
-    };
-    root.querySelectorAll('[data-runtime-view]').forEach(control => control.addEventListener('click', () => setView(control)));
-    const refresh = () => {
-        updates.hidden = true;
-        if (cardView.hidden) refreshGrid();
-        else load(true);
-    };
     root.querySelector('[data-runtime-refresh]').addEventListener('click', refresh);
     updates.addEventListener('click', refresh);
-    try {
-        if (localStorage.getItem('krackend-runtime-instances-view') === 'cards') setView(root.querySelector('[data-runtime-view="cards"]'));
-    } catch { /* Preference is optional. */ }
     window.addEventListener('krackend:instances-changed', () => {
         clearTimeout(refreshTimer);
         refreshTimer = setTimeout(() => {
-            if (!cardView.hidden && page <= 1) load(true);
-            else if (!gridView.hidden && (grid.querySelector('[data-z-grid-viewport]')?.scrollTop ?? 0) === 0) refreshGrid();
+            if ((grid.querySelector('[data-z-grid-viewport]')?.scrollTop ?? 0) === 0) refresh();
             else updates.hidden = false;
         }, 1000);
     });
+    refresh();
 })();

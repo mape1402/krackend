@@ -1,0 +1,55 @@
+@page
+@using Zoorce.Web.UI.Foundation.Components
+@using Zoorce.Web.UI.Foundation.Skeleton
+@using Zoorce.Web.UI.Navigation.Wizard
+@using Zoorce.Web.UI.Navigation.Stepper
+@addTagHelper *, Zoorce.Web.UI
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.PendingReleasesModel
+@{
+    ViewData["Title"] = "Pending releases";
+    var wizard = new ZoorceWizardOptions {
+        Id = "pullReleaseWizard", AriaLabel = "Apply release", Layout = ZoorceWizardLayout.Top,
+        ExecutionMode = ZoorceWizardExecutionMode.Manual, PanelHeaderMode = ZoorceWizardPanelHeaderMode.Hidden,
+        Steps = [new("detail", "Release details", State: ZoorceStepperState.Active), new("confirm", "Confirm")]
+    };
+}
+@section Head {
+    <link rel="stylesheet" href="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+}
+<section class="pull-flow" data-pull-flow data-source-key="@Model.SourceKey"
+         data-list-url="@Url.Page("/DesignNodes/Index", "PendingPage", new { area = "OrchestratorRuntime" })"
+         data-apply-url="@Url.Page("/DesignNodes/Index", "ApplyReleaseJson", new { area = "OrchestratorRuntime" })"
+         data-retry-url="@Url.Page("/DesignNodes/Index", "RetryAcknowledgement", new { area = "OrchestratorRuntime" })"
+         data-artifacts-url="@Url.Page("/Artifacts/Index", new { area = "OrchestratorRuntime" })">
+    <div class="pull-context"><span>Design node</span><strong>@Model.SourceKey</strong></div>
+    <div data-pull-list>
+        <div class="pull-toolbar"><p>Releases ready for this runtime</p><button class="z-button z-button-ghost" type="button" data-pull-refresh>Refresh</button></div>
+        <p data-pull-status role="status" aria-live="polite"></p>
+        <div data-pull-skeleton hidden>@await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Count = 3, AriaLabel = "Loading releases" })</div>
+        <div class="pull-list" data-pull-items></div>
+        <div data-pull-sentinel aria-hidden="true"></div>
+        <button type="button" class="z-button z-button-ghost" data-pull-more hidden>Load more</button>
+    </div>
+    <div data-pull-wizard hidden><zoorce-wizard options="wizard" css-class="pull-wizard">
+    <zoorce-wizard-panel step-id="detail"><div data-pull-detail hidden>
+        <div class="pull-detail-heading"><div><span class="z-badge" data-pull-type></span><h2 tabindex="-1" data-pull-name></h2><p data-pull-effect></p></div></div>
+        <dl class="pull-facts" data-pull-facts></dl>
+        <details class="pull-technical"><summary>Technical details</summary><dl data-pull-technical></dl></details>
+        <div class="pull-actions"><button type="button" class="z-button z-button-ghost" data-pull-list-back>Pending releases</button><button type="button" class="z-button z-button-primary" data-pull-prepare>Review application</button></div>
+    </div></zoorce-wizard-panel>
+    <zoorce-wizard-panel step-id="confirm"><div data-pull-confirm hidden>
+        <h2 tabindex="-1">Confirm application</h2><p data-pull-confirm-text></p>
+        <p class="pull-note">The artifact will be downloaded and applied to this runtime.</p>
+        <form data-pull-form>@Html.AntiForgeryToken()</form>
+        <div class="pull-actions"><button type="button" class="z-button z-button-ghost" data-pull-detail-back>Release details</button><span data-pull-apply>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "pullApplyButton", Text = "Apply release" })</span></div>
+        <p role="status" aria-live="polite" data-pull-progress></p>
+    </div></zoorce-wizard-panel>
+    </zoorce-wizard></div>
+    <div data-pull-result hidden>
+        <span class="z-badge" data-pull-result-status></span><h2 tabindex="-1" data-pull-result-title></h2><p data-pull-result-message></p>
+        <div class="pull-actions"><button type="button" class="z-button z-button-ghost" data-pull-done>Pending releases</button><button type="button" class="z-button z-button-primary" data-pull-retry hidden>Retry confirmation</button><a class="z-button z-button-primary" data-pull-history>View runtime artifacts</a></div>
+    </div>
+</section>
+@section Scripts {
+    <script src="~/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-pull.js" asp-append-version="true"></script>
+}

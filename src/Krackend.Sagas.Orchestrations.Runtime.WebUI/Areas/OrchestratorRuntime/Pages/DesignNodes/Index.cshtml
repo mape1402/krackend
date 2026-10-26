@@ -18,7 +18,8 @@
 <div class="od-create-floating js-open-design-node-setup" data-mode="create">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createDesignNodeButton", Label = "Create design node", Icon = "+" })</div>
 
 <section class="od-panel" data-design-node-catalog data-source="@Url.Page(null, "Nodes")"
-         data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")">
+         data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")"
+         data-pending-url="@Url.Page("/DesignNodes/PendingReleases", new { area = "OrchestratorRuntime" })">
     <div class="od-runtime-view-controls" role="group" aria-label="View mode">
         <button type="button" class="btn btn-outline-secondary" data-node-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
         <button type="button" class="btn btn-outline-secondary" data-node-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
@@ -65,11 +66,6 @@
     Id = "generatedCredentialsModal", Title = "Generated Runtime credentials", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_GeneratedCredentials", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"copyGeneratedCredentialsButton\">Copy</button><button type=\"button\" class=\"z-button z-button-primary\" data-z-dialog-close>Done</button>")
-})
-@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
-    Id = "pendingReleasesModal", Title = "Pending releases", Eyebrow = null, Size = "full",
-    Body = await Html.PartialAsync("_PendingReleases", Model),
-    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
 })
 @functions {
     private static string DesignNodeStatusClass(RuntimeDesignNodeStatus status)
