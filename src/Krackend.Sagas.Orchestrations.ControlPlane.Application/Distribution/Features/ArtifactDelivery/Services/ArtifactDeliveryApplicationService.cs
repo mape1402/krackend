@@ -105,7 +105,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             target.FailureReason = string.Empty;
             await AddAttempt(target.Id, "Push", initiatedBy, startedAtUtc, true, body.RuntimeArtifactId, null, cancellationToken);
 
-            if (IsRuntimeReady(body.Status))
+            if (IsRuntimeReady(body.Status, artifact.ArtifactType))
             {
                 target.Status = ReleaseTargetStatus.Activated;
                 target.ActivationStatus = ActivationStatus.Activated;
@@ -240,7 +240,8 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             throw new InvalidOperationException("Release target does not belong to the runtime node.");
         }
 
-        var ready = IsRuntimeReady(runtimeArtifactStatus);
+        var artifact = await _artifactRepository.GetById(target.ArtifactId, cancellationToken);
+        var ready = IsRuntimeReady(runtimeArtifactStatus, artifact.ArtifactType);
         target.Status = ready ? ReleaseTargetStatus.Activated : ReleaseTargetStatus.Acknowledged;
         target.ActivationStatus = ready ? ActivationStatus.Activated : ActivationStatus.Activating;
         target.DeliveredAtUtc ??= DateTime.UtcNow;
@@ -470,7 +471,9 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             : firstLine.Length > 500 ? firstLine[..500] : firstLine;
     }
 
-    private static bool IsRuntimeReady(string status)
+    private static bool IsRuntimeReady(string status, string artifactType)
         => string.Equals(status, "Ready", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase);
+            || string.Equals(status, "Activated", StringComparison.OrdinalIgnoreCase)
+            || (string.Equals(status, "Retired", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(artifactType, ArtifactTypes.ArchivedOrchestrationVersion, StringComparison.OrdinalIgnoreCase));
 }

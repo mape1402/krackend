@@ -103,6 +103,25 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         Assert.Equal("sales.sale.created", delivered.OrchestrationDefinitionKey);
     }
 
+    [Theory]
+    [InlineData("orchestration-version.archived", ReleaseTargetStatus.Activated)]
+    [InlineData("orchestration-version.new", ReleaseTargetStatus.Delivered)]
+    public async Task PushRecognizesRetiredOnlyForArchiveArtifacts(string artifactType, ReleaseTargetStatus expectedStatus)
+    {
+        var state = CreateState(DistributionMode.DesignPublishesToRuntime);
+        state.Artifact.ArtifactType = artifactType;
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(JsonSerializer.Serialize(new RuntimeArtifactDeploymentResult
+        {
+            Accepted = true, RuntimeArtifactId = "runtime-artifact-1", Status = "Retired"
+        })));
+
+        var result = await CreateService(state, handler).Push(state.Target.Id.ToString(), "tester");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expectedStatus, state.Target.Status);
+        Assert.Equal(expectedStatus == ReleaseTargetStatus.Activated, state.Artifact.IsPublished);
+    }
+
     [Fact]
     public async Task PushMarksAcceptedRuntimeAsDeliveredWhileActivationContinues()
     {
@@ -308,6 +327,21 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         }
     }
 
+    [Theory]
+    [InlineData("orchestration-version.archived", ReleaseTargetStatus.Activated)]
+    [InlineData("orchestration-version.new", ReleaseTargetStatus.Acknowledged)]
+    public async Task AcknowledgePullRecognizesRetiredOnlyForArchiveArtifacts(string artifactType, ReleaseTargetStatus expectedStatus)
+    {
+        var state = CreateState(DistributionMode.RuntimeFetchesFromDesign);
+        state.Artifact.ArtifactType = artifactType;
+
+        var result = await CreateService(state).AcknowledgePull(state.Node.Id.ToString(), state.Target.Id.ToString(), "runtime-artifact-1", "Retired");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expectedStatus, state.Target.Status);
+        Assert.Equal(expectedStatus == ReleaseTargetStatus.Activated, state.Artifact.IsPublished);
+    }
+
     [Fact]
     public async Task AcknowledgePullRejectsTargetsFromAnotherRuntimeNode()
     {
@@ -430,9 +464,9 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         node.EndpointApiPath = "/custom/deploy/";
 
         var uri = InvokePrivateStatic<Uri>("BuildDeployUri", node);
-        var ready = InvokePrivateStatic<bool>("IsRuntimeReady", "Activated");
-        var mixedCaseReady = InvokePrivateStatic<bool>("IsRuntimeReady", "rEaDy");
-        var notReady = InvokePrivateStatic<bool>("IsRuntimeReady", "Pending");
+        var ready = InvokePrivateStatic<bool>("IsRuntimeReady", "Activated", "orchestration-version.new");
+        var mixedCaseReady = InvokePrivateStatic<bool>("IsRuntimeReady", "rEaDy", "orchestration-version.new");
+        var notReady = InvokePrivateStatic<bool>("IsRuntimeReady", "Pending", "orchestration-version.new");
 
         Assert.Equal(new Uri("https://runtime.local/custom/deploy"), uri);
         Assert.True(ready);
