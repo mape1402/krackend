@@ -30,4 +30,9 @@ public interface IControlPlaneArtifactPullService
         string sourceKey,
         string releaseTargetId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Retries acknowledgement of an already installed artifact without deploying it again.</summary>
+    Task<RuntimeArtifactDeploymentResult> RetryAcknowledgementAsync(
+        string sourceKey, string releaseTargetId, string runtimeArtifactId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured pull client does not support acknowledgement recovery.");
 }

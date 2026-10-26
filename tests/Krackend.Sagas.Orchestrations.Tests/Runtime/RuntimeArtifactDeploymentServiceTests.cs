@@ -51,6 +51,47 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
+    public async Task DeployAsync_WhenSameReleaseIsPending_DoesNotScheduleProjectionAgain()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var existing = repository.Add(CreateRuntimeArtifact("sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Pending, ingressGeneration: 4));
+        var package = CreatePackage(existing.OrchestrationDefinitionKey, existing.Version, existing.ArtifactChecksum.Value, existing.SourceOrchestrationVersionId);
+        package.ReleaseId = "release-1";
+        existing.LastReleaseId = package.ReleaseId;
+        existing.LastControlPlaneArtifactId = package.ArtifactId;
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Equal("Pending", result.Status);
+        Assert.Empty(scheduler.Requests);
+        Assert.Equal(0, repository.UpsertCount);
+    }
+
+    [Theory]
+    [InlineData("", "same")]
+    [InlineData("other-release", "same")]
+    [InlineData("release-1", "different")]
+    public async Task DeployAsync_WhenPendingArtifactBelongsToDifferentDelivery_SchedulesProjection(
+        string releaseId, string artifactIdentity)
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var existing = repository.Add(CreateRuntimeArtifact("sales.sale.created", Version, "checksum-a", RuntimeOrchestrationArtifactStatus.Pending, ingressGeneration: 4));
+        var package = CreatePackage(existing.OrchestrationDefinitionKey, existing.Version, existing.ArtifactChecksum.Value, existing.SourceOrchestrationVersionId);
+        package.ReleaseId = releaseId;
+        existing.LastReleaseId = "release-1";
+        existing.LastControlPlaneArtifactId = artifactIdentity == "same" ? package.ArtifactId : Id.New().ToString();
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.Single(scheduler.Requests);
+        Assert.Equal(1, repository.UpsertCount);
+    }
+
+    [Fact]
     public async Task DeployAsync_DirectRejectsACompetingTriggerAcrossVersions()
     {
         var repository = new TestRuntimeArtifactDeploymentRepository();

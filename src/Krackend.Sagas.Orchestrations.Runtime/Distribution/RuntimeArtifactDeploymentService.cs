@@ -130,6 +130,15 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
                 $"Artifact '{existingArtifact.OrchestrationDefinitionKey}' v{existingArtifact.Version} is already ready.");
         }
 
+        if (existingArtifact is not null && existingArtifact.Status == RuntimeOrchestrationArtifactStatus.Pending &&
+            !string.IsNullOrWhiteSpace(package.ReleaseId) &&
+            string.Equals(existingArtifact.LastReleaseId, package.ReleaseId, StringComparison.Ordinal) &&
+            string.Equals(existingArtifact.LastControlPlaneArtifactId, package.ArtifactId, StringComparison.Ordinal))
+        {
+            return Accepted(existingArtifact, RuntimeOrchestrationArtifactStatus.Pending,
+                $"Artifact '{existingArtifact.OrchestrationDefinitionKey}' v{existingArtifact.Version} was already accepted for ingress projection.");
+        }
+
         var conflictingArtifacts = await FindTriggerConflictsAsync(payload, existingArtifact?.Id, cancellationToken);
         if (conflictingArtifacts.Count > 0 && strategy == RuntimeReleaseStrategy.Direct)
         {

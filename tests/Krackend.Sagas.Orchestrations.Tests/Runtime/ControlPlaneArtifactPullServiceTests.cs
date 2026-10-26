@@ -5,6 +5,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using NSubstitute;
 
@@ -131,6 +134,54 @@ public sealed class ControlPlaneArtifactPullServiceTests
         Assert.Same(deployment, result);
         Assert.False(result.Accepted);
         Assert.Equal(HttpMethod.Get, Assert.Single(handler.Requests).Method);
+    }
+
+    [Fact]
+    public async Task ApplyAsyncReportsAcceptedDeploymentWhenAcknowledgementFails()
+    {
+        var source = Source();
+        var deployment = new RuntimeArtifactDeploymentResult { Accepted = true, RuntimeArtifactId = "installed", Status = "Pending" };
+        var deploymentService = Substitute.For<IRuntimeArtifactDeploymentService>();
+        deploymentService.DeployAsync(Arg.Any<RuntimeArtifactDeliveryPackage>(), source.Key, Arg.Any<CancellationToken>()).Returns(deployment);
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Get
+            ? Json(Package("target-1")) : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var service = CreateService(handler, new SingleSourceProvider(source), deploymentService: deploymentService);
+
+        var error = await Assert.ThrowsAsync<ArtifactPullAcknowledgementException>(() => service.ApplyAsync(source.Key, "target-1"));
+
+        Assert.Same(deployment, error.Deployment);
+        Assert.IsType<HttpRequestException>(error.InnerException);
+        Assert.Equal([HttpMethod.Get, HttpMethod.Post], handler.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task RetryAcknowledgementChecksInstalledArtifactWithoutRedeploying()
+    {
+        var source = Source();
+        var package = Package("target-1"); package.ReleaseId = "release-1";
+        var id = Id.New();
+        var artifact = new RuntimeOrchestrationArtifact { Id = id, OrchestrationDefinitionKey = package.OrchestrationDefinitionKey,
+            ArtifactType = package.ArtifactType, ArtifactChecksum = new Checksum(package.Checksum), ArtifactPayload = System.Text.Json.Nodes.JsonNode.Parse("{}")!,
+            Version = new SemanticVersion(1, 0, 0), LastReleaseId = package.ReleaseId, LastControlPlaneArtifactId = package.ArtifactId,
+            Status = RuntimeOrchestrationArtifactStatus.Pending };
+        var repository = Substitute.For<IRuntimeArtifactRepository>();
+        repository.GetById(id, Arg.Any<CancellationToken>()).Returns(artifact);
+        var deployer = Substitute.For<IRuntimeArtifactDeploymentService>();
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Get ? Json(package) : new HttpResponseMessage(HttpStatusCode.OK));
+        var service = new ControlPlaneArtifactPullService(new HttpClient(handler), new SingleSourceProvider(source), new RecordingAccessTokenProvider(), deployer, repository);
+
+        var result = await service.RetryAcknowledgementAsync(source.Key, "target-1", id.ToString());
+        Assert.True(result.Accepted);
+        Assert.Equal("Pending", result.Status);
+        Assert.Equal([HttpMethod.Get, HttpMethod.Post], handler.Requests.Select(request => request.Method));
+        await deployer.DidNotReceive().DeployAsync(Arg.Any<RuntimeArtifactDeliveryPackage>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await Assert.ThrowsAsync<ArgumentException>(() => service.RetryAcknowledgementAsync(source.Key, "target-1", "invalid"));
+        artifact.LastReleaseId = "different";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RetryAcknowledgementAsync(source.Key, "target-1", id.ToString()));
+        artifact.LastReleaseId = package.ReleaseId;
+        artifact.Status = RuntimeOrchestrationArtifactStatus.Failed;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RetryAcknowledgementAsync(source.Key, "target-1", id.ToString()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService().RetryAcknowledgementAsync(source.Key, "target-1", id.ToString()));
     }
 
     private static ControlPlaneArtifactPullService CreateService(

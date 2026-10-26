@@ -3,6 +3,9 @@ using System.Text;
 using System.Text.Json;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Distribution;
 
@@ -15,6 +18,7 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
     private readonly IControlPlaneDistributionSourceProvider _sourceProvider;
     private readonly IControlPlaneAccessTokenProvider _accessTokenProvider;
     private readonly IRuntimeArtifactDeploymentService _deploymentService;
+    private readonly IRuntimeArtifactRepository _artifactRepository;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ControlPlaneArtifactPullService"/> class.
@@ -23,12 +27,14 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         HttpClient httpClient,
         IControlPlaneDistributionSourceProvider sourceProvider,
         IControlPlaneAccessTokenProvider accessTokenProvider,
-        IRuntimeArtifactDeploymentService deploymentService)
+        IRuntimeArtifactDeploymentService deploymentService,
+        IRuntimeArtifactRepository artifactRepository = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _sourceProvider = sourceProvider ?? throw new ArgumentNullException(nameof(sourceProvider));
         _accessTokenProvider = accessTokenProvider ?? throw new ArgumentNullException(nameof(accessTokenProvider));
         _deploymentService = deploymentService ?? throw new ArgumentNullException(nameof(deploymentService));
+        _artifactRepository = artifactRepository;
     }
 
     /// <inheritdoc />
@@ -84,9 +90,46 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         var deployment = await _deploymentService.DeployAsync(package, source.Key, cancellationToken);
         if (deployment.Accepted)
         {
-            await AcknowledgeAsync(source, releaseTargetId, deployment, cancellationToken);
+            try
+            {
+                await AcknowledgeAsync(source, releaseTargetId, deployment, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                throw new ArtifactPullAcknowledgementException(deployment, exception);
+            }
         }
         return deployment;
+    }
+
+    /// <inheritdoc />
+    public async Task<RuntimeArtifactDeploymentResult> RetryAcknowledgementAsync(
+        string sourceKey, string releaseTargetId, string runtimeArtifactId, CancellationToken cancellationToken = default)
+    {
+        if (_artifactRepository is null)
+            throw new InvalidOperationException("Runtime artifact storage is required for acknowledgement recovery.");
+        if (!Ulid.TryParse(runtimeArtifactId, out var id))
+            throw new ArgumentException("Invalid runtime artifact identifier.", nameof(runtimeArtifactId));
+
+        var source = _sourceProvider.GetByKey(sourceKey);
+        var package = await GetPackageAsync(source, releaseTargetId, cancellationToken);
+        var artifact = await _artifactRepository.GetById(new Id(id), cancellationToken);
+        if (artifact is null || string.IsNullOrWhiteSpace(package.ReleaseId) || string.IsNullOrWhiteSpace(package.ArtifactId) ||
+            !string.Equals(artifact.OrchestrationDefinitionKey, package.OrchestrationDefinitionKey, StringComparison.Ordinal) ||
+            !string.Equals(artifact.Version.ToString(), package.Version, StringComparison.Ordinal) ||
+            !string.Equals(artifact.LastReleaseId, package.ReleaseId, StringComparison.Ordinal) ||
+            !string.Equals(artifact.LastControlPlaneArtifactId, package.ArtifactId, StringComparison.Ordinal))
+            throw new InvalidOperationException("The release does not match the installed runtime artifact.");
+        if (artifact.Status == RuntimeOrchestrationArtifactStatus.Failed)
+            throw new InvalidOperationException("The runtime artifact failed projection and cannot be acknowledged as activating.");
+
+        var result = new RuntimeArtifactDeploymentResult
+        {
+            Accepted = true, RuntimeArtifactId = artifact.Id.ToString(), Status = artifact.Status.ToString(),
+            Message = "The runtime artifact was already installed."
+        };
+        await AcknowledgeAsync(source, releaseTargetId, result, cancellationToken);
+        return result;
     }
 
     private async Task<RuntimeArtifactDeliveryPackage> GetPackageAsync(
