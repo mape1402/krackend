@@ -114,6 +114,25 @@ public sealed class ControlPlaneArtifactPullServiceTests
         Assert.Contains(accessTokens.RequestedScopes, scopes => scopes.Contains(ArtifactDeliveryScope.ArtifactAcknowledge));
     }
 
+    [Fact]
+    public async Task ApplyAsyncDoesNotAcknowledgeRejectedArtifact()
+    {
+        var source = Source();
+        var package = Package("release-target-1");
+        var deployment = new RuntimeArtifactDeploymentResult { Accepted = false, Status = "Rejected", Message = "Invalid artifact" };
+        var deploymentService = Substitute.For<IRuntimeArtifactDeploymentService>();
+        deploymentService.DeployAsync(Arg.Any<RuntimeArtifactDeliveryPackage>(), source.Key, Arg.Any<CancellationToken>())
+            .Returns(deployment);
+        var handler = new RecordingHandler(_ => Json(package));
+        var service = CreateService(handler, new SingleSourceProvider(source), deploymentService: deploymentService);
+
+        var result = await service.ApplyAsync(source.Key, "release-target-1");
+
+        Assert.Same(deployment, result);
+        Assert.False(result.Accepted);
+        Assert.Equal(HttpMethod.Get, Assert.Single(handler.Requests).Method);
+    }
+
     private static ControlPlaneArtifactPullService CreateService(
         RecordingHandler? handler = null,
         IControlPlaneDistributionSourceProvider? provider = null,

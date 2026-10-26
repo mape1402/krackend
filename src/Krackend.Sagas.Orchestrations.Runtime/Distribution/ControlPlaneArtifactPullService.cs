@@ -82,7 +82,10 @@ public sealed class ControlPlaneArtifactPullService : IControlPlaneArtifactPullS
         var source = _sourceProvider.GetByKey(sourceKey);
         var package = await GetPackageAsync(source, releaseTargetId, cancellationToken);
         var deployment = await _deploymentService.DeployAsync(package, source.Key, cancellationToken);
-        await AcknowledgeAsync(source, releaseTargetId, deployment, cancellationToken);
+        if (deployment.Accepted)
+        {
+            await AcknowledgeAsync(source, releaseTargetId, deployment, cancellationToken);
+        }
         return deployment;
     }
 
