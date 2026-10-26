@@ -7,6 +7,35 @@
     const error = root.querySelector('[data-history-error]');
     grid.querySelector('.z-toolbar').append(root.querySelector('[data-history-filters]'));
     const records = new Map();
+    const bodyObserver = new MutationObserver(() => renderActions());
+    const observeGridBody = () => {
+        bodyObserver.disconnect();
+        const body = grid.querySelector('[data-z-grid-body]');
+        if (body) bodyObserver.observe(body, { childList: true, subtree: true });
+    };
+    const mountGrid = () => {
+        window.ZoorceDataGrid.mount(grid);
+        observeGridBody();
+    };
+    const updateLoadedCopy = result => {
+        const footer = grid.querySelector('.z-grid-footer');
+        if (!footer || !result) return;
+        const loaded = records.size;
+        const total = Number(result.totalCount ?? result.totalRows ?? 0);
+        const label = total > loaded
+            ? `${loaded.toLocaleString()} of ${total.toLocaleString()} matching rows loaded`
+            : total > 0
+                ? `All ${loaded.toLocaleString()} matching rows loaded`
+                : 'No matching rows';
+        let copy = footer.querySelector('[data-history-loaded-copy]');
+        if (!copy) {
+            copy = document.createElement('span');
+            copy.dataset.historyLoadedCopy = 'true';
+            copy.className = 'od-grid-loaded-copy';
+            footer.replaceChildren(copy);
+        }
+        copy.textContent = label;
+    };
     const renderActions = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         const cell = row.querySelector('[data-z-grid-field="actions"]');
@@ -34,9 +63,12 @@
             if (!Number.isNaN(date.getTime())) target.textContent = date.toISOString().replace('T', ' ').substring(0, 19);
         }
     });
-    new MutationObserver(renderActions).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
+    observeGridBody();
     grid.addEventListener('zoorce:grid:loaded', event => {
-        records.clear(); event.detail.result.items.forEach(item => records.set(String(item.id), item)); renderActions();
+        if (!event.detail.append) records.clear();
+        event.detail.result.items.forEach(item => records.set(String(item.id), item));
+        renderActions();
+        updateLoadedCopy(event.detail.result);
     });
     root.querySelector('[data-history-filters]').addEventListener('submit', event => {
         event.preventDefault();
@@ -51,7 +83,8 @@
         }
         const configElement = grid.querySelector('[data-z-grid-config]');
         const config = JSON.parse(configElement.textContent); config.binding.source = url.toString();
-        window.ZoorceDataGrid.dispose(grid); configElement.textContent = JSON.stringify(config); window.ZoorceDataGrid.mount(grid);
+        records.clear();
+        window.ZoorceDataGrid.dispose(grid); configElement.textContent = JSON.stringify(config); mountGrid();
         const search = grid.querySelector('[data-z-grid-search]');
         if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
     });

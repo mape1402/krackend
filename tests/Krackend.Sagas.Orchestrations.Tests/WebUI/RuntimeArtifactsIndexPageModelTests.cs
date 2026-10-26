@@ -101,6 +101,24 @@ public sealed class RuntimeArtifactsIndexPageModelTests
     }
 
     [Fact]
+    public async Task OnPostRequestStandupAsync_WhenArtifactIsArchived_DoesNotNotifyReplicas()
+    {
+        var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 4, 0), RuntimeOrchestrationArtifactStatus.Retired, DateTime.UtcNow);
+        artifact.IsActive = false;
+        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived;
+        var repository = new ArtifactRepositoryStub(artifact);
+        var notifier = new RecordingRuntimeArtifactReadyNotifier();
+        var model = CreateModel(repository, notifier);
+
+        var result = await model.OnPostRequestStandupAsync(artifact.Id.ToString());
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Empty(notifier.Messages);
+        Assert.Equal("Artifact is not ready", model.TempData["OrchestratorMessage.Title"]);
+        Assert.Equal("warning", model.TempData["OrchestratorMessage.Type"]);
+    }
+
+    [Fact]
     public async Task OnPostRequestStandupAsync_WhenRepositoryFails_ShowsFailureMessage()
     {
         var artifactId = Id.New();

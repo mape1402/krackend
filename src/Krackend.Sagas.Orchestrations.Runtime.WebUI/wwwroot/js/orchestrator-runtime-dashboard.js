@@ -6,14 +6,12 @@
     const filterForm = root.querySelector('[data-dashboard-filter]');
     const period = filterForm?.elements.namedItem('days');
     const orchestration = root.querySelector('[data-dashboard-orchestration]');
-    const liveIndicator = root.querySelector('[data-dashboard-live-state]');
-    const liveLabel = root.querySelector('[data-dashboard-live-label]');
-    const liveList = root.querySelector('[data-dashboard-live-list]');
-    const liveEmpty = root.querySelector('[data-dashboard-live-empty]');
+    const refreshButton = root.querySelector('#dashboardRefreshButton');
     const requests = new Map();
     let refreshTimer;
     let reconnectTimer;
     let closed = false;
+    let dashboardRefreshInFlight = false;
     const state = {
         days: Number(root.dataset.days) || 7,
         orchestrationKey: root.dataset.orchestrationKey || ''
@@ -23,12 +21,6 @@
     const statusTotal = (statuses, names) => names.reduce((total, name) => total + statusValue(statuses, name), 0);
     const activeStatuses = ['Created', 'Running', 'Waiting', 'Compensating', 'DeadLettered'];
     const terminalStatuses = ['Stopped', 'Compensated', 'Completed', 'CompletedWithErrors', 'Aborted', 'Failed'];
-
-    function setLiveState(status, text) {
-        if (!liveIndicator || !liveLabel) return;
-        liveIndicator.dataset.liveState = status;
-        liveLabel.textContent = text;
-    }
 
     function requestUrl(source) {
         const url = new URL(source, window.location.href);
@@ -147,8 +139,8 @@
 
     function bucketStart(date, bucket) {
         const result = new Date(date.getTime());
-        if (bucket === 'Hour') result.setUTCMinutes(0, 0, 0);
-        else if (bucket === 'Day') result.setUTCHours(0, 0, 0, 0);
+        if (bucket === 'hour') result.setUTCMinutes(0, 0, 0);
+        else if (bucket === 'day') result.setUTCHours(0, 0, 0, 0);
         else {
             result.setUTCHours(0, 0, 0, 0);
             result.setUTCDate(result.getUTCDate() - ((result.getUTCDay() + 6) % 7));
@@ -158,20 +150,20 @@
 
     function bucketStep(date, bucket) {
         const next = new Date(date.getTime());
-        if (bucket === 'Hour') next.setUTCHours(next.getUTCHours() + 1);
-        else if (bucket === 'Day') next.setUTCDate(next.getUTCDate() + 1);
+        if (bucket === 'hour') next.setUTCHours(next.getUTCHours() + 1);
+        else if (bucket === 'day') next.setUTCDate(next.getUTCDate() + 1);
         else next.setUTCDate(next.getUTCDate() + 7);
         return next;
     }
 
     function bucketLabel(date, bucket) {
-        if (bucket === 'Hour') return date.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
-        if (bucket === 'Week') return `Week of ${date.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`;
+        if (bucket === 'hour') return date.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
+        if (bucket === 'week') return `Week of ${date.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`;
         return date.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' });
     }
 
     function renderActivity(result) {
-        const bucket = result.bucket || 'Day';
+        const bucket = String(result.bucket || 'Day').toLowerCase();
         const start = asUtcDate(result.fromUtc);
         const before = asUtcDate(result.beforeUtc);
         if (!start || !before) throw new Error('The activity range is invalid.');
@@ -199,8 +191,7 @@
         if (!element) return;
         if (!health.backfillCompleted) element.textContent = 'Preparing history';
         else if (Number(health.pendingObservations || 0) > 0) element.textContent = 'Updating projection';
-        else if (health.lastObservedOnUtc) element.textContent = `Updated ${formatUtcTime(health.lastObservedOnUtc)}`;
-        else element.textContent = 'No observations yet';
+        else element.textContent = '';
     }
 
     function formatUtcTime(value) {
@@ -244,11 +235,28 @@
         catch (error) { console.warn('Krackend dashboard projection health could not load.', error); }
     }
 
-    function loadDashboard({ includeFilters = false } = {}) {
-        if (includeFilters) void loadFilters();
-        void loadCohort();
-        void loadActivity();
-        void loadHealth();
+    async function loadDashboard({ includeFilters = false, showProgress = false } = {}) {
+        if (dashboardRefreshInFlight) return;
+        dashboardRefreshInFlight = true;
+        if (showProgress && refreshButton) {
+            refreshButton.disabled = true;
+            refreshButton.dataset.zProgressState = 'active';
+            refreshButton.dataset.zProgressIndeterminate = 'true';
+            refreshButton.setAttribute('aria-busy', 'true');
+        }
+        const loaders = [loadCohort(), loadActivity(), loadHealth()];
+        if (includeFilters) loaders.push(loadFilters());
+        try {
+            await Promise.allSettled(loaders);
+        } finally {
+            dashboardRefreshInFlight = false;
+            if (showProgress && refreshButton) {
+                refreshButton.disabled = false;
+                refreshButton.dataset.zProgressState = 'idle';
+                refreshButton.dataset.zProgressIndeterminate = 'false';
+                refreshButton.removeAttribute('aria-busy');
+            }
+        }
     }
 
     function updateAddress() {
@@ -264,40 +272,20 @@
         state.days = Number(period.value) || 7;
         state.orchestrationKey = orchestration.value || '';
         updateAddress();
-        loadDashboard();
+        void loadDashboard({ showProgress: true });
+    });
+    refreshButton?.addEventListener('click', event => {
+        event.preventDefault();
+        filterForm?.requestSubmit();
     });
 
     function scheduleStatisticsRefresh() {
         window.clearTimeout(refreshTimer);
-        refreshTimer = window.setTimeout(() => loadDashboard(), 250);
-    }
-
-    function appendLiveActivity(event) {
-        if (!event || (state.orchestrationKey && event.orchestrationDefinitionKey !== state.orchestrationKey)) return;
-        const item = document.createElement('li');
-        const detail = document.createElement('div');
-        const title = document.createElement('strong');
-        title.textContent = event.orchestrationDefinitionKey || 'Orchestration';
-        const description = document.createElement('span');
-        description.textContent = [event.stageKey, event.taskKey, event.transitionType].filter(Boolean).join(' · ');
-        const time = document.createElement('time');
-        time.textContent = formatUtcTime(event.occurredOnUtc);
-        detail.append(title, description);
-        if (event.orchestrationInstanceId && root.dataset.instanceTemplate) {
-            const link = document.createElement('a');
-            link.href = root.dataset.instanceTemplate.replace('__instance_id__', encodeURIComponent(event.orchestrationInstanceId));
-            link.setAttribute('aria-label', `Open ${event.orchestrationDefinitionKey || 'orchestration'} instance`);
-            link.append(detail);
-            item.append(link, time);
-        } else item.append(detail, time);
-        liveList?.prepend(item);
-        while (liveList?.children.length > 10) liveList.lastElementChild.remove();
-        if (liveEmpty) liveEmpty.hidden = true;
+        refreshTimer = window.setTimeout(() => void loadDashboard(), 250);
     }
 
     if (!window.signalR) {
-        setLiveState('disconnected', 'Offline');
-        loadDashboard({ includeFilters: true });
+        void loadDashboard({ includeFilters: true });
         return;
     }
 
@@ -309,20 +297,15 @@
         }
     };
     const subscribe = async () => {
-        const synchronized = await connection.invoke('WatchRuntime');
-        setLiveState(synchronized === false ? 'degraded' : 'connected', synchronized === false ? 'Local only' : 'Live');
+        await connection.invoke('WatchRuntime');
     };
     connection.on('runtime.statistics.updated', scheduleStatisticsRefresh);
     connection.on('runtime.resync', scheduleStatisticsRefresh);
-    connection.on('runtime.transition', appendLiveActivity);
-    connection.on('runtime.fanout.health', synchronized => setLiveState(synchronized ? 'connected' : 'degraded', synchronized ? 'Live' : 'Local only'));
-    connection.onreconnecting(() => setLiveState('connecting', 'Reconnecting'));
     connection.onreconnected(() => subscribe().catch(() => connection.stop()));
-    connection.onclose(() => { setLiveState('disconnected', 'Offline'); retry(); });
+    connection.onclose(() => retry());
     async function start() {
         try { await connection.start(); await subscribe(); }
         catch {
-            setLiveState('disconnected', 'Offline');
             if (connection.state !== signalR.HubConnectionState.Disconnected) await connection.stop();
             retry();
         }
@@ -336,6 +319,6 @@
         connection.stop();
     }, { once: true });
 
-    loadDashboard({ includeFilters: true });
+    void loadDashboard({ includeFilters: true });
     start();
 })();

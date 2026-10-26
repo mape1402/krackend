@@ -24,7 +24,6 @@
          data-cohort-url="@Url.Page(null, "Cohort")"
          data-activity-url="@Url.Page(null, "Activity")"
          data-health-url="@Url.Page(null, "Health")"
-         data-instance-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })"
          data-days="@Model.Days"
          data-orchestration-key="@Model.OrchestrationKey">
     <div class="od-dashboard-metrics" data-dashboard-metrics aria-live="polite">
@@ -50,7 +49,7 @@
                         }
                     </select></label>
                     <label><span class="visually-hidden">Orchestration</span><select name="orchestrationKey" class="z-form-input z-form-select" data-dashboard-orchestration aria-label="Orchestration" disabled><option value="">All orchestrations</option></select></label>
-                    <button type="submit" class="z-button z-button-primary" aria-label="Apply dashboard filters" title="Apply dashboard filters"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+                    @await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "dashboardRefreshButton", Text = "Refresh" })
                 </form>
                 <span class="od-dashboard-health" data-dashboard-health aria-live="polite"></span>
             </div>
@@ -58,10 +57,10 @@
                 @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
                 {
                     Id = "runtime-activity-chart", Title = "Observed activity", Summary = "Completed, dead-lettered and failed status changes during the selected period.",
-                    Kind = ZoorceChartKind.Bar, BarMode = ZoorceChartBarMode.Stacked, Size = ZoorceChartSize.Wide, Series = emptySeries
+                    Kind = ZoorceChartKind.Area, Size = ZoorceChartSize.Wide, Series = emptySeries
                 })
                 <div class="od-dashboard-skeleton" data-dashboard-loading="activity">
-                    @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "15rem", AriaLabel = "Loading activity" })
+                    @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "11rem", AriaLabel = "Loading activity" })
                 </div>
             </div>
             <p class="od-dashboard-panel-error" data-dashboard-error="activity" hidden></p>
@@ -74,7 +73,7 @@
                 Kind = ZoorceChartKind.Donut, Series = emptySeries
             })
             <div class="od-dashboard-skeleton" data-dashboard-loading="status">
-                @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "14rem", AriaLabel = "Loading current status" })
+                    @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading current status" })
             </div>
             <p class="od-dashboard-panel-error" data-dashboard-error="status" hidden></p>
         </section>
@@ -87,16 +86,11 @@
             })
             <div class="od-dashboard-outcome" data-dashboard-outcome hidden></div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="funnel">
-                @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "14rem", AriaLabel = "Loading completion path" })
+                    @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading completion path" })
             </div>
             <p class="od-dashboard-panel-error" data-dashboard-error="funnel" hidden></p>
         </section>
 
-        <section class="od-dashboard-live" aria-label="Live activity">
-            <div class="od-dashboard-live-heading"><h2>Live activity</h2><span class="od-live-indicator" data-dashboard-live-state="connecting"><span class="od-live-dot"></span><span data-dashboard-live-label>Connecting</span></span></div>
-            <p class="od-dashboard-live-empty" data-dashboard-live-empty>No activity received yet.</p>
-            <ol class="od-dashboard-live-list" data-dashboard-live-list></ol>
-        </section>
     </div>
 </section>
 

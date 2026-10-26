@@ -20,7 +20,7 @@
     </form>
     @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
         Id = "runtime-history-grid", AriaLabel = "Instance history", Binding = new ZoorceDataBindingOptions { Source = source },
-        LoadMode = ZoorceDataLoadMode.Pagination, PageSize = 25,
+        LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
         Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
             new("status", "Status"), new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated"), new("actions", "Actions", false)]
     })

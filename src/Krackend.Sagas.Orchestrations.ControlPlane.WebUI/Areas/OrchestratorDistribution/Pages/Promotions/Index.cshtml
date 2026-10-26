@@ -135,8 +135,8 @@ else
 
     const allowedNodesModal = allowedNodesModalElement;
     const releaseDetailsModal = releaseDetailsModalElement;
-    const selectedOrchestrationId = '@Model.OrchestrationId';
-    const artifactOptionsUrl = '@Url.Page(null, "ArtifactOptions", new { orchestrationId = Model.OrchestrationId })';
+    const selectedOrchestrationId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.OrchestrationId));
+    const artifactOptionsUrl = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Url.Page(null, "ArtifactOptions", new { orchestrationId = Model.OrchestrationId })));
 
     const updateStrategyAvailability = () => {
         if (!artifactSelect || !strategySelect || !strategyHint) {

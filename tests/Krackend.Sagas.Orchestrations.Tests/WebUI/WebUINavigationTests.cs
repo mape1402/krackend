@@ -13,11 +13,15 @@ using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 using global::ButterMorph.Web.Razor;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using ControlPlaneWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.ServiceCollectionExtensions;
 using DesignWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ServiceCollectionExtensions;
 using DistributionWebUiServices = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.ServiceCollectionExtensions;
@@ -29,6 +33,63 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 using System.Reflection;
 public sealed class WebUINavigationTests
 {
+    [Fact]
+    public void TopBarNavigationResolverProvidesTheVersionsParentWithoutUsingBrowserHistory()
+    {
+        var url = Substitute.For<IUrlHelper>();
+        url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+        url.RouteUrl(Arg.Any<UrlRouteContext>()).Returns("/admin/design/orchestrations/one");
+        var factory = Substitute.For<IUrlHelperFactory>();
+        factory.GetUrlHelper(Arg.Any<ActionContext>()).Returns(url);
+        var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory,
+            Options.Create(new OrchestratorTopBarNavigationOptions()));
+        var context = CreateViewContext("OrchestratorDesign", "/OrchestrationVersions/Details",
+            ("orchestrationId", "one"));
+
+        var result = resolver.Resolve(context);
+
+        Assert.NotNull(result);
+        Assert.True(result.Visible);
+        Assert.Equal("Back to orchestration", result.Label);
+        Assert.Equal("/admin/design/orchestrations/one", result.Url);
+    }
+
+    [Fact]
+    public void TopBarNavigationResolverDoesNotAddBackNavigationToSagaInstanceDetails()
+    {
+        var factory = Substitute.For<IUrlHelperFactory>();
+        var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory,
+            Options.Create(new OrchestratorTopBarNavigationOptions()));
+
+        var result = resolver.Resolve(CreateViewContext("OrchestratorRuntime", "/Instances/Detail", ("instanceId", "one")));
+
+        Assert.Null(result);
+        factory.DidNotReceive().GetUrlHelper(Arg.Any<ActionContext>());
+    }
+
+    [Fact]
+    public void TopBarNavigationResolverHonorsHostOverridesAndCanDisableDefaults()
+    {
+        var factory = Substitute.For<IUrlHelperFactory>();
+        var options = new OrchestratorTopBarNavigationOptions { EnableContextualBackNavigation = false };
+        options.Overrides["OrchestratorDesign:/Reviews/Details"] = new OrchestratorTopBarBackOverrideOptions
+        {
+            Visible = true,
+            Label = "Review queue",
+            Url = " /ops/reviews "
+        };
+        var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory, Options.Create(options));
+
+        var overrideResult = resolver.Resolve(CreateViewContext("OrchestratorDesign", "/Reviews/Details"));
+        var defaultResult = resolver.Resolve(CreateViewContext("OrchestratorDesign", "/Orchestrations/Details"));
+
+        Assert.NotNull(overrideResult);
+        Assert.True(overrideResult.Visible);
+        Assert.Equal("Review queue", overrideResult.Label);
+        Assert.Equal("/ops/reviews", overrideResult.Url);
+        Assert.Null(defaultResult);
+    }
+
     [Fact]
     public void WebUiModulesRegisterNavigationContributorsInDeterministicOrder()
     {
@@ -641,6 +702,24 @@ public sealed class WebUINavigationTests
         Assert.Equal(area, item.Area);
         Assert.Equal(page, item.Page);
         Assert.Equal(order, item.Order);
+    }
+
+    private static ViewContext CreateViewContext(string area, string page, params (string Key, string Value)[] values)
+    {
+        var routeData = new RouteData();
+        routeData.Values["area"] = area;
+        routeData.Values["page"] = page;
+        foreach (var (key, value) in values)
+        {
+            routeData.Values[key] = value;
+        }
+
+        return new ViewContext
+        {
+            HttpContext = new DefaultHttpContext(),
+            RouteData = routeData,
+            ActionDescriptor = new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()
+        };
     }
 
     private sealed class NoopRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader

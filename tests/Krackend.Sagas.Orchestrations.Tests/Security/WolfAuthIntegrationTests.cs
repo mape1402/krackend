@@ -273,6 +273,7 @@ public sealed class WolfAuthIntegrationTests
         {
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
+            builder.Services.AddRazorPages();
             builder.Services.AddAuthentication(TestAuthenticationDefaults.Scheme)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
                     TestAuthenticationDefaults.Scheme,
