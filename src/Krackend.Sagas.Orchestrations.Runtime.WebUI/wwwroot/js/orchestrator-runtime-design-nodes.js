@@ -165,6 +165,8 @@
                 const card = make('article', 'od-pending-release-card');
                 const details = document.createElement('div');
                 details.append(make('h3', '', `${item.orchestrationDefinitionKey} v${item.version}`),
+                    make('p', 'od-item-meta', `${({ 'orchestration-version.new': 'New version', 'orchestration-version-snapshot': 'New version', 'orchestration-version.deprecated': 'Deprecate', 'orchestration-version.archived': 'Archive' })[item.artifactType] || item.artifactType || 'Artifact'} · ${item.releaseStrategy || 'Strategy unavailable'}`),
+                    make('p', 'od-item-meta', item.releaseId ? `Release: ${item.releaseId}` : 'Release identifier unavailable'),
                     make('p', 'od-item-meta', `Promoted by ${item.promotedBy} on ${date(item.promotedOnUtc)} UTC`),
                     make('p', 'od-item-meta', `Correlation: ${item.correlationId}`),
                     make('p', 'od-item-meta', `Checksum: ${item.checksum}`));

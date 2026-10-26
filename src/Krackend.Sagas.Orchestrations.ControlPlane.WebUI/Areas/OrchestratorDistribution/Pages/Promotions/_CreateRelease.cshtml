@@ -1,29 +1,52 @@
 @using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums
+@using Zoorce.Web.UI.Navigation.Wizard
+@using Zoorce.Web.UI.Navigation.Stepper
+@using Zoorce.Web.UI.Foundation.Skeleton
+@addTagHelper *, Zoorce.Web.UI
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
-<form id="createReleaseForm" method="post" asp-page-handler="Create" data-orchestrator-validate="true" data-orchestrator-busy="true" data-busy-title="Creating release" data-busy-message="Distribution is creating the release and resolving the runtime targets.">
-    <input asp-for="Input.OrchestrationDefinitionId" type="hidden" value="@Model.OrchestrationId" /><input asp-for="Input.RequestedBy" type="hidden" /><input asp-for="Input.Notes" type="hidden" />
-    <div class="row g-3">
-        <div class="col-12">
-            <label asp-for="Input.ArtifactId" for="releaseArtifactSelect" class="z-form-label"></label>
-            <input type="search" class="z-form-input mb-2" id="releaseArtifactSearch" placeholder="Search artifacts" aria-label="Search artifacts" />
-            <select asp-for="Input.ArtifactId" class="z-form-input z-form-select" id="releaseArtifactSelect">
-                <option value="">Select artifact</option>
-                @if (Model.SelectedArtifact is not null)
-                {
-                    <option value="@Model.SelectedArtifact.Id" data-artifact-type="@Model.SelectedArtifact.ArtifactType">@Model.SelectedArtifact.ArtifactType - @Model.SelectedArtifact.VersionNumber - @(string.IsNullOrWhiteSpace(Model.SelectedArtifact.VersionLabel) ? "Unlabeled" : Model.SelectedArtifact.VersionLabel)</option>
-                }
-            </select>
-            <button type="button" class="btn btn-link btn-sm" id="releaseArtifactsMore" hidden>Load more artifacts</button><div class="form-text" id="releaseArtifactStatus" aria-live="polite"></div>
-        </div>
-        <div class="col-md-6">
-            <label asp-for="Input.Strategy" for="releaseStrategySelect" class="z-form-label">Release strategy</label>
-            <select asp-for="Input.Strategy" class="z-form-input z-form-select" id="releaseStrategySelect"><option value="@ReleaseStrategy.Direct">Direct</option><option value="@ReleaseStrategy.Rollout">Rollout</option></select>
-            <div class="form-text" id="releaseStrategyHint">Direct applies this artifact to the selected runtime nodes.</div>
-        </div>
-        <div class="col-12">
-            <label class="z-form-label" for="releaseNodeSearch">Target runtime nodes</label><input type="search" class="z-form-input mb-2" id="releaseNodeSearch" placeholder="Search allowed nodes" />
-            <div class="border rounded p-3" id="releaseNodeScroll" style="max-height: 260px; overflow-y: auto;"><div id="releaseNodeItems" class="od-stage-picker"></div><div id="releaseNodeStatus" class="form-text" aria-live="polite"></div><button type="button" class="btn btn-link btn-sm" id="releaseNodesMore" hidden>Load more nodes</button></div>
-            <div id="releaseNodeValues"></div>
-        </div>
+@{
+    var wizard = new ZoorceWizardOptions {
+        Id = "createReleaseWizard", AriaLabel = "Create release", Layout = ZoorceWizardLayout.Sidebar,
+        ExecutionMode = ZoorceWizardExecutionMode.Manual, PanelHeaderMode = ZoorceWizardPanelHeaderMode.Hidden,
+        Steps = [new("targets", "Runtime nodes", State: ZoorceStepperState.Active), new("strategy", "Strategy"), new("review", "Review")]
+    };
+    var artifact = Model.SelectedArtifact;
+    var typeLabel = artifact?.ArtifactType switch {
+        "orchestration-version.new" or "orchestration-version-snapshot" => "New version",
+        "orchestration-version.deprecated" => "Deprecate",
+        "orchestration-version.archived" => "Archive",
+        _ => artifact?.ArtifactType ?? "Artifact"
+    };
+}
+<form id="createReleaseForm" method="post" asp-page-handler="Create" data-orchestrator-validate="true">
+    <input asp-for="Input.OrchestrationDefinitionId" type="hidden" value="@Model.OrchestrationId" />
+    <input asp-for="Input.ArtifactId" type="hidden" id="releaseArtifactSelect" data-artifact-type="@artifact?.ArtifactType" />
+    <input asp-for="Input.RequestedBy" type="hidden" /><input asp-for="Input.Notes" type="hidden" />
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    <div class="od-release-context">
+        <strong>@Model.SelectedOrchestration?.Name</strong>
+        <span>@artifact?.VersionNumber</span>
+        <span class="z-badge">@typeLabel</span>
     </div>
+    <zoorce-wizard options="wizard" css-class="od-release-wizard">
+        <zoorce-wizard-panel step-id="targets">
+            <h2 class="od-section-title">Runtime nodes</h2>
+            <p class="od-item-meta">Choose the allowed nodes that will receive this artifact.</p>
+            <label class="z-form-label" for="releaseNodeSearch">Search nodes</label>
+            <input type="search" class="z-form-input mb-2" id="releaseNodeSearch" placeholder="Search allowed nodes" />
+            <div class="border rounded p-3" id="releaseNodeScroll" style="max-height: 260px; overflow-y: auto;"><div id="releaseNodeLoading" hidden>@await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Count = 3, AriaLabel = "Loading runtime nodes" })</div><div id="releaseNodeItems" class="od-stage-picker"></div><div id="releaseNodeStatus" class="form-text" aria-live="polite"></div><button type="button" class="z-button z-button-ghost" id="releaseNodesMore" hidden>Load more nodes</button></div>
+            <div id="releaseNodeValues"></div><div id="releaseNodeError" class="text-danger" role="alert" hidden>Select at least one runtime node.</div>
+        </zoorce-wizard-panel>
+        <zoorce-wizard-panel step-id="strategy">
+            <h2 class="od-section-title">Release strategy</h2>
+            <label asp-for="Input.Strategy" for="releaseStrategySelect" class="z-form-label">Strategy</label>
+            <select asp-for="Input.Strategy" class="z-form-input z-form-select" id="releaseStrategySelect"><option value="@ReleaseStrategy.Direct">Direct</option><option value="@ReleaseStrategy.Rollout">Rollout</option></select>
+            <p class="od-item-meta" id="releaseStrategyHint"></p>
+        </zoorce-wizard-panel>
+        <zoorce-wizard-panel step-id="review">
+            <h2 class="od-section-title">Review release</h2>
+            <p class="od-item-meta">Creating a release does not apply it to the runtime. Delivery follows each node's configured mode.</p>
+            <dl><dt>Artifact</dt><dd>@artifact?.VersionNumber · @typeLabel</dd><dt>Strategy</dt><dd id="releaseReviewStrategy"></dd><dt>Runtime nodes</dt><dd id="releaseReviewNodes"></dd></dl>
+        </zoorce-wizard-panel>
+    </zoorce-wizard>
 </form>

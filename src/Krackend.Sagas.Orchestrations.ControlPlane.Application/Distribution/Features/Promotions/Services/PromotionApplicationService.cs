@@ -73,7 +73,7 @@ public sealed class ReleaseApplicationService : IReleaseApplicationService
                 cancellationToken);
             if (existingTarget is not null)
             {
-                continue;
+                throw new InvalidOperationException($"Selected artifact already has a release target for runtime node '{node.Name}'. Remove that node from the selection.");
             }
 
             selectedNodes[nodeId] = node;

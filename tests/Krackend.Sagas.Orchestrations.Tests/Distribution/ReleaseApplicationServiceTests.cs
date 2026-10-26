@@ -63,7 +63,7 @@ public sealed class ReleaseApplicationServiceTests
     }
 
     [Fact]
-    public async Task CreateSkipsAlreadyTargetedNodesAndCreatesOnlyMissingTargets()
+    public async Task CreateRejectsPartiallyDuplicatedTargetsWithoutCreatingARelease()
     {
         var artifact = Artifact("sales.sale.created");
         var existingNode = RuntimeNode(DistributionMode.DesignPublishesToRuntime);
@@ -78,17 +78,17 @@ public sealed class ReleaseApplicationServiceTests
         };
         var service = state.CreateService();
 
-        await service.Create(new CreateReleaseInput(
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.Create(new CreateReleaseInput(
             artifact.Id.ToString(),
             "tester",
             "Direct",
             [existingNode.Id.ToString(), missingNode.Id.ToString()],
-            ""));
+            "")));
 
-        Assert.Single(state.CreatedPlanTargets);
-        Assert.Single(state.CreatedReleaseTargets);
-        Assert.Equal(missingNode.Id, state.CreatedPlanTargets.Single().RuntimeNodeId);
-        Assert.Equal(missingNode.Id, state.CreatedReleaseTargets.Single().RuntimeNodeId);
+        Assert.Contains(existingNode.Name, error.Message);
+        Assert.Empty(state.CreatedReleases);
+        Assert.Empty(state.CreatedPlanTargets);
+        Assert.Empty(state.CreatedReleaseTargets);
     }
 
     [Fact]

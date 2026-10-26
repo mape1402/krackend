@@ -12,6 +12,9 @@ public sealed class PendingArtifactPage
 /// <summary>Information needed to identify a pending release without transferring its payload.</summary>
 public sealed class PendingArtifactSummary
 {
+    public string ReleaseId { get; set; } = string.Empty;
+    public string ArtifactType { get; set; } = string.Empty;
+    public string ReleaseStrategy { get; set; } = string.Empty;
     public string ReleaseTargetId { get; set; } = string.Empty;
     public string OrchestrationDefinitionKey { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;

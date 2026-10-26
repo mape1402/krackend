@@ -3,17 +3,13 @@
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
 @using Zoorce.Web.UI.Foundation.Components
+@using Zoorce.Web.UI.Foundation.WaitDialog
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Releases.IndexModel
 @{
     var isOrchestrationSelected = !string.IsNullOrWhiteSpace(Model.OrchestrationId);
     var selectedOrchestrationName = Model.SelectedOrchestration?.Name ?? Model.OrchestrationId;
     ViewData["Title"] = isOrchestrationSelected ? $"{selectedOrchestrationName} · Releases" : "Releases";
-}
-
-@if (isOrchestrationSelected)
-{
-    <div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openCreateRelease", Label = "Create release", Icon = "+" })</div>
 }
 
 @if (!isOrchestrationSelected)
@@ -76,14 +72,18 @@ else
     </section>
 }
 
-@if (!string.IsNullOrWhiteSpace(Model.OrchestrationId))
+@if (Model.SelectedArtifact is not null)
 {
+    var footer = new HtmlContentBuilder();
+    footer.AppendHtml("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"button\" class=\"z-button z-button-secondary\" id=\"releaseWizardBack\" hidden>Back</button><button type=\"button\" class=\"z-button z-button-primary\" id=\"releaseWizardNext\">Continue</button>");
+    footer.AppendHtml(await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "createReleaseSubmitButton", Text = "Create release" }));
     @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
     {
         Id = "createReleaseModal", Title = "Create release", Eyebrow = null, Size = "wide",
         Body = await Html.PartialAsync("_CreateRelease", Model),
-        Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"createReleaseForm\" class=\"z-button z-button-primary\" id=\"createReleaseSubmitButton\">Create release</button>")
+        Footer = footer
     })
+    @await Component.InvokeAsync("ZoorceWaitDialog", new ZoorceWaitDialogOptions { Id = "releaseCreateWait" })
 }
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
@@ -130,8 +130,7 @@ else
             return;
         }
 
-        const selected = artifactSelect.options[artifactSelect.selectedIndex];
-        const type = selected?.getAttribute('data-artifact-type') ?? '';
+        const type = artifactSelect.dataset.artifactType ?? '';
         const rolloutAllowed = type === 'orchestration-version.new' || type === 'orchestration-version-snapshot';
         const rolloutOption = Array.from(strategySelect.options).find(option => option.value === 'Rollout');
         if (rolloutOption) {
@@ -143,7 +142,7 @@ else
         }
 
         strategyHint.textContent = !type ? 'Select an artifact to choose its release strategy.' : rolloutAllowed
-            ? 'Direct applies immediately. Rollout replaces an existing trigger owner in a controlled handoff.'
+            ? 'Direct applies without a handoff when delivered. Rollout replaces an existing trigger owner in a controlled handoff.'
             : 'Deprecation and archive artifacts are applied directly to preserve a deterministic runtime lifecycle.';
     };
 
@@ -197,8 +196,9 @@ else
         const values = document.getElementById(`${prefix}NodeValues`);
         const more = document.getElementById(`${prefix}NodesMore`);
         const scroll = document.getElementById(`${prefix}NodeScroll`);
+        const skeleton = document.getElementById(`${prefix}NodeLoading`);
         if (!search || !list || !more) return null;
-        const picker = { selected: new Set(), page: 0, hasMore: true, loading: false, generation: 0 };
+        const picker = { selected: new Set(), names: new Map(), page: 0, hasMore: true, loading: false, generation: 0 };
         picker.sync = () => {
             values.replaceChildren(...Array.from(picker.selected, id => {
                 const input = document.createElement('input');
@@ -210,6 +210,7 @@ else
             if (picker.loading || !picker.hasMore) return;
             const generation = picker.generation;
             picker.loading = true; status.textContent = 'Loading nodes...'; more.hidden = true;
+            if (skeleton) skeleton.hidden = false;
             try {
                 const url = new URL(location.pathname, location.href);
                 url.searchParams.set('handler', 'NodeOptions');
@@ -223,18 +224,21 @@ else
                 if (generation !== picker.generation) return;
                 picker.page++; picker.hasMore = result.hasMore;
                 for (const node of result.items) {
+                    const modeLabel = ({ DesignPublishesToRuntime: 'Push', RuntimeFetchesFromDesign: 'Runtime import', HybridSync: 'Push or import' })[node.distributionMode] || node.distributionMode || '';
+                    const nodeLabel = [node.name, node.environmentName, modeLabel].filter(Boolean).join(' · ');
+                    picker.names.set(node.id, nodeLabel);
                     const label = document.createElement('label'); label.className = 'form-check d-block';
                     const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'form-check-input';
                     input.value = node.id; input.checked = picker.selected.has(node.id);
                     input.addEventListener('change', () => { if (input.checked) picker.selected.add(node.id); else picker.selected.delete(node.id); picker.sync(); });
-                    const text = document.createElement('span'); text.className = 'form-check-label'; text.textContent = `${node.name} (${node.code})`;
+                    const text = document.createElement('span'); text.className = 'form-check-label'; text.textContent = `${nodeLabel} (${node.code})`;
                     label.append(input, text); list.append(label);
                 }
                 status.textContent = picker.page === 1 && !result.items.length ? (allowedOnly ? 'No allowed enabled nodes found.' : 'No enabled nodes found.') : '';
                 more.hidden = !picker.hasMore;
             } catch {
                 if (generation === picker.generation) { status.textContent = 'Nodes could not be loaded. Try again.'; more.hidden = false; }
-            } finally { if (generation === picker.generation) picker.loading = false; }
+            } finally { if (generation === picker.generation) { picker.loading = false; if (skeleton) skeleton.hidden = true; } }
         };
         picker.reset = () => { picker.generation++; picker.page = 0; picker.hasMore = true; picker.loading = false; list.replaceChildren(); return picker.load(); };
         let timer;
@@ -250,46 +254,41 @@ else
         releasePicker.sync();
     }
 
-    const artifactSearch = document.getElementById('releaseArtifactSearch');
-    const artifactMore = document.getElementById('releaseArtifactsMore');
-    const artifactStatus = document.getElementById('releaseArtifactStatus');
-    let artifactPage = 0, artifactHasMore = true, artifactLoading = false, artifactGeneration = 0;
-    const loadArtifacts = async () => {
-        if (!artifactSelect || artifactLoading || !artifactHasMore) return;
-        const generation = artifactGeneration;
-        artifactLoading = true; artifactMore.hidden = true; artifactStatus.textContent = 'Loading artifacts...';
-        try {
-            const url = new URL(location.pathname, location.href);
-            url.searchParams.set('handler', 'ArtifactOptions'); url.searchParams.set('orchestrationId', selectedOrchestrationId);
-            url.searchParams.set('page', String(artifactPage + 1)); url.searchParams.set('search', artifactSearch.value);
-            const response = await fetch(url); if (!response.ok) throw new Error();
-            const result = await response.json(); if (generation !== artifactGeneration) return;
-            artifactPage++; artifactHasMore = result.hasMore;
-            for (const item of result.items) {
-                if (Array.from(artifactSelect.options).some(option => option.value === item.id)) continue;
-                const option = document.createElement('option'); option.value = item.id; option.dataset.artifactType = item.artifactType;
-                option.textContent = `${item.artifactType} - ${item.versionNumber} - ${item.versionLabel || 'Unlabeled'}`;
-                artifactSelect.append(option);
-            }
-            artifactStatus.textContent = artifactPage === 1 && !result.items.length ? 'No matching artifacts.' : '';
-            artifactMore.hidden = !artifactHasMore;
-        } catch { if (generation === artifactGeneration) { artifactStatus.textContent = 'Artifacts could not be loaded. Try again.'; artifactMore.hidden = false; } }
-        finally { if (generation === artifactGeneration) artifactLoading = false; }
-    };
-    if (artifactSearch) {
-        let timer;
-        artifactSearch.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => {
-            artifactGeneration++; artifactPage = 0; artifactHasMore = true; artifactLoading = false;
-            Array.from(artifactSelect.options).slice(1).filter(option => !option.selected).forEach(option => option.remove());
-            loadArtifacts();
-        }, 250); });
-        artifactMore.addEventListener('click', loadArtifacts);
-        document.getElementById('openCreateRelease')?.addEventListener('click', event => {
-            document.getElementById('createReleaseModal')?.open?.(event.currentTarget);
-            loadArtifacts();
-            releasePicker?.reset();
+    const wizardSteps = ['targets', 'strategy', 'review'];
+    let wizardStep = 0;
+    const wizardBack = document.getElementById('releaseWizardBack');
+    const wizardNext = document.getElementById('releaseWizardNext');
+    const wizardSubmit = document.getElementById('createReleaseSubmitButton');
+    const showWizardStep = () => {
+        window.ZoorceWizards?.get('createReleaseWizard')?.applySnapshot({
+            currentStepId: wizardSteps[wizardStep],
+            steps: wizardSteps.map((id, index) => ({ id, isNavigable: false, state: index < wizardStep ? 'Completed' : index === wizardStep ? 'Active' : 'Pending' }))
         });
-    }
+        wizardBack.hidden = wizardStep === 0;
+        wizardNext.hidden = wizardStep === wizardSteps.length - 1;
+        wizardSubmit.hidden = wizardStep !== wizardSteps.length - 1;
+        if (wizardStep === 2) {
+            document.getElementById('releaseReviewStrategy').textContent = strategySelect.value;
+            document.getElementById('releaseReviewNodes').textContent = Array.from(releasePicker.selected, id => releasePicker.names.get(id) || id).join(', ');
+        }
+    };
+    wizardNext?.addEventListener('click', () => {
+        const invalid = wizardStep === 0 && !releasePicker?.selected.size;
+        document.getElementById('releaseNodeError').hidden = !invalid;
+        if (invalid) return;
+        wizardStep = Math.min(wizardStep + 1, wizardSteps.length - 1);
+        showWizardStep();
+    });
+    wizardBack?.addEventListener('click', () => { wizardStep = Math.max(0, wizardStep - 1); showWizardStep(); });
+    wizardSubmit?.addEventListener('click', () => document.getElementById('createReleaseForm')?.requestSubmit());
+    document.getElementById('createReleaseForm')?.addEventListener('submit', event => {
+        if (event.defaultPrevented) return;
+        wizardSubmit.disabled = true;
+        wizardSubmit.dataset.zProgressState = 'active';
+        wizardSubmit.dataset.zProgressIndeterminate = 'true';
+        wizardSubmit.setAttribute('aria-busy', 'true');
+        window.ZoorceWaitDialog?.show('releaseCreateWait', { title: 'Creating release', description: 'Preparing the selected runtime targets.' });
+    });
 
     let detailGeneration = 0;
     const detailsMore = document.getElementById('releaseDetailsMore');
@@ -345,7 +344,7 @@ else
                 const normalized = (target.status || '').toLowerCase();
                 const badgeClass = ['delivered', 'acknowledged', 'activated'].includes(normalized) ? 'success' :
                     ['failed', 'cancelled'].includes(normalized) ? 'danger' : ['pending', 'availableforpull'].includes(normalized) ? 'warning' : 'info';
-                const label = ['inprogress', 'pushscheduled', 'pending'].includes(normalized) ? 'Queued' : normalized === 'availableforpull' ? 'Pending' : target.status;
+                const label = ({ inprogress: 'Queued', pushscheduled: 'Ready to push', pending: 'Pending', availableforpull: 'Ready for runtime', delivered: 'Delivered', acknowledged: 'Acknowledged', activated: 'Activated' })[normalized] || target.status;
                 head.append(identity, element('span', `od-stage-badge od-stage-badge-${badgeClass}`, label));
                 const body = element('div', 'od-stage-card-body');
                 const mode = element('div', 'od-stage-kv');
@@ -354,7 +353,7 @@ else
                 body.append(mode);
                 const foot = element('div', 'od-stage-card-foot');
                 if (target.canPush) {
-                    const button = element('button', 'btn btn-sm btn-primary', 'Push');
+                    const button = element('button', 'z-button z-button-primary', normalized === 'delivered' || normalized === 'acknowledged' ? 'Retry delivery' : 'Push to runtime');
                     button.type = 'button';
                     button.addEventListener('click', () => {
                         releasePushForm.elements.releaseTargetId.value = target.targetId;
@@ -362,7 +361,7 @@ else
                         releasePushForm.requestSubmit();
                     });
                     foot.append(button);
-                } else foot.append(element('span', 'od-stage-note', target.activated ? 'Promoted' : target.canPull ? 'Pull by Runtime' : 'No manual action'));
+                } else foot.append(element('span', 'od-stage-note', target.activated ? 'Activated in runtime' : target.canPull ? 'Waiting for runtime import' : 'No manual action'));
                 card.append(head, body, foot);
                 releaseDetailsTargetsElement.append(card);
             });
@@ -409,17 +408,22 @@ else
         });
     }
     updateStrategyAvailability();
-    @if (string.Equals(Model.HttpContext.Request.Method, "POST", StringComparison.OrdinalIgnoreCase) && string.Equals(Model.HttpContext.Request.Query["handler"], "Create", StringComparison.OrdinalIgnoreCase) && !ViewData.ModelState.IsValid && isOrchestrationSelected)
+    @if (Model.SelectedArtifact is not null)
     {
         <text>
-        document.getElementById('createReleaseModal')?.open?.(document.getElementById('openCreateRelease'));
-        loadArtifacts();
+        document.getElementById('createReleaseModal')?.open?.();
         releasePicker?.reset();
+        showWizardStep();
         </text>
     }
 })();
 </script>
 <style>
+#createReleaseWizard > .z-wizard-footer { display: none; }
+#createReleaseModal [hidden] { display: none !important; }
+.od-release-context { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; padding: 0.6rem 0; color: var(--od-muted); font-size: 0.85rem; }
+.od-release-context strong { color: var(--od-text); }
+.od-release-wizard { min-height: 330px; }
 .od-orch-card {
     min-height: 0 !important;
     padding: 0.75rem 0.9rem;

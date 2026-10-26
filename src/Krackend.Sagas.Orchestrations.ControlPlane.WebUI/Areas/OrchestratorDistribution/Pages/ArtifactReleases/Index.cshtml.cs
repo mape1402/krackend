@@ -46,7 +46,8 @@ public sealed class IndexModel : PageModel
                 items = result.Rows.Select(x => new { id = x.Id, key = x.VersionNumber, displayName = x.OrchestrationDisplayName,
                     version = x.VersionNumber, artifactType = x.ArtifactType, typeLabel = GetArtifactTypePresentation(x.ArtifactType).Label,
                     typeClass = GetArtifactTypePresentation(x.ArtifactType).CssClass, created = x.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"),
-                    description = x.VersionLabel, checksum = x.Checksum }),
+                    description = x.VersionLabel, checksum = x.Checksum,
+                    releaseUrl = Url.Page("/Promotions/Index", new { area = "OrchestratorDistribution", artifactId = x.Id }) }),
                 totalCount = result.TotalRows, hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
                 search = search?.Trim() ?? string.Empty, sort = sort ?? string.Empty, descending
             });

@@ -13,6 +13,40 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ControlPlaneReleasesPageModelTests
 {
     [Fact]
+    public async Task SelectedArtifactStartsReleaseInItsOwnOrchestration()
+    {
+        var fixture = new Fixture();
+        var id = Ulid.NewUlid().ToString();
+        fixture.ArtifactService.GetById(id, Arg.Any<CancellationToken>()).Returns(new ArtifactModel
+        {
+            Id = id, OrchestrationDefinitionId = "sales.sale.created", VersionNumber = "1.0.0"
+        });
+        var page = fixture.CreatePage();
+        page.ArtifactId = id;
+
+        await page.OnGetAsync();
+
+        Assert.Equal("sales.sale.created", page.OrchestrationId);
+        Assert.Equal(id, page.Input.ArtifactId);
+        Assert.Equal(id, page.SelectedArtifact.Id);
+    }
+
+    [Fact]
+    public async Task SelectedArtifactCannotBeUsedWithAnotherOrchestration()
+    {
+        var fixture = new Fixture();
+        var id = Ulid.NewUlid().ToString();
+        fixture.ArtifactService.GetById(id, Arg.Any<CancellationToken>()).Returns(new ArtifactModel { Id = id, OrchestrationDefinitionId = "other" });
+        var page = fixture.CreatePage();
+        page.ArtifactId = id;
+        page.OrchestrationId = "sales.sale.created";
+
+        await page.OnGetAsync();
+
+        Assert.Null(page.SelectedArtifact);
+        Assert.Empty(page.Input.ArtifactId);
+    }
+    [Fact]
     public async Task OnGetWithoutSelectionDoesNotLoadAllCatalogs()
     {
         var fixture = new Fixture();
@@ -45,6 +79,24 @@ public sealed class ControlPlaneReleasesPageModelTests
         Assert.Contains("Sales", json);
         Assert.Contains("\"count\":3", json);
         await fixture.PolicyService.Received(1).SearchOrchestrations(Arg.Is<ApplicationPagedSettings>(x => x.PageNumber == 1 && x.PageSize == 25), "Sales", "name", false, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("orchestration-version.new", "New version")]
+    [InlineData("orchestration-version-snapshot", "New version")]
+    [InlineData("orchestration-version.deprecated", "Deprecate")]
+    [InlineData("orchestration-version.archived", "Archive")]
+    [InlineData("custom", "custom")]
+    [InlineData("", "Artifact")]
+    public async Task ReleaseListUsesReadableArtifactTypes(string type, string label)
+    {
+        var fixture = new Fixture();
+        fixture.ReleaseService.SearchCatalog(Arg.Any<ApplicationPagedSettings>(), "sales", "", "created", false, Arg.Any<CancellationToken>())
+            .Returns(Page(new ReleaseModel { Id = "release", ArtifactId = "artifact", OrchestrationDefinitionId = "sales" }));
+        fixture.ArtifactService.GetSummariesByIds(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new ArtifactModel { Id = "artifact", ArtifactType = type, VersionNumber = "1.0.0" }]);
+        var result = Assert.IsType<JsonResult>(await fixture.CreatePage().OnGetReleaseListAsync(1, 25, "sales", "", "created", false));
+        Assert.Contains(label, System.Text.Json.JsonSerializer.Serialize(result.Value));
     }
 
     [Theory]
@@ -168,7 +220,7 @@ public sealed class ControlPlaneReleasesPageModelTests
     }
 
     [Fact]
-    public async Task OnPostCreateReturnsPageWhenArtifactDoesNotBelongToSelectedOrchestration()
+    public async Task OnPostCreateReportsWhenArtifactDoesNotBelongToSelectedOrchestration()
     {
         var fixture = new Fixture();
         var page = fixture.CreatePage();
@@ -181,9 +233,9 @@ public sealed class ControlPlaneReleasesPageModelTests
 
         var result = await page.OnPostCreateAsync(CancellationToken.None);
 
-        Assert.IsType<PageResult>(result);
-        Assert.False(page.ModelState.IsValid);
-        Assert.Contains(page.ModelState[string.Empty]!.Errors, error => error.ErrorMessage.Contains("Selected artifact", StringComparison.Ordinal));
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("Release not created", page.TempData["OrchestratorMessage.Title"]);
+        Assert.Contains("selected artifact", (string)page.TempData["OrchestratorMessage.Body"], StringComparison.OrdinalIgnoreCase);
         await fixture.ReleaseService.DidNotReceive().Create(Arg.Any<CreateReleaseInput>(), Arg.Any<CancellationToken>());
     }
 

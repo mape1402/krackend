@@ -40,10 +40,19 @@
             return details;
         }
         if (kind === 'artifacts') {
-            const details = button('bi-eye', `Details for ${item.displayName} version ${item.version}`);
-            details.classList.add('js-open-artifact-details');
+            const group = document.createElement('div'); group.className = 'dropdown';
+            const toggle = button('bi-three-dots-vertical', `Actions for ${item.displayName} version ${item.version}`);
+            toggle.dataset.bsToggle = 'dropdown'; toggle.setAttribute('aria-expanded', 'false');
+            const menu = document.createElement('ul'); menu.className = 'dropdown-menu dropdown-menu-end';
+            const details = document.createElement('button');
+            details.type = 'button'; details.className = 'dropdown-item js-open-artifact-details'; details.textContent = 'View details';
             details.dataset.id = item.id;
-            return details;
+            const release = document.createElement('a');
+            release.href = item.releaseUrl;
+            release.className = 'dropdown-item'; release.textContent = 'Create release';
+            for (const action of [details, release]) { const entry = document.createElement('li'); entry.append(action); menu.append(entry); }
+            group.append(toggle, menu);
+            return group;
         }
         if (kind === 'runtime-nodes') {
             const group = document.createElement('div');

@@ -32,6 +32,7 @@ public sealed class IndexModel : PageModel
     }
 
     [BindProperty(SupportsGet = true)] public string OrchestrationId { get; set; } = string.Empty;
+    [BindProperty(SupportsGet = true)] public string ArtifactId { get; set; } = string.Empty;
     public OrchestrationPolicyDefinitionModel SelectedOrchestration { get; private set; } = null!;
     [BindProperty] public ReleaseInput Input { get; set; } = new();
     [BindProperty] public AllowedNodesInput AllowedNodes { get; set; } = new();
@@ -39,6 +40,17 @@ public sealed class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken = default)
     {
+        if (Ulid.TryParse(ArtifactId, out _))
+        {
+            SelectedArtifact = await _artifactService.GetById(ArtifactId, cancellationToken);
+            if (SelectedArtifact is not null && (string.IsNullOrWhiteSpace(OrchestrationId) ||
+                string.Equals(OrchestrationId, SelectedArtifact.OrchestrationDefinitionId, StringComparison.Ordinal)))
+            {
+                OrchestrationId = SelectedArtifact.OrchestrationDefinitionId;
+                Input.ArtifactId = SelectedArtifact.Id;
+            }
+            else SelectedArtifact = null;
+        }
         if (!string.IsNullOrWhiteSpace(OrchestrationId))
             await LoadPageData(cancellationToken);
     }
@@ -94,7 +106,7 @@ public sealed class IndexModel : PageModel
                     artifacts.TryGetValue(item.ArtifactId, out var artifact);
                     var status = item.Status;
                     var artifactLabel = artifact is null ? "No artifact linked" :
-                        $"{artifact.ArtifactType} - {artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}";
+                        $"{ArtifactTypeLabel(artifact.ArtifactType)} · {artifact.VersionNumber}";
                     return new
                     {
                         id = item.Id, key = item.Id, displayName = "Release", artifact = artifactLabel,
@@ -137,7 +149,7 @@ public sealed class IndexModel : PageModel
             return new JsonResult(new
             {
                 release.Id, orchestration = artifact?.OrchestrationDisplayName ?? "Release",
-                artifact = artifact is null ? "No artifact linked" : $"{artifact.VersionNumber} - {(string.IsNullOrWhiteSpace(artifact.VersionLabel) ? "Unlabeled" : artifact.VersionLabel)}",
+                artifact = artifact is null ? "No artifact linked" : $"{ArtifactTypeLabel(artifact.ArtifactType)} · {artifact.VersionNumber}",
                 created = release.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm"), targets,
                 hasMore = result.PageNumber < result.TotalPages
             });
@@ -160,9 +172,8 @@ public sealed class IndexModel : PageModel
         catch (ArgumentException) { }
         if (selectedArtifact is null || !string.Equals(selectedArtifact.OrchestrationDefinitionId, Input.OrchestrationDefinitionId, StringComparison.Ordinal))
         {
-            ModelState.AddModelError(string.Empty, "Selected artifact does not belong to the selected orchestration.");
-            await LoadPageData(cancellationToken);
-            return Page();
+            SetMessage("Release not created", "The selected artifact is unavailable or does not belong to this orchestration.", "error");
+            return RedirectToPage(new { OrchestrationId = Input.OrchestrationDefinitionId });
         }
         SelectedArtifact = selectedArtifact;
 
@@ -266,7 +277,7 @@ public sealed class IndexModel : PageModel
             var result = allowedOnly
                 ? await _runtimeService.SearchAllowed(settings, orchestrationId, search?.Trim() ?? string.Empty, cancellationToken)
                 : await _runtimeService.SearchEnabled(settings, search?.Trim() ?? string.Empty, "name", false, cancellationToken);
-            return new JsonResult(new { items = result.Rows.Select(x => new { x.Id, x.Name, x.Code }), hasMore = result.PageNumber < result.TotalPages });
+            return new JsonResult(new { items = result.Rows.Select(x => new { x.Id, x.Name, x.Code, x.EnvironmentName, x.DistributionMode }), hasMore = result.PageNumber < result.TotalPages });
         }
         catch (NotSupportedException) { return StatusCode(503); }
     }
@@ -342,4 +353,12 @@ public sealed class IndexModel : PageModel
     private static bool IsNewVersionArtifact(string artifactType)
         => string.Equals(artifactType, "orchestration-version.new", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(artifactType, "orchestration-version-snapshot", StringComparison.OrdinalIgnoreCase);
+
+    private static string ArtifactTypeLabel(string artifactType) => artifactType?.ToLowerInvariant() switch
+    {
+        "orchestration-version.new" or "orchestration-version-snapshot" => "New version",
+        "orchestration-version.deprecated" => "Deprecate",
+        "orchestration-version.archived" => "Archive",
+        _ => string.IsNullOrWhiteSpace(artifactType) ? "Artifact" : artifactType
+    };
 }

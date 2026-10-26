@@ -188,6 +188,7 @@ public sealed class ArtifactDeliveryApplicationService : IArtifactDeliveryApplic
             var package = await BuildPackage(target, node, artifact, cancellationToken);
             items.Add(new PendingArtifactSummary
             {
+                ReleaseId = package.ReleaseId, ArtifactType = package.ArtifactType, ReleaseStrategy = package.ReleaseStrategy,
                 ReleaseTargetId = package.ReleaseTargetId, OrchestrationDefinitionKey = package.OrchestrationDefinitionKey,
                 Version = package.Version, CorrelationId = package.CorrelationId, Checksum = package.Checksum,
                 PromotedBy = package.PromotedBy, PromotedOnUtc = package.PromotedOnUtc

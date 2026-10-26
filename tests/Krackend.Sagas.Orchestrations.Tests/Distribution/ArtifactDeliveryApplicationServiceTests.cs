@@ -264,7 +264,11 @@ public sealed class ArtifactDeliveryApplicationServiceTests
         Assert.Equal(included ? 1 : 0, page.TotalRows);
         if (included)
         {
-            Assert.Equal(state.Target.Id.ToString(), Assert.Single(page.Items).ReleaseTargetId);
+            var summary = Assert.Single(page.Items);
+            Assert.Equal(state.Target.Id.ToString(), summary.ReleaseTargetId);
+            Assert.Equal(state.Target.ReleaseId.ToString(), summary.ReleaseId);
+            Assert.Equal(state.Target.RolloutGroup, summary.ReleaseStrategy);
+            Assert.Equal("orchestration-version-snapshot", summary.ArtifactType);
             Assert.Equal(ReleaseTargetStatus.PushScheduled, state.Target.Status);
             Assert.DoesNotContain("Payload", System.Text.Json.JsonSerializer.Serialize(page));
         }
