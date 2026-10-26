@@ -3136,3 +3136,64 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-dashboard-live-list li div { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .od-dashboard-live-list li span, .od-dashboard-live-list time { color: var(--z-muted, #68758a); }
 @media (max-width: 720px) { .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); } .od-dashboard-charts > :first-child { grid-column: auto; } }
+
+/* Dashboard blocks are independently loaded, but keep a stable visual rhythm while they settle. */
+.od-dashboard { display: grid; gap: .9rem; min-width: 0; }
+.od-dashboard-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .65rem; min-width: 0; }
+.od-dashboard-metrics > .z-component-card {
+    --metric-accent: var(--z-primary, var(--od-primary));
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 92px;
+    padding: .7rem .75rem;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--metric-accent) 25%, var(--z-border, var(--od-border)));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--metric-accent) 5%, var(--z-surface, var(--od-surface)));
+    box-shadow: none;
+}
+.od-dashboard-metrics > .z-component-card::before { content: ""; display: block; width: 2rem; height: 2px; margin-bottom: .55rem; border-radius: 2px; background: var(--metric-accent); }
+.od-dashboard-metrics > .z-component-card header { display: block; padding: 0; }
+.od-dashboard-metrics > .z-component-card h2 { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .67rem; font-weight: 700; line-height: 1.2; letter-spacing: 0; }
+.od-dashboard-metrics > .z-component-card .z-component-card-body { min-width: 0; margin: .4rem 0 0; padding: 0; }
+.od-dashboard-metric-body { display: grid; grid-template-columns: 1.8rem minmax(0, 1fr); align-items: center; gap: .45rem; min-width: 0; }
+.od-dashboard-metrics .od-metric-icon { position: static; width: 1.8rem; height: 1.8rem; transform: none; border-radius: 6px; color: var(--metric-accent); background: color-mix(in srgb, var(--metric-accent) 14%, transparent); font-size: .82rem; }
+.od-dashboard-metric-data { display: grid; min-width: 0; gap: .08rem; }
+.od-dashboard-metric-data strong { color: var(--z-text, var(--od-text)); font-size: 1.25rem; font-weight: 720; line-height: 1; font-variant-numeric: tabular-nums; }
+.od-dashboard-metric-data small { overflow: hidden; color: var(--z-muted, var(--od-muted)); font-size: .62rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.od-dashboard-metric-skeleton { display: block; width: 100%; }
+.od-dashboard-metric-skeleton .z-skeleton { width: 48%; height: 1.3rem; }
+#runtime-metric-running { --metric-accent: var(--z-info, #176b87); }
+#runtime-metric-waiting, #runtime-metric-deadLettered { --metric-accent: var(--z-warning, #a16207); }
+#runtime-metric-completed { --metric-accent: var(--z-success, #0f8c55); }
+#runtime-metric-failed { --metric-accent: var(--z-danger, #c43d4d); }
+
+.od-dashboard-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; align-items: start; min-width: 0; }
+.od-dashboard-activity { grid-column: 1 / -1; min-width: 0; }
+.od-dashboard-panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .65rem; min-height: 34px; margin: 0 0 .45rem; }
+.od-dashboard-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0; }
+.od-dashboard-filters select { min-width: 8.5rem; max-width: min(14rem, 60vw); min-height: 32px; font-size: .72rem; }
+.od-dashboard-filters .z-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.od-dashboard-health { color: var(--z-muted, var(--od-muted)); font-size: .67rem; white-space: nowrap; }
+.od-dashboard-chart-shell { position: relative; min-width: 0; }
+.od-dashboard-skeleton { position: absolute; z-index: 2; inset: 0; display: grid; align-items: stretch; padding: .8rem; background: var(--z-surface, var(--od-surface)); }
+.od-dashboard-skeleton[hidden] { display: none; }
+.od-dashboard-skeleton .z-skeleton-group, .od-dashboard-skeleton .z-skeleton-block { height: 100%; min-height: 100%; }
+.od-dashboard-panel-error { margin: .35rem 0 0; color: var(--z-danger, var(--od-danger)); font-size: .7rem; }
+.od-dashboard-outcome { display: flex; flex-wrap: wrap; gap: .35rem; margin: .45rem 0 0; }
+.od-dashboard-outcome-chip { display: inline-flex; align-items: center; min-height: 21px; padding: .18rem .45rem; border: 1px solid var(--z-border, var(--od-border)); border-radius: 999px; color: var(--z-muted, var(--od-muted)); background: var(--z-subtle, var(--od-surface-2)); font-size: .63rem; font-weight: 650; line-height: 1; }
+.od-dashboard-outcome-chip.is-running { color: var(--z-info, var(--od-info)); background: var(--z-info-soft, color-mix(in srgb, var(--z-info) 9%, transparent)); }
+.od-dashboard-outcome-chip.is-warning { color: var(--z-warning, var(--od-warning)); background: var(--z-warning-soft, color-mix(in srgb, var(--z-warning) 9%, transparent)); }
+.od-dashboard-outcome-chip.is-danger { color: var(--z-danger, var(--od-danger)); background: var(--z-danger-soft, color-mix(in srgb, var(--z-danger) 9%, transparent)); }
+.od-dashboard-live { min-height: 0; padding: .9rem; border-radius: 10px; box-shadow: none; }
+.od-dashboard-live-heading h2 { font-size: .78rem; }
+.od-dashboard-live-list li { padding: .5rem 0; font-size: .7rem; }
+
+@media (max-width: 1180px) { .od-dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+    .od-dashboard-metrics, .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); }
+    .od-dashboard-activity { grid-column: auto; }
+    .od-dashboard-panel-toolbar { align-items: flex-start; flex-direction: column; }
+    .od-dashboard-health { white-space: normal; }
+}

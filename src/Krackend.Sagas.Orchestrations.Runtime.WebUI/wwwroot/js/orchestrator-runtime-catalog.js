@@ -5,9 +5,8 @@
     const search = grid.querySelector('[data-z-grid-search]');
     const scope = root.querySelector('[data-runtime-scope]');
     const controls = root.querySelector('.od-runtime-view-controls');
-    const updates = root.querySelector('[data-runtime-updates]');
     const records = new Map();
-    let refreshTimer, countsRequest, refreshing = false, refreshPending = false;
+    let refreshTimer, countsRequest, refreshing = false, refreshPending = false, preservePending = false, scrollAnchor = null;
     grid.querySelector('.z-toolbar').append(controls);
 
     const scopedUrl = source => {
@@ -35,9 +34,33 @@
             if (error.name !== 'AbortError') root.querySelectorAll('[data-monitor-count]').forEach(element => { element.textContent = '—'; });
         } finally { if (countsRequest === controller) countsRequest = null; }
     };
-    const refresh = () => {
-        updates.hidden = true;
-        if (refreshing || grid.getAttribute('aria-busy') === 'true') { refreshPending = true; return; }
+    const captureScrollAnchor = () => {
+        const viewport = grid.querySelector('[data-z-grid-viewport]');
+        if (!viewport || viewport.scrollTop <= 0) return null;
+        const viewportTop = viewport.getBoundingClientRect().top;
+        const row = [...grid.querySelectorAll('tr[data-z-grid-key]')]
+            .find(item => item.getBoundingClientRect().bottom > viewportTop);
+        return row
+            ? { key: row.dataset.zGridKey, offset: row.getBoundingClientRect().top - viewportTop, scrollTop: viewport.scrollTop }
+            : { key: null, offset: 0, scrollTop: viewport.scrollTop };
+    };
+    const restoreScrollAnchor = () => {
+        if (!scrollAnchor) return;
+        const anchor = scrollAnchor;
+        scrollAnchor = null;
+        const viewport = grid.querySelector('[data-z-grid-viewport]');
+        if (!viewport) return;
+        const row = anchor.key ? grid.querySelector(`tr[data-z-grid-key="${CSS.escape(anchor.key)}"]`) : null;
+        if (row) viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - anchor.offset;
+        else viewport.scrollTop = anchor.scrollTop;
+    };
+    const refresh = ({ preserveScroll = false } = {}) => {
+        if (refreshing || grid.getAttribute('aria-busy') === 'true') {
+            refreshPending = true;
+            preservePending ||= preserveScroll;
+            return;
+        }
+        if (preserveScroll) scrollAnchor = captureScrollAnchor();
         refreshing = true;
         grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
     };
@@ -83,14 +106,29 @@
         }
     });
     new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
-    grid.addEventListener('zoorce:grid:error', () => { refreshing = false; if (refreshPending) updates.hidden = false; refreshPending = false; });
+    grid.addEventListener('zoorce:grid:error', () => {
+        refreshing = false;
+        scrollAnchor = null;
+        if (refreshPending) {
+            const preserveScroll = preservePending;
+            refreshPending = false;
+            preservePending = false;
+            refresh({ preserveScroll });
+        }
+    });
     grid.addEventListener('zoorce:grid:loaded', event => {
         refreshing = false;
         if (!event.detail.append) records.clear();
         event.detail.result.items.forEach(item => records.set(String(item.id), item));
         decorate();
         if (!event.detail.append) refreshCounts();
-        if (refreshPending) { refreshPending = false; refresh(); }
+        window.requestAnimationFrame(restoreScrollAnchor);
+        if (refreshPending) {
+            const preserveScroll = preservePending;
+            refreshPending = false;
+            preservePending = false;
+            refresh({ preserveScroll });
+        }
     });
     scope.addEventListener('change', () => {
         const configElement = grid.querySelector('[data-z-grid-config]');
@@ -99,13 +137,12 @@
         refreshing = false; refreshPending = false; window.ZoorceDataGrid.mount(grid);
         if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    root.querySelector('[data-runtime-refresh]').addEventListener('click', refresh);
-    updates.addEventListener('click', refresh);
+    root.querySelector('[data-runtime-refresh]').addEventListener('click', () => refresh());
     window.addEventListener('krackend:instances-changed', () => {
         clearTimeout(refreshTimer);
         refreshTimer = setTimeout(() => {
-            if ((grid.querySelector('[data-z-grid-viewport]')?.scrollTop ?? 0) === 0) refresh();
-            else updates.hidden = false;
+            const preserveScroll = (grid.querySelector('[data-z-grid-viewport]')?.scrollTop ?? 0) > 0;
+            refresh({ preserveScroll });
         }, 1000);
     });
     refresh();

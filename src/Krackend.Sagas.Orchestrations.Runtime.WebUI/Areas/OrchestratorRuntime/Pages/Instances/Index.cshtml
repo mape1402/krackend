@@ -31,7 +31,6 @@
             <label class="od-monitor-scope">Time range <select class="z-form-input z-form-select" data-runtime-scope aria-label="Instance time range"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option><option value="active">All active instances</option></select></label>
             <button type="button" class="btn btn-outline-secondary" data-runtime-refresh aria-label="Refresh instances" title="Refresh instances"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
         </div>
-        <button type="button" class="btn btn-link od-runtime-updates" data-runtime-updates hidden>New activity available. Refresh instances</button>
         <div data-runtime-grid-view>
             @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
             {

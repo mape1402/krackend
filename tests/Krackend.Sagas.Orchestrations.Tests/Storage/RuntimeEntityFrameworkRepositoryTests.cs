@@ -52,6 +52,52 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task DashboardStatisticsReaderUsesExclusiveCohortStatesAndUtcBuckets()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var completed = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-30));
+        var running = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-20));
+        await repository.Create(completed);
+        await repository.Create(running);
+        completed.Status = OrchestrationInstanceStatus.DeadLettered;
+        await repository.Update(completed);
+        completed.Status = OrchestrationInstanceStatus.Completed;
+        await repository.Update(completed);
+        await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(20);
+
+        var reader = scope.ServiceProvider.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1), completed.OrchestrationDefinitionKey);
+        var cohort = await reader.GetCohortAsync(query);
+        var hourly = await reader.GetActivityAsync(query, SagaStatisticsActivityBucket.Hour);
+        var daily = await reader.GetActivityAsync(new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1)),
+            SagaStatisticsActivityBucket.Day);
+        var weekly = await reader.GetActivityAsync(new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1)),
+            SagaStatisticsActivityBucket.Week);
+        var health = await reader.GetHealthAsync();
+
+        Assert.Equal(2, cohort.Total);
+        Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Completed]);
+        Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Running]);
+        Assert.DoesNotContain(cohort.CurrentStatuses, item => item.Key == OrchestrationInstanceStatus.DeadLettered);
+        Assert.Contains(hourly, item => item.Status == OrchestrationInstanceStatus.Completed);
+        Assert.All(hourly, item => Assert.Equal(0, item.BucketUtc.Minute));
+        Assert.All(daily, item => Assert.Equal(TimeSpan.Zero, item.BucketUtc.TimeOfDay));
+        Assert.All(weekly, item => Assert.Equal(DayOfWeek.Monday, item.BucketUtc.DayOfWeek));
+        Assert.Equal(0, health.PendingObservations);
+        Assert.False(health.BackfillCompleted);
+        Assert.Contains(completed.OrchestrationDefinitionKey, await reader.GetOrchestrationKeysAsync());
+        Assert.Equal(2, (await reader.GetCohortAsync(new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1)))).Total);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => reader.GetActivityAsync(query, (SagaStatisticsActivityBucket)99));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => reader.GetActivityAsync(null!, SagaStatisticsActivityBucket.Day));
+    }
+
+    [Fact]
     public async Task StatisticsBackfillCapturesLegacyInstancesAndPersistsCompletion()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

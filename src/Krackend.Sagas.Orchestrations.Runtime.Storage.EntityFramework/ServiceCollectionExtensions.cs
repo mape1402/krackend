@@ -78,7 +78,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ISagaStatisticsProjector, SagaStatisticsProjector>();
         services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsBatchProcessor, SagaStatisticsBatchProcessor>());
         services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsBackfill, SagaStatisticsBackfill>());
-        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader, SagaStatisticsReader>());
+        services.Replace(ServiceDescriptor.Scoped<SagaStatisticsReader>(provider =>
+            new SagaStatisticsReader(provider.GetRequiredService<RuntimeDbContext>())));
+        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
+        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
         services.Replace(ServiceDescriptor.Scoped<IStageExecutionRepository, StageExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionRepository, TaskExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionAttemptRepository, TaskExecutionAttemptRepository>());
