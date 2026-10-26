@@ -1,0 +1,29 @@
+@page
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.Extensions.Options
+@using Krackend.Sagas.Orchestrations.WebUI.Shell
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Authentication
+@using Zoorce.Web.UI.Layout.Components
+@inject IOptions<OrchestratorWebUIThemeOptions> Theme
+@inject IOptions<OrchestratorSignInOptions> SignInOptions
+@{
+    Layout = "_ZoorceStandaloneLayout";
+    ViewData["Title"] = "Sign in";
+    var options = SignInOptions.Value;
+    var returnUrl = Request.Query[options.ReturnUrlParameter].ToString();
+    var isLocal = Uri.TryCreate(returnUrl, UriKind.Relative, out _) && !returnUrl.StartsWith("//", StringComparison.Ordinal);
+    var challengeUrl = QueryHelpers.AddQueryString(options.ChallengePath, options.ReturnUrlParameter, isLocal ? returnUrl : "/");
+    var theme = Theme.Value;
+}
+@await Component.InvokeAsync("ZoorceSignIn", new ZoorceSignInOptions
+{
+    ApplicationName = theme.Title,
+    BrandSubtitle = theme.Subtitle,
+    BrandMark = "K",
+    SignInUrl = challengeUrl,
+    SignInEnabled = options.Enabled,
+    Title = options.Title,
+    Description = options.Description,
+    SignInText = options.SignInText,
+    ShowShootingStars = true
+})

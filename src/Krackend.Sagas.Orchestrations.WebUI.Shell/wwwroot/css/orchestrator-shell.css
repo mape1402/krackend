@@ -40,6 +40,35 @@ html, body { height: 100%; margin: 0; padding: 0; }
 .z-nav-group-trigger[title="Security"] { --orchestrator-nav-icon: url("../icons/bootstrap/shield-lock.svg"); }
 .z-nav-list-nested .z-nav-link { --orchestrator-nav-icon: url("../icons/bootstrap/arrow-up-right.svg"); }
 
+.z-sidebar .z-nav-marker {
+    flex: 0 0 auto;
+    width: .34rem;
+    height: .34rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--z-sidebar-foreground, var(--krackend-sidebar-text, #d0d3e8)) 44%, transparent);
+}
+
+.z-sidebar .z-nav-link.is-active .z-nav-marker,
+.z-sidebar .z-nav-group-trigger[aria-expanded="true"] .z-nav-marker {
+    background: var(--z-primary, var(--krackend-primary, #4856d7));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--z-primary, var(--krackend-primary, #4856d7)) 14%, transparent);
+}
+
+.z-sidebar .z-nav-disclosure {
+    flex: 0 0 auto;
+    width: .32rem;
+    height: .32rem;
+    margin-left: auto;
+    border-right: 1px solid currentColor;
+    border-bottom: 1px solid currentColor;
+    opacity: .48;
+    transform: rotate(45deg) translateY(-1px);
+    transition: transform .16s ease;
+}
+
+.z-sidebar .z-nav-group-trigger[aria-expanded="true"] .z-nav-disclosure { transform: rotate(225deg) translate(-1px, -1px); }
+.z-sidebar .z-sidebar-close { font-size: .68rem; }
+
 [data-krackend-theme="dark"] .btn-outline-secondary {
     --bs-btn-color: var(--krackend-text, #e8edf7);
     --bs-btn-border-color: var(--krackend-muted-text, #a4b3ca);

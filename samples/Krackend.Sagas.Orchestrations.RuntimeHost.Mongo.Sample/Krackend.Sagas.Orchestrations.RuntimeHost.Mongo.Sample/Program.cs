@@ -180,6 +180,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseOrchestratorWebUIStatusPages();
 app.UseHttpsRedirection();
 
 app.UseRouting();

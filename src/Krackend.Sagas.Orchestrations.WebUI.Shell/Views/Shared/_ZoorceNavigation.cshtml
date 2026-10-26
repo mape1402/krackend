@@ -1,0 +1,82 @@
+@using Microsoft.AspNetCore.Mvc.ViewFeatures
+@using Zoorce.Web.UI.Abstractions.Navigation
+@using Zoorce.Web.UI.Layout
+@model IReadOnlyList<NavigationItem>
+@{
+    var depth = ViewData["ZoorceNavigationDepth"] is int value ? value : 0;
+    var nodePath = ViewData["ZoorceNavigationPath"] as string ?? "root";
+    var expansion = ViewData["ZoorceNavigationExpansion"] is ZoorceNavigationExpansionMode mode
+        ? mode
+        : ZoorceNavigationExpansionMode.ActivePath;
+    var requestPath = Context.Request.Path.Value ?? "/";
+
+    string TargetPath(string target)
+    {
+        var separator = target.IndexOfAny(['?', '#']);
+        return separator >= 0 ? target[..separator] : string.IsNullOrWhiteSpace(target) ? "/" : target;
+    }
+
+    bool IsActive(NavigationItem item)
+    {
+        if (item.MatchMode is NavigationMatchMode.Hash or NavigationMatchMode.None) return false;
+        var targets = item.GetActiveUrls();
+        return targets.Count > 0 && targets.Any(target =>
+        {
+            var path = TargetPath(target);
+            return item.MatchMode == NavigationMatchMode.Exact || (item.MatchMode == NavigationMatchMode.Auto && path == "/")
+                ? string.Equals(requestPath, path, StringComparison.OrdinalIgnoreCase)
+                : requestPath.StartsWith(path, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    bool IsExpanded(NavigationItem item)
+    {
+        if (item.GroupExpansion == NavigationGroupExpansion.Expanded) return true;
+        if (item.GroupExpansion == NavigationGroupExpansion.Collapsed) return false;
+        return expansion switch
+        {
+            ZoorceNavigationExpansionMode.AllExpanded => true,
+            ZoorceNavigationExpansionMode.AllCollapsed => false,
+            _ => item.Children?.Any(child => IsActive(child) || (child.HasChildren && IsExpanded(child))) == true
+        };
+    }
+}
+<ul class="z-nav-list @(depth > 0 ? "z-nav-list-nested" : string.Empty)" data-z-nav-level="@depth">
+@for (var index = 0; index < Model.Count; index++)
+{
+    var item = Model[index];
+    var path = $"{nodePath}-{index}";
+    if (item.HasChildren)
+    {
+        var groupId = $"z-nav-group-{path}";
+        var groupKey = string.IsNullOrWhiteSpace(item.Id) ? path : item.Id.Trim();
+        var expanded = IsExpanded(item);
+        <li class="z-nav-node z-nav-node-group" data-z-nav-node data-z-nav-depth="@depth">
+            <button class="z-nav-group-trigger" type="button" data-z-nav-group data-z-nav-key="@groupKey" aria-expanded="@expanded.ToString().ToLowerInvariant()" aria-controls="@groupId" title="@item.Text">
+                <span class="z-nav-marker" aria-hidden="true"></span>
+                <span data-z-nav-copy>@item.Text</span>
+                <span class="z-nav-disclosure" aria-hidden="true"></span>
+            </button>
+            <div class="z-nav-group-items" id="@groupId">
+                @await Html.PartialAsync("_ZoorceNavigation", item.Children, new ViewDataDictionary(ViewData)
+                {
+                    ["ZoorceNavigationDepth"] = depth + 1,
+                    ["ZoorceNavigationPath"] = path,
+                    ["ZoorceNavigationExpansion"] = expansion
+                })
+            </div>
+        </li>
+    }
+    else
+    {
+        var active = IsActive(item);
+        var targets = string.Join('|', item.GetActiveUrls());
+        <li class="z-nav-node" data-z-nav-node data-z-nav-depth="@depth">
+            <a class="z-nav-link @(active ? "is-active" : string.Empty)" href="@item.Url" title="@item.Text" data-z-nav-link data-z-nav-match="@item.MatchMode.ToString().ToLowerInvariant()" data-z-nav-targets="@targets" aria-current="@(active ? "page" : null)">
+                <span class="z-nav-marker" aria-hidden="true"></span>
+                <span data-z-nav-copy>@item.Text</span>
+            </a>
+        </li>
+    }
+}
+</ul>

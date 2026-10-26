@@ -1,0 +1,20 @@
+@page "/_orchestrator/status/{code:int}"
+@using Microsoft.Extensions.Options
+@using Krackend.Sagas.Orchestrations.WebUI.Shell
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Authentication
+@using Zoorce.Web.UI.Layout.Components
+@model Krackend.Sagas.Orchestrations.WebUI.Shell.Areas.OrchestratorShell.Pages.StatusModel
+@inject IOptions<OrchestratorWebUIThemeOptions> Theme
+@inject IOptions<OrchestratorSignInOptions> SignInOptions
+@{
+    Layout = "_ZoorceStandaloneLayout";
+    ViewData["Title"] = Model.Title;
+    var status = ZoorceStatusPageOptions.ForStatus(
+        Model.Code,
+        homeUrl: Url.Content("~/"),
+        signInUrl: SignInOptions.Value.Enabled ? SignInOptions.Value.SignInPath : null,
+        retryUrl: Url.Content("~/"));
+    status.ApplicationName = Theme.Value.Title;
+    status.BrandSubtitle = Theme.Value.Subtitle;
+}
+@await Component.InvokeAsync("ZoorceStatusPage", status)

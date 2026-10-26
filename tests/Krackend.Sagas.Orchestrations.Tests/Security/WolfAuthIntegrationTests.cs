@@ -107,8 +107,9 @@ public sealed class WolfAuthIntegrationTests
 
         Assert.Contains("Sample Krackend", html);
         Assert.Contains("Authentication required.", html);
-        Assert.Contains(">Sign in</a>", html);
+        Assert.Contains("Sign in", html);
         Assert.Contains("/auth/login/challenge?returnUrl=%2Fsecure", html);
+        Assert.Contains("zoorce", html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -207,8 +208,8 @@ public sealed class WolfAuthIntegrationTests
 
         var html = await fixture.Client.GetStringAsync("/auth/login");
 
-        Assert.Contains(">Overridden sign in</a>", html);
-        Assert.DoesNotContain(">Configured sign in</a>", html);
+        Assert.Contains("Overridden sign in", html);
+        Assert.DoesNotContain("Configured sign in", html);
     }
 
     [Fact]
@@ -296,6 +297,7 @@ public sealed class WolfAuthIntegrationTests
             app.UseAuthentication();
             app.UseKrackendWolfAuthLoginGate();
             app.UseAuthorization();
+            app.MapRazorPages();
             app.MapKrackendWolfAuthEndpoints();
             app.MapGet("/secure", () => "ok");
 

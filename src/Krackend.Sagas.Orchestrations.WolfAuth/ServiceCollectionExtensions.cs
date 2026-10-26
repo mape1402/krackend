@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.WebUI.Shell.Authentication;
+using Krackend.Sagas.Orchestrations.WebUI.Shell;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +30,7 @@ public static class ServiceCollectionExtensions
             services.Configure(configure);
         }
 
-        RegisterEnabledIntegration(services, options.Enabled);
+        RegisterEnabledIntegration(services, options);
 
         return services;
     }
@@ -56,18 +57,29 @@ public static class ServiceCollectionExtensions
             services.Configure(configure);
         }
 
-        RegisterEnabledIntegration(services, options.Enabled);
+        RegisterEnabledIntegration(services, options);
 
         return services;
     }
 
-    private static void RegisterEnabledIntegration(IServiceCollection services, bool enabled)
+    private static void RegisterEnabledIntegration(IServiceCollection services, KrackendWolfAuthOptions options)
     {
-        if (!enabled)
+        if (!options.Enabled)
         {
             return;
         }
 
+        services.AddOrchestratorWebUIShell();
+        services.Configure<OrchestratorSignInOptions>(signIn =>
+        {
+            signIn.Enabled = true;
+            signIn.SignInPath = options.LoginPath;
+            signIn.ChallengePath = options.ChallengePath;
+            signIn.ReturnUrlParameter = options.ReturnUrlParameter;
+            signIn.Title = options.ApplicationName;
+            signIn.Description = options.Subtitle;
+            signIn.SignInText = options.LoginButtonText;
+        });
         services.TryAddSingleton<IKrackendWolfAuthRegistration, KrackendWolfAuthRegistration>();
         services.TryAddSingleton<IOrchestratorWebUIAuthenticationRegistration, KrackendWebUIAuthenticationRegistration>();
         services.AddAuthorization(options =>

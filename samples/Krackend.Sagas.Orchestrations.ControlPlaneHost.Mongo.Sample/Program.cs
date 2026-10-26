@@ -112,6 +112,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 app.UseExceptionHandler("/Error");
+app.UseOrchestratorWebUIStatusPages();
 app.UseRouting();
 if (app.Services.GetService<IAuthenticationSchemeProvider>() is not null)
 {

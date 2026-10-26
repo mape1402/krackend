@@ -1,8 +1,11 @@
 @using Microsoft.Extensions.Options
 @using Krackend.Sagas.Orchestrations.WebUI.Shell
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation
+@using Zoorce.Web.UI.Layout.Components
 @inject IOptions<OrchestratorWebUIThemeOptions> ThemeOptions
 @inject IOrchestratorThemeCssRenderer ThemeCssRenderer
 @inject IOrchestratorThemeModeAccessor ThemeModeAccessor
+@inject IOrchestratorTopBarNavigationResolver TopBarNavigation
 @{
     Layout = "_ZoorceLayout";
     var mode = ThemeModeAccessor.GetCssMode(ThemeOptions.Value);
@@ -12,6 +15,10 @@
     var pageError = ViewContext.ViewData.Model?.GetType().GetProperty("ErrorMessage")?.GetValue(ViewContext.ViewData.Model)?.ToString() ?? string.Empty;
     var validationErrors = ViewContext.ModelState.Values.SelectMany(x => x.Errors)
         .Select(x => x.ErrorMessage).Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+    if (ViewData["ZoorceTopBarBack"] is null)
+    {
+        ViewData["ZoorceTopBarBack"] = TopBarNavigation.Resolve(ViewContext) ?? new ZoorceTopBarBackOptions { Visible = false };
+    }
 }
 <script>
     document.documentElement.dataset.zoorceTheme = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(mode));
