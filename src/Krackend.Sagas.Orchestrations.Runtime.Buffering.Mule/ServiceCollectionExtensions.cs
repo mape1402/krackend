@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 using Mule;
 using Mule.Configuration;
 
@@ -41,6 +42,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 configure(mule);
                 mule.AddActionsFromAssemblyContaining<TriggerAction>();
             });
+
+            builder.Services.AddOptions<SagaStatisticsMuleOptions>().BindConfiguration("Runtime:Statistics");
+            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SagaStatisticsScheduler>());
 
             if (configureRuntime is not null)
             {

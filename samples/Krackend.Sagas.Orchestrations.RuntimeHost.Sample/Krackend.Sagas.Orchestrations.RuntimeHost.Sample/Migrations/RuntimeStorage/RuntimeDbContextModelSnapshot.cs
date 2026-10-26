@@ -329,6 +329,12 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime>("StartedOnUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<long>("StatisticsRevision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -356,7 +362,13 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .IsUnique()
                         .HasFilter("[StartIdempotencyKey] IS NOT NULL");
 
+                    b.HasIndex("StatisticsRevision");
+
                     b.HasIndex("DispatchCancellationPending", "LastUpdatedOnUtc");
+
+                    b.HasIndex("StartedOnUtc", "Status");
+
+                    b.HasIndex("Status", "LastUpdatedOnUtc");
 
                     b.ToTable("OrchestrationInstances", "Runtime");
                 });
@@ -1127,6 +1139,127 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasKey("Id");
 
                     b.ToTable("DataProtectionKeys", "Runtime");
+                });
+
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.SagaStatisticsBackfillCheckpoint", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasAnnotation("Mongo:ElementName", "_id");
+
+                    b.Property<DateTime>("CompletedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SagaStatisticsBackfillCheckpoints", "Runtime");
+                });
+
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.SagaStatisticsObservation", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasAnnotation("Mongo:ElementName", "_id");
+
+                    b.Property<byte[]>("ArtifactId")
+                        .IsRequired()
+                        .HasColumnType("binary(16)");
+
+                    b.Property<byte[]>("InstanceId")
+                        .IsRequired()
+                        .HasColumnType("binary(16)");
+
+                    b.Property<bool>("IsBackfill")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("OccurredOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OrchestrationKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("Processed")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bit");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StageKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("StartedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("StatusChanged")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("StatusFirstReached")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstanceId", "Revision")
+                        .IsUnique();
+
+                    b.HasIndex("OrchestrationKey", "OccurredOnUtc");
+
+                    b.HasIndex("Processed", "InstanceId", "Revision");
+
+                    b.ToTable("SagaStatisticsObservations", "Runtime");
+                });
+
+            modelBuilder.Entity("Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.SagaStatisticsProjection", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(26)
+                        .HasColumnType("nvarchar(26)")
+                        .HasAnnotation("Mongo:ElementName", "_id");
+
+                    b.Property<byte[]>("ArtifactId")
+                        .IsRequired()
+                        .HasColumnType("binary(16)");
+
+                    b.Property<DateTime>("LastObservedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OrchestrationKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<long>("ReachedStatuses")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("StartedOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrchestrationKey", "StartedOnUtc");
+
+                    b.HasIndex("Status", "StartedOnUtc");
+
+                    b.ToTable("SagaStatisticsProjections", "Runtime");
                 });
 
             modelBuilder.Entity("Mule.DurableAction", b =>

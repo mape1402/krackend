@@ -12,7 +12,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 /// <summary>
 /// Reads runtime storage and builds diagnostics models for dashboards and trace views.
 /// </summary>
-public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader
+public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader, IRuntimeInstanceStatusCountsReader
 {
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new(JsonSerializerDefaults.Web);
@@ -103,6 +103,15 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
 
         return new RuntimeInstancePageModel(result.Items.Select(x => ToRow(x, versions.GetValueOrDefault(x.RuntimeOrchestrationArtifactId))).ToArray(),
             result.TotalCount, result.PageNumber, result.PageSize);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(
+        RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+    {
+        if (_instanceRepository is not IRuntimeInstanceStatusCountsRepository counts)
+            throw new NotSupportedException("The configured runtime storage does not support scoped instance counts.");
+        return counts.GetStatusCounts(query, cancellationToken);
     }
 
     /// <inheritdoc />

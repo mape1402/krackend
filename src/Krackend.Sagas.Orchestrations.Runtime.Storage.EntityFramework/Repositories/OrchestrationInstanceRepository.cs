@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -15,18 +15,44 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
+        instance.StatisticsRevision = 1;
         DbContext.OrchestrationInstances.Add(instance);
+        AddStatisticsObservation(instance, false);
         await SaveChanges(cancellationToken);
     }
 
     public async Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
+        var existing = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instance.Id);
+        var originalRevision = existing is null
+            ? instance.StatisticsRevision
+            : DbContext.Entry(existing).Property(x => x.StatisticsRevision).OriginalValue;
+        instance.StatisticsRevision = Math.Max(instance.StatisticsRevision, existing?.StatisticsRevision ?? 0) + 1;
         DetachLocalTrackedEntity(DbContext.OrchestrationInstances, instance);
         DbContext.OrchestrationInstances.Update(instance);
         var entry = DbContext.Entry(instance);
+        entry.Property(x => x.StatisticsRevision).OriginalValue = originalRevision;
         entry.Property(x => x.ActiveLeaseId).IsModified = false;
         entry.Property(x => x.ActiveLeaseExpiresOnUtc).IsModified = false;
+        AddStatisticsObservation(instance, originalRevision == 0 && instance.StatisticsRevision == 1);
         await SaveChanges(cancellationToken);
+    }
+
+    private void AddStatisticsObservation(OrchestrationInstance instance, bool isBackfill)
+    {
+        DbContext.SagaStatisticsObservations.Add(new SagaStatisticsObservation
+        {
+            Id = $"{instance.Id}:{instance.StatisticsRevision:D20}",
+            InstanceId = instance.Id,
+            ArtifactId = instance.RuntimeOrchestrationArtifactId,
+            OrchestrationKey = instance.OrchestrationDefinitionKey,
+            Revision = instance.StatisticsRevision,
+            Status = instance.Status,
+            StageKey = instance.CurrentStageKey,
+            StartedOnUtc = instance.StartedOnUtc,
+            OccurredOnUtc = instance.LastUpdatedOnUtc,
+            IsBackfill = isBackfill
+        });
     }
 
     public async Task<OrchestrationInstance> GetById(Id instanceId, CancellationToken cancellationToken = default)
@@ -130,14 +156,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         var page = Math.Max(1, query.PageNumber);
         var size = Math.Clamp(query.PageSize, 1, 100);
         var skip = (int)Math.Min((long)(page - 1) * size, int.MaxValue);
-        var source = DbContext.OrchestrationInstances.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrWhiteSpace(query.SearchText))
-        {
-            var term = query.SearchText.Trim();
-            source = source.Where(x => x.OrchestrationDefinitionKey.Contains(term) || x.CorrelationId.Contains(term)
-                || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
-        }
-        if (query.Status is { } status) source = source.Where(x => x.Status == status);
+        var source = ApplyCatalogFilters(query);
         var count = await source.LongCountAsync(cancellationToken);
         var ordered = (query.Sort, query.Descending) switch
         {
@@ -156,6 +175,42 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         };
         var items = await ordered.ThenBy(x => x.Id).Skip(skip).Take(size).ToArrayAsync(cancellationToken);
         return new RuntimeInstanceCatalogPage(items, count, page, size);
+    }
+
+    public async Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(
+        RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        return await ApplyCatalogFilters(query).GroupBy(x => x.Status)
+            .Select(group => new { Status = group.Key, Count = group.LongCount() })
+            .ToDictionaryAsync(item => item.Status, item => item.Count, cancellationToken);
+    }
+
+    private IQueryable<OrchestrationInstance> ApplyCatalogFilters(RuntimeInstanceCatalogQuery query)
+    {
+        var source = DbContext.OrchestrationInstances.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            var term = query.SearchText.Trim();
+            if (Ulid.TryParse(term, out var parsedId))
+            {
+                var instanceId = new Id(parsedId);
+                source = source.Where(x => x.Id == instanceId || x.OrchestrationDefinitionKey.Contains(term)
+                    || x.CorrelationId.Contains(term) || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
+            }
+            else
+                source = source.Where(x => x.OrchestrationDefinitionKey.Contains(term) || x.CorrelationId.Contains(term)
+                    || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
+        }
+        if (query.Status is { } status) source = source.Where(x => x.Status == status);
+        if (query.StartedFromUtc is { } startedFrom) source = source.Where(x => x.StartedOnUtc >= startedFrom);
+        if (query.StartedBeforeUtc is { } startedBefore) source = source.Where(x => x.StartedOnUtc < startedBefore);
+        if (query.ActiveOnly)
+            source = source.Where(x => x.Status == OrchestrationInstanceStatus.Created
+                || x.Status == OrchestrationInstanceStatus.Running
+                || x.Status == OrchestrationInstanceStatus.Waiting
+                || x.Status == OrchestrationInstanceStatus.Compensating);
+        return source;
     }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetDispatchCancellationPending(int take, int skip, CancellationToken cancellationToken = default)

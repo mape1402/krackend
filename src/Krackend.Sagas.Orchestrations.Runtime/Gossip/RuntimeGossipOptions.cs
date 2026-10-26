@@ -15,6 +15,9 @@ public sealed class RuntimeGossipOptions
     /// </summary>
     public string ChannelName { get; set; } = "krackend.runtime.artifacts.ready";
 
+    /// <summary>Gets or sets the optional runtime-monitor notification channel.</summary>
+    public string ReactiveChannelName { get; set; } = "krackend.runtime.reactive";
+
     /// <summary>
     /// Gets or sets the Redis connection string used by the Redis gossip adapter.
     /// </summary>

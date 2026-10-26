@@ -40,6 +40,12 @@ public sealed class RuntimeDbContext : DbContext
 
     public DbSet<OrchestrationInstance> OrchestrationInstances => Set<OrchestrationInstance>();
 
+    internal DbSet<SagaStatisticsObservation> SagaStatisticsObservations => Set<SagaStatisticsObservation>();
+
+    internal DbSet<SagaStatisticsProjection> SagaStatisticsProjections => Set<SagaStatisticsProjection>();
+
+    internal DbSet<SagaStatisticsBackfillCheckpoint> SagaStatisticsBackfillCheckpoints => Set<SagaStatisticsBackfillCheckpoint>();
+
     public DbSet<StageExecution> StageExecutions => Set<StageExecution>();
 
     public DbSet<TaskExecution> TaskExecutions => Set<TaskExecution>();
@@ -70,6 +76,9 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureRuntimeTriggerClaims(modelBuilder);
         ConfigureRuntimeDesignNodes(modelBuilder);
         ConfigureInstances(modelBuilder);
+        ConfigureStatisticsObservations(modelBuilder);
+        ConfigureStatisticsProjections(modelBuilder);
+        ConfigureStatisticsBackfill(modelBuilder);
         ConfigureStages(modelBuilder);
         ConfigureTasks(modelBuilder);
         ConfigureAttempts(modelBuilder);
@@ -209,6 +218,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.SagaId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.ExecutionKey).HasMaxLength(512).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.StatisticsRevision).HasDefaultValue(0L).IsConcurrencyToken();
         builder.Property(x => x.CurrentStageKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.CurrentTaskKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.CurrentParallelGroupKey).HasMaxLength(256).IsRequired(false);
@@ -218,10 +228,52 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.SnapshotPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => x.LastUpdatedOnUtc);
+        builder.HasIndex(x => x.StatisticsRevision);
+        builder.HasIndex(x => new { x.StartedOnUtc, x.Status });
+        builder.HasIndex(x => new { x.Status, x.LastUpdatedOnUtc });
         builder.HasIndex(x => new { x.DispatchCancellationPending, x.LastUpdatedOnUtc });
         builder.HasIndex(x => x.StartIdempotencyKey).IsUnique();
         builder.HasIndex(x => x.CorrelationId);
         builder.HasIndex(x => x.SagaId);
+    }
+
+    private static void ConfigureStatisticsObservations(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<SagaStatisticsObservation>();
+        builder.ToTable("SagaStatisticsObservations");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasMaxLength(64).HasAnnotation("Mongo:ElementName", "_id");
+        builder.Property(x => x.InstanceId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.ArtifactId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.OrchestrationKey).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.StageKey).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.Processed).IsConcurrencyToken();
+        builder.HasIndex(x => new { x.InstanceId, x.Revision }).IsUnique();
+        builder.HasIndex(x => new { x.Processed, x.InstanceId, x.Revision });
+        builder.HasIndex(x => new { x.OrchestrationKey, x.OccurredOnUtc });
+    }
+
+    private static void ConfigureStatisticsProjections(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<SagaStatisticsProjection>();
+        builder.ToTable("SagaStatisticsProjections");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasMaxLength(26).HasAnnotation("Mongo:ElementName", "_id");
+        builder.Property(x => x.ArtifactId).HasConversion(new IdToBytesConverter());
+        builder.Property(x => x.OrchestrationKey).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Revision).IsConcurrencyToken();
+        builder.HasIndex(x => new { x.OrchestrationKey, x.StartedOnUtc });
+        builder.HasIndex(x => new { x.Status, x.StartedOnUtc });
+    }
+
+    private static void ConfigureStatisticsBackfill(ModelBuilder modelBuilder)
+    {
+        var builder = modelBuilder.Entity<SagaStatisticsBackfillCheckpoint>();
+        builder.ToTable("SagaStatisticsBackfillCheckpoints");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasMaxLength(64).HasAnnotation("Mongo:ElementName", "_id");
     }
 
     private static void ConfigureStages(ModelBuilder modelBuilder)

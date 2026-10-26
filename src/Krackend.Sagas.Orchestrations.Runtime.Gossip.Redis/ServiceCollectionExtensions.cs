@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
 
@@ -36,6 +37,11 @@ public static class ServiceCollectionExtensions
         });
 
         builder.Services.TryAddSingleton<IRedisRuntimeGossipConnectionFactory, RedisRuntimeGossipConnectionFactory>();
+        builder.Services.TryAddSingleton<IRedisRuntimeReactiveConnectionFactory, RedisRuntimeReactiveConnectionFactory>();
+        builder.Services.TryAddSingleton<RedisRuntimeReactiveFanout>();
+        builder.Services.TryAddSingleton<IRuntimeReactiveFanout>(provider => provider.GetRequiredService<RedisRuntimeReactiveFanout>());
+        builder.Services.TryAddSingleton<IRuntimeStatisticsFanout>(provider => provider.GetRequiredService<RedisRuntimeReactiveFanout>());
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<RedisRuntimeReactiveFanout>());
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IRuntimeDependencyProbe, RedisRuntimeGossipDependencyProbe>());
         builder.Services.Replace(

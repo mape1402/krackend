@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository
+    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -101,15 +101,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             var page = Math.Max(1, query.PageNumber);
             var size = Math.Clamp(query.PageSize, 1, 100);
             var skip = (int)Math.Min((long)(page - 1) * size, int.MaxValue);
-            IEnumerable<OrchestrationInstance> source = _store.Instances.Values;
-            if (!string.IsNullOrWhiteSpace(query.SearchText))
-            {
-                var term = query.SearchText.Trim();
-                source = source.Where(x => x.OrchestrationDefinitionKey.Contains(term) || x.CorrelationId.Contains(term)
-                    || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
-            }
-            if (query.Status is { } status) source = source.Where(x => x.Status == status);
-            var filtered = source.ToArray();
+            var filtered = ApplyCatalogFilters(query).ToArray();
             var ordered = (query.Sort, query.Descending) switch
             {
                 (RuntimeInstanceCatalogSort.Started, false) => filtered.OrderBy(x => x.StartedOnUtc),
@@ -126,6 +118,43 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 _ => filtered.OrderByDescending(x => x.LastUpdatedOnUtc)
             };
             return Task.FromResult(new RuntimeInstanceCatalogPage(ordered.ThenBy(x => x.Id).Skip(skip).Take(size).ToArray(), filtered.LongLength, page, size));
+        }
+
+        public Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(
+            RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(query);
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyDictionary<OrchestrationInstanceStatus, long> counts = ApplyCatalogFilters(query)
+                .GroupBy(x => x.Status).ToDictionary(group => group.Key, group => group.LongCount());
+            return Task.FromResult(counts);
+        }
+
+        private IEnumerable<OrchestrationInstance> ApplyCatalogFilters(RuntimeInstanceCatalogQuery query)
+        {
+            IEnumerable<OrchestrationInstance> source = _store.Instances.Values;
+            if (!string.IsNullOrWhiteSpace(query.SearchText))
+            {
+                var term = query.SearchText.Trim();
+                if (Ulid.TryParse(term, out var parsedId))
+                {
+                    var instanceId = new Id(parsedId);
+                    source = source.Where(x => x.Id == instanceId || x.OrchestrationDefinitionKey.Contains(term)
+                        || x.CorrelationId.Contains(term) || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
+                }
+                else
+                    source = source.Where(x => x.OrchestrationDefinitionKey.Contains(term) || x.CorrelationId.Contains(term)
+                        || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
+            }
+            if (query.Status is { } status) source = source.Where(x => x.Status == status);
+            if (query.StartedFromUtc is { } startedFrom) source = source.Where(x => x.StartedOnUtc >= startedFrom);
+            if (query.StartedBeforeUtc is { } startedBefore) source = source.Where(x => x.StartedOnUtc < startedBefore);
+            if (query.ActiveOnly)
+                source = source.Where(x => x.Status is OrchestrationInstanceStatus.Created
+                    or OrchestrationInstanceStatus.Running
+                    or OrchestrationInstanceStatus.Waiting
+                    or OrchestrationInstanceStatus.Compensating);
+            return source;
         }
 
         public Task<IReadOnlyCollection<OrchestrationInstance>> GetDispatchCancellationPending(int take, int skip, CancellationToken cancellationToken = default)

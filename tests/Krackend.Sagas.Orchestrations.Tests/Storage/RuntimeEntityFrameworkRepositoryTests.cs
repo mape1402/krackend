@@ -12,6 +12,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Statistics;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -22,6 +23,201 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
+    [Fact]
+    public async Task StatisticsReportUsesProjectedStatesAndSeparatesObservedTransitions()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, now);
+        await repository.Create(instance);
+        instance.Status = OrchestrationInstanceStatus.DeadLettered;
+        await repository.Update(instance);
+        instance.Status = OrchestrationInstanceStatus.Completed;
+        await repository.Update(instance);
+        await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(10);
+        var report = await scope.ServiceProvider.GetRequiredService<ISagaStatisticsReader>()
+            .GetReportAsync(now.AddDays(-1), now.AddDays(1), instance.OrchestrationDefinitionKey);
+        Assert.Equal(1, report.Total);
+        Assert.Equal(1, report.CurrentStatuses[OrchestrationInstanceStatus.Completed]);
+        Assert.False(report.CurrentStatuses.ContainsKey(OrchestrationInstanceStatus.DeadLettered));
+        Assert.Equal(1, report.ReachedStatuses[OrchestrationInstanceStatus.DeadLettered]);
+        Assert.Equal(1, report.ReachedStatuses[OrchestrationInstanceStatus.Completed]);
+        Assert.Contains(report.Activity, item => item.Status == OrchestrationInstanceStatus.DeadLettered && item.Count == 1);
+        Assert.Equal(0, report.PendingObservations);
+    }
+
+    [Fact]
+    public async Task StatisticsBackfillCapturesLegacyInstancesAndPersistsCompletion()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        await repository.Create(Instance(Id.New(), OrchestrationInstanceStatus.Completed, DateTime.UtcNow));
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SagaStatisticsObservations";
+        await command.ExecuteNonQueryAsync();
+        command.CommandText = "UPDATE OrchestrationInstances SET StatisticsRevision = 0";
+        await command.ExecuteNonQueryAsync();
+        scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().ChangeTracker.Clear();
+
+        var backfill = scope.ServiceProvider.GetRequiredService<ISagaStatisticsBackfill>();
+        Assert.False(await backfill.ProcessAsync(10));
+        Assert.True(await backfill.ProcessAsync(10));
+        Assert.True(await backfill.ProcessAsync(10));
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations WHERE Revision = 1 AND IsBackfill = 1";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsBackfillCheckpoints";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+        Assert.Equal(1, (await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(10)).Applied);
+    }
+
+    [Fact]
+    public async Task StatisticsBatchProjectsCurrentStatusAndCountsEachReachedStatusOnce()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        instance.Status = OrchestrationInstanceStatus.DeadLettered;
+        await repository.Update(instance);
+        instance.Status = OrchestrationInstanceStatus.Running;
+        await repository.Update(instance);
+        instance.Status = OrchestrationInstanceStatus.Completed;
+        await repository.Update(instance);
+        var processor = scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>();
+        Assert.Equal(new SagaStatisticsBatchResult(4, 4, 0), await processor.ProcessAsync(100));
+        Assert.Equal(new SagaStatisticsBatchResult(0, 0, 0), await processor.ProcessAsync(100));
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Status, Revision FROM SagaStatisticsProjections";
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("Completed", reader.GetString(0));
+            Assert.Equal(4, reader.GetInt64(1));
+        }
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations WHERE Status = 'Running' AND StatusFirstReached = 1";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations WHERE Processed = 0";
+        Assert.Equal(0L, await command.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task StatisticsBatchLeavesAnOutOfOrderObservationPending()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        instance.Status = OrchestrationInstanceStatus.Completed;
+        await repository.Update(instance);
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SagaStatisticsObservations WHERE Revision = 1";
+        await command.ExecuteNonQueryAsync();
+        var result = await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(100);
+        Assert.Equal(new SagaStatisticsBatchResult(1, 0, 1), result);
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations WHERE Processed = 0";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task StatisticsObservationsFollowCommittedInstanceRevisions()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        instance.Status = OrchestrationInstanceStatus.DeadLettered;
+        await repository.Update(instance);
+        instance.Status = OrchestrationInstanceStatus.Completed;
+        await repository.Update(instance);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Revision, Status FROM SagaStatisticsObservations ORDER BY Revision";
+        await using var reader = await command.ExecuteReaderAsync();
+        var observations = new List<(long Revision, string Status)>();
+        while (await reader.ReadAsync()) observations.Add((reader.GetInt64(0), reader.GetString(1)));
+        Assert.Equal([(1L, "Running"), (2L, "DeadLettered"), (3L, "Completed")], observations);
+        Assert.Equal(3, (await repository.GetById(instance.Id)).StatisticsRevision);
+    }
+
+    [Fact]
+    public async Task StatisticsObservationRollsBackWithInstanceUpdate()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await repository.Create(instance);
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IRuntimeStorageUnitOfWork>();
+        await using (await unitOfWork.BeginTransactionAsync())
+        {
+            using (unitOfWork.DeferAutoSave())
+            {
+                instance.Status = OrchestrationInstanceStatus.Completed;
+                await repository.Update(instance);
+                await unitOfWork.SaveChanges();
+            }
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+        using var readScope = provider.CreateScope();
+        var persisted = await readScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>().GetById(instance.Id);
+        Assert.Equal(OrchestrationInstanceStatus.Running, persisted.Status);
+        Assert.Equal(1, persisted.StatisticsRevision);
+    }
+
+    [Fact]
+    public async Task StaleInstanceUpdateCannotOverwriteACommittedStatisticsRevision()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var first = provider.CreateScope();
+        using var second = provider.CreateScope();
+        await first.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var firstRepository = first.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var secondRepository = second.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await firstRepository.Create(instance);
+        var stale = await secondRepository.GetById(instance.Id);
+        instance.Status = OrchestrationInstanceStatus.Waiting;
+        await firstRepository.Update(instance);
+        stale.Status = OrchestrationInstanceStatus.Completed;
+        await Assert.ThrowsAnyAsync<DbUpdateException>(() => secondRepository.Update(stale));
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations";
+        Assert.Equal(2L, await command.ExecuteScalarAsync());
+    }
+
     [Fact]
     public async Task RuntimeStorageUnitOfWorkIgnoresRepeatedDeferralDisposal()
     {
@@ -944,6 +1140,102 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task DeferredSaveWithoutTransactionPublishesAfterSave()
+    {
+        var publisher = new RecordingRuntimeReactiveEventPublisher();
+        await using var provider = CreateProvider(publisher);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+        var transitions = services.GetRequiredService<IExecutionTransitionRepository>();
+        var unitOfWork = services.GetRequiredService<IRuntimeStorageUnitOfWork>();
+        using (unitOfWork.DeferAutoSave())
+        {
+            await transitions.Create(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+                TransitionType = "InstanceCompleted", OccurredOnUtc = DateTime.UtcNow, ProducedBy = "test" });
+            Assert.Empty(publisher.Events);
+            await unitOfWork.SaveChanges();
+            Assert.Single(publisher.Events);
+        }
+    }
+
+    [Fact]
+    public async Task NotificationFailureDoesNotFailCommittedTransition()
+    {
+        var publisher = new RecordingRuntimeReactiveEventPublisher { ThrowOnPublish = true };
+        await using var provider = CreateProvider(publisher);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+        var transitions = services.GetRequiredService<IExecutionTransitionRepository>();
+        await transitions.Create(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+            TransitionType = "InstanceCompleted", OccurredOnUtc = DateTime.UtcNow, ProducedBy = "test" });
+
+        Assert.Single(await transitions.GetByInstanceId(instance.Id));
+    }
+
+    [Fact]
+    public async Task ReactiveEventsArePublishedOnlyAfterTransactionCommit()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var publisher = new RecordingRuntimeReactiveEventPublisher();
+        await using var provider = CreateProvider(publisher, options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        await services.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+        var transitions = services.GetRequiredService<IExecutionTransitionRepository>();
+        var unitOfWork = services.GetRequiredService<IRuntimeStorageUnitOfWork>();
+
+        await using (var transaction = await unitOfWork.BeginTransactionAsync())
+        {
+            using (unitOfWork.DeferAutoSave())
+            {
+                await transitions.Create(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+                    TransitionType = "InstanceCompleted", OccurredOnUtc = DateTime.UtcNow, ProducedBy = "test" });
+                Assert.Empty(publisher.Events);
+                await unitOfWork.SaveChanges();
+                Assert.Empty(publisher.Events);
+            }
+            await transaction.CommitAsync();
+            Assert.Single(publisher.Events);
+        }
+    }
+
+    [Fact]
+    public async Task RolledBackTransitionDoesNotPublishReactiveEvent()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var publisher = new RecordingRuntimeReactiveEventPublisher();
+        await using var provider = CreateProvider(publisher, options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        await services.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+        var transitions = services.GetRequiredService<IExecutionTransitionRepository>();
+        var unitOfWork = services.GetRequiredService<IRuntimeStorageUnitOfWork>();
+
+        await using (await unitOfWork.BeginTransactionAsync())
+        {
+            using (unitOfWork.DeferAutoSave())
+            {
+                await transitions.Create(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+                    TransitionType = "InstanceCompleted", OccurredOnUtc = DateTime.UtcNow, ProducedBy = "test" });
+                await unitOfWork.SaveChanges();
+            }
+        }
+
+        Assert.Empty(publisher.Events);
+        Assert.Empty(await transitions.GetByInstanceId(instance.Id));
+    }
+
+    [Fact]
     public async Task ExecutionTransitionRepositoryPublishesReactiveEventsForRuntimeTimeline()
     {
         var publisher = new RecordingRuntimeReactiveEventPublisher();
@@ -1276,9 +1568,11 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     private sealed class RecordingRuntimeReactiveEventPublisher : IRuntimeReactiveEventPublisher
     {
         public List<RuntimeReactiveEvent> Events { get; } = [];
+        public bool ThrowOnPublish { get; init; }
 
         public Task Publish(RuntimeReactiveEvent eventData, CancellationToken cancellationToken = default)
         {
+            if (ThrowOnPublish) throw new InvalidOperationException("Notification unavailable.");
             Events.Add(eventData);
             return Task.CompletedTask;
         }

@@ -10,6 +10,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Reposito
 internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IExecutionTransitionRepository
 {
     private readonly IRuntimeReactiveEventPublisher _reactiveEventPublisher;
+    private readonly IRuntimeStorageUnitOfWork _unitOfWork;
 
     public ExecutionTransitionRepository(
         RuntimeDbContext dbContext,
@@ -18,6 +19,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         : base(dbContext, unitOfWork)
     {
         _reactiveEventPublisher = reactiveEventPublisher ?? throw new ArgumentNullException(nameof(reactiveEventPublisher));
+        _unitOfWork = unitOfWork;
     }
 
     public async Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default)
@@ -27,7 +29,10 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         var eventData = await BuildReactiveEvent(transition, cancellationToken);
         if (eventData is not null)
         {
-            await _reactiveEventPublisher.Publish(eventData, cancellationToken);
+            if (_unitOfWork is RuntimeStorageUnitOfWork unitOfWork)
+                await unitOfWork.PublishWhenCommitted(eventData);
+            else
+                await _reactiveEventPublisher.Publish(eventData, cancellationToken);
         }
     }
 

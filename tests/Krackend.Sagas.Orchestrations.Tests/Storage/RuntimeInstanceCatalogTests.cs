@@ -85,6 +85,55 @@ public sealed class RuntimeInstanceCatalogTests
         Assert.Equal("sale.three", Assert.Single(page.Items).OrchestrationDefinitionKey);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FiltersByTimeAndActiveStatusBeforePaging(bool relational)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        if (relational) await connection.OpenAsync();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        if (relational) services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlite(connection));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        if (relational) await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(repository);
+        var start = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+        await repository.Create(Instance("old-waiting", start.AddDays(-1), OrchestrationInstanceStatus.Waiting));
+        var running = Instance("start-running", start, OrchestrationInstanceStatus.Running);
+        await repository.Create(running);
+        await repository.Create(Instance("middle-completed", start.AddHours(1), OrchestrationInstanceStatus.Completed));
+        await repository.Create(Instance("end-created", start.AddDays(1), OrchestrationInstanceStatus.Created));
+
+        var recent = await catalog.GetPage(new RuntimeInstanceCatalogQuery(StartedFromUtc: start, StartedBeforeUtc: start.AddDays(1)));
+        Assert.Equal(2, recent.TotalCount);
+        Assert.Equal(new[] { "middle-completed", "start-running" }, recent.Items.Select(x => x.OrchestrationDefinitionKey));
+
+        var active = await catalog.GetPage(new RuntimeInstanceCatalogQuery(ActiveOnly: true));
+        Assert.Equal(3, active.TotalCount);
+        Assert.Contains(active.Items, x => x.OrchestrationDefinitionKey == "old-waiting");
+        Assert.DoesNotContain(active.Items, x => x.Status == OrchestrationInstanceStatus.Completed);
+
+        var boundedActive = await catalog.GetPage(new RuntimeInstanceCatalogQuery(PageSize: 1, StartedFromUtc: start,
+            StartedBeforeUtc: start.AddDays(1), ActiveOnly: true));
+        Assert.Equal(1, boundedActive.TotalCount);
+        Assert.Equal("start-running", Assert.Single(boundedActive.Items).OrchestrationDefinitionKey);
+
+        var countsRepository = Assert.IsAssignableFrom<IRuntimeInstanceStatusCountsRepository>(repository);
+        var counts = await countsRepository.GetStatusCounts(new RuntimeInstanceCatalogQuery(PageSize: 1,
+            StartedFromUtc: start, StartedBeforeUtc: start.AddDays(1)));
+        Assert.Equal(1, counts[OrchestrationInstanceStatus.Running]);
+        Assert.Equal(1, counts[OrchestrationInstanceStatus.Completed]);
+        Assert.Equal(2, counts.Values.Sum());
+        Assert.False(counts.ContainsKey(OrchestrationInstanceStatus.Waiting));
+
+        var byId = await catalog.GetPage(new RuntimeInstanceCatalogQuery(SearchText: running.Id.ToString()));
+        Assert.Equal(running.Id, Assert.Single(byId.Items).Id);
+    }
+
     private static OrchestrationInstance Instance(string key, DateTime timestamp, OrchestrationInstanceStatus status)
         => new()
         {

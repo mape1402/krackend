@@ -11,6 +11,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
+using Krackend.Sagas.Orchestrations.Runtime.Statistics;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -74,6 +75,10 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactDeploymentHistoryRepository, RuntimeArtifactDeploymentHistoryRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeTriggerClaimRepository, RuntimeTriggerClaimRepository>());
         services.Replace(ServiceDescriptor.Scoped<IOrchestrationInstanceRepository, OrchestrationInstanceRepository>());
+        services.TryAddSingleton<ISagaStatisticsProjector, SagaStatisticsProjector>();
+        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsBatchProcessor, SagaStatisticsBatchProcessor>());
+        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsBackfill, SagaStatisticsBackfill>());
+        services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader, SagaStatisticsReader>());
         services.Replace(ServiceDescriptor.Scoped<IStageExecutionRepository, StageExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionRepository, TaskExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionAttemptRepository, TaskExecutionAttemptRepository>());
