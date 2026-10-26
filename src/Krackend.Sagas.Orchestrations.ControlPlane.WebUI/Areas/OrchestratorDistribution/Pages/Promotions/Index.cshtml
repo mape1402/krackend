@@ -70,9 +70,12 @@ else
             <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
         </div>
     </section>
+    <div class="od-create-floating js-open-release-modal">
+        @await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "createReleaseButton", Label = "Create release", Icon = "+" })
+    </div>
 }
 
-@if (Model.SelectedArtifact is not null)
+@if (isOrchestrationSelected)
 {
     var footer = new HtmlContentBuilder();
     footer.AppendHtml("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"button\" class=\"z-button z-button-secondary\" id=\"releaseWizardBack\" hidden>Back</button><button type=\"button\" class=\"z-button z-button-primary\" id=\"releaseWizardNext\">Continue</button>");
@@ -105,6 +108,15 @@ else
 <script>
 (() => {
     const artifactSelect = document.getElementById('releaseArtifactSelect');
+    const artifactSearch = document.getElementById('releaseArtifactSearch');
+    const artifactItems = document.getElementById('releaseArtifactItems');
+    const artifactStatus = document.getElementById('releaseArtifactStatus');
+    const artifactMore = document.getElementById('releaseArtifactsMore');
+    const artifactScroll = document.getElementById('releaseArtifactScroll');
+    const artifactLoading = document.getElementById('releaseArtifactLoading');
+    const selectedArtifactName = document.getElementById('releaseSelectedArtifactName');
+    const selectedArtifactVersion = document.getElementById('releaseSelectedArtifactVersion');
+    const releaseArtifactError = document.getElementById('releaseArtifactError');
     const strategySelect = document.getElementById('releaseStrategySelect');
     const strategyHint = document.getElementById('releaseStrategyHint');
     const allowedNodesModalElement = document.getElementById('allowedNodesModal');
@@ -124,6 +136,7 @@ else
     const allowedNodesModal = allowedNodesModalElement;
     const releaseDetailsModal = releaseDetailsModalElement;
     const selectedOrchestrationId = '@Model.OrchestrationId';
+    const artifactOptionsUrl = '@Url.Page(null, "ArtifactOptions", new { orchestrationId = Model.OrchestrationId })';
 
     const updateStrategyAvailability = () => {
         if (!artifactSelect || !strategySelect || !strategyHint) {
@@ -254,7 +267,73 @@ else
         releasePicker.sync();
     }
 
-    const wizardSteps = ['targets', 'strategy', 'review'];
+    const artifactPicker = { page: 0, hasMore: true, loading: false, generation: 0, selected: null };
+    const artifactTypeLabel = type => ({
+        'orchestration-version.new': 'New version',
+        'orchestration-version-snapshot': 'New version',
+        'orchestration-version.deprecated': 'Deprecate',
+        'orchestration-version.archived': 'Archive'
+    })[type] || type || 'Artifact';
+    const selectArtifact = artifact => {
+        artifactPicker.selected = artifact;
+        artifactSelect.value = artifact.id;
+        artifactSelect.dataset.artifactType = artifact.artifactType || '';
+        selectedArtifactName.textContent = artifactTypeLabel(artifact.artifactType);
+        selectedArtifactVersion.textContent = [artifact.versionNumber, artifact.versionLabel].filter(Boolean).join(' · ') || 'No version label';
+        releaseArtifactError.hidden = true;
+        updateStrategyAvailability();
+        artifactItems?.querySelectorAll('[data-artifact-id]').forEach(item => item.classList.toggle('is-selected', item.dataset.artifactId === artifact.id));
+    };
+    const loadArtifacts = async () => {
+        if (!artifactItems || artifactPicker.loading || !artifactPicker.hasMore || !selectedOrchestrationId) return;
+        const generation = artifactPicker.generation;
+        artifactPicker.loading = true;
+        artifactLoading.hidden = false;
+        artifactMore.hidden = true;
+        try {
+            const url = new URL(artifactOptionsUrl, location.href);
+            url.searchParams.set('page', String(artifactPicker.page + 1));
+            url.searchParams.set('search', artifactSearch.value || '');
+            const response = await fetch(url);
+            if (!response.ok) throw new Error();
+            const result = await response.json();
+            if (generation !== artifactPicker.generation) return;
+            artifactPicker.page++;
+            artifactPicker.hasMore = Boolean(result.hasMore);
+            for (const artifact of result.items || []) {
+                const option = document.createElement('button');
+                option.type = 'button'; option.className = 'od-release-artifact-option'; option.dataset.artifactId = artifact.id;
+                option.innerHTML = `<span>${artifactTypeLabel(artifact.artifactType)}</span><strong>${[artifact.versionNumber, artifact.versionLabel].filter(Boolean).join(' · ') || 'No version label'}</strong>`;
+                option.addEventListener('click', () => selectArtifact(artifact));
+                artifactItems.append(option);
+            }
+            artifactStatus.textContent = artifactPicker.page === 1 && !(result.items || []).length ? 'No published artifacts match this search.' : '';
+            artifactMore.hidden = !artifactPicker.hasMore;
+        } catch {
+            if (generation === artifactPicker.generation) {
+                artifactStatus.textContent = 'Artifacts could not be loaded. Try again.';
+                artifactMore.hidden = false;
+            }
+        } finally {
+            if (generation === artifactPicker.generation) {
+                artifactPicker.loading = false;
+                artifactLoading.hidden = true;
+            }
+        }
+    };
+    const resetArtifacts = () => {
+        artifactPicker.generation++; artifactPicker.page = 0; artifactPicker.hasMore = true; artifactPicker.loading = false;
+        artifactItems?.replaceChildren();
+        return loadArtifacts();
+    };
+    let artifactSearchTimer;
+    artifactSearch?.addEventListener('input', () => { clearTimeout(artifactSearchTimer); artifactSearchTimer = setTimeout(resetArtifacts, 250); });
+    artifactMore?.addEventListener('click', loadArtifacts);
+    artifactScroll?.addEventListener('scroll', () => {
+        if (artifactScroll.scrollTop + artifactScroll.clientHeight >= artifactScroll.scrollHeight - 48) loadArtifacts();
+    });
+
+    const wizardSteps = ['artifact', 'targets', 'strategy', 'review'];
     let wizardStep = 0;
     const wizardBack = document.getElementById('releaseWizardBack');
     const wizardNext = document.getElementById('releaseWizardNext');
@@ -267,15 +346,18 @@ else
         wizardBack.hidden = wizardStep === 0;
         wizardNext.hidden = wizardStep === wizardSteps.length - 1;
         wizardSubmit.hidden = wizardStep !== wizardSteps.length - 1;
-        if (wizardStep === 2) {
+        if (wizardStep === 3) {
+            document.getElementById('releaseReviewArtifact').textContent = `${selectedArtifactName.textContent} · ${selectedArtifactVersion.textContent}`;
             document.getElementById('releaseReviewStrategy').textContent = strategySelect.value;
             document.getElementById('releaseReviewNodes').textContent = Array.from(releasePicker.selected, id => releasePicker.names.get(id) || id).join(', ');
         }
     };
     wizardNext?.addEventListener('click', () => {
-        const invalid = wizardStep === 0 && !releasePicker?.selected.size;
-        document.getElementById('releaseNodeError').hidden = !invalid;
-        if (invalid) return;
+        const invalidArtifact = wizardStep === 0 && !artifactSelect?.value;
+        const invalidNodes = wizardStep === 1 && !releasePicker?.selected.size;
+        releaseArtifactError.hidden = !invalidArtifact;
+        document.getElementById('releaseNodeError').hidden = !invalidNodes;
+        if (invalidArtifact || invalidNodes) return;
         wizardStep = Math.min(wizardStep + 1, wizardSteps.length - 1);
         showWizardStep();
     });
@@ -408,12 +490,18 @@ else
         });
     }
     updateStrategyAvailability();
+    const openReleaseModal = opener => {
+        document.getElementById('createReleaseModal')?.open?.(opener);
+        releasePicker?.reset();
+        resetArtifacts();
+        showWizardStep();
+    };
+    document.querySelector('.js-open-release-modal')?.addEventListener('click', event => openReleaseModal(event.currentTarget));
     @if (Model.SelectedArtifact is not null)
     {
         <text>
-        document.getElementById('createReleaseModal')?.open?.();
-        releasePicker?.reset();
-        showWizardStep();
+        selectArtifact(@Html.Raw(System.Text.Json.JsonSerializer.Serialize(new { Model.SelectedArtifact.Id, Model.SelectedArtifact.ArtifactType, Model.SelectedArtifact.VersionNumber, Model.SelectedArtifact.VersionLabel })));
+        openReleaseModal();
         </text>
     }
 })();
@@ -424,6 +512,12 @@ else
 .od-release-context { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; padding: 0.6rem 0; color: var(--od-muted); font-size: 0.85rem; }
 .od-release-context strong { color: var(--od-text); }
 .od-release-wizard { min-height: 330px; }
+.od-release-artifact-scroll { max-height: 18rem; overflow-y: auto; }
+.od-release-artifact-option { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.8rem; border: 1px solid var(--z-border, var(--od-border)); border-radius: 0.5rem; background: var(--z-surface, var(--od-surface)); color: var(--od-text); text-align: left; }
+.od-release-artifact-option + .od-release-artifact-option { margin-top: 0.45rem; }
+.od-release-artifact-option:hover, .od-release-artifact-option:focus-visible, .od-release-artifact-option.is-selected { border-color: var(--z-primary, var(--od-primary)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 8%, var(--z-surface, var(--od-surface))); }
+.od-release-artifact-option span, .od-release-artifact-option strong { font-size: 0.8rem; }
+.od-release-artifact-option span { color: var(--od-muted); }
 .od-orch-card {
     min-height: 0 !important;
     padding: 0.75rem 0.9rem;

@@ -8,7 +8,7 @@
     var wizard = new ZoorceWizardOptions {
         Id = "createReleaseWizard", AriaLabel = "Create release", Layout = ZoorceWizardLayout.Sidebar,
         ExecutionMode = ZoorceWizardExecutionMode.Manual, PanelHeaderMode = ZoorceWizardPanelHeaderMode.Hidden,
-        Steps = [new("targets", "Runtime nodes", State: ZoorceStepperState.Active), new("strategy", "Strategy"), new("review", "Review")]
+        Steps = [new("artifact", "Artifact", State: ZoorceStepperState.Active), new("targets", "Runtime nodes"), new("strategy", "Strategy"), new("review", "Review")]
     };
     var artifact = Model.SelectedArtifact;
     var typeLabel = artifact?.ArtifactType switch {
@@ -25,10 +25,23 @@
     <div asp-validation-summary="All" class="text-danger" role="alert"></div>
     <div class="od-release-context">
         <strong>@Model.SelectedOrchestration?.Name</strong>
-        <span>@artifact?.VersionNumber</span>
-        <span class="z-badge">@typeLabel</span>
+        <span id="releaseSelectedArtifactVersion">@artifact?.VersionNumber</span>
+        <span class="z-badge" id="releaseSelectedArtifactName">@typeLabel</span>
     </div>
     <zoorce-wizard options="wizard" css-class="od-release-wizard">
+        <zoorce-wizard-panel step-id="artifact">
+            <h2 class="od-section-title">Select an artifact</h2>
+            <p class="od-item-meta">Choose the deployed artifact that this release will deliver.</p>
+            <label class="z-form-label" for="releaseArtifactSearch">Search artifacts</label>
+            <input type="search" class="z-form-input mb-2" id="releaseArtifactSearch" placeholder="Search version or artifact type" />
+            <div class="od-release-artifact-scroll" id="releaseArtifactScroll">
+                <div id="releaseArtifactLoading" hidden>@await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Count = 3, AriaLabel = "Loading artifacts" })</div>
+                <div id="releaseArtifactItems"></div>
+                <p id="releaseArtifactStatus" class="form-text" aria-live="polite"></p>
+                <button type="button" class="z-button z-button-ghost" id="releaseArtifactsMore" hidden>Load more artifacts</button>
+            </div>
+            <div id="releaseArtifactError" class="text-danger" role="alert" hidden>Select an artifact before continuing.</div>
+        </zoorce-wizard-panel>
         <zoorce-wizard-panel step-id="targets">
             <h2 class="od-section-title">Runtime nodes</h2>
             <p class="od-item-meta">Choose the allowed nodes that will receive this artifact.</p>
@@ -46,7 +59,7 @@
         <zoorce-wizard-panel step-id="review">
             <h2 class="od-section-title">Review release</h2>
             <p class="od-item-meta">Creating a release does not apply it to the runtime. Delivery follows each node's configured mode.</p>
-            <dl><dt>Artifact</dt><dd>@artifact?.VersionNumber · @typeLabel</dd><dt>Strategy</dt><dd id="releaseReviewStrategy"></dd><dt>Runtime nodes</dt><dd id="releaseReviewNodes"></dd></dl>
+            <dl><dt>Artifact</dt><dd id="releaseReviewArtifact"></dd><dt>Strategy</dt><dd id="releaseReviewStrategy"></dd><dt>Runtime nodes</dt><dd id="releaseReviewNodes"></dd></dl>
         </zoorce-wizard-panel>
     </zoorce-wizard>
 </form>
