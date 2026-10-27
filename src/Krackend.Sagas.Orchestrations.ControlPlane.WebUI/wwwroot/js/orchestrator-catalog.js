@@ -262,10 +262,7 @@
         if (item && kind === 'artifacts') {
             const type = row.querySelector('[data-z-grid-field="artifactType"]');
             if (type && !type.firstElementChild) {
-                const badge = document.createElement('span');
-                badge.className = `z-badge ${item.typeClass}`;
-                badge.textContent = item.typeLabel;
-                type.replaceChildren(badge);
+                type.replaceChildren(window.KrackendCatalogUI.badge(item.typeLabel, item.typeTone));
             }
         }
     });
@@ -305,10 +302,7 @@
             const badge = window.KrackendCatalogUI.status(item.status);
             card.append(top, badge);
         } else if (kind === 'artifacts') {
-            const badge = document.createElement('span');
-            badge.className = `z-badge ${item.typeClass}`;
-            badge.textContent = item.typeLabel;
-            card.append(top, badge);
+            card.append(top, window.KrackendCatalogUI.badge(item.typeLabel, item.typeTone));
         } else card.append(top);
         if (kind === 'reviews') {
             const states = document.createElement('div');

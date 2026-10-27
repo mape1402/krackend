@@ -4,7 +4,6 @@
     const grid = root.querySelector('[data-z-data-grid]');
     const search = grid.querySelector('[data-z-grid-search]');
     const scope = root.querySelector('[data-runtime-scope]');
-    const pageSize = root.querySelector('[data-runtime-page-size]');
     const controls = root.querySelector('.od-runtime-view-controls');
     const records = new Map();
     let refreshTimer, countsRequest, refreshing = false, refreshPending = false, preservePending = false, scrollAnchor = null;
@@ -23,23 +22,21 @@
     }
 
     const updateLoadedCopy = result => {
-        const footer = grid.querySelector('.z-grid-footer');
-        if (!footer || !result) return;
+        const copy = root.querySelector('[data-runtime-loaded-copy]');
+        if (!copy || !result) return;
         const loaded = records.size;
         const total = Number(result.totalCount ?? result.totalRows ?? 0);
         const label = total > loaded
             ? `${loaded.toLocaleString()} of ${total.toLocaleString()} matching rows loaded`
             : total > 0
-                ? `All ${loaded.toLocaleString()} matching rows loaded`
+                ? `${loaded.toLocaleString()} rows loaded`
                 : 'No matching rows';
-        let copy = footer.querySelector('[data-runtime-loaded-copy]');
-        if (!copy) {
-            copy = document.createElement('span');
-            copy.dataset.runtimeLoadedCopy = 'true';
-            copy.className = 'od-grid-loaded-copy';
-            footer.replaceChildren(copy);
-        }
         copy.textContent = label;
+    };
+
+    const setMetricLoading = loading => {
+        root.querySelectorAll('[data-monitor-metric-skeleton]').forEach(element => { element.hidden = !loading; });
+        root.querySelectorAll('[data-monitor-metric-data]').forEach(element => { element.hidden = loading; });
     };
 
     const scopedUrl = source => {
@@ -49,6 +46,7 @@
         return url;
     };
     const refreshCounts = async () => {
+        setMetricLoading(true);
         countsRequest?.abort();
         const controller = new AbortController();
         countsRequest = controller;
@@ -62,10 +60,23 @@
             const totals = { running: value('Created') + value('Running') + value('Compensating'), waiting: value('Waiting'),
                 completed: value('Completed'), deadLettered: value('DeadLettered'),
                 failed: value('Failed') + value('Aborted') + value('CompletedWithErrors') };
-            Object.entries(totals).forEach(([key, count]) => { root.querySelector(`[data-monitor-count="${key}"]`).textContent = count.toLocaleString(); });
+            const total = Object.values(totals).reduce((sum, count) => sum + count, 0);
+            Object.entries(totals).forEach(([key, count]) => {
+                root.querySelector(`[data-monitor-count="${key}"]`).textContent = count.toLocaleString();
+                const share = root.querySelector(`[data-monitor-share="${key}"]`);
+                if (share) share.textContent = total ? `${Math.round(count * 100 / total)}% of matching` : 'no instances';
+            });
         } catch (error) {
-            if (error.name !== 'AbortError') root.querySelectorAll('[data-monitor-count]').forEach(element => { element.textContent = '—'; });
-        } finally { if (countsRequest === controller) countsRequest = null; }
+            if (error.name !== 'AbortError') {
+                root.querySelectorAll('[data-monitor-count]').forEach(element => { element.textContent = '—'; });
+                root.querySelectorAll('[data-monitor-share]').forEach(element => { element.textContent = 'Counts unavailable'; });
+            }
+        } finally {
+            if (countsRequest === controller) {
+                countsRequest = null;
+                setMetricLoading(false);
+            }
+        }
     };
     const captureScrollAnchor = () => {
         const viewport = grid.querySelector('[data-z-grid-viewport]');
@@ -169,16 +180,6 @@
         const config = JSON.parse(configElement.textContent); config.binding.source = scopedUrl(root.dataset.source).toString();
         window.ZoorceDataGrid.dispose(grid); configElement.textContent = JSON.stringify(config);
         refreshing = false; refreshPending = false; mountGrid();
-        if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    pageSize?.addEventListener('change', () => {
-        const configElement = grid.querySelector('[data-z-grid-config]');
-        const config = JSON.parse(configElement.textContent);
-        config.pageSize = Number(pageSize.value);
-        window.ZoorceDataGrid.dispose(grid);
-        configElement.textContent = JSON.stringify(config);
-        records.clear();
-        mountGrid();
         if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
     });
     root.querySelector('[data-runtime-refresh]').addEventListener('click', () => refresh());

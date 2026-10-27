@@ -20,12 +20,9 @@
 }
 
 <section class="od-dashboard" data-runtime-dashboard
-         data-filters-url="@Url.Page(null, "Filters")"
          data-cohort-url="@Url.Page(null, "Cohort")"
          data-activity-url="@Url.Page(null, "Activity")"
-         data-health-url="@Url.Page(null, "Health")"
-         data-days="@Model.Days"
-         data-orchestration-key="@Model.OrchestrationKey">
+         data-days="@Model.Days">
     <div class="od-dashboard-metrics" data-dashboard-metrics aria-live="polite">
         @foreach (var metric in metrics)
         {
@@ -41,23 +38,19 @@
     <div class="od-dashboard-charts">
         <section class="od-dashboard-activity" data-dashboard-panel="activity">
             <div class="od-dashboard-panel-toolbar">
-                <form class="od-dashboard-filters" data-dashboard-filter>
-                    <label><span class="visually-hidden">Statistics period</span><select name="days" class="z-form-input z-form-select" aria-label="Statistics period">
-                        @foreach (var period in new[] { 1, 7, 30, 90 })
-                        {
-                            <option value="@period" selected="@(period == Model.Days)">Last @period @(period == 1 ? "day" : "days")</option>
-                        }
-                    </select></label>
-                    <label><span class="visually-hidden">Orchestration</span><select name="orchestrationKey" class="z-form-input z-form-select" data-dashboard-orchestration aria-label="Orchestration" disabled><option value="">All orchestrations</option></select></label>
-                    @await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "dashboardRefreshButton", Text = "Refresh" })
-                </form>
-                <span class="od-dashboard-health" data-dashboard-health aria-live="polite"></span>
+                <div class="od-dashboard-period" data-dashboard-period role="group" aria-label="Statistics period">
+                    @foreach (var period in new[] { (1, "24h"), (7, "7d"), (30, "30d"), (90, "90d") })
+                    {
+                        <button type="button" class="od-dashboard-period-option" data-dashboard-period-value="@period.Item1"
+                                aria-pressed="@(period.Item1 == Model.Days ? "true" : "false")">@period.Item2</button>
+                    }
+                </div>
             </div>
             <div class="od-dashboard-chart-shell">
                 @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
                 {
-                    Id = "runtime-activity-chart", Title = "Observed activity", Summary = "Completed, dead-lettered and failed status changes during the selected period.",
-                    Kind = ZoorceChartKind.Area, Size = ZoorceChartSize.Wide, Series = emptySeries
+                    Id = "runtime-activity-chart", Title = "Observed activity", Summary = "Completed, dead-lettered and failed transitions.",
+                    Kind = ZoorceChartKind.Area, Size = ZoorceChartSize.Wide, MinimumValue = 0, Series = emptySeries
                 })
                 <div class="od-dashboard-skeleton" data-dashboard-loading="activity">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "11rem", AriaLabel = "Loading activity" })

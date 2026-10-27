@@ -67,6 +67,34 @@ public sealed class WebUINavigationTests
         factory.DidNotReceive().GetUrlHelper(Arg.Any<ActionContext>());
     }
 
+    [Theory]
+    [InlineData("OrchestratorDesign", "/Orchestrations/Create", "Back to orchestrations")]
+    [InlineData("OrchestratorDistribution", "/ArtifactReleases/Index", "Back to artifacts")]
+    [InlineData("OrchestratorDistribution", "/Promotions/Index", "Back to releases")]
+    public void TopBarNavigationResolverProvidesContextualParentsForNestedCatalogFlows(
+        string area,
+        string page,
+        string expectedLabel)
+    {
+        var url = Substitute.For<IUrlHelper>();
+        url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+        url.RouteUrl(Arg.Any<UrlRouteContext>()).Returns("/parent");
+        var factory = Substitute.For<IUrlHelperFactory>();
+        factory.GetUrlHelper(Arg.Any<ActionContext>()).Returns(url);
+        var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory,
+            Options.Create(new OrchestratorTopBarNavigationOptions()));
+        var values = page == "/Orchestrations/Create"
+            ? Array.Empty<(string Key, string Value)>()
+            : new[] { ("orchestrationId", "sales.sale.created") };
+
+        var result = resolver.Resolve(CreateViewContext(area, page, values));
+
+        Assert.NotNull(result);
+        Assert.True(result.Visible);
+        Assert.Equal(expectedLabel, result.Label);
+        Assert.Equal("/parent", result.Url);
+    }
+
     [Fact]
     public void TopBarNavigationResolverHonorsHostOverridesAndCanDisableDefaults()
     {

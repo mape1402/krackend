@@ -715,9 +715,9 @@
 .od-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0; }
 .od-history-filters label { display: inline-flex; align-items: center; gap: .35rem; color: var(--od-muted); font-size: .75rem; }
 .od-history-filters input { width: 10rem; }
-[data-instance-history] .z-toolbar, [data-runtime-catalog] .z-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+[data-instance-history] .z-toolbar, [data-runtime-catalog] .z-toolbar { display: flex; width:100%; min-width:0; max-width:100%; align-items: center; flex-wrap: wrap; gap: .5rem; }
 [data-instance-history] .od-history-filters, [data-runtime-catalog] .od-runtime-view-controls { margin-left: auto; }
-[data-runtime-catalog] .z-toolbar:has(> .od-runtime-view-controls) > .z-grid-footer { margin-left: auto; }
+[data-runtime-catalog] .z-grid-footer { display: none; }
 body:has([data-instance-history]) { height: 100dvh; overflow: hidden; }
 body:has([data-instance-history]) .z-app-shell,
 body:has([data-instance-history]) .z-page-shell { height: 100%; min-height: 0; }
@@ -738,7 +738,7 @@ body:has([data-runtime-catalog]) .z-main { min-height: 0; overflow: hidden; }
 body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height: 0; padding: 0; border: 0; background: transparent; }
 [data-runtime-catalog] { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .75rem; }
 [data-runtime-catalog] [data-runtime-grid-view],
-[data-runtime-catalog] .z-data-grid-component { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+[data-runtime-catalog] .z-data-grid-component { min-width:0; width:100%; max-width:100%; min-height: 0; height: 100%; display: flex; flex-direction: column; }
 [data-runtime-catalog] .z-data-grid-viewport { flex: 1 1 0; min-height: 0; overflow: auto; }
 @media (max-width: 700px) {
     body:has([data-runtime-catalog]) { height: auto; overflow: auto; }
@@ -746,6 +746,7 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
     [data-runtime-catalog], [data-runtime-catalog] [data-runtime-grid-view], [data-runtime-catalog] .z-data-grid-component { height: auto; }
     [data-runtime-catalog] .z-data-grid-viewport { max-height: 68dvh; }
 }
+@media (max-width: 1380px) { .od-monitor-counters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .od-monitor-counters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .od-runtime-view-controls [aria-pressed="true"] {
@@ -3128,80 +3129,96 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
         gap: 0.25rem;
     }
 }
-/* Dashboard blocks are independently loaded, but keep a stable visual rhythm while they settle. */
-.od-dashboard { display: grid; gap: .9rem; min-width: 0; }
+/* Runtime dashboard: compact, projection-backed surfaces with no outer desktop scroll. */
+.od-dashboard { display: grid; min-width: 0; gap: .8rem; }
 .od-dashboard-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .65rem; min-width: 0; }
-.od-dashboard-metrics > .z-component-card {
+.od-dashboard-metrics > .z-component-card,
+.od-monitor-counters > .z-component-card {
     --metric-accent: var(--z-primary, var(--od-primary));
-    display: flex;
-    flex-direction: column;
+    position: relative;
+    display: block;
     min-width: 0;
-    min-height: 92px;
-    padding: .7rem .75rem;
+    min-height: 88px;
+    padding: .72rem .8rem;
     overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--metric-accent) 25%, var(--z-border, var(--od-border)));
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--metric-accent) 5%, var(--z-surface, var(--od-surface)));
-    box-shadow: none;
+    border: 1px solid color-mix(in srgb, var(--metric-accent) 23%, var(--z-border, var(--od-border)));
+    border-radius: 14px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--metric-accent) 8%, var(--z-surface, var(--od-surface))), var(--z-surface, var(--od-surface)) 62%);
+    box-shadow: 0 10px 25px color-mix(in srgb, var(--metric-accent) 7%, transparent);
 }
-.od-dashboard-metrics > .z-component-card::before { content: ""; display: block; width: 2rem; height: 2px; margin-bottom: .55rem; border-radius: 2px; background: var(--metric-accent); }
-.od-dashboard-metrics > .z-component-card header { display: block; padding: 0; }
-.od-dashboard-metrics > .z-component-card h2 { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .67rem; font-weight: 700; line-height: 1.2; letter-spacing: 0; }
-.od-dashboard-metrics > .z-component-card .z-component-card-body { min-width: 0; margin: .4rem 0 0; padding: 0; }
-.od-dashboard-metric-body { display: grid; grid-template-columns: 1.8rem minmax(0, 1fr); align-items: center; gap: .45rem; min-width: 0; }
-.od-dashboard-metrics .od-metric-icon { position: static; width: 1.8rem; height: 1.8rem; transform: none; border-radius: 6px; color: var(--metric-accent); background: color-mix(in srgb, var(--metric-accent) 14%, transparent); font-size: .82rem; }
-.od-dashboard-metric-data { display: grid; min-width: 0; gap: .08rem; }
-.od-dashboard-metric-data strong { color: var(--z-text, var(--od-text)); font-size: 1.25rem; font-weight: 720; line-height: 1; font-variant-numeric: tabular-nums; }
-.od-dashboard-metric-data small { overflow: hidden; color: var(--z-muted, var(--od-muted)); font-size: .62rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.od-dashboard-metrics > .z-component-card::before,
+.od-monitor-counters > .z-component-card::before { content: ""; display: block; width: 1.85rem; height: 2px; margin-bottom: .5rem; border-radius: 99px; background: var(--metric-accent); }
+.od-dashboard-metrics > .z-component-card header,
+.od-monitor-counters > .z-component-card header { display: block; padding: 0; }
+.od-dashboard-metrics > .z-component-card h2,
+.od-monitor-counters > .z-component-card h2 { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .68rem; font-weight: 700; line-height: 1.2; letter-spacing: 0; }
+.od-dashboard-metrics > .z-component-card .z-component-card-body,
+.od-monitor-counters > .z-component-card .z-component-card-body { min-width: 0; margin: .36rem 0 0; padding: 0; }
+.od-dashboard-metric-body { display: grid; grid-template-columns: 1.9rem minmax(0, 1fr); align-items: center; gap: .48rem; min-width: 0; }
+.od-dashboard-metrics .od-metric-icon,
+.od-monitor-counters .od-metric-icon { position: static; width: 1.9rem; height: 1.9rem; transform: none; border-radius: 7px; color: var(--metric-accent); background: color-mix(in srgb, var(--metric-accent) 14%, transparent); font-size: .86rem; }
+.od-dashboard-metric-data { display: grid; min-width: 0; gap: .1rem; }
+.od-dashboard-metric-data strong { color: var(--z-text, var(--od-text)); font-size: 1.35rem; font-weight: 720; line-height: 1; font-variant-numeric: tabular-nums; }
+.od-dashboard-metric-data small { overflow: hidden; color: var(--z-muted, var(--od-muted)); font-size: .63rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .od-dashboard-metric-skeleton { display: block; width: 100%; }
-.od-dashboard-metric-skeleton .z-skeleton { width: 48%; height: 1.3rem; }
+.od-dashboard-metric-skeleton .z-skeleton { width: 56%; height: 1.35rem; }
 #runtime-metric-running { --metric-accent: var(--z-info, #176b87); }
 #runtime-metric-waiting, #runtime-metric-deadLettered { --metric-accent: var(--z-warning, #a16207); }
 #runtime-metric-completed { --metric-accent: var(--z-success, #0f8c55); }
 #runtime-metric-failed { --metric-accent: var(--z-danger, #c43d4d); }
 
-.od-dashboard-charts { display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(0, 1fr)); gap: .9rem; align-items: stretch; min-width: 0; }
-.od-dashboard-activity { min-width: 0; }
-.od-dashboard-panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .65rem; min-height: 34px; margin: 0 0 .45rem; }
-.od-dashboard-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0; }
-.od-dashboard-filters select { min-width: 8.5rem; max-width: min(14rem, 60vw); min-height: 32px; font-size: .72rem; }
-.od-dashboard-filters .z-progress-button { min-width: 6.2rem; min-height: 32px; padding-inline: .75rem; }
-.od-dashboard-health { color: var(--z-muted, var(--od-muted)); font-size: .67rem; white-space: nowrap; }
+.od-dashboard-charts { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(18rem, .9fr); grid-template-areas: "activity status" "activity funnel"; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem; min-width: 0; }
+.od-dashboard-activity { position: relative; grid-area: activity; min-width: 0; }
+.od-dashboard-chart-shell[data-dashboard-panel="status"] { grid-area: status; }
+.od-dashboard-chart-shell[data-dashboard-panel="funnel"] { grid-area: funnel; }
 .od-dashboard-chart-shell { position: relative; min-width: 0; min-height: 0; }
-.od-dashboard-skeleton { position: absolute; z-index: 2; inset: 0; display: grid; align-items: stretch; padding: .8rem; background: var(--z-surface, var(--od-surface)); }
+.od-dashboard-panel-toolbar { position: absolute; z-index: 4; top: .75rem; right: .75rem; display: flex; align-items: center; justify-content: flex-end; min-height: 2rem; }
+.od-dashboard-period { display: inline-flex; align-items: center; gap: .15rem; padding: .18rem; border: 1px solid var(--z-border, var(--od-border)); border-radius: 10px; background: color-mix(in srgb, var(--z-surface, var(--od-surface)) 88%, var(--z-primary, var(--od-primary))); box-shadow: 0 5px 12px color-mix(in srgb, var(--z-text, #111) 6%, transparent); }
+.od-dashboard-period-option { min-width: 2.3rem; min-height: 1.75rem; padding: .2rem .42rem; border: 0; border-radius: 7px; color: var(--z-muted, var(--od-muted)); background: transparent; font-size: .65rem; font-weight: 700; line-height: 1; cursor: pointer; transition: background-color .16s ease, color .16s ease, box-shadow .16s ease; }
+.od-dashboard-period-option:hover { color: var(--z-text, var(--od-text)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 10%, transparent); }
+.od-dashboard-period-option[aria-pressed="true"] { color: var(--z-primary, var(--od-primary)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 15%, var(--z-surface, var(--od-surface))); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--z-primary, var(--od-primary)) 22%, transparent); }
+.od-dashboard-activity .z-chart-component-header { padding-right: 11rem; }
+.od-dashboard-chart-shell .z-chart-component { border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 88%, var(--z-primary, var(--od-primary))); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface))); box-shadow: 0 13px 30px color-mix(in srgb, var(--z-text, #111) 5%, transparent); }
+.od-dashboard-chart-shell .z-chart-component h2 { font-size: .86rem; }
+.od-dashboard-chart-shell .z-chart-component p { font-size: .67rem; line-height: 1.4; }
+.od-dashboard-skeleton { position: absolute; z-index: 3; inset: 0; display: grid; align-items: stretch; padding: .8rem; border-radius: 16px; background: var(--z-surface, var(--od-surface)); }
 .od-dashboard-skeleton[hidden] { display: none; }
 .od-dashboard-skeleton .z-skeleton-group, .od-dashboard-skeleton .z-skeleton-block { height: 100%; min-height: 100%; }
-.od-dashboard-panel-error { margin: .35rem 0 0; color: var(--z-danger, var(--od-danger)); font-size: .7rem; }
-.od-dashboard-outcome { display: flex; flex-wrap: wrap; gap: .35rem; margin: .45rem 0 0; }
-.od-dashboard-outcome-chip { display: inline-flex; align-items: center; min-height: 21px; padding: .18rem .45rem; border: 1px solid var(--z-border, var(--od-border)); border-radius: 999px; color: var(--z-muted, var(--od-muted)); background: var(--z-subtle, var(--od-surface-2)); font-size: .63rem; font-weight: 650; line-height: 1; }
-.od-dashboard-outcome-chip.is-running { color: var(--z-info, var(--od-info)); background: var(--z-info-soft, color-mix(in srgb, var(--z-info) 9%, transparent)); }
-.od-dashboard-outcome-chip.is-warning { color: var(--z-warning, var(--od-warning)); background: var(--z-warning-soft, color-mix(in srgb, var(--z-warning) 9%, transparent)); }
-.od-dashboard-outcome-chip.is-danger { color: var(--z-danger, var(--od-danger)); background: var(--z-danger-soft, color-mix(in srgb, var(--z-danger) 9%, transparent)); }
+.od-dashboard-panel-error { position: absolute; z-index: 5; right: .8rem; bottom: .55rem; max-width: calc(100% - 1.6rem); margin: 0; color: var(--z-danger, var(--od-danger)); font-size: .68rem; }
+.od-dashboard-outcome { position: absolute; z-index: 2; right: .8rem; bottom: .62rem; left: .8rem; overflow: hidden; color: var(--z-muted, var(--od-muted)); font-size: .63rem; font-weight: 650; line-height: 1.25; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+
 @media (min-width: 1024px) {
     body:has([data-runtime-dashboard]) { height: 100dvh; overflow: hidden; }
     body:has([data-runtime-dashboard]) .z-app-shell,
     body:has([data-runtime-dashboard]) .z-page-shell { height: 100%; min-height: 0; }
     body:has([data-runtime-dashboard]) .z-main { min-height: 0; overflow: hidden; }
     [data-runtime-dashboard] { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
-    [data-runtime-dashboard] .od-dashboard-charts { min-height: 0; grid-template-rows: minmax(0, 1fr); }
+    [data-runtime-dashboard] .od-dashboard-charts { min-height: 0; }
     [data-runtime-dashboard] [data-dashboard-panel] { min-height: 0; overflow: hidden; }
-    [data-runtime-dashboard] .od-dashboard-activity { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    [data-runtime-dashboard] .od-dashboard-activity { display: block; min-height: 0; align-self: start; }
     [data-runtime-dashboard] .od-dashboard-activity .od-dashboard-chart-shell,
-    [data-runtime-dashboard] .od-dashboard-chart-shell[data-dashboard-panel] { min-height: 0; height: 100%; }
-    [data-runtime-dashboard] .z-chart-component { display: grid; height: 100%; min-height: 0; padding: .75rem; grid-template-rows: auto auto minmax(0, 1fr); }
+    [data-runtime-dashboard] .od-dashboard-activity .z-chart-component { height: auto; }
+    [data-runtime-dashboard] .od-dashboard-activity .z-chart-visual { height: 300px; }
+    [data-runtime-dashboard] .od-dashboard-chart-shell[data-dashboard-panel] { height: 100%; }
+    [data-runtime-dashboard] .z-chart-component { display: grid; height: 100%; min-height: 0; padding: .85rem; grid-template-rows: auto auto minmax(0, 1fr); }
     [data-runtime-dashboard] .z-chart-component-header { min-height: 0; }
     [data-runtime-dashboard] .z-chart-visual { min-height: 0; height: auto; }
     [data-runtime-dashboard] .z-native-chart { min-height: 0; height: 100%; }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1120px) {
     .od-dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .od-dashboard-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .od-dashboard-activity { grid-column: 1 / -1; }
 }
-@media (max-width: 760px) {
-    .od-dashboard-metrics, .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); }
-    .od-dashboard-activity { grid-column: auto; }
-    .od-dashboard-panel-toolbar { align-items: flex-start; flex-direction: column; }
-    .od-dashboard-health { white-space: normal; }
+@media (max-width: 960px) {
+    body:has([data-runtime-dashboard]) { height: auto; overflow: auto; }
+    body:has([data-runtime-dashboard]) .z-main { overflow: visible; }
+    .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); grid-template-areas: "activity" "status" "funnel"; grid-template-rows: auto; }
+    .od-dashboard-activity { min-height: 25rem; }
+    .od-dashboard-chart-shell[data-dashboard-panel] { min-height: 19rem; }
+}
+@media (max-width: 640px) {
+    .od-dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .od-dashboard-panel-toolbar { top: .55rem; right: .55rem; }
+    .od-dashboard-activity .z-chart-component-header { padding-right: 0; padding-bottom: 2.6rem; }
+    .od-dashboard-period-option { min-width: 2.15rem; }
 }

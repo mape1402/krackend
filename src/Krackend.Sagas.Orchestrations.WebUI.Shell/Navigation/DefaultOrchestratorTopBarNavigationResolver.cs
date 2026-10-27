@@ -46,7 +46,13 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             return null;
         }
 
-        var target = ResolveDefault(area, page, viewContext.RouteData.Values);
+        var values = new RouteValueDictionary(viewContext.RouteData.Values);
+        foreach (var query in viewContext.HttpContext.Request.Query)
+        {
+            if (!values.ContainsKey(query.Key)) values[query.Key] = query.Value.ToString();
+        }
+
+        var target = ResolveDefault(area, page, values);
         if (target is null)
         {
             return null;
@@ -61,6 +67,11 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
 
     private static BackTarget? ResolveDefault(string area, string page, RouteValueDictionary values)
     {
+        if (Matches(area, page, "OrchestratorDesign", "/Orchestrations/Create"))
+        {
+            return new("OrchestratorDesign", "/Orchestrations/Index", "Back to orchestrations");
+        }
+
         if (Matches(area, page, "OrchestratorDesign", "/Orchestrations/Details"))
         {
             return new("OrchestratorDesign", "/Orchestrations/Index", "Back to orchestrations");
@@ -86,9 +97,14 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             return new("OrchestratorDesign", "/Reviews/Index", "Back to reviews");
         }
 
-        if (Matches(area, page, "OrchestratorDistribution", "/ArtifactReleases/Index"))
+        if (Matches(area, page, "OrchestratorDistribution", "/ArtifactReleases/Index") && Has(values, "orchestrationId"))
         {
-            return new("OrchestratorDistribution", "/Artifacts/Index", "Back to artifacts");
+            return new("OrchestratorDistribution", "/ArtifactReleases/Index", "Back to artifacts");
+        }
+
+        if (Matches(area, page, "OrchestratorDistribution", "/Promotions/Index") && Has(values, "orchestrationId"))
+        {
+            return new("OrchestratorDistribution", "/Promotions/Index", "Back to releases");
         }
 
         if (Matches(area, page, "OrchestratorRuntime", "/Artifacts/Index") && Has(values, "orchestrationKey"))

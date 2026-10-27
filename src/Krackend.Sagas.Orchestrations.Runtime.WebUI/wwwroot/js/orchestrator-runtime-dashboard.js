@@ -3,40 +3,40 @@
     const config = window.KrackendRuntimeDashboard;
     if (!root || !config) return;
 
-    const filterForm = root.querySelector('[data-dashboard-filter]');
-    const period = filterForm?.elements.namedItem('days');
-    const orchestration = root.querySelector('[data-dashboard-orchestration]');
-    const refreshButton = root.querySelector('#dashboardRefreshButton');
+    const periodButtons = [...root.querySelectorAll('[data-dashboard-period-value]')];
     const requests = new Map();
     let refreshTimer;
     let reconnectTimer;
     let closed = false;
-    let dashboardRefreshInFlight = false;
     const state = {
         days: Number(root.dataset.days) || 7,
-        orchestrationKey: root.dataset.orchestrationKey || ''
+        cohortEpoch: 0,
+        activityEpoch: 0
     };
+
+    const activeStatuses = ['Created', 'Running', 'Compensating'];
+    const failedStatuses = ['Stopped', 'Compensated', 'CompletedWithErrors', 'Aborted', 'Failed'];
+    const supportedPeriods = new Set([1, 7, 30, 90]);
 
     const statusValue = (statuses, name) => Number(statuses?.[name] || 0);
     const statusTotal = (statuses, names) => names.reduce((total, name) => total + statusValue(statuses, name), 0);
-    const activeStatuses = ['Created', 'Running', 'Waiting', 'Compensating', 'DeadLettered'];
-    const terminalStatuses = ['Stopped', 'Compensated', 'Completed', 'CompletedWithErrors', 'Aborted', 'Failed'];
+    const isAbort = error => error?.name === 'AbortError';
 
     function requestUrl(source) {
         const url = new URL(source, window.location.href);
         url.searchParams.set('days', String(state.days));
-        if (state.orchestrationKey) url.searchParams.set('orchestrationKey', state.orchestrationKey);
-        else url.searchParams.delete('orchestrationKey');
         return url;
     }
 
-    async function fetchJson(name, source, scoped = true) {
+    async function fetchJson(name, source) {
         requests.get(name)?.abort();
         const controller = new AbortController();
         requests.set(name, controller);
-        const url = scoped ? requestUrl(source) : new URL(source, window.location.href);
         try {
-            const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+            const response = await fetch(requestUrl(source), {
+                headers: { Accept: 'application/json' },
+                signal: controller.signal
+            });
             if (!response.ok) throw new Error(await response.text() || 'Dashboard data is unavailable.');
             return await response.json();
         } finally {
@@ -66,68 +66,77 @@
 
     function clearError(section) {
         const element = root.querySelector(`[data-dashboard-error="${section}"]`);
-        if (element) {
-            element.textContent = '';
-            element.hidden = true;
-        }
+        if (!element) return;
+        element.textContent = '';
+        element.hidden = true;
     }
 
     function replaceChart(id, series) {
         document.getElementById(id)?.dispatchEvent(new CustomEvent('zoorce:chart:replace', { detail: { series } }));
     }
 
-    function renderCohort(cohort) {
+    function setMetric(key, value, total) {
+        const metric = root.querySelector(`[data-dashboard-metric="${key}"]`);
+        const share = root.querySelector(`[data-dashboard-metric-share="${key}"]`);
+        if (metric) metric.textContent = Number(value).toLocaleString();
+        if (!share) return;
+        share.textContent = key === 'total'
+            ? 'selected cohort'
+            : total ? `${Math.round(value * 100 / total)}% of started` : 'no instances';
+    }
+
+    function asDashboardValues(cohort) {
         const statuses = cohort.currentStatuses || {};
-        const total = Number(cohort.total || 0);
-        const inProgress = statusTotal(statuses, ['Created', 'Running', 'Compensating']);
-        const waiting = statusValue(statuses, 'Waiting');
-        const completed = statusValue(statuses, 'Completed');
-        const deadLettered = statusValue(statuses, 'DeadLettered');
-        const failed = statusTotal(statuses, ['Failed', 'Aborted', 'CompletedWithErrors']);
-        const values = { total, running: inProgress, waiting, completed, deadLettered, failed };
-        Object.entries(values).forEach(([key, value]) => {
-            const metric = root.querySelector(`[data-dashboard-metric="${key}"]`);
-            const share = root.querySelector(`[data-dashboard-metric-share="${key}"]`);
-            if (metric) metric.textContent = value.toLocaleString();
-            if (share) share.textContent = key === 'total' ? 'selected cohort' : total ? `${Math.round(value * 100 / total)}% of started` : 'no instances';
-        });
+        const values = {
+            total: Number(cohort.total || 0),
+            running: statusTotal(statuses, activeStatuses),
+            waiting: statusValue(statuses, 'Waiting'),
+            completed: statusValue(statuses, 'Completed'),
+            deadLettered: statusValue(statuses, 'DeadLettered'),
+            failed: statusTotal(statuses, failedStatuses)
+        };
+        const classified = values.running + values.waiting + values.completed + values.deadLettered + values.failed;
+        values.total = Math.max(values.total, classified);
+        return values;
+    }
+
+    function renderCohort(cohort) {
+        const values = asDashboardValues(cohort);
+        Object.entries(values).forEach(([key, value]) => setMetric(key, value, values.total));
         setMetricLoading(false);
 
-        const visibleStatuses = Object.entries(statuses)
-            .filter(([, value]) => Number(value) > 0)
-            .map(([label, value]) => ({ label: formatStatus(label), value: Number(value) }));
-        replaceChart('runtime-status-chart', [{ name: 'Instances', points: visibleStatuses.length ? visibleStatuses : [{ label: 'No instances', value: 0 }] }]);
+        const distribution = [
+            ['In progress', values.running],
+            ['Waiting', values.waiting],
+            ['Completed', values.completed],
+            ['Dead lettered', values.deadLettered],
+            ['Failed', values.failed]
+        ].filter(([, value]) => value > 0);
+        replaceChart('runtime-status-chart', [{
+            name: 'Instances',
+            points: distribution.length ? distribution.map(([label, value]) => ({ label, value })) : [{ label: 'No instances', value: 0 }]
+        }]);
         setLoading('status', false);
         clearError('status');
 
-        const settled = Math.max(0, total - statusTotal(statuses, activeStatuses));
+        const finalized = values.completed + values.deadLettered + values.failed;
         replaceChart('runtime-funnel-chart', [{
             name: 'Instances',
             points: [
-                { label: 'Started', value: total },
-                { label: 'Finalized', value: settled },
-                { label: 'Completed', value: completed }
+                { label: 'Started', value: values.total },
+                { label: 'Finalized', value: finalized },
+                { label: 'Completed', value: values.completed }
             ]
         }]);
-        const outstanding = statusTotal(statuses, activeStatuses);
         const outcome = root.querySelector('[data-dashboard-outcome]');
         if (outcome) {
             outcome.hidden = false;
-            outcome.replaceChildren(outcomeChip(outstanding, 'in progress', 'running'), outcomeChip(deadLettered, 'dead lettered', 'warning'), outcomeChip(failed, 'failed', 'danger'));
+            outcome.textContent = values.total
+                ? `${values.running + values.waiting} in progress · ${values.deadLettered} dead-lettered · ${values.failed} failed`
+                : 'No instances started in this period.';
         }
         setLoading('funnel', false);
         clearError('funnel');
-    }
-
-    function outcomeChip(value, label, tone) {
-        const item = document.createElement('span');
-        item.className = `od-dashboard-outcome-chip is-${tone}`;
-        item.textContent = `${Number(value).toLocaleString()} ${label}`;
-        return item;
-    }
-
-    function formatStatus(status) {
-        return String(status || '').replace(/([a-z])([A-Z])/g, '$1 $2');
     }
 
     function asUtcDate(value) {
@@ -170,13 +179,10 @@
         const counts = new Map();
         (result.activity || []).forEach(item => {
             const date = asUtcDate(item.bucketUtc);
-            if (!date) return;
-            counts.set(`${date.getTime()}|${item.status}`, Number(item.count || 0));
+            if (date) counts.set(`${date.getTime()}|${item.status}`, Number(item.count || 0));
         });
         const buckets = [];
-        for (let current = bucketStart(start, bucket); current < before; current = bucketStep(current, bucket)) {
-            buckets.push(current);
-        }
+        for (let current = bucketStart(start, bucket); current < before; current = bucketStep(current, bucket)) buckets.push(current);
         const statuses = [['Completed', 'Completed'], ['Dead lettered', 'DeadLettered'], ['Failed', 'Failed']];
         replaceChart('runtime-activity-chart', statuses.map(([name, status]) => ({
             name,
@@ -186,38 +192,17 @@
         clearError('activity');
     }
 
-    function renderHealth(health) {
-        const element = root.querySelector('[data-dashboard-health]');
-        if (!element) return;
-        if (!health.backfillCompleted) element.textContent = 'Preparing history';
-        else if (Number(health.pendingObservations || 0) > 0) element.textContent = 'Updating projection';
-        else element.textContent = '';
-    }
-
-    function formatUtcTime(value) {
-        const date = asUtcDate(value);
-        return date ? date.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC' : 'recently';
-    }
-
-    async function loadFilters() {
-        try {
-            const result = await fetchJson('filters', root.dataset.filtersUrl, false);
-            const selected = state.orchestrationKey;
-            orchestration.replaceChildren(new Option('All orchestrations', ''));
-            (result.orchestrationKeys || []).forEach(key => orchestration.add(new Option(key, key, false, key === selected)));
-            orchestration.disabled = false;
-        } catch (error) {
-            orchestration.disabled = false;
-            console.warn('Krackend dashboard filter options could not load.', error);
-        }
-    }
-
     async function loadCohort() {
+        const epoch = ++state.cohortEpoch;
         setMetricLoading(true);
         setLoading('status', true);
         setLoading('funnel', true);
-        try { renderCohort(await fetchJson('cohort', root.dataset.cohortUrl)); }
-        catch (error) {
+        try {
+            const cohort = await fetchJson('cohort', root.dataset.cohortUrl);
+            if (epoch !== state.cohortEpoch) return;
+            renderCohort(cohort);
+        } catch (error) {
+            if (isAbort(error) || epoch !== state.cohortEpoch) return;
             setMetricLoading(false);
             showError('status', error);
             showError('funnel', error);
@@ -225,87 +210,70 @@
     }
 
     async function loadActivity() {
+        const epoch = ++state.activityEpoch;
         setLoading('activity', true);
-        try { renderActivity(await fetchJson('activity', root.dataset.activityUrl)); }
-        catch (error) { showError('activity', error); }
-    }
-
-    async function loadHealth() {
-        try { renderHealth(await fetchJson('health', root.dataset.healthUrl, false)); }
-        catch (error) { console.warn('Krackend dashboard projection health could not load.', error); }
-    }
-
-    async function loadDashboard({ includeFilters = false, showProgress = false } = {}) {
-        if (dashboardRefreshInFlight) return;
-        dashboardRefreshInFlight = true;
-        if (showProgress && refreshButton) {
-            refreshButton.disabled = true;
-            refreshButton.dataset.zProgressState = 'active';
-            refreshButton.dataset.zProgressIndeterminate = 'true';
-            refreshButton.setAttribute('aria-busy', 'true');
-        }
-        const loaders = [loadCohort(), loadActivity(), loadHealth()];
-        if (includeFilters) loaders.push(loadFilters());
         try {
-            await Promise.allSettled(loaders);
-        } finally {
-            dashboardRefreshInFlight = false;
-            if (showProgress && refreshButton) {
-                refreshButton.disabled = false;
-                refreshButton.dataset.zProgressState = 'idle';
-                refreshButton.dataset.zProgressIndeterminate = 'false';
-                refreshButton.removeAttribute('aria-busy');
-            }
+            const activity = await fetchJson('activity', root.dataset.activityUrl);
+            if (epoch !== state.activityEpoch) return;
+            renderActivity(activity);
+        } catch (error) {
+            if (isAbort(error) || epoch !== state.activityEpoch) return;
+            showError('activity', error);
         }
+    }
+
+    function loadDashboard() {
+        return Promise.allSettled([loadCohort(), loadActivity()]);
+    }
+
+    function syncPeriodButtons() {
+        periodButtons.forEach(button => {
+            const selected = Number(button.dataset.dashboardPeriodValue) === state.days;
+            button.setAttribute('aria-pressed', String(selected));
+        });
     }
 
     function updateAddress() {
         const url = new URL(window.location.href);
         url.searchParams.set('days', String(state.days));
-        if (state.orchestrationKey) url.searchParams.set('orchestrationKey', state.orchestrationKey);
-        else url.searchParams.delete('orchestrationKey');
         window.history.replaceState({}, '', url);
     }
 
-    filterForm?.addEventListener('submit', event => {
-        event.preventDefault();
-        state.days = Number(period.value) || 7;
-        state.orchestrationKey = orchestration.value || '';
+    function selectPeriod(days) {
+        if (!supportedPeriods.has(days) || days === state.days) return;
+        state.days = days;
+        syncPeriodButtons();
         updateAddress();
-        void loadDashboard({ showProgress: true });
-    });
-    refreshButton?.addEventListener('click', event => {
-        event.preventDefault();
-        filterForm?.requestSubmit();
-    });
+        void loadDashboard();
+    }
+
+    periodButtons.forEach(button => button.addEventListener('click', () => selectPeriod(Number(button.dataset.dashboardPeriodValue))));
 
     function scheduleStatisticsRefresh() {
         window.clearTimeout(refreshTimer);
         refreshTimer = window.setTimeout(() => void loadDashboard(), 250);
     }
 
-    if (!window.signalR) {
-        void loadDashboard({ includeFilters: true });
-        return;
-    }
+    syncPeriodButtons();
+    void loadDashboard();
+    if (!window.signalR) return;
 
     const connection = new signalR.HubConnectionBuilder().withUrl(config.hubPath).withAutomaticReconnect().build();
     const retry = () => {
-        if (!closed) {
-            window.clearTimeout(reconnectTimer);
-            reconnectTimer = window.setTimeout(start, 5000);
-        }
+        if (closed) return;
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = window.setTimeout(start, 5000);
     };
-    const subscribe = async () => {
-        await connection.invoke('WatchRuntime');
-    };
+    const subscribe = async () => connection.invoke('WatchRuntime');
     connection.on('runtime.statistics.updated', scheduleStatisticsRefresh);
     connection.on('runtime.resync', scheduleStatisticsRefresh);
     connection.onreconnected(() => subscribe().catch(() => connection.stop()));
-    connection.onclose(() => retry());
+    connection.onclose(retry);
     async function start() {
-        try { await connection.start(); await subscribe(); }
-        catch {
+        try {
+            await connection.start();
+            await subscribe();
+        } catch {
             if (connection.state !== signalR.HubConnectionState.Disconnected) await connection.stop();
             retry();
         }
@@ -316,9 +284,8 @@
         window.clearTimeout(refreshTimer);
         window.clearTimeout(reconnectTimer);
         requests.forEach(controller => controller.abort());
-        connection.stop();
+        void connection.stop();
     }, { once: true });
 
-    void loadDashboard({ includeFilters: true });
-    start();
+    void start();
 })();

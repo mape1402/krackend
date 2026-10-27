@@ -35,7 +35,34 @@
     outline-offset: -2px;
     box-shadow: none;
 }
-.od-catalog-controls, .od-runtime-view-controls { margin-bottom:.5rem; }
+.od-catalog-controls, .od-runtime-view-controls { margin:0; }
+:is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) {
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) auto;
+    grid-template-areas:"content controls" "views views";
+    align-items:start;
+    column-gap:.75rem;
+    row-gap:.5rem;
+    min-width:0;
+}
+:is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) > :is(.od-catalog-controls, .od-runtime-view-controls) {
+    grid-area:controls;
+    justify-self:end;
+    align-self:start;
+}
+:is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) > :is([data-catalog-grid], [data-version-grid], [data-artifact-grid], [data-node-grid], [data-catalog-cards], [data-version-cards-view], [data-artifact-cards-view], [data-node-cards-view]) {
+    grid-area:views;
+    min-width:0;
+}
+:is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.z-search-field, .od-catalog-filters .z-search-field) {
+    box-sizing:border-box;
+    flex:0 1 17rem;
+    inline-size:17rem;
+    max-inline-size:100%;
+}
+:is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is([data-catalog-cards], [data-version-cards-view], [data-artifact-cards-view], [data-node-cards-view]) {
+    min-width:0;
+}
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .z-toolbar:has(> .z-grid-footer) { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .z-toolbar > .z-grid-footer { flex:0 1 auto; min-height:0; margin-left:auto; padding:0; gap:.5rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.od-grid, .od-runtime-cards) { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%, 250px), 1fr)); gap:.75rem; }
@@ -49,6 +76,12 @@
 .od-card-states { display:flex; gap:.35rem; flex-wrap:wrap; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) .dropdown-item i { margin-right:.5rem; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.od-item-meta, .od-runtime-card-meta) { margin:.2rem 0 0; color:var(--od-muted); font-size:.6875rem; line-height:1.4; overflow-wrap:anywhere; }
+:is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is(.od-item-card, .od-runtime-card, .od-runtime-instance-card) > .z-badge {
+    justify-self:start;
+    align-self:start;
+    inline-size:fit-content;
+    max-inline-size:100%;
+}
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is([data-z-grid-field="actions"], .od-item-top, .od-runtime-instance-header) .btn:has(:is(.bi-three-dots-vertical, .bi-diagram-3, .bi-eye)) { color:var(--od-text, #10233f); border-color:transparent; background:transparent; box-shadow:none; }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is([data-z-grid-field="actions"], .od-item-top, .od-runtime-instance-header) .btn:has(:is(.bi-three-dots-vertical, .bi-diagram-3, .bi-eye)):hover { color:var(--od-text, #10233f); background:color-mix(in srgb, var(--od-text, #10233f) 12%, var(--od-surface, #fff)); }
 :is([data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]) :is([data-z-grid-field="actions"], .od-item-top, .od-runtime-instance-header) .btn:has(:is(.bi-three-dots-vertical, .bi-diagram-3, .bi-eye)):focus-visible { outline:2px solid var(--od-primary, #0b3d91); outline-offset:2px; }
@@ -58,4 +91,12 @@
 .od-list-status--danger { background:var(--z-danger-soft); color:var(--z-danger); }
 @media (max-width:600px) { .od-create-floating { right:1rem; bottom:calc(2rem + env(safe-area-inset-bottom, 0px)); } }
 @media (max-width:980px) { .od-metric-strip { flex:0 1 auto; grid-template-columns:repeat(2,minmax(0, 1fr)); } .od-traffic-mode { width:auto; flex-direction:row; } }
-@media (min-width:720px) { .od-catalog-controls, .od-runtime-view-controls { float:right; position:relative; z-index:1; margin:0 0 0 .75rem; } }
+@media (max-width:600px) {
+    :is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) {
+        grid-template-columns:minmax(0, 1fr);
+        grid-template-areas:"controls" "views";
+    }
+    :is(.od-catalog[data-catalog], .od-catalog[data-version-catalog], [data-artifact-catalog], [data-design-node-catalog]) > :is(.od-catalog-controls, .od-runtime-view-controls) {
+        justify-self:end;
+    }
+}

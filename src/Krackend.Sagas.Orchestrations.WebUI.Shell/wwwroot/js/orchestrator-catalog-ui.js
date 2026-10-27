@@ -1,14 +1,18 @@
 (() => {
+    const badge = (value, tone = '') => {
+        const element = document.createElement('span');
+        const normalizedTone = String(tone || '').trim().toLowerCase();
+        element.className = `z-badge${['success', 'warning', 'danger'].includes(normalizedTone) ? ` z-badge-${normalizedTone}` : ''}`;
+        element.textContent = String(value ?? '').trim();
+        return element;
+    };
     const status = value => {
         const label = String(value ?? '').trim();
         const normalized = label.replace(/[^a-z]/gi, '').toLowerCase();
         const success = ['active', 'enabled', 'completed', 'deployed', 'applied', 'approved', 'ready', 'acknowledged', 'succeeded'];
         const warning = ['pending', 'pendingdeployment', 'pendingdeprecation', 'pendingarchive', 'inreview', 'inprogress', 'running', 'waiting', 'queued', 'processing', 'todeploy', 'todeprecate', 'toarchive'];
         const danger = ['failed', 'deadlettered', 'rejected', 'error', 'cancelled'];
-        const badge = document.createElement('span');
-        badge.className = `od-list-status${success.includes(normalized) ? ' od-list-status--success' : warning.includes(normalized) ? ' od-list-status--warning' : danger.includes(normalized) ? ' od-list-status--danger' : ''}`;
-        badge.textContent = label;
-        return badge;
+        return badge(label, success.includes(normalized) ? 'success' : warning.includes(normalized) ? 'warning' : danger.includes(normalized) ? 'danger' : '');
     };
     const cardIcon = name => {
         const icon = document.createElement('i');
@@ -16,7 +20,7 @@
         icon.setAttribute('aria-hidden', 'true');
         return icon;
     };
-    window.KrackendCatalogUI = { status, cardIcon };
+    window.KrackendCatalogUI = { badge, status, cardIcon };
     const start = () => {
         const roots = document.querySelectorAll('[data-catalog], [data-version-catalog], [data-runtime-catalog], [data-artifact-catalog], [data-design-node-catalog]');
         let frame = 0;

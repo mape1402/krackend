@@ -21,15 +21,15 @@ public sealed class IndexModel : PageModel
 
     [BindProperty(SupportsGet = true)] public string OrchestrationId { get; set; } = string.Empty;
 
-    /// <summary>Returns a concise, color-distinct presentation for an artifact lifecycle type.</summary>
+    /// <summary>Returns a concise presentation using the shared Zoorce badge tones.</summary>
     public ArtifactTypePresentation GetArtifactTypePresentation(string artifactType)
         => artifactType switch
         {
-            NewVersionArtifactType => new ArtifactTypePresentation("New version", "od-artifact-type-new"),
-            DeprecatedArtifactType => new ArtifactTypePresentation("Deprecated", "od-artifact-type-deprecated"),
-            ArchivedArtifactType => new ArtifactTypePresentation("Archived", "od-artifact-type-archived"),
-            LegacySnapshotArtifactType => new ArtifactTypePresentation("Snapshot", "od-artifact-type-legacy"),
-            _ => new ArtifactTypePresentation(string.IsNullOrWhiteSpace(artifactType) ? "Unknown" : artifactType, "od-artifact-type-legacy"),
+            NewVersionArtifactType => new ArtifactTypePresentation("New version", "success"),
+            DeprecatedArtifactType => new ArtifactTypePresentation("Deprecated", "warning"),
+            ArchivedArtifactType => new ArtifactTypePresentation("Archived", "danger"),
+            LegacySnapshotArtifactType => new ArtifactTypePresentation("Snapshot", ""),
+            _ => new ArtifactTypePresentation(string.IsNullOrWhiteSpace(artifactType) ? "Unknown" : artifactType, ""),
         };
 
     public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -45,7 +45,7 @@ public sealed class IndexModel : PageModel
             {
                 items = result.Rows.Select(x => new { id = x.Id, key = x.VersionNumber, displayName = x.OrchestrationDisplayName,
                     version = x.VersionNumber, artifactType = x.ArtifactType, typeLabel = GetArtifactTypePresentation(x.ArtifactType).Label,
-                    typeClass = GetArtifactTypePresentation(x.ArtifactType).CssClass, created = x.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"),
+                    typeTone = GetArtifactTypePresentation(x.ArtifactType).Tone, created = x.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"),
                     description = x.VersionLabel, checksum = x.Checksum,
                     releaseUrl = Url.Page("/Promotions/Index", new { area = "OrchestratorDistribution", artifactId = x.Id }) }),
                 totalCount = result.TotalRows, hasMore = (long)result.PageNumber * result.PageSize < result.TotalRows,
@@ -83,6 +83,6 @@ public sealed class IndexModel : PageModel
         }
     }
 
-    /// <summary>Describes the visible label and theme-safe class for an artifact type.</summary>
-    public sealed record ArtifactTypePresentation(string Label, string CssClass);
+    /// <summary>Describes the visible label and semantic Zoorce tone for an artifact type.</summary>
+    public sealed record ArtifactTypePresentation(string Label, string Tone);
 }
