@@ -22,6 +22,7 @@
 <section class="od-dashboard" data-runtime-dashboard
          data-cohort-url="@Url.Page(null, "Cohort")"
          data-activity-url="@Url.Page(null, "Activity")"
+         data-top-orchestrations-url="@Url.Page(null, "TopOrchestrations")"
          data-hours="@Model.Hours">
     <div class="od-dashboard-metrics" data-dashboard-metrics aria-live="polite">
         @foreach (var metric in metrics)
@@ -89,6 +90,45 @@
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading completion path" })
             </div>
             <p class="od-dashboard-panel-error" data-dashboard-error="funnel" hidden></p>
+        </section>
+
+        <section class="od-dashboard-chart-shell" data-dashboard-panel="effectiveness">
+            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
+            {
+                Id = "runtime-effectiveness-chart", Title = "Success rate", Summary = "Completed successfully among terminal instances.",
+                Kind = ZoorceChartKind.Gauge, ShowLegend = false, ShowTooltip = false, MinimumValue = 0, MaximumValue = 100,
+                ValueSuffix = "%", Series = emptySeries
+            })
+            <div class="od-dashboard-effectiveness-detail" data-dashboard-effectiveness-detail aria-live="polite" hidden></div>
+            <div class="od-dashboard-skeleton" data-dashboard-loading="effectiveness">
+                @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading success rate" })
+            </div>
+            <p class="od-dashboard-panel-error" data-dashboard-error="effectiveness" hidden></p>
+        </section>
+
+        <section class="od-dashboard-chart-shell od-dashboard-top-orchestrations" data-dashboard-panel="top-orchestrations">
+            <div class="od-dashboard-panel-toolbar">
+                <div class="od-dashboard-period" data-dashboard-ranking-limit role="group" aria-label="Most started orchestrations limit">
+                    @foreach (var limit in new[] { 10, 15, 20, 25 })
+                    {
+                        <button type="button" class="od-dashboard-period-option" data-dashboard-ranking-limit-value="@limit"
+                                aria-pressed="@(limit == 10 ? "true" : "false")">@limit</button>
+                    }
+                </div>
+            </div>
+            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
+            {
+                Id = "runtime-top-orchestrations-chart", Title = "Most started orchestrations", Summary = "Started instances in the selected period.",
+                Kind = ZoorceChartKind.Bar, ShowLegend = false, Series = emptySeries
+            })
+            <div class="od-dashboard-skeleton" data-dashboard-loading="top-orchestrations">
+                @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "12rem", AriaLabel = "Loading orchestration ranking" })
+            </div>
+            <div class="od-dashboard-ranking-empty" data-dashboard-ranking-empty hidden>
+                <i class="bi bi-bar-chart" aria-hidden="true"></i>
+                <strong>No orchestration starts in this period</strong>
+            </div>
+            <p class="od-dashboard-panel-error" data-dashboard-error="top-orchestrations" hidden></p>
         </section>
 
     </div>

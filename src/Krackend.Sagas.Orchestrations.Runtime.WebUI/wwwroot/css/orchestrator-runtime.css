@@ -3167,10 +3167,12 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 #runtime-metric-completed { --metric-accent: var(--z-success, #0f8c55); }
 #runtime-metric-failed { --metric-accent: var(--z-danger, #c43d4d); }
 
-.od-dashboard-charts { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(18rem, .9fr); grid-template-areas: "activity status" "activity funnel"; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem; min-width: 0; }
+.od-dashboard-charts { display: grid; grid-template-columns: minmax(16.5rem, .82fr) minmax(0, 1.94fr) minmax(17rem, 1.1fr); grid-template-areas: "activity activity status" "effectiveness top-orchestrations funnel"; grid-template-rows: minmax(0, 1.16fr) minmax(12rem, .84fr); column-gap: .8rem; row-gap: 1.15rem; min-width: 0; }
 .od-dashboard-activity { position: relative; grid-area: activity; min-width: 0; }
 .od-dashboard-chart-shell[data-dashboard-panel="status"] { grid-area: status; }
 .od-dashboard-chart-shell[data-dashboard-panel="funnel"] { grid-area: funnel; }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] { grid-area: effectiveness; }
+.od-dashboard-chart-shell[data-dashboard-panel="top-orchestrations"] { grid-area: top-orchestrations; }
 .od-dashboard-chart-shell { position: relative; min-width: 0; min-height: 0; }
 .od-dashboard-panel-toolbar { position: absolute; z-index: 4; top: .75rem; right: .75rem; display: flex; align-items: center; justify-content: flex-end; min-height: 2rem; }
 .od-dashboard-period { display: inline-flex; align-items: center; gap: .15rem; padding: .18rem; border: 1px solid var(--z-border, var(--od-border)); border-radius: 10px; background: color-mix(in srgb, var(--z-surface, var(--od-surface)) 88%, var(--z-primary, var(--od-primary))); box-shadow: 0 5px 12px color-mix(in srgb, var(--z-text, #111) 6%, transparent); }
@@ -3178,6 +3180,7 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-dashboard-period-option:hover { color: var(--z-text, var(--od-text)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 10%, transparent); }
 .od-dashboard-period-option[aria-pressed="true"] { color: var(--z-primary, var(--od-primary)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 15%, var(--z-surface, var(--od-surface))); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--z-primary, var(--od-primary)) 22%, transparent); }
 .od-dashboard-activity .z-chart-component-header { padding-right: 13rem; }
+.od-dashboard-top-orchestrations .z-chart-component-header { padding-right: 9.5rem; }
 .od-dashboard-chart-shell .z-chart-component { border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 88%, var(--z-primary, var(--od-primary))); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface))); box-shadow: 0 13px 30px color-mix(in srgb, var(--z-text, #111) 5%, transparent); }
 .od-dashboard-chart-shell .z-chart-component h2 { font-size: .86rem; }
 .od-dashboard-chart-shell .z-chart-component p { font-size: .67rem; line-height: 1.4; }
@@ -3188,6 +3191,25 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-dashboard-activity [data-z-chart-metric],
 .od-dashboard-activity [data-z-chart-delta] { display: none; }
 .od-dashboard-activity .z-chart-visual { overflow: hidden; }
+#runtime-effectiveness-chart[data-effectiveness-tone="healthy"] { --z-data-primary: var(--z-success, #0f8c55); }
+#runtime-effectiveness-chart[data-effectiveness-tone="warning"] { --z-data-primary: var(--z-warning, #a16207); }
+#runtime-effectiveness-chart[data-effectiveness-tone="danger"] { --z-data-primary: var(--z-danger, #c43d4d); }
+#runtime-effectiveness-chart [data-z-chart-metric],
+#runtime-effectiveness-chart [data-z-chart-delta] { display: none; }
+#runtime-effectiveness-chart[data-effectiveness-empty="true"] [data-z-chart-metric],
+#runtime-effectiveness-chart[data-effectiveness-empty="true"] [data-z-chart-delta] { display: none; }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .z-chart-component { padding-bottom: 2.9rem; grid-template-rows: auto minmax(0, 1fr); }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .z-chart-component-header { padding-bottom: 0; }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] [data-z-chart-visual] { min-height: 7.25rem; }
+.od-dashboard-effectiveness-detail { position: absolute; z-index: 2; right: .75rem; bottom: .65rem; left: .75rem; display: grid; gap: .08rem; padding-top: .35rem; border-top: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, transparent); color: var(--z-muted, var(--od-muted)); font-size: .58rem; font-weight: 650; line-height: 1.25; text-align: center; }
+.od-dashboard-effectiveness-detail strong { color: var(--z-text, var(--od-text)); font-size: .62rem; }
+.od-dashboard-top-orchestrations [data-z-chart-metric],
+.od-dashboard-top-orchestrations [data-z-chart-delta] { display: none; }
+.od-dashboard-top-orchestrations [data-z-chart-visual] { min-height: 0; }
+.od-dashboard-ranking-empty { position: absolute; z-index: 2; top: 5rem; right: .8rem; bottom: .8rem; left: .8rem; display: grid; place-content: center; justify-items: center; gap: .3rem; border: 1px dashed color-mix(in srgb, var(--z-border, var(--od-border)) 88%, var(--z-primary, var(--od-primary))); border-radius: 11px; background: color-mix(in srgb, var(--z-surface, var(--od-surface)) 88%, var(--z-primary, var(--od-primary))); color: var(--z-muted, var(--od-muted)); font-size: .68rem; text-align: center; }
+.od-dashboard-ranking-empty[hidden] { display: none; }
+.od-dashboard-ranking-empty i { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 999px; color: var(--z-primary, var(--od-primary)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 12%, transparent); font-size: .9rem; }
+.od-dashboard-ranking-empty strong { color: var(--z-text, var(--od-text)); font-size: .74rem; }
 .od-dashboard-chart-shell[data-dashboard-panel="status"] .z-chart-component { padding-bottom: 2.45rem; }
 .od-dashboard-chart-shell[data-dashboard-panel="status"] [data-z-chart-visual] { position: relative; width: 100%; min-height: 0; height: auto; align-self: stretch; }
 .od-dashboard-status-center { position: absolute; z-index: 2; top: 50%; left: 50%; display: grid; gap: .08rem; min-width: 5rem; color: var(--z-text, var(--od-text)); pointer-events: none; text-align: center; transform: translate(-50%, -50%); }
@@ -3229,12 +3251,12 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
     [data-runtime-dashboard] { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
     [data-runtime-dashboard] .od-dashboard-charts { min-height: 0; }
     [data-runtime-dashboard] [data-dashboard-panel] { min-height: 0; overflow: hidden; }
-    [data-runtime-dashboard] .od-dashboard-activity { display: block; min-height: 0; align-self: start; }
+    [data-runtime-dashboard] .od-dashboard-activity { display: block; min-height: 0; }
     [data-runtime-dashboard] .od-dashboard-activity .od-dashboard-chart-shell,
-    [data-runtime-dashboard] .od-dashboard-activity .z-chart-component { height: auto; }
-    [data-runtime-dashboard] .od-dashboard-activity .z-chart-visual { height: 300px; }
+    [data-runtime-dashboard] .od-dashboard-activity .z-chart-component { height: 100%; }
     [data-runtime-dashboard] .od-dashboard-chart-shell[data-dashboard-panel] { height: 100%; }
     [data-runtime-dashboard] .z-chart-component { display: grid; height: 100%; min-height: 0; padding: .85rem; grid-template-rows: auto auto minmax(0, 1fr); }
+    [data-runtime-dashboard] .od-dashboard-activity .z-chart-component { padding-bottom: .45rem; }
     [data-runtime-dashboard] .z-chart-component-header { min-height: 0; }
     [data-runtime-dashboard] .z-chart-visual { min-height: 0; height: auto; }
     [data-runtime-dashboard] .z-native-chart { min-height: 0; height: 100%; }
@@ -3246,7 +3268,7 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 @media (max-width: 960px) {
     body:has([data-runtime-dashboard]) { height: auto; overflow: auto; }
     body:has([data-runtime-dashboard]) .z-main { overflow: visible; }
-    .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); grid-template-areas: "activity" "status" "funnel"; grid-template-rows: auto; }
+    .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); grid-template-areas: "activity" "effectiveness" "top-orchestrations" "status" "funnel"; grid-template-rows: auto; }
     .od-dashboard-activity { min-height: 25rem; }
     .od-dashboard-chart-shell[data-dashboard-panel] { min-height: 19rem; }
 }

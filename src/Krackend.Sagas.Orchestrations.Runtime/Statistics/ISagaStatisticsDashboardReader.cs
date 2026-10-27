@@ -18,6 +18,10 @@ public interface ISagaStatisticsDashboardReader
     Task<IReadOnlyCollection<SagaStatisticsDashboardActivity>> GetActivityAsync(SagaStatisticsDashboardQuery query,
         SagaStatisticsActivityBucket bucket, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the most frequently started orchestrations for one cohort.</summary>
+    Task<IReadOnlyCollection<SagaStatisticsDashboardOrchestration>> GetTopOrchestrationsAsync(
+        SagaStatisticsDashboardQuery query, int take, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the independent projection freshness state.</summary>
     Task<SagaStatisticsDashboardHealth> GetHealthAsync(CancellationToken cancellationToken = default);
 }
@@ -68,6 +72,9 @@ public sealed record SagaStatisticsDashboardActivity(
     DateTime BucketUtc,
     OrchestrationInstanceStatus Status,
     long Count);
+
+/// <summary>Describes one orchestration's start volume within a dashboard cohort.</summary>
+public sealed record SagaStatisticsDashboardOrchestration(string OrchestrationKey, long StartedInstances);
 
 /// <summary>Describes whether the deferred dashboard projection has caught up.</summary>
 public sealed record SagaStatisticsDashboardHealth(

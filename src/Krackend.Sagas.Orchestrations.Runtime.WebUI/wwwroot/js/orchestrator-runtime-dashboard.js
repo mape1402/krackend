@@ -4,6 +4,7 @@
     if (!root || !config) return;
 
     const periodButtons = [...root.querySelectorAll('[data-dashboard-period-value]')];
+    const rankingLimitButtons = [...root.querySelectorAll('[data-dashboard-ranking-limit-value]')];
     const requests = new Map();
     let refreshTimer;
     let reconnectTimer;
@@ -11,7 +12,9 @@
     const state = {
         hours: Number(root.dataset.hours) || 168,
         cohortEpoch: 0,
-        activityEpoch: 0
+        activityEpoch: 0,
+        topOrchestrationsEpoch: 0,
+        rankingLimit: 10
     };
 
     const activeStatuses = ['Created', 'Running', 'Compensating'];
@@ -214,6 +217,43 @@
         return values;
     }
 
+    function effectivenessTone(rate) {
+        if (rate >= 95) return { key: 'healthy', color: 'var(--z-success)' };
+        if (rate >= 90) return { key: 'warning', color: 'var(--z-warning)' };
+        return { key: 'danger', color: 'var(--z-danger)' };
+    }
+
+    function renderEffectiveness(values) {
+        const terminal = values.completed + values.deadLettered + values.failed;
+        const chart = document.getElementById('runtime-effectiveness-chart');
+        const detail = root.querySelector('[data-dashboard-effectiveness-detail]');
+        const rate = terminal ? Math.round(values.completed * 1000 / terminal) / 10 : null;
+        const tone = rate === null ? null : effectivenessTone(rate);
+        if (chart) {
+            chart.dataset.effectivenessTone = tone?.key || 'neutral';
+            chart.dataset.effectivenessEmpty = String(rate === null);
+        }
+        replaceChart('runtime-effectiveness-chart', rate === null ? [] : [{
+            name: 'Success rate',
+            color: tone.color,
+            points: [{ label: 'Success rate', value: rate }]
+        }]);
+        if (detail) {
+            detail.hidden = false;
+            if (rate === null) {
+                detail.textContent = 'No terminal results in the selected period.';
+            } else {
+                const completed = document.createElement('strong');
+                completed.textContent = `${dashboardNumber(values.completed)} of ${dashboardNumber(terminal)} terminal sagas completed successfully`;
+                const active = document.createElement('span');
+                active.textContent = `${dashboardNumber(values.running + values.waiting)} still active`;
+                detail.replaceChildren(completed, active);
+            }
+        }
+        setLoading('effectiveness', false);
+        clearError('effectiveness');
+    }
+
     function renderCohort(cohort) {
         const values = asDashboardValues(cohort);
         Object.entries(values).forEach(([key, value]) => setMetric(key, value, values.total));
@@ -227,6 +267,8 @@
         renderStatusTooltip(values);
         setLoading('status', false);
         clearError('status');
+
+        renderEffectiveness(values);
 
         const finalized = values.completed + values.deadLettered + values.failed;
         replaceChart('runtime-funnel-chart', [{
@@ -293,6 +335,22 @@
         if (emptyState) emptyState.hidden = !empty;
     }
 
+    function setRankingEmpty(empty) {
+        const emptyState = root.querySelector('[data-dashboard-ranking-empty]');
+        if (emptyState) emptyState.hidden = !empty;
+    }
+
+    function renderTopOrchestrations(orchestrations) {
+        const rows = Array.isArray(orchestrations) ? orchestrations : [];
+        setRankingEmpty(rows.length === 0);
+        replaceChart('runtime-top-orchestrations-chart', rows.length === 0 ? [] : [{
+            name: 'Started instances',
+            points: rows.map(row => ({ label: String(row.orchestrationKey || ''), value: Number(row.startedInstances || 0) }))
+        }]);
+        setLoading('top-orchestrations', false);
+        clearError('top-orchestrations');
+    }
+
     function renderActivity(result) {
         const bucket = String(result.bucket || 'Day').toLowerCase();
         const start = asUtcDate(result.fromUtc);
@@ -321,6 +379,7 @@
         setMetricLoading(true);
         setLoading('status', true);
         setLoading('funnel', true);
+        setLoading('effectiveness', true);
         try {
             const cohort = await fetchJson('cohort', root.dataset.cohortUrl);
             if (epoch !== state.cohortEpoch) return;
@@ -330,6 +389,7 @@
             setMetricLoading(false);
             showError('status', error);
             showError('funnel', error);
+            showError('effectiveness', error);
         }
     }
 
@@ -347,13 +407,36 @@
         }
     }
 
+    async function loadTopOrchestrations() {
+        const epoch = ++state.topOrchestrationsEpoch;
+        setRankingEmpty(false);
+        setLoading('top-orchestrations', true);
+        try {
+            const source = new URL(root.dataset.topOrchestrationsUrl, window.location.href);
+            source.searchParams.set('limit', String(state.rankingLimit));
+            const ranking = await fetchJson('top-orchestrations', source);
+            if (epoch !== state.topOrchestrationsEpoch) return;
+            renderTopOrchestrations(ranking);
+        } catch (error) {
+            if (isAbort(error) || epoch !== state.topOrchestrationsEpoch) return;
+            showError('top-orchestrations', error);
+        }
+    }
+
     function loadDashboard() {
-        return Promise.allSettled([loadCohort(), loadActivity()]);
+        return Promise.allSettled([loadCohort(), loadActivity(), loadTopOrchestrations()]);
     }
 
     function syncPeriodButtons() {
         periodButtons.forEach(button => {
             const selected = Number(button.dataset.dashboardPeriodValue) === state.hours;
+            button.setAttribute('aria-pressed', String(selected));
+        });
+    }
+
+    function syncRankingLimitButtons() {
+        rankingLimitButtons.forEach(button => {
+            const selected = Number(button.dataset.dashboardRankingLimitValue) === state.rankingLimit;
             button.setAttribute('aria-pressed', String(selected));
         });
     }
@@ -373,7 +456,15 @@
         void loadDashboard();
     }
 
+    function selectRankingLimit(limit) {
+        if (![10, 15, 20, 25].includes(limit) || limit === state.rankingLimit) return;
+        state.rankingLimit = limit;
+        syncRankingLimitButtons();
+        void loadTopOrchestrations();
+    }
+
     periodButtons.forEach(button => button.addEventListener('click', () => selectPeriod(Number(button.dataset.dashboardPeriodValue))));
+    rankingLimitButtons.forEach(button => button.addEventListener('click', () => selectRankingLimit(Number(button.dataset.dashboardRankingLimitValue))));
 
     function scheduleStatisticsRefresh() {
         window.clearTimeout(refreshTimer);
@@ -381,6 +472,7 @@
     }
 
     syncPeriodButtons();
+    syncRankingLimitButtons();
     void loadDashboard();
     if (!window.signalR) return;
 

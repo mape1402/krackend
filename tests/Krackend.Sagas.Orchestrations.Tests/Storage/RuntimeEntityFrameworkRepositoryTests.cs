@@ -98,6 +98,46 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task DashboardStatisticsReaderRanksStartedOrchestrationsInTheProjection()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+
+        var inventory = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now);
+        inventory.OrchestrationDefinitionKey = "inventory.stock.updated";
+        var salesFirst = Instance(Id.New(), OrchestrationInstanceStatus.Running, now);
+        salesFirst.OrchestrationDefinitionKey = "sales.sale.created";
+        var salesSecond = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now);
+        salesSecond.OrchestrationDefinitionKey = "sales.sale.created";
+        var outsideRange = Instance(Id.New(), OrchestrationInstanceStatus.Completed, now.AddDays(-2));
+        outsideRange.OrchestrationDefinitionKey = "outside.range";
+        await repository.Create(inventory);
+        await repository.Create(salesFirst);
+        await repository.Create(salesSecond);
+        await repository.Create(outsideRange);
+        await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(20);
+
+        var reader = scope.ServiceProvider.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1));
+        var ranking = await reader.GetTopOrchestrationsAsync(query, 10);
+
+        Assert.Collection(ranking,
+            item => Assert.Equal(new SagaStatisticsDashboardOrchestration("sales.sale.created", 2), item),
+            item => Assert.Equal(new SagaStatisticsDashboardOrchestration("inventory.stock.updated", 1), item));
+        Assert.Equal([new SagaStatisticsDashboardOrchestration("sales.sale.created", 2)],
+            await reader.GetTopOrchestrationsAsync(query, 1));
+        Assert.Equal([new SagaStatisticsDashboardOrchestration("inventory.stock.updated", 1)],
+            await reader.GetTopOrchestrationsAsync(new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1), "inventory.stock.updated"), 10));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => reader.GetTopOrchestrationsAsync(query, 0));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => reader.GetTopOrchestrationsAsync(null!, 10));
+    }
+
+    [Fact]
     public async Task StatisticsBackfillCapturesLegacyInstancesAndPersistsCompletion()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

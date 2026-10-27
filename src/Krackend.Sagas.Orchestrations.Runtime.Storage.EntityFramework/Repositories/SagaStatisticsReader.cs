@@ -102,6 +102,29 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
             .ToArray();
     }
 
+    public async Task<IReadOnlyCollection<SagaStatisticsDashboardOrchestration>> GetTopOrchestrationsAsync(
+        SagaStatisticsDashboardQuery query, int take, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (take <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(take));
+        }
+
+        query = query.Normalize();
+        var rankings = await FilterProjections(query)
+            .GroupBy(item => item.OrchestrationKey)
+            .Select(group => new { OrchestrationKey = group.Key, StartedInstances = group.Count() })
+            .OrderByDescending(item => item.StartedInstances)
+            .ThenBy(item => item.OrchestrationKey)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+
+        return rankings
+            .Select(item => new SagaStatisticsDashboardOrchestration(item.OrchestrationKey, item.StartedInstances))
+            .ToArray();
+    }
+
     public async Task<SagaStatisticsDashboardHealth> GetHealthAsync(CancellationToken cancellationToken = default)
     {
         var pending = await db.SagaStatisticsObservations.AsNoTracking()

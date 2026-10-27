@@ -64,6 +64,15 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
         });
     }
 
+    /// <summary>Returns the independently loaded ranking of the most frequently started orchestrations.</summary>
+    public async Task<IActionResult> OnGetTopOrchestrationsAsync(int days = 7, string orchestrationKey = null, int? hours = null,
+        int limit = 10, CancellationToken cancellationToken = default)
+    {
+        var reader = GetDashboardReader();
+        if (reader is null) return Unavailable();
+        return Json(await reader.GetTopOrchestrationsAsync(CreateQuery(days, orchestrationKey, hours), NormalizeRankingLimit(limit), cancellationToken));
+    }
+
     /// <summary>Returns deferred projection freshness without coupling it to visible statistics.</summary>
     public async Task<IActionResult> OnGetHealthAsync(CancellationToken cancellationToken = default)
     {
@@ -111,6 +120,8 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
 
     private static int NormalizeHours(int? hours, int days)
         => hours is 1 or 6 or 24 or 168 or 720 or 2160 ? hours.Value : NormalizeDays(days) * 24;
+
+    private static int NormalizeRankingLimit(int limit) => limit is 10 or 15 or 20 or 25 ? limit : 10;
 
     private static string NormalizeKey(string orchestrationKey)
         => string.IsNullOrWhiteSpace(orchestrationKey) ? null : orchestrationKey.Trim();

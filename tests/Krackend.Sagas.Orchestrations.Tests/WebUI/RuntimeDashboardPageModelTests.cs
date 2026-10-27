@@ -110,6 +110,24 @@ public sealed class RuntimeDashboardPageModelTests
     }
 
     [Fact]
+    public async Task TopOrchestrationsUsesTheSelectedPeriodAndOneOfTheSupportedLimits()
+    {
+        var reader = new FakeDashboardReader();
+        using var services = CreateServices(reader);
+        var page = CreatePage(services);
+
+        var result = Assert.IsType<JsonResult>(await page.OnGetTopOrchestrationsAsync(hours: 6, limit: 25));
+
+        Assert.Equal(6, (reader.TopOrchestrationsQuery.BeforeUtc - reader.TopOrchestrationsQuery.FromUtc).TotalHours);
+        Assert.Equal(25, reader.TopOrchestrationsLimit);
+        Assert.Contains("sales.sale.created", Serialize(result.Value));
+
+        await page.OnGetTopOrchestrationsAsync(hours: 6, limit: 999);
+
+        Assert.Equal(10, reader.TopOrchestrationsLimit);
+    }
+
+    [Fact]
     public async Task DashboardHandlersReportUnavailableWhenTheProjectionReaderIsNotRegistered()
     {
         using var services = new ServiceCollection().BuildServiceProvider();
@@ -118,6 +136,7 @@ public sealed class RuntimeDashboardPageModelTests
         Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetFiltersAsync()).StatusCode);
         Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetCohortAsync()).StatusCode);
         Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetActivityAsync()).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetTopOrchestrationsAsync()).StatusCode);
         Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetHealthAsync()).StatusCode);
         Assert.Equal(503, Assert.IsType<ObjectResult>(await page.OnGetStatsAsync()).StatusCode);
     }
@@ -191,10 +210,13 @@ public sealed class RuntimeDashboardPageModelTests
         public int FilterCalls { get; private set; }
         public int CohortCalls { get; private set; }
         public int ActivityCalls { get; private set; }
+        public int TopOrchestrationsCalls { get; private set; }
         public int HealthCalls { get; private set; }
-        public int CallCount => FilterCalls + CohortCalls + ActivityCalls + HealthCalls;
+        public int CallCount => FilterCalls + CohortCalls + ActivityCalls + TopOrchestrationsCalls + HealthCalls;
         public SagaStatisticsDashboardQuery ActivityQuery { get; private set; } = new(Now.UtcDateTime, Now.UtcDateTime.AddHours(1));
         public SagaStatisticsActivityBucket ActivityBucket { get; private set; }
+        public SagaStatisticsDashboardQuery TopOrchestrationsQuery { get; private set; } = new(Now.UtcDateTime, Now.UtcDateTime.AddHours(1));
+        public int TopOrchestrationsLimit { get; private set; }
 
         public Task<IReadOnlyCollection<string>> GetOrchestrationKeysAsync(CancellationToken cancellationToken = default)
         {
@@ -222,6 +244,16 @@ public sealed class RuntimeDashboardPageModelTests
             ActivityBucket = bucket;
             return Task.FromResult<IReadOnlyCollection<SagaStatisticsDashboardActivity>>(
             [new SagaStatisticsDashboardActivity(query.FromUtc, OrchestrationInstanceStatus.Completed, 1)]);
+        }
+
+        public Task<IReadOnlyCollection<SagaStatisticsDashboardOrchestration>> GetTopOrchestrationsAsync(
+            SagaStatisticsDashboardQuery query, int take, CancellationToken cancellationToken = default)
+        {
+            TopOrchestrationsCalls++;
+            TopOrchestrationsQuery = query;
+            TopOrchestrationsLimit = take;
+            return Task.FromResult<IReadOnlyCollection<SagaStatisticsDashboardOrchestration>>(
+            [new SagaStatisticsDashboardOrchestration("sales.sale.created", 20)]);
         }
 
         public Task<SagaStatisticsDashboardHealth> GetHealthAsync(CancellationToken cancellationToken = default)
