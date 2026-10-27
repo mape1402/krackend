@@ -22,7 +22,7 @@
 <section class="od-dashboard" data-runtime-dashboard
          data-cohort-url="@Url.Page(null, "Cohort")"
          data-activity-url="@Url.Page(null, "Activity")"
-         data-days="@Model.Days">
+         data-hours="@Model.Hours">
     <div class="od-dashboard-metrics" data-dashboard-metrics aria-live="polite">
         @foreach (var metric in metrics)
         {
@@ -39,10 +39,10 @@
         <section class="od-dashboard-activity" data-dashboard-panel="activity">
             <div class="od-dashboard-panel-toolbar">
                 <div class="od-dashboard-period" data-dashboard-period role="group" aria-label="Statistics period">
-                    @foreach (var period in new[] { (1, "24h"), (7, "7d"), (30, "30d"), (90, "90d") })
+                    @foreach (var period in new[] { (1, "1h"), (6, "6h"), (24, "24h"), (168, "7d"), (720, "30d"), (2160, "90d") })
                     {
                         <button type="button" class="od-dashboard-period-option" data-dashboard-period-value="@period.Item1"
-                                aria-pressed="@(period.Item1 == Model.Days ? "true" : "false")">@period.Item2</button>
+                                aria-pressed="@(period.Item1 == Model.Hours ? "true" : "false")">@period.Item2</button>
                     }
                 </div>
             </div>
@@ -55,6 +55,11 @@
                 <div class="od-dashboard-skeleton" data-dashboard-loading="activity">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "11rem", AriaLabel = "Loading activity" })
                 </div>
+                <div class="od-dashboard-activity-empty" data-dashboard-activity-empty hidden>
+                    <i class="bi bi-activity" aria-hidden="true"></i>
+                    <strong>No transitions in this period</strong>
+                    <span>Choose a wider range to inspect earlier activity.</span>
+                </div>
             </div>
             <p class="od-dashboard-panel-error" data-dashboard-error="activity" hidden></p>
         </section>
@@ -63,8 +68,10 @@
             @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
             {
                 Id = "runtime-status-chart", Title = "Current status", Summary = "Current status distribution for instances started in the selected period.",
-                Kind = ZoorceChartKind.Donut, Series = emptySeries
+                Kind = ZoorceChartKind.Donut, ShowLegend = false, ShowTooltip = false, Series = emptySeries
             })
+            <p class="od-dashboard-status-hint">Hover over the chart to inspect the full status breakdown.</p>
+            <div id="runtime-status-tooltip" class="z-tooltip od-dashboard-status-tooltip" data-dashboard-status-tooltip role="tooltip" hidden></div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="status">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading current status" })
             </div>
@@ -74,10 +81,10 @@
         <section class="od-dashboard-chart-shell" data-dashboard-panel="funnel">
             @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
             {
-                Id = "runtime-funnel-chart", Title = "Completion path", Summary = "Current completion outcome for instances started in the selected period.",
+                Id = "runtime-funnel-chart", Title = "Success conversion", Summary = "Instances that completed successfully from the selected cohort.",
                 Kind = ZoorceChartKind.Funnel, ShowLegend = false, Series = emptySeries
             })
-            <div class="od-dashboard-outcome" data-dashboard-outcome hidden></div>
+            <div class="od-dashboard-outcome" data-dashboard-outcome aria-live="polite" hidden></div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="funnel">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading completion path" })
             </div>

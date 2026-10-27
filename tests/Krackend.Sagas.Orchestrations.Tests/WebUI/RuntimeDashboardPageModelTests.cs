@@ -58,6 +58,33 @@ public sealed class RuntimeDashboardPageModelTests
         Assert.Contains($"\"bucket\":\"{expectedBucket}\"", Serialize(result.Value));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(6)]
+    public async Task ActivitySupportsHourlyDashboardRanges(int hours)
+    {
+        var reader = new FakeDashboardReader();
+        using var services = CreateServices(reader);
+        var page = CreatePage(services);
+
+        await page.OnGetActivityAsync(hours: hours);
+
+        Assert.Equal(SagaStatisticsActivityBucket.Hour, reader.ActivityBucket);
+        Assert.Equal(hours, (reader.ActivityQuery.BeforeUtc - reader.ActivityQuery.FromUtc).TotalHours);
+    }
+
+    [Fact]
+    public async Task OnGetPrefersASupportedHourlyRange()
+    {
+        var reader = new FakeDashboardReader();
+        using var services = CreateServices(reader);
+        var page = CreatePage(services);
+
+        await page.OnGetAsync(hours: 6);
+
+        Assert.Equal(6, page.Hours);
+    }
+
     [Fact]
     public async Task CohortFiltersHealthAndOptionsUseIndependentReaderCalls()
     {

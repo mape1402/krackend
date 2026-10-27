@@ -9,14 +9,21 @@
     let reconnectTimer;
     let closed = false;
     const state = {
-        days: Number(root.dataset.days) || 7,
+        hours: Number(root.dataset.hours) || 168,
         cohortEpoch: 0,
         activityEpoch: 0
     };
 
     const activeStatuses = ['Created', 'Running', 'Compensating'];
     const failedStatuses = ['Stopped', 'Compensated', 'CompletedWithErrors', 'Aborted', 'Failed'];
-    const supportedPeriods = new Set([1, 7, 30, 90]);
+    const statusDescriptors = [
+        { key: 'running', label: 'In progress', tone: 'progress', color: 'var(--z-info)' },
+        { key: 'waiting', label: 'Waiting', tone: 'waiting', color: 'var(--z-warning)' },
+        { key: 'completed', label: 'Completed', tone: 'completed', color: 'var(--z-success)' },
+        { key: 'deadLettered', label: 'Dead lettered', tone: 'dead-lettered', color: 'var(--z-warning)' },
+        { key: 'failed', label: 'Failed', tone: 'failed', color: 'var(--z-danger)' }
+    ];
+    const supportedPeriods = new Set([1, 6, 24, 168, 720, 2160]);
 
     const statusValue = (statuses, name) => Number(statuses?.[name] || 0);
     const statusTotal = (statuses, names) => names.reduce((total, name) => total + statusValue(statuses, name), 0);
@@ -24,7 +31,8 @@
 
     function requestUrl(source) {
         const url = new URL(source, window.location.href);
-        url.searchParams.set('days', String(state.days));
+        url.searchParams.delete('days');
+        url.searchParams.set('hours', String(state.hours));
         return url;
     }
 
@@ -85,6 +93,112 @@
             : total ? `${Math.round(value * 100 / total)}% of started` : 'no instances';
     }
 
+    function dashboardNumber(value) {
+        return Number(value || 0).toLocaleString();
+    }
+
+    function dashboardShare(value, total) {
+        return total ? `${Math.round(value * 100 / total)}%` : '0%';
+    }
+
+    function statusSeries(values) {
+        return statusDescriptors.map(status => ({
+            name: status.label,
+            color: status.color,
+            points: [{ label: status.label, value: values[status.key] }]
+        }));
+    }
+
+    function centerChartCanvas(chartId) {
+        const canvas = document.getElementById(chartId)?.querySelector('[data-z-chart-canvas]');
+        canvas?.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+
+    function renderStatusCenter(total) {
+        const visual = document.getElementById('runtime-status-chart')?.querySelector('[data-z-chart-visual]');
+        if (!visual) return;
+        let center = visual.querySelector('[data-dashboard-status-center]');
+        if (!center) {
+            center = document.createElement('div');
+            center.className = 'od-dashboard-status-center';
+            center.dataset.dashboardStatusCenter = '';
+            visual.append(center);
+        }
+        const value = document.createElement('strong');
+        value.textContent = dashboardNumber(total);
+        const label = document.createElement('span');
+        label.textContent = 'Total instances';
+        center.replaceChildren(value, label);
+        const position = () => {
+            const ring = visual.querySelector('.z-native-chart-ring-track');
+            if (ring) {
+                const visualBounds = visual.getBoundingClientRect();
+                const ringBounds = ring.getBoundingClientRect();
+                center.style.left = `${ringBounds.left - visualBounds.left + ringBounds.width / 2}px`;
+                center.style.top = `${ringBounds.top - visualBounds.top + ringBounds.height / 2}px`;
+                return;
+            }
+
+            const canvas = visual.querySelector('[data-z-chart-canvas]');
+            if (!canvas) return;
+            const visualBounds = visual.getBoundingClientRect();
+            const canvasBounds = canvas.getBoundingClientRect();
+            center.style.left = `${canvasBounds.left - visualBounds.left + canvasBounds.width / 2}px`;
+            center.style.top = `${canvasBounds.top - visualBounds.top + canvasBounds.height / 2}px`;
+        };
+        position();
+        if (!center.statusCenterResizeObserver && 'ResizeObserver' in window) {
+            center.statusCenterResizeObserver = new ResizeObserver(position);
+            center.statusCenterResizeObserver.observe(visual);
+        }
+    }
+
+    function renderStatusTooltip(values) {
+        const tooltip = root.querySelector('[data-dashboard-status-tooltip]');
+        const visual = document.getElementById('runtime-status-chart')?.querySelector('[data-z-chart-visual]');
+        if (!tooltip || !visual) return;
+
+        const heading = document.createElement('strong');
+        heading.className = 'od-dashboard-status-tooltip-title';
+        heading.textContent = 'Status distribution';
+        const caption = document.createElement('span');
+        caption.className = 'od-dashboard-status-tooltip-caption';
+        caption.textContent = `${dashboardNumber(values.total)} total instances`;
+        const rows = document.createElement('div');
+        rows.className = 'od-dashboard-status-tooltip-rows';
+        rows.replaceChildren(...statusDescriptors.map(status => {
+            const value = values[status.key];
+            const row = document.createElement('div');
+            row.className = `od-dashboard-status-row is-${status.tone}`;
+            const marker = document.createElement('span');
+            marker.className = 'od-dashboard-status-marker';
+            marker.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.className = 'od-dashboard-status-label';
+            label.textContent = status.label;
+            const count = document.createElement('strong');
+            count.textContent = `${dashboardNumber(value)} · ${dashboardShare(value, values.total)}`;
+            row.append(marker, label, count);
+            return row;
+        }));
+        tooltip.replaceChildren(heading, caption, rows);
+
+        visual.tabIndex = 0;
+        visual.setAttribute('aria-describedby', tooltip.id);
+        if (visual.dataset.statusTooltipBound) return;
+
+        const show = () => { tooltip.hidden = false; };
+        const hide = () => { tooltip.hidden = true; };
+        visual.addEventListener('pointerenter', show);
+        visual.addEventListener('pointerleave', hide);
+        visual.addEventListener('focusin', show);
+        visual.addEventListener('focusout', hide);
+        visual.addEventListener('keydown', event => {
+            if (event.key === 'Escape') hide();
+        });
+        visual.dataset.statusTooltipBound = 'true';
+    }
+
     function asDashboardValues(cohort) {
         const statuses = cohort.currentStatuses || {};
         const values = {
@@ -105,17 +219,12 @@
         Object.entries(values).forEach(([key, value]) => setMetric(key, value, values.total));
         setMetricLoading(false);
 
-        const distribution = [
-            ['In progress', values.running],
-            ['Waiting', values.waiting],
-            ['Completed', values.completed],
-            ['Dead lettered', values.deadLettered],
-            ['Failed', values.failed]
-        ].filter(([, value]) => value > 0);
-        replaceChart('runtime-status-chart', [{
-            name: 'Instances',
-            points: distribution.length ? distribution.map(([label, value]) => ({ label, value })) : [{ label: 'No instances', value: 0 }]
-        }]);
+        replaceChart('runtime-status-chart', statusSeries(values));
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            centerChartCanvas('runtime-status-chart');
+            renderStatusCenter(values.total);
+        }));
+        renderStatusTooltip(values);
         setLoading('status', false);
         clearError('status');
 
@@ -124,16 +233,24 @@
             name: 'Instances',
             points: [
                 { label: 'Started', value: values.total },
-                { label: 'Finalized', value: finalized },
                 { label: 'Completed', value: values.completed }
             ]
         }]);
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            centerChartCanvas('runtime-funnel-chart');
+        }));
         const outcome = root.querySelector('[data-dashboard-outcome]');
         if (outcome) {
             outcome.hidden = false;
-            outcome.textContent = values.total
-                ? `${values.running + values.waiting} in progress · ${values.deadLettered} dead-lettered · ${values.failed} failed`
-                : 'No instances started in this period.';
+            if (!values.total) {
+                outcome.textContent = 'No instances started in this period.';
+            } else {
+                const terminal = document.createElement('strong');
+                terminal.textContent = `${dashboardNumber(finalized)} reached a terminal outcome`;
+                const detail = document.createElement('span');
+                detail.textContent = `${dashboardNumber(values.running + values.waiting)} still active · ${dashboardNumber(values.failed)} failed · ${dashboardNumber(values.deadLettered)} dead-lettered`;
+                outcome.replaceChildren(terminal, detail);
+            }
         }
         setLoading('funnel', false);
         clearError('funnel');
@@ -171,6 +288,11 @@
         return date.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' });
     }
 
+    function setActivityEmpty(empty) {
+        const emptyState = root.querySelector('[data-dashboard-activity-empty]');
+        if (emptyState) emptyState.hidden = !empty;
+    }
+
     function renderActivity(result) {
         const bucket = String(result.bucket || 'Day').toLowerCase();
         const start = asUtcDate(result.fromUtc);
@@ -184,7 +306,9 @@
         const buckets = [];
         for (let current = bucketStart(start, bucket); current < before; current = bucketStep(current, bucket)) buckets.push(current);
         const statuses = [['Completed', 'Completed'], ['Dead lettered', 'DeadLettered'], ['Failed', 'Failed']];
-        replaceChart('runtime-activity-chart', statuses.map(([name, status]) => ({
+        const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+        setActivityEmpty(total === 0);
+        replaceChart('runtime-activity-chart', total === 0 ? [] : statuses.map(([name, status]) => ({
             name,
             points: buckets.map(date => ({ label: bucketLabel(date, bucket), value: counts.get(`${date.getTime()}|${status}`) || 0 }))
         })));
@@ -211,6 +335,7 @@
 
     async function loadActivity() {
         const epoch = ++state.activityEpoch;
+        setActivityEmpty(false);
         setLoading('activity', true);
         try {
             const activity = await fetchJson('activity', root.dataset.activityUrl);
@@ -228,20 +353,21 @@
 
     function syncPeriodButtons() {
         periodButtons.forEach(button => {
-            const selected = Number(button.dataset.dashboardPeriodValue) === state.days;
+            const selected = Number(button.dataset.dashboardPeriodValue) === state.hours;
             button.setAttribute('aria-pressed', String(selected));
         });
     }
 
     function updateAddress() {
         const url = new URL(window.location.href);
-        url.searchParams.set('days', String(state.days));
+        url.searchParams.delete('days');
+        url.searchParams.set('hours', String(state.hours));
         window.history.replaceState({}, '', url);
     }
 
-    function selectPeriod(days) {
-        if (!supportedPeriods.has(days) || days === state.days) return;
-        state.days = days;
+    function selectPeriod(hours) {
+        if (!supportedPeriods.has(hours) || hours === state.hours) return;
+        state.hours = hours;
         syncPeriodButtons();
         updateAddress();
         void loadDashboard();
