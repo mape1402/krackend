@@ -6,8 +6,10 @@ using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -253,10 +255,31 @@ public sealed class RuntimeInstancesPageModelTests
     private static DetailModel CreateDetailPage(
         IRuntimeDiagnosticsReader reader,
         IOrchestrationRecoveryService recovery = null)
-        => new(
+    {
+        var page = new DetailModel(
             reader,
             recovery ?? Substitute.For<IOrchestrationRecoveryService>(),
             Options.Create(new OrchestratorRuntimeWebUIOptions()));
+        AttachPageContext(page);
+        return page;
+    }
+
+    private static void AttachPageContext(PageModel page)
+    {
+        var httpContext = new DefaultHttpContext();
+        page.PageContext = new PageContext { HttpContext = httpContext };
+        page.TempData = new TempDataDictionary(httpContext, new InMemoryTempDataProvider());
+    }
+
+    private sealed class InMemoryTempDataProvider : ITempDataProvider
+    {
+        public IDictionary<string, object> LoadTempData(HttpContext context)
+            => new Dictionary<string, object>(StringComparer.Ordinal);
+
+        public void SaveTempData(HttpContext context, IDictionary<string, object> values)
+        {
+        }
+    }
 
     private sealed class FakeRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader, IRuntimeInstanceStatusCountsReader
     {

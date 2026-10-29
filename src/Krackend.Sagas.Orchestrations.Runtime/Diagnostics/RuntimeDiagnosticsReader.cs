@@ -158,11 +158,12 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     {
         return status switch
         {
-            "Pending" or "Skipped" => "od-status-inactive",
+            "Created" or "Pending" or "Skipped" or "Stopped" => "od-status-inactive",
             "Running" => "od-status-running",
-            "Idle" or "DeadLettered" => "od-status-warning",
-            "Completed" => "od-status-active",
-            "Failed" => "od-status-danger",
+            "Idle" or "Retrying" or "CompletedWithErrors" or "DeadLettered" => "od-status-warning",
+            "Waiting" or "WaitingResponse" or "AwaitingResponse" or "Compensating" => "od-status-waiting",
+            "Completed" or "Compensated" => "od-status-active",
+            "Failed" or "TimedOut" or "Cancelled" or "Aborted" => "od-status-danger",
             _ => "od-status-inactive"
         };
     }

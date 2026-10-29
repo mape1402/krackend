@@ -91,7 +91,10 @@ public sealed class DetailModel : PageModel
 
         var result = await _recovery.ReplayAsync(instanceId, null, cancellationToken);
         ReplayMessage = result.Message;
-        TempData["ReplayTone"] = result.Succeeded ? "success" : "danger";
+        if (PageContext?.HttpContext is not null)
+        {
+            TempData["ReplayTone"] = result.Succeeded ? "success" : "danger";
+        }
         return RedirectToPage(new { instanceId });
     }
 
