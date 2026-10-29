@@ -1,0 +1,25 @@
+@using Krackend.Sagas.Orchestrations.Runtime.Diagnostics
+@model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.DetailModel
+@{
+    var instance = Model.Detail.Instance;
+    var lastTask = Model.Detail.Tasks
+        .OrderByDescending(task => task.FailedOnUtc ?? task.CompletedOnUtc ?? task.StartedOnUtc)
+        .FirstOrDefault(task => !string.IsNullOrWhiteSpace(task.ErrorSummary));
+    var lastAttempt = lastTask?.Attempts
+        .OrderByDescending(attempt => attempt.FailedOnUtc ?? attempt.TimedOutOnUtc ?? attempt.CompletedOnUtc ?? attempt.StartedOnUtc)
+        .FirstOrDefault();
+    string Timestamp(DateTime? value) => value.HasValue ? $"{value.Value:yyyy-MM-dd HH:mm:ss} UTC" : "—";
+}
+<section class="od-recover-dialog" aria-label="Saga recovery confirmation">
+    <p class="od-recover-dialog-lead">Recovery resumes only unresolved work from the durable checkpoint. It preserves this saga, correlation, trace and original orchestration version.</p>
+    <dl class="od-trace-fields od-recover-dialog-fields">
+        <dt>Saga</dt><dd><code>@instance.SagaId</code></dd>
+        <dt>Correlation</dt><dd><code>@instance.CorrelationId</code></dd>
+        <dt>Orchestration</dt><dd>@instance.OrchestrationLabel</dd>
+        <dt>Status</dt><dd><span class="od-status @instance.StatusClass">@instance.Status</span></dd>
+        <dt>Current stage</dt><dd>@(instance.CurrentStageKey ?? "—")</dd>
+        <dt>Current task</dt><dd>@(instance.CurrentTaskKey ?? "—")</dd>
+        <dt>Last attempt</dt><dd>@(lastAttempt is null ? "—" : $"Attempt {lastAttempt.AttemptNumber} · {Timestamp(lastAttempt.FailedOnUtc ?? lastAttempt.TimedOutOnUtc ?? lastAttempt.CompletedOnUtc)}")</dd>
+        <dt>Last error</dt><dd class="od-trace-error">@(lastAttempt?.ErrorMessage ?? lastTask?.ErrorSummary ?? instance.ErrorSummary ?? "No error details were persisted.")</dd>
+    </dl>
+</section>

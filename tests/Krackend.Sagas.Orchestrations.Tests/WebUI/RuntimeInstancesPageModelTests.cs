@@ -218,31 +218,48 @@ public sealed class RuntimeInstancesPageModelTests
     }
 
     [Fact]
-    public async Task DetailPageReplaysOnlyThroughTheRecoveryService()
+    public async Task DetailPageRecoversTerminalSagasOnlyThroughTheTerminalRecoveryService()
     {
         var id = Ulid.NewUlid().ToString();
         var recovery = Substitute.For<IOrchestrationRecoveryService>();
-        recovery.ReplayAsync(id, null, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(OrchestrationRecoveryResult.Success(id, "Running", "Replay queued.")));
-        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader(), recovery);
+        recovery.RecoverTerminalAsync(id, null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(OrchestrationRecoveryResult.Success(id, "Running", "Recovery queued.")));
+        var reader = new FakeRuntimeDiagnosticsReader { DetailStatus = "DeadLettered" };
+        var page = CreateDetailPage(reader, recovery);
 
-        var result = await page.OnPostReplayAsync(id);
+        var result = await page.OnPostRecoverAsync(id);
 
         var redirect = Assert.IsType<RedirectToPageResult>(result);
-        Assert.Equal("Replay queued.", page.ReplayMessage);
-        Assert.Equal("success", page.TempData["ReplayTone"]);
+        Assert.Equal("Recovery queued.", page.RecoveryMessage);
+        Assert.Equal("success", page.TempData["RecoveryTone"]);
         Assert.Equal(id, redirect.RouteValues["instanceId"]);
-        await recovery.Received(1).ReplayAsync(id, null, Arg.Any<CancellationToken>());
+        await recovery.Received(1).RecoverTerminalAsync(id, null, Arg.Any<CancellationToken>());
+        await recovery.DidNotReceiveWithAnyArgs().ReplayAsync(default, default, default);
     }
 
     [Fact]
-    public async Task DetailPageDoesNotReplayInvalidInstanceIds()
+    public async Task DetailPageDoesNotRecoverInvalidInstanceIds()
     {
         var recovery = Substitute.For<IOrchestrationRecoveryService>();
         var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader(), recovery);
 
-        Assert.IsType<NotFoundResult>(await page.OnPostReplayAsync("not-an-id"));
-        await recovery.DidNotReceiveWithAnyArgs().ReplayAsync(default, default, default);
+        Assert.IsType<NotFoundResult>(await page.OnPostRecoverAsync("not-an-id"));
+        await recovery.DidNotReceiveWithAnyArgs().RecoverTerminalAsync(default, default, default);
+    }
+
+    [Fact]
+    public async Task DetailPageRejectsRecoveryWhenTheSagaIsNoLongerTerminal()
+    {
+        var recovery = Substitute.For<IOrchestrationRecoveryService>();
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader { DetailStatus = "Completed" }, recovery);
+        var id = Ulid.NewUlid().ToString();
+
+        var result = await page.OnPostRecoverAsync(id);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Contains("already changed state", page.RecoveryMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("danger", page.TempData["RecoveryTone"]);
+        await recovery.DidNotReceiveWithAnyArgs().RecoverTerminalAsync(default, default, default);
     }
 
     private static IndexModel CreatePage(
@@ -332,6 +349,7 @@ public sealed class RuntimeInstancesPageModelTests
         public bool SummaryRequested { get; private set; }
         public bool PagingUnsupported { get; set; }
         public bool DetailMissing { get; set; }
+        public string DetailStatus { get; set; } = "Running";
         public RuntimeInstanceCatalogQuery LastQuery { get; private set; }
 
         public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
@@ -365,7 +383,10 @@ public sealed class RuntimeInstancesPageModelTests
         {
             LastDetailInstanceId = instanceId;
             if (DetailMissing) throw new KeyNotFoundException();
-            return Task.FromResult(_detail);
+            return Task.FromResult(_detail with
+            {
+                Instance = _detail.Instance with { Status = DetailStatus }
+            });
         }
     }
 

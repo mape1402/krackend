@@ -70,16 +70,15 @@
         <p class="od-instance-live-update" data-instance-live-update hidden aria-live="polite">
             <span class="od-live-dot" aria-hidden="true"></span><span data-instance-live-update-text></span>
         </p>
-        @if (Model.CanReplay)
+        @if (Model.CanRecover)
         {
-            <form method="post" asp-page-handler="Replay" class="od-instance-replay" data-orchestrator-busy="true" data-busy-title="Requesting replay">
-                <input type="hidden" name="instanceId" value="@id" />
-                @await Component.InvokeAsync("ZoorceProgressButton", new Zoorce.Web.UI.Foundation.Components.ZoorceProgressButtonOptions { Id = "replaySagaButton", Text = "Replay orchestration", Tone = "primary" })
-            </form>
+            <button type="button" class="z-button z-button-primary od-instance-replay" data-recover-dialog-open>
+                <i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Recover saga</span>
+            </button>
         }
-        @if (!string.IsNullOrWhiteSpace(Model.ReplayMessage))
+        @if (!string.IsNullOrWhiteSpace(Model.RecoveryMessage))
         {
-            <p class="od-instance-operation-message od-instance-operation-@((TempData["ReplayTone"]?.ToString()) ?? "neutral")">@Model.ReplayMessage</p>
+            <p class="od-instance-operation-message od-instance-operation-@((TempData["RecoveryTone"]?.ToString()) ?? "neutral")">@Model.RecoveryMessage</p>
         }
     </header>
 
@@ -161,6 +160,22 @@
     }
     </div>
 </main>
+
+@if (Model.CanRecover)
+{
+    <form method="post" asp-page-handler="Recover" id="recover-saga-form" data-orchestrator-busy="true" data-busy-title="Recovering saga">
+        <input type="hidden" name="instanceId" value="@id" />
+    </form>
+    @await Component.InvokeAsync("ZoorceDialog", new Zoorce.Web.UI.Foundation.Components.ZoorceDialogOptions
+    {
+        Id = "recoverSagaDialog",
+        Title = "Recover saga",
+        Eyebrow = "Terminal recovery",
+        Size = "medium",
+        Body = await Html.PartialAsync("_RecoverSaga", Model),
+        Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"recover-saga-form\" class=\"z-button z-button-primary\" id=\"recoverSagaButton\">Recover saga</button>")
+    })
+}
 
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>

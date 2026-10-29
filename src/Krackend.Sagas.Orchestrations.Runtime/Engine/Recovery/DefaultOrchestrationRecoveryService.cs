@@ -73,6 +73,20 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         string instanceId,
         string payload = null,
         CancellationToken cancellationToken = default)
+        => await RecoverAsync(instanceId, payload, terminalOnly: false, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<OrchestrationRecoveryResult> RecoverTerminalAsync(
+        string instanceId,
+        string payload = null,
+        CancellationToken cancellationToken = default)
+        => await RecoverAsync(instanceId, payload, terminalOnly: true, cancellationToken);
+
+    private async Task<OrchestrationRecoveryResult> RecoverAsync(
+        string instanceId,
+        string payload,
+        bool terminalOnly,
+        CancellationToken cancellationToken)
     {
         if (!TryParseId(instanceId, out var parsedInstanceId))
         {
@@ -82,7 +96,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         OrchestrationRecoveryResult result = null;
         var acquired = await _coordinator.TryExecuteAsync(
             parsedInstanceId,
-            async token => result = await ReplayCoreAsync(parsedInstanceId, payload, token),
+            async token => result = await ReplayCoreAsync(parsedInstanceId, payload, terminalOnly, token),
             cancellationToken);
 
         return acquired
@@ -96,11 +110,20 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     private async Task<OrchestrationRecoveryResult> ReplayCoreAsync(
         Id parsedInstanceId,
         string payload,
+        bool terminalOnly,
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
         var instance = await _instanceRepository.GetById(parsedInstanceId, cancellationToken);
-        if (!IsRecoverable(instance.Status))
+        if (instance is null)
+        {
+            return OrchestrationRecoveryResult.Rejected(
+                parsedInstanceId.ToString(),
+                string.Empty,
+                $"Instance '{parsedInstanceId}' was not found.");
+        }
+
+        if (!IsRecoverable(instance.Status) || (terminalOnly && !IsOperatorRecoverableTerminal(instance.Status)))
         {
             return OrchestrationRecoveryResult.Rejected(
                 instance.Id.ToString(),
@@ -802,6 +825,9 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             or OrchestrationInstanceStatus.DeadLettered
             or OrchestrationInstanceStatus.Running
             or OrchestrationInstanceStatus.Idle;
+
+    private static bool IsOperatorRecoverableTerminal(OrchestrationInstanceStatus status)
+        => status is OrchestrationInstanceStatus.Failed or OrchestrationInstanceStatus.DeadLettered;
 
     private static bool IsFinal(OrchestrationInstanceStatus status)
         => status is OrchestrationInstanceStatus.Completed

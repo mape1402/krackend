@@ -18,6 +18,21 @@ public interface IOrchestrationRecoveryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Recovers an operator-selected terminal saga without creating a new saga.
+    /// This operation is deliberately restricted to <c>Failed</c> and
+    /// <c>DeadLettered</c> instances so a delayed callback cannot cause an
+    /// active instance to be replayed from the diagnostics UI.
+    /// </summary>
+    /// <param name="instanceId">Orchestration instance id.</param>
+    /// <param name="payload">Optional recovery payload override.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recovery operation result.</returns>
+    Task<OrchestrationRecoveryResult> RecoverTerminalAsync(
+        string instanceId,
+        string payload = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Replays one failed or timed out task by creating a new execution attempt.
     /// </summary>
     /// <param name="instanceId">Orchestration instance id.</param>

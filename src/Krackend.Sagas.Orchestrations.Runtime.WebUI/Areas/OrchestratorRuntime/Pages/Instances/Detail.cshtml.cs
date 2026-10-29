@@ -40,12 +40,12 @@ public sealed class DetailModel : PageModel
     /// <summary>Gets the SignalR hub route used for unobtrusive detail freshness notifications.</summary>
     public string LiveHubPath => $"/{(string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "runtime" : _options.RoutePrefix.Trim('/'))}/live";
 
-    /// <summary>Gets whether the persisted terminal instance can be replayed by an operator.</summary>
-    public bool CanReplay => Detail?.Instance?.Status is "DeadLettered" or "Failed";
+    /// <summary>Gets whether the persisted terminal instance can be recovered by an operator.</summary>
+    public bool CanRecover => Detail?.Instance?.Status is "DeadLettered" or "Failed";
 
-    /// <summary>Gets the non-sensitive result of the latest replay request.</summary>
+    /// <summary>Gets the non-sensitive result of the latest recovery request.</summary>
     [TempData]
-    public string ReplayMessage { get; set; }
+    public string RecoveryMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync(string instanceId, CancellationToken cancellationToken = default, string section = null, string stageKey = null, string taskKey = null, int? attempt = null)
     {
@@ -83,20 +83,41 @@ public sealed class DetailModel : PageModel
         }
     }
 
-    /// <summary>Requests recovery from the instance detail rather than from the grid.</summary>
-    public async Task<IActionResult> OnPostReplayAsync(string instanceId, string reason = null, CancellationToken cancellationToken = default)
+    /// <summary>Requests terminal-saga recovery from the instance detail rather than from the grid.</summary>
+    public async Task<IActionResult> OnPostRecoverAsync(string instanceId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out _))
             return NotFound();
 
-        var result = await _recovery.ReplayAsync(instanceId, null, cancellationToken);
-        ReplayMessage = result.Message;
+        InstanceDetailModel current;
+        try
+        {
+            current = await _diagnostics.GetDetail(instanceId, cancellationToken);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+
+        if (current?.Instance?.Status is not ("DeadLettered" or "Failed"))
+        {
+            RecoveryMessage = "This saga has already changed state and cannot be recovered from this view.";
+            if (PageContext?.HttpContext is not null) TempData["RecoveryTone"] = "danger";
+            return RedirectToPage(new { instanceId });
+        }
+
+        var result = await _recovery.RecoverTerminalAsync(instanceId, null, cancellationToken);
+        RecoveryMessage = result.Message;
         if (PageContext?.HttpContext is not null)
         {
-            TempData["ReplayTone"] = result.Succeeded ? "success" : "danger";
+            TempData["RecoveryTone"] = result.Succeeded ? "success" : "danger";
         }
         return RedirectToPage(new { instanceId });
     }
+
+    /// <summary>Retained for existing detail links; uses the terminal recovery guard.</summary>
+    public Task<IActionResult> OnPostReplayAsync(string instanceId, string reason = null, CancellationToken cancellationToken = default)
+        => OnPostRecoverAsync(instanceId, cancellationToken);
 
     private static string FindString(JsonNode node, string name)
     {

@@ -23,6 +23,8 @@
     };
     drawerToggle?.addEventListener('click', () => setDrawer(drawer?.hidden));
     root.querySelector('[data-transition-drawer-close]')?.addEventListener('click', () => setDrawer(false));
+    root.querySelector('[data-recover-dialog-open]')?.addEventListener('click', event =>
+        document.getElementById('recoverSagaDialog')?.open?.(event.currentTarget));
     root.addEventListener('zoorce:timeline:select', event => {
         const id = event.detail?.itemId;
         const panels = root.querySelectorAll('[data-transition-details]');

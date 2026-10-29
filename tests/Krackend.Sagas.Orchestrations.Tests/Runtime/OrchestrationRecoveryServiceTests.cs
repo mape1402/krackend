@@ -28,6 +28,61 @@ public sealed class OrchestrationRecoveryServiceTests
         await fixture.InstanceRepository.DidNotReceiveWithAnyArgs().GetById(default, default);
     }
 
+    [Theory]
+    [InlineData(OrchestrationInstanceStatus.Running)]
+    [InlineData(OrchestrationInstanceStatus.Idle)]
+    [InlineData(OrchestrationInstanceStatus.Completed)]
+    public async Task RecoverTerminalRejectsSagasThatAreNotTerminalFailures(OrchestrationInstanceStatus status)
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(status);
+        fixture.InstanceRepository
+            .GetById(instance.Id, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(instance));
+
+        var result = await fixture.Service.RecoverTerminalAsync(instance.Id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(status.ToString(), result.Status);
+        Assert.Contains("not in a recoverable status", result.Message, StringComparison.OrdinalIgnoreCase);
+        await fixture.ArtifactResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default, default);
+    }
+
+    [Fact]
+    public async Task RecoverTerminalRejectsMissingSagasWithoutResolvingAnArtifact()
+    {
+        var fixture = new RecoveryFixture();
+        var id = Id.New();
+        fixture.InstanceRepository
+            .GetById(id, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OrchestrationInstance>(null));
+
+        var result = await fixture.Service.RecoverTerminalAsync(id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("not found", result.Message, StringComparison.OrdinalIgnoreCase);
+        await fixture.ArtifactResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default, default);
+    }
+
+    [Fact]
+    public async Task RecoverTerminalUsesTheSameCheckpointedReplayForDeadLetteredSagas()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+        fixture.ArrangeReplay(
+            instance,
+            CreateResolvedArtifact(instance.RuntimeOrchestrationArtifactId, Stage("stage-one", MessagingTask("reserve-stock"))),
+            Array.Empty<StageExecution>(),
+            Array.Empty<TaskExecution>());
+
+        var result = await fixture.Service.RecoverTerminalAsync(instance.Id.ToString());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(OrchestrationInstanceStatus.Running.ToString(), result.Status);
+        Assert.Single(fixture.Forwards);
+        Assert.Equal("InstanceReplayRequested", Assert.Single(fixture.Transitions).TransitionType);
+    }
+
     [Fact]
     public async Task AbortRejectsFinalInstance()
     {

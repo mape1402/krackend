@@ -3231,6 +3231,10 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-instance-replay { display: flex; justify-content: flex-end; }
 .od-instance-operation-message { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .72rem; }
 .od-instance-operation-success { color: var(--z-success, #0f8c55); }.od-instance-operation-danger { color: var(--z-danger, #c43d4d); }
+.od-recover-dialog { display: grid; gap: .85rem; max-height: min(52dvh, 31rem); overflow: auto; padding-right: .15rem; }
+.od-recover-dialog-lead { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .78rem; line-height: 1.5; }
+.od-recover-dialog-fields { margin: 0; padding: .78rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, var(--z-primary, var(--od-primary))); border-radius: 10px; background: color-mix(in srgb, var(--z-surface, var(--od-surface)) 88%, var(--z-primary, var(--od-primary))); }
+.od-recover-dialog-fields code { font-size: .69rem; overflow-wrap: anywhere; }
 .od-instance-nav { display: flex; align-items: center; gap: .2rem; min-width: 0; padding: .2rem 0; border-bottom: 1px solid var(--z-border, var(--od-border)); overflow-x: auto; }
 .od-instance-nav a { flex: 0 0 auto; padding: .44rem .64rem; border-radius: 7px 7px 0 0; color: var(--z-muted, var(--od-muted)); font-size: .75rem; font-weight: 670; text-decoration: none; }
 .od-instance-nav a[aria-current="page"] { color: var(--z-primary, var(--od-primary)); background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 11%, transparent); box-shadow: inset 0 -2px 0 var(--z-primary, var(--od-primary)); }
