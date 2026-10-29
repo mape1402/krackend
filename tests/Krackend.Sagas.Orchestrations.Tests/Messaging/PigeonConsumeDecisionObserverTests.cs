@@ -123,6 +123,78 @@ public sealed class PigeonConsumeDecisionObserverTests
         Assert.Equal(0, publisher.PublishCount);
     }
 
+    [Fact]
+    public async Task RejectedDecisionWithoutOrchestrationMetadataIsIgnored()
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+
+        await observer.ObserveAsync(
+            new ConsumeDecisionObservation(new ConsumeContext(), new PigeonConsumeDecisionResult(PigeonConsumeDecision.Reject, "rejected")),
+            CancellationToken.None);
+
+        Assert.Equal(0, publisher.PublishCount);
+    }
+
+    [Fact]
+    public async Task RejectedDecisionUsesFallbackFailureDetailsAndOmitsBlankMetadata()
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+        var context = new ConsumeContext();
+        context.ReplyMetadata[" "] = "ignored";
+        SetOrchestrationMetadata(context, CreateOrchestrationMetadata());
+
+        await observer.ObserveAsync(
+            new ConsumeDecisionObservation(
+                context,
+                new PigeonConsumeDecisionResult(PigeonConsumeDecision.Reject, "business rule rejected")
+                {
+                    Metadata = new Dictionary<string, string> { [" "] = "ignored" }
+                }),
+            CancellationToken.None);
+
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Equal("Pigeon.Consume.Rejected", publisher.ResultMetadata!.ErrorCode);
+        Assert.Equal("business rule rejected", publisher.ResultMetadata.ErrorMessage);
+        Assert.Null(publisher.ResultMetadata.ErrorType);
+        Assert.False(publisher.ResultMetadata.Metadata.ContainsKey("Krackend.Pigeon.Decision.Metadata"));
+        Assert.False(publisher.ResultMetadata.Metadata.ContainsKey("Krackend.Pigeon.Reply.Metadata"));
+        Assert.Null(resultScope.Value);
+    }
+
+    [Fact]
+    public async Task RejectedDecisionRestoresScopesWhenPublishingFails()
+    {
+        var priorMessage = new OrchestrationMessageMetadata { CorrelationId = "prior" };
+        var priorPropagation = new OrchestrationPropagationMetadata
+        {
+            Items = { ["prior.context"] = JsonValue.Create("prior") }
+        };
+        var messageScope = new MessageMetadataScope(priorMessage);
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(priorPropagation);
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope, throwOnPublish: true);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+        var context = new ConsumeContext();
+        SetOrchestrationMetadata(context, CreateOrchestrationMetadata());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => observer.ObserveAsync(
+            new ConsumeDecisionObservation(context, new PigeonConsumeDecisionResult(PigeonConsumeDecision.Reject, "rejected")),
+            CancellationToken.None).AsTask());
+
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Same(priorMessage, messageScope.Value);
+        Assert.Null(resultScope.Value);
+        Assert.Equal("prior", propagationScope.Value.Items["prior.context"]!.GetValue<string>());
+    }
+
     private static IConsumeDecisionObserver CreateObserver(
         RecordingPublisher publisher,
         MessageMetadataScope messageScope,
@@ -178,14 +250,18 @@ public sealed class PigeonConsumeDecisionObserverTests
         private readonly ResultMetadataScope _resultScope;
         private readonly PropagationMetadataScope _propagationScope;
 
+        private readonly bool _throwOnPublish;
+
         public RecordingPublisher(
             MessageMetadataScope messageScope,
             ResultMetadataScope resultScope,
-            PropagationMetadataScope propagationScope)
+            PropagationMetadataScope propagationScope,
+            bool throwOnPublish = false)
         {
             _messageScope = messageScope;
             _resultScope = resultScope;
             _propagationScope = propagationScope;
+            _throwOnPublish = throwOnPublish;
         }
 
         public int PublishCount { get; private set; }
@@ -203,6 +279,10 @@ public sealed class PigeonConsumeDecisionObserverTests
             MessageMetadata = _messageScope.Value;
             ResultMetadata = _resultScope.Value;
             PropagationMetadata = _propagationScope.Value.Clone();
+            if (_throwOnPublish)
+            {
+                throw new InvalidOperationException("Pigeon publish failed.");
+            }
             return Task.CompletedTask;
         }
     }
