@@ -1989,10 +1989,19 @@ main.container {
     width: 100%;
     gap: .6rem;
 }
-.od-catalog-toolbar { flex-wrap: wrap; margin-bottom: .65rem; }
+.od-catalog-toolbar { flex-wrap: nowrap; margin-bottom: .65rem; }
 .od-catalog .z-toolbar > :first-child,
-.od-catalog-toolbar > .z-search-field,
-.od-catalog-toolbar > [data-catalog-sort] { flex: 0 1 17rem; min-width: 0; }
+.od-catalog-toolbar > .z-search-field { flex: 0 1 17rem; min-width: 0; }
+.od-catalog-toolbar > select.z-form-select[data-catalog-sort] {
+    /* Zoorce's generic input rule is deliberately expansive for forms.  In a
+       catalog toolbar it must not consume the remaining row and displace the
+       shared count/view controls below the search field. */
+    flex: 0 0 9.5rem !important;
+    inline-size: 9.5rem !important;
+    width: 9.5rem !important;
+    max-inline-size: 9.5rem !important;
+    min-width: 0;
+}
 .od-catalog .z-toolbar .z-grid-search,
 .od-catalog .z-toolbar .z-data-grid-search,
 .od-catalog-toolbar .z-search-field { width: min(17rem, 100%); max-width: 17rem; }
@@ -2008,6 +2017,7 @@ main.container {
 .od-catalog-loaded-count { color: var(--z-muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
     .od-catalog .z-toolbar, .od-catalog-toolbar { align-items: stretch; }
+    .od-catalog-toolbar { flex-wrap: wrap; }
     .od-catalog-toolbar-end { width: 100%; margin-left: 0; justify-content: space-between; }
 }
 

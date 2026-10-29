@@ -18,25 +18,22 @@
     const gridSearch = grid.querySelector('[data-z-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-catalog-controls');
-    const gridToolbarEnd = document.createElement('div');
-    gridToolbarEnd.className = 'od-catalog-toolbar-end';
+    const toolbarEnd = document.createElement('div');
+    toolbarEnd.className = 'od-catalog-toolbar-end';
     const gridCount = document.createElement('span');
     gridCount.className = 'od-catalog-loaded-count';
     gridCount.setAttribute('aria-live', 'polite');
-    gridToolbarEnd.append(gridCount);
+    toolbarEnd.append(gridCount);
     const cardToolbar = document.createElement('div');
     cardToolbar.className = 'od-catalog-toolbar';
-    const cardToolbarEnd = document.createElement('div');
-    cardToolbarEnd.className = 'od-catalog-toolbar-end';
     const records = new Map();
     let page = 0, hasMore = false, request = null, searchTimer = 0, generation = 0;
-    let gridResult = null, gridRefreshTimer = 0;
 
     // The grid and card variants deliberately share one stable toolbar contract:
     // search on the left, loaded count and the selected view on the right.  This
     // prevents the view switch from moving controls or growing the search field.
     if (gridToolbar) {
-        gridToolbar.append(gridToolbarEnd);
+        gridToolbar.append(toolbarEnd);
     }
     if (cardView) {
         const filters = cardView.querySelector('.od-catalog-filters');
@@ -44,12 +41,17 @@
             while (filters.firstChild) cardToolbar.append(filters.firstChild);
             filters.remove();
         }
-        cardToolbar.append(cardToolbarEnd);
         cardView.prepend(cardToolbar);
     }
-    const placeViewControls = showCards => {
-        const target = showCards ? cardToolbarEnd : gridToolbarEnd;
-        if (viewControls && target) target.append(viewControls);
+    const placeToolbarEnd = showCards => {
+        const target = showCards ? cardToolbar : gridToolbar;
+        if (target) target.append(toolbarEnd);
+        if (viewControls) toolbarEnd.append(viewControls);
+    };
+    const setLoadedCount = (loaded, total) => {
+        gridCount.textContent = total > loaded
+            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
+            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching records';
     };
 
     const button = (icon, label) => {
@@ -300,25 +302,14 @@
     });
     new MutationObserver(decorateGrid).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
     grid.addEventListener('zoorce:grid:loaded', event => {
-        gridResult = event.detail.result;
         const loaded = event.detail.append
             ? records.size + event.detail.result.items.length
             : event.detail.result.items.length;
         const total = Number(event.detail.result.totalCount ?? 0);
-        gridCount.textContent = total > loaded
-            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
-            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching records';
+        setLoadedCount(loaded, total);
         if (!event.detail.append) records.clear();
         event.detail.result.items.forEach(item => records.set(String(item.id), item));
         decorateGrid();
-        clearTimeout(gridRefreshTimer);
-        gridRefreshTimer = setTimeout(() => {
-            const sorted = grid.querySelector('[data-z-grid-sort][aria-sort="ascending"], [data-z-grid-sort][aria-sort="descending"]');
-            const sort = sorted?.dataset.zGridSort ?? '';
-            const descending = sorted?.getAttribute('aria-sort') === 'descending';
-            if (gridResult && (gridResult.search !== gridSearch.value.trim() || gridResult.sort !== sort || gridResult.descending !== descending))
-                grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
-        }, 220);
     });
     grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
 
@@ -363,7 +354,7 @@
         const currentGeneration = generation;
         const controller = new AbortController();
         request = controller;
-        status.textContent = `Loading ${label}...`;
+        status.hidden = true;
         cardView.setAttribute('aria-busy', 'true');
         try {
             const url = new URL(root.dataset.source, location.href);
@@ -382,7 +373,7 @@
             hasMore = result.hasMore;
             empty.hidden = cards.childElementCount !== 0;
             more.hidden = !hasMore;
-            status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount} ${label}`;
+            setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
             if (hasMore && result.items.length) requestAnimationFrame(() => {
                 const rect = sentinel.getBoundingClientRect();
                 if (currentGeneration === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);
@@ -390,6 +381,7 @@
         } catch (error) {
             if (error.name !== 'AbortError') {
                 status.textContent = `Unable to load ${label}. Please try again.`;
+                status.hidden = false;
                 more.hidden = false;
                 hasMore = true;
             }
@@ -420,7 +412,7 @@
         const showCards = control.dataset.catalogView === 'cards';
         gridView.hidden = showCards;
         cardView.hidden = !showCards;
-        placeViewControls(showCards);
+        placeToolbarEnd(showCards);
         root.querySelectorAll('[data-catalog-view]').forEach(item =>
             item.setAttribute('aria-pressed', String(item === control)));
         try { localStorage.setItem(preferenceKey, control.dataset.catalogView); } catch { /* Preference is optional. */ }
@@ -434,7 +426,7 @@
         }
     };
     root.querySelectorAll('[data-catalog-view]').forEach(control => control.addEventListener('click', () => setView(control)));
-    placeViewControls(false);
+    placeToolbarEnd(false);
     try {
         if (localStorage.getItem(preferenceKey) === 'cards') setView(root.querySelector('[data-catalog-view="cards"]'));
     } catch { /* Preference is optional. */ }
