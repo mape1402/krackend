@@ -1951,6 +1951,12 @@ main.container {
     color: var(--krackend-on-primary, #fff);
 }
 
+.od-icon-action {
+    min-inline-size: 2rem;
+    min-block-size: 2rem;
+    padding: .35rem;
+}
+
 .od-catalog-actions {
     display: flex;
     gap: .35rem;

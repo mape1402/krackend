@@ -55,7 +55,7 @@
     const button = (icon, label) => {
         const element = document.createElement('button');
         element.type = 'button';
-        element.className = 'btn btn-sm btn-outline-secondary';
+        element.className = 'z-button z-button-ghost od-icon-action';
         element.title = label;
         element.setAttribute('aria-label', label);
         const glyph = document.createElement('i');
@@ -163,7 +163,7 @@
         }
         if (kind === 'reviews' || kind === 'release-orchestrations' || kind === 'assignments') {
             const link = document.createElement('a');
-            link.className = 'btn btn-sm btn-outline-secondary';
+            link.className = 'z-button z-button-ghost od-icon-action';
             link.href = item.openUrl;
             link.title = kind === 'reviews' ? 'Open review' : kind === 'assignments' ? 'View attempts' : 'Open releases';
             link.setAttribute('aria-label', `${link.title} for ${item.displayName}`);
@@ -275,7 +275,7 @@
                 return;
             }
             const entry = document.createElement('li');
-            child.classList.remove('btn', 'btn-sm', 'btn-outline-secondary');
+            child.classList.remove('btn', 'btn-sm', 'btn-outline-secondary', 'z-button', 'z-button-ghost', 'od-icon-action');
             child.classList.add('dropdown-item');
             const label = document.createElement('span');
             label.textContent = child.title;

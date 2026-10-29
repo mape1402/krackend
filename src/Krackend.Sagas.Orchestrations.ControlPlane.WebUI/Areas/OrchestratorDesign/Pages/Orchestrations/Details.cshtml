@@ -7,15 +7,15 @@
 @using Microsoft.AspNetCore.Html
 @{ ViewData["Title"] = Model.Orchestration is null ? "Orchestration details" : $"{Model.Orchestration.Name} \u00b7 {Model.Orchestration.Key}"; }
 <div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openNewVersion", Label = "New version", Icon = "+" })</div>
-<button type="button" class="od-portability-action" id="openImportDraft">Import draft</button>
+<button type="button" class="z-button z-button-ghost od-portability-action" id="openImportDraft">Import draft</button>
 
 <section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
          data-action-url="@Url.Page(null, "VersionAction")" data-orchestration-id="@Model.OrchestrationId"
          data-export-url="@Url.Page(null, "ExportDraft")"
          data-roadmap-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = "__versionId__" })">
     <div class="od-catalog-controls" role="group" aria-label="View mode">
-        <button type="button" class="btn btn-outline-secondary" data-version-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
-        <button type="button" class="btn btn-outline-secondary" data-version-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-view-toggle" data-version-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-view-toggle" data-version-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-version-grid>
         @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
@@ -30,7 +30,7 @@
         <p data-version-empty hidden>No matching versions.</p>
         <p data-version-status aria-live="polite"></p>
         <div data-version-sentinel aria-hidden="true"></div>
-        <button type="button" class="btn btn-outline-secondary" data-version-more hidden>Load more</button>
+        <button type="button" class="z-button z-button-ghost" data-version-more hidden>Load more</button>
     </div>
     <form method="post" id="version-catalog-token" hidden>@Html.AntiForgeryToken()</form>
 </section>

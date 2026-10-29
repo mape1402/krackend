@@ -5,12 +5,24 @@
     const gridView = root.querySelector('[data-version-grid]');
     const cardView = root.querySelector('[data-version-cards-view]');
     const gridSearch = grid.querySelector('[data-z-grid-search]');
+    const gridToolbar = grid.querySelector('.z-toolbar');
+    const viewControls = root.querySelector('.od-catalog-controls');
     const search = root.querySelector('[data-version-search]');
     const cards = root.querySelector('[data-version-cards]');
     const empty = root.querySelector('[data-version-empty]');
     const status = root.querySelector('[data-version-status]');
     const more = root.querySelector('[data-version-more]');
     const sentinel = root.querySelector('[data-version-sentinel]');
+    const gridToolbarEnd = document.createElement('div');
+    gridToolbarEnd.className = 'od-catalog-toolbar-end';
+    const gridCount = document.createElement('span');
+    gridCount.className = 'od-catalog-loaded-count';
+    gridCount.setAttribute('aria-live', 'polite');
+    gridToolbarEnd.append(gridCount);
+    const cardToolbar = document.createElement('div');
+    cardToolbar.className = 'od-catalog-toolbar';
+    const cardToolbarEnd = document.createElement('div');
+    cardToolbarEnd.className = 'od-catalog-toolbar-end';
     const records = new Map();
     let page = 0, hasMore = true, generation = 0, request = null, timer;
     const make = (tag, className, text) => {
@@ -24,7 +36,7 @@
         RequestArchive: 'Request archive', OpenReview: 'Open review', Abandon: 'Abandon draft', ExportDraft: 'Export draft' };
     const actions = item => {
         const group = make('div', 'd-flex'); group.dataset.versionActions = '';
-        const dropdown = make('div', 'dropdown'); const toggle = make('button', 'btn btn-sm btn-outline-secondary');
+        const dropdown = make('div', 'dropdown'); const toggle = make('button', 'z-button z-button-ghost od-icon-action');
         toggle.type = 'button'; toggle.title = 'Version actions'; toggle.setAttribute('aria-label', `Actions for ${item.version}`);
         toggle.setAttribute('data-bs-toggle', 'dropdown'); toggle.setAttribute('aria-expanded', 'false');
         const dots = make('i', 'bi bi-three-dots-vertical'); dots.setAttribute('aria-hidden', 'true'); toggle.append(dots);
@@ -53,8 +65,27 @@
         if (item && cell && !cell.querySelector('[data-version-actions]')) cell.replaceChildren(actions(item));
     });
     new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
+    if (gridToolbar) gridToolbar.append(gridToolbarEnd);
+    const filters = cardView.querySelector('.od-catalog-filters');
+    if (filters) {
+        while (filters.firstChild) cardToolbar.append(filters.firstChild);
+        filters.remove();
+    }
+    cardToolbar.append(cardToolbarEnd);
+    cardView.prepend(cardToolbar);
+    const placeViewControls = showCards => {
+        const target = showCards ? cardToolbarEnd : gridToolbarEnd;
+        if (viewControls && target) target.append(viewControls);
+    };
     grid.addEventListener('zoorce:grid:loaded', event => {
-        if (!event.detail.append) records.clear(); event.detail.result.items.forEach(item => records.set(String(item.id), item)); decorate();
+        if (!event.detail.append) records.clear();
+        event.detail.result.items.forEach(item => records.set(String(item.id), item));
+        const loaded = records.size;
+        const total = Number(event.detail.result.totalCount ?? 0);
+        gridCount.textContent = total > loaded
+            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
+            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching versions';
+        decorate();
     });
     grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
     const addCard = item => {
@@ -94,11 +125,13 @@
     }, { rootMargin: '200px' }).observe(sentinel);
     const setView = button => {
         const showCards = button.dataset.versionView === 'cards'; gridView.hidden = showCards; cardView.hidden = !showCards;
+        placeViewControls(showCards);
         root.querySelectorAll('[data-version-view]').forEach(x => x.setAttribute('aria-pressed', String(x === button)));
         try { localStorage.setItem('krackend-version-view', button.dataset.versionView); } catch { }
         if (showCards) { search.value = gridSearch.value; load(true); }
         else if (gridSearch.value !== search.value) { gridSearch.value = search.value; gridSearch.dispatchEvent(new Event('input', { bubbles: true })); }
     };
     root.querySelectorAll('[data-version-view]').forEach(button => button.addEventListener('click', () => setView(button)));
+    placeViewControls(false);
     try { if (localStorage.getItem('krackend-version-view') === 'cards') setView(root.querySelector('[data-version-view="cards"]')); } catch { }
 })();
