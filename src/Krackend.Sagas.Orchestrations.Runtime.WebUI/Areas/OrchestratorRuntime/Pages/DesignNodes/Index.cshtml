@@ -21,8 +21,8 @@
          data-status-url="@Url.Page(null, "SetStatus")" data-check-url="@Url.Page(null, "ValidateConnection")"
          data-pending-url="@Url.Page("/DesignNodes/PendingReleases", new { area = "OrchestratorRuntime" })">
     <div class="od-runtime-view-controls" role="group" aria-label="View mode">
-        <button type="button" class="btn btn-outline-secondary" data-node-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
-        <button type="button" class="btn btn-outline-secondary" data-node-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-view-toggle" data-node-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-view-toggle" data-node-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-node-grid>
         @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {

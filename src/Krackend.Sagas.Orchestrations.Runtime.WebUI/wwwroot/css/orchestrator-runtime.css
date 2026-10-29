@@ -721,6 +721,18 @@
     white-space: nowrap;
 }
 .od-artifact-loaded-count { color: var(--z-muted, var(--od-muted)); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.od-view-toggle { min-width: 2.5rem; min-height: 2.35rem; padding: 0 .65rem; }
+.od-view-toggle[aria-pressed="true"] {
+    color: var(--z-primary-foreground, var(--krackend-on-primary, #fff));
+    border-color: var(--z-primary, var(--od-primary));
+    background: var(--z-primary, var(--od-primary));
+    box-shadow: 0 5px 12px color-mix(in srgb, var(--z-primary, var(--od-primary)) 20%, transparent);
+}
+.od-view-toggle[aria-pressed="false"]:hover {
+    color: var(--z-text, var(--od-text));
+    border-color: color-mix(in srgb, var(--z-primary, var(--od-primary)) 35%, var(--z-border, var(--od-border)));
+    background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 8%, var(--z-surface, var(--od-surface)));
+}
 @media (max-width: 640px) {
     .od-artifact-toolbar-end { width: 100%; margin-left: 0; justify-content: space-between; }
 }

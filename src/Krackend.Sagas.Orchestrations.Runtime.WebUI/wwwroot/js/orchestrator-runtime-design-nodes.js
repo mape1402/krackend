@@ -5,6 +5,18 @@
     const gridView = root.querySelector('[data-node-grid]');
     const cardView = root.querySelector('[data-node-cards-view]');
     const gridSearch = grid.querySelector('[data-z-grid-search]');
+    const gridToolbar = grid.querySelector('.z-toolbar');
+    const viewControls = root.querySelector('.od-runtime-view-controls');
+    const gridToolbarEnd = document.createElement('div');
+    gridToolbarEnd.className = 'od-artifact-toolbar-end';
+    const gridCount = document.createElement('span');
+    gridCount.className = 'od-artifact-loaded-count';
+    gridCount.setAttribute('aria-live', 'polite');
+    gridToolbarEnd.append(gridCount);
+    const cardToolbar = document.createElement('div');
+    cardToolbar.className = 'od-artifact-toolbar';
+    const cardToolbarEnd = document.createElement('div');
+    cardToolbarEnd.className = 'od-artifact-toolbar-end';
     const search = root.querySelector('[data-node-search]');
     const cards = root.querySelector('[data-node-cards]');
     const empty = root.querySelector('[data-node-empty]');
@@ -13,6 +25,24 @@
     const sentinel = root.querySelector('[data-node-sentinel]');
     const records = new Map();
     let page = 0, hasMore = true, generation = 0, request = null, timer;
+
+    if (gridToolbar) gridToolbar.append(gridToolbarEnd);
+    if (cardView) {
+        if (search) cardToolbar.append(search.closest('.z-search-field') || search);
+        cardToolbar.append(cardToolbarEnd);
+        cardView.prepend(cardToolbar);
+    }
+    const placeViewControls = showCards => {
+        const target = showCards ? cardToolbarEnd : gridToolbarEnd;
+        if (viewControls && target) target.append(viewControls);
+    };
+    const updateGridCount = result => {
+        const loaded = records.size;
+        const total = Number(result?.totalCount ?? 0);
+        gridCount.textContent = total > loaded
+            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
+            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching design nodes';
+    };
 
     const make = (tag, className, text) => {
         const node = document.createElement(tag);
@@ -99,7 +129,9 @@
     new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
     grid.addEventListener('zoorce:grid:loaded', event => {
         if (!event.detail.append) records.clear();
-        event.detail.result.items.forEach(item => records.set(String(item.id), item)); decorate();
+        event.detail.result.items.forEach(item => records.set(String(item.id), item));
+        updateGridCount(event.detail.result);
+        decorate();
     });
     grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
 
@@ -138,12 +170,14 @@
     const setView = button => {
         const showCards = button.dataset.nodeView === 'cards';
         gridView.hidden = showCards; cardView.hidden = !showCards;
+        placeViewControls(showCards);
         root.querySelectorAll('[data-node-view]').forEach(x => x.setAttribute('aria-pressed', String(x === button)));
         try { localStorage.setItem('krackend-runtime-design-node-view', button.dataset.nodeView); } catch { }
         if (showCards) { search.value = gridSearch.value; load(true); }
         else if (gridSearch.value !== search.value) { gridSearch.value = search.value; gridSearch.dispatchEvent(new Event('input', { bubbles: true })); }
     };
     root.querySelectorAll('[data-node-view]').forEach(button => button.addEventListener('click', () => setView(button)));
+    placeViewControls(false);
     try { if (localStorage.getItem('krackend-runtime-design-node-view') === 'cards') setView(root.querySelector('[data-node-view="cards"]')); } catch { }
 
     const openPending = sourceKey => {

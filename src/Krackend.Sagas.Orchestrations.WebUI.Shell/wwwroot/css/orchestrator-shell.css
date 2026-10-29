@@ -25,6 +25,26 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; padding: 0; }
 
+/* Zoorce owns the progress-button component.  Krackend only supplies the
+   indeterminate treatment while a host operation is pending, so the active
+   primary action remains visible in either color mode. */
+@keyframes krackend-progress-button-sweep {
+    from { background-position: 200% 0; }
+    to { background-position: 0 0; }
+}
+
+.z-progress-button[aria-busy="true"] .z-progress-button-fill {
+    width: 100% !important;
+    background: repeating-linear-gradient(
+        125deg,
+        color-mix(in srgb, var(--z-progress-active-foreground) 14%, transparent) 0 10px,
+        color-mix(in srgb, var(--z-progress-active-foreground) 42%, transparent) 10px 20px,
+        color-mix(in srgb, var(--z-progress-active-foreground) 14%, transparent) 20px 30px
+    );
+    background-size: 240% 100%;
+    animation: krackend-progress-button-sweep .9s linear infinite;
+}
+
 .z-nav-icon:empty::before {
     content: "";
     display: block;

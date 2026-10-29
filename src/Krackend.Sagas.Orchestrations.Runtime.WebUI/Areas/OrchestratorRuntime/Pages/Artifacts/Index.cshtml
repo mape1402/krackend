@@ -17,8 +17,8 @@
 <section class="od-panel" data-artifact-catalog data-source="@source" data-kind="@(hasSelection ? "versions" : "groups")"
          data-history-source="@Url.Page(null, "History")" data-index-url="@Url.Page(null, new { area = "OrchestratorRuntime" })">
     <div class="od-runtime-view-controls" role="group" aria-label="View mode">
-        <button type="button" class="btn btn-outline-secondary" data-artifact-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
-        <button type="button" class="btn btn-outline-secondary" data-artifact-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-view-toggle" data-artifact-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-view-toggle" data-artifact-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-artifact-grid>
         @if (!hasSelection)

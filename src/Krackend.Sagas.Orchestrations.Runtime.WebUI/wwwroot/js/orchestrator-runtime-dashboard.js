@@ -475,7 +475,20 @@
             loadActivity({ showLoading })
         ];
         if (root.dataset.topOrchestrationsUrl) loads.push(loadTopOrchestrations({ showLoading }));
-        return Promise.allSettled(loads);
+        return Promise.allSettled(loads).then(results => {
+            // Consumers such as Statistics own their progress button.  They
+            // must complete only when every independently loaded panel has
+            // settled, never on an arbitrary UI timer.
+            root.dispatchEvent(new CustomEvent('krackend:dashboard-loaded', {
+                detail: {
+                    orchestrationKey: state.orchestrationKey,
+                    orchestrationVersion: state.orchestrationVersion,
+                    hours: state.hours,
+                    results
+                }
+            }));
+            return results;
+        });
     }
 
     function syncPeriodButtons() {
@@ -676,5 +689,4 @@
         void stop();
     }, { once: true });
 
-    void start();
 })();

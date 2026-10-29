@@ -5,6 +5,7 @@
     const from = root.querySelector('[data-history-from]');
     const through = root.querySelector('[data-history-through]');
     const error = root.querySelector('[data-history-error]');
+    const apply = root.querySelector('[data-history-apply] button');
     grid.querySelector('.z-toolbar').append(root.querySelector('[data-history-filters]'));
     const records = new Map();
     const bodyObserver = new MutationObserver(() => renderActions());
@@ -16,6 +17,14 @@
     const mountGrid = () => {
         window.ZoorceDataGrid.mount(grid);
         observeGridBody();
+    };
+    const setApplyBusy = busy => {
+        if (!apply) return;
+        apply.disabled = busy;
+        apply.setAttribute('aria-busy', String(busy));
+        apply.dataset.zProgressState = busy ? 'in-progress' : 'idle';
+        apply.dataset.zProgressIndeterminate = String(busy);
+        apply.style.setProperty('--z-button-progress', busy ? '100%' : '0%');
     };
     const updateLoadedCopy = result => {
         const footer = grid.querySelector('.z-grid-footer');
@@ -65,6 +74,7 @@
     });
     observeGridBody();
     grid.addEventListener('zoorce:grid:loaded', event => {
+        setApplyBusy(false);
         if (!event.detail.append) records.clear();
         event.detail.result.items.forEach(item => records.set(String(item.id), item));
         renderActions();
@@ -75,6 +85,7 @@
         const invalid = Boolean(from.value && through.value && from.value > through.value);
         error.hidden = !invalid; from.setAttribute('aria-invalid', String(invalid)); through.setAttribute('aria-invalid', String(invalid));
         if (invalid) return;
+        setApplyBusy(true);
         const url = new URL(root.dataset.source, location.href);
         if (from.value) url.searchParams.set('startedFrom', `${from.value}T00:00:00Z`);
         if (through.value) {
@@ -88,5 +99,6 @@
         const search = grid.querySelector('[data-z-grid-search]');
         if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    grid.addEventListener('zoorce:grid:error', () => setApplyBusy(false));
     grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
 })();

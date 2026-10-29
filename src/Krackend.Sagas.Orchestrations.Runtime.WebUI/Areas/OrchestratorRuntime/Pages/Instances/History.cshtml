@@ -1,6 +1,7 @@
 @page
 @using Zoorce.Web.UI.Abstractions.Data
 @using Zoorce.Web.UI.DataGrid
+@using Zoorce.Web.UI.Foundation.Components
 @{
     ViewData["Title"] = "Instance history";
     var from = DateTime.UtcNow.Date.AddDays(-30).ToString("yyyy-MM-dd");
@@ -15,7 +16,7 @@
     <form class="od-history-filters" data-history-filters>
         <label>From <input class="z-form-input" type="date" data-history-from value="@from" aria-label="From (UTC)" /></label>
         <label>Through <input class="z-form-input" type="date" data-history-through aria-label="Through (UTC)" /></label>
-        <button class="z-button z-button-primary" type="submit">Apply</button>
+        <span data-history-apply>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeHistoryApplyButton", Text = "Apply", Tone = "primary" })</span>
         <span class="od-trace-error" data-history-error role="alert" hidden>From must not be after through.</span>
     </form>
     @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {

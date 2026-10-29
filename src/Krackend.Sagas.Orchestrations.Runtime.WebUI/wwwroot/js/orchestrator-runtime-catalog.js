@@ -163,6 +163,9 @@
         if (!button) return;
         button.disabled = busy;
         button.setAttribute('aria-busy', String(busy));
+        button.dataset.zProgressState = busy ? 'in-progress' : 'idle';
+        button.dataset.zProgressIndeterminate = String(busy);
+        button.style.setProperty('--z-button-progress', busy ? '100%' : '0%');
         refreshControl.classList.toggle('is-loading', busy);
     };
     const refresh = ({ preserveScroll = false, showMetricLoading = false } = {}) => {

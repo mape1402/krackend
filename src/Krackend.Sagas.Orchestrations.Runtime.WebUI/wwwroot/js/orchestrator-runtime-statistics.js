@@ -19,6 +19,9 @@
         load.disabled = busy;
         load.dataset.loading = String(busy);
         load.setAttribute('aria-busy', String(busy));
+        load.dataset.zProgressState = busy ? 'in-progress' : 'idle';
+        load.dataset.zProgressIndeterminate = String(busy);
+        load.style.setProperty('--z-button-progress', busy ? '100%' : '0%');
     };
     const closeSuggestions = element => { if (element) { element.replaceChildren(); element.classList.add('d-none'); } };
 
@@ -77,10 +80,10 @@
         }
         setBusy(true);
         root.dispatchEvent(new CustomEvent('krackend:dashboard-load', { bubbles: false, detail: { orchestrationKey: key, orchestrationVersion: version?.value.trim() || '' } }));
-        window.setTimeout(() => setBusy(false), 300);
     }
 
     load?.addEventListener('click', loadScope);
+    root.addEventListener('krackend:dashboard-loaded', () => setBusy(false));
     tracking?.addEventListener('click', () => {
         isTracking = !isTracking;
         tracking.setAttribute('aria-pressed', String(isTracking));
