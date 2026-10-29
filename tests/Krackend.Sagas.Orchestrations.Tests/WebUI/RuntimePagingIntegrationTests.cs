@@ -134,6 +134,7 @@ public sealed class RuntimePagingIntegrationTests
         builder.Services.AddSingleton(repository);
         builder.Services.AddSingleton(historyRepository);
         builder.Services.AddSingleton(Substitute.For<IRuntimeArtifactReadyNotifier>());
+        builder.Services.AddSingleton(Substitute.For<IRuntimeArtifactTransferService>());
         builder.Services.AddRazorPages(options =>
             options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Artifacts/Index", "artifacts"))
             .AddApplicationPart(typeof(RuntimeArtifactsPage).Assembly);
