@@ -669,6 +669,28 @@ Samples actuales:
 `Messaging.Abstractions` permite conectar cualquier broker. `Messaging.Pigeon`
 conecta la fachada con Pigeon y agrega metadata interceptors.
 
+### Confirmacion de mensajes Pigeon
+
+La confirmacion del broker pertenece al host. Cuando el consumidor no llama
+explicitamente `ConsumeContext.CompleteAsync()`, se debe configurar
+`Pigeon:ConsumerExecution:AcknowledgementMode` como `OnHandlerSuccess`.
+Pigeon usa `Manual` por defecto; dejar ese valor en un host cuyos handlers no confirman
+la entrega hace que Azure Service Bus la vuelva a entregar al vencer su lock, aun cuando
+el pipeline negocio termino correctamente.
+
+```json
+{
+  "Pigeon": {
+    "ConsumerExecution": {
+      "AcknowledgementMode": "OnHandlerSuccess"
+    }
+  }
+}
+```
+
+`Manual` queda reservado para adaptadores que controlan de forma explicita todas sus
+rutas de confirmacion y rechazo.
+
 ## Playbooks
 
 ### Crear y publicar una orquestacion

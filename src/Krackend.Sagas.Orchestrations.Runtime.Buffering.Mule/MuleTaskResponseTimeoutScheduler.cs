@@ -86,7 +86,15 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         await _storage.SaveChangesAsync(cancellationToken);
         var actionId = await _storage.FindByDeduplicationKeyAsync(action.Key, action.DeduplicationKey, cancellationToken) ?? action.Id;
 
-        await CaptureReferenceAsync(request, actionId, cancellationToken);
+        var referenceCapture = await CaptureReferenceAsync(request, actionId, cancellationToken);
+        if (referenceCapture == TimeoutReferenceCaptureResult.NoLongerAwaitingResponse)
+        {
+            // A callback may complete the task between persisting this durable action and acquiring the saga lease
+            // to retain its reference. Do not leave the now-unreachable timer queued until its due date.
+            await CancelPersistedActionAsync(actionId, request.TaskExecutionId, cancellationToken);
+            return new TaskResponseTimeoutScheduleResult(actionId.ToString(), action.Lane);
+        }
+
         await _commitNotifier.NotifySavedAsync(actionId, action.Lane, cancellationToken);
         NotifyWhenDue(actionId, action.Lane, action.NextAttemptOnUtc ?? DateTimeOffset.UtcNow);
         return new TaskResponseTimeoutScheduleResult(actionId.ToString(), action.Lane);
@@ -95,24 +103,26 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
     public async Task CancelAsync(TaskResponseTimeoutCancellationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (string.IsNullOrWhiteSpace(request.ActionId) || !global::Mule.Ulid.TryParse(request.ActionId, out var actionId))
+        global::Mule.Ulid? actionId = null;
+        if (!string.IsNullOrWhiteSpace(request.ActionId) && global::Mule.Ulid.TryParse(request.ActionId, out var capturedActionId))
         {
-            return;
+            actionId = capturedActionId;
         }
 
-        try
+        if (actionId is null &&
+            request.TaskExecutionAttemptId is { } attemptId &&
+            request.AttemptNumber is { } attemptNumber &&
+            request.DueOnUtc is { } dueOnUtc)
         {
-            await _cancellation.CancelAsync(actionId, cancellationToken);
+            actionId = await _storage.FindByDeduplicationKeyAsync(
+                MuleActionKeys.TaskResponseTimeoutActionKey,
+                BuildDeduplicationKey(request.TaskExecutionId, attemptId, attemptNumber, dueOnUtc),
+                cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+        if (actionId is { } persistedActionId)
         {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            // The callback state has already been persisted. A claimed timeout rechecks state under the saga lease,
-            // so cancellation failure must not make a valid callback fail or create duplicate business work.
-            _logger.LogWarning(exception, "Could not cancel task response timeout action '{ActionId}' for task '{TaskId}'.", actionId, request.TaskExecutionId);
+            await CancelPersistedActionAsync(persistedActionId, request.TaskExecutionId, cancellationToken);
         }
     }
 
@@ -162,23 +172,49 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         return repaired;
     }
 
-    private async Task CaptureReferenceAsync(
+    private async Task<TimeoutReferenceCaptureResult> CaptureReferenceAsync(
         TaskResponseTimeoutScheduleRequest request,
         global::Mule.Ulid actionId,
         CancellationToken cancellationToken)
     {
-        await _coordinator.TryExecuteAsync(request.OrchestrationInstanceId, async token =>
+        var result = TimeoutReferenceCaptureResult.Deferred;
+        var executed = await _coordinator.TryExecuteAsync(request.OrchestrationInstanceId, async token =>
         {
             var task = await _tasks.GetById(request.TaskExecutionId, token);
             if (task.Status != TaskExecutionStatus.WaitingResponse || task.ResponseDeadlineUtc != request.DueOnUtc)
             {
+                result = TimeoutReferenceCaptureResult.NoLongerAwaitingResponse;
                 return;
             }
 
             task.TimeoutActionId = actionId.ToString();
             task.TimeoutActionLane = MuleActionKeys.TimeoutLane;
             await _tasks.Update(task, token);
+            result = TimeoutReferenceCaptureResult.Captured;
         }, cancellationToken);
+
+        return executed ? result : TimeoutReferenceCaptureResult.Deferred;
+    }
+
+    private async Task CancelPersistedActionAsync(
+        global::Mule.Ulid actionId,
+        Id taskExecutionId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _cancellation.CancelAsync(actionId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // The state transition has already been persisted. A claimed timeout rechecks state under the saga lease,
+            // so a transient Mule failure must not undo valid business work or create a duplicate dispatch.
+            _logger.LogWarning(exception, "Could not cancel task response timeout action '{ActionId}' for task '{TaskId}'.", actionId, taskExecutionId);
+        }
     }
 
     private void NotifyWhenDue(global::Mule.Ulid actionId, string lane, DateTimeOffset dueOnUtc)
@@ -206,5 +242,23 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
     }
 
     private static string BuildDeduplicationKey(TaskResponseTimeoutScheduleRequest request)
-        => string.Join(':', "task-timeout", request.TaskExecutionId, request.TaskExecutionAttemptId, request.AttemptNumber, request.DueOnUtc.Ticks);
+        => BuildDeduplicationKey(
+            request.TaskExecutionId,
+            request.TaskExecutionAttemptId,
+            request.AttemptNumber,
+            request.DueOnUtc);
+
+    private static string BuildDeduplicationKey(
+        Id taskExecutionId,
+        Id taskExecutionAttemptId,
+        int attemptNumber,
+        DateTime dueOnUtc)
+        => string.Join(':', "task-timeout", taskExecutionId, taskExecutionAttemptId, attemptNumber, dueOnUtc.Ticks);
+
+    private enum TimeoutReferenceCaptureResult
+    {
+        Deferred,
+        Captured,
+        NoLongerAwaitingResponse
+    }
 }

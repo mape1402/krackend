@@ -432,6 +432,9 @@ public sealed class CompleteCallbackDecisionHandlerTests
         state.Task.ResponseDeadlineUtc = DateTime.UtcNow.AddMinutes(2);
         var timeoutActionId = state.Task.TimeoutActionId;
         var timeoutActionLane = state.Task.TimeoutActionLane;
+        var timeoutDeadline = state.Task.ResponseDeadlineUtc;
+        var timeoutAttemptId = state.Attempt.Id;
+        var timeoutAttemptNumber = state.Attempt.AttemptNumber;
         var instances = InstanceRepository();
         var stages = StageRepository();
         var tasks = TaskRepository();
@@ -486,7 +489,10 @@ public sealed class CompleteCallbackDecisionHandlerTests
                     request.OrchestrationInstanceId == state.Instance.Id &&
                     request.TaskExecutionId == state.Task.Id &&
                     request.ActionId == timeoutActionId &&
-                    request.Lane == timeoutActionLane),
+                    request.Lane == timeoutActionLane &&
+                    request.TaskExecutionAttemptId == timeoutAttemptId &&
+                    request.AttemptNumber == timeoutAttemptNumber &&
+                    request.DueOnUtc == timeoutDeadline),
                 Arg.Any<CancellationToken>());
         });
     }

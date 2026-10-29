@@ -63,6 +63,18 @@ public sealed class TaskResponseTimeoutCancellationRequest
 
     /// <summary>Gets the Mule lane used to schedule the timeout action.</summary>
     public string Lane { get; init; }
+
+    /// <summary>
+    /// Gets the attempt that owned the wait. It lets a durable adapter recover the action by its stable
+    /// deduplication key when a very fast callback read the task before its action reference was captured.
+    /// </summary>
+    public Id? TaskExecutionAttemptId { get; init; }
+
+    /// <summary>Gets the stable attempt number used in durable timeout deduplication.</summary>
+    public int? AttemptNumber { get; init; }
+
+    /// <summary>Gets the deadline used in durable timeout deduplication.</summary>
+    public DateTime? DueOnUtc { get; init; }
 }
 
 /// <summary>Describes a durable timeout scheduling attempt.</summary>

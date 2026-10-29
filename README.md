@@ -535,6 +535,24 @@ When multiple independent runtime stores share Redis, give each one a distinct `
 
 Pigeon adapter configuration:
 
+Pigeon acknowledgements are a host transport concern. A runtime or service host that does not
+explicitly complete deliveries must select `OnHandlerSuccess`; Pigeon's default is `Manual` and
+will otherwise leave successfully handled Azure Service Bus deliveries eligible for redelivery
+when their lock expires. The runtime samples use this safe default:
+
+```json
+{
+  "Pigeon": {
+    "ConsumerExecution": {
+      "AcknowledgementMode": "OnHandlerSuccess"
+    }
+  }
+}
+```
+
+Use `Manual` only when the host's consumer deliberately calls `ConsumeContext.CompleteAsync()`
+or `FailAsync(...)` for every terminal path.
+
 Krackend keeps the regular Pigeon global settings callback and also exposes Pigeon's full `IPigeonServiceBuilder` so hosts can configure serializer options, custom serializers, route interceptors, or other Pigeon features without bypassing the Krackend adapter:
 
 ```csharp

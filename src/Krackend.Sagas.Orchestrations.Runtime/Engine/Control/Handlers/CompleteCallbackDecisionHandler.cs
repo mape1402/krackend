@@ -75,6 +75,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var previousAttemptStatus = attempt.Status;
             var timeoutActionId = task.TimeoutActionId;
             var timeoutActionLane = task.TimeoutActionLane;
+            var timeoutDueOnUtc = task.ResponseDeadlineUtc;
+            var timeoutAttemptId = attempt.Id;
+            var timeoutAttemptNumber = attempt.AttemptNumber;
 
             dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
             dispatch.AcknowledgedOnUtc = succeeded ? now : null;
@@ -152,7 +155,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     OrchestrationInstanceId = instance.Id,
                     TaskExecutionId = task.Id,
                     ActionId = timeoutActionId,
-                    Lane = timeoutActionLane
+                    Lane = timeoutActionLane,
+                    TaskExecutionAttemptId = timeoutAttemptId,
+                    AttemptNumber = timeoutAttemptNumber,
+                    DueOnUtc = timeoutDueOnUtc
                 }, cancellationToken);
             }
         }

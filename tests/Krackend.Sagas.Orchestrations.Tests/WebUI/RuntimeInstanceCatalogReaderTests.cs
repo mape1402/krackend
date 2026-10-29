@@ -19,6 +19,16 @@ public sealed class RuntimeInstanceCatalogReaderTests
     }
 
     [Fact]
+    public async Task GetStatusCounts_ReportsUnsupportedStorageWithoutQueryingInstances()
+    {
+        var instances = Substitute.For<IOrchestrationInstanceRepository>();
+        var reader = CreateReader(instances, Substitute.For<IRuntimeArtifactRepository>());
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => reader.GetStatusCounts(new RuntimeInstanceCatalogQuery()));
+        await instances.DidNotReceiveWithAnyArgs().GetRecent();
+    }
+
+    [Fact]
     public async Task MapsPageAndHandlesMissingArtifact()
     {
         var instances = Substitute.For<IOrchestrationInstanceRepository, IRuntimeInstanceCatalogRepository>();

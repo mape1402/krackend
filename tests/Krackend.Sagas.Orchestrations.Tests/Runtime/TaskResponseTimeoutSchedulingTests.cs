@@ -99,6 +99,64 @@ public sealed class TaskResponseTimeoutSchedulingTests
     }
 
     [Fact]
+    public async Task CancelAsyncFindsTheTimerByItsStableDeduplicationKeyWhenTheCallbackReadBeforeReferenceCapture()
+    {
+        var fixture = CreateFixture();
+        var actionId = MuleUlid.NewUlid();
+        fixture.Storage.FindByDeduplicationKeyAsync(
+                MuleActionKeys.TaskResponseTimeoutActionKey,
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MuleUlid?>(actionId));
+        fixture.Cancellation.CancelAsync(actionId, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleCancellationResult>(new MuleCancellationResult(actionId, MuleCancellationOutcome.Cancelled, null)));
+
+        await fixture.Scheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
+        {
+            OrchestrationInstanceId = fixture.Task.OrchestrationInstanceId,
+            TaskExecutionId = fixture.Task.Id,
+            TaskExecutionAttemptId = fixture.Attempt.Id,
+            AttemptNumber = fixture.Attempt.AttemptNumber,
+            DueOnUtc = fixture.Task.ResponseDeadlineUtc,
+            ActionId = null,
+            Lane = null
+        });
+
+        await fixture.Storage.Received(1).FindByDeduplicationKeyAsync(
+            MuleActionKeys.TaskResponseTimeoutActionKey,
+            Arg.Is<string>(key => key.Contains(fixture.Task.Id.ToString(), StringComparison.Ordinal) &&
+                                  key.Contains(fixture.Attempt.Id.ToString(), StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        await fixture.Cancellation.Received(1).CancelAsync(actionId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CancelAsyncUsesTheCapturedReferenceWithoutLookingUpTheDeduplicationKey()
+    {
+        var fixture = CreateFixture();
+        var actionId = MuleUlid.NewUlid();
+        fixture.Cancellation.CancelAsync(actionId, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleCancellationResult>(new MuleCancellationResult(actionId, MuleCancellationOutcome.Cancelled, null)));
+
+        await fixture.Scheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
+        {
+            OrchestrationInstanceId = fixture.Task.OrchestrationInstanceId,
+            TaskExecutionId = fixture.Task.Id,
+            ActionId = actionId.ToString(),
+            Lane = "runtime-timeout",
+            TaskExecutionAttemptId = fixture.Attempt.Id,
+            AttemptNumber = fixture.Attempt.AttemptNumber,
+            DueOnUtc = fixture.Task.ResponseDeadlineUtc
+        });
+
+        await fixture.Storage.DidNotReceive().FindByDeduplicationKeyAsync(
+            Arg.Any<ActionKey>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+        await fixture.Cancellation.Received(1).CancelAsync(actionId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task CancelAsyncPropagatesTheCallerCancellation()
     {
         var fixture = CreateFixture();
@@ -120,7 +178,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
     }
 
     [Fact]
-    public async Task ScheduleAsyncLeavesTheTimerUnreferencedWhenTheCallbackWonTheRace()
+    public async Task ScheduleAsyncCancelsThePersistedTimerWhenTheCallbackWonTheRace()
     {
         var fixture = CreateFixture();
         DurableAction? stored = null;
@@ -136,6 +194,73 @@ public sealed class TaskResponseTimeoutSchedulingTests
 
         Assert.Null(fixture.Task.TimeoutActionId);
         await fixture.Tasks.DidNotReceive().Update(Arg.Any<TaskExecution>(), Arg.Any<CancellationToken>());
+        await fixture.Cancellation.Received(1).CancelAsync(stored!.Id, Arg.Any<CancellationToken>());
+        await fixture.Notifier.DidNotReceive().NotifySavedAsync(Arg.Any<MuleUlid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScheduleAsyncKeepsTheTimerWhenItsReferenceWasCaptured()
+    {
+        var fixture = CreateFixture();
+        DurableAction? stored = null;
+        fixture.Storage.AddAsync(Arg.Do<DurableAction>(action => stored = action), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        fixture.Storage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        fixture.Storage.FindByDeduplicationKeyAsync(Arg.Any<ActionKey>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<MuleUlid?>(stored!.Id));
+        fixture.Serializer.Serialize(Arg.Any<TaskResponseTimeoutActionRequest>()).Returns("{}");
+
+        await fixture.Scheduler.ScheduleAsync(CreateRequest(fixture.Task, fixture.Attempt, fixture.Dispatch, fixture.Task.ResponseDeadlineUtc!.Value));
+
+        await fixture.Cancellation.DidNotReceive().CancelAsync(Arg.Any<MuleUlid>(), Arg.Any<CancellationToken>());
+        await fixture.Notifier.Received(1).NotifySavedAsync(stored!.Id, "runtime-timeout", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScheduleAsyncDefersTheTimerInsteadOfCancellingItWhenTheSagaLeaseIsBusy()
+    {
+        var fixture = CreateFixture();
+        DurableAction? stored = null;
+        fixture.Storage.AddAsync(Arg.Do<DurableAction>(action => stored = action), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        fixture.Storage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        fixture.Storage.FindByDeduplicationKeyAsync(Arg.Any<ActionKey>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<MuleUlid?>(stored!.Id));
+        fixture.Serializer.Serialize(Arg.Any<TaskResponseTimeoutActionRequest>()).Returns("{}");
+        fixture.Coordinator.TryExecuteAsync(
+                Arg.Any<Id>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<bool>())
+            .Returns(Task.FromResult(false));
+
+        await fixture.Scheduler.ScheduleAsync(CreateRequest(fixture.Task, fixture.Attempt, fixture.Dispatch, fixture.Task.ResponseDeadlineUtc!.Value));
+
+        Assert.Null(fixture.Task.TimeoutActionId);
+        await fixture.Cancellation.DidNotReceive().CancelAsync(Arg.Any<MuleUlid>(), Arg.Any<CancellationToken>());
+        await fixture.Notifier.Received(1).NotifySavedAsync(stored!.Id, "runtime-timeout", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScheduleAsyncKeepsTheCompletedCallbackValidWhenOrphanCancellationFails()
+    {
+        var fixture = CreateFixture();
+        DurableAction? stored = null;
+        fixture.Storage.AddAsync(Arg.Do<DurableAction>(action => stored = action), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        fixture.Storage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        fixture.Storage.FindByDeduplicationKeyAsync(Arg.Any<ActionKey>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<MuleUlid?>(stored!.Id));
+        fixture.Serializer.Serialize(Arg.Any<TaskResponseTimeoutActionRequest>()).Returns("{}");
+        fixture.Task.Status = TaskExecutionStatus.Completed;
+        fixture.Cancellation.CancelAsync(Arg.Any<MuleUlid>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<MuleCancellationResult>(Task.FromException<MuleCancellationResult>(
+                new InvalidOperationException("Mule is temporarily unavailable."))));
+
+        var result = await fixture.Scheduler.ScheduleAsync(CreateRequest(fixture.Task, fixture.Attempt, fixture.Dispatch, fixture.Task.ResponseDeadlineUtc!.Value));
+
+        Assert.Equal(stored!.Id.ToString(), result.ActionId);
+        await fixture.Cancellation.Received(1).CancelAsync(stored.Id, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -400,6 +525,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
             tasks,
             attempts,
             dispatches,
+            coordinator,
             task,
             attempt,
             dispatch);
@@ -422,6 +548,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
         ITaskExecutionRepository tasks,
         ITaskExecutionAttemptRepository attempts,
         ITaskDispatchRepository dispatches,
+        IOrchestrationInstanceCoordinator coordinator,
         TaskExecution task,
         TaskExecutionAttempt attempt,
         TaskDispatch dispatch) : IDisposable
@@ -436,6 +563,7 @@ public sealed class TaskResponseTimeoutSchedulingTests
         public ITaskExecutionRepository Tasks { get; } = tasks;
         public ITaskExecutionAttemptRepository Attempts { get; } = attempts;
         public ITaskDispatchRepository Dispatches { get; } = dispatches;
+        public IOrchestrationInstanceCoordinator Coordinator { get; } = coordinator;
         public TaskExecution Task { get; } = task;
         public TaskExecutionAttempt Attempt { get; } = attempt;
         public TaskDispatch Dispatch { get; } = dispatch;
