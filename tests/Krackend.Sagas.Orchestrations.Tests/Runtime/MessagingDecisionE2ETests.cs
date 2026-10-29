@@ -430,6 +430,40 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
+    public async Task EngineTreatsATerminalPigeonIdempotencyRejectionAsAFailureInsteadOfATimeout()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask(
+                "task.squirrelbox.rejected",
+                1,
+                retryPolicy: RetryPolicy(2, "SquirrelBox.Inbox.MissingIdempotencyKey")))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-pigeon-rejection");
+
+        var command = harness.Dispatcher.Commands.Single();
+        await harness.ForwardAsync(
+            command,
+            null,
+            Failure(
+                "SquirrelBox.Inbox.MissingIdempotencyKey",
+                "The incoming message does not contain an idempotency key.",
+                isRetryableCandidate: false));
+
+        var instance = await harness.GetInstanceAsync(command);
+        var task = await harness.GetTaskAsync(command);
+        var attempt = await harness.GetAttemptAsync(command);
+        var transitions = await harness.GetTransitionsAsync(command);
+
+        Assert.Single(harness.Dispatcher.Commands);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(TaskExecutionStatus.Failed, task.Status);
+        Assert.Equal("SquirrelBox.Inbox.MissingIdempotencyKey", attempt.ErrorCode);
+        Assert.False(attempt.Metadata["ExecutionIsRetryableCandidate"]!.GetValue<bool>());
+        Assert.Contains(transitions, transition => transition.TransitionType == "TaskCallbackFailed");
+        Assert.DoesNotContain(transitions, transition => transition.TransitionType == "TaskTimedOut");
+    }
+
+    [Fact]
     public async Task EngineStopsAfterRetryBudgetIsExhausted()
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(

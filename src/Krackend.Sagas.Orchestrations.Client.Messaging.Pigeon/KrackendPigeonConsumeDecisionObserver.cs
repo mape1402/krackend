@@ -54,10 +54,26 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
     {
         ArgumentNullException.ThrowIfNull(observation);
 
-        if (observation.Result.Decision != PigeonConsumeDecision.Reject ||
-            !TryGetOrchestrationMetadata(observation.Context, out var messageMetadata) ||
-            messageMetadata.ReplyAddress is null)
+        if (observation.Result.Decision != PigeonConsumeDecision.Reject)
         {
+            _logger.LogDebug("Ignoring non-terminal Pigeon consume decision {Decision}.", observation.Result.Decision);
+            return;
+        }
+
+        if (!TryGetOrchestrationMetadata(observation.Context, out var messageMetadata))
+        {
+            _logger.LogDebug("Ignoring terminal Pigeon consume decision because the message is not orchestrated.");
+            return;
+        }
+
+        if (messageMetadata.ReplyAddress is null)
+        {
+            _logger.LogDebug(
+                "Ignoring terminal Pigeon consume decision without a reply address. {SagaId} {OrchestrationInstanceId} {TaskExecutionId} {Attempt}",
+                messageMetadata.SagaId,
+                messageMetadata.OrchestrationInstanceId,
+                messageMetadata.TaskExecutionId,
+                messageMetadata.Attempt);
             return;
         }
 
@@ -69,6 +85,15 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
 
         try
         {
+            _logger.LogInformation(
+                "Received terminal Pigeon rejection. {SagaId} {OrchestrationInstanceId} {TaskExecutionId} {Attempt} {Outcome} {ErrorCode}",
+                messageMetadata.SagaId,
+                messageMetadata.OrchestrationInstanceId,
+                messageMetadata.TaskExecutionId,
+                messageMetadata.Attempt,
+                observation.Result.Outcome?.Kind,
+                resultMetadata.ErrorCode);
+
             _messageMetadataSetter.Set(messageMetadata);
             _resultMetadataSetter.Set(resultMetadata);
             _propagationMetadataSetter.Set(propagationMetadata);
@@ -82,6 +107,17 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
                 messageMetadata.TaskExecutionId,
                 messageMetadata.Attempt,
                 resultMetadata.ErrorCode);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to publish orchestration failure reply for rejected Pigeon consumption. {SagaId} {OrchestrationInstanceId} {TaskExecutionId} {Attempt}",
+                messageMetadata.SagaId,
+                messageMetadata.OrchestrationInstanceId,
+                messageMetadata.TaskExecutionId,
+                messageMetadata.Attempt);
+            throw;
         }
         finally
         {
@@ -124,10 +160,10 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
             ErrorCode = failure?.Code ?? "Pigeon.Consume.Rejected",
             ErrorMessage = failure?.Message ?? observation.Result.Reason,
             ErrorType = failure?.Type,
-            // A terminal Pigeon rejection has already exhausted Pigeon's
-            // decision flow.  Do not let a transport-level retry hint revive
-            // the orchestration attempt through its retry policy.
-            IsRetryableCandidate = false,
+            // Pigeon supplies the transport's typed retryability verdict. When
+            // it has no failure detail, fail closed so a terminal rejection is
+            // never mistaken for a timeout or an implicit retry request.
+            IsRetryableCandidate = failure?.IsRetryable ?? false,
             CompletedOnUtc = DateTime.UtcNow
         };
 

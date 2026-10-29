@@ -50,8 +50,8 @@ public sealed class PigeonConsumeDecisionObserverTests
                         Code = "ValidationFailed",
                         Type = "ValidationException",
                         Message = "A required field is missing.",
-                        // The observer must still make a terminal Pigeon
-                        // rejection non-retryable for the orchestration.
+                        // Pigeon owns the terminal decision and explicitly
+                        // marks this failure as retryable.
                         IsRetryable = true
                     }
                 },
@@ -72,7 +72,7 @@ public sealed class PigeonConsumeDecisionObserverTests
         Assert.Equal("ValidationFailed", publisher.ResultMetadata.ErrorCode);
         Assert.Equal("ValidationException", publisher.ResultMetadata.ErrorType);
         Assert.Equal("A required field is missing.", publisher.ResultMetadata.ErrorMessage);
-        Assert.False(publisher.ResultMetadata.IsRetryableCandidate);
+        Assert.True(publisher.ResultMetadata.IsRetryableCandidate);
         Assert.NotNull(publisher.ResultMetadata.CompletedOnUtc);
         Assert.Equal("{\"decision\":\"saved\"}", publisher.ResultMetadata.Metadata["Krackend.Pigeon.Decision.Metadata"]!["SquirrelBoxMetadata"]!.GetValue<string>());
         Assert.Equal("{\"outbox\":\"outbox-1\"}", publisher.ResultMetadata.Metadata["Krackend.Pigeon.Reply.Metadata"]!["SquirrelBoxMetadata"]!.GetValue<string>());
@@ -193,6 +193,40 @@ public sealed class PigeonConsumeDecisionObserverTests
         Assert.Same(priorMessage, messageScope.Value);
         Assert.Null(resultScope.Value);
         Assert.Equal("prior", propagationScope.Value.Items["prior.context"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RejectedDecisionUsesTheSameCallbackIdentityOnRedelivery()
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+        var metadata = CreateOrchestrationMetadata();
+        var context = new ConsumeContext();
+        SetOrchestrationMetadata(context, metadata);
+        var observation = new ConsumeDecisionObservation(
+            context,
+            new PigeonConsumeDecisionResult(PigeonConsumeDecision.Reject, "terminal")
+            {
+                Outcome = new PigeonConsumeOutcome
+                {
+                    Kind = PigeonConsumeOutcomeKind.Rejected,
+                    Failure = new PigeonConsumeFailure { Code = "InboxRejected", IsRetryable = false }
+                }
+            });
+
+        await observer.ObserveAsync(observation, CancellationToken.None);
+        var first = Assert.IsType<OrchestrationMessageMetadata>(publisher.MessageMetadata);
+        await observer.ObserveAsync(observation, CancellationToken.None);
+
+        Assert.Equal(2, publisher.PublishCount);
+        Assert.Equal(first.SagaId, publisher.MessageMetadata!.SagaId);
+        Assert.Equal(first.OrchestrationInstanceId, publisher.MessageMetadata.OrchestrationInstanceId);
+        Assert.Equal(first.TaskExecutionId, publisher.MessageMetadata.TaskExecutionId);
+        Assert.Equal(first.Attempt, publisher.MessageMetadata.Attempt);
+        Assert.False(publisher.ResultMetadata!.IsRetryableCandidate);
     }
 
     private static IConsumeDecisionObserver CreateObserver(
