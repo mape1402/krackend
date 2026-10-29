@@ -6,8 +6,6 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
-using Krackend.Sagas.Orchestrations.ControlPlane.Security.Core;
-using Krackend.Sagas.Orchestrations.ControlPlane.Security.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage;
 using NSubstitute;
 
@@ -44,7 +42,7 @@ public sealed class OrchestrationVersionPackageServiceTests
     public void InspectRejectsAnUnknownPackageSchema()
     {
         var service = CreateService();
-        var packageJson = CreatePackageJson().Replace("\"SchemaVersion\":1", "\"SchemaVersion\":99", StringComparison.Ordinal);
+        var packageJson = CreatePackageJson().Replace("\"SchemaVersion\":2", "\"SchemaVersion\":99", StringComparison.Ordinal);
 
         var result = service.Inspect(packageJson);
 
@@ -53,70 +51,218 @@ public sealed class OrchestrationVersionPackageServiceTests
     }
 
     [Fact]
-    public async Task ImportAsNewOrchestrationCreatesLocalOwnerAndDraftAsOneTransaction()
+    public async Task ImportCreatesDraftInsideTheExistingOrchestrationAsOneTransaction()
     {
         var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
         var versions = Substitute.For<IOrchestrationVersionRepository>();
-        var domains = Substitute.For<IDomainRepository>();
-        var teams = Substitute.For<ITeamRepository>();
         var unitOfWork = Substitute.For<IControlPlaneUnitOfWork>();
-        var createdDefinitions = new List<OrchestrationDefinition>();
         var createdVersions = new List<OrchestrationVersion>();
         var createdStages = new List<StageDefinition>();
 
-        var domainId = Id.New();
-        var teamId = Id.New();
-        domains.GetById(domainId, Arg.Any<CancellationToken>()).Returns(new Domain { Id = domainId, Key = "sales", DisplayName = "Sales", IsActive = true });
-        teams.GetById(teamId, Arg.Any<CancellationToken>()).Returns(new Team { Id = teamId, Key = "platform", DisplayName = "Platform", IsActive = true });
-        definitions.Create(Arg.Do<OrchestrationDefinition>(createdDefinitions.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var definitionId = Id.New();
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition { Id = definitionId, Key = "sales.sale.created" });
+        versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(new PagedResult<OrchestrationVersion>([], 0, 1, 1, 1000));
         versions.Create(Arg.Do<OrchestrationVersion>(createdVersions.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var stages = Substitute.For<IStageRepository>();
         stages.Create(Arg.Do<StageDefinition>(createdStages.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>())
             .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(0)(call.ArgAt<CancellationToken>(1)));
 
-        var service = CreateService(definitions, versions, stages, domains, teams, unitOfWork);
+        var service = CreateService(definitions, versions, stages, unitOfWork);
 
-        var imported = await service.ImportAsNewOrchestrationAsync(
-            new CreateImportedOrchestrationInput("Imported sales flow", domainId.ToString(), teamId.ToString(), "Imported safely.", ["Sales", "portable"]),
-            CreatePackageJson(),
-            "operator");
+        var importedVersionId = await service.ImportAsync(definitionId.ToString(), CreatePackageJson(), "operator");
 
-        var definition = Assert.Single(createdDefinitions);
         var version = Assert.Single(createdVersions);
-        Assert.Equal("sales.sale.created", definition.Key);
-        Assert.Equal("Imported sales flow", definition.Name);
-        Assert.Equal("Sales", definition.DomainDisplayName);
-        Assert.Equal("Platform", definition.OwnerTeamDisplayName);
-        Assert.Equal(["Sales", "portable"], definition.Tags);
-        Assert.Equal(definition.Id, version.OrchestrationDefinitionId);
+        Assert.Equal(definitionId, version.OrchestrationDefinitionId);
         Assert.Equal(OrchestrationVersionStatus.Draft, version.Status);
-        Assert.Equal(definition.Id.ToString(), imported.OrchestrationDefinitionId);
-        Assert.Equal(version.Id.ToString(), imported.OrchestrationVersionId);
+        Assert.Equal(version.Id.ToString(), importedVersionId);
         Assert.Single(createdStages);
+    }
+
+    [Fact]
+    public async Task ImportRejectsAPackageForADifferentOrchestrationBeforeWritingAnything()
+    {
+        var definitionId = Id.New();
+        var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
+        var versions = Substitute.For<IOrchestrationVersionRepository>();
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
+        {
+            Id = definitionId,
+            Key = "inventory.stock.updated",
+        });
+
+        var service = CreateService(definitions: definitions, versions: versions);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ImportAsync(definitionId.ToString(), CreatePackageJson(), "operator"));
+
+        Assert.Contains("different orchestration key", exception.Message, StringComparison.OrdinalIgnoreCase);
+        await versions.DidNotReceive().Create(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ImportRejectsWhenTheDestinationAlreadyHasAnActiveDraft()
+    {
+        var definitionId = Id.New();
+        var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
+        var versions = Substitute.For<IOrchestrationVersionRepository>();
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
+        {
+            Id = definitionId,
+            Key = "sales.sale.created",
+        });
+        versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(
+            new PagedResult<OrchestrationVersion>(
+                [new OrchestrationVersion { Id = Id.New(), OrchestrationDefinitionId = definitionId, Status = OrchestrationVersionStatus.Draft }],
+                1,
+                1,
+                1,
+                1000));
+
+        var service = CreateService(definitions: definitions, versions: versions);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ImportAsync(definitionId.ToString(), CreatePackageJson(), "operator"));
+
+        Assert.Contains("active Draft", exception.Message, StringComparison.OrdinalIgnoreCase);
+        await versions.DidNotReceive().Create(Arg.Any<OrchestrationVersion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ImportKeepsTheSourceLifecycleAsAuditOnlyAndAlwaysCreatesADraft()
+    {
+        var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
+        var versions = Substitute.For<IOrchestrationVersionRepository>();
+        var unitOfWork = Substitute.For<IControlPlaneUnitOfWork>();
+        var createdVersions = new List<OrchestrationVersion>();
+        var definitionId = Id.New();
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
+        {
+            Id = definitionId,
+            Key = "sales.sale.created",
+        });
+        versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(
+            new PagedResult<OrchestrationVersion>([], 0, 1, 1, 1000));
+        versions.Create(Arg.Do<OrchestrationVersion>(createdVersions.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(0)(call.ArgAt<CancellationToken>(1)));
+
+        var service = CreateService(definitions: definitions, versions: versions, unitOfWork: unitOfWork);
+        var deployedSource = CreatePackageJson()
+            .Replace("\"Version\":\"\"", "\"Version\":\"2.4.1\"", StringComparison.Ordinal)
+            .Replace("\"Status\":\"Draft\"", "\"Status\":\"Deployed\"", StringComparison.Ordinal);
+
+        await service.ImportAsync(definitionId.ToString(), deployedSource, "operator");
+
+        var imported = Assert.Single(createdVersions);
+        Assert.Equal(OrchestrationVersionStatus.Draft, imported.Status);
+        Assert.Null(imported.Version);
+        Assert.Contains("2.4.1", imported.Notes, StringComparison.Ordinal);
+        Assert.Contains("Deployed", imported.Notes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InspectRejectsAnAbandonedSourceVersion()
+    {
+        var service = CreateService();
+        var packageJson = CreatePackageJson().Replace("\"Status\":\"Draft\"", "\"Status\":\"Abandoned\"", StringComparison.Ordinal);
+
+        var result = service.Inspect(packageJson);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("Abandoned", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExportRejectsAnAbandonedVersionBeforeItBuildsTheGraph()
+    {
+        var versionId = Id.New();
+        var definitionId = Id.New();
+        var versions = Substitute.For<IOrchestrationVersionRepository>();
+        versions.GetById(versionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationVersion
+        {
+            Id = versionId,
+            OrchestrationDefinitionId = definitionId,
+            Status = OrchestrationVersionStatus.Abandoned
+        });
+
+        var service = CreateService(versions: versions);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExportAsync(versionId.ToString()));
+
+        Assert.Contains("Abandoned", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExportAllowsNonAbandonedVersionAndKeepsSourceVersionAsInformationalData()
+    {
+        var versionId = Id.New();
+        var definitionId = Id.New();
+        var versions = Substitute.For<IOrchestrationVersionRepository>();
+        var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
+        var payloads = Substitute.For<IOrchestrationArtifactPayloadFactory>();
+        var version = new OrchestrationVersion
+        {
+            Id = versionId,
+            OrchestrationDefinitionId = definitionId,
+            Version = new SemanticVersion(2, 4, 1),
+            Status = OrchestrationVersionStatus.Deployed,
+            VersionLabel = "stable"
+        };
+        versions.GetById(versionId, Arg.Any<CancellationToken>()).Returns(version);
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
+        {
+            Id = definitionId,
+            Key = "sales.sale.created",
+            Name = "Sale created"
+        });
+        payloads.CreatePayloadJson(Arg.Any<OrchestrationDefinition>(), Arg.Any<OrchestrationVersion>()).Returns("{\"kind\":\"portable\"}");
+
+        var service = CreateService(definitions: definitions, versions: versions, payloadFactory: payloads);
+
+        var package = await service.ExportAsync(versionId.ToString());
+
+        Assert.Equal(OrchestrationVersionPackage.CurrentSchemaVersion, package.SchemaVersion);
+        Assert.Equal(OrchestrationVersionPackage.Kind, package.PackageKind);
+        Assert.Equal("2.4.1", package.Source.Version);
+        Assert.Equal("Deployed", package.Source.Status);
+        Assert.Equal("stable", package.Source.Label);
+        Assert.Equal("sha256:66dbce477a155b8d58cc5c4a007df1d37b2fb7cbc22b2a0664bafce51ba78334", package.ArtifactChecksum);
     }
 
     private static OrchestrationVersionPackageService CreateService(
         IOrchestrationDefinitionRepository? definitions = null,
         IOrchestrationVersionRepository? versions = null,
         IStageRepository? stages = null,
-        IDomainRepository? domains = null,
-        ITeamRepository? teams = null,
-        IControlPlaneUnitOfWork? unitOfWork = null)
-        => new(
+        IControlPlaneUnitOfWork? unitOfWork = null,
+        IOrchestrationArtifactPayloadFactory? payloadFactory = null)
+    {
+        var triggers = Substitute.For<ITriggerBindingRepository>();
+        var variables = Substitute.For<IVariableDefinitionRepository>();
+        var taskDefinitions = Substitute.For<ITaskRepository>();
+        var groups = Substitute.For<IParallelGroupRepository>();
+        var branches = Substitute.For<IBranchRuleRepository>();
+        var metadata = Substitute.For<IMetadataDescriptorRepository>();
+        triggers.GetAll(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IEnumerable<TriggerBinding>>([]));
+        variables.GetAll(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IEnumerable<VariableDefinition>>([]));
+        (stages ??= Substitute.For<IStageRepository>()).GetAll(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IEnumerable<StageDefinition>>([]));
+        taskDefinitions.GetAll(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IEnumerable<TaskDefinition>>([]));
+        groups.GetAll(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IEnumerable<ParallelGroupDefinition>>([]));
+        branches.GetAll(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult<IEnumerable<BranchRuleDefinition>>([]));
+        metadata.GetAllDescriptors(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyCollection<MetadataDescriptor>>([]));
+        return new(
             definitions ?? Substitute.For<IOrchestrationDefinitionRepository>(),
             versions ?? Substitute.For<IOrchestrationVersionRepository>(),
-            Substitute.For<ITriggerBindingRepository>(),
-            Substitute.For<IVariableDefinitionRepository>(),
-            stages ?? Substitute.For<IStageRepository>(),
-            Substitute.For<ITaskRepository>(),
-            Substitute.For<IParallelGroupRepository>(),
-            Substitute.For<IBranchRuleRepository>(),
-            Substitute.For<IMetadataDescriptorRepository>(),
-            domains ?? Substitute.For<IDomainRepository>(),
-            teams ?? Substitute.For<ITeamRepository>(),
-            Substitute.For<IOrchestrationArtifactPayloadFactory>(),
+            triggers,
+            variables,
+            stages,
+            taskDefinitions,
+            groups,
+            branches,
+            metadata,
+            payloadFactory ?? Substitute.For<IOrchestrationArtifactPayloadFactory>(),
             unitOfWork ?? Substitute.For<IControlPlaneUnitOfWork>());
+    }
 
     private static string CreatePackageJson()
     {
@@ -131,7 +277,7 @@ public sealed class OrchestrationVersionPackageServiceTests
         var artifactJson = JsonSerializer.Serialize(artifact);
         var package = new OrchestrationVersionPackage
         {
-            Source = new("sales.sale.created", Id.New().ToString(), "Draft", string.Empty),
+            Source = new("sales.sale.created", Id.New().ToString(), string.Empty, "Draft", string.Empty),
             ArtifactJson = artifactJson,
             ArtifactChecksum = $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(artifactJson))).ToLowerInvariant()}",
         };

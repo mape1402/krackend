@@ -20,8 +20,6 @@ public sealed class DetailsModel : PageModel
     private readonly IOrchestrationVersionApplicationService _versionService;
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;
     private readonly IOrchestrationVersionPackageService _packageService;
-    private readonly IDomainApplicationService _domainService;
-    private readonly ITeamApplicationService _teamService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DetailsModel"/> class.
@@ -30,16 +28,12 @@ public sealed class DetailsModel : PageModel
         IOrchestrationApplicationService orchestrationService,
         IOrchestrationVersionApplicationService versionService,
         IOrchestrationVersionReviewApplicationService reviewService,
-        IOrchestrationVersionPackageService packageService,
-        IDomainApplicationService domainService,
-        ITeamApplicationService teamService)
+        IOrchestrationVersionPackageService packageService)
     {
         _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
         _reviewService = reviewService ?? throw new ArgumentNullException(nameof(reviewService));
         _packageService = packageService ?? throw new ArgumentNullException(nameof(packageService));
-        _domainService = domainService ?? throw new ArgumentNullException(nameof(domainService));
-        _teamService = teamService ?? throw new ArgumentNullException(nameof(teamService));
     }
 
     /// <summary>
@@ -66,9 +60,6 @@ public sealed class DetailsModel : PageModel
 
     [BindProperty]
     public IFormFile ImportPackage { get; set; }
-
-    [BindProperty]
-    public ImportNewOrchestrationInput ImportNewOrchestration { get; set; } = new();
 
     /// <summary>
     /// Gets user-facing error text.
@@ -244,8 +235,8 @@ public sealed class DetailsModel : PageModel
         }
     }
 
-    /// <summary>Downloads a Draft as an integrity-protected portable package.</summary>
-    public async Task<IActionResult> OnPostExportDraftAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
+    /// <summary>Downloads a non-abandoned version as an integrity-protected portable package.</summary>
+    public async Task<IActionResult> OnPostExportVersionAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
     {
         var version = await _versionService.GetById(new GetOrchestrationVersionByIdQuery(versionId), cancellationToken);
         if (version is null || !string.Equals(version.OrchestrationDefinitionId, orchestrationId, StringComparison.Ordinal))
@@ -255,7 +246,8 @@ public sealed class DetailsModel : PageModel
 
         var package = await _packageService.ExportAsync(versionId, cancellationToken);
         var safeKey = string.Concat((package.Source.OrchestrationKey ?? "orchestration").Select(x => char.IsLetterOrDigit(x) ? x : '-'));
-        return File(Encoding.UTF8.GetBytes(_packageService.Serialize(package)), "application/json", $"{safeKey}-draft-{versionId}.krackend.json");
+        var sourceVersion = string.IsNullOrWhiteSpace(package.Source.Version) ? "draft" : package.Source.Version;
+        return File(Encoding.UTF8.GetBytes(_packageService.Serialize(package)), "application/json", $"{safeKey}-{sourceVersion}-{versionId}.krackend.json");
     }
 
     /// <summary>Validates a package without changing the orchestration.</summary>
@@ -271,56 +263,17 @@ public sealed class DetailsModel : PageModel
         }
     }
 
-    /// <summary>Returns active local domain suggestions for a portable import target.</summary>
-    public async Task<IActionResult> OnGetImportDomainSuggestionsAsync(string term = "", CancellationToken cancellationToken = default)
-    {
-        var page = await _domainService.GetAll(new GetDomainsQuery(
-            new DesignPagedSettings { PageNumber = 1, PageSize = 20, Sorts = [new ApplicationSort("displayName", false), new ApplicationSort("key", false)] },
-            term ?? string.Empty, ActiveOnly: true), cancellationToken);
-        return new JsonResult(page.Rows.Select(x => new { x.Id, x.Key, x.DisplayName, x.Description }));
-    }
-
-    /// <summary>Returns active local owner-team suggestions for a portable import target.</summary>
-    public async Task<IActionResult> OnGetImportTeamSuggestionsAsync(string term = "", CancellationToken cancellationToken = default)
-    {
-        var page = await _teamService.GetAll(new GetTeamsQuery(
-            new Krackend.Sagas.Orchestrations.ControlPlane.Application.Security.ApplicationPagedSettings { PageNumber = 1, PageSize = 20 },
-            term ?? string.Empty, ActiveOnly: true), cancellationToken);
-        return new JsonResult(page.Rows.Select(x => new { x.Id, x.Key, x.DisplayName }));
-    }
-
     /// <summary>Creates a fresh Draft from a validated portable package.</summary>
     public async Task<IActionResult> OnPostImportDraftAsync(
         string orchestrationId,
-        bool importAsNew,
         IFormFile importPackage,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var packageJson = await ReadPackageAsync(importPackage, cancellationToken);
-            if (!importAsNew)
-            {
-                var versionId = await _packageService.ImportAsync(orchestrationId, packageJson, "web-ui", cancellationToken);
-                return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
-            }
-
-            var imported = await _packageService.ImportAsNewOrchestrationAsync(
-                new CreateImportedOrchestrationInput(
-                    ImportNewOrchestration.Name,
-                    ImportNewOrchestration.DomainId,
-                    ImportNewOrchestration.OwnerTeamId,
-                    ImportNewOrchestration.Description,
-                    ParseTags(ImportNewOrchestration.Tags)),
-                packageJson,
-                "web-ui",
-                cancellationToken);
-            return RedirectToPage("/OrchestrationVersions/Details", new
-            {
-                area = "OrchestratorDesign",
-                orchestrationId = imported.OrchestrationDefinitionId,
-                versionId = imported.OrchestrationVersionId,
-            });
+            var versionId = await _packageService.ImportAsync(orchestrationId, packageJson, "web-ui", cancellationToken);
+            return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
         }
         catch (Exception ex)
         {
@@ -336,14 +289,21 @@ public sealed class DetailsModel : PageModel
     /// </summary>
     public IEnumerable<string> GetAllowedActions(OrchestrationVersionStatus status)
     {
-        return status switch
+        var actions = new List<string>();
+        if (status != OrchestrationVersionStatus.Abandoned)
         {
-            OrchestrationVersionStatus.Draft => new[] { "ExportDraft", "RequestDeployment", "Abandon" },
-            OrchestrationVersionStatus.PendingDeployment or OrchestrationVersionStatus.PendingDeprecation or OrchestrationVersionStatus.PendingArchive => new[] { "OpenReview" },
-            OrchestrationVersionStatus.Deployed => new[] { "RequestDeprecation" },
-            OrchestrationVersionStatus.Deprecated => new[] { "RequestArchive" },
-            _ => Array.Empty<string>()
-        };
+            actions.Add("ExportVersion");
+        }
+
+        actions.AddRange(status switch
+        {
+            OrchestrationVersionStatus.Draft => ["RequestDeployment", "Abandon"],
+            OrchestrationVersionStatus.PendingDeployment or OrchestrationVersionStatus.PendingDeprecation or OrchestrationVersionStatus.PendingArchive => ["OpenReview"],
+            OrchestrationVersionStatus.Deployed => ["RequestDeprecation"],
+            OrchestrationVersionStatus.Deprecated => ["RequestArchive"],
+            _ => []
+        });
+        return actions;
     }
 
     private static OrchestrationVersionReviewOperation ToReviewOperation(string action)
@@ -400,13 +360,6 @@ public sealed class DetailsModel : PageModel
         return await reader.ReadToEndAsync(cancellationToken);
     }
 
-    private static IReadOnlyCollection<string> ParseTags(string tags)
-        => string.IsNullOrWhiteSpace(tags)
-            ? []
-            : tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
     private static string FormatTimestamp(string value)
         => DateTimeOffset.TryParse(value, out var parsed) ? parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : value;
 
@@ -437,18 +390,6 @@ public sealed class DetailsModel : PageModel
         /// Gets or sets actor creating the version.
         /// </summary>
         public string CreatedBy { get; set; } = string.Empty;
-    }
-
-    /// <summary>Local identity selected when a portable package creates a new orchestration.</summary>
-    public sealed class ImportNewOrchestrationInput
-    {
-        public string Name { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string DomainText { get; set; } = string.Empty;
-        public string DomainId { get; set; } = string.Empty;
-        public string OwnerTeamText { get; set; } = string.Empty;
-        public string OwnerTeamId { get; set; } = string.Empty;
-        public string Tags { get; set; } = string.Empty;
     }
 
 }

@@ -1,15 +1,15 @@
 namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 
 /// <summary>
-/// Portable, draft-only envelope used to move an orchestration design between control-plane instances.
+/// Portable envelope used to move one orchestration version between control-plane instances.
 /// </summary>
 public sealed class OrchestrationVersionPackage
 {
     /// <summary>Current portable package schema.</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>Stable package discriminator.</summary>
-    public const string Kind = "krackend-orchestration-draft";
+    public const string Kind = "krackend-orchestration-version";
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -31,11 +31,11 @@ public sealed class OrchestrationVersionPackage
     /// <summary>Design-only parallel group names indexed by their artifact identifier.</summary>
     public IReadOnlyDictionary<string, string> ParallelGroupNames { get; init; } = new Dictionary<string, string>();
 }
-
 /// <summary>Human-readable source information retained for auditability only.</summary>
 public sealed record OrchestrationVersionPackageSource(
     string OrchestrationKey,
     string VersionId,
+    string Version,
     string Status,
     string Label,
     string OrchestrationName = "",
@@ -55,13 +55,3 @@ public sealed record OrchestrationVersionPackageInspection(
     string OrchestrationDescription = "",
     string DomainName = "");
 
-/// <summary>Local ownership details required when importing a draft into a new orchestration.</summary>
-public sealed record CreateImportedOrchestrationInput(
-    string Name,
-    string DomainId,
-    string OwnerTeamId,
-    string Description,
-    IReadOnlyCollection<string>? Tags = null);
-
-/// <summary>Identifiers created by a portable draft import.</summary>
-public sealed record ImportedOrchestrationDraft(string OrchestrationDefinitionId, string OrchestrationVersionId);

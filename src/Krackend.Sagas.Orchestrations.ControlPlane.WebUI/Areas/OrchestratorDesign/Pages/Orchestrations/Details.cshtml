@@ -11,7 +11,7 @@
 
 <section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
          data-action-url="@Url.Page(null, "VersionAction")" data-orchestration-id="@Model.OrchestrationId"
-         data-export-url="@Url.Page(null, "ExportDraft")"
+         data-export-url="@Url.Page(null, "ExportVersion")"
          data-roadmap-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = "__versionId__" })">
     <div class="od-catalog-controls" role="group" aria-label="View mode">
         <button type="button" class="z-button z-button-ghost od-view-toggle" data-version-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
@@ -59,18 +59,7 @@ document.getElementById('openImportDraft')?.addEventListener('click', event =>
     const input = document.getElementById('importPackage');
     const message = document.getElementById('importPackageInspection');
     const submit = document.getElementById('importDraftSubmit');
-    const newTarget = document.getElementById('importNewTarget');
-    const importAsNew = document.getElementById('importAsNew');
-    const name = document.getElementById('importNewName');
-    const description = document.getElementById('importNewDescription');
-    if (!input || !message || !submit || !newTarget || !importAsNew || !name || !description) return;
-    const setTargetVisibility = () => {
-        const enabled = importAsNew.checked;
-        newTarget.hidden = !enabled;
-        newTarget.querySelectorAll('[data-import-target-required]').forEach(field => field.required = enabled);
-    };
-    importAsNew.addEventListener('change', setTargetVisibility);
-    setTargetVisibility();
+    if (!input || !message || !submit) return;
     input.addEventListener('change', async () => {
         submit.disabled = true;
         if (!input.files?.length) { message.textContent = ''; return; }
@@ -83,51 +72,8 @@ document.getElementById('openImportDraft')?.addEventListener('click', event =>
             message.textContent = result.message || 'Package could not be inspected.';
             message.classList.toggle('od-import-invalid', !result.isValid);
             submit.disabled = !result.isValid;
-            if (result.isValid) {
-                if (!name.value) name.value = result.orchestrationName || result.orchestrationKey || '';
-                if (!description.value) description.value = result.orchestrationDescription || '';
-            }
         } catch { message.textContent = 'Package could not be inspected.'; message.classList.add('od-import-invalid'); }
     });
-})();
-
-(() => {
-    const escapeHtml = value => (value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
-    const bindAutocomplete = (textId, valueId, suggestionsId, endpoint, includeDescription) => {
-        const text = document.getElementById(textId);
-        const value = document.getElementById(valueId);
-        const suggestions = document.getElementById(suggestionsId);
-        if (!text || !value || !suggestions) return;
-        let requestToken = 0;
-        const hide = () => { suggestions.classList.add('d-none'); suggestions.innerHTML = ''; };
-        const search = async () => {
-            const query = text.value.trim();
-            const token = ++requestToken;
-            value.value = '';
-            if (!query) { hide(); return; }
-            const url = new URL(endpoint, window.location.origin);
-            url.searchParams.set('term', query);
-            try {
-                const response = await fetch(url);
-                const rows = response.ok ? await response.json() : [];
-                if (token !== requestToken || !rows.length) { if (token === requestToken) hide(); return; }
-                suggestions.innerHTML = rows.map(row => `<button type="button" class="od-autocomplete-item" data-id="${escapeHtml(row.id)}" data-value="${escapeHtml(`${row.displayName} (${row.key})`)}"><span class="od-autocomplete-title">${escapeHtml(row.displayName)} (${escapeHtml(row.key)})</span>${includeDescription ? `<span class="od-autocomplete-meta">${escapeHtml(row.description || '')}</span>` : ''}</button>`).join('');
-                suggestions.classList.remove('d-none');
-            } catch { if (token === requestToken) hide(); }
-        };
-        text.addEventListener('input', search);
-        text.addEventListener('blur', () => { requestToken++; setTimeout(hide, 150); });
-        suggestions.addEventListener('click', event => {
-            const item = event.target.closest('.od-autocomplete-item');
-            if (!item) return;
-            requestToken++;
-            value.value = item.dataset.id || '';
-            text.value = item.dataset.value || '';
-            hide();
-        });
-    };
-    bindAutocomplete('importNewDomainText', 'importNewDomainId', 'importDomainSuggestions', '@Url.Page(null, "ImportDomainSuggestions")', true);
-    bindAutocomplete('importNewTeamText', 'importNewTeamId', 'importTeamSuggestions', '@Url.Page(null, "ImportTeamSuggestions")', false);
 })();
 </script>
 }

@@ -3,42 +3,10 @@
     <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
     <div class="d-grid gap-3">
         <div>
-            <label class="z-field-label" for="importPackage">Draft package</label>
+            <label class="z-field-label" for="importPackage">Orchestration version package</label>
             <input id="importPackage" class="z-form-input" type="file" name="importPackage" accept="application/json,.json" required />
             <p id="importPackageInspection" class="od-import-inspection" aria-live="polite"></p>
         </div>
-        <label class="z-choice-row" for="importAsNew">
-            <input id="importAsNew" type="checkbox" name="importAsNew" value="true" />
-            <span><strong>Create a new orchestration</strong><small>Choose local ownership. The package key and graph remain immutable.</small></span>
-        </label>
-        <div id="importNewTarget" class="od-import-target" hidden>
-            <div class="row g-3">
-                <div class="col-12">
-                    <label asp-for="ImportNewOrchestration.Name" class="z-field-label" for="importNewName">Name</label>
-                    <input asp-for="ImportNewOrchestration.Name" id="importNewName" class="z-form-input" data-import-target-required="true" />
-                </div>
-                <div class="col-md-6 position-relative">
-                    <label asp-for="ImportNewOrchestration.DomainText" class="z-field-label" for="importNewDomainText">Domain</label>
-                    <input asp-for="ImportNewOrchestration.DomainText" id="importNewDomainText" class="z-form-input" autocomplete="off" data-import-target-required="true" data-suggestions="importDomainSuggestions" />
-                    <input asp-for="ImportNewOrchestration.DomainId" id="importNewDomainId" type="hidden" data-import-target-required="true" />
-                    <div id="importDomainSuggestions" class="od-autocomplete-list d-none"></div>
-                </div>
-                <div class="col-md-6 position-relative">
-                    <label asp-for="ImportNewOrchestration.OwnerTeamText" class="z-field-label" for="importNewTeamText">Owner team</label>
-                    <input asp-for="ImportNewOrchestration.OwnerTeamText" id="importNewTeamText" class="z-form-input" autocomplete="off" data-import-target-required="true" data-suggestions="importTeamSuggestions" />
-                    <input asp-for="ImportNewOrchestration.OwnerTeamId" id="importNewTeamId" type="hidden" data-import-target-required="true" />
-                    <div id="importTeamSuggestions" class="od-autocomplete-list d-none"></div>
-                </div>
-                <div class="col-12">
-                    <label asp-for="ImportNewOrchestration.Description" class="z-field-label" for="importNewDescription">Description</label>
-                    <textarea asp-for="ImportNewOrchestration.Description" id="importNewDescription" rows="3" class="z-form-input"></textarea>
-                </div>
-                <div class="col-12">
-                    <label asp-for="ImportNewOrchestration.Tags" class="z-field-label" for="importNewTags">Tags</label>
-                    <input asp-for="ImportNewOrchestration.Tags" id="importNewTags" class="z-form-input" placeholder="sales, fulfillment" />
-                </div>
-            </div>
-        </div>
-        <p class="od-item-meta mb-0">Import creates a fresh Draft only. It never overwrites a version or deploys anything.</p>
+        <p class="od-item-meta mb-0">Import creates a fresh Draft in this orchestration only. It never overwrites a version, creates a new orchestration, or deploys anything.</p>
     </div>
 </form>

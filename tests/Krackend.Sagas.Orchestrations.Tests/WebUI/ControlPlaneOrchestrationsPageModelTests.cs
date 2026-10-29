@@ -281,41 +281,36 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         var result = await page.OnPostCreateVersionAsync("orch-1", CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
-        Assert.Equal(["ExportDraft", "RequestDeployment", "Abandon"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
-        Assert.Equal(["OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingDeployment));
-        Assert.Equal(["RequestDeprecation"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
-        Assert.Equal(["RequestArchive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
-        Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
+        Assert.Equal(["ExportVersion", "RequestDeployment", "Abandon"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
+        Assert.Equal(["ExportVersion", "OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingDeployment));
+        Assert.Equal(["ExportVersion", "RequestDeprecation"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
+        Assert.Equal(["ExportVersion", "RequestArchive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
+        Assert.Equal(["ExportVersion"], page.GetAllowedActions(OrchestrationVersionStatus.Archived));
+        Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Abandoned));
     }
 
     [Fact]
-    public async Task DetailsImportsPortableDraftIntoANewLocallyOwnedOrchestration()
+    public async Task DetailsImportsPortableVersionAsADraftIntoTheCurrentOrchestration()
     {
         var fixture = new Fixture();
-        fixture.PackageService.ImportAsNewOrchestrationAsync(
-                Arg.Any<CreateImportedOrchestrationInput>(),
+        fixture.PackageService.ImportAsync(
+                "orch-1",
                 Arg.Any<string>(),
                 "web-ui",
                 Arg.Any<CancellationToken>())
-            .Returns(new ImportedOrchestrationDraft("new-orchestration", "new-draft"));
+            .Returns("new-draft");
         var page = fixture.CreateDetailsPage();
-        page.ImportNewOrchestration = new OrchestrationDetailsPageModel.ImportNewOrchestrationInput
-        {
-            Name = "Imported sales", DomainId = "domain-1", OwnerTeamId = "team-1", Description = "portable", Tags = "sales, sales, fulfillment"
-        };
 
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("{\"package\":true}"));
         var file = new FormFile(stream, 0, stream.Length, "importPackage", "sales.krackend.json");
 
-        var result = Assert.IsType<RedirectToPageResult>(await page.OnPostImportDraftAsync("orch-1", true, file, CancellationToken.None));
+        var result = Assert.IsType<RedirectToPageResult>(await page.OnPostImportDraftAsync("orch-1", file, CancellationToken.None));
 
         Assert.Equal("/OrchestrationVersions/Details", result.PageName);
-        Assert.Equal("new-orchestration", result.RouteValues!["orchestrationId"]);
+        Assert.Equal("orch-1", result.RouteValues!["orchestrationId"]);
         Assert.Equal("new-draft", result.RouteValues["versionId"]);
-        await fixture.PackageService.Received(1).ImportAsNewOrchestrationAsync(
-            Arg.Is<CreateImportedOrchestrationInput>(input =>
-                input.Name == "Imported sales" && input.DomainId == "domain-1" && input.OwnerTeamId == "team-1" &&
-                input.Tags!.SequenceEqual(new[] { "sales", "fulfillment" })),
+        await fixture.PackageService.Received(1).ImportAsync(
+            "orch-1",
             Arg.Any<string>(),
             "web-ui",
             Arg.Any<CancellationToken>());
@@ -435,6 +430,6 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
             => new(OrchestrationService, DomainService, TeamService);
 
         public OrchestrationDetailsPageModel CreateDetailsPage()
-            => new(OrchestrationService, VersionService, ReviewService, PackageService, DomainService, TeamService);
+            => new(OrchestrationService, VersionService, ReviewService, PackageService);
     }
 }

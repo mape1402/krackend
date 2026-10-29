@@ -13,12 +13,11 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfi
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TriggerChannels;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.ValidationConfigurations;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
-using Krackend.Sagas.Orchestrations.ControlPlane.Security.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Storage;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 
-/// <summary>Default portable draft package implementation.</summary>
+/// <summary>Default portable orchestration-version package implementation.</summary>
 public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPackageService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -32,8 +31,6 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
     private readonly IParallelGroupRepository _groupRepository;
     private readonly IBranchRuleRepository _branchRepository;
     private readonly IMetadataDescriptorRepository _metadataRepository;
-    private readonly IDomainRepository _domainRepository;
-    private readonly ITeamRepository _teamRepository;
     private readonly IOrchestrationArtifactPayloadFactory _payloadFactory;
     private readonly IControlPlaneUnitOfWork _unitOfWork;
 
@@ -47,8 +44,6 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
         IParallelGroupRepository groupRepository,
         IBranchRuleRepository branchRepository,
         IMetadataDescriptorRepository metadataRepository,
-        IDomainRepository domainRepository,
-        ITeamRepository teamRepository,
         IOrchestrationArtifactPayloadFactory payloadFactory,
         IControlPlaneUnitOfWork unitOfWork)
     {
@@ -61,8 +56,6 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
         _groupRepository = groupRepository ?? throw new ArgumentNullException(nameof(groupRepository));
         _branchRepository = branchRepository ?? throw new ArgumentNullException(nameof(branchRepository));
         _metadataRepository = metadataRepository ?? throw new ArgumentNullException(nameof(metadataRepository));
-        _domainRepository = domainRepository ?? throw new ArgumentNullException(nameof(domainRepository));
-        _teamRepository = teamRepository ?? throw new ArgumentNullException(nameof(teamRepository));
         _payloadFactory = payloadFactory ?? throw new ArgumentNullException(nameof(payloadFactory));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
@@ -71,9 +64,9 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
     {
         var version = await _versionRepository.GetById(PrimitiveParser.ParseId(orchestrationVersionId), cancellationToken)
             ?? throw new InvalidOperationException("The orchestration version was not found.");
-        if (version.Status != OrchestrationVersionStatus.Draft)
+        if (version.Status == OrchestrationVersionStatus.Abandoned)
         {
-            throw new InvalidOperationException("Only Draft orchestration versions can be exported.");
+            throw new InvalidOperationException("Abandoned orchestration versions cannot be exported.");
         }
 
         var definition = await _definitionRepository.GetById(version.OrchestrationDefinitionId, cancellationToken)
@@ -81,7 +74,7 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
         await HydrateAsync(version, cancellationToken);
 
         // Artifact serialization is the canonical, independently versioned graph format. Drafts have no release
-        // semantic version yet, so a neutral temporary value is used only for the portable envelope.
+        // semantic version yet, so a neutral temporary value is used only for their artifact projection.
         var exportVersion = CopyForPortableArtifact(version);
         var artifactJson = _payloadFactory.CreatePayloadJson(definition, exportVersion);
         return new OrchestrationVersionPackage
@@ -89,6 +82,7 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
             Source = new OrchestrationVersionPackageSource(
                 definition.Key,
                 version.Id.ToString(),
+                version.Version?.ToString() ?? string.Empty,
                 version.Status.ToString(),
                 version.VersionLabel,
                 definition.Name,
@@ -110,7 +104,7 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
             var package = Parse(packageJson);
             var artifact = DeserializeArtifact(package);
             var taskCount = artifact.StageDefinitions.Sum(x => x.TaskDefinitions?.Count ?? 0);
-            return new(true, "Package is valid and can be imported as a new draft.", artifact.Key,
+            return new(true, "Package is valid and can be imported as a Draft in the selected orchestration.", artifact.Key,
                 artifact.TriggerBindings?.Count ?? 0, artifact.StageDefinitions?.Count ?? 0, taskCount,
                 string.IsNullOrWhiteSpace(package.Source.OrchestrationName) ? artifact.Name : package.Source.OrchestrationName,
                 package.Source.OrchestrationDescription,
@@ -166,7 +160,8 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
             Description = string.Empty,
             Checksum = new Checksum($"draft:{targetId}"),
             DraftSlot = $"open:{definitionId}",
-            Notes = string.Empty,
+            // Preserve the source only as local audit context. It never controls the new Draft's lifecycle.
+            Notes = $"Imported from {package.Source.OrchestrationKey} version {package.Source.Version} ({package.Source.Status}); source version id: {package.Source.VersionId}.",
             CreatedOnUtc = DateTime.UtcNow,
             CreatedBy = importedBy,
             ApprovedBy = string.Empty,
@@ -180,86 +175,6 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
         }, cancellationToken);
         return targetId.ToString();
     }
-
-    public async Task<ImportedOrchestrationDraft> ImportAsNewOrchestrationAsync(
-        CreateImportedOrchestrationInput target,
-        string packageJson,
-        string importedBy,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(target);
-        if (string.IsNullOrWhiteSpace(importedBy))
-        {
-            throw new ArgumentException("An importing user is required.", nameof(importedBy));
-        }
-
-        var package = Parse(packageJson);
-        var artifact = DeserializeArtifact(package);
-        if (string.IsNullOrWhiteSpace(target.Name))
-        {
-            throw new InvalidOperationException("A name is required for the new orchestration.");
-        }
-
-        var domain = await _domainRepository.GetById(PrimitiveParser.ParseId(target.DomainId), cancellationToken);
-        if (domain is null || !domain.IsActive)
-        {
-            throw new InvalidOperationException("Select an active local domain for the imported orchestration.");
-        }
-
-        var team = await _teamRepository.GetById(PrimitiveParser.ParseId(target.OwnerTeamId), cancellationToken);
-        if (team is null || !team.IsActive)
-        {
-            throw new InvalidOperationException("Select an active local owner team for the imported orchestration.");
-        }
-
-        var definitionId = Id.New();
-        var versionId = Id.New();
-        var definition = new OrchestrationDefinition
-        {
-            Id = definitionId,
-            Key = artifact.Key,
-            Name = target.Name.Trim(),
-            Description = target.Description?.Trim() ?? string.Empty,
-            Domain = domain.DisplayName,
-            DomainId = domain.Id,
-            DomainDisplayName = domain.DisplayName,
-            OwnerTeam = team.DisplayName,
-            OwnerTeamId = team.Id,
-            OwnerTeamDisplayName = team.DisplayName,
-            Tags = target.Tags?.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [],
-            IsActive = true,
-            CreatedOnUtc = DateTime.UtcNow,
-            CreatedBy = importedBy,
-            UpdatedBy = string.Empty,
-        };
-        var version = CreateDraftVersion(definitionId, versionId, importedBy);
-
-        await _unitOfWork.ExecuteInTransactionAsync(async token =>
-        {
-            await _definitionRepository.Create(definition, token);
-            await _versionRepository.Create(version, token);
-            await CreatePortableGraphAsync(version, artifact, package, token);
-        }, cancellationToken);
-
-        return new ImportedOrchestrationDraft(definitionId.ToString(), versionId.ToString());
-    }
-
-    private static OrchestrationVersion CreateDraftVersion(Id definitionId, Id versionId, string importedBy) => new()
-    {
-        Id = versionId,
-        OrchestrationDefinitionId = definitionId,
-        Version = null,
-        Status = OrchestrationVersionStatus.Draft,
-        VersionLabel = string.Empty,
-        Description = string.Empty,
-        Checksum = new Checksum($"draft:{versionId}"),
-        DraftSlot = $"open:{definitionId}",
-        Notes = string.Empty,
-        CreatedOnUtc = DateTime.UtcNow,
-        CreatedBy = importedBy,
-        ApprovedBy = string.Empty,
-        UpdatedBy = string.Empty,
-    };
 
     private async Task HydrateAsync(OrchestrationVersion version, CancellationToken cancellationToken)
     {
@@ -365,7 +280,7 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
 
     private static OrchestrationVersion CopyForPortableArtifact(OrchestrationVersion source) => new()
     {
-        Id = source.Id, OrchestrationDefinitionId = source.OrchestrationDefinitionId, Version = new SemanticVersion(0, 0, 0),
+        Id = source.Id, OrchestrationDefinitionId = source.OrchestrationDefinitionId, Version = source.Version ?? new SemanticVersion(0, 0, 0),
         Status = source.Status, VersionLabel = source.VersionLabel, Description = source.Description, Checksum = source.Checksum,
         TriggerBindings = source.TriggerBindings, VariableDefinitions = source.VariableDefinitions, StageDefinitions = source.StageDefinitions,
         MetadataDescriptors = source.MetadataDescriptors, Notes = source.Notes, CreatedOnUtc = source.CreatedOnUtc, CreatedBy = source.CreatedBy,
@@ -376,8 +291,12 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
         if (string.IsNullOrWhiteSpace(json)) throw new InvalidOperationException("Select an orchestration package first.");
         var package = JsonSerializer.Deserialize<OrchestrationVersionPackage>(json, SerializerOptions)
             ?? throw new InvalidOperationException("The selected file is not a Krackend orchestration package.");
-        if (package.SchemaVersion != OrchestrationVersionPackage.CurrentSchemaVersion || package.PackageKind != OrchestrationVersionPackage.Kind)
+        var isCurrentPackage = package.SchemaVersion == OrchestrationVersionPackage.CurrentSchemaVersion && package.PackageKind == OrchestrationVersionPackage.Kind;
+        var isLegacyDraftPackage = package.SchemaVersion == 1 && package.PackageKind == "krackend-orchestration-draft";
+        if (!isCurrentPackage && !isLegacyDraftPackage)
             throw new InvalidOperationException("This orchestration package schema is not supported.");
+        if (string.Equals(package.Source?.Status, OrchestrationVersionStatus.Abandoned.ToString(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Abandoned orchestration versions cannot be imported.");
         if (string.IsNullOrWhiteSpace(package.ArtifactJson) || !string.Equals(package.ArtifactChecksum, ComputeChecksum(package.ArtifactJson), StringComparison.Ordinal))
             throw new InvalidOperationException("The package checksum does not match its orchestration payload.");
         return package;
