@@ -1942,7 +1942,7 @@ main.container {
     display: flex;
     justify-content: flex-end;
     gap: .35rem;
-    margin-bottom: .75rem;
+    margin: 0;
 }
 
 .od-catalog-controls [aria-pressed="true"] {
@@ -1972,6 +1972,38 @@ main.container {
 
 .od-catalog-filters .form-select,
 .od-catalog-filters .z-form-select { width: auto; min-width: 10rem; }
+
+/* Catalogs keep the same visual rhythm in grid and card mode.  Controls are
+   mounted by the shared catalog script, rather than absolutely positioned. */
+.od-catalog .z-toolbar,
+.od-catalog-toolbar {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    width: 100%;
+    gap: .6rem;
+}
+.od-catalog-toolbar { flex-wrap: wrap; margin-bottom: .65rem; }
+.od-catalog .z-toolbar > :first-child,
+.od-catalog-toolbar > .z-search-field,
+.od-catalog-toolbar > [data-catalog-sort] { flex: 0 1 17rem; min-width: 0; }
+.od-catalog .z-toolbar .z-grid-search,
+.od-catalog .z-toolbar .z-data-grid-search,
+.od-catalog-toolbar .z-search-field { width: min(17rem, 100%); max-width: 17rem; }
+.od-catalog-toolbar-end {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
+    min-width: 0;
+    margin-left: auto;
+    white-space: nowrap;
+}
+.od-catalog-loaded-count { color: var(--z-muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+    .od-catalog .z-toolbar, .od-catalog-toolbar { align-items: stretch; }
+    .od-catalog-toolbar-end { width: 100%; margin-left: 0; justify-content: space-between; }
+}
 
 .od-catalog .od-item-card > .od-status { align-self: flex-start; }
 
