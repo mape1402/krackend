@@ -400,10 +400,8 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             taskExecution.Metadata["RetrySuppressed"] = JsonValue.Create(true);
             taskExecution.Metadata["RetryConfigurationErrorCode"] = JsonValue.Create(errorCode);
             taskExecution.Metadata["RetryConfigurationError"] = JsonValue.Create(message);
-            request.Instance.Status = request.Task.OnErrorPolicy == OnErrorPolicy.Continue
-                ? OrchestrationInstanceStatus.Running
-                : OrchestrationInstanceStatus.Failed;
-            request.Instance.FailedOnUtc = request.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+            request.Instance.Status = OrchestrationInstanceStatus.Running;
+            request.Instance.FailedOnUtc = null;
             request.Instance.ErrorSummary = message;
             request.Instance.LastUpdatedOnUtc = failedOnUtc;
 
@@ -440,10 +438,10 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         failedTask.Metadata["ExecutionErrorCode"] = JsonValue.Create(errorCode);
         failedTask.Metadata["ExecutionErrorMessage"] = JsonValue.Create(message);
         failedTask.Metadata["RetrySuppressed"] = JsonValue.Create(true);
-        request.Instance.Status = OrchestrationInstanceStatus.Failed;
+        request.Instance.Status = OrchestrationInstanceStatus.Running;
         request.Instance.CurrentStageKey = request.StageKey;
         request.Instance.CurrentTaskKey = request.Task.Key;
-        request.Instance.FailedOnUtc = failedOnUtc;
+        request.Instance.FailedOnUtc = null;
         request.Instance.ErrorSummary = message;
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
         request.Instance.WaitingSinceUtc = null;
@@ -497,10 +495,8 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
             attempt.Metadata[$"Preparation.{diagnostic.Key}"] = diagnostic.Value?.DeepClone();
         }
 
-        request.Instance.Status = request.Task.OnErrorPolicy == OnErrorPolicy.Continue
-            ? OrchestrationInstanceStatus.Running
-            : OrchestrationInstanceStatus.Failed;
-        request.Instance.FailedOnUtc = request.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+        request.Instance.Status = OrchestrationInstanceStatus.Running;
+        request.Instance.FailedOnUtc = null;
         request.Instance.ErrorSummary = exception.Message;
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
 
@@ -538,10 +534,8 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         attempt.FailedOnUtc = failedOnUtc;
         attempt.ErrorCode = "CommandDispatchFailed";
         attempt.ErrorMessage = exception.Message;
-        request.Instance.Status = request.Task.OnErrorPolicy == OnErrorPolicy.Continue
-            ? OrchestrationInstanceStatus.Running
-            : OrchestrationInstanceStatus.Failed;
-        request.Instance.FailedOnUtc = request.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+        request.Instance.Status = OrchestrationInstanceStatus.Running;
+        request.Instance.FailedOnUtc = null;
         request.Instance.ErrorSummary = exception.Message;
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
 
@@ -579,10 +573,8 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         attempt.FailedOnUtc = failedOnUtc;
         attempt.ErrorCode = "CommandDispatchFailed";
         attempt.ErrorMessage = exception.Message;
-        request.Instance.Status = request.Task.OnErrorPolicy == OnErrorPolicy.Continue
-            ? OrchestrationInstanceStatus.Running
-            : OrchestrationInstanceStatus.Failed;
-        request.Instance.FailedOnUtc = request.Task.OnErrorPolicy == OnErrorPolicy.Continue ? null : failedOnUtc;
+        request.Instance.Status = OrchestrationInstanceStatus.Running;
+        request.Instance.FailedOnUtc = null;
         request.Instance.ErrorSummary = exception.Message;
         request.Instance.LastUpdatedOnUtc = failedOnUtc;
 

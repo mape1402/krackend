@@ -42,6 +42,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                         workItem,
                         options =>
                         {
+                            options.Lane = MuleActionKeys.TriggerLane;
                             options.CorrelationId = workItem.MessageMetadata?.CorrelationId
                                 ?? workItem.MessageMetadata?.SagaId;
                             options.DeduplicationKey = BuildTriggerDeduplicationKey(workItem);
@@ -55,6 +56,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                         workItem,
                         options =>
                         {
+                            options.Lane = MuleActionKeys.BackchannelLane;
                             options.CorrelationId = workItem.MessageMetadata?.OrchestrationInstanceId
                                 ?? workItem.MessageMetadata?.CorrelationId;
                             options.DeduplicationKey = BuildBackchannelDeduplicationKey(workItem);
@@ -84,7 +86,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     workItem,
                     options =>
                     {
-                        options.Lane = MuleSettings.DefaultLane;
                         configureOptions(options);
                     },
                     cancellationToken);

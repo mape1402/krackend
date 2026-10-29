@@ -34,4 +34,23 @@ public interface ITaskExecutionRepository
     Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(
         DateTime dueBeforeUtc,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a bounded page of response waits whose persisted deadline has elapsed.
+    /// Implementations that have not yet persisted deadlines may fall back to the legacy waiting timestamp query.
+    /// </summary>
+    Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsDue(
+        DateTime dueBeforeUtc,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => GetWaitingResponseOlderThan(dueBeforeUtc, cancellationToken);
+
+    /// <summary>
+    /// Gets awaited response tasks whose durable timeout action reference was not persisted, so a bounded repair
+    /// process can restore only inconsistent waits rather than scan all healthy instances.
+    /// </summary>
+    Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingAction(
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyCollection<TaskExecution>>(Array.Empty<TaskExecution>());
 }

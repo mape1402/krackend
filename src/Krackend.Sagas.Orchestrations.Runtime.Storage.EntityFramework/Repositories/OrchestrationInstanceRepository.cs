@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -208,7 +208,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         if (query.ActiveOnly)
             source = source.Where(x => x.Status == OrchestrationInstanceStatus.Created
                 || x.Status == OrchestrationInstanceStatus.Running
-                || x.Status == OrchestrationInstanceStatus.Waiting
+                || x.Status == OrchestrationInstanceStatus.Idle
                 || x.Status == OrchestrationInstanceStatus.Compensating);
         return source;
     }
@@ -222,6 +222,19 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetIdleExpiringOnOrBefore(
+        DateTime utcNow,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.Status == OrchestrationInstanceStatus.Idle &&
+                        x.IdleExpiresOnUtc != null &&
+                        x.IdleExpiresOnUtc <= utcNow)
+            .OrderBy(x => x.IdleExpiresOnUtc)
+            .ThenBy(x => x.Id)
+            .Take(Math.Max(1, take))
+            .ToArrayAsync(cancellationToken);
+
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecoverable(int take = 100, CancellationToken cancellationToken = default)
         => await DbContext.OrchestrationInstances.AsNoTracking()
             .Where(x =>
@@ -229,6 +242,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 x.Status != OrchestrationInstanceStatus.Compensated &&
                 x.Status != OrchestrationInstanceStatus.Completed &&
                 x.Status != OrchestrationInstanceStatus.CompletedWithErrors &&
+                x.Status != OrchestrationInstanceStatus.Failed &&
                 x.Status != OrchestrationInstanceStatus.DeadLettered &&
                 x.Status != OrchestrationInstanceStatus.Aborted)
             .OrderBy(x => x.LastUpdatedOnUtc)
@@ -240,7 +254,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         var query = DbContext.OrchestrationInstances.AsNoTracking();
         return new RuntimeInstanceSummary(
             await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Created || x.Status == OrchestrationInstanceStatus.Running, cancellationToken),
-            await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Waiting, cancellationToken),
+            await query.CountAsync(x => x.Status == OrchestrationInstanceStatus.Idle, cancellationToken),
             await query.CountAsync(x => x.CompletedOnUtc >= recentSinceUtc, cancellationToken),
             await query.CountAsync(x => x.FailedOnUtc >= recentSinceUtc || x.Status == OrchestrationInstanceStatus.DeadLettered, cancellationToken),
             recentSinceUtc);

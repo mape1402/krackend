@@ -86,6 +86,21 @@ public sealed class TaskExecution
     public DateTime? WaitingSinceUtc { get; set; }
 
     /// <summary>
+    /// Gets or sets the exact UTC instant at which the current awaited response becomes eligible for timeout.
+    /// </summary>
+    public DateTime? ResponseDeadlineUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the durable timeout action identifier for the current awaited response.
+    /// </summary>
+    public string TimeoutActionId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the durable lane that owns the current timeout action.
+    /// </summary>
+    public string TimeoutActionLane { get; set; }
+
+    /// <summary>
     /// Gets or sets completed on utc.
     /// </summary>
     public DateTime? CompletedOnUtc { get; set; }

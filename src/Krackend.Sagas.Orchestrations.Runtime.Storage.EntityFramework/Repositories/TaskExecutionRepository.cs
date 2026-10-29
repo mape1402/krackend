@@ -47,4 +47,27 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
         => await DbContext.TaskExecutions.AsNoTracking()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse && x.WaitingSinceUtc <= dueBeforeUtc)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsDue(
+        DateTime dueBeforeUtc,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => await DbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                ((x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc) ||
+                 (x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc)))
+            .OrderBy(x => x.ResponseDeadlineUtc ?? x.WaitingSinceUtc)
+            .Take(Math.Max(1, take))
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingAction(
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => await DbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                x.ResponseDeadlineUtc != null &&
+                string.IsNullOrWhiteSpace(x.TimeoutActionId))
+            .OrderBy(x => x.ResponseDeadlineUtc)
+            .Take(Math.Max(1, take))
+            .ToArrayAsync(cancellationToken);
 }

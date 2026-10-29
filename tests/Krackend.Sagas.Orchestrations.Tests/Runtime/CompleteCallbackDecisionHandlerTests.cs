@@ -10,6 +10,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
 using NSubstitute;
 
@@ -320,7 +322,7 @@ public sealed class CompleteCallbackDecisionHandlerTests
             true));
 
         var lateTimedOut = CallbackState(
-            instanceStatus: OrchestrationInstanceStatus.Failed,
+            instanceStatus: OrchestrationInstanceStatus.Idle,
             taskStatus: TaskExecutionStatus.Running,
             attemptStatus: TaskExecutionStatus.TimedOut,
             dispatchStatus: "RetryPending");
@@ -333,7 +335,7 @@ public sealed class CompleteCallbackDecisionHandlerTests
             true));
 
         var lateFinishedDispatch = CallbackState(
-            instanceStatus: OrchestrationInstanceStatus.DeadLettered,
+            instanceStatus: OrchestrationInstanceStatus.Running,
             taskStatus: TaskExecutionStatus.Running,
             attemptStatus: TaskExecutionStatus.Running,
             dispatchStatus: "Acknowledged");
@@ -343,6 +345,19 @@ public sealed class CompleteCallbackDecisionHandlerTests
             lateFinishedDispatch.Task,
             lateFinishedDispatch.Attempt,
             lateFinishedDispatch.Dispatch,
+            true));
+
+        var deadLettered = CallbackState(
+            instanceStatus: OrchestrationInstanceStatus.DeadLettered,
+            taskStatus: TaskExecutionStatus.Running,
+            attemptStatus: TaskExecutionStatus.Running,
+            dispatchStatus: "Acknowledged");
+        Assert.False(InvokePrivate<bool>(
+            "CanApplyCallback",
+            deadLettered.Instance,
+            deadLettered.Task,
+            deadLettered.Attempt,
+            deadLettered.Dispatch,
             true));
 
         var repeatedCompleted = CallbackState(
@@ -408,13 +423,81 @@ public sealed class CompleteCallbackDecisionHandlerTests
             false));
     }
 
+    [Fact]
+    public async Task HandleAsyncClearsAndCancelsTheDurableResponseTimeoutAfterPersistingCallbackState()
+    {
+        var state = CallbackState();
+        state.Task.TimeoutActionId = Id.New().ToString();
+        state.Task.TimeoutActionLane = "runtime-timeout";
+        state.Task.ResponseDeadlineUtc = DateTime.UtcNow.AddMinutes(2);
+        var timeoutActionId = state.Task.TimeoutActionId;
+        var timeoutActionLane = state.Task.TimeoutActionLane;
+        var instances = InstanceRepository();
+        var stages = StageRepository();
+        var tasks = TaskRepository();
+        var attempts = AttemptRepository();
+        var dispatches = DispatchRepository();
+        var transitions = TransitionRepository();
+        var timeouts = Substitute.For<ITaskResponseTimeoutScheduler>();
+        instances.GetById(state.Instance.Id, Arg.Any<CancellationToken>()).Returns(state.Instance);
+        tasks.GetById(state.Task.Id, Arg.Any<CancellationToken>()).Returns(state.Task);
+        stages.GetById(state.Task.StageExecutionId, Arg.Any<CancellationToken>()).Returns(new StageExecution
+        {
+            Id = state.Task.StageExecutionId,
+            OrchestrationInstanceId = state.Instance.Id,
+            StageKey = "reserve"
+        });
+        attempts.GetByDispatchId(state.Dispatch.Id, Arg.Any<CancellationToken>()).Returns(state.Attempt);
+        dispatches.GetById(state.Dispatch.Id, Arg.Any<CancellationToken>()).Returns(state.Dispatch);
+
+        var handler = new CompleteCallbackDecisionHandler(
+            instances,
+            stages,
+            tasks,
+            attempts,
+            dispatches,
+            transitions,
+            PayloadState(),
+            ArtifactResolver(),
+            ValidationExecutor(),
+            timeoutScheduler: timeouts);
+
+        await handler.HandleAsync(new CompleteCallbackDecision(
+            state.Instance.Id,
+            state.Task.Id,
+            state.Dispatch.Id,
+            "{}",
+            new OrchestrationExecutionResultMetadata
+            {
+                Succeeded = false,
+                Status = "Failed",
+                ErrorCode = "RemoteRejected",
+                ErrorMessage = "The command was rejected."
+            }));
+
+        Assert.Null(state.Task.ResponseDeadlineUtc);
+        Assert.Null(state.Task.TimeoutActionId);
+        Assert.Null(state.Task.TimeoutActionLane);
+        Received.InOrder(() =>
+        {
+            tasks.Update(state.Task, Arg.Any<CancellationToken>());
+            timeouts.CancelAsync(
+                Arg.Is<TaskResponseTimeoutCancellationRequest>(request =>
+                    request.OrchestrationInstanceId == state.Instance.Id &&
+                    request.TaskExecutionId == state.Task.Id &&
+                    request.ActionId == timeoutActionId &&
+                    request.Lane == timeoutActionLane),
+                Arg.Any<CancellationToken>());
+        });
+    }
+
     private static T InvokePrivate<T>(string methodName, params object?[] arguments)
         => (T)typeof(CompleteCallbackDecisionHandler)
             .GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic)!
             .Invoke(null, arguments)!;
 
     private static CallbackRuntimeState CallbackState(
-        OrchestrationInstanceStatus instanceStatus = OrchestrationInstanceStatus.Waiting,
+        OrchestrationInstanceStatus instanceStatus = OrchestrationInstanceStatus.Running,
         TaskExecutionStatus taskStatus = TaskExecutionStatus.WaitingResponse,
         TaskExecutionStatus attemptStatus = TaskExecutionStatus.WaitingResponse,
         string dispatchStatus = "WaitingResponse")

@@ -380,7 +380,7 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
-    public async Task ReconcilerProcessesTimeoutsAndAdvancesRecoverableInstances()
+    public async Task ReconcilerProcessesFallbackTimeoutsWithoutReplayingEveryRecoverableInstance()
     {
         var now = DateTime.UtcNow;
         var instance = Instance(OrchestrationInstanceStatus.Waiting, now.AddMinutes(-5));
@@ -404,15 +404,42 @@ public sealed class RuntimeDisasterRecoveryTests
         var result = await reconciler.ReconcileAsync(now);
 
         Assert.False(result.Skipped);
-        Assert.Equal(1, result.InstancesObserved);
-        Assert.Equal(1, result.InstancesAdvanced);
+        Assert.Equal(0, result.InstancesObserved);
+        Assert.Equal(0, result.InstancesAdvanced);
         Assert.Equal(2, result.TimeoutsProcessed);
-        await sagaEngine.Received(1).OrchestrateAsync(
-            Arg.Is<ForwardIntent>(intent =>
-                intent.ArtifactId == instance.RuntimeOrchestrationArtifactId.ToString() &&
-                intent.MessageMetadata.OrchestrationInstanceId == instance.Id.ToString() &&
-                intent.MessageMetadata.CorrelationId == instance.CorrelationId),
-            Arg.Any<CancellationToken>());
+        await sagaEngine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
+        await repository.DidNotReceiveWithAnyArgs().GetRecoverable(default, default);
+    }
+
+    [Fact]
+    public async Task ReconcilerRepairsOnlyMissingDurableTimeoutsWhenMuleSchedulingIsEnabled()
+    {
+        var now = DateTime.UtcNow;
+        var admission = Substitute.For<IRuntimeAdmissionController>();
+        var repository = Substitute.For<IOrchestrationInstanceRepository>();
+        var timeoutProcessor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var sagaEngine = Substitute.For<ISagaEngine>();
+        var timeoutScheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        admission.CanAccept(RuntimeAdmissionOperation.Reconciliation).Returns(true);
+        admission.EnsureAcceptedAsync(RuntimeAdmissionOperation.Reconciliation, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        timeoutScheduler.UsesDurableScheduling.Returns(true);
+        timeoutScheduler.RepairAsync(7, Arg.Any<CancellationToken>()).Returns(3);
+
+        var reconciler = new DefaultOrchestrationRuntimeReconciler(
+            admission,
+            repository,
+            timeoutProcessor,
+            sagaEngine,
+            Options.Create(new RuntimeReconciliationOptions { BatchSize = 7 }),
+            timeoutScheduler: timeoutScheduler);
+
+        var result = await reconciler.ReconcileAsync(now);
+
+        Assert.Equal(3, result.TimeoutsProcessed);
+        await timeoutScheduler.Received(1).RepairAsync(7, Arg.Any<CancellationToken>());
+        await timeoutProcessor.DidNotReceiveWithAnyArgs().ProcessDueTimeoutsAsync(default, default);
+        await repository.DidNotReceiveWithAnyArgs().GetRecoverable(default, default);
     }
 
     [Fact]
@@ -548,7 +575,7 @@ public sealed class RuntimeDisasterRecoveryTests
     }
 
     [Fact]
-    public async Task ReconcilerAdvancesFailedInstanceSoTheEngineCanApplyItsRecoveryPolicy()
+    public async Task ReconcilerLeavesFailedInstancesToTheirDurableRecoveryAction()
     {
         var now = DateTime.UtcNow;
         var failed = Instance(OrchestrationInstanceStatus.Failed, now.AddMinutes(-5));
@@ -571,16 +598,14 @@ public sealed class RuntimeDisasterRecoveryTests
 
         var result = await reconciler.ReconcileAsync(now);
 
-        Assert.Equal(1, result.InstancesAdvanced);
-        await sagaEngine.Received(1).OrchestrateAsync(
-            Arg.Is<ForwardIntent>(intent =>
-                intent.MessageMetadata.OrchestrationInstanceId == failed.Id.ToString() &&
-                intent.MessageMetadata.CorrelationId == failed.CorrelationId),
-            Arg.Any<CancellationToken>());
+        Assert.Equal(0, result.InstancesObserved);
+        Assert.Equal(0, result.InstancesAdvanced);
+        await sagaEngine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
+        await repository.DidNotReceiveWithAnyArgs().GetRecoverable(default, default);
     }
 
     [Fact]
-    public async Task ReconcilerSkipsTerminalInstancesAndBuildsFallbackMetadata()
+    public async Task ReconcilerDoesNotEnumerateTerminalOrRunningInstances()
     {
         var now = DateTime.UtcNow;
         var terminal = Instance(OrchestrationInstanceStatus.Completed, now.AddMinutes(-10));
@@ -606,13 +631,10 @@ public sealed class RuntimeDisasterRecoveryTests
 
         var result = await reconciler.ReconcileAsync(now);
 
-        Assert.Equal(2, result.InstancesObserved);
-        Assert.Equal(1, result.InstancesAdvanced);
-        await sagaEngine.Received(1).OrchestrateAsync(
-            Arg.Is<ForwardIntent>(intent =>
-                intent.MessageMetadata.SagaId == recoverable.Id.ToString() &&
-                intent.MessageMetadata.CurrentTasks.Length == 0),
-            Arg.Any<CancellationToken>());
+        Assert.Equal(0, result.InstancesObserved);
+        Assert.Equal(0, result.InstancesAdvanced);
+        await sagaEngine.DidNotReceiveWithAnyArgs().OrchestrateAsync(default!, default);
+        await repository.DidNotReceiveWithAnyArgs().GetRecoverable(default, default);
     }
 
     [Fact]

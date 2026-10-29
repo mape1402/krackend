@@ -29,14 +29,21 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        // Artifact projection is written as part of the runtime deployment transaction. Mule's polling recovery
+        // is deliberately retained here as the durable post-commit handoff: it also recovers a process that exits
+        // after the deployment transaction commits but before its local notification can be observed.
+        //
+        // This is not used as a throughput limiter. Projection and standup have isolated lanes with their own
+        // capacity budget, so command dispatch, replies and response deadlines remain independently schedulable.
         options.RecoveryMode = MuleRecoveryMode.Polling;
         if (options.DispatchInterval <= TimeSpan.Zero || options.DispatchInterval > TimeSpan.FromSeconds(5))
         {
             options.DispatchInterval = TimeSpan.FromSeconds(1);
         }
 
-        EnsureLane(options, RuntimeArtifactProjectionSchedulerDefaults.Lane, priority: 500, weight: 10, _runtimeOptions);
-        EnsureLane(options, _replicaIdentity.LocalStandupLane, priority: 450, weight: 10, _runtimeOptions);
+        var defaults = KrackendMuleRuntimeCapacityProfile.Resolve(_runtimeOptions).Artifact;
+        EnsureLane(options, RuntimeArtifactProjectionSchedulerDefaults.Lane, priority: 100, weight: 2, _runtimeOptions, defaults);
+        EnsureLane(options, _replicaIdentity.LocalStandupLane, priority: 100, weight: 2, _runtimeOptions, defaults);
     }
 
     private static void EnsureLane(
@@ -44,7 +51,8 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
         string lane,
         int priority,
         int weight,
-        KrackendOrchestrationsMuleRuntimeOptions runtimeOptions)
+        KrackendOrchestrationsMuleRuntimeOptions runtimeOptions,
+        ResolvedMuleLaneOptions defaults)
     {
         if (settings.Lanes.ContainsKey(lane))
         {
@@ -55,22 +63,18 @@ internal sealed class MuleRuntimeArtifactLifecycleOptionsConfigurer : IConfigure
         {
             Priority = priority,
             Weight = weight,
-            WorkerCount = Math.Max(1, runtimeOptions.ArtifactLifecycleWorkerCount),
-            MaxDegreeOfParallelism = Math.Max(1, runtimeOptions.ArtifactLifecycleMaxDegreeOfParallelism),
-            DispatchBatchSize = Math.Max(1, runtimeOptions.ArtifactLifecycleDispatchBatchSize),
-            DispatchQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleDispatchQueueCapacity),
-            ExecutionQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleExecutionQueueCapacity),
-            MaxDrainBatchesPerCycle = runtimeOptions.ArtifactLifecycleMaxDrainBatchesPerCycle <= 0
-                ? int.MaxValue
-                : runtimeOptions.ArtifactLifecycleMaxDrainBatchesPerCycle,
-            MaxDrainActionsPerCycle = Math.Max(0, runtimeOptions.ArtifactLifecycleMaxDrainActionsPerCycle),
-            DrainUntilEmpty = runtimeOptions.ArtifactLifecycleDrainUntilEmpty,
-            MaxAttempts = runtimeOptions.ArtifactLifecycleMaxAttempts <= 0
-                ? int.MaxValue
-                : runtimeOptions.ArtifactLifecycleMaxAttempts,
-            RetryDelay = runtimeOptions.ArtifactLifecycleRetryDelay <= TimeSpan.Zero
-                ? TimeSpan.FromSeconds(1)
-                : runtimeOptions.ArtifactLifecycleRetryDelay
+            WorkerCount = Math.Max(1, runtimeOptions.ArtifactLifecycleWorkerCount ?? defaults.WorkerCount),
+            MaxDegreeOfParallelism = Math.Max(1, runtimeOptions.ArtifactLifecycleMaxDegreeOfParallelism ?? defaults.MaxDegreeOfParallelism),
+            DispatchBatchSize = Math.Max(1, runtimeOptions.ArtifactLifecycleDispatchBatchSize ?? defaults.DispatchBatchSize),
+            DispatchQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleDispatchQueueCapacity ?? defaults.DispatchQueueCapacity),
+            ExecutionQueueCapacity = Math.Max(0, runtimeOptions.ArtifactLifecycleExecutionQueueCapacity ?? defaults.ExecutionQueueCapacity),
+            MaxDrainBatchesPerCycle = Math.Max(1, runtimeOptions.ArtifactLifecycleMaxDrainBatchesPerCycle ?? defaults.MaxDrainBatchesPerCycle),
+            MaxDrainActionsPerCycle = Math.Max(0, runtimeOptions.ArtifactLifecycleMaxDrainActionsPerCycle ?? defaults.MaxDrainActionsPerCycle),
+            DrainUntilEmpty = runtimeOptions.ArtifactLifecycleDrainUntilEmpty ?? defaults.DrainUntilEmpty,
+            MaxAttempts = Math.Max(1, runtimeOptions.ArtifactLifecycleMaxAttempts ?? 120),
+            RetryDelay = runtimeOptions.ArtifactLifecycleRetryDelay is { } retryDelay && retryDelay > TimeSpan.Zero
+                ? retryDelay
+                : TimeSpan.FromSeconds(1)
         };
     }
 }

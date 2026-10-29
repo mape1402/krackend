@@ -50,6 +50,18 @@ internal sealed class OrchestrationTimeoutBackgroundService : BackgroundService
                 return;
             }
 
+            // The core runtime registers a no-op scheduler, but retaining the fallback keeps this hosted service
+            // compatible with minimal hosts that only register the legacy timeout processor.
+            var scheduler = scope.ServiceProvider.GetService<ITaskResponseTimeoutScheduler>()
+                ?? new NoopTaskResponseTimeoutScheduler();
+            var idleProcessor = scope.ServiceProvider.GetRequiredService<IOrchestrationIdleProcessor>();
+            await idleProcessor.ProcessExpiredAsync(DateTime.UtcNow, cancellationToken: cancellationToken);
+            if (scheduler.UsesDurableScheduling)
+            {
+                await scheduler.RepairAsync(take: 100, cancellationToken: cancellationToken);
+                return;
+            }
+
             var processor = scope.ServiceProvider.GetRequiredService<IOrchestrationTimeoutProcessor>();
             await processor.ProcessDueTimeoutsAsync(DateTime.UtcNow, cancellationToken);
         }

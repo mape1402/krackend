@@ -63,7 +63,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
                 || x.CompensatedOnUtc >= firstBucketUtc
                 || x.Status == OrchestrationInstanceStatus.Created
                 || x.Status == OrchestrationInstanceStatus.Running
-                || x.Status == OrchestrationInstanceStatus.Waiting
+                || x.Status == OrchestrationInstanceStatus.Idle
                 || x.Status == OrchestrationInstanceStatus.Compensating)
             .ToArrayAsync(cancellationToken);
 

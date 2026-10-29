@@ -42,7 +42,7 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
 
         var cancelled = await fixture.Coordinator.CancelPendingAsync(instance, "operator aborted the orchestration");
 
-        Assert.Equal(1, cancelled);
+        Assert.Equal(2, cancelled);
         Assert.Equal("Cancelled", pendingDispatch.DispatchStatus);
         Assert.Equal(TaskExecutionStatus.Cancelled, pendingAttempt.Status);
         Assert.Equal(TaskExecutionStatus.Cancelled, pendingTask.Status);
@@ -59,6 +59,9 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
         Assert.Contains(fixture.Transitions, candidate => candidate.TransitionType == "TaskDispatchPhysicalCancellationFinalized");
         await fixture.CancellationService.Received(1).CancelAsync(
             Arg.Is<TaskDispatchCancellationRequest>(request => request.Dispatch == pendingDispatch),
+            Arg.Any<CancellationToken>());
+        await fixture.CancellationService.Received(1).CancelAsync(
+            Arg.Is<TaskDispatchCancellationRequest>(request => request.Dispatch == waitingDispatch),
             Arg.Any<CancellationToken>());
     }
 
@@ -108,7 +111,7 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
     }
 
     [Fact]
-    public async Task CancelPendingDoesNotRewriteCompletedOrTimedOutDeliveries()
+    public async Task CancelPendingPhysicallyCancelsEveryReferencedDeliveryWithoutRewritingCompletedOrTimedOutLogicalState()
     {
         var fixture = new CancellationFixture();
         var instance = CreateInstance(OrchestrationInstanceStatus.Completed);
@@ -123,14 +126,20 @@ public sealed class OrchestrationDispatchCancellationCoordinatorTests
             [completedTask, timedOutTask],
             [completedAttempt, timedOutAttempt],
             [completedDispatch, timedOutDispatch]);
+        fixture.CancellationService
+            .CancelAsync(Arg.Any<TaskDispatchCancellationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(TaskDispatchCancellationResult.FinalResult("Cancelled", "Mule action cancelled.")));
 
         var cancelled = await fixture.Coordinator.CancelPendingAsync(instance, "instance completed");
 
-        Assert.Equal(0, cancelled);
+        Assert.Equal(2, cancelled);
         Assert.Equal("Completed", completedDispatch.DispatchStatus);
         Assert.Equal("TimedOut", timedOutDispatch.DispatchStatus);
-        Assert.Empty(fixture.Transitions);
-        await fixture.CancellationService.DidNotReceiveWithAnyArgs().CancelAsync(default!, default);
+        Assert.DoesNotContain(fixture.Transitions, candidate => candidate.TransitionType == "TaskDispatchCancelled");
+        Assert.Equal(2, fixture.Transitions.Count(candidate => candidate.TransitionType == "TaskDispatchPhysicalCancellationFinalized"));
+        await fixture.CancellationService.Received(2).CancelAsync(
+            Arg.Any<TaskDispatchCancellationRequest>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

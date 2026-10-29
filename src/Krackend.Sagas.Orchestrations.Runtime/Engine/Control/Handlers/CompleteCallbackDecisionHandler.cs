@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
@@ -24,6 +25,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private readonly IRuntimeArtifactResolver _artifactResolver;
         private readonly IOrchestrationValidationExecutor _validationExecutor;
         private readonly IRuntimeStateTransaction _stateTransaction;
+        private readonly ITaskResponseTimeoutScheduler? _timeoutScheduler;
 
         public CompleteCallbackDecisionHandler(
             IOrchestrationInstanceRepository instanceRepository,
@@ -35,7 +37,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             IOrchestrationPayloadState payloadState,
             IRuntimeArtifactResolver artifactResolver,
             IOrchestrationValidationExecutor validationExecutor,
-            IRuntimeStateTransaction stateTransaction = null)
+            IRuntimeStateTransaction stateTransaction = null,
+            ITaskResponseTimeoutScheduler? timeoutScheduler = null)
         {
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
             _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -47,6 +50,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _validationExecutor = validationExecutor ?? throw new ArgumentNullException(nameof(validationExecutor));
             _stateTransaction = stateTransaction;
+            _timeoutScheduler = timeoutScheduler;
         }
 
         public async Task HandleAsync(CompleteCallbackDecision decision, CancellationToken cancellationToken = default)
@@ -69,6 +73,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var errorMessage = result.ErrorMessage;
             var previousTaskStatus = task.Status;
             var previousAttemptStatus = attempt.Status;
+            var timeoutActionId = task.TimeoutActionId;
+            var timeoutActionLane = task.TimeoutActionLane;
 
             dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
             dispatch.AcknowledgedOnUtc = succeeded ? now : null;
@@ -79,6 +85,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             task.FailedOnUtc = succeeded ? null : now;
             task.TimedOutOnUtc = succeeded ? null : task.TimedOutOnUtc;
             task.WaitingSinceUtc = null;
+            task.ResponseDeadlineUtc = null;
+            task.TimeoutActionId = null;
+            task.TimeoutActionLane = null;
             attempt.Status = succeeded ? TaskExecutionStatus.Completed : TaskExecutionStatus.Failed;
             attempt.CompletedOnUtc = succeeded ? now : null;
             attempt.FailedOnUtc = succeeded ? null : now;
@@ -89,12 +98,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             attempt.ErrorMessage = succeeded ? null : errorMessage;
             CopyExecutionResultMetadata(attempt, result);
 
-            instance.Status = succeeded || task.OnErrorPolicy == OnErrorPolicy.Continue
-                ? OrchestrationInstanceStatus.Running
-                : OrchestrationInstanceStatus.Failed;
-            instance.FailedOnUtc = succeeded || task.OnErrorPolicy == OnErrorPolicy.Continue ? null : now;
+            instance.Status = OrchestrationInstanceStatus.Running;
+            instance.FailedOnUtc = null;
             instance.ErrorSummary = succeeded ? null : errorMessage;
             instance.WaitingSinceUtc = null;
+            instance.IdleSinceUtc = null;
+            instance.IdleExpiresOnUtc = null;
+            // A valid callback during Idle resumes the instance. The old dispatch may still
+            // be physically cancelled by Mule, but it must no longer be treated as an
+            // instance-level cancellation intent.
+            instance.DispatchCancellationPending = false;
             instance.LastUpdatedOnUtc = now;
             if (succeeded)
             {
@@ -131,6 +144,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     ProducedBy = nameof(CompleteCallbackDecisionHandler)
                 }, token);
             }, cancellationToken);
+
+            if (_timeoutScheduler is not null)
+            {
+                await _timeoutScheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
+                {
+                    OrchestrationInstanceId = instance.Id,
+                    TaskExecutionId = task.Id,
+                    ActionId = timeoutActionId,
+                    Lane = timeoutActionLane
+                }, cancellationToken);
+            }
         }
 
         private async Task PersistStateAsync(Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
@@ -169,10 +193,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             return succeeded &&
                 task.Status is not (TaskExecutionStatus.Completed or TaskExecutionStatus.Compensated) &&
                 task.LastAttemptNumber <= attempt.AttemptNumber &&
-                instance.Status is OrchestrationInstanceStatus.Failed
-                    or OrchestrationInstanceStatus.DeadLettered
-                    or OrchestrationInstanceStatus.Running
-                    or OrchestrationInstanceStatus.Waiting &&
+                instance.Status is (OrchestrationInstanceStatus.Idle
+                    or OrchestrationInstanceStatus.Running) &&
                 (attempt.Status is TaskExecutionStatus.WaitingResponse
                     or TaskExecutionStatus.TimedOut
                     or TaskExecutionStatus.Failed ||
@@ -182,6 +204,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
         private static bool IsHardTerminal(OrchestrationInstanceStatus status)
             => status is OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.DeadLettered
                 or OrchestrationInstanceStatus.Stopped
                 or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated

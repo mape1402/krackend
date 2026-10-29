@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
+    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -152,7 +152,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             if (query.ActiveOnly)
                 source = source.Where(x => x.Status is OrchestrationInstanceStatus.Created
                     or OrchestrationInstanceStatus.Running
-                    or OrchestrationInstanceStatus.Waiting
+                    or OrchestrationInstanceStatus.Idle
                     or OrchestrationInstanceStatus.Compensating);
             return source;
         }
@@ -163,6 +163,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .OrderBy(x => x.LastUpdatedOnUtc)
                 .ThenBy(x => x.Id)
                 .Skip(Math.Max(0, skip))
+                .Take(Math.Max(1, take))
+                .ToArray());
+
+        public Task<IReadOnlyCollection<OrchestrationInstance>> GetIdleExpiringOnOrBefore(
+            DateTime utcNow,
+            int take = 100,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>(_store.Instances.Values
+                .Where(x => x.Status == OrchestrationInstanceStatus.Idle &&
+                            x.IdleExpiresOnUtc is not null &&
+                            x.IdleExpiresOnUtc <= utcNow)
+                .OrderBy(x => x.IdleExpiresOnUtc)
+                .ThenBy(x => x.Id)
                 .Take(Math.Max(1, take))
                 .ToArray());
 
@@ -178,7 +191,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             var instances = _store.Instances.Values.ToArray();
             return Task.FromResult(new RuntimeInstanceSummary(
                 instances.Count(x => x.Status is OrchestrationInstanceStatus.Created or OrchestrationInstanceStatus.Running),
-                instances.Count(x => x.Status == OrchestrationInstanceStatus.Waiting),
+                instances.Count(x => x.Status == OrchestrationInstanceStatus.Idle),
                 instances.Count(x => x.CompletedOnUtc >= recentSinceUtc),
                 instances.Count(x => x.FailedOnUtc >= recentSinceUtc || x.Status == OrchestrationInstanceStatus.DeadLettered),
                 recentSinceUtc));

@@ -267,6 +267,8 @@ Runtime trigger promotion is idempotent when a stable start key is available. Th
 
 With Mule 2.2, the runtime records cancellation intent before requesting cancellation of a pending durable dispatch. Reconciliation retries deferred cancellation after restarts or provider failures; it does not interrupt an action already claimed by a worker. Late callbacks and configured task retries retain their existing behavior. Custom runtime storage implementations should implement `IOrchestrationDispatchCancellationIntentRepository` and `ITaskDispatchCancellationRepository` to support recovery of cancellation intents. Hosts own their database migrations and must update the runtime model for `OrchestrationInstance.DispatchCancellationPending` and the `TaskDispatch.PhysicalCancellation*` fields, and the Mule model for `DurableAction.CancelledOnUtc` and `MuleReplay.CancelledOnUtc`. The SQL Server runtime sample includes migrations for these changes; other providers must generate their own.
 
+Awaited task responses now own a single durable timeout action. Dispatch records the response deadline and its Mule reference after committing the `WaitingResponse` state; a callback clears that reference and cancels the timer. If a callback and timer race, both run under the orchestration lease and the stale side becomes a no-op. The runtime still accepts late callbacks according to its existing reconciliation policy. Entity Framework hosts must migrate `TaskExecution.ResponseDeadlineUtc`, `TimeoutActionId`, and `TimeoutActionLane` and add the corresponding waiting-response indexes; the SQL Server runtime sample includes that migration.
+
 Runtime task dispatch is adapter-based. Initial dispatch, retry dispatch, compensation dispatch, and runtime artifact compatibility validation resolve an installed task adapter by `TaskKind` instead of hardcoding the messaging transport in the engine. The built-in runtime registers the Messaging adapter by default; other task kinds must provide and register an `ITaskRuntimeAdapter` before artifacts using that kind can be deployed or dispatched.
 
 Retry policies are explicit error-code allowlists. When `MaxRetries` is greater than zero, `RetryableErrorCodes` must contain at least one non-empty code; an empty list means the runtime will not retry any failure. Runtime callbacks can also set `IsRetryableCandidate = false` to suppress retry even when the reported error code appears in the allowlist.
@@ -334,7 +336,7 @@ The runtime evaluates registered dependency probes and exposes an admission cont
 
 Transport and infrastructure adapters receive operational state changes through `IRuntimeDegradationHandler`. The engine stays transport-agnostic and the adapter decides how to pause, resume, nack, defer, or log according to the selected protocol. The built-in Pigeon adapter listens for closed/reopened states without hardcoding broker behavior into the runtime engine.
 
-Runtime reconciliation runs in the background and can also be invoked through `IOrchestrationRuntimeReconciler`. It processes due timeouts, reloads recoverable instances from durable storage, and re-enters the saga engine with preserved message metadata and snapshot payloads. This is the recovery path after orchestrator restarts, transient process crashes, or missed in-memory timers.
+Runtime reconciliation runs in the background and can also be invoked through `IOrchestrationRuntimeReconciler`. It repairs only durable inconsistencies: unresolved physical dispatch cancellations, persisted-but-unconfirmed dispatches, compensation delivery intents, and awaited tasks missing their durable timeout reference. It does not enumerate every healthy `Running` or `Waiting` saga or re-enter the saga engine globally. This preserves restart and failover recovery without turning normal runtime load into repeated work.
 
 ```json
 {
@@ -503,6 +505,9 @@ builder.Services
     .AddMule(mule =>
     {
         mule.UseEntityFrameworkCore<RuntimeDbContext>();
+    }, runtimeMule =>
+    {
+        runtimeMule.Profile = KrackendMuleRuntimeProfile.Balanced;
     });
 
 builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
@@ -511,6 +516,22 @@ app.MapOrchestratorRuntimeDistributionEndpoints();
 app.MapKrackendOrchestrationsRuntimeApi();
 app.MapOrchestratorRuntimeReactiveHub();
 ```
+
+Mule capacity profiles are runtime-owned, so hosts do not need to reproduce Krackend's internal lane topology. `Balanced` is the default; `Development` targets low-resource local work; `HighThroughput` raises the total reader and execution budget for provisioned production hosts; and `Custom` accepts explicit total budgets. Krackend partitions that budget across trigger intake, backchannels, dispatch, response timeouts, statistics, and artifact lifecycle lanes so a busy dispatch lane cannot starve callbacks or timeout processing.
+
+```json
+{
+  "Runtime": {
+    "Mule": {
+      "Profile": "HighThroughput"
+    }
+  }
+}
+```
+
+For `Custom`, set `TotalWorkerCount` and `TotalMaxDegreeOfParallelism`; only use per-lane overrides when there is a measured reason. Runtime response timers and scheduled dispatches are persisted in Mule and have an exact wake-up notification. This avoids a periodic query over every waiting saga while preserving restart recovery from durable storage.
+
+When multiple independent runtime stores share Redis, give each one a distinct `Runtime:Mule:FastLane:KeyPrefix`. Replicas that share the same runtime database must use the same prefix; separate environments, tenants, or isolated runtime databases must not. The sample defaults to `krackend:runtime` and hosts can override it without reproducing the runtime lane configuration.
 
 Pigeon adapter configuration:
 

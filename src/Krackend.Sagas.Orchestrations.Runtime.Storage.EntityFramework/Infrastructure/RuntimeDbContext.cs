@@ -231,6 +231,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasIndex(x => x.StatisticsRevision);
         builder.HasIndex(x => new { x.StartedOnUtc, x.Status });
         builder.HasIndex(x => new { x.Status, x.LastUpdatedOnUtc });
+          builder.HasIndex(x => new { x.Status, x.IdleExpiresOnUtc });
         builder.HasIndex(x => new { x.DispatchCancellationPending, x.LastUpdatedOnUtc });
         builder.HasIndex(x => x.StartIdempotencyKey).IsUnique();
         builder.HasIndex(x => x.CorrelationId);
@@ -308,10 +309,14 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.SkipReason).HasMaxLength(2000).IsRequired(false);
         builder.Property(x => x.OutputVariablesPayload).HasConversion(new JsonNodeConverter()).IsRequired(false);
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.TimeoutActionId).HasMaxLength(64).IsRequired(false);
+        builder.Property(x => x.TimeoutActionLane).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.Metadata).HasConversion(new JsonNodeDictionaryConverter(), new JsonNodeDictionaryComparer()).IsRequired(false);
         builder.HasIndex(x => new { x.StageExecutionId, x.TaskKey }).IsUnique();
         builder.HasIndex(x => x.CorrelationId);
         builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => new { x.Status, x.ResponseDeadlineUtc });
+        builder.HasIndex(x => new { x.Status, x.TimeoutActionId });
     }
 
     private static void ConfigureAttempts(ModelBuilder modelBuilder)

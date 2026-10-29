@@ -14,8 +14,15 @@ public enum OrchestrationInstanceStatus
     /// </summary>
     Running,
     /// <summary>
-    /// Represents waiting.
+    /// Represents an instance that has exhausted immediately executable work but is still
+    /// accepting a reconciliable late callback before it is dead-lettered.
     /// </summary>
+    Idle,
+    /// <summary>
+    /// Legacy aggregate waiting state. Awaiting a response is represented by task and
+    /// attempt state; new runtime writes must use <see cref="Running"/> instead.
+    /// </summary>
+    [Obsolete("Use Running for an active orchestration. AwaitingResponse belongs to a task attempt.")]
     Waiting,
     /// <summary>
     /// Represents stopped.

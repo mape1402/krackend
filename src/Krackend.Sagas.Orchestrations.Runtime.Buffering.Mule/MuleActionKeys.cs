@@ -12,6 +12,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
         public const string StatisticsBatchAction = "SagaStatisticsBatch";
 
+        public const string TaskResponseTimeoutAction = "TaskResponseTimeout";
+
+        public const string TriggerLane = "runtime-trigger";
+
+        public const string BackchannelLane = "runtime-backchannel";
+
+        public const string DispatchLane = "runtime-dispatch";
+
+        public const string StatisticsLane = "runtime-statistics";
+
+        public const string TimeoutLane = "runtime-timeout";
+
         public  static ActionKey TriggerActionKey => ActionKey.From(TriggerAction);
 
         public static ActionKey BackchannelActionKey => ActionKey.From(BackchannelAction);
@@ -19,5 +31,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         public static ActionKey RemoteCommandDispatchActionKey => ActionKey.From(RemoteCommandDispatchAction);
 
         public static ActionKey StatisticsBatchActionKey => ActionKey.From(StatisticsBatchAction);
+
+        public static ActionKey TaskResponseTimeoutActionKey => ActionKey.From(TaskResponseTimeoutAction);
     }
 }

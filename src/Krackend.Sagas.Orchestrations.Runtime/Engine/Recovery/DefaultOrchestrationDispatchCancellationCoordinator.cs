@@ -62,7 +62,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
             ? "Orchestration instance is no longer eligible to dispatch work."
             : reason.Trim();
         var now = DateTime.UtcNow;
-        var cancelled = new List<(TaskExecution Task, TaskExecutionAttempt Attempt, TaskDispatch Dispatch)>();
+        var cancellationRequests = new List<Id>();
         var tasks = await _taskRepository.GetByInstanceId(instance.Id, cancellationToken);
 
         await using (var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken))
@@ -79,15 +79,20 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                     }
 
                     var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
-                    if (dispatch is null || !IsPending(dispatch.DispatchStatus))
+                    if (dispatch is null || dispatch.PhysicalCancellationCompletedOnUtc is not null)
                     {
                         continue;
                     }
 
                     var previousDispatchStatus = dispatch.DispatchStatus;
-                    dispatch.DispatchStatus = "Cancelled";
-                    dispatch.FailedOnUtc = now;
-                    dispatch.FailureReason = normalizedReason;
+                    var requiresLogicalFence = IsPending(dispatch.DispatchStatus);
+                    if (requiresLogicalFence)
+                    {
+                        dispatch.DispatchStatus = "Cancelled";
+                        dispatch.FailedOnUtc = now;
+                        dispatch.FailureReason = normalizedReason;
+                    }
+
                     dispatch.PhysicalCancellationPending = true;
                     dispatch.PhysicalCancellationAttemptCount = 0;
                     dispatch.PhysicalCancellationLastAttemptOnUtc = null;
@@ -100,7 +105,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                     dispatch.Metadata.Remove(CancellationProviderStatusMetadataKey);
                     dispatch.Metadata.Remove(CancellationProviderMessageMetadataKey);
 
-                    if (attempt.Status is TaskExecutionStatus.Running or TaskExecutionStatus.Retrying)
+                    if (requiresLogicalFence && attempt.Status is (TaskExecutionStatus.Running or TaskExecutionStatus.Retrying))
                     {
                         attempt.Status = TaskExecutionStatus.Cancelled;
                         attempt.FailedOnUtc = now;
@@ -108,7 +113,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                         attempt.ErrorMessage = normalizedReason;
                     }
 
-                    if (task.Status is TaskExecutionStatus.Running or TaskExecutionStatus.Retrying)
+                    if (requiresLogicalFence && task.Status is (TaskExecutionStatus.Running or TaskExecutionStatus.Retrying))
                     {
                         task.Status = TaskExecutionStatus.Cancelled;
                         task.FailedOnUtc = now;
@@ -118,21 +123,25 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                     await _dispatchRepository.Update(dispatch, cancellationToken);
                     await _attemptRepository.Update(attempt, cancellationToken);
                     await _taskRepository.Update(task, cancellationToken);
-                    await _transitionRepository.Create(new ExecutionTransition
+                    if (requiresLogicalFence)
                     {
-                        Id = Id.New(),
-                        OrchestrationInstanceId = instance.Id,
-                        StageExecutionId = task.StageExecutionId,
-                        TaskExecutionId = task.Id,
-                        TaskExecutionAttemptId = attempt.Id,
-                        TransitionType = "TaskDispatchCancelled",
-                        FromStatus = previousDispatchStatus,
-                        ToStatus = "Cancelled",
-                        OccurredOnUtc = now,
-                        Message = normalizedReason,
-                        ProducedBy = nameof(DefaultOrchestrationDispatchCancellationCoordinator)
-                    }, cancellationToken);
-                    cancelled.Add((task, attempt, dispatch));
+                        await _transitionRepository.Create(new ExecutionTransition
+                        {
+                            Id = Id.New(),
+                            OrchestrationInstanceId = instance.Id,
+                            StageExecutionId = task.StageExecutionId,
+                            TaskExecutionId = task.Id,
+                            TaskExecutionAttemptId = attempt.Id,
+                            TransitionType = "TaskDispatchCancelled",
+                            FromStatus = previousDispatchStatus,
+                            ToStatus = "Cancelled",
+                            OccurredOnUtc = now,
+                            Message = normalizedReason,
+                            ProducedBy = nameof(DefaultOrchestrationDispatchCancellationCoordinator)
+                        }, cancellationToken);
+                    }
+
+                    cancellationRequests.Add(dispatch.Id);
                 }
             }
 
@@ -146,12 +155,12 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
             await transaction.CommitAsync(cancellationToken);
         }
 
-        foreach (var (_, _, dispatch) in cancelled)
+        foreach (var dispatchId in cancellationRequests)
         {
-            await ReconcileAsync(dispatch.Id, cancellationToken);
+            await ReconcileAsync(dispatchId, cancellationToken);
         }
 
-        return cancelled.Count;
+        return cancellationRequests.Count;
     }
 
     public async Task<int> ReconcilePendingAsync(int take, CancellationToken cancellationToken = default)
@@ -181,7 +190,8 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                         }
 
                         if (instance.Status is OrchestrationInstanceStatus.Completed or OrchestrationInstanceStatus.CompletedWithErrors
-                            or OrchestrationInstanceStatus.DeadLettered or OrchestrationInstanceStatus.Compensating
+                            or OrchestrationInstanceStatus.Failed or OrchestrationInstanceStatus.DeadLettered
+                            or OrchestrationInstanceStatus.Idle or OrchestrationInstanceStatus.Compensating
                             or OrchestrationInstanceStatus.Compensated or OrchestrationInstanceStatus.Aborted or OrchestrationInstanceStatus.Stopped)
                         {
                             await CancelPendingAsync(instance, "Recovered pending dispatch cancellation after an orchestration state change.", token);
@@ -253,8 +263,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
     public async Task<bool> ReconcileAsync(Id dispatchId, CancellationToken cancellationToken = default)
     {
         var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
-        if (dispatch is null || !dispatch.PhysicalCancellationPending ||
-            !string.Equals(dispatch.DispatchStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+        if (dispatch is null || !dispatch.PhysicalCancellationPending)
         {
             return false;
         }
@@ -285,8 +294,7 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
     private async Task<bool> ReconcileCoreAsync(Id dispatchId, CancellationToken cancellationToken)
     {
         var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
-        if (dispatch is null || !dispatch.PhysicalCancellationPending ||
-            !string.Equals(dispatch.DispatchStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+        if (dispatch is null || !dispatch.PhysicalCancellationPending)
         {
             return false;
         }
@@ -335,8 +343,8 @@ internal sealed class DefaultOrchestrationDispatchCancellationCoordinator :
                 TransitionType = result.IsTerminal
                     ? "TaskDispatchPhysicalCancellationFinalized"
                     : "TaskDispatchPhysicalCancellationDeferred",
-                FromStatus = "Cancelled",
-                ToStatus = "Cancelled",
+                FromStatus = dispatch.DispatchStatus,
+                ToStatus = dispatch.DispatchStatus,
                 OccurredOnUtc = now,
                 Message = result.Message,
                 ProducedBy = nameof(DefaultOrchestrationDispatchCancellationCoordinator)

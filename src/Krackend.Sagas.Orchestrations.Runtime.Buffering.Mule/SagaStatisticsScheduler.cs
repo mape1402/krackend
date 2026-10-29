@@ -24,7 +24,11 @@ internal sealed class SagaStatisticsScheduler(IServiceScopeFactory scopes, IOpti
                 var client = scope.ServiceProvider.GetRequiredService<IMuleClient>();
                 var window = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / interval;
                 await client.EnqueueAsync(MuleActionKeys.StatisticsBatchActionKey, new SagaStatisticsBatchRequest { Window = window },
-                    configure => configure.DeduplicationKey = $"saga-statistics:{interval}:{window}", stoppingToken);
+                    configure =>
+                    {
+                        configure.Lane = MuleActionKeys.StatisticsLane;
+                        configure.DeduplicationKey = $"saga-statistics:{interval}:{window}";
+                    }, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception exception) { logger.LogWarning(exception, "Could not schedule the next statistics batch."); }

@@ -100,6 +100,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddEnumerable(ServiceDescriptor.Scoped<IExecutionSandboxProvider, BuiltInLocalExecutionSandboxProvider>());
             services.TryAddScoped<ITaskAttemptDispatcher, TaskAttemptDispatcher>();
             services.TryAddScoped<IOrchestrationTimeoutProcessor, DefaultOrchestrationTimeoutProcessor>();
+            services.TryAddScoped<IOrchestrationIdleProcessor, DefaultOrchestrationIdleProcessor>();
+            services.TryAddScoped<ITaskResponseTimeoutDeadlineResolver, TaskResponseTimeoutDeadlineResolver>();
+            services.TryAddScoped<ITaskResponseTimeoutScheduler, NoopTaskResponseTimeoutScheduler>();
             services.TryAddScoped<IDecisionHandler<StartStageDecision>, StartStageDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DispatchTaskDecision>, DispatchTaskDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompleteStageDecision>, CompleteStageDecisionHandler>();
@@ -107,6 +110,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<IDecisionHandler<CompleteCallbackDecision>, CompleteCallbackDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<CompensateInstanceDecision>, CompensateInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<DeadLetterInstanceDecision>, DeadLetterInstanceDecisionHandler>();
+            services.TryAddScoped<IDecisionHandler<EnterIdleInstanceDecision>, EnterIdleInstanceDecisionHandler>();
             services.TryAddScoped<IDecisionHandler<RetryDecision>, RetryDecisionHandler>();
             services.TryAddSingleton<IOrchestrationArtifactMigrator, DefaultOrchestrationArtifactMigrator>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();

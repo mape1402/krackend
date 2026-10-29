@@ -49,11 +49,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.DispatchCancellationPending = true;
             instance.FailedOnUtc ??= now;
             instance.WaitingSinceUtc = null;
+            instance.IdleSinceUtc = null;
+            instance.IdleExpiresOnUtc = null;
             instance.ErrorSummary = string.IsNullOrWhiteSpace(instance.ErrorSummary) ? reason : instance.ErrorSummary;
             instance.LastUpdatedOnUtc = now;
             instance.Metadata[DeadLetteredOnUtcMetadataKey] = JsonValue.Create(now);
             instance.Metadata[DeadLetterReasonMetadataKey] = JsonValue.Create(reason);
-            instance.Metadata[RecoveryAllowedMetadataKey] = JsonValue.Create(true);
+            instance.Metadata[RecoveryAllowedMetadataKey] = JsonValue.Create(false);
 
             await PersistStateAsync(async token =>
             {

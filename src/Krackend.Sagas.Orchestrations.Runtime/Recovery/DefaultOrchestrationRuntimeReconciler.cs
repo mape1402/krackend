@@ -1,10 +1,6 @@
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
-using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
-using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
-using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.Options;
 
@@ -16,31 +12,32 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Recovery;
 internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRuntimeReconciler
 {
     private readonly IRuntimeAdmissionController _admissionController;
-    private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IOrchestrationTimeoutProcessor _timeoutProcessor;
+    private readonly ITaskResponseTimeoutScheduler _timeoutScheduler;
     private readonly IOrchestrationDispatchCancellationRecoveryCoordinator _dispatchCancellationRecoveryCoordinator;
     private readonly IOrchestrationDispatchRecoveryCoordinator _dispatchRecoveryCoordinator;
     private readonly IOrchestrationCompensationRecoveryCoordinator _compensationRecoveryCoordinator;
-    private readonly ISagaEngine _sagaEngine;
     private readonly RuntimeReconciliationOptions _options;
 
     public DefaultOrchestrationRuntimeReconciler(
         IRuntimeAdmissionController admissionController,
         IOrchestrationInstanceRepository instanceRepository,
         IOrchestrationTimeoutProcessor timeoutProcessor,
-        ISagaEngine sagaEngine,
+        Krackend.Sagas.Orchestrations.Runtime.Engine.ISagaEngine sagaEngine,
         IOptions<RuntimeReconciliationOptions> options,
         IOrchestrationDispatchRecoveryCoordinator dispatchRecoveryCoordinator = null,
         IOrchestrationCompensationRecoveryCoordinator compensationRecoveryCoordinator = null,
-        IOrchestrationDispatchCancellationRecoveryCoordinator dispatchCancellationRecoveryCoordinator = null)
+        IOrchestrationDispatchCancellationRecoveryCoordinator dispatchCancellationRecoveryCoordinator = null,
+        ITaskResponseTimeoutScheduler timeoutScheduler = null)
     {
         _admissionController = admissionController ?? throw new ArgumentNullException(nameof(admissionController));
-        _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
+        ArgumentNullException.ThrowIfNull(instanceRepository);
         _timeoutProcessor = timeoutProcessor ?? throw new ArgumentNullException(nameof(timeoutProcessor));
+        _timeoutScheduler = timeoutScheduler ?? new NoopTaskResponseTimeoutScheduler();
         _dispatchRecoveryCoordinator = dispatchRecoveryCoordinator;
         _compensationRecoveryCoordinator = compensationRecoveryCoordinator;
         _dispatchCancellationRecoveryCoordinator = dispatchCancellationRecoveryCoordinator;
-        _sagaEngine = sagaEngine ?? throw new ArgumentNullException(nameof(sagaEngine));
+        ArgumentNullException.ThrowIfNull(sagaEngine);
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
@@ -70,30 +67,13 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
             : await _compensationRecoveryCoordinator.RecoverPendingCompensationsAsync(
                 Math.Max(1, _options.BatchSize),
                 cancellationToken);
-        var timeoutsProcessed = await _timeoutProcessor.ProcessDueTimeoutsAsync(utcNow, cancellationToken);
-        var instances = await _instanceRepository.GetRecoverable(Math.Max(1, _options.BatchSize), cancellationToken);
-        var advanced = 0;
-
-        foreach (var instance in instances)
-        {
-            if (IsTerminal(instance.Status))
-            {
-                continue;
-            }
-
-            await _sagaEngine.OrchestrateAsync(new ForwardIntent
-            {
-                ArtifactId = instance.RuntimeOrchestrationArtifactId.ToString(),
-                IngressTransport = IngressTransport.Messaging,
-                MessageMetadata = BuildMetadata(instance),
-                Payload = instance.SnapshotPayload?.DeepClone()
-            }, cancellationToken);
-            advanced++;
-        }
+        var timeoutsProcessed = _timeoutScheduler.UsesDurableScheduling
+            ? await _timeoutScheduler.RepairAsync(Math.Max(1, _options.BatchSize), cancellationToken)
+            : await _timeoutProcessor.ProcessDueTimeoutsAsync(utcNow, cancellationToken);
 
         return new RuntimeReconciliationResult(
-            instances.Count,
-            advanced,
+            0,
+            0,
             timeoutsProcessed,
             false,
             DeliveriesRecovered: recoveredDispatches,
@@ -101,23 +81,4 @@ internal sealed class DefaultOrchestrationRuntimeReconciler : IOrchestrationRunt
             DispatchCancellationsReconciled: reconciledCancellations);
     }
 
-    private static OrchestrationMessageMetadata BuildMetadata(OrchestrationInstance instance)
-        => new()
-        {
-            SagaId = string.IsNullOrWhiteSpace(instance.SagaId) ? instance.Id.ToString() : instance.SagaId,
-            OrchestrationInstanceId = instance.Id.ToString(),
-            CurrentStage = instance.CurrentStageKey,
-            CurrentTasks = string.IsNullOrWhiteSpace(instance.CurrentTaskKey)
-                ? Array.Empty<string>()
-                : [instance.CurrentTaskKey],
-            CorrelationId = instance.CorrelationId
-        };
-
-    private static bool IsTerminal(OrchestrationInstanceStatus status)
-        => status is OrchestrationInstanceStatus.Completed
-            or OrchestrationInstanceStatus.CompletedWithErrors
-            or OrchestrationInstanceStatus.DeadLettered
-            or OrchestrationInstanceStatus.Aborted
-            or OrchestrationInstanceStatus.Stopped
-            or OrchestrationInstanceStatus.Compensated;
 }

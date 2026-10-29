@@ -76,8 +76,28 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
             observations = observations.Where(item => item.OrchestrationKey == query.OrchestrationKey);
         }
 
-        if (bucket == SagaStatisticsActivityBucket.Hour)
+        if (bucket is SagaStatisticsActivityBucket.Minute or SagaStatisticsActivityBucket.Hour)
         {
+            if (bucket == SagaStatisticsActivityBucket.Minute)
+            {
+                var minute = await observations.GroupBy(item => new
+                    {
+                        item.OccurredOnUtc.Year, item.OccurredOnUtc.Month, item.OccurredOnUtc.Day,
+                        item.OccurredOnUtc.Hour, item.OccurredOnUtc.Minute, item.Status
+                    })
+                    .OrderBy(group => group.Key.Year).ThenBy(group => group.Key.Month).ThenBy(group => group.Key.Day)
+                    .ThenBy(group => group.Key.Hour).ThenBy(group => group.Key.Minute)
+                    .Select(group => new
+                    {
+                        group.Key.Year, group.Key.Month, group.Key.Day, group.Key.Hour, group.Key.Minute,
+                        group.Key.Status, Count = group.LongCount()
+                    })
+                    .ToArrayAsync(cancellationToken);
+                return minute.Select(item => new SagaStatisticsDashboardActivity(
+                    new DateTime(item.Year, item.Month, item.Day, item.Hour, item.Minute, 0, DateTimeKind.Utc),
+                    item.Status, item.Count)).ToArray();
+            }
+
             var hourly = await observations.GroupBy(item => new
                 { item.OccurredOnUtc.Year, item.OccurredOnUtc.Month, item.OccurredOnUtc.Day, item.OccurredOnUtc.Hour, item.Status })
                 .OrderBy(group => group.Key.Year).ThenBy(group => group.Key.Month).ThenBy(group => group.Key.Day).ThenBy(group => group.Key.Hour)

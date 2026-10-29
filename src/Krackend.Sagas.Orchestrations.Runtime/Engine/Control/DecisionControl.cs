@@ -117,13 +117,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
 
             var failedTask = taskExecutions.FirstOrDefault(x =>
                 x.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut);
-            if (instance.Status == OrchestrationInstanceStatus.Failed && failedTask is null)
+            // Failed is a deterministic terminal aggregate outcome. Transient task failures
+            // remain Running until retry/continue/idle policy is evaluated below.
+            if (instance.Status == OrchestrationInstanceStatus.Failed)
             {
-                return [new DeadLetterInstanceDecision(
-                    instance.Id,
-                    currentStageExecution?.Id,
-                    null,
-                    instance.ErrorSummary ?? "Orchestration instance failed without a recoverable task decision.")];
+                return [];
             }
 
             if (failedTask is not null)
@@ -169,7 +167,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                         resolvedArtifact.Artifact.ExecutionPolicy);
                 }
 
-                return [new DeadLetterInstanceDecision(
+                return [new EnterIdleInstanceDecision(
                     instance.Id,
                     currentStageExecution.Id,
                     failedTask.Id,
@@ -593,6 +591,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
         private static bool IsInstanceTerminalForCallback(OrchestrationInstanceStatus status)
             => status is OrchestrationInstanceStatus.Completed
                 or OrchestrationInstanceStatus.CompletedWithErrors
+                or OrchestrationInstanceStatus.Failed
+                or OrchestrationInstanceStatus.DeadLettered
                 or OrchestrationInstanceStatus.Stopped
                 or OrchestrationInstanceStatus.Compensating
                 or OrchestrationInstanceStatus.Compensated
@@ -613,10 +613,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return false;
             }
 
-            if (instance.Status is OrchestrationInstanceStatus.DeadLettered
-                or OrchestrationInstanceStatus.Failed
-                or OrchestrationInstanceStatus.Running
-                or OrchestrationInstanceStatus.Waiting)
+            if (instance.Status is OrchestrationInstanceStatus.Idle
+                or OrchestrationInstanceStatus.Running)
             {
                 return attempt.Status is TaskExecutionStatus.WaitingResponse
                         or TaskExecutionStatus.TimedOut

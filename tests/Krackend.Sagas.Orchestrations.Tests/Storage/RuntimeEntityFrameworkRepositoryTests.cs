@@ -74,6 +74,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var reader = scope.ServiceProvider.GetRequiredService<ISagaStatisticsDashboardReader>();
         var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1), completed.OrchestrationDefinitionKey);
         var cohort = await reader.GetCohortAsync(query);
+        var minute = await reader.GetActivityAsync(query, SagaStatisticsActivityBucket.Minute);
         var hourly = await reader.GetActivityAsync(query, SagaStatisticsActivityBucket.Hour);
         var daily = await reader.GetActivityAsync(new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1)),
             SagaStatisticsActivityBucket.Day);
@@ -85,6 +86,9 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Completed]);
         Assert.Equal(1, cohort.CurrentStatuses[OrchestrationInstanceStatus.Running]);
         Assert.DoesNotContain(cohort.CurrentStatuses, item => item.Key == OrchestrationInstanceStatus.DeadLettered);
+        Assert.Contains(minute, item => item.Status == OrchestrationInstanceStatus.Completed);
+        Assert.All(minute, item => Assert.Equal(0, item.BucketUtc.Second));
+        Assert.All(minute, item => Assert.Equal(0, item.BucketUtc.Millisecond));
         Assert.Contains(hourly, item => item.Status == OrchestrationInstanceStatus.Completed);
         Assert.All(hourly, item => Assert.Equal(0, item.BucketUtc.Minute));
         Assert.All(daily, item => Assert.Equal(TimeSpan.Zero, item.BucketUtc.TimeOfDay));

@@ -309,10 +309,8 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         attempt.WaitingSinceUtc = null;
         attempt.ErrorCode = errorCode;
         attempt.ErrorMessage = message;
-        instance.Status = task.OnErrorPolicy == OnErrorPolicy.Continue
-            ? OrchestrationInstanceStatus.Running
-            : OrchestrationInstanceStatus.Failed;
-        instance.FailedOnUtc = instance.Status == OrchestrationInstanceStatus.Failed ? now : null;
+        instance.Status = OrchestrationInstanceStatus.Running;
+        instance.FailedOnUtc = null;
         instance.WaitingSinceUtc = null;
         instance.ErrorSummary = message;
         instance.LastUpdatedOnUtc = now;

@@ -378,7 +378,7 @@ public sealed class RemoteCommandDispatchActionTests
 
         Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
         Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
-        Assert.Equal(OrchestrationInstanceStatus.Waiting, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
         Assert.Equal("WaitingResponse", dispatch.DispatchStatus);
         Assert.NotNull(dispatch.SentOnUtc);
     }
@@ -468,9 +468,7 @@ public sealed class RemoteCommandDispatchActionTests
         await action.ExecuteAsync(context, CancellationToken.None);
 
         await executor.DidNotReceive().ExecuteAsync(Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>());
-        await transitionRepository.Received(1).Create(
-            Arg.Is<ExecutionTransition>(transition => transition.TransitionType == "TaskDispatchSuppressed"),
-            Arg.Any<CancellationToken>());
+        await transitionRepository.DidNotReceiveWithAnyArgs().Create(default!, default);
     }
 
     [Fact]
@@ -1203,11 +1201,11 @@ public sealed class RemoteCommandDispatchActionTests
         Assert.Equal("WaitingResponse", dispatch.DispatchStatus);
         Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
         Assert.Equal(TaskExecutionStatus.WaitingResponse, attempt.Status);
-        Assert.Equal(OrchestrationInstanceStatus.Waiting, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
         Assert.NotNull(dispatch.SentOnUtc);
         Assert.NotNull(task.WaitingSinceUtc);
         Assert.NotNull(attempt.WaitingSinceUtc);
-        Assert.NotNull(instance.WaitingSinceUtc);
+        Assert.Null(instance.WaitingSinceUtc);
         await transitionRepository.Received(1).Create(
             Arg.Is<ExecutionTransition>(transition =>
                 transition.TransitionType == "TaskDispatched" &&

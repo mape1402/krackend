@@ -296,6 +296,12 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<DateTime?>("IdleExpiresOnUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("IdleSinceUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("LastUpdatedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -367,6 +373,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("DispatchCancellationPending", "LastUpdatedOnUtc");
 
                     b.HasIndex("StartedOnUtc", "Status");
+
+                    b.HasIndex("Status", "IdleExpiresOnUtc");
 
                     b.HasIndex("Status", "LastUpdatedOnUtc");
 
@@ -778,6 +786,17 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<DateTime?>("ResponseDeadlineUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TimeoutActionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TimeoutActionLane")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<DateTime?>("TimedOutOnUtc")
                         .HasColumnType("datetime2");
 
@@ -792,6 +811,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("CorrelationId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("Status", "ResponseDeadlineUtc");
+
+                    b.HasIndex("Status", "TimeoutActionId");
 
                     b.HasIndex("StageExecutionId", "TaskKey")
                         .IsUnique();

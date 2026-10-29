@@ -13,8 +13,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 {
     internal sealed class MuleRemoteCommandDispatcher : IRemoteCommandDispatcher
     {
-        private static readonly TimeSpan MaxInProcessWakeUpDelay = TimeSpan.FromMinutes(1);
-
         private readonly IMuleClient _muleClient;
         private readonly IMuleStorage _muleStorage;
         private readonly IMuleSerializer _muleSerializer;
@@ -69,6 +67,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     command,
                     options =>
                     {
+                        options.Lane = MuleActionKeys.DispatchLane;
                         options.CorrelationId = command.OrchestrationInstanceId;
                         options.DeduplicationKey = BuildDeduplicationKey(command);
                     },
@@ -89,7 +88,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     exception);
             }
 
-            await CaptureActionReferenceAsync(command, actionId, MuleSettings.DefaultLane, cancellationToken);
+            await CaptureActionReferenceAsync(command, actionId, MuleActionKeys.DispatchLane, cancellationToken);
         }
 
         private async Task EnqueueScheduledAsync(
@@ -101,7 +100,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             {
                 Id = global::Mule.Ulid.NewUlid(),
                 Key = MuleActionKeys.RemoteCommandDispatchActionKey,
-                Lane = MuleSettings.DefaultLane,
+                Lane = MuleActionKeys.DispatchLane,
                 Payload = _muleSerializer.Serialize(command),
                 PayloadType = typeof(RemoteCommand).AssemblyQualifiedName!,
                 Metadata = null,
@@ -205,16 +204,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private void ScheduleDueNotification(global::Mule.Ulid actionId, string lane, DateTimeOffset scheduledOnUtc)
         {
             var delay = scheduledOnUtc - DateTimeOffset.UtcNow;
-            if (delay > MaxInProcessWakeUpDelay)
-            {
-                return;
-            }
-
             if (delay < TimeSpan.Zero)
             {
                 delay = TimeSpan.Zero;
             }
 
+            // Immediate dispatch does not continuously poll future durable work. The persisted action is still
+            // recovered after a restart; this local wake-up only re-notifies Mule at the exact due instant.
             _ = Task.Run(async () =>
             {
                 if (delay > TimeSpan.Zero)

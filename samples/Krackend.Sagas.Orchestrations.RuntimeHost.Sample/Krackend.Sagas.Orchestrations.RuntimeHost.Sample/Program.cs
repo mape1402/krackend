@@ -28,10 +28,7 @@ var serviceBusConnectionString =
     builder.Configuration["Pigeon:MessageBrokers:AzureServiceBus:ConnectionString"];
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 var muleConnectionString = builder.Configuration.GetConnectionString("Mule");
-var muleWorkerCount = Math.Max(1, builder.Configuration.GetValue("Mule:Runtime:WorkerCount", 256));
-var muleMaxDegreeOfParallelism = Math.Max(
-    1,
-    builder.Configuration.GetValue("Mule:Runtime:MaxDegreeOfParallelism", muleWorkerCount));
+var fastLaneKeyPrefix = builder.Configuration["Runtime:Mule:FastLane:KeyPrefix"] ?? "krackend:runtime";
 var sqlServerStorageModelCustomizer = new RuntimeSqlServerStorageModelCustomizer();
 
 if (string.IsNullOrWhiteSpace(redisConnectionString))
@@ -86,9 +83,7 @@ builder.Services
 
         pigeon.ConfigureConsumerExecution(execution =>
         {
-            execution.MaxConcurrency = null;
-            execution.QueueCapacity = null;
-            execution.PrefetchCount = null;
+            builder.Configuration.GetSection("Pigeon:ConsumerExecution").Bind(execution);
         });
     })
     .AddRedisGossip(builder.Configuration)
@@ -99,7 +94,7 @@ builder.Services
             mule.UseFastLaneRedis(options =>
             {
                 options.ConnectionString = redisConnectionString;
-                options.KeyPrefix = "krackend:runtime";
+                options.KeyPrefix = fastLaneKeyPrefix;
                 options.IntentFlushSize = 1_000;
                 options.CompletionFlushSize = 2_000;
                 options.FlushInterval = TimeSpan.FromMilliseconds(25);
@@ -109,23 +104,9 @@ builder.Services
             mule.Configure(settings =>
             {
                 settings.ImmediateDispatch = true;
-                settings.RecoveryMode = MuleRecoveryMode.Polling;
-                settings.DispatchInterval = TimeSpan.FromSeconds(1);
-                settings.DispatchBatchSize = 1_000;
-                settings.DispatchQueueCapacity = 0;
-                settings.ExecutionQueueCapacity = 0;
-                settings.WorkerCount = muleWorkerCount;
-                settings.MaxDegreeOfParallelism = muleMaxDegreeOfParallelism;
-                settings.MaxDrainBatchesPerCycle = int.MaxValue;
-                settings.MaxDrainActionsPerCycle = 0;
-                settings.DrainUntilEmpty = true;
             });
         },
-        runtimeMule =>
-        {
-            runtimeMule.ArtifactLifecycleWorkerCount = muleWorkerCount;
-            runtimeMule.ArtifactLifecycleMaxDegreeOfParallelism = muleMaxDegreeOfParallelism;
-        });
+        runtimeMule => builder.Configuration.GetSection("Runtime:Mule").Bind(runtimeMule));
 
 builder.Services.AddKrackendOrchestrationsRuntimeButterMorph();
 

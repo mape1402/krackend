@@ -60,12 +60,13 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     {
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
 
-        var waitingTasks = await _taskRepository.GetWaitingResponseOlderThan(utcNow, cancellationToken);
+        var waitingTasks = await _taskRepository.GetResponseTimeoutsDue(utcNow, take: 100, cancellationToken);
         var processed = 0;
 
         foreach (var waitingTask in waitingTasks)
         {
-            if (await TryProcessTaskAsync(waitingTask, utcNow, cancellationToken))
+            var result = await ProcessTaskTimeoutAsync(waitingTask.Id, utcNow, cancellationToken);
+            if (result.Applied)
             {
                 processed++;
             }
@@ -74,24 +75,33 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         return processed;
     }
 
-    private async Task<bool> TryProcessTaskAsync(
-        TaskExecution waitingTask,
+    public async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
+        Id taskExecutionId,
         DateTime utcNow,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
-        var processed = false;
+        await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
+
+        TaskResponseTimeoutProcessingResult result = TaskResponseTimeoutProcessingResult.Ignored;
+        TaskExecution task;
+        try
+        {
+            task = await _taskRepository.GetById(taskExecutionId, cancellationToken);
+        }
+        catch (KeyNotFoundException)
+        {
+            return result;
+        }
+
         var acquired = await _coordinator.TryExecuteAsync(
-            waitingTask.OrchestrationInstanceId,
-            async token =>
-            {
-                processed = await TryProcessTaskCoreAsync(waitingTask, utcNow, token);
-            },
+            task.OrchestrationInstanceId,
+            async token => result = await TryProcessTaskCoreAsync(task, utcNow, token),
             cancellationToken);
 
-        return acquired && processed;
+        return acquired ? result : TaskResponseTimeoutProcessingResult.Ignored;
     }
 
-    private async Task<bool> TryProcessTaskCoreAsync(
+    private async Task<TaskResponseTimeoutProcessingResult> TryProcessTaskCoreAsync(
         TaskExecution waitingTask,
         DateTime utcNow,
         CancellationToken cancellationToken)
@@ -99,13 +109,13 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         var task = await _taskRepository.GetById(waitingTask.Id, cancellationToken);
         if (task.Status != TaskExecutionStatus.WaitingResponse || task.WaitingSinceUtc is null)
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         var instance = await _instanceRepository.GetById(task.OrchestrationInstanceId, cancellationToken);
         if (IsTerminal(instance.Status))
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
@@ -117,24 +127,24 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         var timeoutPolicy = taskArtifact?.TimeoutPolicy;
         if (timeoutPolicy is null)
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
-        var dueOnUtc = task.WaitingSinceUtc.Value.Add(timeoutPolicy.Timeout.Value);
+        var dueOnUtc = task.ResponseDeadlineUtc ?? task.WaitingSinceUtc.Value.Add(timeoutPolicy.Timeout.Value);
         if (dueOnUtc > utcNow)
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         var waitGraceResult = await TryApplyWaitGraceAsync(instance, task, timeoutPolicy, utcNow, cancellationToken);
         if (waitGraceResult == WaitGraceResult.Waiting)
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         if (waitGraceResult == WaitGraceResult.Applied)
         {
-            return true;
+            return new TaskResponseTimeoutProcessingResult(true, task.ResponseDeadlineUtc);
         }
 
         var attempts = await _attemptRepository.GetByTaskExecutionId(task.Id, cancellationToken);
@@ -143,7 +153,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             .FirstOrDefault(x => x.Status == TaskExecutionStatus.WaitingResponse);
         if (attempt is null)
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         var dispatch = attempt.DispatchId.HasValue
@@ -151,7 +161,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             : null;
         if (dispatch?.SentOnUtc is null)
         {
-            return false;
+            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         var errorCode = ResolveTimeoutErrorCode(timeoutPolicy);
@@ -195,7 +205,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             Payload = instance.SnapshotPayload?.DeepClone()
         }, cancellationToken);
 
-        return true;
+        return new TaskResponseTimeoutProcessingResult(true);
     }
 
     private async Task<WaitGraceResult> TryApplyWaitGraceAsync(
@@ -218,6 +228,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         graceExpiresOnUtc = utcNow.Add(wait.WaitingTime.Value);
         task.Metadata[TimeoutObservedOnUtcMetadataKey] = JsonValue.Create(utcNow);
         task.Metadata[TimeoutGraceExpiresOnUtcMetadataKey] = JsonValue.Create(graceExpiresOnUtc);
+        task.ResponseDeadlineUtc = graceExpiresOnUtc;
         instance.LastUpdatedOnUtc = utcNow;
 
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -298,6 +309,9 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     {
         task.Status = TaskExecutionStatus.TimedOut;
         task.WaitingSinceUtc = null;
+        task.ResponseDeadlineUtc = null;
+        task.TimeoutActionId = null;
+        task.TimeoutActionLane = null;
         task.FailedOnUtc = utcNow;
         task.TimedOutOnUtc = utcNow;
         task.Metadata["TimeoutBehavior"] = JsonValue.Create(timeoutPolicy.TimeoutBehavior.ToString());
@@ -323,11 +337,13 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             dispatch.FailureReason = errorMessage;
         }
 
-        instance.Status = task.OnErrorPolicy == OnErrorPolicy.Continue || IsContinueTimeout(timeoutPolicy)
-            ? OrchestrationInstanceStatus.Running
-            : OrchestrationInstanceStatus.Failed;
+        // A timeout belongs to this task attempt. The aggregate instance stays Running while
+        // DecisionControl evaluates retries, continuation, compensation, or its idle window.
+        instance.Status = OrchestrationInstanceStatus.Running;
         instance.WaitingSinceUtc = null;
-        instance.FailedOnUtc = instance.Status == OrchestrationInstanceStatus.Failed ? utcNow : null;
+        instance.IdleSinceUtc = null;
+        instance.IdleExpiresOnUtc = null;
+        instance.FailedOnUtc = null;
         instance.ErrorSummary = errorMessage;
         instance.LastUpdatedOnUtc = utcNow;
     }

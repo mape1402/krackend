@@ -55,3 +55,14 @@ public sealed record RuntimeInstanceSummary(
     int CompletedRecent,
     int FailedRecent,
     DateTime RecentSinceUtc);
+
+/// <summary>
+/// Provides indexed access to idle orchestration instances whose reconciliation window has elapsed.
+/// </summary>
+public interface IOrchestrationIdleInstanceRepository
+{
+    Task<IReadOnlyCollection<OrchestrationInstance>> GetIdleExpiringOnOrBefore(
+        DateTime utcNow,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+}

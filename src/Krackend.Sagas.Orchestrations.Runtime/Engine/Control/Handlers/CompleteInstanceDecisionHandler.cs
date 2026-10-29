@@ -40,6 +40,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.CompletedOnUtc = now;
             instance.LastUpdatedOnUtc = now;
             instance.FinalOutcome = "Completed";
+            instance.IdleSinceUtc = null;
+            instance.IdleExpiresOnUtc = null;
             instance.DispatchCancellationPending = true;
 
             await PersistStateAsync(async token =>

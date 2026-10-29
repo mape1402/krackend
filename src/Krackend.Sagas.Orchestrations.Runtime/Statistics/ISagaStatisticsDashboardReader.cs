@@ -49,6 +49,9 @@ public sealed record SagaStatisticsDashboardQuery(DateTime FromUtc, DateTime Bef
 /// <summary>Defines the UTC grouping used by an activity chart.</summary>
 public enum SagaStatisticsActivityBucket
 {
+    /// <summary>One activity point per UTC minute.</summary>
+    Minute,
+
     /// <summary>One activity point per UTC hour.</summary>
     Hour,
 

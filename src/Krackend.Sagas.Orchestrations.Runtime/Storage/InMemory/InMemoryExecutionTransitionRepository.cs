@@ -154,7 +154,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
         private static bool IsActiveStatus(OrchestrationInstanceStatus status)
             => status is OrchestrationInstanceStatus.Created
                 or OrchestrationInstanceStatus.Running
-                or OrchestrationInstanceStatus.Waiting
+                or OrchestrationInstanceStatus.Idle
                 or OrchestrationInstanceStatus.Compensating;
 
         private static TimeSpan GetBucketSize(DateTime sinceUtc, DateTime nowUtc)

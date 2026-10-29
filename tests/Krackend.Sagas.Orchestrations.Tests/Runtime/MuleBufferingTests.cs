@@ -18,6 +18,10 @@ using MuleUlid = Mule.Ulid;
 
 public sealed class MuleBufferingTests
 {
+    private const string TriggerLane = "runtime-trigger";
+    private const string BackchannelLane = "runtime-backchannel";
+    private const string DispatchLane = "runtime-dispatch";
+
     [Fact]
     public async Task IntakeBufferMule_WhenWorkItemIsTrigger_EnqueuesTriggerActionWithCorrelation()
     {
@@ -50,7 +54,7 @@ public sealed class MuleBufferingTests
         capturedOptions!(options);
         Assert.Equal("TriggerSaga", capturedKey!.ToString());
         Assert.Same(workItem, capturedPayload);
-        Assert.Equal(MuleSettings.DefaultLane, options.Lane);
+        Assert.Equal(TriggerLane, options.Lane);
         Assert.Equal("correlation-1", options.CorrelationId);
         Assert.Equal("trigger:artifact-1:correlation-1", options.DeduplicationKey);
     }
@@ -134,7 +138,7 @@ public sealed class MuleBufferingTests
         var options = new EnqueueOptions();
         capturedOptions!(options);
         Assert.Equal("BackchannelSaga", capturedKey!.ToString());
-        Assert.Equal(MuleSettings.DefaultLane, options.Lane);
+        Assert.Equal(BackchannelLane, options.Lane);
         Assert.Equal("instance-1", options.CorrelationId);
         Assert.Equal(expectedDeduplicationKey, options.DeduplicationKey);
     }
@@ -295,6 +299,7 @@ public sealed class MuleBufferingTests
             Arg.Any<CancellationToken>());
         var options = new EnqueueOptions();
         capturedOptions!(options);
+        Assert.Equal(DispatchLane, options.Lane);
         Assert.Equal("instance-1", options.CorrelationId);
         Assert.Equal("dispatch-1", options.DeduplicationKey);
     }
@@ -337,7 +342,7 @@ public sealed class MuleBufferingTests
 
         var persisted = await dispatchRepository.GetById(dispatch.Id);
         Assert.Equal(actionId.ToString(), persisted.Metadata["Mule.ActionId"].GetValue<string>());
-        Assert.Equal(MuleSettings.DefaultLane, persisted.Metadata["Mule.Lane"].GetValue<string>());
+        Assert.Equal(DispatchLane, persisted.Metadata["Mule.Lane"].GetValue<string>());
     }
 
     [Fact]
@@ -496,6 +501,7 @@ public sealed class MuleBufferingTests
 
         var options = new EnqueueOptions();
         capturedOptions!(options);
+        Assert.Equal(DispatchLane, options.Lane);
         Assert.Equal("instance-1", options.CorrelationId);
         Assert.Equal(
             """instance-1:task-1:inventories.reserve:Messaging:{"topic":"inventories.release","version":"1.0.0"}""",
@@ -569,6 +575,7 @@ public sealed class MuleBufferingTests
 
         var options = new EnqueueOptions();
         capturedOptions!(options);
+        Assert.Equal(DispatchLane, options.Lane);
         Assert.Equal(orchestrationInstanceId, options.CorrelationId);
         Assert.Equal(expectedDeduplicationKey, options.DeduplicationKey);
     }
@@ -610,7 +617,7 @@ public sealed class MuleBufferingTests
 
         Assert.NotNull(storedAction);
         Assert.Equal("RemoteCommandDispatch", storedAction!.Key.ToString());
-        Assert.Equal(MuleSettings.DefaultLane, storedAction.Lane);
+        Assert.Equal(DispatchLane, storedAction.Lane);
         Assert.Equal("{\"serialized\":true}", storedAction.Payload);
         Assert.Equal(typeof(RemoteCommand).AssemblyQualifiedName, storedAction.PayloadType);
         Assert.Equal("instance-1", storedAction.CorrelationId);
@@ -620,7 +627,7 @@ public sealed class MuleBufferingTests
         await muleStorage.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
         await commitNotifier.Received(1).NotifySavedAsync(
             storedAction.Id,
-            MuleSettings.DefaultLane,
+            DispatchLane,
             Arg.Any<CancellationToken>());
     }
 
@@ -661,7 +668,7 @@ public sealed class MuleBufferingTests
         await WaitUntilAsync(async () =>
             await commitNotifier.Received(2).NotifySavedAsync(
                 storedAction!.Id,
-                MuleSettings.DefaultLane,
+                DispatchLane,
                 Arg.Any<CancellationToken>()));
     }
 

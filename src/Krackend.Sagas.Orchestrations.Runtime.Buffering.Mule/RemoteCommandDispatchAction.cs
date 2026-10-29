@@ -5,9 +5,12 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mule;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
@@ -30,6 +33,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
         private readonly IOrchestrationInstanceCoordinator? _coordinator;
         private readonly IRuntimeAdmissionController? _admissionController;
         private readonly IRuntimeStorageUnitOfWork? _storageUnitOfWork;
+        private readonly ITaskResponseTimeoutDeadlineResolver? _timeoutDeadlineResolver;
+        private readonly ITaskResponseTimeoutScheduler? _timeoutScheduler;
+        private readonly ILogger<RemoteCommandDispatchAction> _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RemoteCommandDispatchAction"/> class.
@@ -46,7 +52,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             IOrchestrationPropagationMetadataSetter? propagationMetadataSetter = null,
             IOrchestrationInstanceCoordinator? coordinator = null,
             IRuntimeAdmissionController? admissionController = null,
-            IRuntimeStorageUnitOfWork? storageUnitOfWork = null)
+            IRuntimeStorageUnitOfWork? storageUnitOfWork = null,
+            ITaskResponseTimeoutDeadlineResolver? timeoutDeadlineResolver = null,
+            ITaskResponseTimeoutScheduler? timeoutScheduler = null,
+            ILogger<RemoteCommandDispatchAction>? logger = null)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _messageMetadataSetter = messageMetadataSetter ?? throw new ArgumentNullException(nameof(messageMetadataSetter));
@@ -60,6 +69,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             _coordinator = coordinator;
             _admissionController = admissionController;
             _storageUnitOfWork = storageUnitOfWork;
+            _timeoutDeadlineResolver = timeoutDeadlineResolver;
+            _timeoutScheduler = timeoutScheduler;
+            _logger = logger ?? NullLogger<RemoteCommandDispatchAction>.Instance;
         }
 
         /// <summary>
@@ -176,31 +188,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 return true;
             }
 
-            await RecordSuppressedDispatchAsync(instance, task, attempt, dispatch, cancellationToken);
+            _logger.LogDebug(
+                "Suppressed stale durable dispatch '{DispatchId}' for saga '{SagaId}'.",
+                dispatch.Id,
+                instance.SagaId);
             return false;
-        }
-
-        private async Task RecordSuppressedDispatchAsync(
-            OrchestrationInstance instance,
-            TaskExecution task,
-            TaskExecutionAttempt attempt,
-            TaskDispatch dispatch,
-            CancellationToken cancellationToken)
-        {
-            await _transitionRepository.Create(new ExecutionTransition
-            {
-                Id = Id.New(),
-                OrchestrationInstanceId = instance.Id,
-                StageExecutionId = task.StageExecutionId,
-                TaskExecutionId = task.Id,
-                TaskExecutionAttemptId = attempt.Id,
-                TransitionType = "TaskDispatchSuppressed",
-                FromStatus = dispatch?.DispatchStatus,
-                ToStatus = dispatch?.DispatchStatus,
-                OccurredOnUtc = DateTime.UtcNow,
-                Message = $"Task '{task.TaskKey}' durable dispatch was suppressed because it is no longer the current executable attempt.",
-                ProducedBy = nameof(RemoteCommandDispatchAction)
-            }, cancellationToken);
         }
 
         private async Task PersistCommandMetadataAsync(RemoteCommand command, CancellationToken cancellationToken)
@@ -330,6 +322,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             {
                 task.Status = TaskExecutionStatus.WaitingResponse;
                 task.WaitingSinceUtc = sentOnUtc;
+                task.ResponseDeadlineUtc = await ResolveResponseDeadlineAsync(instance, task, sentOnUtc, cancellationToken);
+                task.TimeoutActionId = null;
+                task.TimeoutActionLane = null;
             }
 
             if (!IsTerminal(attempt.Status))
@@ -340,8 +335,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
 
             if (!IsTerminal(instance.Status))
             {
-                instance.Status = OrchestrationInstanceStatus.Waiting;
-                instance.WaitingSinceUtc = sentOnUtc;
+                instance.Status = OrchestrationInstanceStatus.Running;
+                instance.WaitingSinceUtc = null;
+                instance.IdleSinceUtc = null;
+                instance.IdleExpiresOnUtc = null;
                 instance.LastUpdatedOnUtc = sentOnUtc;
             }
 
@@ -367,7 +364,74 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                     ProducedBy = nameof(RemoteCommandDispatchAction)
                 }, cancellationToken);
             }, cancellationToken);
+
+            await ScheduleResponseTimeoutAsync(instance, task, attempt, dispatch, cancellationToken);
             return true;
+        }
+
+        private async Task<DateTime?> ResolveResponseDeadlineAsync(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            DateTime sentOnUtc,
+            CancellationToken cancellationToken)
+        {
+            if (_timeoutDeadlineResolver is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return await _timeoutDeadlineResolver.ResolveAsync(instance.Id, task.Id, sentOnUtc, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Could not resolve response timeout policy for task '{TaskId}'.", task.Id);
+                return null;
+            }
+        }
+
+        private async Task ScheduleResponseTimeoutAsync(
+            OrchestrationInstance instance,
+            TaskExecution task,
+            TaskExecutionAttempt attempt,
+            TaskDispatch dispatch,
+            CancellationToken cancellationToken)
+        {
+            if (_timeoutScheduler is null || task.ResponseDeadlineUtc is not { } dueOnUtc)
+            {
+                return;
+            }
+
+            try
+            {
+                await _timeoutScheduler.ScheduleAsync(new TaskResponseTimeoutScheduleRequest
+                {
+                    OrchestrationInstanceId = instance.Id,
+                    TaskExecutionId = task.Id,
+                    TaskExecutionAttemptId = attempt.Id,
+                    DispatchId = dispatch.Id,
+                    AttemptNumber = attempt.AttemptNumber,
+                    DueOnUtc = dueOnUtc
+                }, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // The waiting state is durable and the repair process will restore the missing action reference.
+                // Retrying this already-published command would risk a duplicate transport publication.
+                _logger.LogWarning(
+                    exception,
+                    "Task response timeout for dispatch '{DispatchId}' could not be scheduled after publication.",
+                    dispatch.Id);
+            }
         }
 
         private Task RecordIgnoredPublishedDispatchAsync(
@@ -450,10 +514,13 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
                 ? "RemoteCommandConfigurationError"
                 : "CommandDispatchFailed";
             attempt.ErrorMessage = exception.Message;
-            instance.Status = task.OnErrorPolicy == OnErrorPolicy.Continue
-                ? OrchestrationInstanceStatus.Running
-                : OrchestrationInstanceStatus.Failed;
-            instance.FailedOnUtc = task.OnErrorPolicy == OnErrorPolicy.Continue ? null : now;
+            // A missing transport executor is a deterministic host configuration error.
+            // It is the narrow dispatch failure that legitimately terminates the saga;
+            // transient delivery/response failures remain Running and follow retry/idle policy.
+            instance.Status = exception is RemoteCommandConfigurationException
+                ? OrchestrationInstanceStatus.Failed
+                : OrchestrationInstanceStatus.Running;
+            instance.FailedOnUtc = instance.Status == OrchestrationInstanceStatus.Failed ? now : null;
             instance.ErrorSummary = exception.Message;
             instance.LastUpdatedOnUtc = now;
 

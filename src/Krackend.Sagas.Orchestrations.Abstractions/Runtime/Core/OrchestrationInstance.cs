@@ -90,6 +90,16 @@ public sealed class OrchestrationInstance
     public DateTime? WaitingSinceUtc { get; set; }
 
     /// <summary>
+    /// Gets or sets the instant at which the instance entered the reconciliable idle window.
+    /// </summary>
+    public DateTime? IdleSinceUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the durable deadline after which an idle instance becomes dead-lettered.
+    /// </summary>
+    public DateTime? IdleExpiresOnUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets completed on utc.
     /// </summary>
     public DateTime? CompletedOnUtc { get; set; }

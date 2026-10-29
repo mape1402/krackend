@@ -793,7 +793,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         => status is OrchestrationInstanceStatus.Failed
             or OrchestrationInstanceStatus.DeadLettered
             or OrchestrationInstanceStatus.Running
-            or OrchestrationInstanceStatus.Waiting;
+            or OrchestrationInstanceStatus.Idle;
 
     private static bool IsFinal(OrchestrationInstanceStatus status)
         => status is OrchestrationInstanceStatus.Completed

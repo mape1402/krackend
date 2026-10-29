@@ -142,25 +142,11 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
                             options.LeaseDuration = TimeSpan.FromSeconds(30);
                             options.DeduplicationRetention = TimeSpan.FromMinutes(30);
                         });
-                        mule.Configure(options =>
-                        {
-                            options.ImmediateDispatch = true;
-                            options.RecoveryMode = MuleRecoveryMode.Polling;
-                            options.DispatchInterval = TimeSpan.FromMilliseconds(200);
-                            options.DispatchBatchSize = 100;
-                            options.DispatchQueueCapacity = 0;
-                            options.ExecutionQueueCapacity = 0;
-                            options.WorkerCount = 16;
-                            options.MaxDegreeOfParallelism = 16;
-                            options.MaxDrainBatchesPerCycle = int.MaxValue;
-                            options.MaxDrainActionsPerCycle = 0;
-                            options.DrainUntilEmpty = true;
-                        });
+                        mule.Configure(options => options.ImmediateDispatch = true);
                     },
                     runtimeMule =>
                     {
-                        runtimeMule.ArtifactLifecycleWorkerCount = 8;
-                        runtimeMule.ArtifactLifecycleMaxDegreeOfParallelism = 8;
+                        runtimeMule.Profile = KrackendMuleRuntimeProfile.HighThroughput;
                     });
             })
             .Build();
