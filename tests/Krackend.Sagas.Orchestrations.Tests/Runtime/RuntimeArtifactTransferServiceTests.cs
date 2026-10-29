@@ -91,6 +91,92 @@ public sealed class RuntimeArtifactTransferServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task ExportAsync_RejectsAnInvalidArtifactIdentifierBeforeQueryingStorage()
+    {
+        var repository = Substitute.For<IRuntimeArtifactRepository>();
+        var service = new RuntimeArtifactTransferService(repository, Substitute.For<IRuntimeArtifactDeploymentService>());
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.ExportAsync("not-a-runtime-artifact"));
+
+        Assert.Contains("Runtime artifact id", exception.Message, StringComparison.Ordinal);
+        await repository.DidNotReceive().GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExportAsync_RejectsAnArtifactThatNoLongerExists()
+    {
+        var artifactId = Id.New();
+        var repository = Substitute.For<IRuntimeArtifactRepository>();
+        repository.GetById(artifactId, Arg.Any<CancellationToken>()).Returns((RuntimeOrchestrationArtifact?)null);
+        var service = new RuntimeArtifactTransferService(repository, Substitute.For<IRuntimeArtifactDeploymentService>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExportAsync(artifactId.ToString()));
+
+        Assert.Contains("not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(true, "payload")]
+    [InlineData(false, "definition id")]
+    public async Task ExportAsync_RejectsIncompleteActiveArtifactPayloads(bool missingPayload, string expectedMessage)
+    {
+        var artifact = CreateArtifact(RuntimeOrchestrationLifecycleStatus.Active);
+        artifact.ArtifactPayload = missingPayload
+            ? null!
+            : new JsonObject { ["key"] = artifact.OrchestrationDefinitionKey };
+        var repository = Substitute.For<IRuntimeArtifactRepository>();
+        repository.GetById(artifact.Id, Arg.Any<CancellationToken>()).Returns(artifact);
+        var service = new RuntimeArtifactTransferService(repository, Substitute.For<IRuntimeArtifactDeploymentService>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExportAsync(artifact.Id.ToString()));
+
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExportAsync_UsesPortableDefaultsWhenTheOriginalReleaseDetailsAreEmpty()
+    {
+        var artifact = CreateArtifact(RuntimeOrchestrationLifecycleStatus.Active);
+        artifact.LastReleaseId = string.Empty;
+        artifact.ReleaseStrategy = string.Empty;
+        var repository = Substitute.For<IRuntimeArtifactRepository>();
+        repository.GetById(artifact.Id, Arg.Any<CancellationToken>()).Returns(artifact);
+        var service = new RuntimeArtifactTransferService(repository, Substitute.For<IRuntimeArtifactDeploymentService>());
+
+        var package = await service.ExportAsync(artifact.Id.ToString());
+
+        Assert.Equal($"portable-{artifact.Id}", package.Delivery.ReleaseId);
+        Assert.Equal("Direct", package.Delivery.ReleaseStrategy);
+    }
+
+    [Fact]
+    public async Task ImportAsync_RequiresAnActorAndInspectExplainsMalformedJson()
+    {
+        var service = new RuntimeArtifactTransferService(
+            Substitute.For<IRuntimeArtifactRepository>(),
+            Substitute.For<IRuntimeArtifactDeploymentService>());
+
+        var actorException = await Assert.ThrowsAsync<ArgumentException>(() => service.ImportAsync("{}", " "));
+        var packageException = Assert.Throws<InvalidOperationException>(() => service.Inspect("{ not-json"));
+
+        Assert.Contains("actor", actorException.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("invalid JSON", packageException.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExportAsync_RejectsUnknownArtifactLifecycle()
+    {
+        var artifact = CreateArtifact((RuntimeOrchestrationLifecycleStatus)99);
+        var repository = Substitute.For<IRuntimeArtifactRepository>();
+        repository.GetById(artifact.Id, Arg.Any<CancellationToken>()).Returns(artifact);
+        var service = new RuntimeArtifactTransferService(repository, Substitute.For<IRuntimeArtifactDeploymentService>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExportAsync(artifact.Id.ToString()));
+
+        Assert.Contains("not supported", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static RuntimeOrchestrationArtifact CreateArtifact(RuntimeOrchestrationLifecycleStatus lifecycle)
     {
         var definitionId = Id.New();

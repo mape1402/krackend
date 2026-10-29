@@ -31,7 +31,8 @@ public sealed class RuntimeArtifactTransferService : IRuntimeArtifactTransferSer
     public async Task<RuntimeArtifactTransferPackage> ExportAsync(string artifactId, CancellationToken cancellationToken = default)
     {
         var id = ParseId(artifactId, "Runtime artifact id");
-        var artifact = await _artifactRepository.GetById(id, cancellationToken);
+        var artifact = await _artifactRepository.GetById(id, cancellationToken)
+            ?? throw new InvalidOperationException("The runtime artifact was not found.");
         var package = new RuntimeArtifactTransferPackage
         {
             ExportedOnUtc = DateTime.UtcNow,
