@@ -2,6 +2,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
@@ -71,9 +72,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 : _store.Tasks.TryGetValue(transition.TaskExecutionId.Value, out var task)
                     ? task.TaskKey
                     : null;
-            var orchestrationVersion = _store.Artifacts.TryGetValue(instance.RuntimeOrchestrationArtifactId, out var artifact)
-                ? artifact.Version.ToString()
-                : null;
+            _store.Artifacts.TryGetValue(instance.RuntimeOrchestrationArtifactId, out var artifact);
+            var orchestrationVersion = artifact?.Version.ToString();
+            var progress = RuntimeReactiveProgressCalculator.TryCalculate(instance, artifact);
 
             return new RuntimeReactiveEvent
             {
@@ -99,6 +100,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 InstanceStatus = instance.Status.ToString(),
                 StartedOnUtc = instance.StartedOnUtc,
                 LastUpdatedOnUtc = instance.LastUpdatedOnUtc,
+                CompletedTaskCount = progress?.CompletedTaskCount,
+                TotalTaskCount = progress?.TotalTaskCount,
                 OccurredOnUtc = transition.OccurredOnUtc,
                 Message = transition.Message,
                 Payload = transition.Payload,

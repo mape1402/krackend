@@ -29,7 +29,9 @@ public sealed record RuntimeReactiveEventMessage(
     DateTime OccurredOnUtc,
     string Message,
     object Payload,
-    string ProducedBy)
+    string ProducedBy,
+    int? CompletedTaskCount = null,
+    int? TotalTaskCount = null)
 {
     /// <summary>
     /// Creates a SignalR payload from a runtime reactive event.
@@ -59,5 +61,7 @@ public sealed record RuntimeReactiveEventMessage(
             eventData.OccurredOnUtc,
             eventData.Message,
             eventData.Payload,
-            eventData.ProducedBy);
+            eventData.ProducedBy,
+            eventData.CompletedTaskCount,
+            eventData.TotalTaskCount);
 }

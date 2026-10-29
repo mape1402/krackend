@@ -3,6 +3,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
+using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 
@@ -89,7 +90,10 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         // enrichment and an existing browser row retains them when omitted.
         var stageKey = GetStageKey(transition.StageExecutionId);
         var taskKey = GetTaskKey(transition.TaskExecutionId);
-        var orchestrationVersion = GetOrchestrationVersion(instance.RuntimeOrchestrationArtifactId);
+        var runtimeArtifact = DbContext.RuntimeOrchestrationArtifacts.Local
+            .FirstOrDefault(x => x.Id == instance.RuntimeOrchestrationArtifactId);
+        var orchestrationVersion = runtimeArtifact?.Version.ToString();
+        var progress = RuntimeReactiveProgressCalculator.TryCalculate(instance, runtimeArtifact);
         return new RuntimeReactiveEvent
         {
             Id = transition.Id,
@@ -114,6 +118,8 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             InstanceStatus = instance.Status.ToString(),
             StartedOnUtc = instance.StartedOnUtc,
             LastUpdatedOnUtc = instance.LastUpdatedOnUtc,
+            CompletedTaskCount = progress?.CompletedTaskCount,
+            TotalTaskCount = progress?.TotalTaskCount,
             OccurredOnUtc = transition.OccurredOnUtc,
             Message = transition.Message,
             Payload = transition.Payload,
@@ -143,13 +149,6 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         var task = DbContext.TaskExecutions.Local.FirstOrDefault(x => x.Id == taskExecutionId.Value);
 
         return task?.TaskKey;
-    }
-
-    private string GetOrchestrationVersion(Id runtimeOrchestrationArtifactId)
-    {
-        var artifact = DbContext.RuntimeOrchestrationArtifacts.Local.FirstOrDefault(x => x.Id == runtimeOrchestrationArtifactId);
-
-        return artifact?.Version.ToString();
     }
 
     private static IReadOnlyCollection<RuntimeTrafficPoint> BuildTraffic(

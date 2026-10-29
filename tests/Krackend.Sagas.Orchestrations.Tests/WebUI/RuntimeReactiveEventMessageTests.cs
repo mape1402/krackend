@@ -47,6 +47,8 @@ public sealed class RuntimeReactiveEventMessageTests
             InstanceStatus = "Running",
             StartedOnUtc = startedOnUtc,
             LastUpdatedOnUtc = occurredOnUtc,
+            CompletedTaskCount = 2,
+            TotalTaskCount = 5,
             OccurredOnUtc = occurredOnUtc,
             Message = "Task completed.",
             Payload = payload,
@@ -74,6 +76,8 @@ public sealed class RuntimeReactiveEventMessageTests
         Assert.Equal("Running", message.InstanceStatus);
         Assert.Equal(startedOnUtc, message.StartedOnUtc);
         Assert.Equal(occurredOnUtc, message.LastUpdatedOnUtc);
+        Assert.Equal(2, message.CompletedTaskCount);
+        Assert.Equal(5, message.TotalTaskCount);
         Assert.Equal(occurredOnUtc, message.OccurredOnUtc);
         Assert.Same(payload, message.Payload);
         Assert.Equal("tests", message.ProducedBy);

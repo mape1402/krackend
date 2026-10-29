@@ -40,6 +40,39 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
+    public void ReactiveProgressUsesOnlyEnabledArtifactTasksWithoutLoadingStorage()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        store.Instance.Status = OrchestrationInstanceStatus.Running;
+        store.Instance.CurrentStageKey = "reserve-stock";
+        store.Instance.CurrentTaskKey = "notify-customer";
+
+        var active = RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact);
+
+        Assert.NotNull(active);
+        Assert.Equal(1, active.Value.CompletedTaskCount);
+        Assert.Equal(3, active.Value.TotalTaskCount);
+
+        store.Instance.Status = OrchestrationInstanceStatus.Completed;
+        var completed = RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact);
+
+        Assert.Equal(3, completed!.Value.CompletedTaskCount);
+        Assert.Equal(3, completed.Value.TotalTaskCount);
+    }
+
+    [Fact]
+    public void ReactiveProgressReturnsNullWhenArtifactPayloadCannotBeRead()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Artifact.ArtifactPayload = JsonNode.Parse("""{"version":"not-a-semver"}""")!;
+
+        Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact));
+        Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(null!, store.Artifact));
+        Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, null!));
+    }
+
+    [Fact]
     public async Task GetDetail_ReturnsCompleteTraceWithFunctionalAndTechnicalTimelines()
     {
         var store = RuntimeDiagnosticsStore.Create();

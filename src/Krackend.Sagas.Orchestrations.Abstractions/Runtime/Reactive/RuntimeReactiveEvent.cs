@@ -114,6 +114,18 @@ public sealed class RuntimeReactiveEvent
     public DateTime LastUpdatedOnUtc { get; set; }
 
     /// <summary>
+    /// Gets the number of enabled tasks already resolved for the instance.
+    /// This optional value is populated only when it can be derived without
+    /// a follow-up storage query.
+    /// </summary>
+    public int? CompletedTaskCount { get; set; }
+
+    /// <summary>
+    /// Gets the total number of enabled tasks for the instance artifact.
+    /// </summary>
+    public int? TotalTaskCount { get; set; }
+
+    /// <summary>
     /// Gets or sets event time.
     /// </summary>
     public DateTime OccurredOnUtc { get; set; }

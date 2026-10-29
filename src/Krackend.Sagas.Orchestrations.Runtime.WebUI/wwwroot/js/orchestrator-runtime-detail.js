@@ -95,6 +95,14 @@
         Running: 'od-status-running', Idle: 'od-status-warning', Completed: 'od-status-active',
         DeadLettered: 'od-status-warning', Failed: 'od-status-danger'
     }[String(status || '')] || 'od-status-inactive');
+    const timelineTone = status => {
+        const value = String(status || '').toLowerCase();
+        if (['completed', 'succeeded'].includes(value)) return 'Success';
+        if (['failed', 'timedout', 'deadlettered'].includes(value)) return 'Danger';
+        if (['skipped', 'disabled'].includes(value)) return 'Warning';
+        if (['running', 'waiting', 'waitingresponse', 'awaitingresponse', 'retrying'].includes(value)) return 'Info';
+        return 'Neutral';
+    };
     const toPublicStatus = status => {
         const value = String(status || 'Running');
         if (['Created', 'Running', 'Waiting', 'WaitingResponse', 'AwaitingResponse', 'Retrying', 'Compensating'].includes(value)) return 'Running';
@@ -103,6 +111,53 @@
         if (value === 'DeadLettered') return 'DeadLettered';
         if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(value)) return 'Failed';
         return value;
+    };
+    const appendTransitionField = (list, label, value) => {
+        const term = document.createElement('dt');
+        term.textContent = label;
+        const definition = document.createElement('dd');
+        definition.textContent = value || '—';
+        list.append(term, definition);
+    };
+    const upsertLiveTransition = event => {
+        const timeline = root.querySelector('#instance-activity-timeline');
+        const id = String(eventValue(event, 'id') || '');
+        if (!timeline || !id || !window.ZoorceTimeline?.applySnapshot) return;
+        const occurred = eventValue(event, 'occurredOnUtc') || eventValue(event, 'lastUpdatedOnUtc') || new Date().toISOString();
+        const from = eventValue(event, 'fromStatus');
+        const to = eventValue(event, 'toStatus');
+        const transition = String(eventValue(event, 'transitionType') || 'Transition');
+        const description = `${formatUtc(occurred)} · ${eventValue(event, 'message') || `${from || '—'} → ${to || '—'}`}`;
+        window.ZoorceTimeline.applySnapshot(timeline, {
+            item: {
+                id,
+                title: transition,
+                description,
+                timestamp: occurred,
+                tone: timelineTone(to),
+                state: ['Completed', 'Succeeded'].includes(String(to)) ? 'Completed' : ['Failed', 'TimedOut', 'DeadLettered'].includes(String(to)) ? 'Error' : 'Default',
+                metadata: { Status: `${from || '—'} → ${to || '—'}` }
+            }
+        });
+
+        const drawer = root.querySelector('[data-transition-drawer]');
+        if (!drawer || [...drawer.querySelectorAll('[data-transition-details]')]
+            .some(panel => panel.dataset.transitionDetails === id)) return;
+        const article = document.createElement('article');
+        article.dataset.transitionDetails = id;
+        article.hidden = true;
+        const fields = document.createElement('dl');
+        fields.className = 'od-trace-fields';
+        appendTransitionField(fields, 'Transition', transition);
+        appendTransitionField(fields, 'At', formatUtc(occurred));
+        appendTransitionField(fields, 'Status', `${from || '—'} → ${to || '—'}`);
+        appendTransitionField(fields, 'Stage', eventValue(event, 'stageKey'));
+        appendTransitionField(fields, 'Task', eventValue(event, 'taskKey'));
+        appendTransitionField(fields, 'Attempt ID', eventValue(event, 'taskExecutionAttemptId'));
+        appendTransitionField(fields, 'Source', eventValue(event, 'producedBy'));
+        appendTransitionField(fields, 'Message', eventValue(event, 'message'));
+        article.append(fields);
+        drawer.append(article);
     };
     const applyLiveEvent = event => {
         const eventInstance = eventValue(event, 'orchestrationInstanceId');
@@ -121,12 +176,22 @@
         const updated = root.querySelector('[data-instance-last-updated]');
         if (updated && occurred) updated.textContent = formatUtc(occurred);
 
+        const progress = root.querySelector('[data-instance-progress]');
+        const completedTasks = Number(eventValue(event, 'completedTaskCount'));
+        const totalTasks = Number(eventValue(event, 'totalTaskCount'));
+        if (progress && Number.isInteger(completedTasks) && Number.isInteger(totalTasks) && totalTasks >= 0) {
+            progress.dataset.completedTasks = String(completedTasks);
+            progress.dataset.totalTasks = String(totalTasks);
+            progress.textContent = `${completedTasks}/${totalTasks} enabled tasks`;
+        }
+
         const notice = root.querySelector('[data-instance-live-update]');
         const noticeText = root.querySelector('[data-instance-live-update-text]');
         if (notice && noticeText) {
             noticeText.textContent = `Live update · ${eventValue(event, 'transitionType') || 'transition'} at ${formatUtc(eventValue(event, 'occurredOnUtc'))}`;
             notice.hidden = false;
         }
+        upsertLiveTransition(event);
     };
 
     // The detail follows one saga only. A runtime-wide group makes an open

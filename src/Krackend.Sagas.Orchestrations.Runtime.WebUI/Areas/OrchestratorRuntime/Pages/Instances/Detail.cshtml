@@ -65,7 +65,7 @@
             @if (!string.IsNullOrWhiteSpace(Model.TraceId)) { <div><span>Trace ID</span>@CopyValue(Model.TraceId, "trace ID")</div> }
             <div><span>Started</span><strong>@Timestamp(instance.StartedOnUtc)</strong></div>
             <div><span>Last updated</span><strong data-instance-last-updated>@Timestamp(instance.LastUpdatedOnUtc)</strong></div>
-            <div><span>Progress</span><strong>@instance.CompletedTaskCount/@instance.TotalTaskCount enabled tasks</strong></div>
+            <div><span>Progress</span><strong data-instance-progress data-completed-tasks="@instance.CompletedTaskCount" data-total-tasks="@instance.TotalTaskCount">@instance.CompletedTaskCount/@instance.TotalTaskCount enabled tasks</strong></div>
         </div>
         <p class="od-instance-live-update" data-instance-live-update hidden aria-live="polite">
             <span class="od-live-dot" aria-hidden="true"></span><span data-instance-live-update-text></span>
