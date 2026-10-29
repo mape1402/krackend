@@ -58,8 +58,17 @@ public sealed class ZoorceOrchestratorNavigationProvider : INavigationProvider
                 : scopedItems
                     .Select(x => new NavigationItem(x.Item.Label, x.Url!))
                     .ToArray();
-            if (children.Length > 0)
-                result.Add(new NavigationItem(group.Label, Children: children));
+            if (children.Length == 0) continue;
+
+            // Runtime sections are already meaningful navigation groups (Activity and
+            // Configuration). Do not add a redundant "Runtime" level above them.
+            if (group.Area == "OrchestratorRuntime")
+            {
+                result.AddRange(children);
+                continue;
+            }
+
+            result.Add(new NavigationItem(group.Label, Children: children));
         }
 
         return result;

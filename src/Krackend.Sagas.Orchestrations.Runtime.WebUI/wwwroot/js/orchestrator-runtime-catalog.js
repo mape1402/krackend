@@ -37,6 +37,7 @@
     }
 
     function mountGrid() {
+        window.KrackendCatalogData?.registerGridSource?.(grid);
         window.ZoorceDataGrid.mount(grid);
         observeGridBody();
     }
@@ -201,6 +202,7 @@
         const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount || 0)));
         const container = document.createElement('span');
         container.className = 'od-instance-progress';
+        container.dataset.progressState = `${complete}/${total}`;
         if (!total) {
             container.textContent = '—';
             return container;
@@ -225,7 +227,8 @@
         }
         for (const field of ['startedOnUtc', 'lastUpdatedOnUtc']) {
             const cell = row.querySelector(`[data-z-grid-field="${field}"]`);
-            if (cell) cell.textContent = formatUtc(item[field]);
+            const value = formatUtc(item[field]);
+            if (cell && cell.textContent !== value) cell.textContent = value;
         }
         const status = row.querySelector('[data-z-grid-field="status"]');
         if (status && (status.querySelector('.od-status')?.textContent !== item.status || status.querySelector('.od-status')?.className !== `od-status ${item.statusClass || ''}`)) {
@@ -235,7 +238,12 @@
             status.replaceChildren(badge);
         }
         const progress = row.querySelector('[data-z-grid-field="progress"]');
-        if (progress) progress.replaceChildren(renderProgress(item));
+        if (progress) {
+            const total = Number(item.totalTaskCount || 0);
+            const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount || 0)));
+            const state = `${complete}/${total}`;
+            if (progress.firstElementChild?.dataset.progressState !== state) progress.replaceChildren(renderProgress(item));
+        }
         row.classList.add('od-instance-row');
         row.tabIndex = 0;
         row.setAttribute('aria-label', `Open saga ${item.sagaId || item.id}`);
@@ -444,6 +452,7 @@
         config.binding.source = scopedUrl(root.dataset.source).toString();
         window.ZoorceDataGrid.dispose(grid);
         configElement.textContent = JSON.stringify(config);
+        window.KrackendCatalogData?.registerRemoteSource?.(config.binding.source);
         records.clear();
         catalogTotal = 0;
         refreshing = false;
@@ -455,5 +464,12 @@
     scopeButtons.forEach(button => button.addEventListener('click', () => changeScope(Number(button.dataset.runtimeScopeValue))));
     refreshControl?.addEventListener('click', () => refresh({ showMetricLoading: true }));
     syncScopeButtons();
-    refresh({ showMetricLoading: true });
+
+    // Zoorce mounts grids as its script is evaluated. Dispose that opportunistic
+    // mount and recreate it only after the catalog listeners above are attached;
+    // otherwise a fast initial request can finish before this page captures the
+    // loaded event and the grid remains visually empty.
+    window.ZoorceDataGrid.dispose(grid);
+    mountGrid();
+    void refreshCounts({ showLoading: true });
 })();

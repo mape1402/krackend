@@ -1,4 +1,43 @@
 (() => {
+    const remoteSources = new Set();
+    const registerRemoteSource = source => {
+        if (!source || remoteSources.has(source) || !window.ZoorceData?.register) return;
+        window.ZoorceData.register(source, {
+            load: async request => {
+                const url = new URL(source, window.location.href);
+                Object.entries(request?.query || {}).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+                });
+
+                const response = await fetch(url, {
+                    headers: { Accept: 'application/json' },
+                    signal: request?.signal,
+                    credentials: 'same-origin'
+                });
+                if (!response.ok) throw new Error(`Unable to load grid data (${response.status}).`);
+
+                const payload = await response.json();
+                return {
+                    items: Array.isArray(payload?.items) ? payload.items : [],
+                    totalCount: Number(payload?.totalCount ?? payload?.totalRows ?? 0),
+                    hasMore: Boolean(payload?.hasMore)
+                };
+            }
+        });
+        remoteSources.add(source);
+    };
+
+    const registerGridSource = grid => {
+        try {
+            const configuration = JSON.parse(grid.querySelector('[data-z-grid-config]')?.textContent || '{}');
+            registerRemoteSource(configuration?.binding?.source);
+        } catch {
+            // A malformed optional grid configuration remains owned by its host page.
+        }
+    };
+
+    window.KrackendCatalogData = Object.freeze({ registerRemoteSource, registerGridSource });
+
     const badge = (value, tone = '') => {
         const element = document.createElement('span');
         const normalizedTone = String(tone || '').trim().toLowerCase();
@@ -47,9 +86,15 @@
         });
         roots.forEach(root => {
             root.querySelectorAll('[data-z-data-grid]').forEach(grid => {
+                registerGridSource(grid);
                 const toolbar = grid.querySelector('.z-toolbar');
                 const footer = grid.querySelector('.z-grid-footer');
                 if (toolbar && footer && footer.parentElement === grid) toolbar.append(footer);
+                // Zoorce discovers grids before this host script is loaded. Recreate
+                // the controller after its endpoint is registered so all catalogs use
+                // the same host-owned HTTP transport.
+                window.ZoorceDataGrid?.dispose(grid);
+                window.ZoorceDataGrid?.mount(grid);
             });
             new MutationObserver(() => { decorate(root); resize(); }).observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['hidden'] });
             decorate(root);
