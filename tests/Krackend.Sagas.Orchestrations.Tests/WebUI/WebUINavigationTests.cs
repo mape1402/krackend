@@ -55,16 +55,22 @@ public sealed class WebUINavigationTests
     }
 
     [Fact]
-    public void TopBarNavigationResolverDoesNotAddBackNavigationToSagaInstanceDetails()
+    public void TopBarNavigationResolverProvidesTheInstancesParentForSagaInstanceDetails()
     {
+        var url = Substitute.For<IUrlHelper>();
+        url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+        url.RouteUrl(Arg.Any<UrlRouteContext>()).Returns("/runtime/instances");
         var factory = Substitute.For<IUrlHelperFactory>();
+        factory.GetUrlHelper(Arg.Any<ActionContext>()).Returns(url);
         var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory,
             Options.Create(new OrchestratorTopBarNavigationOptions()));
 
         var result = resolver.Resolve(CreateViewContext("OrchestratorRuntime", "/Instances/Detail", ("instanceId", "one")));
 
-        Assert.Null(result);
-        factory.DidNotReceive().GetUrlHelper(Arg.Any<ActionContext>());
+        Assert.NotNull(result);
+        Assert.True(result.Visible);
+        Assert.Equal("Back to instances", result.Label);
+        Assert.Equal("/runtime/instances", result.Url);
     }
 
     [Theory]

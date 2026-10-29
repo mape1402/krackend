@@ -1,6 +1,9 @@
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances;
 
@@ -8,8 +11,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.
 public sealed class DetailModel : PageModel
 {
     private readonly IRuntimeDiagnosticsReader _diagnostics;
+    private readonly IOrchestrationRecoveryService _recovery;
+    private readonly OrchestratorRuntimeWebUIOptions _options;
 
-    public DetailModel(IRuntimeDiagnosticsReader diagnostics) => _diagnostics = diagnostics;
+    public DetailModel(
+        IRuntimeDiagnosticsReader diagnostics,
+        IOrchestrationRecoveryService recovery,
+        IOptions<OrchestratorRuntimeWebUIOptions> options)
+    {
+        _diagnostics = diagnostics;
+        _recovery = recovery;
+        _options = options.Value;
+    }
 
     public InstanceDetailModel Detail { get; private set; }
 
@@ -21,6 +34,19 @@ public sealed class DetailModel : PageModel
 
     public TaskAttemptDetailModel Attempt { get; private set; }
 
+    /// <summary>Gets the trace identifier when it was supplied by trigger metadata.</summary>
+    public string TraceId { get; private set; } = string.Empty;
+
+    /// <summary>Gets the SignalR hub route used for unobtrusive detail freshness notifications.</summary>
+    public string LiveHubPath => $"/{(string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "runtime" : _options.RoutePrefix.Trim('/'))}/live";
+
+    /// <summary>Gets whether the persisted terminal instance can be replayed by an operator.</summary>
+    public bool CanReplay => Detail?.Instance?.Status is "DeadLettered" or "Failed";
+
+    /// <summary>Gets the non-sensitive result of the latest replay request.</summary>
+    [TempData]
+    public string ReplayMessage { get; set; }
+
     public async Task<IActionResult> OnGetAsync(string instanceId, CancellationToken cancellationToken = default, string section = null, string stageKey = null, string taskKey = null, int? attempt = null)
     {
         if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out _))
@@ -30,6 +56,7 @@ public sealed class DetailModel : PageModel
         {
             Detail = await _diagnostics.GetDetail(instanceId, cancellationToken);
             if (Detail is null) return NotFound();
+            TraceId = FindString(JsonNode.Parse(Detail.Metadata), "TraceId");
 
             Section = string.IsNullOrEmpty(section) ? "execution" : section.ToLowerInvariant();
             if (Section is not ("overview" or "activity" or "execution" or "data" or "stage" or "task" or "attempt" or "compensations")) return NotFound();
@@ -54,5 +81,43 @@ public sealed class DetailModel : PageModel
         {
             return NotFound();
         }
+    }
+
+    /// <summary>Requests recovery from the instance detail rather than from the grid.</summary>
+    public async Task<IActionResult> OnPostReplayAsync(string instanceId, string reason = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out _))
+            return NotFound();
+
+        var result = await _recovery.ReplayAsync(instanceId, null, cancellationToken);
+        ReplayMessage = result.Message;
+        TempData["ReplayTone"] = result.Succeeded ? "success" : "danger";
+        return RedirectToPage(new { instanceId });
+    }
+
+    private static string FindString(JsonNode node, string name)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (var pair in obj)
+            {
+                if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase) &&
+                    pair.Value is JsonValue value && value.TryGetValue<string>(out var text))
+                    return text ?? string.Empty;
+
+                var nested = FindString(pair.Value, name);
+                if (!string.IsNullOrWhiteSpace(nested)) return nested;
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                var nested = FindString(item, name);
+                if (!string.IsNullOrWhiteSpace(nested)) return nested;
+            }
+        }
+
+        return string.Empty;
     }
 }

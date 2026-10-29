@@ -122,6 +122,11 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             return new("OrchestratorRuntime", "/Instances/Index", "Back to instances");
         }
 
+        if (Matches(area, page, "OrchestratorRuntime", "/Instances/Detail"))
+        {
+            return new("OrchestratorRuntime", "/Instances/Index", "Back to instances");
+        }
+
         return null;
     }
 

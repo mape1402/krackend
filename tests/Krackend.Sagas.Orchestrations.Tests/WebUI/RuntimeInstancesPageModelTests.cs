@@ -3,11 +3,13 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 public sealed class RuntimeInstancesPageModelTests
 {
@@ -161,12 +163,14 @@ public sealed class RuntimeInstancesPageModelTests
     public async Task DetailPageLoadsTheRequestedInstanceAndRejectsInvalidIds()
     {
         var reader = new FakeRuntimeDiagnosticsReader();
-        var page = new DetailModel(reader);
+        var page = CreateDetailPage(reader);
         var id = Ulid.NewUlid().ToString();
 
         Assert.IsType<PageResult>(await page.OnGetAsync(id));
         Assert.Equal(id, reader.LastDetailInstanceId);
         Assert.NotNull(page.Detail);
+        Assert.Equal("trace-1", page.TraceId);
+        Assert.Equal("/runtime/live", page.LiveHubPath);
         Assert.IsType<NotFoundResult>(await page.OnGetAsync("invalid"));
         Assert.IsType<NotFoundResult>(await page.OnGetAsync(null));
         reader.DetailMissing = true;
@@ -182,7 +186,7 @@ public sealed class RuntimeInstancesPageModelTests
     [InlineData("compensations", "compensations")]
     public async Task DetailPageLoadsIndependentSections(string requested, string expected)
     {
-        var page = new DetailModel(new FakeRuntimeDiagnosticsReader());
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader());
         Assert.IsType<PageResult>(await page.OnGetAsync(Ulid.NewUlid().ToString(), section: requested));
         Assert.Equal(expected, page.Section);
     }
@@ -190,7 +194,7 @@ public sealed class RuntimeInstancesPageModelTests
     [Fact]
     public async Task DetailPageRejectsUnknownSectionAndMissingExecutionLevels()
     {
-        var page = new DetailModel(new FakeRuntimeDiagnosticsReader());
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader());
         var id = Ulid.NewUlid().ToString();
         Assert.IsType<NotFoundResult>(await page.OnGetAsync(id, section: "unknown"));
         Assert.IsType<NotFoundResult>(await page.OnGetAsync(id, section: "stage", stageKey: "missing"));
@@ -201,7 +205,7 @@ public sealed class RuntimeInstancesPageModelTests
     [Fact]
     public async Task DetailPageResolvesStageTaskAndAttemptIndependently()
     {
-        var page = new DetailModel(new FakeRuntimeDiagnosticsReader());
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader());
         var id = Ulid.NewUlid().ToString();
         Assert.IsType<PageResult>(await page.OnGetAsync(id, section: "stage", stageKey: "stage-one"));
         Assert.Equal("stage-one", page.Stage.StageKey);
@@ -211,12 +215,48 @@ public sealed class RuntimeInstancesPageModelTests
         Assert.Equal(1, page.Attempt.AttemptNumber);
     }
 
+    [Fact]
+    public async Task DetailPageReplaysOnlyThroughTheRecoveryService()
+    {
+        var id = Ulid.NewUlid().ToString();
+        var recovery = Substitute.For<IOrchestrationRecoveryService>();
+        recovery.ReplayAsync(id, null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(OrchestrationRecoveryResult.Success(id, "Running", "Replay queued.")));
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader(), recovery);
+
+        var result = await page.OnPostReplayAsync(id);
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("Replay queued.", page.ReplayMessage);
+        Assert.Equal("success", page.TempData["ReplayTone"]);
+        Assert.Equal(id, redirect.RouteValues["instanceId"]);
+        await recovery.Received(1).ReplayAsync(id, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DetailPageDoesNotReplayInvalidInstanceIds()
+    {
+        var recovery = Substitute.For<IOrchestrationRecoveryService>();
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader(), recovery);
+
+        Assert.IsType<NotFoundResult>(await page.OnPostReplayAsync("not-an-id"));
+        await recovery.DidNotReceiveWithAnyArgs().ReplayAsync(default, default, default);
+    }
+
     private static IndexModel CreatePage(
         FakeRuntimeDiagnosticsReader reader,
         string routePrefix)
         => new(
             reader,
             Options.Create(new OrchestratorRuntimeWebUIOptions { RoutePrefix = routePrefix }));
+
+    private static DetailModel CreateDetailPage(
+        IRuntimeDiagnosticsReader reader,
+        IOrchestrationRecoveryService recovery = null)
+        => new(
+            reader,
+            recovery ?? Substitute.For<IOrchestrationRecoveryService>(),
+            Options.Create(new OrchestratorRuntimeWebUIOptions()));
 
     private sealed class FakeRuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader, IRuntimeInstanceStatusCountsReader
     {
@@ -258,7 +298,7 @@ public sealed class RuntimeInstancesPageModelTests
                 [task],
                 [],
                 "{}",
-                "{}",
+                """{"trigger_metadata":{"TraceId":"trace-1"}}""",
                 [],
                 [],
                 []);
