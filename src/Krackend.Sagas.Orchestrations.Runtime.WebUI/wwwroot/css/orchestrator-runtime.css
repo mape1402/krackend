@@ -833,7 +833,11 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
  */
 [data-runtime-catalog] .z-data-grid {
     width: 100%;
-    min-width: 0;
+    /* This is the smallest readable operational table. It deliberately does
+       not depend on the browser-window width: a maximized window can still
+       host a narrow grid beside the application shell. Below this width the
+       grid viewport, and only that viewport, supplies horizontal scrolling. */
+    min-width: 1500px;
     table-layout: fixed;
 }
 
@@ -855,19 +859,19 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 }
 
 [data-runtime-catalog] .z-data-grid th:nth-child(1),
-[data-runtime-catalog] .z-data-grid td:nth-child(1) { width: 10%; }
+[data-runtime-catalog] .z-data-grid td:nth-child(1) { width: 10.5%; }
 
 [data-runtime-catalog] .z-data-grid th:nth-child(2),
 [data-runtime-catalog] .z-data-grid td:nth-child(2) { width: 19%; }
 
 [data-runtime-catalog] .z-data-grid th:nth-child(3),
-[data-runtime-catalog] .z-data-grid td:nth-child(3) { width: 16%; }
+[data-runtime-catalog] .z-data-grid td:nth-child(3) { width: 16.5%; }
 
 [data-runtime-catalog] .z-data-grid th:nth-child(4),
 [data-runtime-catalog] .z-data-grid td:nth-child(4) { width: 8%; }
 
 [data-runtime-catalog] .z-data-grid th:nth-child(5),
-[data-runtime-catalog] .z-data-grid td:nth-child(5) { width: 7%; }
+[data-runtime-catalog] .z-data-grid td:nth-child(5) { width: 8%; }
 
 [data-runtime-catalog] .z-data-grid th:nth-child(6),
 [data-runtime-catalog] .z-data-grid td:nth-child(6),
@@ -877,7 +881,7 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 [data-runtime-catalog] .z-data-grid th:nth-child(8),
 [data-runtime-catalog] .z-data-grid td:nth-child(8),
 [data-runtime-catalog] .z-data-grid th:nth-child(9),
-[data-runtime-catalog] .z-data-grid td:nth-child(9) { width: 13%; }
+[data-runtime-catalog] .z-data-grid td:nth-child(9) { width: 12%; }
 
 /* Do not carry the retired card-row treatment into a semantic data table.
    A flex <tr> opt-outs of the browser table layout algorithm and makes each
@@ -922,13 +926,6 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 }
 
 [data-runtime-catalog] .od-instance-progress { min-width: 7rem; }
-
-/* Below the operational table's readable width, keep every field and let the
-   grid viewport scroll. A responsive card conversion or overlapping cells
-   would make live triage materially worse. */
-@media (max-width: 1600px) {
-    [data-runtime-catalog] .z-data-grid { min-width: 1240px; }
-}
 
 .od-runtime-updates { margin-bottom: 0.5rem; }
 
