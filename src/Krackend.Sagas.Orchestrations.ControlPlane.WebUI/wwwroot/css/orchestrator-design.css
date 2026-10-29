@@ -2040,3 +2040,21 @@ main.container {
 #runtimeNodeSetupWizard > .z-wizard-footer {
     display: none;
 }
+/* Portable draft actions remain secondary to the primary floating create action. */
+.od-portability-action {
+    position: fixed;
+    inset-inline-end: 1.5rem;
+    inset-block-end: 5.5rem;
+    z-index: 20;
+    border: 1px solid var(--z-color-border, #c7d7ef);
+    border-radius: .6rem;
+    background: var(--z-color-surface, #fff);
+    color: var(--z-color-primary, #2563eb);
+    font-size: .78rem;
+    font-weight: 700;
+    padding: .5rem .75rem;
+    box-shadow: 0 8px 20px rgb(15 23 42 / 12%);
+}
+
+.od-import-inspection { min-height: 1.25rem; font-size: .82rem; color: var(--z-color-success, #047857); }
+.od-import-invalid { color: var(--z-color-danger, #b91c1c); }

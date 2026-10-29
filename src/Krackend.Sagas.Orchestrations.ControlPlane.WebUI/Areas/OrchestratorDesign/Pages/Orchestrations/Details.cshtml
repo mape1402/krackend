@@ -7,9 +7,11 @@
 @using Microsoft.AspNetCore.Html
 @{ ViewData["Title"] = Model.Orchestration is null ? "Orchestration details" : $"{Model.Orchestration.Name} \u00b7 {Model.Orchestration.Key}"; }
 <div class="od-create-floating">@await Component.InvokeAsync("ZoorceFloatingActionButton", new ZoorceFloatingActionButtonOptions { Id = "openNewVersion", Label = "New version", Icon = "+" })</div>
+<button type="button" class="od-portability-action" id="openImportDraft">Import draft</button>
 
 <section class="od-catalog" data-version-catalog data-source="@Url.Page(null, "Versions", new { orchestrationId = Model.OrchestrationId })"
          data-action-url="@Url.Page(null, "VersionAction")" data-orchestration-id="@Model.OrchestrationId"
+         data-export-url="@Url.Page(null, "ExportDraft")"
          data-roadmap-url="@Url.Page("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId = Model.OrchestrationId, versionId = "__versionId__" })">
     <div class="od-catalog-controls" role="group" aria-label="View mode">
         <button type="button" class="btn btn-outline-secondary" data-version-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
@@ -39,11 +41,40 @@
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"createDraftForm\" class=\"z-button z-button-primary\" id=\"versionModalSubmitButton\">Create draft</button>")
 })
 
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    Id = "importDraftModal", Title = "Import draft", Eyebrow = "Portable orchestration version", Size = "medium",
+    Body = new HtmlString("<form id=\"importDraftForm\" method=\"post\" enctype=\"multipart/form-data\" action=\"" + Url.Page(null, "ImportDraft") + "\"><input type=\"hidden\" name=\"orchestrationId\" value=\"" + Model.OrchestrationId + "\" /><label class=\"z-field-label\" for=\"importPackage\">Draft package</label><input id=\"importPackage\" class=\"form-control\" type=\"file\" name=\"importPackage\" accept=\"application/json,.json\" required /><p class=\"od-item-meta mt-2 mb-0\">Import always creates a fresh Draft; it never overwrites a version or deploys anything.</p><p id=\"importPackageInspection\" class=\"od-import-inspection\" aria-live=\"polite\"></p></form>"),
+    Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"importDraftForm\" class=\"z-button z-button-primary\" id=\"importDraftSubmit\" disabled>Import draft</button>")
+})
+
 @section Scripts {
 <script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-versions.js" asp-append-version="true"></script>
 <script>
 document.getElementById('openNewVersion')?.addEventListener('click', event =>
     document.getElementById('newVersionModal')?.open?.(event.currentTarget));
+document.getElementById('openImportDraft')?.addEventListener('click', event =>
+    document.getElementById('importDraftModal')?.open?.(event.currentTarget));
+
+(() => {
+    const input = document.getElementById('importPackage');
+    const message = document.getElementById('importPackageInspection');
+    const submit = document.getElementById('importDraftSubmit');
+    if (!input || !message || !submit) return;
+    input.addEventListener('change', async () => {
+        submit.disabled = true;
+        if (!input.files?.length) { message.textContent = ''; return; }
+        message.textContent = 'Checking package…';
+        const data = new FormData(); data.append('importPackage', input.files[0]);
+        const token = document.querySelector('#version-catalog-token input[name="__RequestVerificationToken"]')?.value;
+        try {
+            const response = await fetch('@Url.Page(null, "InspectImport")', { method: 'POST', headers: token ? { RequestVerificationToken: token } : {}, body: data });
+            const result = await response.json();
+            message.textContent = result.message || 'Package could not be inspected.';
+            message.classList.toggle('od-import-invalid', !result.isValid);
+            submit.disabled = !result.isValid;
+        } catch { message.textContent = 'Package could not be inspected.'; message.classList.add('od-import-invalid'); }
+    });
+})();
 </script>
 }
 

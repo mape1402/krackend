@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
@@ -16,6 +18,7 @@ public sealed class DetailsModel : PageModel
     private readonly IOrchestrationApplicationService _orchestrationService;
     private readonly IOrchestrationVersionApplicationService _versionService;
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;
+    private readonly IOrchestrationVersionPackageService _packageService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DetailsModel"/> class.
@@ -23,11 +26,13 @@ public sealed class DetailsModel : PageModel
     public DetailsModel(
         IOrchestrationApplicationService orchestrationService,
         IOrchestrationVersionApplicationService versionService,
-        IOrchestrationVersionReviewApplicationService reviewService)
+        IOrchestrationVersionReviewApplicationService reviewService,
+        IOrchestrationVersionPackageService packageService)
     {
         _orchestrationService = orchestrationService ?? throw new ArgumentNullException(nameof(orchestrationService));
         _versionService = versionService ?? throw new ArgumentNullException(nameof(versionService));
         _reviewService = reviewService ?? throw new ArgumentNullException(nameof(reviewService));
+        _packageService = packageService ?? throw new ArgumentNullException(nameof(packageService));
     }
 
     /// <summary>
@@ -51,6 +56,9 @@ public sealed class DetailsModel : PageModel
     /// </summary>
     [BindProperty]
     public CreateVersionInput NewVersion { get; set; } = new();
+
+    [BindProperty]
+    public IFormFile ImportPackage { get; set; }
 
     /// <summary>
     /// Gets user-facing error text.
@@ -226,6 +234,50 @@ public sealed class DetailsModel : PageModel
         }
     }
 
+    /// <summary>Downloads a Draft as an integrity-protected portable package.</summary>
+    public async Task<IActionResult> OnPostExportDraftAsync(string orchestrationId, string versionId, CancellationToken cancellationToken = default)
+    {
+        var version = await _versionService.GetById(new GetOrchestrationVersionByIdQuery(versionId), cancellationToken);
+        if (version is null || !string.Equals(version.OrchestrationDefinitionId, orchestrationId, StringComparison.Ordinal))
+        {
+            return BadRequest();
+        }
+
+        var package = await _packageService.ExportAsync(versionId, cancellationToken);
+        var safeKey = string.Concat((package.Source.OrchestrationKey ?? "orchestration").Select(x => char.IsLetterOrDigit(x) ? x : '-'));
+        return File(Encoding.UTF8.GetBytes(_packageService.Serialize(package)), "application/json", $"{safeKey}-draft-{versionId}.krackend.json");
+    }
+
+    /// <summary>Validates a package without changing the orchestration.</summary>
+    public async Task<IActionResult> OnPostInspectImportAsync(IFormFile importPackage, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return new JsonResult(_packageService.Inspect(await ReadPackageAsync(importPackage, cancellationToken)));
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new OrchestrationVersionPackageInspection(false, ToFriendlyErrorMessage(ex)));
+        }
+    }
+
+    /// <summary>Creates a fresh Draft from a validated portable package.</summary>
+    public async Task<IActionResult> OnPostImportDraftAsync(string orchestrationId, IFormFile importPackage, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var versionId = await _packageService.ImportAsync(orchestrationId, await ReadPackageAsync(importPackage, cancellationToken), "web-ui", cancellationToken);
+            return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
+        }
+        catch (Exception ex)
+        {
+            OrchestrationId = orchestrationId;
+            ErrorMessage = ToFriendlyErrorMessage(ex);
+            await LoadDataAsync(cancellationToken);
+            return Page();
+        }
+    }
+
     /// <summary>
     /// Returns allowed version actions by current status.
     /// </summary>
@@ -233,7 +285,7 @@ public sealed class DetailsModel : PageModel
     {
         return status switch
         {
-            OrchestrationVersionStatus.Draft => new[] { "RequestDeployment", "Abandon" },
+            OrchestrationVersionStatus.Draft => new[] { "ExportDraft", "RequestDeployment", "Abandon" },
             OrchestrationVersionStatus.PendingDeployment or OrchestrationVersionStatus.PendingDeprecation or OrchestrationVersionStatus.PendingArchive => new[] { "OpenReview" },
             OrchestrationVersionStatus.Deployed => new[] { "RequestDeprecation" },
             OrchestrationVersionStatus.Deprecated => new[] { "RequestArchive" },
@@ -276,6 +328,24 @@ public sealed class DetailsModel : PageModel
                 invalidOperation.Message,
             _ => "The operation could not be completed. Review the captured data and try again."
         };
+
+    private static async Task<string> ReadPackageAsync(IFormFile package, CancellationToken cancellationToken)
+    {
+        const long maximumBytes = 5 * 1024 * 1024;
+        if (package is null || package.Length == 0)
+        {
+            throw new InvalidOperationException("Select a portable orchestration package.");
+        }
+
+        if (package.Length > maximumBytes)
+        {
+            throw new InvalidOperationException("The orchestration package exceeds the 5 MB import limit.");
+        }
+
+        await using var stream = package.OpenReadStream();
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: false);
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
 
     private static string FormatTimestamp(string value)
         => DateTimeOffset.TryParse(value, out var parsed) ? parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : value;

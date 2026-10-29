@@ -279,7 +279,7 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         var result = await page.OnPostCreateVersionAsync("orch-1", CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
-        Assert.Equal(["RequestDeployment", "Abandon"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
+        Assert.Equal(["ExportDraft", "RequestDeployment", "Abandon"], page.GetAllowedActions(OrchestrationVersionStatus.Draft));
         Assert.Equal(["OpenReview"], page.GetAllowedActions(OrchestrationVersionStatus.PendingDeployment));
         Assert.Equal(["RequestDeprecation"], page.GetAllowedActions(OrchestrationVersionStatus.Deployed));
         Assert.Equal(["RequestArchive"], page.GetAllowedActions(OrchestrationVersionStatus.Deprecated));
@@ -317,6 +317,8 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         public IOrchestrationVersionApplicationService VersionService { get; } = Substitute.For<IOrchestrationVersionApplicationService>();
 
         public IOrchestrationVersionReviewApplicationService ReviewService { get; } = Substitute.For<IOrchestrationVersionReviewApplicationService>();
+
+        public IOrchestrationVersionPackageService PackageService { get; } = Substitute.For<IOrchestrationVersionPackageService>();
 
         public IDomainApplicationService DomainService { get; } = Substitute.For<IDomainApplicationService>();
 
@@ -398,6 +400,6 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
             => new(OrchestrationService, DomainService, TeamService);
 
         public OrchestrationDetailsPageModel CreateDetailsPage()
-            => new(OrchestrationService, VersionService, ReviewService);
+            => new(OrchestrationService, VersionService, ReviewService, PackageService);
     }
 }

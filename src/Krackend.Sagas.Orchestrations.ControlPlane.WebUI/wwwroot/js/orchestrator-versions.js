@@ -21,7 +21,7 @@
     };
     const roadmapUrl = id => root.dataset.roadmapUrl.replace('__versionId__', encodeURIComponent(id));
     const actionLabels = { RequestDeployment: 'Send to deployment review', RequestDeprecation: 'Request deprecation',
-        RequestArchive: 'Request archive', OpenReview: 'Open review', Abandon: 'Abandon draft' };
+        RequestArchive: 'Request archive', OpenReview: 'Open review', Abandon: 'Abandon draft', ExportDraft: 'Export draft' };
     const actions = item => {
         const group = make('div', 'd-flex'); group.dataset.versionActions = '';
         const dropdown = make('div', 'dropdown'); const toggle = make('button', 'btn btn-sm btn-outline-secondary');
@@ -34,10 +34,13 @@
         roadmapEntry.append(link); menu.append(roadmapEntry);
         item.actions.forEach(action => {
             const li = document.createElement('li'); const form = document.createElement('form');
-            form.method = 'post'; form.action = root.dataset.actionUrl;
+            form.method = 'post'; form.action = action === 'ExportDraft' ? root.dataset.exportUrl : root.dataset.actionUrl;
             const token = document.querySelector('#version-catalog-token input[name="__RequestVerificationToken"]');
             if (token) form.append(token.cloneNode());
-            Object.entries({ orchestrationId: root.dataset.orchestrationId, versionId: item.id, action }).forEach(([name, value]) => {
+            const values = action === 'ExportDraft'
+                ? { orchestrationId: root.dataset.orchestrationId, versionId: item.id }
+                : { orchestrationId: root.dataset.orchestrationId, versionId: item.id, action };
+            Object.entries(values).forEach(([name, value]) => {
                 const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
             });
             const button = make('button', `dropdown-item${action === 'Abandon' ? ' text-danger' : ''}`, actionLabels[action] || action);
