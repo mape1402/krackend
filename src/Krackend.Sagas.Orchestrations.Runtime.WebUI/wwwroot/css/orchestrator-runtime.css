@@ -785,7 +785,17 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 [data-runtime-catalog] { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .65rem; }
 [data-runtime-catalog] [data-runtime-grid-view],
 [data-runtime-catalog] .z-data-grid-component { min-width:0; width:100%; max-width:100%; min-height: 0; height: 100%; display: flex; flex-direction: column; }
-[data-runtime-catalog] .z-data-grid-viewport { flex: 1 1 0; min-height: 0; overflow: auto; }
+[data-runtime-catalog] .z-data-grid-viewport {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+[data-runtime-catalog] .z-data-shell {
+    width: 100%;
+    min-width: 100%;
+    overflow: visible;
+}
 @media (max-width: 700px) {
     body:has([data-runtime-catalog]) { height: auto; overflow: auto; }
     body:has([data-runtime-catalog]) .z-main { overflow: visible; }
@@ -814,6 +824,111 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 [data-runtime-catalog] .od-copy-button { color: var(--od-text); }
 [data-runtime-catalog] [data-z-grid-field="startedOnUtc"],
 [data-runtime-catalog] [data-z-grid-field="lastUpdatedOnUtc"] { white-space: nowrap; }
+
+/*
+ * Instances is an operational grid, not a responsive card layout. Correlation
+ * and saga identifiers remain intact. On a full desktop canvas, its columns
+ * occupy the available grid width. On a narrower canvas, only this viewport
+ * provides horizontal scrolling; the page itself never gains a second scroll.
+ */
+[data-runtime-catalog] .z-data-grid {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+
+[data-runtime-catalog] .z-data-grid th,
+[data-runtime-catalog] .z-data-grid td {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+[data-runtime-catalog] .z-data-grid th {
+    padding: .58rem .72rem;
+    font-size: .64rem;
+    letter-spacing: .045em;
+}
+
+[data-runtime-catalog] .z-data-grid th button { white-space: nowrap; }
+[data-runtime-catalog] .z-data-grid td {
+    padding-inline: .62rem;
+}
+
+[data-runtime-catalog] .z-data-grid th:nth-child(1),
+[data-runtime-catalog] .z-data-grid td:nth-child(1) { width: 10%; }
+
+[data-runtime-catalog] .z-data-grid th:nth-child(2),
+[data-runtime-catalog] .z-data-grid td:nth-child(2) { width: 19%; }
+
+[data-runtime-catalog] .z-data-grid th:nth-child(3),
+[data-runtime-catalog] .z-data-grid td:nth-child(3) { width: 16%; }
+
+[data-runtime-catalog] .z-data-grid th:nth-child(4),
+[data-runtime-catalog] .z-data-grid td:nth-child(4) { width: 8%; }
+
+[data-runtime-catalog] .z-data-grid th:nth-child(5),
+[data-runtime-catalog] .z-data-grid td:nth-child(5) { width: 7%; }
+
+[data-runtime-catalog] .z-data-grid th:nth-child(6),
+[data-runtime-catalog] .z-data-grid td:nth-child(6),
+[data-runtime-catalog] .z-data-grid th:nth-child(7),
+[data-runtime-catalog] .z-data-grid td:nth-child(7) { width: 7%; }
+
+[data-runtime-catalog] .z-data-grid th:nth-child(8),
+[data-runtime-catalog] .z-data-grid td:nth-child(8),
+[data-runtime-catalog] .z-data-grid th:nth-child(9),
+[data-runtime-catalog] .z-data-grid td:nth-child(9) { width: 13%; }
+
+/* Do not carry the retired card-row treatment into a semantic data table.
+   A flex <tr> opt-outs of the browser table layout algorithm and makes each
+   visible row calculate independent column positions. */
+[data-runtime-catalog] .z-data-grid tr.od-instance-row {
+    display: table-row !important;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+/* The former card catalogue applied presentation styles to .od-instance-row.
+   An instance row now belongs to a real table, so each cell must remain a
+   table cell as well; otherwise Chromium paints the first flex item as an
+   isolated rounded tile and the headers no longer line up with their values. */
+[data-runtime-catalog] .z-data-grid tr.od-instance-row > td {
+    display: table-cell !important;
+    margin: 0 !important;
+    border-inline: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+[data-runtime-catalog] .z-data-grid tbody tr.od-instance-row:hover {
+    background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 5%, transparent);
+}
+
+[data-runtime-catalog] .od-id-copy {
+    justify-content: flex-start;
+    align-items: center;
+    width: max-content;
+    max-width: none;
+}
+
+[data-runtime-catalog] .od-copy-value {
+    flex: 0 0 auto;
+    max-width: none;
+}
+
+[data-runtime-catalog] .od-instance-progress { min-width: 7rem; }
+
+/* Below the operational table's readable width, keep every field and let the
+   grid viewport scroll. A responsive card conversion or overlapping cells
+   would make live triage materially worse. */
+@media (max-width: 1600px) {
+    [data-runtime-catalog] .z-data-grid { min-width: 1240px; }
+}
 
 .od-runtime-updates { margin-bottom: 0.5rem; }
 
@@ -929,47 +1044,6 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
     grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
     gap: 0.85rem;
     align-items: start;
-}
-
-.od-instance-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-}
-
-.od-instance-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.65rem;
-    min-height: 64px;
-    padding: 0.7rem;
-    color: var(--od-text);
-    text-decoration: none;
-    border: 1px solid var(--od-border);
-    border-radius: 8px;
-    background: var(--od-surface);
-}
-
-.od-instance-row:hover,
-.od-instance-row.active {
-    color: var(--od-text);
-    border-color: var(--od-primary);
-    background: #f5f7ff;
-}
-
-.od-instance-row strong,
-.od-instance-row small {
-    display: block;
-    max-width: 170px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.od-instance-row small {
-    color: var(--od-muted);
-    font-size: 0.76rem;
 }
 
 .od-diagnostics-main {
@@ -1382,8 +1456,7 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
     white-space: nowrap;
 }
 
-/* The instance grid is an operational console: identifiers remain readable,
-   copy actions stay adjacent, and only the grid itself owns overflow. */
+/* The instance grid keeps identifiers intact and copy actions adjacent. */
 [data-runtime-catalog] .od-id-copy { gap: .18rem; white-space: nowrap; }
 [data-runtime-catalog] .od-copy-value { flex: 0 0 auto; overflow: visible; text-overflow: clip; white-space: nowrap; }
 [data-runtime-catalog] .od-copy-button { width: 22px; height: 22px; border-radius: 6px; }
