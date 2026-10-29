@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 public sealed class RuntimeReactiveEventMessageTests
@@ -79,8 +80,11 @@ public sealed class RuntimeReactiveEventMessageTests
         Assert.Equal(2, message.CompletedTaskCount);
         Assert.Equal(5, message.TotalTaskCount);
         Assert.Equal(occurredOnUtc, message.OccurredOnUtc);
-        Assert.Same(payload, message.Payload);
+        Assert.Null(message.Payload);
         Assert.Equal("tests", message.ProducedBy);
+
+        var serialized = JsonSerializer.Serialize(message);
+        Assert.DoesNotContain("Payload", serialized, StringComparison.Ordinal);
     }
 
     [Fact]

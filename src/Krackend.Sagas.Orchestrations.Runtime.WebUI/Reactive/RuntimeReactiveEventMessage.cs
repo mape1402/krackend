@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
+using System.Text.Json.Serialization;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 
@@ -28,7 +29,7 @@ public sealed record RuntimeReactiveEventMessage(
     DateTime LastUpdatedOnUtc,
     DateTime OccurredOnUtc,
     string Message,
-    object Payload,
+    [property: JsonIgnore] object Payload,
     string ProducedBy,
     int? CompletedTaskCount = null,
     int? TotalTaskCount = null)
@@ -60,7 +61,9 @@ public sealed record RuntimeReactiveEventMessage(
             eventData.LastUpdatedOnUtc,
             eventData.OccurredOnUtc,
             eventData.Message,
-            eventData.Payload,
+            // SignalR updates deliberately stay compact. The complete transition payload is
+            // available only from the instance detail endpoints when the user asks for it.
+            null,
             eventData.ProducedBy,
             eventData.CompletedTaskCount,
             eventData.TotalTaskCount);

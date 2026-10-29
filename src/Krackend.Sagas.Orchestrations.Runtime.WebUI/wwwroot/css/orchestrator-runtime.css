@@ -3296,9 +3296,9 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-trace-timeline .z-timeline-item[data-z-timeline-selectable="true"] .z-timeline-card { position: relative; padding-right: 3rem; transition: border-color .15s, background-color .15s; }
 .od-trace-timeline .z-timeline-item[data-z-timeline-selectable="true"] .z-timeline-card::after { content: "\2192"; position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: var(--z-primary, #527bdc); font-size: 1.15rem; }
 .od-trace-timeline .z-timeline-item:hover .z-timeline-card, .od-trace-timeline .z-timeline-item:focus-within .z-timeline-card { border-color: var(--z-primary, #527bdc); background: var(--z-surface-hover, rgba(120, 130, 150, .08)); }
-.od-trace-timeline .z-timeline--rail[data-z-timeline-effective-orientation="Vertical"] .z-timeline-item { grid-template-columns: 34px minmax(0, 1fr); padding-bottom: .6rem; }
-.od-trace-timeline .z-timeline--rail[data-z-timeline-effective-orientation="Vertical"] .z-timeline-rail { grid-column: 1; }
-.od-trace-timeline .z-timeline--rail[data-z-timeline-effective-orientation="Vertical"] .z-timeline-content { grid-column: 2; }
+/* Preserve Zoorce's rail geometry. Constraining its leading column made full
+   UTC dates wrap beside the stage markers and broke the visual timeline. */
+.od-trace-timeline .z-timeline--rail[data-z-timeline-effective-orientation="Vertical"] .z-timeline-item { padding-bottom: .6rem; }
 .od-transition-selection { min-height: 0; }
 .od-trace-content:has(.od-transition-selection) { overflow: hidden; }
 .od-trace-content:has(.od-transition-selection) .od-trace-layout { min-height: 0; height: 100%; align-items: stretch; }
@@ -3322,6 +3322,17 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 }
 /* Runtime dashboard: compact, projection-backed surfaces with no outer desktop scroll. */
 .od-dashboard { display: grid; min-width: 0; gap: .8rem; }
+.od-dashboard,
+.od-dashboard-charts,
+.od-dashboard-chart-shell,
+.od-dashboard-chart-shell .z-chart-component,
+.od-dashboard-chart-shell .z-chart-visual,
+.od-dashboard-chart-shell .z-native-chart { max-width: 100%; }
+
+/* Charts may expose a fixed intrinsic SVG width while their responsive host is
+   narrower than a desktop rail layout. It must not create a second page axis. */
+body:has([data-runtime-dashboard]) .z-main,
+[data-runtime-dashboard] { overflow-x: clip; }
 .od-statistics-layout { display: grid; grid-template-columns: minmax(15.5rem, .44fr) minmax(0, 2.56fr); gap: .8rem; min-width: 0; align-items: stretch; }
 .od-statistics-parameters { display: grid; align-content: start; gap: .78rem; min-width: 0; padding: .9rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 88%, var(--z-primary, var(--od-primary))); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface))); box-shadow: 0 13px 30px color-mix(in srgb, var(--z-text, #111) 5%, transparent); }
 .od-statistics-eyebrow { color: var(--z-primary, var(--od-primary)); font-size: .62rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
@@ -3482,7 +3493,10 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 @media (max-width: 1120px) {
     .od-dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 960px) {
+/* The chart grid needs the width left after the persistent navigation rail.
+   Below this breakpoint a five-panel desktop mosaic compresses headings and
+   legends into unreadable columns, so it intentionally becomes a clear stack. */
+@media (max-width: 1120px) {
     body:has([data-runtime-dashboard]) { height: auto; overflow: auto; }
     body:has([data-runtime-dashboard]) .z-main { overflow: visible; }
     .od-dashboard-charts { grid-template-columns: minmax(0, 1fr); grid-template-areas: "activity" "effectiveness" "top-orchestrations" "status" "funnel"; grid-template-rows: auto; }
