@@ -8,6 +8,7 @@
     const gridSearch = grid.querySelector('[data-z-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-runtime-view-controls');
+    const importAction = root.querySelector('.od-artifact-import-action');
     const toolbarEnd = document.createElement('div');
     toolbarEnd.className = 'od-artifact-toolbar-end';
     const gridCount = document.createElement('span');
@@ -32,12 +33,17 @@
     const placeToolbarEnd = showCards => {
         const target = showCards ? cardToolbar : gridToolbar;
         if (target) target.append(toolbarEnd);
+        // Keep catalog actions predictable: action first, then the factual
+        // loaded count, then the current view selector at the far right.
+        toolbarEnd.replaceChildren();
+        if (importAction) toolbarEnd.append(importAction);
+        toolbarEnd.append(gridCount);
         if (viewControls) toolbarEnd.append(viewControls);
     };
     const setLoadedCount = (loaded, total) => {
         gridCount.textContent = total > loaded
-            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
-            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching artifacts';
+            ? `${loaded.toLocaleString()} of ${total.toLocaleString()} matching rows loaded`
+            : total ? `${loaded.toLocaleString()} matching rows loaded` : 'No matching artifacts';
     };
     const make = (tag, className, text) => {
         const node = document.createElement(tag);

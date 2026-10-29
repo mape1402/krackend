@@ -721,6 +721,7 @@
     margin-left: auto;
     white-space: nowrap;
 }
+.od-artifact-toolbar-end .od-artifact-import-action { display: inline-flex; }
 .od-artifact-loaded-count { color: var(--z-muted, var(--od-muted)); font-size: .72rem; font-variant-numeric: tabular-nums; }
 [data-artifact-catalog] [data-z-grid-state],
 [data-artifact-catalog] .z-grid-footer { display: none !important; }

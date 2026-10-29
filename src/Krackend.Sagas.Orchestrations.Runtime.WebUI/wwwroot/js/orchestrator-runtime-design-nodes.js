@@ -36,8 +36,8 @@
     };
     const setLoadedCount = (loaded, total) => {
         gridCount.textContent = total > loaded
-            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
-            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching design nodes';
+            ? `${loaded.toLocaleString()} of ${total.toLocaleString()} matching rows loaded`
+            : total ? `${loaded.toLocaleString()} matching rows loaded` : 'No matching design nodes';
     };
     const updateGridCount = result => setLoadedCount(records.size, Number(result?.totalCount ?? 0));
 
