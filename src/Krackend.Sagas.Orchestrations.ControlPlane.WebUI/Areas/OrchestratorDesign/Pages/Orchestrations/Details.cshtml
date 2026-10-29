@@ -43,7 +43,7 @@
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
     Id = "importDraftModal", Title = "Import draft", Eyebrow = "Portable orchestration version", Size = "medium",
-    Body = new HtmlString("<form id=\"importDraftForm\" method=\"post\" enctype=\"multipart/form-data\" action=\"" + Url.Page(null, "ImportDraft") + "\"><input type=\"hidden\" name=\"orchestrationId\" value=\"" + Model.OrchestrationId + "\" /><label class=\"z-field-label\" for=\"importPackage\">Draft package</label><input id=\"importPackage\" class=\"form-control\" type=\"file\" name=\"importPackage\" accept=\"application/json,.json\" required /><p class=\"od-item-meta mt-2 mb-0\">Import always creates a fresh Draft; it never overwrites a version or deploys anything.</p><p id=\"importPackageInspection\" class=\"od-import-inspection\" aria-live=\"polite\"></p></form>"),
+    Body = await Html.PartialAsync("_ImportDraft", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"importDraftForm\" class=\"z-button z-button-primary\" id=\"importDraftSubmit\" disabled>Import draft</button>")
 })
 
@@ -59,7 +59,18 @@ document.getElementById('openImportDraft')?.addEventListener('click', event =>
     const input = document.getElementById('importPackage');
     const message = document.getElementById('importPackageInspection');
     const submit = document.getElementById('importDraftSubmit');
-    if (!input || !message || !submit) return;
+    const newTarget = document.getElementById('importNewTarget');
+    const importAsNew = document.getElementById('importAsNew');
+    const name = document.getElementById('importNewName');
+    const description = document.getElementById('importNewDescription');
+    if (!input || !message || !submit || !newTarget || !importAsNew || !name || !description) return;
+    const setTargetVisibility = () => {
+        const enabled = importAsNew.checked;
+        newTarget.hidden = !enabled;
+        newTarget.querySelectorAll('[data-import-target-required]').forEach(field => field.required = enabled);
+    };
+    importAsNew.addEventListener('change', setTargetVisibility);
+    setTargetVisibility();
     input.addEventListener('change', async () => {
         submit.disabled = true;
         if (!input.files?.length) { message.textContent = ''; return; }
@@ -72,8 +83,51 @@ document.getElementById('openImportDraft')?.addEventListener('click', event =>
             message.textContent = result.message || 'Package could not be inspected.';
             message.classList.toggle('od-import-invalid', !result.isValid);
             submit.disabled = !result.isValid;
+            if (result.isValid) {
+                if (!name.value) name.value = result.orchestrationName || result.orchestrationKey || '';
+                if (!description.value) description.value = result.orchestrationDescription || '';
+            }
         } catch { message.textContent = 'Package could not be inspected.'; message.classList.add('od-import-invalid'); }
     });
+})();
+
+(() => {
+    const escapeHtml = value => (value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+    const bindAutocomplete = (textId, valueId, suggestionsId, endpoint, includeDescription) => {
+        const text = document.getElementById(textId);
+        const value = document.getElementById(valueId);
+        const suggestions = document.getElementById(suggestionsId);
+        if (!text || !value || !suggestions) return;
+        let requestToken = 0;
+        const hide = () => { suggestions.classList.add('d-none'); suggestions.innerHTML = ''; };
+        const search = async () => {
+            const query = text.value.trim();
+            const token = ++requestToken;
+            value.value = '';
+            if (!query) { hide(); return; }
+            const url = new URL(endpoint, window.location.origin);
+            url.searchParams.set('term', query);
+            try {
+                const response = await fetch(url);
+                const rows = response.ok ? await response.json() : [];
+                if (token !== requestToken || !rows.length) { if (token === requestToken) hide(); return; }
+                suggestions.innerHTML = rows.map(row => `<button type="button" class="od-autocomplete-item" data-id="${escapeHtml(row.id)}" data-value="${escapeHtml(`${row.displayName} (${row.key})`)}"><span class="od-autocomplete-title">${escapeHtml(row.displayName)} (${escapeHtml(row.key)})</span>${includeDescription ? `<span class="od-autocomplete-meta">${escapeHtml(row.description || '')}</span>` : ''}</button>`).join('');
+                suggestions.classList.remove('d-none');
+            } catch { if (token === requestToken) hide(); }
+        };
+        text.addEventListener('input', search);
+        text.addEventListener('blur', () => { requestToken++; setTimeout(hide, 150); });
+        suggestions.addEventListener('click', event => {
+            const item = event.target.closest('.od-autocomplete-item');
+            if (!item) return;
+            requestToken++;
+            value.value = item.dataset.id || '';
+            text.value = item.dataset.value || '';
+            hide();
+        });
+    };
+    bindAutocomplete('importNewDomainText', 'importNewDomainId', 'importDomainSuggestions', '@Url.Page(null, "ImportDomainSuggestions")', true);
+    bindAutocomplete('importNewTeamText', 'importNewTeamId', 'importTeamSuggestions', '@Url.Page(null, "ImportTeamSuggestions")', false);
 })();
 </script>
 }

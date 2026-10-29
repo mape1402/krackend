@@ -14,4 +14,14 @@ public interface IOrchestrationVersionPackageService
         string packageJson,
         string importedBy,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a local orchestration definition and imports the package as its first Draft.
+    /// Domain and team references are intentionally selected locally rather than copied across environments.
+    /// </summary>
+    Task<ImportedOrchestrationDraft> ImportAsNewOrchestrationAsync(
+        CreateImportedOrchestrationInput target,
+        string packageJson,
+        string importedBy,
+        CancellationToken cancellationToken = default);
 }

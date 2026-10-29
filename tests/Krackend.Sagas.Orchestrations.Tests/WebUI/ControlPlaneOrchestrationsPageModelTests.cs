@@ -1,10 +1,12 @@
 using System.Reflection;
+using System.Text;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Security;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using CreateOrchestrationPageModel = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.CreateModel;
 using OrchestrationDetailsPageModel = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.DetailsModel;
@@ -286,6 +288,39 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
         Assert.Empty(page.GetAllowedActions(OrchestrationVersionStatus.Archived));
     }
 
+    [Fact]
+    public async Task DetailsImportsPortableDraftIntoANewLocallyOwnedOrchestration()
+    {
+        var fixture = new Fixture();
+        fixture.PackageService.ImportAsNewOrchestrationAsync(
+                Arg.Any<CreateImportedOrchestrationInput>(),
+                Arg.Any<string>(),
+                "web-ui",
+                Arg.Any<CancellationToken>())
+            .Returns(new ImportedOrchestrationDraft("new-orchestration", "new-draft"));
+        var page = fixture.CreateDetailsPage();
+        page.ImportNewOrchestration = new OrchestrationDetailsPageModel.ImportNewOrchestrationInput
+        {
+            Name = "Imported sales", DomainId = "domain-1", OwnerTeamId = "team-1", Description = "portable", Tags = "sales, sales, fulfillment"
+        };
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("{\"package\":true}"));
+        var file = new FormFile(stream, 0, stream.Length, "importPackage", "sales.krackend.json");
+
+        var result = Assert.IsType<RedirectToPageResult>(await page.OnPostImportDraftAsync("orch-1", true, file, CancellationToken.None));
+
+        Assert.Equal("/OrchestrationVersions/Details", result.PageName);
+        Assert.Equal("new-orchestration", result.RouteValues!["orchestrationId"]);
+        Assert.Equal("new-draft", result.RouteValues["versionId"]);
+        await fixture.PackageService.Received(1).ImportAsNewOrchestrationAsync(
+            Arg.Is<CreateImportedOrchestrationInput>(input =>
+                input.Name == "Imported sales" && input.DomainId == "domain-1" && input.OwnerTeamId == "team-1" &&
+                input.Tags!.SequenceEqual(new[] { "sales", "fulfillment" })),
+            Arg.Any<string>(),
+            "web-ui",
+            Arg.Any<CancellationToken>());
+    }
+
     private static DesignPagedResult DefinitionsPage(params OrchestrationDefinitionModel[] rows)
         => new(1, 1, rows.Length, 120, rows);
 
@@ -400,6 +435,6 @@ public sealed class ControlPlaneOrchestrationsPageModelTests
             => new(OrchestrationService, DomainService, TeamService);
 
         public OrchestrationDetailsPageModel CreateDetailsPage()
-            => new(OrchestrationService, VersionService, ReviewService, PackageService);
+            => new(OrchestrationService, VersionService, ReviewService, PackageService, DomainService, TeamService);
     }
 }

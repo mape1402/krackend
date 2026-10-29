@@ -37,7 +37,11 @@ public sealed record OrchestrationVersionPackageSource(
     string OrchestrationKey,
     string VersionId,
     string Status,
-    string Label);
+    string Label,
+    string OrchestrationName = "",
+    string OrchestrationDescription = "",
+    string DomainName = "",
+    string OwnerTeamName = "");
 
 /// <summary>Safe inspection result returned before an import is applied.</summary>
 public sealed record OrchestrationVersionPackageInspection(
@@ -46,4 +50,18 @@ public sealed record OrchestrationVersionPackageInspection(
     string OrchestrationKey = "",
     int TriggerCount = 0,
     int StageCount = 0,
-    int TaskCount = 0);
+    int TaskCount = 0,
+    string OrchestrationName = "",
+    string OrchestrationDescription = "",
+    string DomainName = "");
+
+/// <summary>Local ownership details required when importing a draft into a new orchestration.</summary>
+public sealed record CreateImportedOrchestrationInput(
+    string Name,
+    string DomainId,
+    string OwnerTeamId,
+    string Description,
+    IReadOnlyCollection<string>? Tags = null);
+
+/// <summary>Identifiers created by a portable draft import.</summary>
+public sealed record ImportedOrchestrationDraft(string OrchestrationDefinitionId, string OrchestrationVersionId);
