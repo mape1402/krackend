@@ -50,6 +50,7 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
         var normalizedHours = NormalizeHours(hours, days);
         var bucket = normalizedHours switch
         {
+            1 => SagaStatisticsActivityBucket.Minute,
             <= 24 => SagaStatisticsActivityBucket.Hour,
             2160 => SagaStatisticsActivityBucket.Week,
             _ => SagaStatisticsActivityBucket.Day
@@ -100,9 +101,10 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
         var now = services.GetService(typeof(TimeProvider)) is TimeProvider clock
             ? clock.GetUtcNow().UtcDateTime
             : DateTime.UtcNow;
-        var before = normalizedHours <= 24
-            ? new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc).AddHours(1)
-            : now.Date.AddDays(1);
+        // The dashboard is an operational, rolling view.  Do not round the upper
+        // bound to an hour/day boundary: doing so would make "last hour" discard
+        // all activity as soon as the clock crosses an hour.
+        var before = now;
         return new SagaStatisticsDashboardQuery(before.AddHours(-normalizedHours), before, NormalizeKey(orchestrationKey));
     }
 

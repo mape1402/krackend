@@ -692,12 +692,19 @@
 
 .od-runtime-view-controls {
     display: flex;
-    gap: 0.35rem;
+    gap: .65rem;
     align-items: center;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: space-between;
+    min-width: 0;
     margin: 0;
 }
+
+.od-runtime-view-controls-start,
+.od-runtime-view-controls-end { display: inline-flex; min-width: 0; align-items: center; gap: .55rem; }
+.od-runtime-view-controls [data-runtime-refresh] { display: inline-flex; }
+.od-runtime-view-controls [data-runtime-refresh] button { min-width: 6.5rem; }
+.od-runtime-view-controls [data-runtime-refresh].is-loading { pointer-events: none; }
+.od-monitor-periods { flex-wrap: nowrap; white-space: nowrap; }
 
 .od-monitor-scope { display: inline-flex; align-items: center; gap: .5rem; color: var(--od-muted); font-size: .75rem; white-space: nowrap; }
 .od-monitor-scope select { min-width: 10rem; width: auto; }
@@ -709,7 +716,7 @@
 .od-monitor-counters strong, .od-dashboard-metrics strong { color: var(--od-text); font-size: 1.25rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .od-metric-icon { position: absolute; top: 50%; left: .7rem; transform: translateY(-50%); display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 6px; color: var(--metric-accent); background: color-mix(in srgb, var(--metric-accent) 22%, var(--od-surface)); font-size: 1rem; }
 #monitor-metric-completed, #runtime-metric-3 { --metric-accent: var(--z-success, #16865c); }
-#monitor-metric-waiting, #runtime-metric-2 { --metric-accent: var(--z-warning, #ad6b12); }
+#monitor-metric-idle, #runtime-metric-idle { --metric-accent: var(--z-warning, #ad6b12); }
 #monitor-metric-deadLettered, #runtime-metric-4 { --metric-accent: var(--z-warning, #ad6b12); }
 #monitor-metric-failed, #runtime-metric-5 { --metric-accent: var(--z-danger, #c6374c); }
 .od-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0; }
@@ -736,7 +743,7 @@ body:has([data-runtime-catalog]) .z-app-shell,
 body:has([data-runtime-catalog]) .z-page-shell { height: 100%; min-height: 0; }
 body:has([data-runtime-catalog]) .z-main { min-height: 0; overflow: hidden; }
 body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height: 0; padding: 0; border: 0; background: transparent; }
-[data-runtime-catalog] { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .75rem; }
+[data-runtime-catalog] { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .65rem; }
 [data-runtime-catalog] [data-runtime-grid-view],
 [data-runtime-catalog] .z-data-grid-component { min-width:0; width:100%; max-width:100%; min-height: 0; height: 100%; display: flex; flex-direction: column; }
 [data-runtime-catalog] .z-data-grid-viewport { flex: 1 1 0; min-height: 0; overflow: auto; }
@@ -754,6 +761,12 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
     border-color: var(--od-primary);
     color: var(--krackend-on-primary, #fff);
 }
+
+.od-live-indicator { display: inline-flex; align-items: center; gap: .34rem; color: var(--z-muted, var(--od-muted)); font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.od-live-dot { width: .46rem; height: .46rem; border-radius: 999px; background: var(--z-warning, #a16207); }
+.od-live-indicator[data-live-state="connected"] .od-live-dot { background: var(--z-success, #0f8c55); animation: od-live-pulse 1.8s ease-out infinite; }
+.od-live-indicator[data-live-state="reconnecting"] .od-live-dot { background: var(--z-warning, #a16207); }
+@keyframes od-live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--z-success, #0f8c55) 38%, transparent); } 70% { box-shadow: 0 0 0 .38rem transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 
 [data-runtime-catalog] .btn-outline-secondary:not([aria-pressed="true"]) {
     color: var(--od-text);
@@ -3163,7 +3176,7 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-dashboard-metric-skeleton { display: block; width: 100%; }
 .od-dashboard-metric-skeleton .z-skeleton { width: 56%; height: 1.35rem; }
 #runtime-metric-running { --metric-accent: var(--z-info, #176b87); }
-#runtime-metric-waiting, #runtime-metric-deadLettered { --metric-accent: var(--z-warning, #a16207); }
+#runtime-metric-idle, #runtime-metric-deadLettered { --metric-accent: var(--z-warning, #a16207); }
 #runtime-metric-completed { --metric-accent: var(--z-success, #0f8c55); }
 #runtime-metric-failed { --metric-accent: var(--z-danger, #c43d4d); }
 
@@ -3226,7 +3239,7 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-dashboard-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .od-dashboard-status-row strong { color: var(--z-text, var(--od-text)); font-size: .63rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .od-dashboard-status-row.is-progress { --status-tone: var(--z-info, #176b87); }
-.od-dashboard-status-row.is-waiting,
+.od-dashboard-status-row.is-idle,
 .od-dashboard-status-row.is-dead-lettered { --status-tone: var(--z-warning, #a16207); }
 .od-dashboard-status-row.is-completed { --status-tone: var(--z-success, #0f8c55); }
 .od-dashboard-status-row.is-failed { --status-tone: var(--z-danger, #c43d4d); }

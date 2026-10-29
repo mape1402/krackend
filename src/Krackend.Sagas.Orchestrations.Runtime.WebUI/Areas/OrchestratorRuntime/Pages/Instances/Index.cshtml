@@ -8,7 +8,7 @@
 @{
     ViewData["Title"] = "Instances";
     var counters = new[] {
-        ("running", "Running", "activity"), ("waiting", "Waiting", "hourglass-split"),
+        ("running", "Running", "activity"), ("idle", "Idle", "pause-circle"),
         ("completed", "Completed", "check2-circle"), ("deadLettered", "Dead lettered", "inbox"), ("failed", "Failed", "exclamation-circle")
     };
 }
@@ -27,21 +27,37 @@
             }
         </div>
         <div class="od-runtime-view-controls" role="group" aria-label="Instance filters">
-            <span class="od-grid-loaded-copy" data-runtime-loaded-copy aria-live="polite">Loading rows...</span>
-            <button type="button" class="btn btn-outline-secondary" data-runtime-refresh aria-label="Refresh instances" title="Refresh instances"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
-            <label class="od-monitor-scope">Time range <select class="z-form-input z-form-select" data-runtime-scope aria-label="Instance time range"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option><option value="active">All active instances</option></select></label>
-            <div class="od-live-indicator" data-live-state="connecting"><span class="od-live-dot"></span><span data-live-label>Connecting</span></div>
+            <div class="od-runtime-view-controls-start">
+                <span data-runtime-refresh>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeInstancesRefreshButton", Text = "Refresh" })</span>
+            </div>
+            <div class="od-runtime-view-controls-end">
+                <div class="od-live-indicator" data-live-state="connecting" title="Live connection"><span class="od-live-dot"></span><span data-live-label>Connecting</span></div>
+                <div class="od-dashboard-periods od-monitor-periods" role="group" aria-label="Instance time range">
+                    <button type="button" data-runtime-scope-value="1" aria-pressed="false">1h</button>
+                    <button type="button" data-runtime-scope-value="6" aria-pressed="false">6h</button>
+                    <button type="button" data-runtime-scope-value="24" aria-pressed="true">24h</button>
+                    <button type="button" data-runtime-scope-value="168" aria-pressed="false">7d</button>
+                    <button type="button" data-runtime-scope-value="720" aria-pressed="false">30d</button>
+                    <button type="button" data-runtime-scope-value="2160" aria-pressed="false">90d</button>
+                </div>
+            </div>
         </div>
         <div data-runtime-grid-view>
             @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
             {
-                Id = "runtime-instances-grid", AriaLabel = "runtime instances", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List", new { recentHours = 24 }) },
+                Id = "runtime-instances-grid", AriaLabel = "runtime instances", Binding = new ZoorceDataBindingOptions
+                {
+                    Source = Url.Page(null, "List", new { recentHours = 24 }),
+                    InvalidationScope = "runtime.instances"
+                },
                 LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                RealtimeBehavior = ZoorceDataGridRealtimeBehavior.Patch,
                 Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
                     new("status", "Status"), new("currentStageKey", "Stage", false), new("currentTaskKey", "Task", false),
                     new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated"), new("actions", "Actions", false)]
             })
         </div>
+        <div class="od-grid-loaded-copy" data-runtime-loaded-copy aria-live="polite">Loading rows...</div>
     </div>
 </section>
 

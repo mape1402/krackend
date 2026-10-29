@@ -17,11 +17,13 @@
         rankingLimit: 10
     };
 
+    // Created/Compensating are execution internals.  The aggregate view exposes
+    // them as one comprehensible operational state: Running.
     const activeStatuses = ['Created', 'Running', 'Compensating'];
     const failedStatuses = ['Stopped', 'Compensated', 'CompletedWithErrors', 'Aborted', 'Failed'];
     const statusDescriptors = [
         { key: 'running', label: 'In progress', tone: 'progress', color: 'var(--z-info)' },
-        { key: 'waiting', label: 'Waiting', tone: 'waiting', color: 'var(--z-warning)' },
+        { key: 'idle', label: 'Idle', tone: 'idle', color: 'var(--z-warning)' },
         { key: 'completed', label: 'Completed', tone: 'completed', color: 'var(--z-success)' },
         { key: 'deadLettered', label: 'Dead lettered', tone: 'dead-lettered', color: 'var(--z-warning)' },
         { key: 'failed', label: 'Failed', tone: 'failed', color: 'var(--z-danger)' }
@@ -207,12 +209,14 @@
         const values = {
             total: Number(cohort.total || 0),
             running: statusTotal(statuses, activeStatuses),
-            waiting: statusValue(statuses, 'Waiting'),
+            // Waiting is retained only to present records written before the
+            // Idle lifecycle migration as the same public aggregate state.
+            idle: statusValue(statuses, 'Idle') + statusValue(statuses, 'Waiting'),
             completed: statusValue(statuses, 'Completed'),
             deadLettered: statusValue(statuses, 'DeadLettered'),
             failed: statusTotal(statuses, failedStatuses)
         };
-        const classified = values.running + values.waiting + values.completed + values.deadLettered + values.failed;
+        const classified = values.running + values.idle + values.completed + values.deadLettered + values.failed;
         values.total = Math.max(values.total, classified);
         return values;
     }
@@ -246,7 +250,7 @@
                 const completed = document.createElement('strong');
                 completed.textContent = `${dashboardNumber(values.completed)} of ${dashboardNumber(terminal)} terminal sagas completed successfully`;
                 const active = document.createElement('span');
-                active.textContent = `${dashboardNumber(values.running + values.waiting)} still active`;
+                active.textContent = `${dashboardNumber(values.running + values.idle)} still active`;
                 detail.replaceChildren(completed, active);
             }
         }
@@ -290,7 +294,7 @@
                 const terminal = document.createElement('strong');
                 terminal.textContent = `${dashboardNumber(finalized)} reached a terminal outcome`;
                 const detail = document.createElement('span');
-                detail.textContent = `${dashboardNumber(values.running + values.waiting)} still active · ${dashboardNumber(values.failed)} failed · ${dashboardNumber(values.deadLettered)} dead-lettered`;
+                detail.textContent = `${dashboardNumber(values.running + values.idle)} still active · ${dashboardNumber(values.failed)} failed · ${dashboardNumber(values.deadLettered)} dead-lettered`;
                 outcome.replaceChildren(terminal, detail);
             }
         }
@@ -307,7 +311,8 @@
 
     function bucketStart(date, bucket) {
         const result = new Date(date.getTime());
-        if (bucket === 'hour') result.setUTCMinutes(0, 0, 0);
+        if (bucket === 'minute') result.setUTCSeconds(0, 0);
+        else if (bucket === 'hour') result.setUTCMinutes(0, 0, 0);
         else if (bucket === 'day') result.setUTCHours(0, 0, 0, 0);
         else {
             result.setUTCHours(0, 0, 0, 0);
@@ -318,14 +323,15 @@
 
     function bucketStep(date, bucket) {
         const next = new Date(date.getTime());
-        if (bucket === 'hour') next.setUTCHours(next.getUTCHours() + 1);
+        if (bucket === 'minute') next.setUTCMinutes(next.getUTCMinutes() + 1);
+        else if (bucket === 'hour') next.setUTCHours(next.getUTCHours() + 1);
         else if (bucket === 'day') next.setUTCDate(next.getUTCDate() + 1);
         else next.setUTCDate(next.getUTCDate() + 7);
         return next;
     }
 
     function bucketLabel(date, bucket) {
-        if (bucket === 'hour') return date.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
+        if (bucket === 'minute' || bucket === 'hour') return date.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
         if (bucket === 'week') return `Week of ${date.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' })}`;
         return date.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', day: 'numeric' });
     }
@@ -374,12 +380,14 @@
         clearError('activity');
     }
 
-    async function loadCohort() {
+    async function loadCohort({ showLoading = false } = {}) {
         const epoch = ++state.cohortEpoch;
-        setMetricLoading(true);
-        setLoading('status', true);
-        setLoading('funnel', true);
-        setLoading('effectiveness', true);
+        if (showLoading) {
+            setMetricLoading(true);
+            setLoading('status', true);
+            setLoading('funnel', true);
+            setLoading('effectiveness', true);
+        }
         try {
             const cohort = await fetchJson('cohort', root.dataset.cohortUrl);
             if (epoch !== state.cohortEpoch) return;
@@ -393,10 +401,12 @@
         }
     }
 
-    async function loadActivity() {
+    async function loadActivity({ showLoading = false } = {}) {
         const epoch = ++state.activityEpoch;
-        setActivityEmpty(false);
-        setLoading('activity', true);
+        if (showLoading) {
+            setActivityEmpty(false);
+            setLoading('activity', true);
+        }
         try {
             const activity = await fetchJson('activity', root.dataset.activityUrl);
             if (epoch !== state.activityEpoch) return;
@@ -407,10 +417,12 @@
         }
     }
 
-    async function loadTopOrchestrations() {
+    async function loadTopOrchestrations({ showLoading = false } = {}) {
         const epoch = ++state.topOrchestrationsEpoch;
-        setRankingEmpty(false);
-        setLoading('top-orchestrations', true);
+        if (showLoading) {
+            setRankingEmpty(false);
+            setLoading('top-orchestrations', true);
+        }
         try {
             const source = new URL(root.dataset.topOrchestrationsUrl, window.location.href);
             source.searchParams.set('limit', String(state.rankingLimit));
@@ -423,8 +435,12 @@
         }
     }
 
-    function loadDashboard() {
-        return Promise.allSettled([loadCohort(), loadActivity(), loadTopOrchestrations()]);
+    function loadDashboard({ showLoading = false } = {}) {
+        return Promise.allSettled([
+            loadCohort({ showLoading }),
+            loadActivity({ showLoading }),
+            loadTopOrchestrations({ showLoading })
+        ]);
     }
 
     function syncPeriodButtons() {
@@ -453,14 +469,14 @@
         state.hours = hours;
         syncPeriodButtons();
         updateAddress();
-        void loadDashboard();
+        void loadDashboard({ showLoading: true });
     }
 
     function selectRankingLimit(limit) {
         if (![10, 15, 20, 25].includes(limit) || limit === state.rankingLimit) return;
         state.rankingLimit = limit;
         syncRankingLimitButtons();
-        void loadTopOrchestrations();
+        void loadTopOrchestrations({ showLoading: true });
     }
 
     periodButtons.forEach(button => button.addEventListener('click', () => selectPeriod(Number(button.dataset.dashboardPeriodValue))));
@@ -468,12 +484,14 @@
 
     function scheduleStatisticsRefresh() {
         window.clearTimeout(refreshTimer);
-        refreshTimer = window.setTimeout(() => void loadDashboard(), 250);
+        // Coalesce a burst of runtime observations.  Live updates repaint data
+        // only; skeletons are reserved for the first load and a period change.
+        refreshTimer = window.setTimeout(() => void loadDashboard(), 1000);
     }
 
     syncPeriodButtons();
     syncRankingLimitButtons();
-    void loadDashboard();
+    void loadDashboard({ showLoading: true });
     if (!window.signalR) return;
 
     const connection = new signalR.HubConnectionBuilder().withUrl(config.hubPath).withAutomaticReconnect().build();

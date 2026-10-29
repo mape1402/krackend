@@ -61,7 +61,7 @@ public sealed class RuntimeDashboardPageModelTests
     [Theory]
     [InlineData(1)]
     [InlineData(6)]
-    public async Task ActivitySupportsHourlyDashboardRanges(int hours)
+    public async Task ActivityUsesMinuteBucketsOnlyForTheOneHourDashboardRange(int hours)
     {
         var reader = new FakeDashboardReader();
         using var services = CreateServices(reader);
@@ -69,8 +69,22 @@ public sealed class RuntimeDashboardPageModelTests
 
         await page.OnGetActivityAsync(hours: hours);
 
-        Assert.Equal(SagaStatisticsActivityBucket.Hour, reader.ActivityBucket);
+        Assert.Equal(hours == 1 ? SagaStatisticsActivityBucket.Minute : SagaStatisticsActivityBucket.Hour, reader.ActivityBucket);
         Assert.Equal(hours, (reader.ActivityQuery.BeforeUtc - reader.ActivityQuery.FromUtc).TotalHours);
+    }
+
+    [Fact]
+    public async Task ActivityUsesARollingWindowInsteadOfRoundingAtTheUtcHour()
+    {
+        var reader = new FakeDashboardReader();
+        using var services = CreateServices(reader);
+        var page = CreatePage(services);
+
+        await page.OnGetActivityAsync(hours: 1);
+
+        Assert.Equal(Now.UtcDateTime, reader.ActivityQuery.BeforeUtc);
+        Assert.Equal(Now.UtcDateTime.AddHours(-1), reader.ActivityQuery.FromUtc);
+        Assert.Equal(SagaStatisticsActivityBucket.Minute, reader.ActivityBucket);
     }
 
     [Fact]

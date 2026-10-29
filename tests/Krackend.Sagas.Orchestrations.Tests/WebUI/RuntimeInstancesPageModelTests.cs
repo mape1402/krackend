@@ -33,7 +33,7 @@ public sealed class RuntimeInstancesPageModelTests
     [InlineData("sagaId", RuntimeInstanceCatalogSort.SagaId)]
     [InlineData("status", RuntimeInstanceCatalogSort.Status)]
     [InlineData("startedOnUtc", RuntimeInstanceCatalogSort.Started)]
-    [InlineData("other", RuntimeInstanceCatalogSort.Updated)]
+    [InlineData("other", RuntimeInstanceCatalogSort.Started)]
     public async Task ListPassesBoundedQueryToStorage(string sort, RuntimeInstanceCatalogSort expected)
     {
         var reader = new FakeRuntimeDiagnosticsReader();
@@ -45,13 +45,13 @@ public sealed class RuntimeInstancesPageModelTests
     }
 
     [Fact]
-    public async Task ListUsesLatestFirstAndRejectsInvalidStatus()
+    public async Task ListUsesStartedDescendingQueueOrderAndRejectsInvalidStatus()
     {
         var reader = new FakeRuntimeDiagnosticsReader();
         var page = CreatePage(reader, "runtime");
 
         Assert.IsType<JsonResult>(await page.OnGetListAsync(-1, 0));
-        Assert.Equal(new RuntimeInstanceCatalogQuery(1, 1, string.Empty, null, RuntimeInstanceCatalogSort.Updated, true), reader.LastQuery);
+        Assert.Equal(new RuntimeInstanceCatalogQuery(1, 1, string.Empty, null, RuntimeInstanceCatalogSort.Started, true), reader.LastQuery);
         Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(status: "unknown"));
     }
 
@@ -84,6 +84,8 @@ public sealed class RuntimeInstancesPageModelTests
         Assert.InRange(reader.LastQuery.StartedFromUtc.Value, DateTime.UtcNow.AddHours(-24).AddSeconds(-2), DateTime.UtcNow.AddHours(-24));
         Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(recentHours: 0));
         Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(recentHours: 169));
+        Assert.IsType<JsonResult>(await page.OnGetCountsAsync(recentHours: 720));
+        Assert.IsType<JsonResult>(await page.OnGetCountsAsync(recentHours: 2160));
         Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(startedFrom: DateTimeOffset.UtcNow, recentHours: 1));
     }
 
@@ -121,7 +123,7 @@ public sealed class RuntimeInstancesPageModelTests
 
         Assert.Equal(2, Assert.IsAssignableFrom<IReadOnlyDictionary<OrchestrationInstanceStatus, long>>(result.Value)[OrchestrationInstanceStatus.Running]);
         Assert.Equal(new RuntimeInstanceCatalogQuery(1, 1, "sale", OrchestrationInstanceStatus.Running,
-            RuntimeInstanceCatalogSort.Updated, true, start.UtcDateTime, end.UtcDateTime, true), reader.LastQuery);
+            RuntimeInstanceCatalogSort.Started, true, start.UtcDateTime, end.UtcDateTime, true), reader.LastQuery);
         Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(status: "missing"));
         Assert.IsType<BadRequestObjectResult>(await page.OnGetCountsAsync(startedFrom: end, startedBefore: start));
     }

@@ -78,7 +78,7 @@ public sealed class IndexModel : PageModel
             "sagaId" => RuntimeInstanceCatalogSort.SagaId,
             "status" => RuntimeInstanceCatalogSort.Status,
             "startedOnUtc" => RuntimeInstanceCatalogSort.Started,
-            _ => RuntimeInstanceCatalogSort.Updated
+            _ => RuntimeInstanceCatalogSort.Started
         };
         RuntimeInstancePageModel result;
         try
@@ -111,7 +111,7 @@ public sealed class IndexModel : PageModel
         if (recentHours.HasValue) startedFrom = DateTimeOffset.UtcNow.AddHours(-recentHours.Value);
 
         var query = new RuntimeInstanceCatalogQuery(1, 1, search?.Trim() ?? string.Empty, selectedStatus,
-            RuntimeInstanceCatalogSort.Updated, true, startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly);
+            RuntimeInstanceCatalogSort.Started, true, startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly);
         try
         {
             return new JsonResult(await countsReader.GetStatusCounts(query, cancellationToken));
@@ -126,8 +126,10 @@ public sealed class IndexModel : PageModel
         out OrchestrationInstanceStatus? selectedStatus)
     {
         selectedStatus = null;
-        if (recentHours is < 1 or > 168 || (recentHours.HasValue && (startedFrom.HasValue || startedBefore.HasValue)))
-            return "The recent time range must be between 1 and 168 hours and cannot be combined with explicit dates.";
+        if (recentHours.HasValue && recentHours is not (1 or 6 or 24 or 168 or 720 or 2160))
+            return "The recent time range must be 1, 6, 24, 168, 720, or 2160 hours and cannot be combined with explicit dates.";
+        if (recentHours.HasValue && (startedFrom.HasValue || startedBefore.HasValue))
+            return "The recent time range cannot be combined with explicit dates.";
         if (startedFrom.HasValue && startedBefore.HasValue && startedFrom.Value >= startedBefore.Value)
             return "The start of the time range must be earlier than its end.";
         if (string.IsNullOrWhiteSpace(status)) return null;
