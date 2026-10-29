@@ -242,8 +242,9 @@
             color: tone.color,
             points: [{ label: 'Success rate', value: rate }]
         }]);
+        setPanelEmpty('effectiveness', terminal === 0);
         if (detail) {
-            detail.hidden = false;
+            detail.hidden = terminal === 0;
             if (rate === null) {
                 detail.textContent = 'No terminal results in the selected period.';
             } else {
@@ -269,6 +270,7 @@
             renderStatusCenter(values.total);
         }));
         renderStatusTooltip(values);
+        setPanelEmpty('status', values.total === 0);
         setLoading('status', false);
         clearError('status');
 
@@ -286,8 +288,9 @@
             centerChartCanvas('runtime-funnel-chart');
         }));
         const outcome = root.querySelector('[data-dashboard-outcome]');
+        setPanelEmpty('funnel', values.total === 0);
         if (outcome) {
-            outcome.hidden = false;
+            outcome.hidden = values.total === 0;
             if (!values.total) {
                 outcome.textContent = 'No instances started in this period.';
             } else {
@@ -343,6 +346,11 @@
 
     function setRankingEmpty(empty) {
         const emptyState = root.querySelector('[data-dashboard-ranking-empty]');
+        if (emptyState) emptyState.hidden = !empty;
+    }
+
+    function setPanelEmpty(panel, empty) {
+        const emptyState = root.querySelector(`[data-dashboard-empty="${panel}"]`);
         if (emptyState) emptyState.hidden = !empty;
     }
 

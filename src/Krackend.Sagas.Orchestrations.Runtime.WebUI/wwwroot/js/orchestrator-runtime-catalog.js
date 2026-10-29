@@ -11,7 +11,11 @@
     let refreshing = false, refreshPending = false, preservePending = false, scrollAnchor = null;
     let countsLoadingForNextLoad = true, catalogLoaded = false, catalogTotal = 0;
     let recentHours = 24;
-    grid.querySelector('.z-toolbar').append(controls);
+    const toolbar = grid.querySelector('.z-toolbar');
+    const refreshControl = root.querySelector('[data-runtime-refresh]');
+    const searchControl = search.closest('.z-grid-search, .z-data-grid-search') || search.parentElement;
+    toolbar.append(controls);
+    if (searchControl && refreshControl) searchControl.after(refreshControl);
     const bodyObserver = new MutationObserver(() => decorate());
 
     function observeGridBody() {

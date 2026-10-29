@@ -26,19 +26,16 @@
                     Body = new HtmlString($"<div class=\"od-dashboard-metric-body\"><span class=\"od-metric-icon\" aria-hidden=\"true\"><i class=\"bi bi-{counter.Item3}\"></i></span><span class=\"od-dashboard-metric-skeleton\" data-monitor-metric-skeleton=\"{counter.Item1}\"><span class=\"z-skeleton z-skeleton-line z-skeleton-animate\"></span></span><div class=\"od-dashboard-metric-data\" data-monitor-metric-data=\"{counter.Item1}\" hidden><strong data-monitor-count=\"{counter.Item1}\">0</strong><small data-monitor-share=\"{counter.Item1}\"></small></div></div>") })
             }
         </div>
+        <span data-runtime-refresh>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeInstancesRefreshButton", Text = "Refresh", Tone = "primary" })</span>
         <div class="od-runtime-view-controls" role="group" aria-label="Instance filters">
-            <div class="od-runtime-view-controls-start">
-                <span data-runtime-refresh>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeInstancesRefreshButton", Text = "Refresh" })</span>
-            </div>
             <div class="od-runtime-view-controls-end">
                 <div class="od-live-indicator" data-live-state="connecting" title="Live connection"><span class="od-live-dot"></span><span data-live-label>Connecting</span></div>
-                <div class="od-dashboard-periods od-monitor-periods" role="group" aria-label="Instance time range">
-                    <button type="button" data-runtime-scope-value="1" aria-pressed="false">1h</button>
-                    <button type="button" data-runtime-scope-value="6" aria-pressed="false">6h</button>
-                    <button type="button" data-runtime-scope-value="24" aria-pressed="true">24h</button>
-                    <button type="button" data-runtime-scope-value="168" aria-pressed="false">7d</button>
-                    <button type="button" data-runtime-scope-value="720" aria-pressed="false">30d</button>
-                    <button type="button" data-runtime-scope-value="2160" aria-pressed="false">90d</button>
+                <div class="od-dashboard-period od-monitor-periods" role="group" aria-label="Instance time range">
+                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="1" aria-pressed="false">1h</button>
+                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="3" aria-pressed="false">3h</button>
+                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="6" aria-pressed="false">6h</button>
+                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="12" aria-pressed="false">12h</button>
+                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="24" aria-pressed="true">24h</button>
                 </div>
             </div>
         </div>

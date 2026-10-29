@@ -73,6 +73,11 @@
             })
             <p class="od-dashboard-status-hint">Hover over the chart to inspect the full status breakdown.</p>
             <div id="runtime-status-tooltip" class="z-tooltip od-dashboard-status-tooltip" data-dashboard-status-tooltip role="tooltip" hidden></div>
+            <div class="od-dashboard-empty" data-dashboard-empty="status" hidden>
+                <i class="bi bi-pie-chart" aria-hidden="true"></i>
+                <strong>No instance data in this period</strong>
+                <span>Choose a wider range to inspect earlier activity.</span>
+            </div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="status">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading current status" })
             </div>
@@ -86,6 +91,11 @@
                 Kind = ZoorceChartKind.Funnel, ShowLegend = false, Series = emptySeries
             })
             <div class="od-dashboard-outcome" data-dashboard-outcome aria-live="polite" hidden></div>
+            <div class="od-dashboard-empty" data-dashboard-empty="funnel" hidden>
+                <i class="bi bi-funnel" aria-hidden="true"></i>
+                <strong>No instance data in this period</strong>
+                <span>Choose a wider range to inspect earlier activity.</span>
+            </div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="funnel">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading completion path" })
             </div>
@@ -100,6 +110,11 @@
                 ValueSuffix = "%", Series = emptySeries
             })
             <div class="od-dashboard-effectiveness-detail" data-dashboard-effectiveness-detail aria-live="polite" hidden></div>
+            <div class="od-dashboard-empty" data-dashboard-empty="effectiveness" hidden>
+                <i class="bi bi-speedometer2" aria-hidden="true"></i>
+                <strong>No terminal results in this period</strong>
+                <span>The success rate appears when a saga reaches a terminal outcome.</span>
+            </div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="effectiveness">
                 @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading success rate" })
             </div>
