@@ -57,16 +57,19 @@
                 <p class="od-instance-overview-kicker">Orchestration execution</p>
                 <h1>@instance.OrchestrationLabel</h1>
             </div>
-            <span class="od-status @instance.StatusClass">@instance.Status</span>
+            <span class="od-status @instance.StatusClass" data-instance-status>@instance.Status</span>
         </div>
         <div class="od-instance-overview-facts">
             <div><span>Saga ID</span>@CopyValue(instance.SagaId, "saga ID")</div>
             <div><span>Correlation ID</span>@CopyValue(instance.CorrelationId, "correlation ID")</div>
             @if (!string.IsNullOrWhiteSpace(Model.TraceId)) { <div><span>Trace ID</span>@CopyValue(Model.TraceId, "trace ID")</div> }
             <div><span>Started</span><strong>@Timestamp(instance.StartedOnUtc)</strong></div>
-            <div><span>Last updated</span><strong>@Timestamp(instance.LastUpdatedOnUtc)</strong></div>
+            <div><span>Last updated</span><strong data-instance-last-updated>@Timestamp(instance.LastUpdatedOnUtc)</strong></div>
             <div><span>Progress</span><strong>@instance.CompletedTaskCount/@instance.TotalTaskCount enabled tasks</strong></div>
         </div>
+        <p class="od-instance-live-update" data-instance-live-update hidden aria-live="polite">
+            <span class="od-live-dot" aria-hidden="true"></span><span data-instance-live-update-text></span>
+        </p>
         @if (Model.CanReplay)
         {
             <form method="post" asp-page-handler="Replay" class="od-instance-replay" data-orchestrator-busy="true" data-busy-title="Requesting replay">

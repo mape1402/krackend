@@ -33,25 +33,93 @@
         if (found) setDrawer(true);
     });
 
-    // Pretty-print valid JSON without introducing a second editor dependency.
-    // Content arrives Razor-encoded, so token markup is generated only from text.
+    // Pretty-print valid JSON with safe token nodes. Content arrives Razor-encoded
+    // and this renderer never assigns JSON as HTML, so diagnostic payloads remain
+    // copyable without opening an XSS surface.
+    const appendJsonToken = (fragment, text, className) => {
+        const span = document.createElement('span');
+        span.className = className;
+        span.textContent = text;
+        fragment.append(span);
+    };
+    const renderJson = (view, source) => {
+        const formatted = JSON.stringify(JSON.parse(source), null, 2);
+        const fragment = document.createDocumentFragment();
+        const token = /("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*")|(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|\b(true|false|null)\b/g;
+        let cursor = 0;
+        for (let match; (match = token.exec(formatted));) {
+            fragment.append(document.createTextNode(formatted.slice(cursor, match.index)));
+            if (match[1]) appendJsonToken(fragment, match[1], 'json-key');
+            else if (match[2]) appendJsonToken(fragment, match[2], 'json-string');
+            else if (match[3]) appendJsonToken(fragment, match[3], 'json-number');
+            else appendJsonToken(fragment, match[4], match[4] === 'null' ? 'json-null' : 'json-boolean');
+            cursor = match.index + match[0].length;
+        }
+        fragment.append(document.createTextNode(formatted.slice(cursor)));
+        view.replaceChildren(fragment);
+    };
     root.querySelectorAll('[data-json-view]').forEach(view => {
         const source = view.textContent.trim();
         if (!source) { view.textContent = 'No data recorded.'; return; }
-        try { view.textContent = JSON.stringify(JSON.parse(source), null, 2); }
+        try { renderJson(view, source); }
         catch { /* Non-JSON diagnostic data remains readable as supplied. */ }
     });
 
-    // Details share the runtime SignalR connection.  A matching transition does
-    // not reload the page while an operator is reading it; it marks freshness
-    // discreetly and offers the browser's normal refresh path.
+    const eventValue = (event, name) => event?.[name] ?? event?.[`${name.charAt(0).toUpperCase()}${name.slice(1)}`];
+    const toTimestamp = value => {
+        const timestamp = new Date(value).getTime();
+        return Number.isNaN(timestamp) ? 0 : timestamp;
+    };
+    const formatUtc = value => {
+        const text = typeof value === 'string' && !/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? `${value}Z` : value;
+        const date = new Date(text);
+        return Number.isNaN(date.getTime()) ? '—' : date.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+    };
+    const statusClass = status => ({
+        Running: 'od-status-running', Idle: 'od-status-warning', Completed: 'od-status-active',
+        DeadLettered: 'od-status-warning', Failed: 'od-status-danger'
+    }[String(status || '')] || 'od-status-inactive');
+    const toPublicStatus = status => {
+        const value = String(status || 'Running');
+        if (['Created', 'Running', 'Waiting', 'WaitingResponse', 'AwaitingResponse', 'Retrying', 'Compensating'].includes(value)) return 'Running';
+        if (value === 'Idle') return 'Idle';
+        if (['Completed', 'Compensated'].includes(value)) return 'Completed';
+        if (value === 'DeadLettered') return 'DeadLettered';
+        if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(value)) return 'Failed';
+        return value;
+    };
+    const applyLiveEvent = event => {
+        const eventInstance = eventValue(event, 'orchestrationInstanceId');
+        if (String(eventInstance || '') !== root.dataset.instanceId) return;
+        const occurred = eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc');
+        const prior = toTimestamp(root.dataset.liveEventTimestamp);
+        if (toTimestamp(occurred) && toTimestamp(occurred) < prior) return;
+        root.dataset.liveEventTimestamp = occurred || root.dataset.liveEventTimestamp || '';
+
+        const status = toPublicStatus(eventValue(event, 'instanceStatus'));
+        const statusElement = root.querySelector('[data-instance-status]');
+        if (statusElement && status) {
+            statusElement.textContent = status;
+            statusElement.className = `od-status ${statusClass(status)}`;
+        }
+        const updated = root.querySelector('[data-instance-last-updated]');
+        if (updated && occurred) updated.textContent = formatUtc(occurred);
+
+        const notice = root.querySelector('[data-instance-live-update]');
+        const noticeText = root.querySelector('[data-instance-live-update-text]');
+        if (notice && noticeText) {
+            noticeText.textContent = `Live update · ${eventValue(event, 'transitionType') || 'transition'} at ${formatUtc(eventValue(event, 'occurredOnUtc'))}`;
+            notice.hidden = false;
+        }
+    };
+
+    // The detail follows one saga only. A runtime-wide group makes an open
+    // detail page process every message in a busy node and was the reason the
+    // former indicator never represented useful freshness.
     if (window.signalR && root.dataset.liveHub) {
         const connection = new signalR.HubConnectionBuilder().withUrl(root.dataset.liveHub).withAutomaticReconnect().build();
-        connection.on('runtime.transition', event => {
-            const eventInstance = event?.orchestrationInstanceId ?? event?.OrchestrationInstanceId;
-            if (String(eventInstance || '') !== root.dataset.instanceId) return;
-            root.dataset.liveUpdate = 'true';
-        });
-        connection.start().then(() => connection.invoke('WatchRuntime')).catch(() => { /* Detail remains usable offline. */ });
+        connection.on('runtime.transition', applyLiveEvent);
+        connection.onreconnected(() => connection.invoke('WatchInstance', root.dataset.instanceId).catch(() => { /* Detail remains usable offline. */ }));
+        connection.start().then(() => connection.invoke('WatchInstance', root.dataset.instanceId)).catch(() => { /* Detail remains usable offline. */ });
     }
 })();
