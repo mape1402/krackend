@@ -560,6 +560,7 @@ public sealed class WebUINavigationTests
         Assert.Contains("runtime", routes);
         Assert.Contains("runtime/instances", routes);
         Assert.Contains("runtime/dashboard", routes);
+        Assert.Contains("runtime/statistics", routes);
         Assert.Contains("runtime/instances/{instanceId}", routes);
         Assert.Contains("runtime/history", routes);
         Assert.Contains("runtime/artifacts", routes);

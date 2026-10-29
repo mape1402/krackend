@@ -19,6 +19,7 @@ internal sealed class ConfigureRuntimeAreaRoutes : IConfigureOptions<RazorPagesO
         var prefix = string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "runtime" : _options.RoutePrefix.Trim('/');
         options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Instances/Index", prefix);
         options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Dashboard/Index", $"{prefix}/dashboard");
+        options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Statistics/Index", $"{prefix}/statistics");
         options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Instances/Index", $"{prefix}/instances");
         options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Instances/History", $"{prefix}/history");
         options.Conventions.AddAreaPageRoute("OrchestratorRuntime", "/Instances/Detail", $"{prefix}/instances/{{instanceId}}");
