@@ -131,6 +131,7 @@ public sealed class RedisRuntimeReactiveFanoutTests
     private static RuntimeReactiveEvent CreateEvent() => new()
     {
         Id = new Id(Ulid.NewUlid()),
+        Revision = "1",
         OrchestrationInstanceId = new Id(Ulid.NewUlid()),
         EventName = "transition",
         TransitionType = "changed",

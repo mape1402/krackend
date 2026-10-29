@@ -295,7 +295,9 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
         var isLegacyDraftPackage = package.SchemaVersion == 1 && package.PackageKind == "krackend-orchestration-draft";
         if (!isCurrentPackage && !isLegacyDraftPackage)
             throw new InvalidOperationException("This orchestration package schema is not supported.");
-        if (string.Equals(package.Source?.Status, OrchestrationVersionStatus.Abandoned.ToString(), StringComparison.OrdinalIgnoreCase))
+        if (package.Source is null || string.IsNullOrWhiteSpace(package.Source.OrchestrationKey))
+            throw new InvalidOperationException("The package does not identify its source orchestration version.");
+        if (string.Equals(package.Source.Status, OrchestrationVersionStatus.Abandoned.ToString(), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Abandoned orchestration versions cannot be imported.");
         if (string.IsNullOrWhiteSpace(package.ArtifactJson) || !string.Equals(package.ArtifactChecksum, ComputeChecksum(package.ArtifactJson), StringComparison.Ordinal))
             throw new InvalidOperationException("The package checksum does not match its orchestration payload.");

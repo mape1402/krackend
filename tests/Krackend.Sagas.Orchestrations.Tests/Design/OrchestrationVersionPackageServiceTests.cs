@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
@@ -51,6 +52,19 @@ public sealed class OrchestrationVersionPackageServiceTests
     }
 
     [Fact]
+    public void InspectRejectsAPackageWithoutSourceVersionIdentity()
+    {
+        var service = CreateService();
+        var package = JsonNode.Parse(CreatePackageJson())!.AsObject();
+        package["Source"] = null;
+
+        var result = service.Inspect(package.ToJsonString());
+
+        Assert.False(result.IsValid);
+        Assert.Contains("source orchestration version", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ImportCreatesDraftInsideTheExistingOrchestrationAsOneTransaction()
     {
         var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
@@ -60,8 +74,8 @@ public sealed class OrchestrationVersionPackageServiceTests
         var createdStages = new List<StageDefinition>();
 
         var definitionId = Id.New();
-        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition { Id = definitionId, Key = "sales.sale.created" });
-        versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(new PagedResult<OrchestrationVersion>([], 0, 1, 1, 1000));
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(CreateDefinition(definitionId));
+        versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(EmptyVersions());
         versions.Create(Arg.Do<OrchestrationVersion>(createdVersions.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var stages = Substitute.For<IStageRepository>();
         stages.Create(Arg.Do<StageDefinition>(createdStages.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
@@ -85,11 +99,7 @@ public sealed class OrchestrationVersionPackageServiceTests
         var definitionId = Id.New();
         var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
         var versions = Substitute.For<IOrchestrationVersionRepository>();
-        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
-        {
-            Id = definitionId,
-            Key = "inventory.stock.updated",
-        });
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(CreateDefinition(definitionId, "inventory.stock.updated"));
 
         var service = CreateService(definitions: definitions, versions: versions);
 
@@ -106,18 +116,14 @@ public sealed class OrchestrationVersionPackageServiceTests
         var definitionId = Id.New();
         var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
         var versions = Substitute.For<IOrchestrationVersionRepository>();
-        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
-        {
-            Id = definitionId,
-            Key = "sales.sale.created",
-        });
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(CreateDefinition(definitionId));
         versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(
             new PagedResult<OrchestrationVersion>(
-                [new OrchestrationVersion { Id = Id.New(), OrchestrationDefinitionId = definitionId, Status = OrchestrationVersionStatus.Draft }],
                 1,
                 1,
                 1,
-                1000));
+                1000,
+                [CreateVersion(Id.New(), definitionId, OrchestrationVersionStatus.Draft)]));
 
         var service = CreateService(definitions: definitions, versions: versions);
 
@@ -136,13 +142,9 @@ public sealed class OrchestrationVersionPackageServiceTests
         var unitOfWork = Substitute.For<IControlPlaneUnitOfWork>();
         var createdVersions = new List<OrchestrationVersion>();
         var definitionId = Id.New();
-        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
-        {
-            Id = definitionId,
-            Key = "sales.sale.created",
-        });
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(CreateDefinition(definitionId));
         versions.GetAll(definitionId, Arg.Any<PagedSettings>(), Arg.Any<CancellationToken>()).Returns(
-            new PagedResult<OrchestrationVersion>([], 0, 1, 1, 1000));
+            EmptyVersions());
         versions.Create(Arg.Do<OrchestrationVersion>(createdVersions.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>())
             .Returns(call => call.ArgAt<Func<CancellationToken, Task>>(0)(call.ArgAt<CancellationToken>(1)));
@@ -179,12 +181,7 @@ public sealed class OrchestrationVersionPackageServiceTests
         var versionId = Id.New();
         var definitionId = Id.New();
         var versions = Substitute.For<IOrchestrationVersionRepository>();
-        versions.GetById(versionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationVersion
-        {
-            Id = versionId,
-            OrchestrationDefinitionId = definitionId,
-            Status = OrchestrationVersionStatus.Abandoned
-        });
+        versions.GetById(versionId, Arg.Any<CancellationToken>()).Returns(CreateVersion(versionId, definitionId, OrchestrationVersionStatus.Abandoned));
 
         var service = CreateService(versions: versions);
 
@@ -201,21 +198,11 @@ public sealed class OrchestrationVersionPackageServiceTests
         var versions = Substitute.For<IOrchestrationVersionRepository>();
         var definitions = Substitute.For<IOrchestrationDefinitionRepository>();
         var payloads = Substitute.For<IOrchestrationArtifactPayloadFactory>();
-        var version = new OrchestrationVersion
-        {
-            Id = versionId,
-            OrchestrationDefinitionId = definitionId,
-            Version = new SemanticVersion(2, 4, 1),
-            Status = OrchestrationVersionStatus.Deployed,
-            VersionLabel = "stable"
-        };
+        var version = CreateVersion(versionId, definitionId, OrchestrationVersionStatus.Deployed);
+        version.Version = new SemanticVersion(2, 4, 1);
+        version.VersionLabel = "stable";
         versions.GetById(versionId, Arg.Any<CancellationToken>()).Returns(version);
-        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(new OrchestrationDefinition
-        {
-            Id = definitionId,
-            Key = "sales.sale.created",
-            Name = "Sale created"
-        });
+        definitions.GetById(definitionId, Arg.Any<CancellationToken>()).Returns(CreateDefinition(definitionId));
         payloads.CreatePayloadJson(Arg.Any<OrchestrationDefinition>(), Arg.Any<OrchestrationVersion>()).Returns("{\"kind\":\"portable\"}");
 
         var service = CreateService(definitions: definitions, versions: versions, payloadFactory: payloads);
@@ -263,6 +250,25 @@ public sealed class OrchestrationVersionPackageServiceTests
             payloadFactory ?? Substitute.For<IOrchestrationArtifactPayloadFactory>(),
             unitOfWork ?? Substitute.For<IControlPlaneUnitOfWork>());
     }
+
+    private static OrchestrationDefinition CreateDefinition(Id id, string key = "sales.sale.created") => new()
+    {
+        Id = id,
+        Key = key,
+        Name = "Sale created",
+        CreatedBy = "test"
+    };
+
+    private static OrchestrationVersion CreateVersion(Id id, Id definitionId, OrchestrationVersionStatus status) => new()
+    {
+        Id = id,
+        OrchestrationDefinitionId = definitionId,
+        Status = status,
+        Checksum = new Checksum("test"),
+        CreatedBy = "test"
+    };
+
+    private static PagedResult<OrchestrationVersion> EmptyVersions() => new(1, 1, 0, 1000, []);
 
     private static string CreatePackageJson()
     {
