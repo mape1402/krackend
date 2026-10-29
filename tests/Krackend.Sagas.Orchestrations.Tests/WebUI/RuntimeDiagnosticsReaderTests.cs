@@ -190,6 +190,43 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
+    public async Task GetDetail_WhenConfiguredStageIsDisabled_LabelsItsStageAndTasksAsSkipped()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        store.Artifact.ArtifactPayload["stageDefinitions"]!.AsArray()[1]!["isEnabled"] = false;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var disabledStage = Assert.Single(detail.Stages.Where(stage => stage.StageKey == "capture-payment"));
+        Assert.Equal("Skipped", disabledStage.Status);
+        Assert.True(disabledStage.WasSkipped);
+        Assert.Contains("Disabled in the deployed orchestration design", disabledStage.SkipReason);
+        var disabledTask = Assert.Single(disabledStage.Tasks);
+        Assert.Equal("Skipped", disabledTask.Status);
+        Assert.True(disabledTask.WasSkipped);
+        Assert.Contains("Disabled in the deployed orchestration design", disabledTask.SkipReason);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenConfiguredTaskIsDisabled_LabelsItAsSkippedWithoutChangingItsStage()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        store.Artifact.ArtifactPayload["stageDefinitions"]!.AsArray()[0]!["taskDefinitions"]!.AsArray()[1]!["isEnabled"] = false;
+        var reader = CreateReader(store);
+
+        var detail = await reader.GetDetail(store.Instance.Id.ToString());
+
+        var stage = Assert.Single(detail.Stages.Where(candidate => candidate.StageKey == "reserve-stock"));
+        var disabledTask = Assert.Single(stage.Tasks.Where(task => task.TaskKey == "notify-customer"));
+        Assert.Equal("Skipped", disabledTask.Status);
+        Assert.True(disabledTask.WasSkipped);
+        Assert.Contains("Disabled in the deployed orchestration design", disabledTask.SkipReason);
+    }
+
+    [Fact]
     public async Task GetDetail_WhenExecutedTaskIsNotInArtifact_KeepsItAfterConfiguredPendingTasks()
     {
         var store = RuntimeDiagnosticsStore.Create();

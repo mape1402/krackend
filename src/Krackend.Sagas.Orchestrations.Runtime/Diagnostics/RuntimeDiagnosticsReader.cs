@@ -320,7 +320,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
                 continue;
             }
 
-            stageDetails.Add(ToPendingStage(stageArtifact));
+            stageDetails.Add(stageArtifact.IsEnabled
+                ? ToPendingStage(stageArtifact)
+                : ToDisabledStage(stageArtifact));
         }
 
         foreach (var stage in stages.Where(x => !consumedStageIds.Contains(x.Id.ToString())).OrderBy(x => x.Order))
@@ -357,7 +359,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
                 continue;
             }
 
-            merged.Add(ToPendingTask(stageExecutionId, taskArtifact));
+            merged.Add(taskArtifact.IsEnabled
+                ? ToPendingTask(stageExecutionId, taskArtifact)
+                : ToDisabledTask(stageExecutionId, taskArtifact));
         }
 
         foreach (var task in executedTasks.Where(x => !consumedTaskIds.Contains(x.Id)))
@@ -385,6 +389,30 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             stage.TaskDefinitions.OrderBy(x => x.Order).Select(task => ToPendingTask(stageId, task)).ToArray(),
             false,
             null,
+            null,
+            stage.ParallelGroups?.Count ?? 0,
+            false,
+            stage.Name,
+            stage.Description);
+    }
+
+    private static StageDetailModel ToDisabledStage(StageArtifact stage)
+    {
+        var stageId = $"configured-stage:{stage.Key}";
+        return new StageDetailModel(
+            stageId,
+            stage.Key,
+            stage.Order,
+            nameof(StageExecutionStatus.Skipped),
+            StatusClass(nameof(StageExecutionStatus.Skipped)),
+            null,
+            null,
+            null,
+            null,
+            FormatJson(BuildStageArtifactMetadata(stage)),
+            stage.TaskDefinitions.OrderBy(x => x.Order).Select(task => ToDisabledTask(stageId, task)).ToArray(),
+            true,
+            "Disabled in the deployed orchestration design.",
             null,
             stage.ParallelGroups?.Count ?? 0,
             false,
@@ -421,6 +449,14 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             task.Name,
             task.Notes,
             task.Order);
+
+    private static TaskDetailModel ToDisabledTask(string stageExecutionId, TaskArtifact task)
+        => ToPendingTask(stageExecutionId, task) with
+        {
+            Status = nameof(TaskExecutionStatus.Skipped),
+            WasSkipped = true,
+            SkipReason = "Disabled in the deployed orchestration design."
+        };
 
     private static InstanceRowModel ToRow(OrchestrationInstance instance, string orchestrationVersion = null)
         => ToRow(instance, new InstanceArtifactInfo(orchestrationVersion, Array.Empty<ArtifactTaskPosition>()));
