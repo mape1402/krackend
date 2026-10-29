@@ -16,8 +16,8 @@
 {
     <section class="od-catalog" data-catalog="release-orchestrations" data-label="orchestrations" data-source="@Url.Page(null, "OrchestrationList")">
         <div class="od-catalog-controls" role="group" aria-label="View mode">
-            <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
-            <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+            <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+            <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
         </div>
         <div data-catalog-grid>
             @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
@@ -37,7 +37,7 @@
             <div class="od-grid" data-catalog-card-items></div>
             <p class="od-empty" data-catalog-empty hidden>No matching orchestrations.</p>
             <p data-catalog-status aria-live="polite"></p><div data-catalog-sentinel aria-hidden="true"></div>
-            <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+            <button type="button" class="z-button z-button-ghost" data-catalog-more hidden>Load more</button>
         </div>
     </section>
 }
@@ -46,8 +46,8 @@ else
     <section class="od-catalog" data-catalog="releases" data-label="releases" data-source="@Url.Page(null, "ReleaseList", new { orchestrationId = Model.OrchestrationId })" data-detail-source="@Url.Page(null, "ReleaseDetails", new { orchestrationId = Model.OrchestrationId })">
         <div class="od-catalog-controls" role="group" aria-label="Release controls">
             <button type="button" class="z-button z-button-secondary" id="openRuntimeNodesModalButton">Allowed nodes</button>
-            <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
-            <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+            <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+            <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
         </div>
         <div data-catalog-grid>
             @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
@@ -67,7 +67,7 @@ else
             <div class="od-grid" data-catalog-card-items></div>
             <p class="od-empty" data-catalog-empty hidden>No matching releases.</p>
             <p data-catalog-status aria-live="polite"></p><div data-catalog-sentinel aria-hidden="true"></div>
-            <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+            <button type="button" class="z-button z-button-ghost" data-catalog-more hidden>Load more</button>
         </div>
     </section>
     <div class="od-create-floating js-open-release-modal">

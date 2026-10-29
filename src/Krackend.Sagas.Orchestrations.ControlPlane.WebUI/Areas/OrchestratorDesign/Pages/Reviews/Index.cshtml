@@ -8,8 +8,8 @@
 
 <section class="od-catalog" data-catalog="reviews" data-label="reviews" data-source="@Url.Page(null, "List")">
     <div class="od-catalog-controls" role="group" aria-label="View mode">
-        <button type="button" class="btn btn-outline-secondary" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
-        <button type="button" class="btn btn-outline-secondary" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+        <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-catalog-grid>
         @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
@@ -33,7 +33,7 @@
         <p class="od-empty" data-catalog-empty hidden>No matching reviews.</p>
         <p data-catalog-status aria-live="polite"></p>
         <div data-catalog-sentinel aria-hidden="true"></div>
-        <button type="button" class="btn btn-outline-secondary" data-catalog-more hidden>Load more</button>
+        <button type="button" class="z-button z-button-ghost" data-catalog-more hidden>Load more</button>
     </div>
 </section>
 
