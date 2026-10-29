@@ -124,7 +124,10 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
             ErrorCode = failure?.Code ?? "Pigeon.Consume.Rejected",
             ErrorMessage = failure?.Message ?? observation.Result.Reason,
             ErrorType = failure?.Type,
-            IsRetryableCandidate = failure?.IsRetryable,
+            // A terminal Pigeon rejection has already exhausted Pigeon's
+            // decision flow.  Do not let a transport-level retry hint revive
+            // the orchestration attempt through its retry policy.
+            IsRetryableCandidate = false,
             CompletedOnUtc = DateTime.UtcNow
         };
 

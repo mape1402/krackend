@@ -50,7 +50,9 @@ public sealed class PigeonConsumeDecisionObserverTests
                         Code = "ValidationFailed",
                         Type = "ValidationException",
                         Message = "A required field is missing.",
-                        IsRetryable = false
+                        // The observer must still make a terminal Pigeon
+                        // rejection non-retryable for the orchestration.
+                        IsRetryable = true
                     }
                 },
                 Metadata = new Dictionary<string, string>
