@@ -58,6 +58,7 @@ builder.Services.AddOrchestratorRuntimeWebUI(options =>
     options.RoutePrefix = "runtime";
     options.Theme.Title = "Krackend";
     options.Theme.Subtitle = "Runtime";
+    options.Theme.TopBarContext = "Runtime";
     options.Theme.IconCssClass = "bi-cpu";
     options.Theme.Mode = OrchestratorWebUIThemeMode.Light;
     options.Theme.PrimaryColor = "#0b3d91";

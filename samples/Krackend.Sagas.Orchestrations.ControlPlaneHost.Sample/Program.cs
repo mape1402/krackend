@@ -99,6 +99,7 @@ builder.Services.AddOrchestratorControlPlane(options =>
     options.DefaultSchemaRegistryProviderKey = builder.Configuration["SchemaRegistry:KnOwl:ProviderKey"] ?? "knowl";
     options.Theme.Title = "Krackend";
     options.Theme.Subtitle = "Control Plane";
+    options.Theme.TopBarContext = "Control plane";
     options.Theme.IconCssClass = "bi-diagram-3-fill";
     options.Theme.Mode = OrchestratorWebUIThemeMode.Light;
     options.ConfigureStorage = db => db.UseSqlServer(
