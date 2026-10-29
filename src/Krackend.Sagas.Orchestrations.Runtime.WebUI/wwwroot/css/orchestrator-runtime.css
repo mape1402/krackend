@@ -703,6 +703,7 @@
 .od-artifact-toolbar {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     min-width: 0;
     width: 100%;
     gap: .6rem;
@@ -721,6 +722,8 @@
     white-space: nowrap;
 }
 .od-artifact-loaded-count { color: var(--z-muted, var(--od-muted)); font-size: .72rem; font-variant-numeric: tabular-nums; }
+[data-artifact-catalog] [data-z-grid-state],
+[data-artifact-catalog] .z-grid-footer { display: none !important; }
 .od-view-toggle { min-width: 2.5rem; min-height: 2.35rem; padding: 0 .65rem; }
 .od-view-toggle[aria-pressed="true"] {
     color: var(--z-primary-foreground, var(--krackend-on-primary, #fff));
@@ -759,9 +762,11 @@
 .od-history-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0; }
 .od-history-filters label { display: inline-flex; align-items: center; gap: .35rem; color: var(--od-muted); font-size: .75rem; }
 .od-history-filters input { width: 10rem; }
-[data-instance-history] .z-toolbar, [data-runtime-catalog] .z-toolbar { display: flex; width:100%; min-width:0; max-width:100%; align-items: center; flex-wrap: wrap; gap: .5rem; }
+[data-instance-history] .z-toolbar, [data-runtime-catalog] .z-toolbar { display: flex; width:100%; min-width:0; max-width:100%; align-items: center; justify-content: flex-start !important; flex-wrap: wrap; gap: .5rem; }
 [data-instance-history] .od-history-filters, [data-runtime-catalog] .od-runtime-view-controls { margin-left: auto; }
-[data-runtime-catalog] [data-runtime-refresh] { display: inline-flex; flex: 0 0 auto; }
+[data-runtime-catalog] .z-toolbar > .z-search-field { order: 0; flex: 0 1 17rem; }
+[data-runtime-catalog] .z-toolbar > [data-runtime-refresh] { display: inline-flex; order: 1; flex: 0 0 auto; margin-left: 0 !important; }
+[data-runtime-catalog] .z-toolbar > .od-runtime-view-controls { order: 2; margin-left: auto !important; }
 [data-runtime-catalog] [data-runtime-refresh] button {
     min-width: 6.5rem;
     color: var(--krackend-on-primary, #fff);
@@ -774,8 +779,8 @@
     background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 88%, #000);
     border-color: color-mix(in srgb, var(--z-primary, var(--od-primary)) 88%, #000);
 }
-[data-runtime-catalog] [data-z-grid-state] { display: none; }
-[data-runtime-catalog] .z-grid-footer { display: none; }
+[data-runtime-catalog] [data-z-grid-state],
+[data-runtime-catalog] .z-grid-footer { display: none !important; }
 body:has([data-instance-history]) { height: 100dvh; overflow: hidden; }
 body:has([data-instance-history]) .z-app-shell,
 body:has([data-instance-history]) .z-page-shell { height: 100%; min-height: 0; }

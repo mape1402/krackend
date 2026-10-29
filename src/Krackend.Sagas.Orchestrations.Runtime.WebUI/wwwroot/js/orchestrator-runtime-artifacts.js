@@ -8,16 +8,14 @@
     const gridSearch = grid.querySelector('[data-z-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-runtime-view-controls');
-    const gridToolbarEnd = document.createElement('div');
-    gridToolbarEnd.className = 'od-artifact-toolbar-end';
+    const toolbarEnd = document.createElement('div');
+    toolbarEnd.className = 'od-artifact-toolbar-end';
     const gridCount = document.createElement('span');
     gridCount.className = 'od-artifact-loaded-count';
     gridCount.setAttribute('aria-live', 'polite');
-    gridToolbarEnd.append(gridCount);
+    toolbarEnd.append(gridCount);
     const cardToolbar = document.createElement('div');
     cardToolbar.className = 'od-artifact-toolbar';
-    const cardToolbarEnd = document.createElement('div');
-    cardToolbarEnd.className = 'od-artifact-toolbar-end';
     const search = root.querySelector('[data-artifact-search]');
     const cards = root.querySelector('[data-artifact-cards]');
     const empty = root.querySelector('[data-artifact-empty]');
@@ -26,15 +24,20 @@
     const sentinel = root.querySelector('[data-artifact-sentinel]');
     const records = new Map();
     let page = 0, hasMore = true, generation = 0, request = null, timer;
-    if (gridToolbar) gridToolbar.append(gridToolbarEnd);
+    if (gridToolbar) gridToolbar.append(toolbarEnd);
     if (cardView) {
         if (search) cardToolbar.append(search.closest('.z-search-field') || search);
-        cardToolbar.append(cardToolbarEnd);
         cardView.prepend(cardToolbar);
     }
-    const placeViewControls = showCards => {
-        const target = showCards ? cardToolbarEnd : gridToolbarEnd;
-        if (viewControls && target) target.append(viewControls);
+    const placeToolbarEnd = showCards => {
+        const target = showCards ? cardToolbar : gridToolbar;
+        if (target) target.append(toolbarEnd);
+        if (viewControls) toolbarEnd.append(viewControls);
+    };
+    const setLoadedCount = (loaded, total) => {
+        gridCount.textContent = total > loaded
+            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
+            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching artifacts';
     };
     const make = (tag, className, text) => {
         const node = document.createElement(tag);
@@ -107,9 +110,7 @@
     grid.addEventListener('zoorce:grid:loaded', event => {
         const loaded = event.detail.append ? records.size + event.detail.result.items.length : event.detail.result.items.length;
         const total = Number(event.detail.result.totalCount ?? 0);
-        gridCount.textContent = total > loaded
-            ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
-            : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching artifacts';
+        setLoadedCount(loaded, total);
         if (!event.detail.append) records.clear();
         event.detail.result.items.forEach(item => records.set(String(item.id), item));
         decorate();
@@ -129,7 +130,7 @@
         if (reset) { generation++; request?.abort(); request = null; page = 0; hasMore = true; cards.replaceChildren(); }
         if (request || !hasMore) return;
         const current = generation, controller = new AbortController(); request = controller;
-        status.textContent = 'Loading artifacts...'; more.hidden = true;
+        status.hidden = true; more.hidden = true;
         try {
             const url = new URL(root.dataset.source, location.href);
             url.searchParams.set('page', String(page + 1)); url.searchParams.set('pageSize', '25'); url.searchParams.set('search', search.value.trim());
@@ -137,13 +138,13 @@
             const result = await response.json(); if (current !== generation) return;
             result.items.forEach(addCard); page++; hasMore = result.hasMore;
             empty.hidden = cards.childElementCount !== 0; more.hidden = !hasMore;
-            status.textContent = `Showing ${cards.childElementCount} of ${result.totalCount}`;
+            setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
             if (hasMore && result.items.length) requestAnimationFrame(() => {
                 const rect = sentinel.getBoundingClientRect();
                 if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);
             });
         } catch (error) {
-            if (error.name !== 'AbortError') { status.textContent = 'Artifacts could not be loaded. Try again.'; more.hidden = false; hasMore = true; }
+            if (error.name !== 'AbortError') { status.textContent = 'Artifacts could not be loaded. Try again.'; status.hidden = false; more.hidden = false; hasMore = true; }
         } finally { if (request === controller) request = null; }
     };
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(true), 250); });
@@ -154,14 +155,14 @@
     const setView = button => {
         const showCards = button.dataset.artifactView === 'cards';
         gridView.hidden = showCards; cardView.hidden = !showCards;
-        placeViewControls(showCards);
+        placeToolbarEnd(showCards);
         root.querySelectorAll('[data-artifact-view]').forEach(x => x.setAttribute('aria-pressed', String(x === button)));
         try { localStorage.setItem('krackend-runtime-artifact-view', button.dataset.artifactView); } catch { }
         if (showCards) { search.value = gridSearch.value; load(true); }
         else if (gridSearch.value !== search.value) { gridSearch.value = search.value; gridSearch.dispatchEvent(new Event('input', { bubbles: true })); }
     };
     root.querySelectorAll('[data-artifact-view]').forEach(button => button.addEventListener('click', () => setView(button)));
-    placeViewControls(false);
+    placeToolbarEnd(false);
     try { if (localStorage.getItem('krackend-runtime-artifact-view') === 'cards') setView(root.querySelector('[data-artifact-view="cards"]')); } catch { }
 
     const historyModalElement = document.getElementById('artifactHistoryModal');
