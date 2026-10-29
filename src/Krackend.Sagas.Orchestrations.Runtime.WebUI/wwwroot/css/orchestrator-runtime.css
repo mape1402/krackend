@@ -3534,3 +3534,242 @@ body:has([data-runtime-dashboard]) .z-main,
     .od-dashboard-activity .z-chart-component-header { padding-right: 0; padding-bottom: 2.6rem; }
     .od-dashboard-period-option { min-width: 2.15rem; }
 }
+
+/* Statistics is an investigation workspace, not a narrow dashboard sidebar.
+   Its panels intentionally follow the operator's reading order: select a
+   scope, inspect health and status, then read activity and conversion. */
+.od-statistics-workspace {
+    display: grid;
+    grid-template-columns: minmax(15rem, .8fr) minmax(16rem, .95fr) minmax(18rem, 1.12fr);
+    grid-template-areas:
+        "parameters effectiveness status"
+        "activity activity funnel";
+    grid-template-rows: minmax(13.5rem, .78fr) minmax(18rem, 1.22fr);
+    gap: .8rem;
+    min-width: 0;
+}
+
+.od-statistics-workspace > .od-statistics-parameters { grid-area: parameters; }
+.od-statistics-workspace > [data-dashboard-panel="effectiveness"] { grid-area: effectiveness; }
+.od-statistics-workspace > [data-dashboard-panel="status"] { grid-area: status; }
+.od-statistics-workspace > .od-dashboard-activity { grid-area: activity; min-width: 0; }
+.od-statistics-workspace > [data-dashboard-panel="funnel"] { grid-area: funnel; }
+.od-statistics-workspace > .od-dashboard-activity > .od-dashboard-chart-shell { height: 100%; }
+.od-statistics-workspace > [data-dashboard-panel] { min-width: 0; min-height: 0; }
+
+.od-statistics-parameters {
+    justify-content: stretch;
+    border-radius: 16px;
+}
+
+.od-statistics-parameters > :first-child { padding-bottom: .12rem; }
+.od-statistics-parameters .od-statistics-actions { margin-top: auto; }
+.od-statistics-parameters .od-statistics-live-copy { min-height: 2.5rem; }
+
+.od-autocomplete-list:not(.d-none) {
+    display: grid;
+    padding: .28rem;
+    border: 1px solid var(--z-border, var(--od-border));
+    border-radius: 10px;
+    background: var(--z-surface, var(--od-surface));
+    box-shadow: 0 12px 26px color-mix(in srgb, var(--z-text, #111) 14%, transparent);
+}
+
+.od-autocomplete-item {
+    width: 100%;
+    padding: .5rem .56rem;
+    border: 0;
+    border-radius: 7px;
+    color: var(--z-text, var(--od-text));
+    background: transparent;
+    font-size: .7rem;
+    font-weight: 650;
+    text-align: left;
+}
+
+.od-autocomplete-item:hover,
+.od-autocomplete-item:focus-visible {
+    outline: none;
+    color: var(--z-primary, var(--od-primary));
+    background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 10%, transparent);
+}
+
+@media (min-width: 1024px) {
+    body:has([data-runtime-statistics]) { height: 100dvh; overflow: hidden; }
+    body:has([data-runtime-statistics]) .z-app-shell,
+    body:has([data-runtime-statistics]) .z-page-shell { height: 100%; min-height: 0; }
+    body:has([data-runtime-statistics]) .z-main { min-height: 0; overflow: hidden; }
+    [data-runtime-statistics] { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+    [data-runtime-statistics] .od-statistics-workspace { min-height: 0; overflow: hidden; }
+    [data-runtime-statistics] .od-statistics-workspace > [data-dashboard-panel],
+    [data-runtime-statistics] .od-statistics-workspace > .od-dashboard-activity { overflow: hidden; }
+    [data-runtime-statistics] .od-statistics-workspace .od-dashboard-chart-shell,
+    [data-runtime-statistics] .od-statistics-workspace .z-chart-component { height: 100%; }
+}
+
+@media (max-width: 1320px) {
+    .od-statistics-workspace {
+        grid-template-columns: minmax(15rem, .78fr) minmax(0, 1.22fr);
+        grid-template-areas:
+            "parameters effectiveness"
+            "activity activity"
+            "status funnel";
+        grid-template-rows: minmax(13rem, auto) minmax(18rem, 1fr) minmax(14rem, auto);
+    }
+}
+
+@media (max-width: 900px) {
+    body:has([data-runtime-statistics]) { height: auto; overflow: auto; }
+    body:has([data-runtime-statistics]) .z-main { overflow: visible; }
+    .od-statistics-workspace {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "parameters" "effectiveness" "status" "activity" "funnel";
+        grid-template-rows: auto;
+    }
+    .od-statistics-workspace > [data-dashboard-panel],
+    .od-statistics-workspace > .od-dashboard-activity { min-height: 18rem; }
+}
+
+/* Saga explorer: the hierarchy is navigation, not a collection of competing
+   panels. Keep the identity strip calm, make the active execution level clear,
+   and let the one content viewport own scrolling on desktop. */
+.od-instance-trace .od-trace-content {
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.od-instance-trace .od-trace-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .34rem;
+    min-height: 2rem;
+    margin: 0;
+    padding: .05rem 0 .45rem;
+    border: 0;
+    color: var(--z-muted, var(--od-muted));
+    font-size: .7rem;
+    font-weight: 640;
+}
+
+.od-instance-trace .od-trace-breadcrumb-root,
+.od-instance-trace .od-trace-breadcrumb-parent {
+    display: inline-flex;
+    align-items: center;
+    gap: .32rem;
+    min-width: 0;
+    padding: .28rem .46rem;
+    border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, var(--z-primary, var(--od-primary)));
+    border-radius: 999px;
+    color: var(--z-primary, var(--od-primary));
+    background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 7%, transparent);
+    text-decoration: none;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+
+.od-instance-trace .od-trace-breadcrumb-root:hover,
+.od-instance-trace .od-trace-breadcrumb-parent:hover {
+    border-color: var(--z-primary, var(--od-primary));
+    background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 14%, transparent);
+    color: var(--z-primary, var(--od-primary));
+}
+
+.od-instance-trace .od-trace-breadcrumb-root i { font-size: .68rem; }
+.od-instance-trace .od-trace-breadcrumb-separator { color: var(--z-muted, var(--od-muted)); font-size: .56rem; }
+.od-instance-trace .od-trace-breadcrumb-current { min-width: 0; overflow: hidden; color: var(--z-text, var(--od-text)); font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
+
+.od-instance-trace .od-data-workspace > article {
+    gap: .38rem;
+    padding: .8rem;
+}
+
+.od-instance-trace .od-data-workspace .od-trace-heading {
+    align-items: center;
+    gap: .45rem;
+    margin-bottom: 0;
+}
+
+.od-instance-trace .od-data-workspace .od-trace-heading h2 {
+    margin: 0;
+    font-size: .86rem;
+}
+
+.od-instance-trace .od-data-workspace .od-trace-heading p {
+    max-height: 2.45em;
+    margin: .12rem 0 0;
+    overflow: hidden;
+    color: var(--z-muted, var(--od-muted));
+    font-size: .66rem;
+    line-height: 1.22;
+}
+
+/* A JSON value belongs in its viewer. Repeating it beside the title steals
+   the entire header at normal desktop widths, so only the explicit copy
+   affordance remains there. */
+.od-instance-trace .od-data-workspace .od-trace-heading > .od-copy-reference,
+.od-instance-trace .od-json-block > div > .od-copy-reference {
+    flex: 0 0 auto;
+}
+
+.od-instance-trace .od-data-workspace .od-trace-heading > .od-copy-reference-value,
+.od-instance-trace .od-json-block > div > .od-copy-reference-value {
+    display: none;
+}
+
+.od-instance-trace .od-data-workspace .od-trace-heading > .od-copy-reference .od-copy-button,
+.od-instance-trace .od-json-block > div > .od-copy-reference .od-copy-button {
+    width: 1.7rem;
+    height: 1.7rem;
+}
+
+.od-instance-trace .od-data-workspace .od-json-view-expanded {
+    min-height: 18rem;
+    height: min(52dvh, 38rem);
+}
+
+.od-instance-trace .od-trace-timeline .z-timeline {
+    scrollbar-gutter: stable;
+}
+
+.od-instance-trace .od-trace-timeline .z-timeline-card {
+    box-shadow: 0 5px 14px color-mix(in srgb, var(--z-text, #111) 5%, transparent);
+}
+
+.od-instance-trace .od-trace-copy-value {
+    display: inline-flex;
+    align-items: center;
+    gap: .34rem;
+    min-width: 0;
+}
+
+.od-instance-trace .od-trace-copy-value code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--z-text, var(--od-text));
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+}
+
+.od-instance-trace .od-trace-copy-value .od-copy-button {
+    flex: 0 0 auto;
+}
+
+.od-instance-trace .od-attempt-timeline .z-timeline {
+    scrollbar-gutter: stable;
+}
+
+@media (max-width: 1080px) {
+    .od-instance-trace .od-data-workspace {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: .7rem;
+    }
+
+    .od-instance-trace .od-data-workspace .od-json-view-expanded {
+        min-height: 16rem;
+    }
+}
+
+@media (max-width: 760px) {
+    .od-instance-trace .od-trace-breadcrumb-current { max-width: 100%; }
+    .od-instance-trace .od-data-workspace { grid-template-columns: minmax(0, 1fr); }
+}

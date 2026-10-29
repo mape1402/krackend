@@ -112,11 +112,26 @@
         if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(value)) return 'Failed';
         return value;
     };
-    const appendTransitionField = (list, label, value) => {
+    const appendTransitionField = (list, label, value, copyable = false) => {
         const term = document.createElement('dt');
         term.textContent = label;
         const definition = document.createElement('dd');
-        definition.textContent = value || '—';
+        const text = value == null || value === '' ? '—' : String(value);
+        if (copyable && text !== '—') {
+            definition.className = 'od-trace-copy-value';
+            const content = document.createElement('code');
+            content.textContent = text;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'od-copy-button';
+            button.dataset.copyValue = text;
+            button.title = `Copy ${label.toLowerCase()}`;
+            button.setAttribute('aria-label', button.title);
+            button.innerHTML = '<i class="bi bi-copy" aria-hidden="true"></i>';
+            definition.append(content, button);
+        } else {
+            definition.textContent = text;
+        }
         list.append(term, definition);
     };
     const upsertLiveTransition = event => {
@@ -148,12 +163,13 @@
         article.hidden = true;
         const fields = document.createElement('dl');
         fields.className = 'od-trace-fields';
+        appendTransitionField(fields, 'Transition ID', id, true);
         appendTransitionField(fields, 'Transition', transition);
         appendTransitionField(fields, 'At', formatUtc(occurred));
         appendTransitionField(fields, 'Status', `${from || '—'} → ${to || '—'}`);
         appendTransitionField(fields, 'Stage', eventValue(event, 'stageKey'));
         appendTransitionField(fields, 'Task', eventValue(event, 'taskKey'));
-        appendTransitionField(fields, 'Attempt ID', eventValue(event, 'taskExecutionAttemptId'));
+        appendTransitionField(fields, 'Attempt ID', eventValue(event, 'taskExecutionAttemptId'), true);
         appendTransitionField(fields, 'Source', eventValue(event, 'producedBy'));
         appendTransitionField(fields, 'Message', eventValue(event, 'message'));
         article.append(fields);
