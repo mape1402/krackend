@@ -51,6 +51,12 @@
         const glyph = make('i', `bi ${icon}`); glyph.setAttribute('aria-hidden', 'true'); button.append(glyph);
         return button;
     };
+    const exportCandidate = item => {
+        const url = new URL(root.dataset.indexUrl, location.href);
+        url.searchParams.set('handler', 'ExportCandidate');
+        url.searchParams.set('artifactId', item.id);
+        window.location.assign(url.toString());
+    };
     const actions = item => {
         if (kind === 'groups') {
             const link = make('a', 'btn btn-sm btn-outline-secondary');
@@ -62,6 +68,8 @@
         const group = make('div', 'd-flex gap-2');
         const history = iconButton('bi-clock-history', `View history for version ${item.version}`);
         history.addEventListener('click', () => showHistory(item)); group.append(history);
+        const exportButton = iconButton('bi-box-arrow-up-right', `Export version ${item.version} as a release candidate`);
+        exportButton.addEventListener('click', () => exportCandidate(item)); group.append(exportButton);
         if (item.isActive && item.status === 'Ready') {
             const standup = iconButton('bi-broadcast-pin', `Request standup for version ${item.version}`);
             standup.addEventListener('click', () => {
@@ -87,6 +95,10 @@
         } else {
             const history = make('button', 'dropdown-item', 'View history');
             history.type = 'button'; history.addEventListener('click', () => showHistory(item)); entry.append(history);
+            const exportEntry = document.createElement('li');
+            const exportButton = make('button', 'dropdown-item', 'Export candidate');
+            exportButton.type = 'button'; exportButton.addEventListener('click', () => exportCandidate(item));
+            exportEntry.append(exportButton); menu.append(exportEntry);
         }
         menu.append(entry);
         if (kind !== 'groups' && item.isActive && item.status === 'Ready') {
@@ -162,6 +174,45 @@
         else if (gridSearch.value !== search.value) { gridSearch.value = search.value; gridSearch.dispatchEvent(new Event('input', { bubbles: true })); }
     };
     root.querySelectorAll('[data-artifact-view]').forEach(button => button.addEventListener('click', () => setView(button)));
+    const importModal = document.getElementById('artifactImportModal');
+    const importForm = document.getElementById('artifact-import-form');
+    const importFile = importForm?.querySelector('input[type="file"]');
+    const importInspect = importModal?.querySelector('[data-artifact-import-inspect]');
+    const importApply = importModal?.querySelector('[data-artifact-import-apply]');
+    const importSummary = importForm?.querySelector('[data-artifact-import-summary]');
+    const importMessage = importForm?.querySelector('[data-artifact-import-message]');
+    const resetImportInspection = () => {
+        if (importApply) importApply.disabled = true;
+        if (importSummary) { importSummary.hidden = true; importSummary.replaceChildren(); }
+        if (importMessage) importMessage.textContent = '';
+    };
+    root.querySelector('[data-artifact-import-open]')?.addEventListener('click', () => { resetImportInspection(); importModal?.open(); });
+    importFile?.addEventListener('change', resetImportInspection);
+    importInspect?.addEventListener('click', async () => {
+        resetImportInspection();
+        if (!importForm || !importFile?.files?.length) {
+            if (importMessage) importMessage.textContent = 'Choose a runtime artifact package first.';
+            return;
+        }
+        importInspect.disabled = true;
+        importInspect.textContent = 'Inspecting…';
+        try {
+            const response = await fetch(importForm.dataset.inspectUrl, { method: 'POST', body: new FormData(importForm) });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || 'The package could not be inspected.');
+            const details = [['Orchestration', result.orchestrationKey], ['Version', result.version], ['Artifact', result.artifactType],
+                ['Strategy', result.releaseStrategy], ['Exported', `${result.exportedOnUtc} UTC`]];
+            details.forEach(([label, value]) => importSummary.append(make('dt', '', label), make('dd', '', String(value || '-'))));
+            importSummary.hidden = false;
+            importMessage.textContent = 'Package integrity verified. It is ready to apply.';
+            importApply.disabled = false;
+        } catch (error) {
+            importMessage.textContent = error.message || 'The package could not be inspected.';
+        } finally {
+            importInspect.disabled = false;
+            importInspect.textContent = 'Inspect package';
+        }
+    });
     placeToolbarEnd(false);
     try { if (localStorage.getItem('krackend-runtime-artifact-view') === 'cards') setView(root.querySelector('[data-artifact-view="cards"]')); } catch { }
 

@@ -16,6 +16,11 @@
 
 <section class="od-panel" data-artifact-catalog data-source="@source" data-kind="@(hasSelection ? "versions" : "groups")"
          data-history-source="@Url.Page(null, "History")" data-index-url="@Url.Page(null, new { area = "OrchestratorRuntime" })">
+    <div class="od-artifact-import-action">
+        <button type="button" class="z-button z-button-primary" data-artifact-import-open>
+            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i><span>Import candidate</span>
+        </button>
+    </div>
     <div class="od-runtime-view-controls" role="group" aria-label="View mode">
         <button type="button" class="z-button z-button-ghost od-view-toggle" data-artifact-view="grid" aria-label="Grid view" title="Grid view" aria-pressed="true"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
         <button type="button" class="z-button z-button-ghost od-view-toggle" data-artifact-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
@@ -51,6 +56,20 @@
 <form method="post" asp-page-handler="RequestStandup" id="artifact-standup-form" data-orchestrator-busy="true" data-busy-title="Requesting standup">
     <input type="hidden" name="artifactId" />
 </form>
+
+@await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
+{
+    Id = "artifactImportModal",
+    Title = "Import runtime artifact",
+    Eyebrow = "Portable release candidate",
+    Size = "medium",
+    Body = await Html.PartialAsync("_ArtifactImport"),
+    Footer = new HtmlString("""
+        <button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button>
+        <button type=\"button\" class=\"z-button z-button-secondary\" data-artifact-import-inspect>Inspect package</button>
+        <button type=\"submit\" form=\"artifact-import-form\" class=\"z-button z-button-primary\" data-artifact-import-apply disabled>Apply candidate</button>
+        """)
+})
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {

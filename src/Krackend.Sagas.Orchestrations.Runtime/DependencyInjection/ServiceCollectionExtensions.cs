@@ -144,6 +144,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddSingleton<IRuntimeDesignNodeSecretProtector, DataProtectionRuntimeDesignNodeSecretProtector>();
             services.TryAddScoped<IControlPlaneDistributionSourceProvider, RuntimeDesignNodeDistributionSourceProvider>();
             services.TryAddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
+            services.TryAddScoped<IRuntimeArtifactTransferService, RuntimeArtifactTransferService>();
             services.TryAddScoped<IRuntimeArtifactCompatibilityValidator, MessagingRuntimeArtifactCompatibilityValidator>();
             services.TryAddScoped<IRuntimeArtifactDeliveryEndpointAuthenticator, RuntimeArtifactDeliveryEndpointAuthenticator>();
             services.TryAddScoped<IRuntimeConnectionTokenIssuer, RuntimeConnectionTokenIssuer>();

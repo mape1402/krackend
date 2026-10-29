@@ -1,12 +1,16 @@
 using System.Text.Json.Nodes;
+using System.Text;
+using Krackend.Sagas.Orchestrations.Abstractions.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using NSubstitute;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -136,15 +140,88 @@ public sealed class RuntimeArtifactsIndexPageModelTests
         Assert.Equal("error", model.TempData["OrchestratorMessage.Type"]);
     }
 
+    [Fact]
+    public async Task OnGetExportCandidateAsync_DownloadsThePortableRuntimeCandidate()
+    {
+        var artifact = Artifact("sales.sale.created", new SemanticVersion(1, 5, 0), RuntimeOrchestrationArtifactStatus.Ready, DateTime.UtcNow);
+        var transfer = Substitute.For<IRuntimeArtifactTransferService>();
+        var package = new RuntimeArtifactTransferPackage
+        {
+            SourceArtifactId = artifact.Id.ToString(),
+            PackageChecksum = "sha256:package",
+            Delivery = new RuntimeArtifactDeliveryPackage { OrchestrationDefinitionKey = "sales.sale.created", Version = "1.5.0" }
+        };
+        transfer.ExportAsync(artifact.Id.ToString(), Arg.Any<CancellationToken>()).Returns(package);
+        transfer.Serialize(package).Returns("{\"package\":true}");
+        var model = CreateModel(new ArtifactRepositoryStub(artifact), transfer: transfer);
+
+        var result = await model.OnGetExportCandidateAsync(artifact.Id.ToString());
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/json", file.ContentType);
+        Assert.Contains("sales.sale.created-1.5.0", file.FileDownloadName, StringComparison.Ordinal);
+        Assert.Equal("{\"package\":true}", Encoding.UTF8.GetString(file.FileContents));
+    }
+
+    [Fact]
+    public async Task OnPostImportCandidateAsync_UsesTheTransferServiceAndReportsItsDeploymentOutcome()
+    {
+        var transfer = Substitute.For<IRuntimeArtifactTransferService>();
+        transfer.ImportAsync("{\"package\":true}", "runtime-ui", Arg.Any<CancellationToken>())
+            .Returns(new RuntimeArtifactDeploymentResult { Accepted = true, Status = "Pending", Message = "Accepted for projection." });
+        var model = CreateModel(new ArtifactRepositoryStub(), transfer: transfer);
+        var file = new FormFile(new MemoryStream(Encoding.UTF8.GetBytes("{\"package\":true}")), 0, 16, "candidatePackage", "candidate.json");
+
+        var result = await model.OnPostImportCandidateAsync(file);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("Artifact candidate applied", model.TempData["OrchestratorMessage.Title"]);
+        Assert.Equal("success", model.TempData["OrchestratorMessage.Type"]);
+    }
+
+    [Fact]
+    public async Task OnPostImportCandidateAsync_RejectsMissingFilesBeforeCallingTheTransferService()
+    {
+        var transfer = Substitute.For<IRuntimeArtifactTransferService>();
+        var model = CreateModel(new ArtifactRepositoryStub(), transfer: transfer);
+
+        var result = await model.OnPostImportCandidateAsync(null!);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("Artifact import failed", model.TempData["OrchestratorMessage.Title"]);
+        Assert.Equal("warning", model.TempData["OrchestratorMessage.Type"]);
+        await transfer.DidNotReceive().ImportAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnPostInspectCandidateAsync_ReturnsPortableCandidateDetailsWithoutApplyingIt()
+    {
+        var transfer = Substitute.For<IRuntimeArtifactTransferService>();
+        transfer.Inspect("{\"package\":true}").Returns(new RuntimeArtifactTransferInspection(
+            1, RuntimeArtifactTransferPackage.Kind, "source-artifact", "sales.sale.created", "1.5.0",
+            "orchestration-version.new", "Rollout", DateTime.UtcNow));
+        var model = CreateModel(new ArtifactRepositoryStub(), transfer: transfer);
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("{\"package\":true}"));
+        var file = new FormFile(stream, 0, stream.Length, "candidatePackage", "candidate.json");
+
+        var result = await model.OnPostInspectCandidateAsync(file);
+
+        var payload = Assert.IsType<JsonResult>(result).Value;
+        Assert.Contains("sales.sale.created", System.Text.Json.JsonSerializer.Serialize(payload), StringComparison.Ordinal);
+        await transfer.DidNotReceive().ImportAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private static IndexModel CreateModel(
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeArtifactReadyNotifier? notifier = null,
-        IRuntimeArtifactDeploymentHistoryRepository? history = null)
+        IRuntimeArtifactDeploymentHistoryRepository? history = null,
+        IRuntimeArtifactTransferService? transfer = null)
     {
         var model = new IndexModel(
             artifactRepository,
             history ?? new DeploymentHistoryRepositoryStub(),
-            notifier ?? new RecordingRuntimeArtifactReadyNotifier());
+            notifier ?? new RecordingRuntimeArtifactReadyNotifier(),
+            transfer ?? Substitute.For<IRuntimeArtifactTransferService>());
         model.TempData = new TempDataDictionary(new DefaultHttpContext(), new EmptyTempDataProvider());
         return model;
     }

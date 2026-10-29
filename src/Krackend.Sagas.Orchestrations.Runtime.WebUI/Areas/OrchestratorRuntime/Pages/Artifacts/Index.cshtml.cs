@@ -1,7 +1,10 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
+using Microsoft.AspNetCore.Http;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -15,6 +18,7 @@ public sealed class IndexModel : PageModel
     private readonly IRuntimeArtifactRepository _artifactRepository;
     private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
     private readonly IRuntimeArtifactReadyNotifier _artifactReadyNotifier;
+    private readonly IRuntimeArtifactTransferService _artifactTransferService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IndexModel"/> class.
@@ -22,11 +26,13 @@ public sealed class IndexModel : PageModel
     public IndexModel(
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository,
-        IRuntimeArtifactReadyNotifier artifactReadyNotifier)
+        IRuntimeArtifactReadyNotifier artifactReadyNotifier,
+        IRuntimeArtifactTransferService artifactTransferService)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
         _artifactReadyNotifier = artifactReadyNotifier ?? throw new ArgumentNullException(nameof(artifactReadyNotifier));
+        _artifactTransferService = artifactTransferService ?? throw new ArgumentNullException(nameof(artifactTransferService));
     }
 
     /// <summary>Orchestration selected for version details.</summary>
@@ -36,6 +42,83 @@ public sealed class IndexModel : PageModel
     /// Handles the initial page request.
     /// </summary>
     public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Exports a runtime artifact as an integrity-protected release candidate.</summary>
+    public async Task<IActionResult> OnGetExportCandidateAsync(string artifactId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var package = await _artifactTransferService.ExportAsync(artifactId, cancellationToken);
+            var json = _artifactTransferService.Serialize(package);
+            var filename = $"krackend-runtime-artifact-{package.Delivery.OrchestrationDefinitionKey}-{package.Delivery.Version}.json";
+            return File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", filename);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            SetMessage("Artifact export failed", exception.Message, "error");
+            return RedirectToPage(new { orchestrationKey = OrchestrationKey });
+        }
+    }
+
+    /// <summary>Imports a portable runtime artifact through the normal deployment pipeline.</summary>
+    public async Task<IActionResult> OnPostImportCandidateAsync(IFormFile candidatePackage, CancellationToken cancellationToken = default)
+    {
+        if (candidatePackage is null || candidatePackage.Length == 0)
+        {
+            SetMessage("Artifact import failed", "Choose a runtime artifact package first.", "warning");
+            return RedirectToPage();
+        }
+
+        try
+        {
+            using var reader = new StreamReader(candidatePackage.OpenReadStream());
+            var packageJson = await reader.ReadToEndAsync(cancellationToken);
+            var importedBy = User?.Identity?.Name;
+            var result = await _artifactTransferService.ImportAsync(
+                packageJson,
+                string.IsNullOrWhiteSpace(importedBy) ? "runtime-ui" : importedBy,
+                cancellationToken);
+            SetMessage(
+                result.Accepted ? "Artifact candidate applied" : "Artifact candidate rejected",
+                result.Message,
+                result.Accepted ? "success" : "warning");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or JsonException)
+        {
+            SetMessage("Artifact import failed", exception.Message, "error");
+        }
+
+        return RedirectToPage();
+    }
+
+    /// <summary>Inspects a portable runtime package before an operator applies it.</summary>
+    public async Task<IActionResult> OnPostInspectCandidateAsync(IFormFile candidatePackage, CancellationToken cancellationToken = default)
+    {
+        if (candidatePackage is null || candidatePackage.Length == 0)
+        {
+            return BadRequest(new { message = "Choose a runtime artifact package first." });
+        }
+
+        try
+        {
+            using var reader = new StreamReader(candidatePackage.OpenReadStream());
+            var packageJson = await reader.ReadToEndAsync(cancellationToken);
+            var inspection = _artifactTransferService.Inspect(packageJson);
+            return new JsonResult(new
+            {
+                sourceArtifactId = inspection.SourceArtifactId,
+                orchestrationKey = inspection.OrchestrationKey,
+                inspection.Version,
+                artifactType = inspection.ArtifactType,
+                releaseStrategy = inspection.ReleaseStrategy,
+                exportedOnUtc = inspection.ExportedOnUtc.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or JsonException)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+    }
 
     /// <summary>Searches orchestration groups in the configured storage.</summary>
     public async Task<IActionResult> OnGetGroupsAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25, string search = "", CancellationToken cancellationToken = default)

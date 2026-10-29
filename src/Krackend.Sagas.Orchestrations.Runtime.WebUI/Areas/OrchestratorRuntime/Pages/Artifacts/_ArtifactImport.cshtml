@@ -1,0 +1,10 @@
+<form method="post" enctype="multipart/form-data" asp-page-handler="ImportCandidate"
+      data-inspect-url="@Url.Page(null, "InspectCandidate")" id="artifact-import-form" class="od-dialog-form">
+    <p class="od-dialog-copy">Inspect the package first. Applying it always uses normal runtime deployment safeguards.</p>
+    <label class="z-field">
+        <span>Runtime artifact package</span>
+        <input type="file" name="candidatePackage" accept="application/json,.json" required />
+    </label>
+    <dl class="od-artifact-import-summary" data-artifact-import-summary hidden></dl>
+    <p class="od-dialog-copy" data-artifact-import-message aria-live="polite"></p>
+</form>
