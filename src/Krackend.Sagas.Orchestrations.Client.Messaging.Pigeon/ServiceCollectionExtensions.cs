@@ -68,6 +68,7 @@ public static class ServiceCollectionExtensions
 
         RegisterPigeonClientServices(builder.Services);
         var pigeonBuilder = builder.Services.AddPigeon(configuration, configure);
+        pigeonBuilder.AddConsumeDecisionObserver<KrackendPigeonConsumeDecisionObserver>(ObserverFailureBehavior.Fail);
         configurePigeon(pigeonBuilder);
 
         return builder;

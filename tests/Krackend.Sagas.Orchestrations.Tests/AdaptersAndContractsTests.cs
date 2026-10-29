@@ -458,6 +458,8 @@ public sealed class AdaptersAndContractsTests
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType.Name == "IPublishInterceptor" &&
             descriptor.ImplementationType?.Name == "KrackendClientPublishInterceptor");
+        Assert.Contains(services, descriptor =>
+            descriptor.ImplementationType?.Name == "KrackendPigeonConsumeDecisionObserver");
     }
 
     [Fact]
