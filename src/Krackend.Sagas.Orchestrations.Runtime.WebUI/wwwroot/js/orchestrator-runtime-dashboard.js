@@ -360,6 +360,7 @@
     function setActivityEmpty(empty) {
         const emptyState = root.querySelector('[data-dashboard-activity-empty]');
         if (emptyState) emptyState.hidden = !empty;
+        root.querySelector('[data-dashboard-panel="activity"]')?.classList.toggle('is-empty', empty);
     }
 
     function setRankingEmpty(empty) {
@@ -370,6 +371,7 @@
     function setPanelEmpty(panel, empty) {
         const emptyState = root.querySelector(`[data-dashboard-empty="${panel}"]`);
         if (emptyState) emptyState.hidden = !empty;
+        root.querySelector(`[data-dashboard-panel="${panel}"]`)?.classList.toggle('is-empty', empty);
     }
 
     function renderTopOrchestrations(orchestrations) {

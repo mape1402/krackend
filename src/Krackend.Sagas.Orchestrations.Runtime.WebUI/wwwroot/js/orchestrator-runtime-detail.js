@@ -23,6 +23,11 @@
     };
     drawerToggle?.addEventListener('click', () => setDrawer(drawer?.hidden));
     root.querySelector('[data-transition-drawer-close]')?.addEventListener('click', () => setDrawer(false));
+    const compensationDrawer = root.querySelector('[data-compensation-drawer]');
+    const setCompensationDrawer = open => {
+        if (compensationDrawer) compensationDrawer.hidden = !open;
+    };
+    root.querySelector('[data-compensation-drawer-close]')?.addEventListener('click', () => setCompensationDrawer(false));
     root.querySelector('[data-recover-dialog-open]')?.addEventListener('click', event =>
         document.getElementById('recoverSagaDialog')?.open?.(event.currentTarget));
     root.addEventListener('zoorce:timeline:select', event => {
@@ -33,6 +38,17 @@
         const placeholder = root.querySelector('[data-transition-placeholder]');
         if (placeholder) placeholder.hidden = found;
         if (found) setDrawer(true);
+
+        const compensationPanels = root.querySelectorAll('[data-compensation-details]');
+        let compensationFound = false;
+        compensationPanels.forEach(panel => {
+            const selected = panel.dataset.compensationDetails === id;
+            panel.hidden = !selected;
+            compensationFound ||= selected;
+        });
+        const compensationPlaceholder = root.querySelector('[data-compensation-placeholder]');
+        if (compensationPlaceholder) compensationPlaceholder.hidden = compensationFound;
+        if (compensationFound) setCompensationDrawer(true);
     });
 
     // Pretty-print valid JSON with safe token nodes. Content arrives Razor-encoded
@@ -91,6 +107,19 @@
         const date = new Date(text);
         return Number.isNaN(date.getTime()) ? '—' : date.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
     };
+    // Timelines are an operational view, so they must never silently switch
+    // the date into the browser's local zone. The component emits a compact
+    // localised label by default; replace it with the complete UTC anchor that
+    // is also used throughout the saga header and drill-down views.
+    const normalizeTimelineTimestamps = scope => {
+        (scope || root).querySelectorAll?.('[data-z-timeline-time][datetime]').forEach(time => {
+            const formatted = formatUtc(time.dateTime);
+            if (formatted === '—') return;
+            time.textContent = formatted;
+            time.title = formatted;
+        });
+    };
+    normalizeTimelineTimestamps();
     const statusClass = status => ({
         Running: 'od-status-running', Idle: 'od-status-warning', Completed: 'od-status-active',
         DeadLettered: 'od-status-warning', Failed: 'od-status-danger'
@@ -138,7 +167,12 @@
         const timeline = root.querySelector('#instance-activity-timeline');
         const id = String(eventValue(event, 'id') || '');
         if (!timeline || !id || !window.ZoorceTimeline?.applySnapshot) return;
-        const occurred = eventValue(event, 'occurredOnUtc') || eventValue(event, 'lastUpdatedOnUtc') || new Date().toISOString();
+        // A reactive event carries timestamps persisted by the runtime.  Never
+        // substitute the browser clock: that would create a transition which
+        // does not exist in the durable execution history.  A malformed event
+        // is ignored and the next explicit refresh remains the source of truth.
+        const occurred = eventValue(event, 'occurredOnUtc') || eventValue(event, 'lastUpdatedOnUtc');
+        if (!occurred) return;
         const from = eventValue(event, 'fromStatus');
         const to = eventValue(event, 'toStatus');
         const transition = String(eventValue(event, 'transitionType') || 'Transition');
@@ -154,6 +188,7 @@
                 metadata: { Status: `${from || '—'} → ${to || '—'}` }
             }
         });
+        normalizeTimelineTimestamps(timeline);
 
         const drawer = root.querySelector('[data-transition-drawer]');
         if (!drawer || [...drawer.querySelectorAll('[data-transition-details]')]

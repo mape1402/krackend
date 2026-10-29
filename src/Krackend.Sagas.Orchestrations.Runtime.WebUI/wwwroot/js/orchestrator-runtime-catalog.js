@@ -49,7 +49,10 @@
     };
     const toUtcText = value => {
         const timestamp = new Date(value).getTime();
-        return Number.isNaN(timestamp) ? new Date().toISOString() : new Date(timestamp).toISOString();
+        // The catalog represents the durable runtime projection. Never use the
+        // browser clock as a fallback for a malformed or incomplete event.
+        // A missing timestamp is preferable to a fictitious persisted update.
+        return Number.isNaN(timestamp) ? '' : new Date(timestamp).toISOString();
     };
     const toPublicStatus = value => {
         const status = String(value || 'Running');
@@ -358,7 +361,7 @@
             currentStageKey: eventValue(event, 'stageKey') || existing?.currentStageKey || '',
             currentTaskKey: eventValue(event, 'taskKey') || existing?.currentTaskKey || '',
             startedOnUtc: toUtcText(eventValue(event, 'startedOnUtc') || existing?.startedOnUtc || eventValue(event, 'occurredOnUtc')),
-            lastUpdatedOnUtc: toUtcText(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc')),
+            lastUpdatedOnUtc: toUtcText(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc') || existing?.lastUpdatedOnUtc),
             reactiveRevision: String(eventValue(event, 'revision') || existing?.reactiveRevision || ''),
             // The reactive payload carries the server-side projection. Keep the
             // row's existing values only for older publishers that do not yet

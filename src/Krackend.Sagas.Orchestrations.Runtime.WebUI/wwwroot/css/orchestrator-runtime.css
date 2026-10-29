@@ -3241,17 +3241,26 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 
 /* Saga detail is intentionally a compact explorer: identity never competes
    with timelines, wide JSON is isolated, and only the content pane scrolls. */
-.od-instance-overview { display: grid; gap: .65rem; padding: .8rem 1rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 84%, var(--z-primary, var(--od-primary))); border-radius: 14px; background: linear-gradient(125deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface))); }
+.od-instance-overview { display: grid; gap: .38rem; padding: .58rem .72rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 84%, var(--z-primary, var(--od-primary))); border-radius: 14px; background: linear-gradient(125deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface))); }
 .od-instance-overview-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-width: 0; }
-.od-instance-overview-heading h1 { margin: .08rem 0 0; color: var(--z-text, var(--od-text)); font-size: 1rem; line-height: 1.2; }
+.od-instance-overview-heading h1 { margin: .06rem 0 0; color: var(--z-text, var(--od-text)); font-size: .94rem; line-height: 1.2; }
 .od-instance-overview-kicker { margin: 0; color: var(--z-primary, var(--od-primary)); font-size: .63rem; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
-.od-instance-overview-facts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .55rem; }
-.od-instance-overview-facts > div { display: grid; min-width: 0; gap: .16rem; padding: .46rem .55rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--z-surface, var(--od-surface)) 82%, var(--z-primary, var(--od-primary))); }
-.od-instance-overview-facts span { color: var(--z-muted, var(--od-muted)); font-size: .61rem; font-weight: 680; }
-.od-instance-overview-facts strong { overflow: hidden; color: var(--z-text, var(--od-text)); font-size: .7rem; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
+.od-instance-overview-facts { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 1fr); gap: .55rem; min-width: 0; }
+.od-instance-reference-group,
+.od-instance-lifecycle-group { min-width: 0; padding: .44rem .56rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--z-surface, var(--od-surface)) 82%, var(--z-primary, var(--od-primary))); }
+.od-instance-reference-group { display: grid; gap: 0; }
+.od-instance-fact-label,
+.od-instance-reference-list > div > span,
+.od-instance-lifecycle-group > div > span { color: var(--z-muted, var(--od-muted)); font-size: .59rem; font-weight: 690; }
+.od-instance-reference-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .28rem .45rem; min-width: 0; }
+.od-instance-reference-list > div { display: flex; align-items: baseline; gap: .3rem; min-width: 0; }
+.od-instance-reference-list > div > span { flex: 0 0 auto; }
+.od-instance-lifecycle-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: .45rem; }
+.od-instance-lifecycle-group > div { display: grid; min-width: 0; gap: .14rem; }
+.od-instance-lifecycle-group strong { overflow: hidden; color: var(--z-text, var(--od-text)); font-size: .68rem; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
 .od-instance-live-update { display: inline-flex; align-items: center; width: fit-content; gap: .38rem; margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .68rem; font-weight: 650; }
 .od-copy-reference { display: inline-flex; align-items: center; min-width: 0; gap: .2rem; }
-.od-copy-reference-value { min-width: 0; overflow: hidden; color: var(--z-text, var(--od-text)); font-size: .68rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.od-copy-reference-value { min-width: 0; overflow-wrap: anywhere; color: var(--z-text, var(--od-text)); font-size: .68rem; font-variant-numeric: tabular-nums; line-height: 1.25; }
 .od-copy-reference .od-copy-button { flex: 0 0 auto; width: 1.48rem; height: 1.48rem; padding: 0; border: 1px solid var(--z-border, var(--od-border)); border-radius: 6px; color: var(--z-primary, var(--od-primary)); background: transparent; }
 .od-instance-replay { display: flex; justify-content: flex-end; }
 .od-instance-operation-message { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .72rem; }
@@ -3274,7 +3283,12 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-data-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; min-height: 0; }.od-data-workspace > article { min-height: 0; display: flex; flex-direction: column; }.od-data-workspace .od-json-view { flex: 1 1 auto; }
 .od-activity-workspace { position: relative; min-height: 0; }.od-activity-timeline { min-height: 0; }.od-activity-timeline .z-timeline { border: 0; background: transparent; }.od-transition-drawer { position: absolute; z-index: 5; top: .75rem; right: .75rem; bottom: .75rem; width: min(31rem, calc(100% - 1.5rem)); padding: .9rem; overflow: auto; border: 1px solid var(--z-border, var(--od-border)); border-radius: 12px; background: var(--z-surface, var(--od-surface)); box-shadow: -12px 0 28px color-mix(in srgb, var(--z-text, #111) 15%, transparent); }.od-transition-drawer[hidden] { display: none; }.od-transition-drawer-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; }.od-transition-drawer article { display: grid; gap: .7rem; }
 .od-compensation-list { display: grid; gap: .75rem; }.od-compensation-item { padding: .8rem; border: 1px solid var(--z-border, var(--od-border)); border-radius: 10px; }.od-compensation-item > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .65rem; }.od-attempt-timeline { overflow: hidden; }.od-attempt-timeline .z-timeline { overflow-x: auto; padding-bottom: .45rem; }
-@media (max-width: 1260px) { .od-instance-overview-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1260px) {
+    .od-instance-overview-facts { grid-template-columns: 1fr; }
+    .od-instance-reference-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .od-instance-reference-list > div:last-child { grid-column: 1 / -1; }
+    .od-instance-lifecycle-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 800px) { body:has(.od-instance-trace) { height: auto; overflow: auto; }.od-instance-trace { height: auto; }.od-trace-content { overflow: visible; }.od-instance-overview-facts, .od-data-workspace { grid-template-columns: 1fr; }.od-instance-overview-heading { align-items: flex-start; flex-direction: column; }.od-json-view-expanded { height: 22rem; }.od-transition-drawer { position: fixed; inset: auto .75rem .75rem; width: auto; max-height: 70dvh; } }
 .od-instance-context { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; color: var(--od-muted); font-size: .8rem; }
 .od-instance-nav { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--od-border); }
@@ -3321,6 +3335,13 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 .od-trace-timeline .z-timeline-item[data-z-timeline-selectable="true"] .z-timeline-card { position: relative; padding-right: 3rem; transition: border-color .15s, background-color .15s; }
 .od-trace-timeline .z-timeline-item[data-z-timeline-selectable="true"] .z-timeline-card::after { content: "\2192"; position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: var(--z-primary, #527bdc); font-size: 1.15rem; }
 .od-trace-timeline .z-timeline-item:hover .z-timeline-card, .od-trace-timeline .z-timeline-item:focus-within .z-timeline-card { border-color: var(--z-primary, #527bdc); background: var(--z-surface-hover, rgba(120, 130, 150, .08)); }
+.od-trace-timeline [data-z-timeline-time] { color: var(--z-muted, var(--od-muted)); font-size: .62rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; white-space: nowrap; }
+.od-trace-unrecorded { display: grid; gap: .42rem; margin-top: .85rem; padding: .7rem .8rem; border: 1px dashed color-mix(in srgb, var(--z-border, var(--od-border)) 88%, transparent); border-radius: .75rem; background: color-mix(in srgb, var(--z-surface, #fff) 92%, var(--z-warning, #d99123) 8%); }
+.od-trace-unrecorded > span { color: var(--od-muted); font-size: .68rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.od-trace-unrecorded > a { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .65rem; row-gap: .12rem; align-items: center; color: inherit; text-decoration: none; }
+.od-trace-unrecorded > a:hover strong { color: var(--z-primary, var(--od-primary)); text-decoration: underline; }
+.od-trace-unrecorded strong { min-width: 0; font-size: .78rem; overflow-wrap: anywhere; }
+.od-trace-unrecorded small { grid-column: 1 / -1; color: var(--od-muted); font-size: .7rem; line-height: 1.35; }
 /* Preserve Zoorce's rail geometry. Constraining its leading column made full
    UTC dates wrap beside the stage markers and broke the visual timeline. */
 .od-trace-timeline .z-timeline--rail[data-z-timeline-effective-orientation="Vertical"] .z-timeline-item { padding-bottom: .6rem; }
@@ -3367,7 +3388,7 @@ body:has([data-runtime-dashboard]) .z-main,
 .od-statistics-field > span small { margin-left: .25rem; color: var(--z-muted, var(--od-muted)); font-size: .58rem; font-weight: 600; }
 .od-statistics-field .z-form-input { min-width: 0; }
 .od-statistics-field .od-autocomplete-list { position: absolute; z-index: 8; top: calc(100% + .2rem); right: 0; left: 0; max-height: 12rem; overflow: auto; }
-.od-statistics-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; margin-top: .15rem; }
+.od-statistics-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin-top: .15rem; }
 .od-statistics-actions [data-statistics-load] > button, .od-statistics-actions [data-statistics-tracking] { width: 100%; justify-content: center; }
 .od-statistics-actions [data-statistics-tracking].is-active { color: var(--z-primary-contrast, #fff); border-color: var(--z-primary, var(--od-primary)); background: var(--z-primary, var(--od-primary)); }
 .od-statistics-live-copy { padding-top: .62rem; border-top: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 80%, transparent); }
@@ -3443,10 +3464,12 @@ body:has([data-runtime-dashboard]) .z-main,
 #runtime-effectiveness-chart [data-z-chart-delta] { display: none; }
 #runtime-effectiveness-chart[data-effectiveness-empty="true"] [data-z-chart-metric],
 #runtime-effectiveness-chart[data-effectiveness-empty="true"] [data-z-chart-delta] { display: none; }
-.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .z-chart-component { padding-bottom: 2.9rem; grid-template-rows: auto minmax(0, 1fr); }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] { display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .z-chart-component { min-height: 18rem; padding-bottom: .7rem; grid-template-rows: auto minmax(0, 1fr); }
 .od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .z-chart-component-header { padding-bottom: 0; }
-.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] [data-z-chart-visual] { min-height: 7.25rem; }
-.od-dashboard-effectiveness-detail { position: absolute; z-index: 2; right: .75rem; bottom: .65rem; left: .75rem; display: grid; gap: .08rem; padding-top: .35rem; border-top: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, transparent); color: var(--z-muted, var(--od-muted)); font-size: .58rem; font-weight: 650; line-height: 1.25; text-align: center; }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] [data-z-chart-visual] { min-height: 9.5rem; height: 10rem; max-height: 10rem; overflow: hidden; }
+.od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] [data-z-chart-visual] .z-native-chart { transform: scale(1.26); transform-origin: center; }
+.od-dashboard-effectiveness-detail { position: static; z-index: 2; display: grid; gap: .08rem; margin: 0 .75rem .65rem; padding-top: .42rem; border-top: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 82%, transparent); color: var(--z-muted, var(--od-muted)); font-size: .58rem; font-weight: 650; line-height: 1.25; text-align: center; }
 .od-dashboard-effectiveness-detail strong { color: var(--z-text, var(--od-text)); font-size: .62rem; }
 .od-dashboard-top-orchestrations [data-z-chart-metric],
 .od-dashboard-top-orchestrations [data-z-chart-delta] { display: none; }
@@ -3491,6 +3514,9 @@ body:has([data-runtime-dashboard]) .z-main,
 .od-dashboard-chart-shell[data-dashboard-panel="status"] .od-dashboard-empty,
 .od-dashboard-chart-shell[data-dashboard-panel="funnel"] .od-dashboard-empty,
 .od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .od-dashboard-empty { top: 5rem; }
+.od-dashboard-chart-shell.is-empty .z-chart-visual,
+.od-dashboard-activity.is-empty .z-chart-visual { visibility: hidden; }
+.od-dashboard-chart-shell.is-empty .od-dashboard-status-hint { display: none; }
 .od-dashboard-panel-error { position: absolute; z-index: 5; right: .8rem; bottom: .55rem; max-width: calc(100% - 1.6rem); margin: 0; color: var(--z-danger, var(--od-danger)); font-size: .68rem; }
 .od-dashboard-chart-shell[data-dashboard-panel="funnel"] .z-chart-component { padding-bottom: 3.35rem; }
 .od-dashboard-outcome { position: absolute; z-index: 2; right: .85rem; bottom: .75rem; left: .85rem; display: grid; gap: .08rem; padding: .42rem .6rem 0; border-top: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 86%, var(--z-primary, var(--od-primary))); color: var(--z-muted, var(--od-muted)); font-size: .57rem; font-weight: 650; line-height: 1.2; text-align: center; }
@@ -3608,13 +3634,53 @@ body:has([data-runtime-dashboard]) .z-main,
 }
 
 @media (max-width: 1320px) {
+    /* At this width the navigation rail leaves a two-column content area. It
+       cannot also be treated as a fixed dashboard viewport: fixed minimum
+       panel heights would hide the scope heading and lower charts underneath
+       the top bar. Let this investigation page scroll as one document. */
+    body:has([data-runtime-statistics]) { height: auto; overflow-x: clip; overflow-y: auto; }
+    body:has([data-runtime-statistics]) .z-app-shell,
+    body:has([data-runtime-statistics]) .z-page-shell { max-width: 100%; height: auto; min-height: 100%; overflow-x: clip; }
+    body:has([data-runtime-statistics]) .z-main { min-width: 0; min-height: 0; max-width: 100%; overflow-x: hidden !important; overflow-y: visible; }
+    [data-runtime-statistics] { width: 100%; max-width: 100%; height: auto; min-height: 0; overflow-x: clip; }
+    [data-runtime-statistics] .od-statistics-workspace { max-width: 100%; overflow-x: clip; overflow-y: visible; }
+    [data-runtime-statistics] .od-statistics-workspace > [data-dashboard-panel],
+    [data-runtime-statistics] .od-statistics-workspace > .od-dashboard-activity { overflow: visible; }
+    [data-runtime-statistics] .od-statistics-workspace .od-dashboard-chart-shell,
+    [data-runtime-statistics] .od-statistics-workspace .z-chart-component { height: auto; }
+
     .od-statistics-workspace {
-        grid-template-columns: minmax(15rem, .78fr) minmax(0, 1.22fr);
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         grid-template-areas:
             "parameters effectiveness"
+            "parameters status"
             "activity activity"
-            "status funnel";
-        grid-template-rows: minmax(13rem, auto) minmax(18rem, 1fr) minmax(14rem, auto);
+            "funnel funnel";
+        grid-template-rows: minmax(12rem, .7fr) minmax(12rem, .7fr) minmax(18rem, 1fr) minmax(14rem, .78fr);
+    }
+
+    .od-statistics-parameters {
+        grid-template-columns: minmax(0, 1fr);
+        align-content: start;
+        align-items: stretch;
+    }
+
+    .od-statistics-parameters > :first-child { grid-column: auto; }
+    .od-statistics-parameters .od-statistics-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 0; }
+    .od-statistics-parameters .od-statistics-live-copy { display: none; }
+}
+
+/* A runtime shell keeps a persistent navigation rail. At this width the
+   scope controls still belong together, but must never force a horizontal
+   page axis or hide the realtime control beyond the viewport. */
+@media (max-width: 1120px) {
+    .od-statistics-parameters {
+        grid-template-columns: minmax(0, 1fr);
+        gap: .62rem;
+    }
+
+    .od-statistics-parameters .od-statistics-actions {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
 }
 
@@ -3628,6 +3694,13 @@ body:has([data-runtime-dashboard]) .z-main,
     }
     .od-statistics-workspace > [data-dashboard-panel],
     .od-statistics-workspace > .od-dashboard-activity { min-height: 18rem; }
+
+    .od-statistics-parameters { display: grid; grid-template-columns: 1fr; }
+    .od-statistics-parameters > :first-child { grid-column: auto; }
+    /* Both scope actions remain peers even in the compact shell. Splitting
+       them into separate rows makes the realtime control fall below the
+       visible panel and hides a capability that belongs to the primary flow. */
+    .od-statistics-parameters .od-statistics-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 
 /* Saga explorer: the hierarchy is navigation, not a collection of competing
@@ -3636,6 +3709,68 @@ body:has([data-runtime-dashboard]) .z-main,
 .od-instance-trace .od-trace-content {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
+    overflow-x: clip;
+    overflow-y: auto;
+}
+
+/* Execution context is supporting information. Keep it compact so the stage,
+   task, and attempt timelines remain the visual focus. */
+.od-instance-trace .od-trace-context-panel {
+    display: grid;
+    gap: .58rem;
+    padding: .78rem .86rem;
+}
+
+.od-instance-trace .od-trace-context-panel .od-trace-heading {
+    align-items: center;
+    margin-bottom: 0;
+}
+
+.od-instance-trace .od-trace-context-panel .od-trace-heading h2 { font-size: .9rem; }
+
+.od-instance-trace .od-trace-context-panel .od-trace-summary {
+    grid-template-columns: repeat(auto-fit, minmax(8.25rem, 1fr));
+    gap: .46rem .72rem;
+    margin: 0;
+}
+
+.od-instance-trace .od-trace-context-panel .od-trace-summary > div { gap: .12rem; }
+
+.od-instance-trace .od-trace-context-panel .od-trace-summary strong,
+.od-instance-trace .od-trace-context-panel .od-trace-summary .od-copy-reference-value {
+    overflow-wrap: anywhere;
+    font-size: .68rem;
+    line-height: 1.25;
+}
+
+.od-instance-trace .od-trace-context-panel .od-json-block { margin: 0; }
+.od-instance-trace .od-trace-context-panel .od-json-block .od-json-view { max-height: 8.5rem; }
+
+/* Attempt detail has two sibling contexts. Long command destinations and JSON
+   must remain inside their own column; only a JSON viewer may own horizontal
+   scrolling, never the saga page or its detail viewport. */
+.od-instance-trace .od-trace-layout {
+    min-width: 0;
+    overflow-x: clip;
+}
+
+.od-instance-trace .od-trace-layout > .od-trace-section,
+.od-instance-trace .od-trace-layout .od-json-block,
+.od-instance-trace .od-trace-layout .od-trace-fields,
+.od-instance-trace .od-trace-layout .od-trace-fields dd {
+    min-width: 0;
+}
+
+.od-instance-trace .od-trace-layout > .od-trace-section {
+    overflow-x: clip;
+}
+
+.od-instance-trace .od-trace-layout .od-trace-fields dd {
+    overflow-wrap: anywhere;
+}
+
+.od-instance-trace .od-trace-layout .od-json-view {
+    max-width: 100%;
 }
 
 .od-instance-trace .od-trace-breadcrumb {
@@ -3712,6 +3847,7 @@ body:has([data-runtime-dashboard]) .z-main,
 }
 
 .od-instance-trace .od-data-workspace .od-trace-heading > .od-copy-reference-value,
+.od-instance-trace .od-data-workspace .od-trace-heading > .od-copy-reference .od-copy-reference-value,
 .od-instance-trace .od-json-block > div > .od-copy-reference-value {
     display: none;
 }
@@ -3725,6 +3861,34 @@ body:has([data-runtime-dashboard]) .z-main,
 .od-instance-trace .od-data-workspace .od-json-view-expanded {
     min-height: 18rem;
     height: min(52dvh, 38rem);
+}
+
+.od-instance-trace .od-compensation-workspace {
+    position: relative;
+    min-height: 0;
+}
+
+.od-instance-trace .od-compensation-timeline {
+    min-height: 0;
+}
+
+.od-instance-trace .od-compensation-timeline .z-timeline {
+    border: 0;
+    background: transparent;
+}
+
+.od-instance-trace .od-compensation-drawer article {
+    display: grid;
+    gap: .7rem;
+}
+
+.od-instance-trace .od-compensation-detail-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .65rem;
+    padding-bottom: .55rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 84%, transparent);
 }
 
 .od-instance-trace .od-trace-timeline .z-timeline {
