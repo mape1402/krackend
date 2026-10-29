@@ -155,6 +155,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.FailedOnUtc = null;
         instance.ErrorSummary = null;
         instance.WaitingSinceUtc = null;
+        instance.IdleSinceUtc = null;
+        instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
@@ -459,6 +461,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         attempt.WaitingSinceUtc = null;
         instance.Status = OrchestrationInstanceStatus.Running;
         instance.WaitingSinceUtc = null;
+        instance.IdleSinceUtc = null;
+        instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
 
         await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
@@ -606,6 +610,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.FailedOnUtc ??= now;
         instance.StoppedOnUtc ??= now;
         instance.WaitingSinceUtc = null;
+        instance.IdleSinceUtc = null;
+        instance.IdleExpiresOnUtc = null;
         instance.ErrorSummary = abortReason;
         instance.LastUpdatedOnUtc = now;
         instance.Metadata[AbortReasonMetadataKey] = JsonValue.Create(abortReason);
@@ -719,6 +725,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.FailedOnUtc = null;
         instance.ErrorSummary = null;
         instance.WaitingSinceUtc = null;
+        instance.IdleSinceUtc = null;
+        instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");

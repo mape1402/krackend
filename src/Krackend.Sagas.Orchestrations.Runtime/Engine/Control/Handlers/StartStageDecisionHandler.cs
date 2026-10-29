@@ -90,6 +90,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             };
 
             instance.Status = OrchestrationInstanceStatus.Running;
+            instance.IdleSinceUtc = null;
+            instance.IdleExpiresOnUtc = null;
             instance.CurrentStageKey = decision.Stage.Key;
             instance.CurrentTaskKey = string.Empty;
             instance.LastUpdatedOnUtc = now;
@@ -193,6 +195,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             };
 
             instance.Status = OrchestrationInstanceStatus.Running;
+            instance.IdleSinceUtc = null;
+            instance.IdleExpiresOnUtc = null;
             instance.CurrentStageKey = string.Empty;
             instance.CurrentTaskKey = string.Empty;
             instance.LastUpdatedOnUtc = now;

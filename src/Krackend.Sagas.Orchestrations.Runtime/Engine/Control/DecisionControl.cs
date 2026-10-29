@@ -167,7 +167,19 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                         resolvedArtifact.Artifact.ExecutionPolicy);
                 }
 
-                return [new EnterIdleInstanceDecision(
+                // Only an unanswered command is uncertain enough to retain the saga in
+                // its reconciliation window. A callback failure is an explicit terminal
+                // outcome once its retry policy has been exhausted.
+                if (failedTask.Status == TaskExecutionStatus.TimedOut)
+                {
+                    return [new EnterIdleInstanceDecision(
+                        instance.Id,
+                        currentStageExecution.Id,
+                        failedTask.Id,
+                        ResolveDeadLetterReason(instance, failedTask))];
+                }
+
+                return [new DeadLetterInstanceDecision(
                     instance.Id,
                     currentStageExecution.Id,
                     failedTask.Id,

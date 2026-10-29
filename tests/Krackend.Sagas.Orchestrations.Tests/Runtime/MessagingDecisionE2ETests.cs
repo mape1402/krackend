@@ -1501,7 +1501,7 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetRequiredService<IExecutionTransitionRepository>().GetByInstanceId(instance.Id);
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.Equal(StageExecutionStatus.Failed, stages.Single().Status);
         Assert.Contains(transitions, transition => transition.TransitionType == "StageConditionFailed");
     }
@@ -1551,7 +1551,7 @@ public sealed class MessagingDecisionE2ETests
         var task = tasks.Single();
 
         Assert.Empty(harness.Dispatcher.Commands);
-        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("task.condition.failure", task.TaskKey);
         Assert.True(task.Metadata.ContainsKey("ConditionErrorCode"));
@@ -1684,7 +1684,7 @@ public sealed class MessagingDecisionE2ETests
         var sourceStage = stages.Single(stage => stage.StageKey == "stage-source");
         var transitions = await harness.GetTransitionsAsync(sourceCommand);
 
-        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Failed, instance.Status);
         Assert.Equal(StageExecutionStatus.Failed, sourceStage.Status);
         Assert.Equal("ConditionAdapterNotConfigured", sourceStage.Metadata["BranchErrorCode"]!.GetValue<string>());
         Assert.Contains("requires a DSL condition adapter", sourceStage.Metadata["BranchErrorMessage"]!.GetValue<string>());
@@ -1770,7 +1770,7 @@ public sealed class MessagingDecisionE2ETests
     }
 
     [Fact]
-    public async Task EngineAcceptsLateParallelSuccessCallbackAfterInstanceIsDeadLettered()
+    public async Task EngineDoesNotAcceptLateParallelSuccessCallbackAfterInstanceIsDeadLettered()
     {
         var groupId = Id.New();
 
@@ -1797,8 +1797,8 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetTransitionsAsync(failedCommand);
 
         Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
-        Assert.Equal(TaskExecutionStatus.Completed, lateTask.Status);
-        Assert.Contains(transitions, transition =>
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, lateTask.Status);
+        Assert.DoesNotContain(transitions, transition =>
             transition.TaskExecutionId == lateTask.Id &&
             transition.TransitionType == "TaskCallbackCompleted");
     }

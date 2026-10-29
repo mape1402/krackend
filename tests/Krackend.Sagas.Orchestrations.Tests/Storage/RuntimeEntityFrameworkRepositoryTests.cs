@@ -325,7 +325,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
-    public async Task OrchestrationInstanceRepositoryReturnsFailedInstancesForRecovery()
+    public async Task OrchestrationInstanceRepositoryReturnsOnlyNonTerminalInstancesForBackgroundRecovery()
     {
         await using var provider = CreateProvider();
         using var scope = provider.CreateScope();
@@ -340,7 +340,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
 
         var recoverable = await repository.GetRecoverable();
 
-        Assert.Equal([running.Id, failed.Id], recoverable.Select(instance => instance.Id).ToArray());
+        Assert.Equal([running.Id], recoverable.Select(instance => instance.Id).ToArray());
     }
 
     [Fact]

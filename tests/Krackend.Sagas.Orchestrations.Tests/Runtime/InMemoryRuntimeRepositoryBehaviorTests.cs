@@ -167,7 +167,7 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
             "lease-1",
             DateTime.UtcNow,
             DateTime.UtcNow.AddMinutes(1));
-        var staleUpdate = Instance(OrchestrationInstanceStatus.Waiting, DateTime.UtcNow.AddMinutes(-4));
+        var staleUpdate = Instance(OrchestrationInstanceStatus.Idle, DateTime.UtcNow.AddMinutes(-4));
         staleUpdate.Id = instance.Id;
         await repository.Update(staleUpdate);
         Assert.Equal("lease-1", (await repository.GetById(instance.Id)).ActiveLeaseId);
@@ -238,12 +238,12 @@ public sealed class InMemoryRuntimeRepositoryBehaviorTests
         var since = DateTime.UtcNow.AddMinutes(-10);
         var created = Instance(OrchestrationInstanceStatus.Created, since.AddMinutes(1));
         var running = Instance(OrchestrationInstanceStatus.Running, since.AddMinutes(2));
-        var waiting = Instance(OrchestrationInstanceStatus.Waiting, since.AddMinutes(3));
+        var idle = Instance(OrchestrationInstanceStatus.Idle, since.AddMinutes(3));
         var completed = Instance(OrchestrationInstanceStatus.Completed, since.AddMinutes(4), completedOnUtc: since.AddMinutes(5));
         var failed = Instance(OrchestrationInstanceStatus.Failed, since.AddMinutes(6), failedOnUtc: since.AddMinutes(7));
         await repository.Create(created);
         await repository.Create(running);
-        await repository.Create(waiting);
+        await repository.Create(idle);
         await repository.Create(completed);
         await repository.Create(failed);
 

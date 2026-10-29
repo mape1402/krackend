@@ -790,6 +790,7 @@ public sealed class RuntimeSmallComponentBehaviorTests
         var processor = new RecordingTimeoutProcessor();
         var services = new ServiceCollection();
         services.AddScoped<IOrchestrationTimeoutProcessor>(_ => processor);
+        services.AddScoped<IOrchestrationIdleProcessor, NoopIdleProcessor>();
         await using var provider = services.BuildServiceProvider();
         var service = CreateTimeoutBackgroundService(provider.GetRequiredService<IServiceScopeFactory>());
         var method = service.GetType().GetMethod("ProcessTimeoutsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -828,6 +829,7 @@ public sealed class RuntimeSmallComponentBehaviorTests
         var processor = new SignalingTimeoutProcessor();
         var services = new ServiceCollection();
         services.AddScoped<IOrchestrationTimeoutProcessor>(_ => processor);
+        services.AddScoped<IOrchestrationIdleProcessor, NoopIdleProcessor>();
         await using var provider = services.BuildServiceProvider();
         var service = (IHostedService)CreateTimeoutBackgroundService(
             provider.GetRequiredService<IServiceScopeFactory>(),
@@ -1261,6 +1263,15 @@ public sealed class RuntimeSmallComponentBehaviorTests
             Processed.TrySetResult();
             return Task.FromResult(1);
         }
+    }
+
+    private sealed class NoopIdleProcessor : IOrchestrationIdleProcessor
+    {
+        public Task<int> ProcessExpiredAsync(
+            DateTime utcNow,
+            int take = 100,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(0);
     }
 
     private sealed class ReflectionLogger<T> : Microsoft.Extensions.Logging.ILogger<T>

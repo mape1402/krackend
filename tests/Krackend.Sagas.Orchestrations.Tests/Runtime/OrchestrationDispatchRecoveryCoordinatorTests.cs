@@ -42,7 +42,7 @@ public sealed class OrchestrationDispatchRecoveryCoordinatorTests
     }
 
     [Fact]
-    public async Task RecoverPendingDispatchesMarksFailureAndAdvancesTheSagaWhenProviderRejectsDelivery()
+    public async Task RecoverPendingDispatchesMarksTheTaskFailedAndDefersSagaPolicyEvaluationWhenProviderRejectsDelivery()
     {
         var fixture = new RecoveryFixture();
         fixture.Provider.Result = ExecutionDispatchRecoveryResult.Rejected("Unavailable", "Mule storage is unavailable.");
@@ -57,7 +57,7 @@ public sealed class OrchestrationDispatchRecoveryCoordinatorTests
         Assert.Equal("Failed", state.Dispatch.DispatchStatus);
         Assert.Equal(TaskExecutionStatus.Failed, state.Task.Status);
         Assert.Equal(TaskExecutionStatus.Failed, state.Attempt.Status);
-        Assert.Equal(OrchestrationInstanceStatus.Failed, state.Instance.Status);
+        Assert.Equal(OrchestrationInstanceStatus.Running, state.Instance.Status);
         Assert.Equal("Unavailable", state.Attempt.ErrorCode);
         Assert.Equal("TaskDispatchRecoveryFailed", Assert.Single(fixture.Transitions).TransitionType);
         await fixture.SagaEngine.Received(1).OrchestrateAsync(

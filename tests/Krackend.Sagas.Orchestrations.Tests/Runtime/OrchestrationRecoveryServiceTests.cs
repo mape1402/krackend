@@ -224,7 +224,7 @@ public sealed class OrchestrationRecoveryServiceTests
     public async Task ReplaySpecificTaskRejectsANonTerminalTask()
     {
         var fixture = new RecoveryFixture();
-        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        var instance = CreateInstance(OrchestrationInstanceStatus.Idle);
         var waitingTask = new TaskExecution
         {
             Id = Id.New(),
@@ -380,7 +380,7 @@ public sealed class OrchestrationRecoveryServiceTests
     public async Task ReplaySpecificDispatchRejectsAnActiveDelivery()
     {
         var fixture = new RecoveryFixture();
-        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        var instance = CreateInstance(OrchestrationInstanceStatus.Idle);
         var task = CreateFailedTask(instance.Id);
         task.Status = TaskExecutionStatus.WaitingResponse;
         var attempt = new TaskExecutionAttempt
@@ -485,7 +485,7 @@ public sealed class OrchestrationRecoveryServiceTests
     {
         var fixture = new RecoveryFixture();
         var instance = CreateInstance(
-            OrchestrationInstanceStatus.Waiting,
+            OrchestrationInstanceStatus.Idle,
             currentStageKey: "stage-one",
             currentTaskKey: string.Empty,
             waitingSinceUtc: DateTime.UtcNow.AddMinutes(-3),
@@ -502,6 +502,8 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Equal(OrchestrationInstanceStatus.Running, instance.Status);
         Assert.Null(instance.FailedOnUtc);
         Assert.Null(instance.WaitingSinceUtc);
+        Assert.Null(instance.IdleSinceUtc);
+        Assert.Null(instance.IdleExpiresOnUtc);
         Assert.Null(instance.ErrorSummary);
         Assert.Equal("operator", instance.Metadata["Recovery.ReplayRequestedBy"]!.GetValue<string>());
         var forward = Assert.Single(fixture.Forwards);
@@ -545,7 +547,7 @@ public sealed class OrchestrationRecoveryServiceTests
     public async Task ReplayRecoverableInstanceUsesTheSuppliedPayloadInsteadOfTheStoredSnapshot()
     {
         var fixture = new RecoveryFixture();
-        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        var instance = CreateInstance(OrchestrationInstanceStatus.Idle);
         fixture.ArrangeReplay(
             instance,
             CreateResolvedArtifact(instance.RuntimeOrchestrationArtifactId, Stage("stage-one", MessagingTask("reserve-stock"))),
@@ -562,7 +564,7 @@ public sealed class OrchestrationRecoveryServiceTests
     public async Task ReplayRecoverableInstanceWithoutASnapshotForwardsANullPayload()
     {
         var fixture = new RecoveryFixture();
-        var instance = CreateInstance(OrchestrationInstanceStatus.Waiting);
+        var instance = CreateInstance(OrchestrationInstanceStatus.Idle);
         instance.SnapshotPayload = null!;
         fixture.ArrangeReplay(
             instance,
@@ -601,6 +603,8 @@ public sealed class OrchestrationRecoveryServiceTests
             FailedOnUtc = failedOnUtc ?? (status is OrchestrationInstanceStatus.Failed or OrchestrationInstanceStatus.DeadLettered ? DateTime.UtcNow.AddMinutes(-1) : null),
             StoppedOnUtc = stoppedOnUtc,
             WaitingSinceUtc = waitingSinceUtc,
+            IdleSinceUtc = status == OrchestrationInstanceStatus.Idle ? DateTime.UtcNow.AddMinutes(-3) : null,
+            IdleExpiresOnUtc = status == OrchestrationInstanceStatus.Idle ? DateTime.UtcNow.AddMinutes(17) : null,
             ErrorSummary = errorSummary,
             SnapshotPayload = JsonNode.Parse("""{"value":"snapshot"}""")!
         };

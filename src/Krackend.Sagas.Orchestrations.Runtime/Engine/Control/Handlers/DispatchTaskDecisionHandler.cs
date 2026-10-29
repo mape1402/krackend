@@ -181,6 +181,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             };
 
             instance.Status = OrchestrationInstanceStatus.Running;
+            instance.IdleSinceUtc = null;
+            instance.IdleExpiresOnUtc = null;
             instance.CurrentStageKey = decision.StageKey;
             instance.CurrentTaskKey = string.Empty;
             instance.LastUpdatedOnUtc = now;

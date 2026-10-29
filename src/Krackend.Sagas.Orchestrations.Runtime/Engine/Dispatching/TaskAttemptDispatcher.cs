@@ -439,6 +439,8 @@ internal sealed class TaskAttemptDispatcher : ITaskAttemptDispatcher
         failedTask.Metadata["ExecutionErrorMessage"] = JsonValue.Create(message);
         failedTask.Metadata["RetrySuppressed"] = JsonValue.Create(true);
         request.Instance.Status = OrchestrationInstanceStatus.Running;
+        request.Instance.IdleSinceUtc = null;
+        request.Instance.IdleExpiresOnUtc = null;
         request.Instance.CurrentStageKey = request.StageKey;
         request.Instance.CurrentTaskKey = request.Task.Key;
         request.Instance.FailedOnUtc = null;

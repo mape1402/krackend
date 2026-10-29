@@ -157,12 +157,14 @@ internal sealed class MessagingEngineHarness : IDisposable
             CorrelationId = $"correlation-{Guid.NewGuid():N}",
             SagaId = Id.New().ToString(),
             ExecutionKey = $"{Artifact.Key}:{Guid.NewGuid():N}",
-            Status = OrchestrationInstanceStatus.Failed,
+            // A failed task still needs its retry/continue/dead-letter policy evaluated.
+            // Aggregate Failed is reserved for deterministic, terminal runtime failures.
+            Status = OrchestrationInstanceStatus.Running,
             CurrentStageKey = stageKey,
             CurrentTaskKey = taskArtifact.Key,
             StartedOnUtc = now.AddSeconds(-5),
             LastUpdatedOnUtc = now,
-            FailedOnUtc = now,
+            FailedOnUtc = null,
             ErrorSummary = errorCode,
             SnapshotPayload = new JsonObject
             {

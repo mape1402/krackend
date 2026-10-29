@@ -66,6 +66,7 @@ public sealed class DecisionControlRetryTests
         }, CancellationToken.None);
 
         Assert.DoesNotContain(decisions, decision => decision.Kind == "retry-task");
+        Assert.IsType<DeadLetterInstanceDecision>(Assert.Single(decisions));
     }
 
     [Fact]
@@ -80,6 +81,20 @@ public sealed class DecisionControlRetryTests
             CancellationToken.None);
 
         Assert.Contains(decisions, decision => decision.Kind == "retry-task");
+    }
+
+    [Fact]
+    public async Task DecideAsyncMovesAnUnansweredTimedOutTaskToIdleAfterItsRetryPolicyIsExhausted()
+    {
+        var state = await CreateRetryStateAsync(task => task with { RetryPolicy = null! });
+        await UpdateTaskAsync(state, task => task.Status = TaskExecutionStatus.TimedOut);
+        var decisionControl = state.Services.GetRequiredService<IDecisionControl>();
+
+        var decisions = await decisionControl.DecideAsync(
+            Request(state, "TaskTimedOut"),
+            CancellationToken.None);
+
+        Assert.IsType<EnterIdleInstanceDecision>(Assert.Single(decisions));
     }
 
     [Theory]
@@ -115,7 +130,7 @@ public sealed class DecisionControlRetryTests
     }
 
     [Fact]
-    public async Task DecideAsyncDeadLettersFailedInstanceWithoutRecoverableTask()
+    public async Task DecideAsyncDoesNotReopenDeterministicallyFailedInstance()
     {
         var state = await CreateRetryStateAsync();
         await UpdateInstanceAsync(state, instance =>
@@ -128,8 +143,7 @@ public sealed class DecisionControlRetryTests
 
         var decisions = await decisionControl.DecideAsync(Request(state), CancellationToken.None);
 
-        var decision = Assert.Single(decisions);
-        Assert.Equal("dead-letter-instance", decision.Kind);
+        Assert.Empty(decisions);
     }
 
     [Fact]
@@ -220,6 +234,8 @@ public sealed class DecisionControlRetryTests
 
         Assert.DoesNotContain(suppressed, decision => decision.Kind == "retry-task");
         Assert.DoesNotContain(nonRetryable, decision => decision.Kind == "retry-task");
+        Assert.IsType<DeadLetterInstanceDecision>(Assert.Single(suppressed));
+        Assert.IsType<DeadLetterInstanceDecision>(Assert.Single(nonRetryable));
     }
 
     [Fact]
@@ -360,13 +376,15 @@ public sealed class DecisionControlRetryTests
             OrchestrationInstanceStatus.Stopped,
             OrchestrationInstanceStatus.Compensating,
             OrchestrationInstanceStatus.Compensated,
-            OrchestrationInstanceStatus.Aborted
+            OrchestrationInstanceStatus.Aborted,
+            OrchestrationInstanceStatus.DeadLettered,
+            OrchestrationInstanceStatus.Failed
         })
         {
             Assert.True(InvokeDecisionControlPrivateStatic<bool>("IsInstanceTerminalForCallback", status));
         }
 
-        Assert.False(InvokeDecisionControlPrivateStatic<bool>("IsInstanceTerminalForCallback", OrchestrationInstanceStatus.DeadLettered));
+        Assert.False(InvokeDecisionControlPrivateStatic<bool>("IsInstanceTerminalForCallback", OrchestrationInstanceStatus.Idle));
         Assert.True(InvokeDecisionControlPrivateStatic<bool>(
             "IsSuccessfulCallback",
             new OrchestrationExecutionResultMetadata { Succeeded = true }));
@@ -409,10 +427,8 @@ public sealed class DecisionControlRetryTests
 
         foreach (var status in new[]
         {
-            OrchestrationInstanceStatus.DeadLettered,
-            OrchestrationInstanceStatus.Failed,
             OrchestrationInstanceStatus.Running,
-            OrchestrationInstanceStatus.Waiting
+            OrchestrationInstanceStatus.Idle
         })
         {
             Assert.True(InvokeDecisionControlPrivateStatic<bool>(
@@ -425,6 +441,28 @@ public sealed class DecisionControlRetryTests
         }
 
         Assert.True(InvokeDecisionControlPrivateStatic<bool>(
+            "IsRecoverableLateSuccess",
+            CreateInstance(OrchestrationInstanceStatus.Running),
+            waitingTask,
+            new TaskExecutionAttempt { Status = TaskExecutionStatus.TimedOut },
+            new TaskDispatch { DispatchStatus = "Failed", DispatchType = "messaging" },
+            successfulResult));
+        Assert.True(InvokeDecisionControlPrivateStatic<bool>(
+            "IsRecoverableLateSuccess",
+            CreateInstance(OrchestrationInstanceStatus.Running),
+            waitingTask,
+            new TaskExecutionAttempt { Status = TaskExecutionStatus.Failed },
+            new TaskDispatch { DispatchStatus = "Failed", DispatchType = "messaging" },
+            successfulResult));
+        Assert.True(InvokeDecisionControlPrivateStatic<bool>(
+            "IsRecoverableLateSuccess",
+            CreateInstance(OrchestrationInstanceStatus.Running),
+            waitingTask,
+            new TaskExecutionAttempt { Status = TaskExecutionStatus.Running },
+            completedDispatch,
+            successfulResult));
+
+        Assert.False(InvokeDecisionControlPrivateStatic<bool>(
             "IsRecoverableLateSuccess",
             CreateInstance(OrchestrationInstanceStatus.Failed),
             CreateTaskExecution(TaskExecutionStatus.TimedOut),

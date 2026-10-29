@@ -102,7 +102,7 @@ public sealed class RuntimeInstanceCatalogTests
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
         var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(repository);
         var start = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
-        await repository.Create(Instance("old-waiting", start.AddDays(-1), OrchestrationInstanceStatus.Waiting));
+        await repository.Create(Instance("old-idle", start.AddDays(-1), OrchestrationInstanceStatus.Idle));
         var running = Instance("start-running", start, OrchestrationInstanceStatus.Running);
         await repository.Create(running);
         await repository.Create(Instance("middle-completed", start.AddHours(1), OrchestrationInstanceStatus.Completed));
@@ -114,7 +114,7 @@ public sealed class RuntimeInstanceCatalogTests
 
         var active = await catalog.GetPage(new RuntimeInstanceCatalogQuery(ActiveOnly: true));
         Assert.Equal(3, active.TotalCount);
-        Assert.Contains(active.Items, x => x.OrchestrationDefinitionKey == "old-waiting");
+        Assert.Contains(active.Items, x => x.OrchestrationDefinitionKey == "old-idle");
         Assert.DoesNotContain(active.Items, x => x.Status == OrchestrationInstanceStatus.Completed);
 
         var boundedActive = await catalog.GetPage(new RuntimeInstanceCatalogQuery(PageSize: 1, StartedFromUtc: start,
@@ -128,7 +128,7 @@ public sealed class RuntimeInstanceCatalogTests
         Assert.Equal(1, counts[OrchestrationInstanceStatus.Running]);
         Assert.Equal(1, counts[OrchestrationInstanceStatus.Completed]);
         Assert.Equal(2, counts.Values.Sum());
-        Assert.False(counts.ContainsKey(OrchestrationInstanceStatus.Waiting));
+        Assert.False(counts.ContainsKey(OrchestrationInstanceStatus.Idle));
 
         var byId = await catalog.GetPage(new RuntimeInstanceCatalogQuery(SearchText: running.Id.ToString()));
         Assert.Equal(running.Id, Assert.Single(byId.Items).Id);
