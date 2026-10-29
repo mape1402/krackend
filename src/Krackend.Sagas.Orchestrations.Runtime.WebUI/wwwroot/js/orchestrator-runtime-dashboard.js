@@ -27,7 +27,7 @@
 
     // Created/Compensating are execution internals.  The aggregate view exposes
     // them as one comprehensible operational state: Running.
-    const activeStatuses = ['Created', 'Running', 'Waiting', 'Compensating'];
+    const activeStatuses = ['Created', 'Running', 'Waiting', 'WaitingResponse', 'Retrying', 'Compensating'];
     const failedStatuses = ['Stopped', 'CompletedWithErrors', 'Aborted', 'Failed'];
     const statusDescriptors = [
         { key: 'running', label: 'In progress', tone: 'progress', color: 'var(--z-info)' },

@@ -802,11 +802,35 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 [data-runtime-catalog] { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .65rem; }
 [data-runtime-catalog] [data-runtime-grid-view],
 [data-runtime-catalog] .z-data-grid-component { min-width:0; width:100%; max-width:100%; min-height: 0; height: 100%; display: flex; flex-direction: column; }
+[data-runtime-catalog] [data-runtime-grid-view] {
+    align-self: stretch;
+    overflow: hidden;
+}
+/*
+ * Zoorce's generic grid intentionally owns a fixed viewport.  Instances is
+ * the operational view: its viewport is the remaining page space.  Pin the
+ * toolbar, viewport and footer order explicitly so the generic component
+ * cannot distribute the toolbar at the far end of a stretched flex column.
+ */
+[data-runtime-catalog] .z-data-grid-component {
+    justify-content: flex-start;
+    align-content: stretch;
+}
+[data-runtime-catalog] .z-toolbar {
+    order: 0;
+    flex: 0 0 auto;
+}
 [data-runtime-catalog] .z-data-grid-viewport {
+    order: 1;
     flex: 1 1 0;
     min-height: 0;
+    height: auto !important;
     overflow-x: auto;
     overflow-y: auto;
+}
+[data-runtime-catalog] .z-grid-footer {
+    order: 2;
+    flex: 0 0 auto;
 }
 [data-runtime-catalog] .z-data-shell {
     width: 100%;

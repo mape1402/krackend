@@ -120,7 +120,12 @@
             if (!response.ok) throw new Error('Counts unavailable');
             const counts = await response.json();
             const value = key => Number(counts[key] || 0);
-            metrics.running = value('Created') + value('Running') + value('Waiting') + value('Compensating');
+            metrics.running = value('Created')
+                + value('Running')
+                + value('Waiting')
+                + value('WaitingResponse')
+                + value('Retrying')
+                + value('Compensating');
             metrics.idle = value('Idle');
             metrics.completed = value('Completed') + value('Compensated');
             metrics.deadLettered = value('DeadLettered');
@@ -355,8 +360,11 @@
             startedOnUtc: toUtcText(eventValue(event, 'startedOnUtc') || existing?.startedOnUtc || eventValue(event, 'occurredOnUtc')),
             lastUpdatedOnUtc: toUtcText(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc')),
             reactiveRevision: String(eventValue(event, 'revision') || existing?.reactiveRevision || ''),
-            completedTaskCount: existing?.completedTaskCount || 0,
-            totalTaskCount: existing?.totalTaskCount || 0
+            // The reactive payload carries the server-side projection. Keep the
+            // row's existing values only for older publishers that do not yet
+            // include progress, never calculate task state in the browser.
+            completedTaskCount: Number(eventValue(event, 'completedTaskCount') ?? existing?.completedTaskCount ?? 0),
+            totalTaskCount: Number(eventValue(event, 'totalTaskCount') ?? existing?.totalTaskCount ?? 0)
         };
     };
     const patchVisibleRow = item => {
