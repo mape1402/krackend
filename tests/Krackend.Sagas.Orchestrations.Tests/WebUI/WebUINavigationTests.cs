@@ -146,9 +146,10 @@ public sealed class WebUINavigationTests
             item => AssertNavigation(item, "Teams", "OrchestratorSecurity", "/Teams/Index", 30),
             item => AssertNavigation(item, "Dashboard", "OrchestratorRuntime", "/Dashboard/Index", 34),
             item => AssertNavigation(item, "Instances", "OrchestratorRuntime", "/Instances/Index", 35),
-            item => AssertNavigation(item, "History", "OrchestratorRuntime", "/Instances/History", 36),
-            item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 37),
-            item => AssertNavigation(item, "Design Nodes", "OrchestratorRuntime", "/DesignNodes/Index", 38));
+            item => AssertNavigation(item, "Statistics", "OrchestratorRuntime", "/Statistics/Index", 36),
+            item => AssertNavigation(item, "History", "OrchestratorRuntime", "/Instances/History", 37),
+            item => AssertNavigation(item, "Artifacts", "OrchestratorRuntime", "/Artifacts/Index", 38),
+            item => AssertNavigation(item, "Design Nodes", "OrchestratorRuntime", "/DesignNodes/Index", 39));
     }
 
     [Fact]
@@ -177,6 +178,8 @@ public sealed class WebUINavigationTests
         var theme = provider.GetRequiredService<IOptions<OrchestratorWebUIThemeOptions>>().Value;
 
         Assert.Equal("Orchestrator", theme.Title);
+        Assert.Equal("K", theme.BrandMark);
+        Assert.Equal(string.Empty, theme.TopBarContext);
         Assert.Equal(OrchestratorWebUIThemeMode.Light, theme.Mode);
         Assert.Equal("#245fc7", theme.PrimaryColor);
         Assert.Equal("#8dbaff", theme.Dark.PrimaryColor);
@@ -279,6 +282,8 @@ public sealed class WebUINavigationTests
         {
             options.Theme.Title = "Atlas";
             options.Theme.Subtitle = "Control Plane";
+            options.Theme.TopBarContext = "Operations";
+            options.Theme.BrandMark = "A";
             options.Theme.Mode = OrchestratorWebUIThemeMode.Dark;
             options.Theme.PrimaryColor = "#112233";
             options.Theme.Dark.PrimaryColor = "#445566";
@@ -290,6 +295,8 @@ public sealed class WebUINavigationTests
 
         Assert.Equal("Atlas", theme.Title);
         Assert.Equal("Control Plane", theme.Subtitle);
+        Assert.Equal("Operations", theme.TopBarContext);
+        Assert.Equal("A", theme.BrandMark);
         Assert.Equal(OrchestratorWebUIThemeMode.Dark, theme.Mode);
         Assert.Equal("#112233", theme.PrimaryColor);
         Assert.Equal("#445566", theme.Dark.PrimaryColor);

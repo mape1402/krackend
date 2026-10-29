@@ -73,6 +73,18 @@ public sealed class OrchestratorWebUIThemeOptions
     public string Subtitle { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the optional context label rendered above a page title in the top bar.
+    /// Hosts can use this for a product area such as <c>Control plane</c>; when omitted,
+    /// the shell intentionally renders no secondary product label.
+    /// </summary>
+    public string TopBarContext { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the compact text mark rendered by the Zoorce shell when no image mark is used.
+    /// </summary>
+    public string BrandMark { get; set; } = "K";
+
+    /// <summary>
     /// Gets or sets the configured color mode.
     /// </summary>
     public OrchestratorWebUIThemeMode Mode { get; set; } = OrchestratorWebUIThemeMode.Light;
@@ -196,6 +208,8 @@ public sealed class OrchestratorWebUIThemeOptions
 
         Title = source.Title;
         Subtitle = source.Subtitle;
+        TopBarContext = source.TopBarContext;
+        BrandMark = source.BrandMark;
         Mode = source.Mode;
         IconCssClass = source.IconCssClass;
         IconImageUrl = source.IconImageUrl;

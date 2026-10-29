@@ -41,11 +41,23 @@ public sealed class ZoorceOrchestratorNavigationProvider : INavigationProvider
             (Area: "OrchestratorSecurity", Label: "Security")
         })
         {
-            var children = items.Where(x => x.Area == group.Area && x != overview)
+            var scopedItems = items.Where(x => x.Area == group.Area && x != overview)
                 .Select(x => (Item: x, Url: _links.GetPathByPage(context, x.Page, values: new { area = x.Area })))
                 .Where(x => x.Url is not null)
-                .Select(x => new NavigationItem(x.Item.Label, x.Url))
                 .ToArray();
+            var children = group.Area == "OrchestratorRuntime"
+                ? scopedItems
+                    .GroupBy(x => string.IsNullOrWhiteSpace(x.Item.Section) ? "Activity" : x.Item.Section, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x.Min(x => x.Item.Order))
+                    .Select(section => new NavigationItem(
+                        section.Key,
+                        Children: section.OrderBy(x => x.Item.Order)
+                            .Select(x => new NavigationItem(x.Item.Label, x.Url!))
+                            .ToArray()))
+                    .ToArray()
+                : scopedItems
+                    .Select(x => new NavigationItem(x.Item.Label, x.Url!))
+                    .ToArray();
             if (children.Length > 0)
                 result.Add(new NavigationItem(group.Label, Children: children));
         }

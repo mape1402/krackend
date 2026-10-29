@@ -8,7 +8,7 @@
 @{
     ViewData["Title"] = "Instances";
     var counters = new[] {
-        ("running", "Running", "activity"), ("idle", "Idle", "pause-circle"),
+        ("total", "Total instances", "layers"), ("running", "Running", "activity"), ("idle", "Idle", "pause-circle"),
         ("completed", "Completed", "check2-circle"), ("deadLettered", "Dead lettered", "inbox"), ("failed", "Failed", "exclamation-circle")
     };
 }
@@ -50,8 +50,8 @@
                 LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
                 RealtimeBehavior = ZoorceDataGridRealtimeBehavior.Patch,
                 Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
-                    new("status", "Status"), new("currentStageKey", "Stage", false), new("currentTaskKey", "Task", false),
-                    new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated"), new("actions", "Actions", false)]
+                    new("status", "Status"), new("progress", "Progress", false), new("currentStageKey", "Stage", false), new("currentTaskKey", "Task", false),
+                    new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated")]
             })
         </div>
         <div class="od-grid-loaded-copy" data-runtime-loaded-copy aria-live="polite">Loading rows...</div>

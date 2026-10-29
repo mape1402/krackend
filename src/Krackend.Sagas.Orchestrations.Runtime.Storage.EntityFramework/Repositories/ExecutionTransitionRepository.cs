@@ -103,6 +103,8 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             FromStatus = transition.FromStatus,
             ToStatus = transition.ToStatus,
             InstanceStatus = instance.Status.ToString(),
+            StartedOnUtc = instance.StartedOnUtc,
+            LastUpdatedOnUtc = instance.LastUpdatedOnUtc,
             OccurredOnUtc = transition.OccurredOnUtc,
             Message = transition.Message,
             Payload = transition.Payload,

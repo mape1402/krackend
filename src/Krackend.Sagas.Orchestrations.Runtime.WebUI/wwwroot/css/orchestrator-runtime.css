@@ -707,7 +707,7 @@
 
 .od-monitor-scope { display: inline-flex; align-items: center; gap: .5rem; color: var(--od-muted); font-size: .75rem; white-space: nowrap; }
 .od-monitor-scope select { min-width: 10rem; width: auto; }
-.od-monitor-counters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .65rem; margin-bottom: .9rem; }
+.od-monitor-counters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .65rem; margin-bottom: .9rem; }
 .od-monitor-counters > .z-component-card, .od-dashboard-metrics > .z-component-card { --metric-accent: var(--z-primary, #356bd8); position: relative; display: grid; grid-template-columns: 2.1rem minmax(0, 1fr); grid-template-rows: auto auto; column-gap: .65rem; align-content: center; min-width: 0; min-height: 72px; padding: .65rem .7rem; border: 1px solid color-mix(in srgb, var(--metric-accent) 28%, var(--od-surface)); border-radius: 8px; background: color-mix(in srgb, var(--od-surface) 88%, var(--metric-accent)); }
 .od-monitor-counters .z-component-card header, .od-dashboard-metrics .z-component-card header { grid-column: 2; grid-row: 2; min-width: 0; padding: 0; }
 .od-monitor-counters .z-component-card h2, .od-dashboard-metrics .z-component-card h2 { color: var(--od-muted); font-size: .7rem; line-height: 1.25; overflow-wrap: normal; }
@@ -851,6 +851,7 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 
 .od-live-indicator[data-live-state="connected"] .od-live-dot {
     background: var(--od-success);
+    animation: od-live-pulse-strong 1.45s ease-out infinite;
 }
 
 .od-live-indicator[data-live-state="connecting"] .od-live-dot {
@@ -1353,6 +1354,24 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
     font-size: 0.7rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* The instance grid is an operational console: identifiers remain readable,
+   copy actions stay adjacent, and only the grid itself owns overflow. */
+[data-runtime-catalog] .od-id-copy { gap: .18rem; white-space: nowrap; }
+[data-runtime-catalog] .od-copy-value { flex: 0 0 auto; overflow: visible; text-overflow: clip; white-space: nowrap; }
+[data-runtime-catalog] .od-copy-button { width: 22px; height: 22px; border-radius: 6px; }
+[data-runtime-catalog] .od-instance-row { cursor: pointer; }
+[data-runtime-catalog] .od-instance-row:hover { background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 5%, transparent); }
+[data-runtime-catalog] .od-instance-row:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-primary, var(--od-primary)) 55%, transparent); outline-offset: -2px; }
+.od-instance-progress { display: inline-flex; align-items: center; gap: .38rem; min-width: 6rem; color: var(--z-muted, var(--od-muted)); font-variant-numeric: tabular-nums; font-size: .68rem; white-space: nowrap; }
+.od-instance-progress-meter { display: block; width: 3.85rem; height: .32rem; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 13%, var(--z-surface, var(--od-surface))); }
+.od-instance-progress-meter > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--z-primary, var(--od-primary)), color-mix(in srgb, var(--z-success, #0f8c55) 80%, var(--z-primary, var(--od-primary)))); transition: width .18s ease; }
+
+@keyframes od-live-pulse-strong {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--od-success, #0f8c55) 52%, transparent); transform: scale(1); }
+    70% { box-shadow: 0 0 0 .52rem transparent; transform: scale(1.08); }
+    100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
 }
 
 .od-copy-button {

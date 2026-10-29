@@ -28,6 +28,18 @@ public sealed record InstanceRowModel(
     int RetryCount = 0)
 {
     /// <summary>
+    /// Gets the number of enabled orchestration tasks that are already complete
+    /// for the instance. This is a diagnostics-only, display-safe progress value.
+    /// </summary>
+    public int CompletedTaskCount { get; init; }
+
+    /// <summary>
+    /// Gets the number of enabled orchestration tasks defined by the deployed
+    /// artifact. Disabled design elements are intentionally excluded.
+    /// </summary>
+    public int TotalTaskCount { get; init; }
+
+    /// <summary>
     /// Gets the orchestration label including definition key and version when available.
     /// </summary>
     public string OrchestrationLabel

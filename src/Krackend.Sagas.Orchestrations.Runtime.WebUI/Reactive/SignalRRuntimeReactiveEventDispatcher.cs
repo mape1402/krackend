@@ -50,6 +50,10 @@ public sealed class SignalRRuntimeReactiveEventDispatcher : BackgroundService
         await foreach (var message in _queue.Reader.ReadAllAsync(stoppingToken))
         {
             await Dispatch(message, stoppingToken);
+            if (_queue.TryTakeResynchronizationRequired())
+            {
+                await NotifyResync();
+            }
         }
     }
 

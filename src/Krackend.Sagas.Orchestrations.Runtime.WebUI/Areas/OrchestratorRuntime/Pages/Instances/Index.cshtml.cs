@@ -126,8 +126,8 @@ public sealed class IndexModel : PageModel
         out OrchestrationInstanceStatus? selectedStatus)
     {
         selectedStatus = null;
-        if (recentHours.HasValue && recentHours is not (1 or 6 or 24 or 168 or 720 or 2160))
-            return "The recent time range must be 1, 6, 24, 168, 720, or 2160 hours and cannot be combined with explicit dates.";
+        if (recentHours.HasValue && recentHours is not (1 or 3 or 6 or 12 or 24 or 168 or 720 or 2160))
+            return "The recent time range must be 1, 3, 6, 12, 24, 168, 720, or 2160 hours and cannot be combined with explicit dates.";
         if (recentHours.HasValue && (startedFrom.HasValue || startedBefore.HasValue))
             return "The recent time range cannot be combined with explicit dates.";
         if (startedFrom.HasValue && startedBefore.HasValue && startedFrom.Value >= startedBefore.Value)

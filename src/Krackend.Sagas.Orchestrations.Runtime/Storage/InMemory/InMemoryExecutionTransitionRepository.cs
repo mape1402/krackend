@@ -94,6 +94,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 FromStatus = transition.FromStatus,
                 ToStatus = transition.ToStatus,
                 InstanceStatus = instance.Status.ToString(),
+                StartedOnUtc = instance.StartedOnUtc,
+                LastUpdatedOnUtc = instance.LastUpdatedOnUtc,
                 OccurredOnUtc = transition.OccurredOnUtc,
                 Message = transition.Message,
                 Payload = transition.Payload,

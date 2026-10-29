@@ -1,21 +1,33 @@
 (() => {
     const root = document.querySelector('[data-runtime-catalog]');
     if (!root) return;
+
     const grid = root.querySelector('[data-z-data-grid]');
     const search = grid.querySelector('[data-z-grid-search]');
     const scopeButtons = [...root.querySelectorAll('[data-runtime-scope-value]')];
     const controls = root.querySelector('.od-runtime-view-controls');
-    const records = new Map();
-    const pendingEvents = new Map();
-    let countsTimer, liveEventTimer, countsRequest;
-    let refreshing = false, refreshPending = false, preservePending = false, scrollAnchor = null;
-    let countsLoadingForNextLoad = true, catalogLoaded = false, catalogTotal = 0;
-    let recentHours = 24;
     const toolbar = grid.querySelector('.z-toolbar');
     const refreshControl = root.querySelector('[data-runtime-refresh]');
     const searchControl = search.closest('.z-grid-search, .z-data-grid-search') || search.parentElement;
+    const records = new Map();
+    const pendingEvents = new Map();
+    const seenEventIds = new Set();
+    const metrics = { total: 0, running: 0, idle: 0, completed: 0, deadLettered: 0, failed: 0 };
+    const maxRetainedRows = 500;
+    const maxPendingEvents = 1024;
+    const maxSeenEvents = 4096;
+    let catalogTotal = 0;
+    let recentHours = 24;
+    let refreshing = false;
+    let refreshPending = false;
+    let preservePending = false;
+    let scrollAnchor = null;
+    let countsRequest;
+    let liveEventTimer = 0;
+
     toolbar.append(controls);
     if (searchControl && refreshControl) searchControl.after(refreshControl);
+
     const bodyObserver = new MutationObserver(() => decorate());
 
     function observeGridBody() {
@@ -29,25 +41,66 @@
         observeGridBody();
     }
 
+    const eventValue = (event, name) => event?.[name] ?? event?.[`${name.charAt(0).toUpperCase()}${name.slice(1)}`];
+    const toTimestamp = value => {
+        const timestamp = new Date(value).getTime();
+        return Number.isNaN(timestamp) ? 0 : timestamp;
+    };
+    const toUtcText = value => {
+        const timestamp = new Date(value).getTime();
+        return Number.isNaN(timestamp) ? new Date().toISOString() : new Date(timestamp).toISOString();
+    };
+    const toPublicStatus = value => {
+        const status = String(value || 'Running');
+        if (['Created', 'Running', 'Waiting', 'WaitingResponse', 'Retrying', 'Compensating'].includes(status)) return 'Running';
+        if (status === 'Idle') return 'Idle';
+        if (['Completed', 'Compensated'].includes(status)) return 'Completed';
+        if (status === 'DeadLettered') return 'DeadLettered';
+        if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(status)) return 'Failed';
+        return status;
+    };
+    const statusClass = status => ({
+        Running: 'od-status-running', Idle: 'od-status-warning', Completed: 'od-status-active',
+        DeadLettered: 'od-status-warning', Failed: 'od-status-danger'
+    }[status] || 'od-status-inactive');
+    const metricKey = status => ({
+        Running: 'running', Idle: 'idle', Completed: 'completed', DeadLettered: 'deadLettered', Failed: 'failed'
+    }[toPublicStatus(status)] || null);
+    const formatUtc = value => {
+        const text = typeof value === 'string' && !/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? `${value}Z` : value;
+        const date = new Date(text);
+        return Number.isNaN(date.getTime()) ? '' : date.toISOString().replace('T', ' ').substring(0, 19);
+    };
+    const isInstanceStatusTransition = event => /^Instance/i.test(String(eventValue(event, 'transitionType') || ''));
+    const isInstanceStart = event => /^(InstancePromoted|InstanceStarted)$/i.test(String(eventValue(event, 'transitionType') || ''));
+    const orchestrationLabel = (definitionKey, version) => definitionKey ? (version ? `${definitionKey} v${version}` : definitionKey) : '';
+
     const updateLoadedCopy = result => {
         const copy = root.querySelector('[data-runtime-loaded-copy]');
         if (!copy) return;
-        const loaded = records.size;
         if (result) catalogTotal = Number(result.totalCount ?? result.totalRows ?? 0);
-        const total = catalogTotal;
-        const label = total > loaded
-            ? `${loaded.toLocaleString()} of ${total.toLocaleString()} matching rows loaded`
-            : total > 0
-                ? `${loaded.toLocaleString()} rows loaded`
-                : 'No matching rows';
-        copy.textContent = label;
+        const loaded = records.size;
+        copy.textContent = catalogTotal > loaded
+            ? `${loaded.toLocaleString()} of ${catalogTotal.toLocaleString()} matching rows loaded`
+            : catalogTotal > 0 ? `${loaded.toLocaleString()} rows loaded` : 'No matching rows';
     };
 
     const setMetricLoading = loading => {
         root.querySelectorAll('[data-monitor-metric-skeleton]').forEach(element => { element.hidden = !loading; });
         root.querySelectorAll('[data-monitor-metric-data]').forEach(element => { element.hidden = loading; });
     };
-
+    const renderMetrics = () => {
+        Object.entries(metrics).forEach(([key, count]) => {
+            const countElement = root.querySelector(`[data-monitor-count="${key}"]`);
+            const shareElement = root.querySelector(`[data-monitor-share="${key}"]`);
+            if (countElement) countElement.textContent = Number(count).toLocaleString();
+            if (shareElement) {
+                shareElement.textContent = key === 'total'
+                    ? 'selected time range'
+                    : metrics.total ? `${Math.round(count * 100 / metrics.total)}% of matching` : 'no instances';
+            }
+        });
+    };
     const scopedUrl = source => {
         const url = new URL(source, location.href);
         url.searchParams.delete('activeOnly');
@@ -66,15 +119,13 @@
             if (!response.ok) throw new Error('Counts unavailable');
             const counts = await response.json();
             const value = key => Number(counts[key] || 0);
-            const totals = { running: value('Created') + value('Running') + value('Compensating'), idle: value('Idle') + value('Waiting'),
-                completed: value('Completed'), deadLettered: value('DeadLettered'),
-                failed: value('Failed') + value('Aborted') + value('CompletedWithErrors') };
-            const total = Object.values(totals).reduce((sum, count) => sum + count, 0);
-            Object.entries(totals).forEach(([key, count]) => {
-                root.querySelector(`[data-monitor-count="${key}"]`).textContent = count.toLocaleString();
-                const share = root.querySelector(`[data-monitor-share="${key}"]`);
-                if (share) share.textContent = total ? `${Math.round(count * 100 / total)}% of matching` : 'no instances';
-            });
+            metrics.running = value('Created') + value('Running') + value('Waiting') + value('Compensating');
+            metrics.idle = value('Idle');
+            metrics.completed = value('Completed') + value('Compensated');
+            metrics.deadLettered = value('DeadLettered');
+            metrics.failed = value('Failed') + value('Stopped') + value('Aborted') + value('CompletedWithErrors');
+            metrics.total = metrics.running + metrics.idle + metrics.completed + metrics.deadLettered + metrics.failed;
+            renderMetrics();
         } catch (error) {
             if (error.name !== 'AbortError') {
                 root.querySelectorAll('[data-monitor-count]').forEach(element => { element.textContent = '—'; });
@@ -87,18 +138,13 @@
             }
         }
     };
-    const scheduleCountsRefresh = () => {
-        window.clearTimeout(countsTimer);
-        countsTimer = window.setTimeout(() => void refreshCounts(), 450);
-    };
+
     const captureScrollAnchor = () => {
         const viewport = grid.querySelector('[data-z-grid-viewport]');
         if (!viewport || viewport.scrollTop <= 0) return null;
         const viewportTop = viewport.getBoundingClientRect().top;
-        const row = [...grid.querySelectorAll('tr[data-z-grid-key]')]
-            .find(item => item.getBoundingClientRect().bottom > viewportTop);
-        return row
-            ? { key: row.dataset.zGridKey, offset: row.getBoundingClientRect().top - viewportTop, scrollTop: viewport.scrollTop }
+        const row = [...grid.querySelectorAll('tr[data-z-grid-key]')].find(item => item.getBoundingClientRect().bottom > viewportTop);
+        return row ? { key: row.dataset.zGridKey, offset: row.getBoundingClientRect().top - viewportTop, scrollTop: viewport.scrollTop }
             : { key: null, offset: 0, scrollTop: viewport.scrollTop };
     };
     const restoreScrollAnchor = () => {
@@ -111,6 +157,13 @@
         if (row) viewport.scrollTop += row.getBoundingClientRect().top - viewport.getBoundingClientRect().top - anchor.offset;
         else viewport.scrollTop = anchor.scrollTop;
     };
+    const setRefreshBusy = busy => {
+        const button = refreshControl?.querySelector('button');
+        if (!button) return;
+        button.disabled = busy;
+        button.setAttribute('aria-busy', String(busy));
+        refreshControl.classList.toggle('is-loading', busy);
+    };
     const refresh = ({ preserveScroll = false, showMetricLoading = false } = {}) => {
         if (refreshing || grid.getAttribute('aria-busy') === 'true') {
             refreshPending = true;
@@ -118,99 +171,144 @@
             return;
         }
         if (preserveScroll) scrollAnchor = captureScrollAnchor();
-        countsLoadingForNextLoad = showMetricLoading;
         refreshing = true;
         setRefreshBusy(true);
+        if (showMetricLoading) void refreshCounts({ showLoading: true });
         grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
     };
-    const setRefreshBusy = busy => {
-        const control = root.querySelector('[data-runtime-refresh]');
-        const button = control?.querySelector('button');
-        if (!button) return;
-        button.disabled = busy;
-        button.setAttribute('aria-busy', String(busy));
-        control.classList.toggle('is-loading', busy);
-    };
+
     const copyable = (value, label) => {
-        const container = document.createElement('span'); container.className = 'od-id-copy';
-        const text = document.createElement('span'); text.className = 'od-copy-value'; text.textContent = value || '-'; container.append(text);
+        const container = document.createElement('span');
+        container.className = 'od-id-copy';
+        const text = document.createElement('span');
+        text.className = 'od-copy-value';
+        text.textContent = value || '-';
+        container.append(text);
         if (value) {
-            const button = document.createElement('button'); button.type = 'button'; button.className = 'od-copy-button';
-            button.dataset.copyValue = value; button.title = `Copy ${label}`; button.setAttribute('aria-label', `Copy ${label}`);
-            const icon = document.createElement('i'); icon.className = 'bi bi-copy'; icon.setAttribute('aria-hidden', 'true');
-            button.append(icon); container.append(button);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'od-copy-button';
+            button.dataset.copyValue = value;
+            button.title = `Copy ${label}`;
+            button.setAttribute('aria-label', `Copy ${label}`);
+            button.innerHTML = '<i class="bi bi-copy" aria-hidden="true"></i>';
+            container.append(button);
         }
+        return container;
+    };
+    const renderProgress = item => {
+        const total = Number(item.totalTaskCount || 0);
+        const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount || 0)));
+        const container = document.createElement('span');
+        container.className = 'od-instance-progress';
+        if (!total) {
+            container.textContent = '—';
+            return container;
+        }
+        const meter = document.createElement('span');
+        meter.className = 'od-instance-progress-meter';
+        const fill = document.createElement('span');
+        fill.style.width = `${Math.round(complete * 100 / total)}%`;
+        meter.append(fill);
+        const label = document.createElement('small');
+        label.textContent = `${complete}/${total}`;
+        container.title = `${complete} of ${total} enabled tasks completed`;
+        container.append(meter, label);
         return container;
     };
     const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         if (!item) return;
-        const actions = row.querySelector('[data-z-grid-field="actions"]');
-        if (actions && !actions.querySelector('[data-instance-link]')) {
-            const link = document.createElement('a'); link.className = 'z-button z-button-ghost';
-            link.href = root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(item.id));
-            link.dataset.instanceLink = item.id; link.title = 'View instance'; link.setAttribute('aria-label', `View instance ${item.correlationId || item.id}`);
-            const icon = document.createElement('i'); icon.className = 'bi bi-eye'; icon.setAttribute('aria-hidden', 'true');
-            link.append(icon); actions.replaceChildren(link);
-        }
         for (const [field, label] of [['correlationId', 'correlation ID'], ['sagaId', 'saga ID']]) {
             const cell = row.querySelector(`[data-z-grid-field="${field}"]`);
             if (cell && cell.querySelector('.od-copy-value')?.textContent !== (item[field] || '-')) cell.replaceChildren(copyable(item[field], label));
         }
         for (const field of ['startedOnUtc', 'lastUpdatedOnUtc']) {
-            const cell = row.querySelector(`[data-z-grid-field="${field}"]`), value = item[field];
-            const text = typeof value === 'string' && !/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? `${value}Z` : value;
-            const date = new Date(text);
-            if (cell && value && !Number.isNaN(date.getTime())) {
-                const formatted = date.toISOString().replace('T', ' ').substring(0, 19);
-                if (cell.textContent !== formatted) cell.textContent = formatted;
-            }
+            const cell = row.querySelector(`[data-z-grid-field="${field}"]`);
+            if (cell) cell.textContent = formatUtc(item[field]);
         }
         const status = row.querySelector('[data-z-grid-field="status"]');
         if (status && (status.querySelector('.od-status')?.textContent !== item.status || status.querySelector('.od-status')?.className !== `od-status ${item.statusClass || ''}`)) {
-            const badge = document.createElement('span'); badge.className = `od-status ${item.statusClass || ''}`; badge.textContent = item.status;
+            const badge = document.createElement('span');
+            badge.className = `od-status ${item.statusClass || ''}`;
+            badge.textContent = item.status;
             status.replaceChildren(badge);
         }
+        const progress = row.querySelector('[data-z-grid-field="progress"]');
+        if (progress) progress.replaceChildren(renderProgress(item));
+        row.classList.add('od-instance-row');
+        row.tabIndex = 0;
+        row.setAttribute('aria-label', `Open saga ${item.sagaId || item.id}`);
     });
-    grid.addEventListener('click', async event => {
-        const button = event.target.closest('[data-copy-value]');
-        if (!button || !grid.contains(button)) return;
-        const value = button.dataset.copyValue;
-        if (!value) return;
-        try {
+
+    const copyText = async value => {
+        if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(value);
-            button.classList.add('is-copied');
-            button.title = 'Copied';
-            window.setTimeout(() => { button.classList.remove('is-copied'); button.title = button.getAttribute('aria-label'); }, 1400);
-        } catch {
-            button.title = 'Unable to copy';
+            return;
         }
+        const input = document.createElement('textarea');
+        input.value = value;
+        input.setAttribute('readonly', '');
+        input.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+        document.body.append(input);
+        input.select();
+        const succeeded = document.execCommand('copy');
+        input.remove();
+        if (!succeeded) throw new Error('Clipboard unavailable');
+    };
+    grid.addEventListener('click', async event => {
+        const copyButton = event.target.closest('[data-copy-value]');
+        if (copyButton && grid.contains(copyButton)) {
+            const value = copyButton.dataset.copyValue;
+            if (!value) return;
+            try {
+                await copyText(value);
+                copyButton.classList.add('is-copied');
+                copyButton.title = 'Copied';
+                window.setTimeout(() => { copyButton.classList.remove('is-copied'); copyButton.title = copyButton.getAttribute('aria-label'); }, 1400);
+            } catch {
+                copyButton.title = 'Unable to copy';
+            }
+            return;
+        }
+        if (event.target.closest('a,button,input,select,textarea')) return;
+        const row = event.target.closest('tr[data-z-grid-key]');
+        const item = row && records.get(row.dataset.zGridKey);
+        if (item) location.assign(root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(item.id)));
     });
+    grid.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const row = event.target.closest('tr[data-z-grid-key]');
+        const item = row && records.get(row.dataset.zGridKey);
+        if (!item) return;
+        event.preventDefault();
+        location.assign(root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(item.id)));
+    });
+
+    const trimRecordState = () => {
+        if (records.size <= maxRetainedRows) return;
+        const visible = new Set([...grid.querySelectorAll('tr[data-z-grid-key]')].map(row => row.dataset.zGridKey));
+        for (const key of records.keys()) {
+            if (records.size <= maxRetainedRows) break;
+            if (!visible.has(key)) records.delete(key);
+        }
+        while (records.size > maxRetainedRows) records.delete(records.keys().next().value);
+    };
     observeGridBody();
     grid.addEventListener('zoorce:grid:error', () => {
         refreshing = false;
         setRefreshBusy(false);
         scrollAnchor = null;
-        if (refreshPending) {
-            const preserveScroll = preservePending;
-            refreshPending = false;
-            preservePending = false;
-            refresh({ preserveScroll });
-        }
     });
     grid.addEventListener('zoorce:grid:loaded', event => {
         refreshing = false;
         setRefreshBusy(false);
-        catalogLoaded = true;
         if (!event.detail.append) records.clear();
         event.detail.result.items.forEach(item => records.set(String(item.id), item));
+        trimRecordState();
         decorate();
         updateLoadedCopy(event.detail.result);
-        if (!event.detail.append) {
-            const showLoading = countsLoadingForNextLoad;
-            countsLoadingForNextLoad = false;
-            void refreshCounts({ showLoading });
-        }
+        if (!event.detail.append) void refreshCounts({ showLoading: false });
         window.requestAnimationFrame(restoreScrollAnchor);
         if (refreshPending) {
             const preserveScroll = preservePending;
@@ -219,26 +317,7 @@
             refresh({ preserveScroll });
         }
     });
-    const eventValue = (event, name) => event?.[name] ?? event?.[`${name.charAt(0).toUpperCase()}${name.slice(1)}`];
-    const toUtcText = value => {
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
-    };
-    const toTimestamp = value => {
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? 0 : date.getTime();
-    };
-    const orchestrationLabel = (definitionKey, version) => definitionKey
-        ? (version ? `${definitionKey} v${version}` : definitionKey)
-        : '';
-    const statusClass = status => {
-        if (['Completed', 'Compensated'].includes(status)) return 'od-status-active';
-        if (status === 'Running') return 'od-status-running';
-        if (['Idle', 'Waiting', 'WaitingResponse', 'Compensating'].includes(status)) return 'od-status-waiting';
-        if (['Retrying', 'CompletedWithErrors', 'DeadLettered'].includes(status)) return 'od-status-warning';
-        if (['Failed', 'TimedOut', 'Cancelled', 'Aborted'].includes(status)) return 'od-status-danger';
-        return 'od-status-inactive';
-    };
+
     const matchesScope = item => {
         const term = search.value.trim().toLocaleLowerCase();
         if (!term) return true;
@@ -246,18 +325,15 @@
             .some(value => String(value || '').toLocaleLowerCase().includes(term));
     };
     const toLiveRow = (event, existing) => {
-        const status = String(eventValue(event, 'instanceStatus') || existing?.status || 'Created');
-        const occurredOnUtc = toUtcText(eventValue(event, 'occurredOnUtc'));
+        const status = toPublicStatus(eventValue(event, 'instanceStatus') || existing?.status);
         const definitionKey = eventValue(event, 'orchestrationDefinitionKey') || existing?.orchestrationDefinitionKey || '';
         const version = eventValue(event, 'orchestrationVersion') || existing?.orchestrationVersion || '';
-        const isCompleted = ['Completed', 'Compensated'].includes(status);
-        const isFailed = ['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'DeadLettered'].includes(status);
         return {
             ...existing,
             id: String(eventValue(event, 'orchestrationInstanceId') || existing?.id || ''),
             orchestrationDefinitionKey: definitionKey,
             orchestrationVersion: version,
-            orchestrationLabel: existing?.orchestrationLabel || orchestrationLabel(definitionKey, version),
+            orchestrationLabel: orchestrationLabel(definitionKey, version),
             correlationId: eventValue(event, 'correlationId') || existing?.correlationId || '',
             sagaId: eventValue(event, 'sagaId') || existing?.sagaId || '',
             executionKey: eventValue(event, 'executionKey') || existing?.executionKey || '',
@@ -265,24 +341,11 @@
             statusClass: statusClass(status),
             currentStageKey: eventValue(event, 'stageKey') || existing?.currentStageKey || '',
             currentTaskKey: eventValue(event, 'taskKey') || existing?.currentTaskKey || '',
-            startedOnUtc: existing?.startedOnUtc || occurredOnUtc,
-            lastUpdatedOnUtc: occurredOnUtc,
-            idleSinceUtc: status === 'Idle' ? occurredOnUtc : existing?.idleSinceUtc || null,
-            completedOnUtc: isCompleted ? occurredOnUtc : existing?.completedOnUtc || null,
-            failedOnUtc: isFailed ? occurredOnUtc : existing?.failedOnUtc || null
+            startedOnUtc: toUtcText(eventValue(event, 'startedOnUtc') || existing?.startedOnUtc || eventValue(event, 'occurredOnUtc')),
+            lastUpdatedOnUtc: toUtcText(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc')),
+            completedTaskCount: existing?.completedTaskCount || 0,
+            totalTaskCount: existing?.totalTaskCount || 0
         };
-    };
-    const publishPatch = item => {
-        if (!window.ZoorceData?.invalidate) return false;
-        window.ZoorceData.invalidate({
-            scope: 'runtime.instances',
-            change: { key: item.id, item },
-            correlationId: item.id
-        });
-        // Zoorce patches primitive cell values. Reapply the catalog affordances
-        // after its DOM write without loading or reordering the collection.
-        window.requestAnimationFrame(decorate);
-        return true;
     };
     const patchVisibleRow = item => {
         const row = grid.querySelector(`tr[data-z-grid-key="${CSS.escape(item.id)}"]`);
@@ -291,31 +354,54 @@
             const cell = row.querySelector(`[data-z-grid-field="${field}"]`);
             if (cell) cell.textContent = item[field] || '';
         }
-        window.requestAnimationFrame(decorate);
+        decorate();
+        return true;
+    };
+    const adjustMetrics = (event, current, row) => {
+        if (!isInstanceStatusTransition(event)) return;
+        const after = metricKey(row.status);
+        const before = metricKey(current?.status || eventValue(event, 'fromStatus'));
+        if (!current && isInstanceStart(event)) {
+            metrics.total += 1;
+            if (after) metrics[after] += 1;
+            renderMetrics();
+            return;
+        }
+        if (!before || !after || before === after) return;
+        metrics[before] = Math.max(0, metrics[before] - 1);
+        metrics[after] += 1;
+        renderMetrics();
+    };
+    const rememberEvent = event => {
+        const id = String(eventValue(event, 'id') || '');
+        if (!id || seenEventIds.has(id)) return false;
+        seenEventIds.add(id);
+        if (seenEventIds.size > maxSeenEvents) seenEventIds.delete(seenEventIds.values().next().value);
         return true;
     };
     const applyLiveEvent = event => {
+        if (!rememberEvent(event)) return;
         const id = String(eventValue(event, 'orchestrationInstanceId') || '');
         if (!id) return;
         const current = records.get(id);
-        const occurredOnUtc = eventValue(event, 'occurredOnUtc');
-        if (current && toTimestamp(occurredOnUtc) < toTimestamp(current.lastUpdatedOnUtc)) return;
+        if (current && toTimestamp(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc')) < toTimestamp(current.lastUpdatedOnUtc)) return;
         const row = toLiveRow(event, current);
+        adjustMetrics(event, current, row);
         if (!matchesScope(row)) return;
         if (current) {
             records.set(id, row);
-            if (!publishPatch(row)) patchVisibleRow(row);
+            patchVisibleRow(row);
             return;
         }
+        // Existing, unloaded rows are never injected into the reader's current
+        // viewport. Only a genuinely new saga gets its descending-start row.
+        if (!isInstanceStart(event)) return;
         const viewport = grid.querySelector('[data-z-grid-viewport]');
-        // A scrolling user owns the viewport. Keep newly arrived rows for the
-        // next deliberate refresh instead of inserting above their reading position.
-        if ((viewport?.scrollTop ?? 0) > 8) {
-            return;
-        }
+        if ((viewport?.scrollTop ?? 0) > 8) return;
         records.set(id, row);
         catalogTotal += 1;
         grid.dispatchEvent(new CustomEvent('zoorce:grid:insert', { detail: { item: row } }));
+        trimRecordState();
         updateLoadedCopy();
     };
     const flushLiveEvents = () => {
@@ -323,24 +409,28 @@
         const events = [...pendingEvents.values()];
         pendingEvents.clear();
         events.forEach(applyLiveEvent);
-        if (events.length) scheduleCountsRefresh();
     };
     const queueLiveEvent = event => {
         const id = String(eventValue(event, 'orchestrationInstanceId') || '');
         if (!id) return;
+        if (!pendingEvents.has(id) && pendingEvents.size >= maxPendingEvents) {
+            // A single fallback reconciliation is safer than retaining an
+            // unbounded in-browser state during an exceptional burst.
+            refresh({ preserveScroll: true });
+            return;
+        }
         const current = pendingEvents.get(id);
         if (!current || toTimestamp(eventValue(event, 'occurredOnUtc')) >= toTimestamp(eventValue(current, 'occurredOnUtc')))
             pendingEvents.set(id, event);
-        if (liveEventTimer) return;
-        liveEventTimer = window.setTimeout(flushLiveEvents, 180);
+        if (!liveEventTimer) liveEventTimer = window.setTimeout(flushLiveEvents, 120);
     };
     window.addEventListener('krackend:instances-changed', event => {
         const detail = event.detail || {};
         const transition = String(eventValue(detail.event, 'transitionType') || '');
         const technical = new Set(['TaskDispatchSuppressed', 'TaskDispatchPhysicalCancellationFinalized', 'TaskDispatchPhysicalCancellationDeferred']);
         if (detail.event && !technical.has(transition) && eventValue(detail.event, 'instanceStatus')) queueLiveEvent(detail.event);
-        // A server-requested resync is exceptional and is the sole realtime path
-        // allowed to reload the catalog.
+        // A server resync only occurs following a reconnect or a bounded queue
+        // overflow; routine transitions must never reload the catalog.
         if (detail.resync) refresh({ preserveScroll: true });
     });
     const syncScopeButtons = () => scopeButtons.forEach(button =>
@@ -350,13 +440,20 @@
         recentHours = hours;
         syncScopeButtons();
         const configElement = grid.querySelector('[data-z-grid-config]');
-        const config = JSON.parse(configElement.textContent); config.binding.source = scopedUrl(root.dataset.source).toString();
-        window.ZoorceDataGrid.dispose(grid); configElement.textContent = JSON.stringify(config);
-        refreshing = false; refreshPending = false; countsLoadingForNextLoad = true; mountGrid();
+        const config = JSON.parse(configElement.textContent);
+        config.binding.source = scopedUrl(root.dataset.source).toString();
+        window.ZoorceDataGrid.dispose(grid);
+        configElement.textContent = JSON.stringify(config);
+        records.clear();
+        catalogTotal = 0;
+        refreshing = false;
+        refreshPending = false;
+        mountGrid();
+        void refreshCounts({ showLoading: true });
         if (search.value.trim()) search.dispatchEvent(new Event('input', { bubbles: true }));
     };
     scopeButtons.forEach(button => button.addEventListener('click', () => changeScope(Number(button.dataset.runtimeScopeValue))));
-    root.querySelector('[data-runtime-refresh]').addEventListener('click', () => refresh({ showMetricLoading: false }));
+    refreshControl?.addEventListener('click', () => refresh({ showMetricLoading: true }));
     syncScopeButtons();
     refresh({ showMetricLoading: true });
 })();

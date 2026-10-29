@@ -6,7 +6,6 @@
     const periodButtons = [...root.querySelectorAll('[data-dashboard-period-value]')];
     const rankingLimitButtons = [...root.querySelectorAll('[data-dashboard-ranking-limit-value]')];
     const requests = new Map();
-    let refreshTimer;
     let reconnectTimer;
     let closed = false;
     const state = {
@@ -14,13 +13,19 @@
         cohortEpoch: 0,
         activityEpoch: 0,
         topOrchestrationsEpoch: 0,
-        rankingLimit: 10
+        rankingLimit: 10,
+        values: null,
+        activity: null,
+        ranking: [],
+        liveEvents: new Map(),
+        liveEventTimer: 0,
+        seenEventIds: new Set()
     };
 
     // Created/Compensating are execution internals.  The aggregate view exposes
     // them as one comprehensible operational state: Running.
-    const activeStatuses = ['Created', 'Running', 'Compensating'];
-    const failedStatuses = ['Stopped', 'Compensated', 'CompletedWithErrors', 'Aborted', 'Failed'];
+    const activeStatuses = ['Created', 'Running', 'Waiting', 'Compensating'];
+    const failedStatuses = ['Stopped', 'CompletedWithErrors', 'Aborted', 'Failed'];
     const statusDescriptors = [
         { key: 'running', label: 'In progress', tone: 'progress', color: 'var(--z-info)' },
         { key: 'idle', label: 'Idle', tone: 'idle', color: 'var(--z-warning)' },
@@ -29,6 +34,7 @@
         { key: 'failed', label: 'Failed', tone: 'failed', color: 'var(--z-danger)' }
     ];
     const supportedPeriods = new Set([1, 6, 24, 168, 720, 2160]);
+    const eventValue = (event, name) => event?.[name] ?? event?.[`${name.charAt(0).toUpperCase()}${name.slice(1)}`];
 
     const statusValue = (statuses, name) => Number(statuses?.[name] || 0);
     const statusTotal = (statuses, names) => names.reduce((total, name) => total + statusValue(statuses, name), 0);
@@ -261,6 +267,11 @@
 
     function renderCohort(cohort) {
         const values = asDashboardValues(cohort);
+        state.values = values;
+        renderCohortValues(values);
+    }
+
+    function renderCohortValues(values) {
         Object.entries(values).forEach(([key, value]) => setMetric(key, value, values.total));
         setMetricLoading(false);
 
@@ -356,6 +367,7 @@
 
     function renderTopOrchestrations(orchestrations) {
         const rows = Array.isArray(orchestrations) ? orchestrations : [];
+        state.ranking = rows;
         setRankingEmpty(rows.length === 0);
         replaceChart('runtime-top-orchestrations-chart', rows.length === 0 ? [] : [{
             name: 'Started instances',
@@ -366,6 +378,7 @@
     }
 
     function renderActivity(result) {
+        state.activity = result;
         const bucket = String(result.bucket || 'Day').toLowerCase();
         const start = asUtcDate(result.fromUtc);
         const before = asUtcDate(result.beforeUtc);
@@ -377,11 +390,16 @@
         });
         const buckets = [];
         for (let current = bucketStart(start, bucket); current < before; current = bucketStep(current, bucket)) buckets.push(current);
-        const statuses = [['Completed', 'Completed'], ['Dead lettered', 'DeadLettered'], ['Failed', 'Failed']];
+        const statuses = [
+            ['Completed', 'Completed', 'var(--z-success)'],
+            ['Dead lettered', 'DeadLettered', 'var(--z-warning)'],
+            ['Failed', 'Failed', 'var(--z-danger)']
+        ];
         const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
         setActivityEmpty(total === 0);
-        replaceChart('runtime-activity-chart', total === 0 ? [] : statuses.map(([name, status]) => ({
+        replaceChart('runtime-activity-chart', total === 0 ? [] : statuses.map(([name, status, color]) => ({
             name,
+            color,
             points: buckets.map(date => ({ label: bucketLabel(date, bucket), value: counts.get(`${date.getTime()}|${status}`) || 0 }))
         })));
         setLoading('activity', false);
@@ -490,11 +508,93 @@
     periodButtons.forEach(button => button.addEventListener('click', () => selectPeriod(Number(button.dataset.dashboardPeriodValue))));
     rankingLimitButtons.forEach(button => button.addEventListener('click', () => selectRankingLimit(Number(button.dataset.dashboardRankingLimitValue))));
 
-    function scheduleStatisticsRefresh() {
-        window.clearTimeout(refreshTimer);
-        // Coalesce a burst of runtime observations.  Live updates repaint data
-        // only; skeletons are reserved for the first load and a period change.
-        refreshTimer = window.setTimeout(() => void loadDashboard(), 1000);
+    function publicStatus(value) {
+        const status = String(value || 'Running');
+        if (['Created', 'Running', 'Waiting', 'WaitingResponse', 'Retrying', 'Compensating'].includes(status)) return 'running';
+        if (status === 'Idle') return 'idle';
+        if (['Completed', 'Compensated'].includes(status)) return 'completed';
+        if (status === 'DeadLettered') return 'deadLettered';
+        if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(status)) return 'failed';
+        return null;
+    }
+
+    function isInstanceTransition(event) {
+        return /^Instance/i.test(String(eventValue(event, 'transitionType') || ''));
+    }
+
+    function isInstanceStart(event) {
+        return /^(InstancePromoted|InstanceStarted)$/i.test(String(eventValue(event, 'transitionType') || ''));
+    }
+
+    function isWithinCurrentRange(value) {
+        const timestamp = asUtcDate(value)?.getTime();
+        const from = asUtcDate(state.activity?.fromUtc)?.getTime();
+        const before = asUtcDate(state.activity?.beforeUtc)?.getTime();
+        return timestamp !== undefined && timestamp !== null && from !== undefined && before !== undefined && timestamp >= from && timestamp < before;
+    }
+
+    function incrementActivity(status, occurredOnUtc) {
+        if (!state.activity || !isWithinCurrentRange(occurredOnUtc)) return;
+        const bucket = String(state.activity.bucket || 'Day').toLowerCase();
+        const key = bucketStart(asUtcDate(occurredOnUtc), bucket).toISOString();
+        const activity = Array.isArray(state.activity.activity) ? state.activity.activity : (state.activity.activity = []);
+        const point = activity.find(item => String(item.bucketUtc) === key && String(item.status) === status);
+        if (point) point.count = Number(point.count || 0) + 1;
+        else activity.push({ bucketUtc: key, status, count: 1 });
+        renderActivity(state.activity);
+    }
+
+    function incrementRanking(event) {
+        if (!isWithinCurrentRange(eventValue(event, 'startedOnUtc') || eventValue(event, 'occurredOnUtc'))) return;
+        const key = String(eventValue(event, 'orchestrationDefinitionKey') || '').trim();
+        if (!key) return;
+        const rows = [...state.ranking];
+        const existing = rows.find(row => String(row.orchestrationKey) === key);
+        if (existing) existing.startedInstances = Number(existing.startedInstances || 0) + 1;
+        else rows.push({ orchestrationKey: key, startedInstances: 1 });
+        rows.sort((left, right) => Number(right.startedInstances || 0) - Number(left.startedInstances || 0));
+        renderTopOrchestrations(rows.slice(0, state.rankingLimit));
+    }
+
+    function applyLiveEvent(event) {
+        const eventId = String(eventValue(event, 'id') || '');
+        if (!eventId || state.seenEventIds.has(eventId) || !isInstanceTransition(event) || !state.values) return;
+        state.seenEventIds.add(eventId);
+        if (state.seenEventIds.size > 4096) state.seenEventIds.delete(state.seenEventIds.values().next().value);
+
+        const after = publicStatus(eventValue(event, 'instanceStatus') || eventValue(event, 'toStatus'));
+        const before = publicStatus(eventValue(event, 'fromStatus'));
+        if (isInstanceStart(event)) {
+            state.values.total += 1;
+            if (after) state.values[after] += 1;
+            incrementRanking(event);
+        } else if (before && after && before !== after) {
+            state.values[before] = Math.max(0, state.values[before] - 1);
+            state.values[after] += 1;
+        }
+        renderCohortValues(state.values);
+        if (after === 'completed') incrementActivity('Completed', eventValue(event, 'occurredOnUtc'));
+        if (after === 'deadLettered') incrementActivity('DeadLettered', eventValue(event, 'occurredOnUtc'));
+        if (after === 'failed') incrementActivity('Failed', eventValue(event, 'occurredOnUtc'));
+    }
+
+    function queueLiveEvent(event) {
+        const id = String(eventValue(event, 'id') || '');
+        if (!id) return;
+        state.liveEvents.set(id, event);
+        if (state.liveEvents.size > 1024) {
+            state.liveEvents.clear();
+            void loadDashboard();
+            return;
+        }
+        if (state.liveEventTimer) return;
+        state.liveEventTimer = window.setTimeout(() => {
+            state.liveEventTimer = 0;
+            const events = [...state.liveEvents.values()].sort((left, right) =>
+                (asUtcDate(eventValue(left, 'occurredOnUtc'))?.getTime() || 0) - (asUtcDate(eventValue(right, 'occurredOnUtc'))?.getTime() || 0));
+            state.liveEvents.clear();
+            events.forEach(applyLiveEvent);
+        }, 120);
     }
 
     syncPeriodButtons();
@@ -509,8 +609,11 @@
         reconnectTimer = window.setTimeout(start, 5000);
     };
     const subscribe = async () => connection.invoke('WatchRuntime');
-    connection.on('runtime.statistics.updated', scheduleStatisticsRefresh);
-    connection.on('runtime.resync', scheduleStatisticsRefresh);
+    // Realtime events already contain the tiny state delta needed by the
+    // dashboard. Statistics projection notifications are deliberately ignored:
+    // querying SQL for every SignalR message made a busy dashboard unusable.
+    connection.on('runtime.transition', queueLiveEvent);
+    connection.on('runtime.resync', () => void loadDashboard());
     connection.onreconnected(() => subscribe().catch(() => connection.stop()));
     connection.onclose(retry);
     async function start() {
@@ -525,7 +628,7 @@
 
     window.addEventListener('pagehide', () => {
         closed = true;
-        window.clearTimeout(refreshTimer);
+        window.clearTimeout(state.liveEventTimer);
         window.clearTimeout(reconnectTimer);
         requests.forEach(controller => controller.abort());
         void connection.stop();

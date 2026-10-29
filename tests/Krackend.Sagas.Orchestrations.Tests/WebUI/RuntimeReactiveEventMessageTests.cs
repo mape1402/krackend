@@ -23,6 +23,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var taskExecutionId = Id.New();
         var attemptId = Id.New();
         var occurredOnUtc = DateTime.UtcNow;
+        var startedOnUtc = occurredOnUtc.AddSeconds(-20);
         var payload = JsonNode.Parse("""{"task":"inventories.reserve"}""");
         var eventData = new RuntimeReactiveEvent
         {
@@ -43,6 +44,8 @@ public sealed class RuntimeReactiveEventMessageTests
             FromStatus = "WaitingResponse",
             ToStatus = "Completed",
             InstanceStatus = "Running",
+            StartedOnUtc = startedOnUtc,
+            LastUpdatedOnUtc = occurredOnUtc,
             OccurredOnUtc = occurredOnUtc,
             Message = "Task completed.",
             Payload = payload,
@@ -67,6 +70,8 @@ public sealed class RuntimeReactiveEventMessageTests
         Assert.Equal("WaitingResponse", message.FromStatus);
         Assert.Equal("Completed", message.ToStatus);
         Assert.Equal("Running", message.InstanceStatus);
+        Assert.Equal(startedOnUtc, message.StartedOnUtc);
+        Assert.Equal(occurredOnUtc, message.LastUpdatedOnUtc);
         Assert.Equal(occurredOnUtc, message.OccurredOnUtc);
         Assert.Same(payload, message.Payload);
         Assert.Equal("tests", message.ProducedBy);
@@ -124,6 +129,21 @@ public sealed class RuntimeReactiveEventMessageTests
         Assert.True(queue.Reader.TryRead(out var message));
         Assert.Equal("StageStarted", message.TransitionType);
         Assert.Throws<ArgumentNullException>(() => new SignalRRuntimeReactiveEventPublisher(null!));
+    }
+
+    [Fact]
+    public void QueueBoundsARealtimeBurstAndRequestsOneReconciliation()
+    {
+        var queue = new SignalRRuntimeReactiveEventQueue();
+        var overflowed = false;
+        for (var index = 0; index < 5_000; index++)
+        {
+            overflowed |= !queue.TryEnqueue(RuntimeReactiveEventMessage.From(CreateEvent()));
+        }
+
+        Assert.True(overflowed);
+        Assert.True(queue.TryTakeResynchronizationRequired());
+        Assert.False(queue.TryTakeResynchronizationRequired());
     }
 
     [Fact]

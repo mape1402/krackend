@@ -94,6 +94,19 @@ public sealed class RuntimeReactiveEvent
     public required string InstanceStatus { get; set; }
 
     /// <summary>
+    /// Gets or sets the immutable time at which the orchestration instance started.
+    /// This allows realtime clients to place a newly observed instance in the
+    /// current time window without performing a follow-up diagnostics query.
+    /// </summary>
+    public DateTime StartedOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last persisted update time for the orchestration
+    /// instance. Realtime consumers use this value to discard stale updates.
+    /// </summary>
+    public DateTime LastUpdatedOnUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets event time.
     /// </summary>
     public DateTime OccurredOnUtc { get; set; }
