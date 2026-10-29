@@ -7,6 +7,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
 /// </summary>
 public sealed record RuntimeReactiveEventMessage(
     string Id,
+    string Revision,
     string EventName,
     string TransitionType,
     string OrchestrationDefinitionKey,
@@ -36,6 +37,7 @@ public sealed record RuntimeReactiveEventMessage(
     public static RuntimeReactiveEventMessage From(RuntimeReactiveEvent eventData)
         => new(
             eventData.Id.ToString(),
+            eventData.Revision,
             eventData.EventName,
             eventData.TransitionType,
             eventData.OrchestrationDefinitionKey,

@@ -354,6 +354,7 @@
             currentTaskKey: eventValue(event, 'taskKey') || existing?.currentTaskKey || '',
             startedOnUtc: toUtcText(eventValue(event, 'startedOnUtc') || existing?.startedOnUtc || eventValue(event, 'occurredOnUtc')),
             lastUpdatedOnUtc: toUtcText(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc')),
+            reactiveRevision: String(eventValue(event, 'revision') || existing?.reactiveRevision || ''),
             completedTaskCount: existing?.completedTaskCount || 0,
             totalTaskCount: existing?.totalTaskCount || 0
         };
@@ -390,12 +391,26 @@
         if (seenEventIds.size > maxSeenEvents) seenEventIds.delete(seenEventIds.values().next().value);
         return true;
     };
+    const isOlderEvent = (event, current) => {
+        if (!current) return false;
+        const incomingTimestamp = toTimestamp(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc'));
+        const currentTimestamp = toTimestamp(current.lastUpdatedOnUtc);
+        if (incomingTimestamp < currentTimestamp) return true;
+        if (incomingTimestamp > currentTimestamp) return false;
+        const incomingRevision = String(eventValue(event, 'revision') || '');
+        const currentRevision = String(current.reactiveRevision || '');
+        if (!incomingRevision || !currentRevision) return false;
+        const incomingNumber = Number(incomingRevision);
+        const currentNumber = Number(currentRevision);
+        if (Number.isFinite(incomingNumber) && Number.isFinite(currentNumber)) return incomingNumber <= currentNumber;
+        return incomingRevision.localeCompare(currentRevision) <= 0;
+    };
     const applyLiveEvent = event => {
         if (!rememberEvent(event)) return;
         const id = String(eventValue(event, 'orchestrationInstanceId') || '');
         if (!id) return;
         const current = records.get(id);
-        if (current && toTimestamp(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc')) < toTimestamp(current.lastUpdatedOnUtc)) return;
+        if (isOlderEvent(event, current)) return;
         const row = toLiveRow(event, current);
         adjustMetrics(event, current, row);
         if (!matchesScope(row)) return;
@@ -431,7 +446,7 @@
             return;
         }
         const current = pendingEvents.get(id);
-        if (!current || toTimestamp(eventValue(event, 'occurredOnUtc')) >= toTimestamp(eventValue(current, 'occurredOnUtc')))
+        if (!current || !isOlderEvent(event, toLiveRow(current, null)))
             pendingEvents.set(id, event);
         if (!liveEventTimer) liveEventTimer = window.setTimeout(flushLiveEvents, 120);
     };

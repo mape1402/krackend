@@ -78,6 +78,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             return new RuntimeReactiveEvent
             {
                 Id = transition.Id,
+                Revision = instance.StatisticsRevision > 0
+                    ? instance.StatisticsRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : transition.Id.ToString(),
                 EventName = ResolveEventName(transition.TransitionType),
                 TransitionType = transition.TransitionType,
                 OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,

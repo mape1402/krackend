@@ -28,6 +28,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var eventData = new RuntimeReactiveEvent
         {
             Id = eventId,
+            Revision = "42",
             EventName = "runtime.transition.created",
             TransitionType = "TaskCallbackCompleted",
             OrchestrationDefinitionKey = "sales.sale.created",
@@ -55,6 +56,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var message = RuntimeReactiveEventMessage.From(eventData);
 
         Assert.Equal(eventId.ToString(), message.Id);
+        Assert.Equal("42", message.Revision);
         Assert.Equal("runtime.transition.created", message.EventName);
         Assert.Equal("TaskCallbackCompleted", message.TransitionType);
         Assert.Equal("sales.sale.created", message.OrchestrationDefinitionKey);
@@ -83,6 +85,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var eventData = new RuntimeReactiveEvent
         {
             Id = Id.New(),
+            Revision = "7",
             EventName = "runtime.instance.created",
             TransitionType = "InstanceCreated",
             OrchestrationDefinitionKey = "sales.sale.created",
@@ -110,6 +113,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var eventData = new RuntimeReactiveEvent
         {
             Id = Id.New(),
+            Revision = "8",
             EventName = "runtime.transition.created",
             TransitionType = "StageStarted",
             OrchestrationDefinitionKey = "sales.sale.created",
@@ -204,6 +208,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var message = RuntimeReactiveEventMessage.From(new RuntimeReactiveEvent
         {
             Id = Id.New(),
+            Revision = "9",
             EventName = "runtime.transition.created",
             TransitionType = "TaskCompleted",
             OrchestrationDefinitionKey = "sales.sale.created",
@@ -257,6 +262,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var message = RuntimeReactiveEventMessage.From(new RuntimeReactiveEvent
         {
             Id = Id.New(),
+            Revision = "10",
             EventName = "runtime.transition.created",
             TransitionType = "TaskCompleted",
             OrchestrationDefinitionKey = "sales.sale.created",
@@ -301,6 +307,7 @@ public sealed class RuntimeReactiveEventMessageTests
         var message = RuntimeReactiveEventMessage.From(new RuntimeReactiveEvent
         {
             Id = Id.New(),
+            Revision = "11",
             EventName = "runtime.transition.created",
             TransitionType = "TaskFailed",
             OrchestrationDefinitionKey = "sales.sale.created",
@@ -407,7 +414,7 @@ public sealed class RuntimeReactiveEventMessageTests
 
     private static RuntimeReactiveEvent CreateEvent() => new()
     {
-        Id = Id.New(), EventName = "runtime.transition.created", TransitionType = "TaskCompleted",
+        Id = Id.New(), Revision = "1", EventName = "runtime.transition.created", TransitionType = "TaskCompleted",
         OrchestrationDefinitionKey = "sales", OrchestrationInstanceId = Id.New(), CorrelationId = "correlation",
         SagaId = "saga", ExecutionKey = "execution", InstanceStatus = "Running", ProducedBy = "tests"
     };

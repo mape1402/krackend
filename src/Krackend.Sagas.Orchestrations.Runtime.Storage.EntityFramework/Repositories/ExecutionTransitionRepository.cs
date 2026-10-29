@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
@@ -81,12 +82,20 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             return null;
         }
 
-        var stageKey = await GetStageKey(transition.StageExecutionId, cancellationToken);
-        var taskKey = await GetTaskKey(transition.TaskExecutionId, cancellationToken);
-        var orchestrationVersion = await GetOrchestrationVersion(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+        // A reactive event is emitted in the same unit of work that changed the
+        // saga. The normal path therefore already has its execution graph in
+        // EF's local tracker. Do not turn each SignalR delta into three extra
+        // database lookups: stage, task and artifact data are optional display
+        // enrichment and an existing browser row retains them when omitted.
+        var stageKey = GetStageKey(transition.StageExecutionId);
+        var taskKey = GetTaskKey(transition.TaskExecutionId);
+        var orchestrationVersion = GetOrchestrationVersion(instance.RuntimeOrchestrationArtifactId);
         return new RuntimeReactiveEvent
         {
             Id = transition.Id,
+            Revision = instance.StatisticsRevision > 0
+                ? instance.StatisticsRevision.ToString(CultureInfo.InvariantCulture)
+                : transition.Id.ToString(),
             EventName = ResolveEventName(transition.TransitionType),
             TransitionType = transition.TransitionType,
             OrchestrationDefinitionKey = instance.OrchestrationDefinitionKey,
@@ -112,39 +121,33 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         };
     }
 
-    private async Task<string> GetStageKey(Id? stageExecutionId, CancellationToken cancellationToken)
+    private string GetStageKey(Id? stageExecutionId)
     {
         if (stageExecutionId is null)
         {
             return null;
         }
 
-        var stage = DbContext.StageExecutions.Local.FirstOrDefault(x => x.Id == stageExecutionId.Value)
-            ?? await DbContext.StageExecutions.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == stageExecutionId.Value, cancellationToken);
+        var stage = DbContext.StageExecutions.Local.FirstOrDefault(x => x.Id == stageExecutionId.Value);
 
         return stage?.StageKey;
     }
 
-    private async Task<string> GetTaskKey(Id? taskExecutionId, CancellationToken cancellationToken)
+    private string GetTaskKey(Id? taskExecutionId)
     {
         if (taskExecutionId is null)
         {
             return null;
         }
 
-        var task = DbContext.TaskExecutions.Local.FirstOrDefault(x => x.Id == taskExecutionId.Value)
-            ?? await DbContext.TaskExecutions.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == taskExecutionId.Value, cancellationToken);
+        var task = DbContext.TaskExecutions.Local.FirstOrDefault(x => x.Id == taskExecutionId.Value);
 
         return task?.TaskKey;
     }
 
-    private async Task<string> GetOrchestrationVersion(Id runtimeOrchestrationArtifactId, CancellationToken cancellationToken)
+    private string GetOrchestrationVersion(Id runtimeOrchestrationArtifactId)
     {
-        var artifact = DbContext.RuntimeOrchestrationArtifacts.Local.FirstOrDefault(x => x.Id == runtimeOrchestrationArtifactId)
-            ?? await DbContext.RuntimeOrchestrationArtifacts.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == runtimeOrchestrationArtifactId, cancellationToken);
+        var artifact = DbContext.RuntimeOrchestrationArtifacts.Local.FirstOrDefault(x => x.Id == runtimeOrchestrationArtifactId);
 
         return artifact?.Version.ToString();
     }

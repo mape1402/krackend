@@ -14,6 +14,13 @@ public sealed class RuntimeReactiveEvent
     public Id Id { get; set; }
 
     /// <summary>
+    /// Gets or sets the monotonic revision for this instance change.
+    /// The persisted transition identifier is used so realtime clients can
+    /// discard an older delivery that shares the same timestamp resolution.
+    /// </summary>
+    public required string Revision { get; set; }
+
+    /// <summary>
     /// Gets or sets the canonical reactive event name.
     /// </summary>
     public required string EventName { get; set; }

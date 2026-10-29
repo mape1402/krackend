@@ -72,6 +72,20 @@
         const timestamp = new Date(value).getTime();
         return Number.isNaN(timestamp) ? 0 : timestamp;
     };
+    const isOlderEvent = event => {
+        const incomingTimestamp = toTimestamp(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc'));
+        const previousTimestamp = toTimestamp(root.dataset.liveEventTimestamp);
+        if (incomingTimestamp < previousTimestamp) return true;
+        if (incomingTimestamp > previousTimestamp) return false;
+        const incomingRevision = String(eventValue(event, 'revision') || '');
+        const previousRevision = String(root.dataset.liveRevision || '');
+        if (!incomingRevision || !previousRevision) return false;
+        const incomingNumber = Number(incomingRevision);
+        const previousNumber = Number(previousRevision);
+        return Number.isFinite(incomingNumber) && Number.isFinite(previousNumber)
+            ? incomingNumber <= previousNumber
+            : incomingRevision.localeCompare(previousRevision) <= 0;
+    };
     const formatUtc = value => {
         const text = typeof value === 'string' && !/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? `${value}Z` : value;
         const date = new Date(text);
@@ -94,9 +108,9 @@
         const eventInstance = eventValue(event, 'orchestrationInstanceId');
         if (String(eventInstance || '') !== root.dataset.instanceId) return;
         const occurred = eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc');
-        const prior = toTimestamp(root.dataset.liveEventTimestamp);
-        if (toTimestamp(occurred) && toTimestamp(occurred) < prior) return;
+        if (isOlderEvent(event)) return;
         root.dataset.liveEventTimestamp = occurred || root.dataset.liveEventTimestamp || '';
+        root.dataset.liveRevision = String(eventValue(event, 'revision') || root.dataset.liveRevision || '');
 
         const status = toPublicStatus(eventValue(event, 'instanceStatus'));
         const statusElement = root.querySelector('[data-instance-status]');
