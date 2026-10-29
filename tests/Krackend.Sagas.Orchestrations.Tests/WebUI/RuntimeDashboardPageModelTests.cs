@@ -124,6 +124,28 @@ public sealed class RuntimeDashboardPageModelTests
     }
 
     [Fact]
+    public async Task SuggestionEndpointsStayBoundedAndVersionFlowsIntoDashboardQueries()
+    {
+        var reader = new FakeDashboardReader();
+        using var services = CreateServices(reader);
+        var page = CreatePage(services);
+
+        var keys = Assert.IsType<JsonResult>(await page.OnGetOrchestrationSuggestionsAsync(" sale ", 999));
+        var versions = Assert.IsType<JsonResult>(await page.OnGetVersionSuggestionsAsync(" sales.sale.created ", "2", 999));
+        await page.OnGetCohortAsync(hours: 6, orchestrationKey: " sales.sale.created ", orchestrationVersion: " 2.0.0 ");
+
+        Assert.Contains("sales.sale.created", Serialize(keys.Value));
+        Assert.Contains("2.0.0", Serialize(versions.Value));
+        Assert.Equal("sale", reader.KeySuggestionSearch);
+        Assert.Equal(50, reader.KeySuggestionTake);
+        Assert.Equal("sales.sale.created", reader.VersionSuggestionKey);
+        Assert.Equal("2", reader.VersionSuggestionSearch);
+        Assert.Equal(50, reader.VersionSuggestionTake);
+        Assert.Equal("sales.sale.created", reader.CohortQuery.OrchestrationKey);
+        Assert.Equal("2.0.0", reader.CohortQuery.OrchestrationVersion);
+    }
+
+    [Fact]
     public async Task TopOrchestrationsUsesTheSelectedPeriodAndOneOfTheSupportedLimits()
     {
         var reader = new FakeDashboardReader();
@@ -191,11 +213,13 @@ public sealed class RuntimeDashboardPageModelTests
     [Fact]
     public void DashboardQueryNormalizesKeysAndRejectsAnInvalidRange()
     {
-        var normalized = new SagaStatisticsDashboardQuery(Now.UtcDateTime, Now.UtcDateTime.AddHours(1), " sales ").Normalize();
+        var normalized = new SagaStatisticsDashboardQuery(Now.UtcDateTime, Now.UtcDateTime.AddHours(1), " sales ", " 1.2.3 ").Normalize();
 
         Assert.Equal("sales", normalized.OrchestrationKey);
+        Assert.Equal("1.2.3", normalized.OrchestrationVersion);
         Assert.Equal(DateTimeKind.Utc, normalized.FromUtc.Kind);
         Assert.Throws<ArgumentException>(() => new SagaStatisticsDashboardQuery(Now.UtcDateTime, Now.UtcDateTime).Normalize());
+        Assert.Throws<ArgumentException>(() => new SagaStatisticsDashboardQuery(Now.UtcDateTime, Now.UtcDateTime.AddHours(1), OrchestrationVersion: "1.2").Normalize());
     }
 
     private static IndexModel CreatePage(IServiceProvider services)
@@ -228,9 +252,15 @@ public sealed class RuntimeDashboardPageModelTests
         public int HealthCalls { get; private set; }
         public int CallCount => FilterCalls + CohortCalls + ActivityCalls + TopOrchestrationsCalls + HealthCalls;
         public SagaStatisticsDashboardQuery ActivityQuery { get; private set; } = new(Now.UtcDateTime, Now.UtcDateTime.AddHours(1));
+        public SagaStatisticsDashboardQuery CohortQuery { get; private set; } = new(Now.UtcDateTime, Now.UtcDateTime.AddHours(1));
         public SagaStatisticsActivityBucket ActivityBucket { get; private set; }
         public SagaStatisticsDashboardQuery TopOrchestrationsQuery { get; private set; } = new(Now.UtcDateTime, Now.UtcDateTime.AddHours(1));
         public int TopOrchestrationsLimit { get; private set; }
+        public string KeySuggestionSearch { get; private set; } = string.Empty;
+        public int KeySuggestionTake { get; private set; }
+        public string VersionSuggestionKey { get; private set; } = string.Empty;
+        public string VersionSuggestionSearch { get; private set; } = string.Empty;
+        public int VersionSuggestionTake { get; private set; }
 
         public Task<IReadOnlyCollection<string>> GetOrchestrationKeysAsync(CancellationToken cancellationToken = default)
         {
@@ -238,10 +268,28 @@ public sealed class RuntimeDashboardPageModelTests
             return Task.FromResult<IReadOnlyCollection<string>>(["sales.sale.created", "sales.sale.updated"]);
         }
 
+        public Task<IReadOnlyCollection<string>> SearchOrchestrationKeysAsync(string search, int take = 20,
+            CancellationToken cancellationToken = default)
+        {
+            KeySuggestionSearch = search;
+            KeySuggestionTake = take;
+            return Task.FromResult<IReadOnlyCollection<string>>(["sales.sale.created"]);
+        }
+
+        public Task<IReadOnlyCollection<string>> SearchOrchestrationVersionsAsync(string orchestrationKey, string search,
+            int take = 20, CancellationToken cancellationToken = default)
+        {
+            VersionSuggestionKey = orchestrationKey;
+            VersionSuggestionSearch = search;
+            VersionSuggestionTake = take;
+            return Task.FromResult<IReadOnlyCollection<string>>(["2.0.0"]);
+        }
+
         public Task<SagaStatisticsDashboardCohort> GetCohortAsync(SagaStatisticsDashboardQuery query,
             CancellationToken cancellationToken = default)
         {
             CohortCalls++;
+            CohortQuery = query;
             return Task.FromResult(new SagaStatisticsDashboardCohort(query.FromUtc, query.BeforeUtc, query.OrchestrationKey, 20,
                 new Dictionary<OrchestrationInstanceStatus, long>
                 {

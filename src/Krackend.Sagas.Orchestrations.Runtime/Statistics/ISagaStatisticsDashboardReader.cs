@@ -10,6 +10,23 @@ public interface ISagaStatisticsDashboardReader
     /// <summary>Returns orchestration keys that have statistics projections.</summary>
     Task<IReadOnlyCollection<string>> GetOrchestrationKeysAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Searches orchestration keys without forcing a dashboard client to preload the full catalog.</summary>
+    async Task<IReadOnlyCollection<string>> SearchOrchestrationKeysAsync(string search, int take = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = search?.Trim() ?? string.Empty;
+        var limit = Math.Clamp(take, 1, 50);
+        return (await GetOrchestrationKeysAsync(cancellationToken))
+            .Where(key => string.IsNullOrEmpty(normalized) || key.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+            .Take(limit)
+            .ToArray();
+    }
+
+    /// <summary>Searches versions available for one orchestration key.</summary>
+    Task<IReadOnlyCollection<string>> SearchOrchestrationVersionsAsync(string orchestrationKey, string search, int take = 20,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyCollection<string>>(Array.Empty<string>());
+
     /// <summary>Returns the current statuses for one started-instance cohort.</summary>
     Task<SagaStatisticsDashboardCohort> GetCohortAsync(SagaStatisticsDashboardQuery query,
         CancellationToken cancellationToken = default);
@@ -27,7 +44,11 @@ public interface ISagaStatisticsDashboardReader
 }
 
 /// <summary>Identifies a UTC cohort of orchestration instances.</summary>
-public sealed record SagaStatisticsDashboardQuery(DateTime FromUtc, DateTime BeforeUtc, string? OrchestrationKey = null)
+public sealed record SagaStatisticsDashboardQuery(
+    DateTime FromUtc,
+    DateTime BeforeUtc,
+    string? OrchestrationKey = null,
+    string? OrchestrationVersion = null)
 {
     /// <summary>Returns a normalized query with a valid UTC range.</summary>
     public SagaStatisticsDashboardQuery Normalize()
@@ -37,12 +58,28 @@ public sealed record SagaStatisticsDashboardQuery(DateTime FromUtc, DateTime Bef
             throw new ArgumentException("The dashboard range start must precede its end.");
         }
 
+        var normalizedVersion = string.IsNullOrWhiteSpace(OrchestrationVersion) ? null : OrchestrationVersion.Trim();
+        if (normalizedVersion is not null && !IsSemanticVersion(normalizedVersion))
+        {
+            throw new ArgumentException("The orchestration version must use major.minor.patch format.", nameof(OrchestrationVersion));
+        }
+
         return this with
         {
             FromUtc = DateTime.SpecifyKind(FromUtc, DateTimeKind.Utc),
             BeforeUtc = DateTime.SpecifyKind(BeforeUtc, DateTimeKind.Utc),
-            OrchestrationKey = string.IsNullOrWhiteSpace(OrchestrationKey) ? null : OrchestrationKey.Trim()
+            OrchestrationKey = string.IsNullOrWhiteSpace(OrchestrationKey) ? null : OrchestrationKey.Trim(),
+            OrchestrationVersion = normalizedVersion
         };
+    }
+
+    private static bool IsSemanticVersion(string value)
+    {
+        var parts = value.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts is { Length: 3 }
+            && int.TryParse(parts[0], out _)
+            && int.TryParse(parts[1], out _)
+            && int.TryParse(parts[2], out _);
     }
 }
 

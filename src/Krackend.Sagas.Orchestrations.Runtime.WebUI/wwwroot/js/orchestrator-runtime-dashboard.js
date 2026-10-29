@@ -1,5 +1,5 @@
 (() => {
-    const root = document.querySelector('[data-runtime-dashboard]');
+    const root = document.querySelector('[data-runtime-dashboard], [data-runtime-statistics]');
     const config = window.KrackendRuntimeDashboard;
     if (!root || !config) return;
 
@@ -10,6 +10,8 @@
     let closed = false;
     const state = {
         hours: Number(root.dataset.hours) || 168,
+        orchestrationKey: root.dataset.orchestrationKey || '',
+        orchestrationVersion: root.dataset.orchestrationVersion || '',
         cohortEpoch: 0,
         activityEpoch: 0,
         topOrchestrationsEpoch: 0,
@@ -19,7 +21,8 @@
         ranking: [],
         liveEvents: new Map(),
         liveEventTimer: 0,
-        seenEventIds: new Set()
+        seenEventIds: new Set(),
+        tracking: root.dataset.dashboardManualLoad !== 'true'
     };
 
     // Created/Compensating are execution internals.  The aggregate view exposes
@@ -44,6 +47,10 @@
         const url = new URL(source, window.location.href);
         url.searchParams.delete('days');
         url.searchParams.set('hours', String(state.hours));
+        if (state.orchestrationKey) url.searchParams.set('orchestrationKey', state.orchestrationKey);
+        else url.searchParams.delete('orchestrationKey');
+        if (state.orchestrationVersion) url.searchParams.set('orchestrationVersion', state.orchestrationVersion);
+        else url.searchParams.delete('orchestrationVersion');
         return url;
     }
 
@@ -444,6 +451,7 @@
     }
 
     async function loadTopOrchestrations({ showLoading = false } = {}) {
+        if (!root.dataset.topOrchestrationsUrl) return;
         const epoch = ++state.topOrchestrationsEpoch;
         if (showLoading) {
             setRankingEmpty(false);
@@ -462,11 +470,12 @@
     }
 
     function loadDashboard({ showLoading = false } = {}) {
-        return Promise.allSettled([
+        const loads = [
             loadCohort({ showLoading }),
-            loadActivity({ showLoading }),
-            loadTopOrchestrations({ showLoading })
-        ]);
+            loadActivity({ showLoading })
+        ];
+        if (root.dataset.topOrchestrationsUrl) loads.push(loadTopOrchestrations({ showLoading }));
+        return Promise.allSettled(loads);
     }
 
     function syncPeriodButtons() {
@@ -507,6 +516,17 @@
 
     periodButtons.forEach(button => button.addEventListener('click', () => selectPeriod(Number(button.dataset.dashboardPeriodValue))));
     rankingLimitButtons.forEach(button => button.addEventListener('click', () => selectRankingLimit(Number(button.dataset.dashboardRankingLimitValue))));
+
+    root.addEventListener('krackend:dashboard-load', event => {
+        const detail = event.detail || {};
+        state.orchestrationKey = String(detail.orchestrationKey || '').trim();
+        state.orchestrationVersion = String(detail.orchestrationVersion || '').trim();
+        if (detail.hours && supportedPeriods.has(Number(detail.hours))) {
+            state.hours = Number(detail.hours);
+            syncPeriodButtons();
+        }
+        void loadDashboard({ showLoading: true });
+    });
 
     function publicStatus(value) {
         const status = String(value || 'Running');
@@ -599,12 +619,9 @@
 
     syncPeriodButtons();
     syncRankingLimitButtons();
-    void loadDashboard({ showLoading: true });
-    if (!window.signalR) return;
-
-    const connection = new signalR.HubConnectionBuilder().withUrl(config.hubPath).withAutomaticReconnect().build();
+    let connection;
     const retry = () => {
-        if (closed) return;
+        if (closed || !state.tracking) return;
         window.clearTimeout(reconnectTimer);
         reconnectTimer = window.setTimeout(start, 5000);
     };
@@ -612,11 +629,18 @@
     // Realtime events already contain the tiny state delta needed by the
     // dashboard. Statistics projection notifications are deliberately ignored:
     // querying SQL for every SignalR message made a busy dashboard unusable.
-    connection.on('runtime.transition', queueLiveEvent);
-    connection.on('runtime.resync', () => void loadDashboard());
-    connection.onreconnected(() => subscribe().catch(() => connection.stop()));
-    connection.onclose(retry);
+    function createConnection() {
+        if (connection || !window.signalR) return connection;
+        connection = new signalR.HubConnectionBuilder().withUrl(config.hubPath).withAutomaticReconnect().build();
+        connection.on('runtime.transition', queueLiveEvent);
+        connection.on('runtime.resync', () => void loadDashboard());
+        connection.onreconnected(() => subscribe().catch(() => connection.stop()));
+        connection.onclose(retry);
+        return connection;
+    }
     async function start() {
+        if (!state.tracking) return;
+        if (!createConnection()) return;
         try {
             await connection.start();
             await subscribe();
@@ -626,12 +650,30 @@
         }
     }
 
+    async function stop() {
+        window.clearTimeout(reconnectTimer);
+        if (connection && connection.state !== signalR.HubConnectionState.Disconnected) {
+            await connection.stop();
+        }
+    }
+
+    root.addEventListener('krackend:dashboard-tracking', event => {
+        state.tracking = Boolean(event.detail?.enabled);
+        if (state.tracking) void start();
+        else void stop();
+    });
+
+    if (state.tracking) {
+        void loadDashboard({ showLoading: true });
+        void start();
+    }
+
     window.addEventListener('pagehide', () => {
         closed = true;
         window.clearTimeout(state.liveEventTimer);
         window.clearTimeout(reconnectTimer);
         requests.forEach(controller => controller.abort());
-        void connection.stop();
+        void stop();
     }, { once: true });
 
     void start();

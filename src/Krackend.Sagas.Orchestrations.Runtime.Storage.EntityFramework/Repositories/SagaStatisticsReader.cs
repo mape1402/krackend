@@ -45,6 +45,39 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
             .OrderBy(key => key)
             .ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<string>> SearchOrchestrationKeysAsync(string search, int take = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = search?.Trim() ?? string.Empty;
+        var limit = Math.Clamp(take, 1, 50);
+        var query = db.SagaStatisticsProjections.AsNoTracking().Select(item => item.OrchestrationKey).Distinct();
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            query = query.Where(key => EF.Functions.Like(key, $"%{normalized}%"));
+        }
+
+        return await query.OrderBy(key => key).Take(limit).ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<string>> SearchOrchestrationVersionsAsync(string orchestrationKey, string search,
+        int take = 20, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orchestrationKey)) return Array.Empty<string>();
+        var normalized = search?.Trim() ?? string.Empty;
+        var limit = Math.Clamp(take, 1, 50);
+        var versions = await db.RuntimeOrchestrationArtifacts.AsNoTracking()
+            .Where(item => item.OrchestrationDefinitionKey == orchestrationKey.Trim())
+            .Select(item => item.Version)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        return versions
+            .Where(version => string.IsNullOrEmpty(normalized) || version.ToString().Contains(normalized, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(version => version)
+            .Select(version => version.ToString())
+            .Take(limit)
+            .ToArray();
+    }
+
     public async Task<SagaStatisticsDashboardCohort> GetCohortAsync(SagaStatisticsDashboardQuery query,
         CancellationToken cancellationToken = default)
     {
@@ -71,10 +104,7 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
         var observations = db.SagaStatisticsObservations.AsNoTracking()
             .Where(item => item.Processed && item.StatusChanged && !item.IsBackfill
                 && item.OccurredOnUtc >= query.FromUtc && item.OccurredOnUtc < query.BeforeUtc);
-        if (query.OrchestrationKey is not null)
-        {
-            observations = observations.Where(item => item.OrchestrationKey == query.OrchestrationKey);
-        }
+        observations = FilterObservations(observations, query);
 
         if (bucket is SagaStatisticsActivityBucket.Minute or SagaStatisticsActivityBucket.Hour)
         {
@@ -161,9 +191,51 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
     {
         var selected = db.SagaStatisticsProjections.AsNoTracking()
             .Where(item => item.StartedOnUtc >= query.FromUtc && item.StartedOnUtc < query.BeforeUtc);
-        return query.OrchestrationKey is null
+        if (query.OrchestrationKey is not null)
+        {
+            selected = selected.Where(item => item.OrchestrationKey == query.OrchestrationKey);
+        }
+
+        return query.OrchestrationVersion is null
             ? selected
-            : selected.Where(item => item.OrchestrationKey == query.OrchestrationKey);
+            : selected.Where(item => ArtifactIdsFor(query).Contains(item.ArtifactId));
+    }
+
+    private IQueryable<SagaStatisticsObservation> FilterObservations(IQueryable<SagaStatisticsObservation> observations,
+        SagaStatisticsDashboardQuery query)
+    {
+        if (query.OrchestrationKey is not null)
+        {
+            observations = observations.Where(item => item.OrchestrationKey == query.OrchestrationKey);
+        }
+
+        return query.OrchestrationVersion is null
+            ? observations
+            : observations.Where(item => ArtifactIdsFor(query).Contains(item.ArtifactId));
+    }
+
+    private IQueryable<Abstractions.Primitives.Id> ArtifactIdsFor(SagaStatisticsDashboardQuery query)
+    {
+        var artifacts = db.RuntimeOrchestrationArtifacts.AsNoTracking();
+        if (query.OrchestrationKey is not null)
+        {
+            artifacts = artifacts.Where(item => item.OrchestrationDefinitionKey == query.OrchestrationKey);
+        }
+
+        var version = ParseVersion(query.OrchestrationVersion);
+        return artifacts.Where(item => item.Version.Equals(version)).Select(item => item.Id);
+    }
+
+    private static Abstractions.Primitives.SemanticVersion ParseVersion(string value)
+    {
+        var parts = value?.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts is not { Length: 3 } || !int.TryParse(parts[0], out var major) || !int.TryParse(parts[1], out var minor)
+            || !int.TryParse(parts[2], out var patch))
+        {
+            throw new ArgumentException("The orchestration version must use major.minor.patch format.", nameof(value));
+        }
+
+        return new Abstractions.Primitives.SemanticVersion(major, minor, patch);
     }
 
     private static DateTime WeekStart(DateTime occurredOnUtc)

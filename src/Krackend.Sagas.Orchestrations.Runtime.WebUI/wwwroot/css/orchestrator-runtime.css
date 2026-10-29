@@ -3170,6 +3170,24 @@ body:has(.od-instance-trace) .z-main { min-height: 0; overflow: hidden; }
 }
 /* Runtime dashboard: compact, projection-backed surfaces with no outer desktop scroll. */
 .od-dashboard { display: grid; min-width: 0; gap: .8rem; }
+.od-statistics-layout { display: grid; grid-template-columns: minmax(15.5rem, .44fr) minmax(0, 2.56fr); gap: .8rem; min-width: 0; align-items: stretch; }
+.od-statistics-parameters { display: grid; align-content: start; gap: .78rem; min-width: 0; padding: .9rem; border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 88%, var(--z-primary, var(--od-primary))); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface))); box-shadow: 0 13px 30px color-mix(in srgb, var(--z-text, #111) 5%, transparent); }
+.od-statistics-eyebrow { color: var(--z-primary, var(--od-primary)); font-size: .62rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.od-statistics-parameters h2 { margin: .24rem 0 .2rem; color: var(--z-text, var(--od-text)); font-size: .94rem; }
+.od-statistics-parameters p { margin: 0; color: var(--z-muted, var(--od-muted)); font-size: .68rem; line-height: 1.45; }
+.od-statistics-field { position: relative; display: grid; gap: .32rem; min-width: 0; color: var(--z-text, var(--od-text)); font-size: .68rem; font-weight: 700; }
+.od-statistics-field > span small { margin-left: .25rem; color: var(--z-muted, var(--od-muted)); font-size: .58rem; font-weight: 600; }
+.od-statistics-field .z-form-input { min-width: 0; }
+.od-statistics-field .od-autocomplete-list { position: absolute; z-index: 8; top: calc(100% + .2rem); right: 0; left: 0; max-height: 12rem; overflow: auto; }
+.od-statistics-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; margin-top: .15rem; }
+.od-statistics-actions [data-statistics-load] > button, .od-statistics-actions [data-statistics-tracking] { width: 100%; justify-content: center; }
+.od-statistics-actions [data-statistics-tracking].is-active { color: var(--z-primary-contrast, #fff); border-color: var(--z-primary, var(--od-primary)); background: var(--z-primary, var(--od-primary)); }
+.od-statistics-live-copy { padding-top: .62rem; border-top: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 80%, transparent); }
+.od-statistics-dashboard { display: grid; grid-template-columns: minmax(13rem, .9fr) minmax(13rem, 1.1fr); grid-template-areas: "activity activity" "effectiveness status" "funnel funnel"; grid-template-rows: minmax(16rem, 1.35fr) minmax(12rem, .8fr) minmax(12rem, .75fr); gap: .8rem; min-width: 0; }
+.od-statistics-dashboard > .od-dashboard-activity { grid-area: activity; }
+.od-statistics-dashboard > [data-dashboard-panel="effectiveness"] { grid-area: effectiveness; }
+.od-statistics-dashboard > [data-dashboard-panel="status"] { grid-area: status; }
+.od-statistics-dashboard > [data-dashboard-panel="funnel"] { grid-area: funnel; }
 .od-dashboard-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .65rem; min-width: 0; }
 .od-dashboard-metrics > .z-component-card,
 .od-monitor-counters > .z-component-card {

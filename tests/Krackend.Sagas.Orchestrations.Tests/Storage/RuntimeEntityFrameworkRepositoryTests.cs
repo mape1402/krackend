@@ -142,6 +142,35 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task DashboardStatisticsReaderSearchesServerSideAndFiltersByDeployedVersion()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var firstArtifact = RuntimeArtifact(new SemanticVersion(1, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
+        var secondArtifact = RuntimeArtifact(new SemanticVersion(2, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
+        db.RuntimeOrchestrationArtifacts.AddRange(firstArtifact, secondArtifact);
+        await db.SaveChangesAsync();
+
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        await repository.Create(Instance(firstArtifact.Id, OrchestrationInstanceStatus.Completed, now));
+        await repository.Create(Instance(secondArtifact.Id, OrchestrationInstanceStatus.Running, now));
+        await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(20);
+
+        var reader = scope.ServiceProvider.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1), "sales.sale.created", "1.0.0");
+
+        Assert.Equal(1, (await reader.GetCohortAsync(query)).Total);
+        Assert.Equal(["sales.sale.created"], await reader.SearchOrchestrationKeysAsync("sale", 10));
+        Assert.Equal(["2.0.0", "1.0.0"], await reader.SearchOrchestrationVersionsAsync("sales.sale.created", string.Empty, 10));
+        await Assert.ThrowsAsync<ArgumentException>(() => reader.GetCohortAsync(query with { OrchestrationVersion = "invalid" }));
+    }
+
+    [Fact]
     public async Task StatisticsBackfillCapturesLegacyInstancesAndPersistsCompletion()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

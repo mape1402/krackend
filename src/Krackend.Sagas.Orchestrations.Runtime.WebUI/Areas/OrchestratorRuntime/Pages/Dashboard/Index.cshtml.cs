@@ -32,17 +32,35 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
         return Json(new { orchestrationKeys = await reader.GetOrchestrationKeysAsync(cancellationToken) });
     }
 
-    /// <summary>Returns one cohort's current status distribution for dashboard counters and outcomes.</summary>
-    public async Task<IActionResult> OnGetCohortAsync(int days = 7, string orchestrationKey = null, int? hours = null,
+    /// <summary>Returns a bounded search result for a statistics orchestration picker.</summary>
+    public async Task<IActionResult> OnGetOrchestrationSuggestionsAsync(string search = "", int take = 20,
         CancellationToken cancellationToken = default)
     {
         var reader = GetDashboardReader();
         if (reader is null) return Unavailable();
-        return Json(await reader.GetCohortAsync(CreateQuery(days, orchestrationKey, hours), cancellationToken));
+        return Json(new { items = await reader.SearchOrchestrationKeysAsync(search?.Trim() ?? string.Empty, NormalizeSuggestionTake(take), cancellationToken) });
+    }
+
+    /// <summary>Returns versions for the orchestration selected in a statistics picker.</summary>
+    public async Task<IActionResult> OnGetVersionSuggestionsAsync(string orchestrationKey, string search = "", int take = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var reader = GetDashboardReader();
+        if (reader is null) return Unavailable();
+        return Json(new { items = await reader.SearchOrchestrationVersionsAsync(NormalizeKey(orchestrationKey), search?.Trim() ?? string.Empty, NormalizeSuggestionTake(take), cancellationToken) });
+    }
+
+    /// <summary>Returns one cohort's current status distribution for dashboard counters and outcomes.</summary>
+    public async Task<IActionResult> OnGetCohortAsync(int days = 7, string orchestrationKey = null, string orchestrationVersion = null, int? hours = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reader = GetDashboardReader();
+        if (reader is null) return Unavailable();
+        return Json(await reader.GetCohortAsync(CreateQuery(days, orchestrationKey, orchestrationVersion, hours), cancellationToken));
     }
 
     /// <summary>Returns one independently refreshable activity timeline.</summary>
-    public async Task<IActionResult> OnGetActivityAsync(int days = 7, string orchestrationKey = null, int? hours = null,
+    public async Task<IActionResult> OnGetActivityAsync(int days = 7, string orchestrationKey = null, string orchestrationVersion = null, int? hours = null,
         CancellationToken cancellationToken = default)
     {
         var reader = GetDashboardReader();
@@ -55,7 +73,7 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
             2160 => SagaStatisticsActivityBucket.Week,
             _ => SagaStatisticsActivityBucket.Day
         };
-        var query = CreateQuery(days, orchestrationKey, hours);
+        var query = CreateQuery(days, orchestrationKey, orchestrationVersion, hours);
         return Json(new
         {
             query.FromUtc,
@@ -66,12 +84,12 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
     }
 
     /// <summary>Returns the independently loaded ranking of the most frequently started orchestrations.</summary>
-    public async Task<IActionResult> OnGetTopOrchestrationsAsync(int days = 7, string orchestrationKey = null, int? hours = null,
+    public async Task<IActionResult> OnGetTopOrchestrationsAsync(int days = 7, string orchestrationKey = null, string orchestrationVersion = null, int? hours = null,
         int limit = 10, CancellationToken cancellationToken = default)
     {
         var reader = GetDashboardReader();
         if (reader is null) return Unavailable();
-        return Json(await reader.GetTopOrchestrationsAsync(CreateQuery(days, orchestrationKey, hours), NormalizeRankingLimit(limit), cancellationToken));
+        return Json(await reader.GetTopOrchestrationsAsync(CreateQuery(days, orchestrationKey, orchestrationVersion, hours), NormalizeRankingLimit(limit), cancellationToken));
     }
 
     /// <summary>Returns deferred projection freshness without coupling it to visible statistics.</summary>
@@ -83,19 +101,19 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
     }
 
     /// <summary>Preserves the former aggregate endpoint for callers outside the dashboard UI.</summary>
-    public async Task<IActionResult> OnGetStatsAsync(int days = 7, string orchestrationKey = null, int? hours = null,
+    public async Task<IActionResult> OnGetStatsAsync(int days = 7, string orchestrationKey = null, string orchestrationVersion = null, int? hours = null,
         CancellationToken cancellationToken = default)
     {
         if (services.GetService(typeof(ISagaStatisticsReader)) is not ISagaStatisticsReader reader)
             return Unavailable();
-        var query = CreateQuery(days, orchestrationKey, hours);
+        var query = CreateQuery(days, orchestrationKey, orchestrationVersion, hours);
         return Json(await reader.GetReportAsync(query.FromUtc, query.BeforeUtc, query.OrchestrationKey, cancellationToken));
     }
 
     private ISagaStatisticsDashboardReader GetDashboardReader()
         => services.GetService(typeof(ISagaStatisticsDashboardReader)) as ISagaStatisticsDashboardReader;
 
-    private SagaStatisticsDashboardQuery CreateQuery(int days, string orchestrationKey, int? hours = null)
+    private SagaStatisticsDashboardQuery CreateQuery(int days, string orchestrationKey, string orchestrationVersion = null, int? hours = null)
     {
         var normalizedHours = NormalizeHours(hours, days);
         var now = services.GetService(typeof(TimeProvider)) is TimeProvider clock
@@ -105,7 +123,7 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
         // bound to an hour/day boundary: doing so would make "last hour" discard
         // all activity as soon as the clock crosses an hour.
         var before = now;
-        return new SagaStatisticsDashboardQuery(before.AddHours(-normalizedHours), before, NormalizeKey(orchestrationKey));
+        return new SagaStatisticsDashboardQuery(before.AddHours(-normalizedHours), before, NormalizeKey(orchestrationKey), NormalizeVersion(orchestrationVersion));
     }
 
     private IActionResult Unavailable()
@@ -125,6 +143,11 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
 
     private static int NormalizeRankingLimit(int limit) => limit is 10 or 15 or 20 or 25 ? limit : 10;
 
+    private static int NormalizeSuggestionTake(int take) => Math.Clamp(take, 1, 50);
+
     private static string NormalizeKey(string orchestrationKey)
         => string.IsNullOrWhiteSpace(orchestrationKey) ? null : orchestrationKey.Trim();
+
+    private static string NormalizeVersion(string orchestrationVersion)
+        => string.IsNullOrWhiteSpace(orchestrationVersion) ? null : orchestrationVersion.Trim();
 }
