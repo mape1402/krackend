@@ -52,11 +52,7 @@ env:
 
 jobs:
   build-and-test:
-    # MongoDB 8.x deliberately refuses Linux kernels 6.19 through 7.0.13
-    # because of SERVER-121912. Pinning the runner keeps Testcontainers tests
-    # on Ubuntu 24.04's supported kernel instead of inheriting a future
-    # ubuntu-latest image that cannot start MongoDB.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write

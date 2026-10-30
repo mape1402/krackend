@@ -23,11 +23,15 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
 public sealed class MongoCatalogSearchTests
 {
+    // Keep Testcontainers deterministic: newer MongoDB 8.0 images deliberately
+    // refuse the hosted Linux kernels used by GitHub Actions (SERVER-121912).
+    private const string MongoImage = "mongo:8.0.4";
+
     [Fact]
     public async Task RuntimeArtifactGroupsAreFilteredAndPagedInMongo()
     {
         await using var mongo = new ContainerBuilder()
-            .WithImage("mongo:8.0")
+            .WithImage(MongoImage)
             .WithPortBinding(27017, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(27017))
             .Build();
@@ -75,7 +79,7 @@ public sealed class MongoCatalogSearchTests
     public async Task DomainsAndTeamsFilterCaseInsensitivelyBeforePaging()
     {
         await using var mongo = new ContainerBuilder()
-            .WithImage("mongo:8.0")
+            .WithImage(MongoImage)
             .WithPortBinding(27017, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(27017))
             .Build();
