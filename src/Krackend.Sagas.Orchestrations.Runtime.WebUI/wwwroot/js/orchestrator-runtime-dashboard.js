@@ -5,6 +5,7 @@
 
     const periodButtons = [...root.querySelectorAll('[data-dashboard-period-value]')];
     const rankingLimitButtons = [...root.querySelectorAll('[data-dashboard-ranking-limit-value]')];
+    const isManualDashboard = root.dataset.dashboardManualLoad === 'true';
     const requests = new Map();
     let reconnectTimer;
     let closed = false;
@@ -22,7 +23,7 @@
         liveEvents: new Map(),
         liveEventTimer: 0,
         seenEventIds: new Set(),
-        tracking: root.dataset.dashboardManualLoad !== 'true'
+        tracking: !isManualDashboard
     };
 
     // Created/Compensating are execution internals.  The aggregate view exposes
@@ -30,7 +31,7 @@
     const activeStatuses = ['Created', 'Running', 'Waiting', 'WaitingResponse', 'Retrying', 'Compensating'];
     const failedStatuses = ['Stopped', 'CompletedWithErrors', 'Aborted', 'Failed'];
     const statusDescriptors = [
-        { key: 'running', label: 'In progress', tone: 'progress', color: 'var(--z-info)' },
+        { key: 'running', label: 'Running', tone: 'progress', color: 'var(--z-info)' },
         { key: 'idle', label: 'Idle', tone: 'idle', color: 'var(--z-warning)' },
         { key: 'completed', label: 'Completed', tone: 'completed', color: 'var(--z-success)' },
         { key: 'deadLettered', label: 'Dead lettered', tone: 'dead-lettered', color: 'var(--z-warning)' },
@@ -135,6 +136,10 @@
     function renderStatusCenter(total) {
         const visual = document.getElementById('runtime-status-chart')?.querySelector('[data-z-chart-visual]');
         if (!visual) return;
+        if (isManualDashboard) {
+            visual.querySelector('[data-dashboard-status-center]')?.remove();
+            return;
+        }
         let center = visual.querySelector('[data-dashboard-status-center]');
         if (!center) {
             center = document.createElement('div');
@@ -169,6 +174,14 @@
             center.statusCenterResizeObserver = new ResizeObserver(position);
             center.statusCenterResizeObserver.observe(visual);
         }
+    }
+
+    function renderStatusSummary(total) {
+        const summary = root.querySelector('[data-dashboard-status-total]');
+        const value = root.querySelector('[data-dashboard-status-total-value]');
+        if (!summary || !value) return;
+        summary.hidden = total === 0;
+        value.textContent = dashboardNumber(total);
     }
 
     function renderStatusTooltip(values) {
@@ -262,10 +275,9 @@
                 detail.textContent = 'No terminal results in the selected period.';
             } else {
                 const completed = document.createElement('strong');
-                completed.textContent = `${dashboardNumber(values.completed)} of ${dashboardNumber(terminal)} terminal sagas completed successfully`;
-                const active = document.createElement('span');
-                active.textContent = `${dashboardNumber(values.running + values.idle)} still active`;
-                detail.replaceChildren(completed, active);
+                completed.textContent = `${dashboardNumber(values.completed)} of ${dashboardNumber(terminal)} terminal results successful`;
+                detail.title = `${dashboardNumber(values.running + values.idle)} still active`;
+                detail.replaceChildren(completed);
             }
         }
         setLoading('effectiveness', false);
@@ -287,6 +299,7 @@
             centerChartCanvas('runtime-status-chart');
             renderStatusCenter(values.total);
         }));
+        renderStatusSummary(values.total);
         renderStatusTooltip(values);
         setPanelEmpty('status', values.total === 0);
         setLoading('status', false);
@@ -313,10 +326,16 @@
                 outcome.textContent = 'No instances started in this period.';
             } else {
                 const terminal = document.createElement('strong');
-                terminal.textContent = `${dashboardNumber(finalized)} reached a terminal outcome`;
-                const detail = document.createElement('span');
-                detail.textContent = `${dashboardNumber(values.running + values.idle)} still active · ${dashboardNumber(values.failed)} failed · ${dashboardNumber(values.deadLettered)} dead-lettered`;
-                outcome.replaceChildren(terminal, detail);
+                if (isManualDashboard) {
+                    terminal.textContent = `${dashboardNumber(values.completed)} of ${dashboardNumber(values.total)} completed successfully`;
+                    outcome.title = `${dashboardNumber(values.running + values.idle)} still active · ${dashboardNumber(values.failed)} failed · ${dashboardNumber(values.deadLettered)} dead-lettered`;
+                    outcome.replaceChildren(terminal);
+                } else {
+                    terminal.textContent = `${dashboardNumber(finalized)} reached a terminal outcome`;
+                    const detail = document.createElement('span');
+                    detail.textContent = `${dashboardNumber(values.running + values.idle)} still active · ${dashboardNumber(values.failed)} failed · ${dashboardNumber(values.deadLettered)} dead-lettered`;
+                    outcome.replaceChildren(terminal, detail);
+                }
             }
         }
         setLoading('funnel', false);
@@ -519,6 +538,7 @@
         state.hours = hours;
         syncPeriodButtons();
         updateAddress();
+        if (isManualDashboard && !state.orchestrationKey) return;
         void loadDashboard({ showLoading: true });
     }
 
@@ -635,6 +655,9 @@
     syncPeriodButtons();
     syncRankingLimitButtons();
     let connection;
+    const notifyLiveState = stateName => root.dispatchEvent(new CustomEvent('krackend:dashboard-live-state', {
+        detail: { tracking: state.tracking, state: stateName }
+    }));
     const retry = () => {
         if (closed || !state.tracking) return;
         window.clearTimeout(reconnectTimer);
@@ -649,8 +672,20 @@
         connection = new signalR.HubConnectionBuilder().withUrl(config.hubPath).withAutomaticReconnect().build();
         connection.on('runtime.transition', queueLiveEvent);
         connection.on('runtime.resync', () => void loadDashboard());
-        connection.onreconnected(() => subscribe().catch(() => connection.stop()));
-        connection.onclose(retry);
+        connection.onreconnecting(() => notifyLiveState('reconnecting'));
+        connection.onreconnected(async () => {
+            try {
+                await subscribe();
+                notifyLiveState('connected');
+            } catch {
+                notifyLiveState('reconnecting');
+                await connection.stop();
+            }
+        });
+        connection.onclose(() => {
+            notifyLiveState(state.tracking ? 'reconnecting' : 'inactive');
+            retry();
+        });
         return connection;
     }
     async function start() {
@@ -659,7 +694,9 @@
         try {
             await connection.start();
             await subscribe();
+            notifyLiveState('connected');
         } catch {
+            notifyLiveState('reconnecting');
             if (connection.state !== signalR.HubConnectionState.Disconnected) await connection.stop();
             retry();
         }
@@ -670,6 +707,7 @@
         if (connection && connection.state !== signalR.HubConnectionState.Disconnected) {
             await connection.stop();
         }
+        notifyLiveState('inactive');
     }
 
     root.addEventListener('krackend:dashboard-tracking', event => {
