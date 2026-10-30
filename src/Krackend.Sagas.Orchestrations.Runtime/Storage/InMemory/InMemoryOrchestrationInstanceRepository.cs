@@ -15,12 +15,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 
         public Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
         {
+            instance.CaptureLastExecutionCursor();
             _store.Instances[instance.Id] = instance;
             return Task.CompletedTask;
         }
 
         public Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
         {
+            instance.CaptureLastExecutionCursor();
             if (_store.Instances.TryGetValue(instance.Id, out var current) && !ReferenceEquals(current, instance))
             {
                 lock (current)

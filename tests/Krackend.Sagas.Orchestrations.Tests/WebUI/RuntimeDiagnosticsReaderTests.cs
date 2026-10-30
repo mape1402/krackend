@@ -40,6 +40,28 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
+    public void InstanceCursorRetainsTheLastExecutedLocationWhenCurrentWorkClears()
+    {
+        var instance = new OrchestrationInstance
+        {
+            OrchestrationDefinitionKey = "sales.sale.created",
+            CorrelationId = "corr-last-execution",
+            SagaId = "saga-last-execution",
+            ExecutionKey = "sales.sale.created:last-execution",
+            CurrentStageKey = "deliveries",
+            CurrentTaskKey = "schedule-delivery"
+        };
+
+        instance.CaptureLastExecutionCursor();
+        instance.CurrentStageKey = string.Empty;
+        instance.CurrentTaskKey = string.Empty;
+        instance.CaptureLastExecutionCursor();
+
+        Assert.Equal("deliveries", instance.LastExecutedStageKey);
+        Assert.Equal("schedule-delivery", instance.LastExecutedTaskKey);
+    }
+
+    [Fact]
     public void ReactiveProgressUsesOnlyEnabledArtifactTasksWithoutLoadingStorage()
     {
         var store = RuntimeDiagnosticsStore.Create();
@@ -133,6 +155,8 @@ public sealed class RuntimeDiagnosticsReaderTests
         var instance = Assert.Single(snapshot.Instances);
         Assert.Equal("1.0.0", instance.OrchestrationVersion);
         Assert.Equal("orders v1.0.0", instance.OrchestrationLabel);
+        Assert.Equal("reserve-stock", instance.LastExecutedStageKey);
+        Assert.Equal("reserve", instance.LastExecutedTaskKey);
         Assert.Equal(1, snapshot.Summary.CompletedLastMinute);
         Assert.Equal(bucket, Assert.Single(snapshot.Traffic).BucketUtc);
         Assert.Equal(5, Assert.Single(summary.Traffic).Failed);
@@ -596,6 +620,8 @@ public sealed class RuntimeDiagnosticsReaderTests
                     Status = OrchestrationInstanceStatus.Completed,
                     CurrentStageKey = "reserve-stock",
                     CurrentTaskKey = "reserve",
+                    LastExecutedStageKey = "reserve-stock",
+                    LastExecutedTaskKey = "reserve",
                     StartedOnUtc = started,
                     LastUpdatedOnUtc = started.AddSeconds(5),
                     CompletedOnUtc = started.AddSeconds(5),

@@ -101,6 +101,26 @@ public sealed class RuntimeReactiveEvent
     public required string InstanceStatus { get; set; }
 
     /// <summary>
+    /// Gets or sets the current stage cursor from the persisted instance.
+    /// </summary>
+    public string CurrentStageKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the current task cursor from the persisted instance.
+    /// </summary>
+    public string CurrentTaskKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last executed stage cursor from the persisted instance.
+    /// </summary>
+    public string LastExecutedStageKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last executed task cursor from the persisted instance.
+    /// </summary>
+    public string LastExecutedTaskKey { get; set; }
+
+    /// <summary>
     /// Gets or sets the immutable time at which the orchestration instance started.
     /// This allows realtime clients to place a newly observed instance in the
     /// current time window without performing a follow-up diagnostics query.

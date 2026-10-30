@@ -65,8 +65,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             stage.Status = StageExecutionStatus.Completed;
             stage.CompletedOnUtc = now;
-            instance.CurrentStageKey = string.Empty;
-            instance.CurrentTaskKey = string.Empty;
+            instance.ClearCurrentExecutionCursor();
             instance.LastUpdatedOnUtc = now;
 
             if (branchNavigation.HasNavigation)

@@ -1497,15 +1497,43 @@ body:has([data-runtime-catalog]) .od-instances-panel { height: 100%; min-height:
 }
 
 /* The instance grid keeps identifiers intact and copy actions adjacent. */
-[data-runtime-catalog] .od-id-copy { gap: .18rem; white-space: nowrap; }
-[data-runtime-catalog] .od-copy-value { flex: 0 0 auto; overflow: visible; text-overflow: clip; white-space: nowrap; }
-[data-runtime-catalog] .od-copy-button { width: 22px; height: 22px; border-radius: 6px; }
+[data-runtime-catalog] .od-id-copy { gap: .12rem; align-items: center; line-height: 1; white-space: nowrap; }
+[data-runtime-catalog] .od-copy-value { flex: 0 0 auto; overflow: visible; line-height: 1.2; text-overflow: clip; white-space: nowrap; }
+[data-runtime-catalog] .od-copy-button {
+    width: 1.22rem;
+    height: 1.22rem;
+    padding: 0;
+    align-self: center;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--z-muted, var(--od-muted));
+    transform: translateY(.5px);
+}
+[data-runtime-catalog] .od-copy-button:hover {
+    border: 0;
+    background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 10%, transparent);
+    color: var(--z-primary, var(--od-primary));
+}
+[data-runtime-catalog] .od-copy-button:focus-visible {
+    border: 0;
+    outline: 2px solid color-mix(in srgb, var(--z-primary, var(--od-primary)) 45%, transparent);
+    outline-offset: 1px;
+    color: var(--z-primary, var(--od-primary));
+}
+[data-runtime-catalog] .od-copy-button.is-copied {
+    border: 0;
+    background: color-mix(in srgb, var(--z-success, #0f8c55) 14%, transparent);
+    color: var(--z-success, #0f8c55);
+}
 [data-runtime-catalog] .od-instance-row { cursor: pointer; }
 [data-runtime-catalog] .od-instance-row:hover { background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 5%, transparent); }
 [data-runtime-catalog] .od-instance-row:focus-visible { outline: 2px solid color-mix(in srgb, var(--z-primary, var(--od-primary)) 55%, transparent); outline-offset: -2px; }
 .od-instance-progress { display: inline-flex; align-items: center; gap: .38rem; min-width: 6rem; color: var(--z-muted, var(--od-muted)); font-variant-numeric: tabular-nums; font-size: .68rem; white-space: nowrap; }
-.od-instance-progress-meter { display: block; width: 3.85rem; height: .32rem; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 13%, var(--z-surface, var(--od-surface))); }
-.od-instance-progress-meter > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--z-primary, var(--od-primary)), color-mix(in srgb, var(--z-success, #0f8c55) 80%, var(--z-primary, var(--od-primary)))); transition: width .18s ease; }
+.od-instance-progress-meter { display: block; width: 3.85rem; height: .38rem; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--z-primary, var(--od-primary)) 26%, var(--z-surface, var(--od-surface))); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--z-primary, var(--od-primary)) 24%, transparent); }
+.od-instance-progress-meter > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--z-primary, var(--od-primary)), color-mix(in srgb, var(--z-success, #0f8c55) 80%, var(--z-primary, var(--od-primary)))); box-shadow: 0 0 6px color-mix(in srgb, var(--z-primary, var(--od-primary)) 36%, transparent); transition: width .18s ease; }
+[data-runtime-catalog] .od-instance-current-location { color: var(--z-text, var(--od-text)); }
+[data-runtime-catalog] .od-instance-last-location { color: var(--z-muted, var(--od-muted)); font-size: .7rem; font-style: italic; }
 
 @keyframes od-live-pulse-strong {
     0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--od-success, #0f8c55) 52%, transparent); transform: scale(1); }

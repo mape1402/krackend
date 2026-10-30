@@ -40,6 +40,18 @@ public sealed record InstanceRowModel(
     public int TotalTaskCount { get; init; }
 
     /// <summary>
+    /// Gets the most recently executed stage. This is distinct from the
+    /// current stage, which is blank after terminal completion.
+    /// </summary>
+    public string LastExecutedStageKey { get; init; }
+
+    /// <summary>
+    /// Gets the most recently executed task. This is distinct from the
+    /// current task, which is blank after terminal completion.
+    /// </summary>
+    public string LastExecutedTaskKey { get; init; }
+
+    /// <summary>
     /// Gets the orchestration label including definition key and version when available.
     /// </summary>
     public string OrchestrationLabel

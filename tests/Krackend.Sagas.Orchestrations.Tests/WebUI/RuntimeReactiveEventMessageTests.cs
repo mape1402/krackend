@@ -46,6 +46,10 @@ public sealed class RuntimeReactiveEventMessageTests
             FromStatus = "WaitingResponse",
             ToStatus = "Completed",
             InstanceStatus = "Running",
+            CurrentStageKey = "inventory",
+            CurrentTaskKey = "inventories.reserve",
+            LastExecutedStageKey = "payments",
+            LastExecutedTaskKey = "payments.authorize",
             StartedOnUtc = startedOnUtc,
             LastUpdatedOnUtc = occurredOnUtc,
             CompletedTaskCount = 2,
@@ -75,6 +79,10 @@ public sealed class RuntimeReactiveEventMessageTests
         Assert.Equal("WaitingResponse", message.FromStatus);
         Assert.Equal("Completed", message.ToStatus);
         Assert.Equal("Running", message.InstanceStatus);
+        Assert.Equal("inventory", message.CurrentStageKey);
+        Assert.Equal("inventories.reserve", message.CurrentTaskKey);
+        Assert.Equal("payments", message.LastExecutedStageKey);
+        Assert.Equal("payments.authorize", message.LastExecutedTaskKey);
         Assert.Equal(startedOnUtc, message.StartedOnUtc);
         Assert.Equal(occurredOnUtc, message.LastUpdatedOnUtc);
         Assert.Equal(2, message.CompletedTaskCount);

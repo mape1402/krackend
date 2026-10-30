@@ -110,6 +110,29 @@ public sealed class InMemoryRepositoryBranchTests
     }
 
     [Fact]
+    public async Task OrchestrationInstanceRepositoryKeepsTheLastExecutionCursorWhenCurrentWorkCompletes()
+    {
+        await using var provider = CreateRuntimeProvider();
+        var repository = provider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        instance.CurrentStageKey = "payments";
+        instance.CurrentTaskKey = "capture";
+
+        await repository.Create(instance);
+
+        instance.Status = OrchestrationInstanceStatus.Completed;
+        instance.ClearCurrentExecutionCursor();
+        await repository.Update(instance);
+
+        var stored = await repository.GetById(instance.Id);
+
+        Assert.Empty(stored.CurrentStageKey);
+        Assert.Empty(stored.CurrentTaskKey);
+        Assert.Equal("payments", stored.LastExecutedStageKey);
+        Assert.Equal("capture", stored.LastExecutedTaskKey);
+    }
+
+    [Fact]
     public async Task RuntimeIngressConfigurationRepositoryOnlyReturnsActiveReadyArtifacts()
     {
         await using var provider = CreateRuntimeProvider();
