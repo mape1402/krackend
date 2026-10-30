@@ -12,6 +12,18 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
 
+## Version 6.0 highlights
+
+`v6.0.0` is a major orchestration release. It replaces the former direct version lifecycle with reviewed, applied deployment artifacts; adds portable orchestration-version packages; and hardens the runtime around durable dispatch cancellation, replay, response-timeout ownership, and recovery across replicas.
+
+- **Governed delivery.** Drafts move through a review and explicit apply step before producing a deploy, deprecate, or archive artifact. Releases now target those immutable deployed artifacts, including direct and rollout delivery strategies.
+- **Portable design.** Export an eligible orchestration version and import it into a selected orchestration as a new draft; its exported lifecycle state is informational and is never copied into the destination lifecycle.
+- **Durable operations.** Mule-backed dispatches can be fenced, replayed, and cancelled durably. A response timeout is a single owned durable action, and instances that need reconciliation enter the `Idle` window before dead-lettering.
+- **Observable runtime.** The Runtime UI exposes separate dashboard, instances, statistics, history, and artifact areas with scoped live updates. SignalR carries compact deltas so active views do not need to reload their data for each state change.
+- **Safer Pigeon outcomes.** Terminal Pigeon consumer rejections become non-retryable orchestration failures, while client diagnostics can preserve full exception details for the matching task attempt.
+
+Review the [orchestration reference](docs/sagas-orchestrations.md) and the [end-to-end walkthrough](docs/sagas-orchestrations-end-to-end.md) before upgrading a host. The release requires host-owned storage migrations for the new Control Plane lifecycle and Runtime durability fields.
+
 ## Packages
 
 Event sourcing packages:
