@@ -33,6 +33,12 @@ public sealed class OrchestrationExecutionResultMetadata
     public string ErrorType { get; set; }
 
     /// <summary>
+    /// Gets or sets the complete exception diagnostic captured by the client when the operation failed.
+    /// This normally contains the exception type, message, inner-exception chain, and stack trace.
+    /// </summary>
+    public string ExceptionDetails { get; set; }
+
+    /// <summary>
     /// Gets or sets an optional client-side hint indicating whether the error can be considered retryable.
     /// </summary>
     public bool? IsRetryableCandidate { get; set; }

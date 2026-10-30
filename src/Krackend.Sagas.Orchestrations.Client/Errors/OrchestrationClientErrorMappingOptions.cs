@@ -13,9 +13,17 @@ public sealed class OrchestrationClientErrorMappingOptions
     public string DefaultErrorCode { get; set; } = "UnhandledException";
 
     /// <summary>
-    /// Gets or sets a value indicating whether failure metadata can include exception messages and CLR exception types.
+    /// Gets or sets a value indicating whether failure metadata can include exception messages, CLR exception types,
+    /// and complete exception diagnostics.
     /// </summary>
     public bool IncludeExceptionDetails { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether failure metadata includes the complete exception diagnostic
+    /// (type, message, inner-exception chain, and stack trace). This option has no effect when
+    /// <see cref="IncludeExceptionDetails"/> is <see langword="false"/>.
+    /// </summary>
+    public bool IncludeExceptionStackTrace { get; set; } = true;
 
     /// <summary>
     /// Gets or sets the failure message reported when exception details are disabled.

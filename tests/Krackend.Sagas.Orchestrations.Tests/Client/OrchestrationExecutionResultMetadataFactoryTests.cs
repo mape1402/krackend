@@ -78,10 +78,12 @@ public sealed class OrchestrationExecutionResultMetadataFactoryTests
         Assert.NotEqual(default, fallbackOperationSuccess.StartedOnUtc);
         Assert.Equal("boom", detailsFailure.ErrorMessage);
         Assert.Equal(typeof(InvalidOperationException).FullName, detailsFailure.ErrorType);
+        Assert.Equal("System.InvalidOperationException: boom", detailsFailure.ExceptionDetails);
         Assert.Equal("orders.fail", detailsFailure.OperationName);
         Assert.Equal("metadata", detailsFailure.Metadata["failure"]!.GetValue<string>());
         Assert.Null(nullDetailsFailure.ErrorMessage);
         Assert.Null(nullDetailsFailure.ErrorType);
+        Assert.Null(nullDetailsFailure.ExceptionDetails);
         AssertConstructorGuards(provider);
     }
 
@@ -110,6 +112,7 @@ public sealed class OrchestrationExecutionResultMetadataFactoryTests
         Assert.Equal("UnhandledException", nullExceptionFailure.ErrorCode);
         Assert.Equal("UnhandledException", nullExceptionFailure.ErrorMessage);
         Assert.Null(nullExceptionFailure.ErrorType);
+        Assert.Null(nullExceptionFailure.ExceptionDetails);
         Assert.Equal(typeof(string).FullName, fallbackFailure.OperationName);
         Assert.Equal("UnhandledException", fallbackFailure.ErrorMessage);
 
@@ -124,6 +127,36 @@ public sealed class OrchestrationExecutionResultMetadataFactoryTests
             [typeof(Type), typeof(Exception), typeof(OrchestrationOperationOptions)],
             [typeof(string), new InvalidOperationException("boom"), null]);
         Assert.Equal("Hidden failure.", redactedFailure.ErrorMessage);
+        Assert.Null(redactedFailure.ExceptionDetails);
+    }
+
+    [Fact]
+    public void FactoryCapturesCompleteExceptionDiagnosticsUnlessStackTraceCaptureIsDisabled()
+    {
+        var exception = new InvalidOperationException("outer failure", new ArgumentException("inner failure"));
+        using var provider = CreateProvider();
+        var factory = GetFactory(provider);
+
+        var diagnosticsFailure = InvokeFactory<OrchestrationExecutionResultMetadata>(
+            factory,
+            "CreateFailure",
+            [typeof(Type), typeof(Exception), typeof(OrchestrationOperationOptions)],
+            [typeof(string), exception, null]);
+
+        Assert.Equal(exception.ToString(), diagnosticsFailure.ExceptionDetails);
+        Assert.Contains("outer failure", diagnosticsFailure.ExceptionDetails);
+        Assert.Contains("inner failure", diagnosticsFailure.ExceptionDetails);
+
+        using var disabledProvider = CreateProvider(options => options.IncludeExceptionStackTrace = false);
+        var disabledFailure = InvokeFactory<OrchestrationExecutionResultMetadata>(
+            GetFactory(disabledProvider),
+            "CreateFailure",
+            [typeof(Type), typeof(Exception), typeof(OrchestrationOperationOptions)],
+            [typeof(string), exception, null]);
+
+        Assert.Equal("outer failure", disabledFailure.ErrorMessage);
+        Assert.Equal(typeof(InvalidOperationException).FullName, disabledFailure.ErrorType);
+        Assert.Null(disabledFailure.ExceptionDetails);
     }
 
     private static ServiceProvider CreateProvider(Action<Krackend.Sagas.Orchestrations.Client.Errors.OrchestrationClientErrorMappingOptions>? configure = null)

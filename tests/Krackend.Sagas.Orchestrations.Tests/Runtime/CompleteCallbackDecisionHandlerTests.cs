@@ -213,6 +213,7 @@ public sealed class CompleteCallbackDecisionHandlerTests
             ErrorCode = "InventoryRejected",
             ErrorMessage = "Inventory rejected the reservation.",
             ErrorType = "Business",
+            ExceptionDetails = "BusinessException: Inventory rejected the reservation.\n   at Inventory.Reserve()",
             IsRetryableCandidate = false,
             StartedOnUtc = started,
             CompletedOnUtc = completed,
@@ -233,6 +234,7 @@ public sealed class CompleteCallbackDecisionHandlerTests
         Assert.Equal("InventoryRejected", attempt.Metadata["ExecutionErrorCode"]!.GetValue<string>());
         Assert.Equal("Inventory rejected the reservation.", attempt.Metadata["ExecutionErrorMessage"]!.GetValue<string>());
         Assert.Equal("Business", attempt.Metadata["ExecutionErrorType"]!.GetValue<string>());
+        Assert.Equal("BusinessException: Inventory rejected the reservation.\n   at Inventory.Reserve()", attempt.Metadata["ExecutionExceptionDetails"]!.GetValue<string>());
         Assert.False(attempt.Metadata["ExecutionIsRetryableCandidate"]!.GetValue<bool>());
         Assert.Equal(started, attempt.Metadata["ExecutionStartedOnUtc"]!.GetValue<DateTime>());
         Assert.Equal(completed, attempt.Metadata["ExecutionCompletedOnUtc"]!.GetValue<DateTime>());
@@ -268,6 +270,41 @@ public sealed class CompleteCallbackDecisionHandlerTests
         Assert.Equal(string.Empty, attempt.Metadata["ExecutionStatus"]!.GetValue<string>());
         Assert.True(attempt.Metadata.ContainsKey("Execution.nullable"));
         Assert.Null(attempt.Metadata["Execution.nullable"]);
+    }
+
+    [Fact]
+    public void CopyExecutionResultMetadataKeepsCompleteDiagnosticsScopedToEachAttempt()
+    {
+        var firstAttempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = Id.New(),
+            AttemptNumber = 1,
+            Status = TaskExecutionStatus.WaitingResponse
+        };
+        var retryAttempt = new TaskExecutionAttempt
+        {
+            Id = Id.New(),
+            TaskExecutionId = firstAttempt.TaskExecutionId,
+            AttemptNumber = 2,
+            Status = TaskExecutionStatus.WaitingResponse
+        };
+
+        InvokePrivate<object?>("CopyExecutionResultMetadata", firstAttempt, new OrchestrationExecutionResultMetadata
+        {
+            Succeeded = false,
+            Status = "Failed",
+            ExceptionDetails = "First failure stack trace"
+        });
+        InvokePrivate<object?>("CopyExecutionResultMetadata", retryAttempt, new OrchestrationExecutionResultMetadata
+        {
+            Succeeded = false,
+            Status = "Failed",
+            ExceptionDetails = "Retry failure stack trace"
+        });
+
+        Assert.Equal("First failure stack trace", firstAttempt.Metadata["ExecutionExceptionDetails"]!.GetValue<string>());
+        Assert.Equal("Retry failure stack trace", retryAttempt.Metadata["ExecutionExceptionDetails"]!.GetValue<string>());
     }
 
     [Fact]
