@@ -13,6 +13,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.0.0] - 2026-10-30
+
+### Breaking Changes
+
+- Replaced the direct orchestration-version lifecycle with a review-governed workflow. New work starts as a draft, enters a lifecycle review, and only creates a deployed artifact when an approved review is explicitly applied. Integrations that deployed, deprecated, or archived versions directly must move to review and deployed-artifact operations.
+- Changed release inputs from version snapshots to immutable deployed artifacts. A release now delivers a `NewVersion`, `Deprecated`, or `Archived` artifact through its selected direct or rollout strategy.
+- Targeted all Krackend runtime libraries, hosts, and samples to .NET 10. Applications consuming those packages must run on .NET 10 or later; the Roslyn analyzer remains compatible with `netstandard2.0`.
+- Added durable Control Plane and Runtime storage state for lifecycle reviews, artifact history, timeout ownership, cancellation intent, and runtime statistics. Hosts that own EF migrations must apply the corresponding schema migrations before upgrading.
+
+### Added
+
+- Added lifecycle reviews with independent approval and application state for deploy, deprecate, and archive operations. Reviews support approval, rejection with optional comments, abort, and an explicit apply step.
+- Added compact deployed lifecycle artifacts for new versions, deprecations, and archives, plus artifact provenance on Runtime history and release delivery.
+- Added export and import of orchestration-version packages. Eligible versions can be exported, and importing into a selected orchestration always creates a new draft rather than copying the source lifecycle state.
+- Added direct and rollout release strategies, runtime artifact pull recovery, and explicit handling for archived artifacts so their ingress is no longer activated.
+- Added durable task-dispatch replay, targeted saga replay, dispatch-cancellation intent and physical cancellation recovery, stale dispatch fencing, and compensation-delivery recovery.
+- Added one durable response-timeout action per awaited task response. Callback and timeout races are serialized by the orchestration lease; retries run before a recoverable saga is dead-lettered.
+- Added an `Idle` reconciliation state with a 20-minute window before a stalled recoverable instance becomes dead-lettered.
+- Added durable runtime statistics projections, independently loaded dashboards, scoped Statistics and History workspaces, compact SignalR deltas, and live saga-detail updates for multi-replica Runtime hosts.
+- Added terminal Pigeon consume-decision observation. A terminal reject becomes a non-retryable orchestration failure rather than being retried as a transient consumer outcome.
+- Added complete client exception diagnostics to orchestration execution-result metadata, including the exception type, inner exceptions, and stack trace by default. Hosts can redact details or omit the stack trace through client options.
+
+### Changed
+
+- Changed orchestration lifecycle, artifact delivery, and release selection to preserve a clear immutable record of what was reviewed, applied, and delivered to each Runtime node.
+- Changed Runtime public instance status reporting to consolidate engine-level states into `Running`, `Idle`, `Completed`, `DeadLettered`, and `Failed` for operator-facing monitoring.
+- Changed Mule runtime integration to use capacity profiles and isolated lanes for trigger intake, callbacks, dispatch, response timeouts, statistics, and artifact lifecycle work so dispatch pressure cannot starve critical work.
+- Changed client Pigeon and runtime Pigeon integrations to the current Pigeon decision and metadata surfaces while retaining transport-owned business-payload serialization.
+- Changed Control Plane and Runtime web experiences to the Zoorce shell, configurable host palettes/title context, database-paged catalogs, lifecycle dialogs, runtime dashboards, and focused saga diagnostics.
+
+### Fixed
+
+- Fixed timeout lifecycle races and stale timeout actions so an accepted callback clears the owned timer and terminal instances no longer retain dispatch work that can run later.
+- Fixed terminal saga recovery so only explicitly recoverable terminal states may be replayed.
+- Fixed runtime artifact pull acknowledgement and rejection handling, including archived releases and candidate transfer.
+- Fixed client metadata propagation and terminal Pigeon rejection handling so outgoing behavior remains deterministic without overriding domain metadata or retrying a terminal consumer decision.
+
+------
+
 ## [v5.3.0] - 2026-10-14
 
 - ### Breaking Changes
