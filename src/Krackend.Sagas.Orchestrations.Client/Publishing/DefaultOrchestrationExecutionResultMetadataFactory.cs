@@ -63,6 +63,7 @@ internal sealed class DefaultOrchestrationExecutionResultMetadataFactory : IOrch
             ErrorCode = errorResolution.ErrorCode,
             ErrorMessage = ResolveErrorMessage(exception, errorResolution, optionsValue),
             ErrorType = optionsValue.IncludeExceptionDetails ? exception?.GetType().FullName : null,
+            ExceptionDetails = ResolveExceptionDetails(exception, optionsValue),
             IsRetryableCandidate = errorResolution.IsRetryableCandidate,
             StartedOnUtc = startedOnUtc,
             CompletedOnUtc = completedOnUtc,
@@ -90,6 +91,13 @@ internal sealed class DefaultOrchestrationExecutionResultMetadataFactory : IOrch
             ? errorResolution.ErrorCode
             : options.RedactedExceptionMessage;
     }
+
+    private static string ResolveExceptionDetails(
+        Exception exception,
+        OrchestrationClientErrorMappingOptions options)
+        => options.IncludeExceptionDetails && options.IncludeExceptionStackTrace
+            ? exception?.ToString()
+            : null;
 
     private DateTime ResolveStartedOnUtc()
         => _executionContext.StartedOnUtc == default

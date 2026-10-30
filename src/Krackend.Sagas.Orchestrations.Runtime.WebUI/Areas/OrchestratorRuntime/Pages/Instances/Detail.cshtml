@@ -1,6 +1,7 @@
 @page
 @using Microsoft.AspNetCore.Html
 @using Microsoft.AspNetCore.Mvc.Rendering
+@using System.Text.Json.Nodes
 @using Zoorce.Web.UI.Timelines
 @using Krackend.Sagas.Orchestrations.Runtime.Diagnostics
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.DetailModel
@@ -17,6 +18,23 @@
     string Timestamp(DateTime? value) => value.HasValue ? $"{value.Value:yyyy-MM-dd HH:mm:ss} UTC" : "—";
     DateTime? ExecutionTimestamp(params DateTime?[] timestamps) => timestamps.FirstOrDefault(timestamp => timestamp.HasValue);
     DateTimeOffset TimelineTime(DateTime value) => new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
+    string MetadataValue(string metadata, string key)
+    {
+        if (string.IsNullOrWhiteSpace(metadata) || metadata == "—") return string.Empty;
+        try
+        {
+            return FindMetadataValue(JsonNode.Parse(metadata), key);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+    string FindMetadataValue(JsonNode node, string key)
+    {
+        if (node is JsonObject obj && obj[key] is JsonValue value && value.TryGetValue<string>(out var text)) return text ?? string.Empty;
+        return string.Empty;
+    }
     ZoorceTimelineTone Tone(string status) => status?.ToLowerInvariant() switch {
         "completed" or "succeeded" => ZoorceTimelineTone.Success,
         "failed" or "timedout" or "deadlettered" => ZoorceTimelineTone.Danger,
@@ -185,9 +203,10 @@
     else if (section == "attempt")
     {
         var stage = Model.Stage; var task = Model.Task; var attempt = Model.Attempt;
+        var exceptionDetails = MetadataValue(attempt.Metadata, "ExecutionExceptionDetails");
         <nav class="od-trace-breadcrumb" aria-label="Execution path"><a class="od-trace-breadcrumb-root" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution"><i class="bi bi-diagram-3" aria-hidden="true"></i><span>Stages</span></a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><a class="od-trace-breadcrumb-parent" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey">@(stage.ConfiguredName ?? stage.StageKey)</a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><a class="od-trace-breadcrumb-parent" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@task.TaskKey">@(task.ConfiguredName ?? task.TaskKey)</a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><span class="od-trace-breadcrumb-current">Attempt @attempt.AttemptNumber</span></nav>
         <div class="od-trace-layout">
-            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Attempt @attempt.AttemptNumber</h2><p>Task execution record</p></div><span class="od-status @RuntimeDiagnosticsReader.StatusClass(attempt.Status)">@attempt.Status</span></div><dl class="od-trace-fields"><dt>Attempt ID</dt><dd>@CopyValue(attempt.Id, "attempt ID")</dd><dt>Started</dt><dd>@Timestamp(attempt.StartedOnUtc)</dd><dt>Waiting since</dt><dd>@Timestamp(attempt.WaitingSinceUtc)</dd><dt>Completed</dt><dd>@Timestamp(attempt.CompletedOnUtc)</dd><dt>Failed</dt><dd>@Timestamp(attempt.FailedOnUtc)</dd><dt>Timed out</dt><dd>@Timestamp(attempt.TimedOutOnUtc)</dd><dt>Error code</dt><dd>@attempt.ErrorCode</dd><dt>Error</dt><dd class="od-trace-error">@attempt.ErrorMessage</dd></dl><div class="od-json-block"><div><span>Request</span>@CopyValue(attempt.RequestPayload, "request payload")</div><pre class="od-json-view" data-json-view>@attempt.RequestPayload</pre></div><div class="od-json-block"><div><span>Response</span>@CopyValue(attempt.ResponsePayload, "response payload")</div><pre class="od-json-view" data-json-view>@attempt.ResponsePayload</pre></div><div class="od-json-block"><div><span>Attempt metadata</span>@CopyValue(attempt.Metadata, "attempt metadata")</div><pre class="od-json-view" data-json-view>@attempt.Metadata</pre></div></section>
+            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Attempt @attempt.AttemptNumber</h2><p>Task execution record</p></div><span class="od-status @RuntimeDiagnosticsReader.StatusClass(attempt.Status)">@attempt.Status</span></div><dl class="od-trace-fields"><dt>Attempt ID</dt><dd>@CopyValue(attempt.Id, "attempt ID")</dd><dt>Started</dt><dd>@Timestamp(attempt.StartedOnUtc)</dd><dt>Waiting since</dt><dd>@Timestamp(attempt.WaitingSinceUtc)</dd><dt>Completed</dt><dd>@Timestamp(attempt.CompletedOnUtc)</dd><dt>Failed</dt><dd>@Timestamp(attempt.FailedOnUtc)</dd><dt>Timed out</dt><dd>@Timestamp(attempt.TimedOutOnUtc)</dd><dt>Error code</dt><dd>@attempt.ErrorCode</dd><dt>Error</dt><dd class="od-trace-error">@attempt.ErrorMessage</dd></dl>@if (!string.IsNullOrWhiteSpace(exceptionDetails)) { <div class="od-json-block"><div><span>Exception diagnostics</span>@CopyValue(exceptionDetails, "exception diagnostics")</div><pre class="od-json-view" data-json-view>@exceptionDetails</pre></div> }<div class="od-json-block"><div><span>Request</span>@CopyValue(attempt.RequestPayload, "request payload")</div><pre class="od-json-view" data-json-view>@attempt.RequestPayload</pre></div><div class="od-json-block"><div><span>Response</span>@CopyValue(attempt.ResponsePayload, "response payload")</div><pre class="od-json-view" data-json-view>@attempt.ResponsePayload</pre></div><div class="od-json-block"><div><span>Attempt metadata</span>@CopyValue(attempt.Metadata, "attempt metadata")</div><pre class="od-json-view" data-json-view>@attempt.Metadata</pre></div></section>
             @if (attempt.Dispatch is { } dispatch) { <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Dispatch</h2><p>@dispatch.DispatchType · @dispatch.DispatchStatus</p></div></div><dl class="od-trace-fields"><dt>Dispatch ID</dt><dd>@CopyValue(dispatch.Id, "dispatch ID")</dd><dt>Destination</dt><dd>@dispatch.Destination</dd><dt>Command ID</dt><dd>@CopyValue(dispatch.CommandId, "command ID")</dd><dt>Correlation ID</dt><dd>@CopyValue(dispatch.CorrelationId, "correlation ID")</dd><dt>Sent</dt><dd>@Timestamp(dispatch.SentOnUtc)</dd><dt>Acknowledged</dt><dd>@Timestamp(dispatch.AcknowledgedOnUtc)</dd><dt>Failed</dt><dd>@Timestamp(dispatch.FailedOnUtc)</dd><dt>Failure</dt><dd class="od-trace-error">@dispatch.FailureReason</dd></dl><div class="od-json-block"><div><span>Payload</span>@CopyValue(dispatch.RequestPayload, "dispatch payload")</div><pre class="od-json-view" data-json-view>@dispatch.RequestPayload</pre></div><div class="od-json-block"><div><span>Dispatch metadata</span>@CopyValue(dispatch.Metadata, "dispatch metadata")</div><pre class="od-json-view" data-json-view>@dispatch.Metadata</pre></div></section> }
         </div>
     }

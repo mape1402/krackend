@@ -375,6 +375,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                 attempt.Metadata["ExecutionErrorType"] = JsonValue.Create(result.ErrorType);
             }
 
+            if (!string.IsNullOrWhiteSpace(result.ExceptionDetails))
+            {
+                attempt.Metadata["ExecutionExceptionDetails"] = JsonValue.Create(result.ExceptionDetails);
+            }
+
             if (result.IsRetryableCandidate.HasValue)
             {
                 attempt.Metadata["ExecutionIsRetryableCandidate"] = JsonValue.Create(result.IsRetryableCandidate.Value);

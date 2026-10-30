@@ -40,7 +40,8 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         {
             Succeeded = true,
             Status = "Succeeded",
-            ServiceName = "inventories"
+            ServiceName = "inventories",
+            ExceptionDetails = "System.InvalidOperationException: retained by Pigeon"
         };
         var messageAccessor = Substitute.For<IOrchestrationMessageMetadataAccessor>();
         var resultAccessor = Substitute.For<IOrchestrationExecutionResultMetadataAccessor>();
@@ -54,6 +55,9 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         var metadata = GetPublishMetadata(context);
         Assert.Same(messageMetadata, metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey]);
         Assert.Same(resultMetadata, metadata[OrchestrationMetadataConstants.OrchestrationExecutionResultMetadataKey]);
+        Assert.Equal(
+            "System.InvalidOperationException: retained by Pigeon",
+            ((OrchestrationExecutionResultMetadata)metadata[OrchestrationMetadataConstants.OrchestrationExecutionResultMetadataKey]).ExceptionDetails);
     }
 
     [Theory]
@@ -446,7 +450,8 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
         var resultMetadata = new OrchestrationExecutionResultMetadata
         {
             Succeeded = true,
-            Status = "Succeeded"
+            Status = "Succeeded",
+            ExceptionDetails = "System.InvalidOperationException: retained by Pigeon"
         };
         var messageSetter = Substitute.For<IOrchestrationMessageMetadataSetter>();
         var resultSetter = Substitute.For<IOrchestrationExecutionResultMetadataSetter>();
@@ -458,7 +463,8 @@ public sealed class PigeonOrchestrationMetadataInterceptorTests
 
         messageSetter.Received(1).Set(messageMetadata);
         resultSetter.Received(1).Clear();
-        resultSetter.Received(1).Set(resultMetadata);
+        resultSetter.Received(1).Set(Arg.Is<OrchestrationExecutionResultMetadata>(metadata =>
+            metadata.ExceptionDetails == "System.InvalidOperationException: retained by Pigeon"));
 
         messageSetter.ClearReceivedCalls();
         resultSetter.ClearReceivedCalls();
