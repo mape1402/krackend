@@ -3634,6 +3634,18 @@ body:has([data-runtime-dashboard]) .z-main,
 .od-statistics-status-total { position: absolute; z-index: 4; top: .83rem; right: .92rem; display: grid; min-width: 0; max-width: 7.25rem; gap: .08rem; color: var(--z-muted, var(--od-muted)); font-size: .57rem; font-weight: 720; line-height: 1.1; text-align: right; }
 .od-statistics-status-total[hidden] { display: none; }
 .od-statistics-status-total strong { overflow: hidden; color: var(--z-text, var(--od-text)); font-size: clamp(.9rem, 1.2vw, 1.2rem); font-variant-numeric: tabular-nums; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
+[data-runtime-statistics] .od-statistics-status-total { display: none; }
+[data-runtime-statistics] .od-dashboard-chart-shell[data-dashboard-panel="status"] .od-dashboard-status-center { width: min(62%, 8.75rem); min-width: 0; max-width: calc(100% - 4.8rem); }
+[data-runtime-statistics] .od-dashboard-chart-shell[data-dashboard-panel="status"] .od-dashboard-status-center strong { overflow: hidden; font-size: clamp(.72rem, 1.18vw, 1.12rem); text-overflow: ellipsis; white-space: nowrap; }
+[data-runtime-statistics] .od-dashboard-chart-shell[data-dashboard-panel="status"] .od-dashboard-status-center span { font-size: .52rem; white-space: nowrap; }
+
+/* The scope view already explains the conversion below the chart.  The native
+   headline duplicates that value, consumes the compact panel header and can
+   overflow for production-scale totals. */
+[data-runtime-statistics] .od-dashboard-chart-shell[data-dashboard-panel="funnel"] [data-z-chart-metric],
+[data-runtime-statistics] .od-dashboard-chart-shell[data-dashboard-panel="funnel"] [data-z-chart-delta] { display: none; }
+[data-runtime-statistics] .od-dashboard-activity .z-chart-component { padding-bottom: .8rem; }
+[data-runtime-statistics] .od-dashboard-activity [data-z-chart-visual] { padding-bottom: .2rem; }
 [data-runtime-statistics] .od-dashboard-status-tooltip { max-width: calc(100% - 1.8rem); }
 [data-runtime-statistics] .od-dashboard-status-row strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; text-align: right; }
 
@@ -3648,6 +3660,16 @@ body:has([data-runtime-dashboard]) .z-main,
     [data-runtime-statistics] .od-statistics-workspace > .od-dashboard-activity { overflow: hidden; }
     [data-runtime-statistics] .od-statistics-workspace .od-dashboard-chart-shell,
     [data-runtime-statistics] .od-statistics-workspace .z-chart-component { height: 100%; }
+    /* Keep the Statistics chart viewport on the exact same grid contract as
+       Dashboard. Without these rows the funnel SVG consumes the full panel
+       instead of the compact visual area used by Dashboard. */
+    [data-runtime-statistics] .z-chart-component {
+        display: grid;
+        min-height: 0;
+        padding: .85rem;
+        grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    [data-runtime-statistics] .z-chart-visual { min-height: 0; height: auto; }
 }
 
 
