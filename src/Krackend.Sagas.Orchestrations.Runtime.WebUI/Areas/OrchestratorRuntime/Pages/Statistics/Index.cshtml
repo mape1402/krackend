@@ -9,10 +9,12 @@
     ViewData["Title"] = "Statistics";
     var metrics = new[]
     {
-        ("Total instances", "layers", "total"), ("In progress", "activity", "running"),
+        ("Total instances", "layers", "total"), ("Running", "activity", "running"),
         ("Idle", "pause-circle", "idle"), ("Completed", "check2-circle", "completed"),
         ("Dead lettered", "inbox", "deadLettered"), ("Failed", "exclamation-circle", "failed")
     };
+    // Zoorce requires one seed series even while Statistics is intentionally idle.
+    // The surrounding empty states obscure this placeholder until a scope is loaded.
     var emptySeries = new[] { new ZoorceChartSeries("Loading", new[] { new ZoorceChartPoint("", 0) }) };
     var dashboardPage = "/Dashboard/Index";
 }
@@ -30,35 +32,34 @@
             {
                 Id = $"runtime-statistics-metric-{metric.Item3}",
                 Title = metric.Item1,
-                Body = new HtmlString($"<div class=\"od-dashboard-metric-body\"><span class=\"od-metric-icon\" aria-hidden=\"true\"><i class=\"bi bi-{metric.Item2}\"></i></span><span class=\"od-dashboard-metric-skeleton\" data-dashboard-metric-skeleton=\"{metric.Item3}\"><span class=\"z-skeleton z-skeleton-line z-skeleton-animate\"></span></span><div class=\"od-dashboard-metric-data\" data-dashboard-metric-data=\"{metric.Item3}\" hidden><strong data-dashboard-metric=\"{metric.Item3}\">0</strong><small data-dashboard-metric-share=\"{metric.Item3}\"></small></div></div>")
+                Body = new HtmlString($"<div class=\"od-dashboard-metric-body\"><span class=\"od-metric-icon\" aria-hidden=\"true\"><i class=\"bi bi-{metric.Item2}\"></i></span><span class=\"od-dashboard-metric-skeleton\" data-dashboard-metric-skeleton=\"{metric.Item3}\" hidden><span class=\"z-skeleton z-skeleton-line z-skeleton-animate\"></span></span><div class=\"od-dashboard-metric-data\" data-dashboard-metric-data=\"{metric.Item3}\"><strong data-dashboard-metric=\"{metric.Item3}\">0</strong><small data-dashboard-metric-share=\"{metric.Item3}\">Select a scope</small></div></div>")
             })
         }
     </div>
 
     <div class="od-statistics-workspace" aria-live="polite">
         <aside class="od-statistics-parameters" aria-label="Statistics parameters">
-            <div>
-                <span class="od-statistics-eyebrow">Scope</span>
-                <h2>Choose an orchestration</h2>
-                <p>Load one orchestration and, optionally, one deployed version.</p>
-            </div>
+            <span class="od-statistics-eyebrow">Scope</span>
             <label class="od-statistics-field">
                 <span>Orchestration</span>
-                <input type="search" class="z-form-input" data-statistics-orchestration autocomplete="off" placeholder="Search orchestrations" aria-autocomplete="list" />
+                            <input type="search" class="z-form-input" data-statistics-orchestration autocomplete="off" spellcheck="false" placeholder="Search orchestrations" aria-autocomplete="list" />
                 <span class="od-autocomplete-list d-none" data-statistics-orchestration-suggestions></span>
             </label>
             <label class="od-statistics-field">
                 <span>Version <small>Optional</small></span>
-                <input type="search" class="z-form-input" data-statistics-version autocomplete="off" placeholder="All versions" aria-autocomplete="list" disabled />
+                            <input type="search" class="z-form-input" data-statistics-version autocomplete="off" spellcheck="false" placeholder="All versions" aria-autocomplete="list" disabled />
                 <span class="od-autocomplete-list d-none" data-statistics-version-suggestions></span>
             </label>
             <div class="od-statistics-actions">
                 <span data-statistics-load>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeStatisticsLoad", Text = "Load", Tone = "primary" })</span>
-                <button type="button" class="z-button z-button-secondary" data-statistics-tracking aria-pressed="false">
-                    <i class="bi bi-broadcast" aria-hidden="true"></i><span>Track realtime</span>
+                <button type="button" class="z-button z-button-secondary" data-statistics-tracking aria-pressed="false" disabled>
+                    <i class="bi bi-broadcast" aria-hidden="true"></i><span>Track live</span>
                 </button>
             </div>
-            <p class="od-statistics-live-copy" data-statistics-live-copy>Realtime tracking is off until you enable it.</p>
+            <div class="od-statistics-live-indicator" data-statistics-live-indicator aria-live="polite" hidden>
+                <span class="od-statistics-live-pulse" aria-hidden="true"></span>
+                <span>Live tracking</span>
+            </div>
         </aside>
 
         <section class="od-dashboard-chart-shell is-empty" data-dashboard-panel="effectiveness">
@@ -71,6 +72,10 @@
 
         <section class="od-dashboard-chart-shell is-empty" data-dashboard-panel="status">
                 @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-status-chart", Title = "Current status", Summary = "Current status distribution for instances started in the selected scope.", Kind = ZoorceChartKind.Donut, ShowLegend = false, ShowTooltip = false, Series = emptySeries })
+                <div class="od-statistics-status-total" data-dashboard-status-total hidden>
+                    <span>Total instances</span>
+                    <strong data-dashboard-status-total-value>0</strong>
+                </div>
                 <p class="od-dashboard-status-hint">Hover over the chart to inspect the full status breakdown.</p>
                 <div id="runtime-status-tooltip" class="z-tooltip od-dashboard-status-tooltip" data-dashboard-status-tooltip role="tooltip" hidden></div>
                 <div class="od-dashboard-empty" data-dashboard-empty="status"><i class="bi bi-pie-chart" aria-hidden="true"></i><strong>No instance data in this scope</strong><span>Load an orchestration to inspect its status distribution.</span></div>
