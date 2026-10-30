@@ -3579,7 +3579,27 @@ body:has([data-runtime-dashboard]) .z-main,
 }
 
 .od-statistics-workspace > .od-statistics-parameters { grid-area: parameters; }
-.od-statistics-workspace > [data-dashboard-panel="effectiveness"] { grid-area: effectiveness; }
+.od-statistics-workspace > [data-dashboard-panel="effectiveness"] {
+    grid-area: effectiveness;
+    /* One continuous card: gauge above, result summary below. This mirrors the
+       Funnel card rather than leaving a small chart card with a detached footer. */
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    align-self: stretch;
+    border: 1px solid color-mix(in srgb, var(--z-border, var(--od-border)) 88%, var(--z-primary, var(--od-primary)));
+    border-radius: 16px;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--z-surface, var(--od-surface)) 94%, var(--z-primary, var(--od-primary))), var(--z-surface, var(--od-surface)));
+    box-shadow: 0 13px 30px color-mix(in srgb, var(--z-text, #111) 5%, transparent);
+}
+.od-statistics-workspace > [data-dashboard-panel="effectiveness"] .z-chart-component {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
 .od-statistics-workspace > [data-dashboard-panel="status"] { grid-area: status; }
 .od-statistics-workspace > .od-dashboard-activity { grid-area: activity; min-width: 0; }
 .od-statistics-workspace > [data-dashboard-panel="funnel"] { grid-area: funnel; }
@@ -3670,6 +3690,12 @@ body:has([data-runtime-dashboard]) .z-main,
         grid-template-rows: auto auto minmax(0, 1fr);
     }
     [data-runtime-statistics] .z-chart-visual { min-height: 0; height: auto; }
+    /* Success rate owns a second, in-flow summary row. Its chart uses the
+       remaining height while the full card stays level with its row peers. */
+    [data-runtime-statistics] .od-dashboard-chart-shell[data-dashboard-panel="effectiveness"] .z-chart-component {
+        height: auto;
+        min-height: 0;
+    }
 }
 
 
