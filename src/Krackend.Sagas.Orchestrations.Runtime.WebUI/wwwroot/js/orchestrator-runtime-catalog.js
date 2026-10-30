@@ -43,6 +43,8 @@
     }
 
     const eventValue = (event, name) => event?.[name] ?? event?.[`${name.charAt(0).toUpperCase()}${name.slice(1)}`];
+    const hasEventValue = (event, name) => Object.prototype.hasOwnProperty.call(event || {}, name)
+        || Object.prototype.hasOwnProperty.call(event || {}, `${name.charAt(0).toUpperCase()}${name.slice(1)}`);
     const toTimestamp = value => {
         const timestamp = new Date(value).getTime();
         return Number.isNaN(timestamp) ? 0 : timestamp;
@@ -229,6 +231,26 @@
         container.append(meter, label);
         return container;
     };
+    const isTerminalStatus = status => ['Completed', 'DeadLettered', 'Failed'].includes(toPublicStatus(status));
+    const executionLocation = (item, currentField, lastField) => {
+        const current = String(item?.[currentField] || '');
+        if (current) return { value: current, isLast: false };
+
+        const last = String(item?.[lastField] || '');
+        return isTerminalStatus(item?.status) && last
+            ? { value: last, isLast: true }
+            : { value: '', isLast: false };
+    };
+    const renderExecutionLocation = (item, currentField, lastField, kind) => {
+        const location = executionLocation(item, currentField, lastField);
+        if (!location.value) return document.createTextNode('—');
+
+        const text = document.createElement('span');
+        text.className = location.isLast ? 'od-instance-last-location' : 'od-instance-current-location';
+        text.textContent = location.isLast ? `Last: ${location.value}` : location.value;
+        if (location.isLast) text.title = `Last executed ${kind}: ${location.value}`;
+        return text;
+    };
     const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
         const item = records.get(row.dataset.zGridKey);
         if (!item) return;
@@ -254,6 +276,14 @@
             const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount || 0)));
             const state = `${complete}/${total}`;
             if (progress.firstElementChild?.dataset.progressState !== state) progress.replaceChildren(renderProgress(item));
+        }
+        for (const [field, lastField, kind] of [
+            ['currentStageKey', 'lastExecutedStageKey', 'stage'],
+            ['currentTaskKey', 'lastExecutedTaskKey', 'task']]) {
+            const cell = row.querySelector(`[data-z-grid-field="${field}"]`);
+            const location = executionLocation(item, field, lastField);
+            const expected = location.isLast ? `Last: ${location.value}` : location.value || '—';
+            if (cell && cell.textContent !== expected) cell.replaceChildren(renderExecutionLocation(item, field, lastField, kind));
         }
         row.classList.add('od-instance-row');
         row.tabIndex = 0;
@@ -340,13 +370,20 @@
     const matchesScope = item => {
         const term = search.value.trim().toLocaleLowerCase();
         if (!term) return true;
-        return [item.id, item.orchestrationDefinitionKey, item.correlationId, item.sagaId, item.executionKey]
+        return [item.id, item.orchestrationDefinitionKey, item.correlationId, item.sagaId, item.executionKey,
+            item.currentStageKey, item.currentTaskKey, item.lastExecutedStageKey, item.lastExecutedTaskKey]
             .some(value => String(value || '').toLocaleLowerCase().includes(term));
     };
     const toLiveRow = (event, existing) => {
         const status = toPublicStatus(eventValue(event, 'instanceStatus') || existing?.status);
         const definitionKey = eventValue(event, 'orchestrationDefinitionKey') || existing?.orchestrationDefinitionKey || '';
         const version = eventValue(event, 'orchestrationVersion') || existing?.orchestrationVersion || '';
+        const currentStageKey = hasEventValue(event, 'currentStageKey')
+            ? eventValue(event, 'currentStageKey') || ''
+            : eventValue(event, 'stageKey') || existing?.currentStageKey || '';
+        const currentTaskKey = hasEventValue(event, 'currentTaskKey')
+            ? eventValue(event, 'currentTaskKey') || ''
+            : eventValue(event, 'taskKey') || existing?.currentTaskKey || '';
         return {
             ...existing,
             id: String(eventValue(event, 'orchestrationInstanceId') || existing?.id || ''),
@@ -358,8 +395,14 @@
             executionKey: eventValue(event, 'executionKey') || existing?.executionKey || '',
             status,
             statusClass: statusClass(status),
-            currentStageKey: eventValue(event, 'stageKey') || existing?.currentStageKey || '',
-            currentTaskKey: eventValue(event, 'taskKey') || existing?.currentTaskKey || '',
+            currentStageKey,
+            currentTaskKey,
+            lastExecutedStageKey: hasEventValue(event, 'lastExecutedStageKey')
+                ? eventValue(event, 'lastExecutedStageKey') || ''
+                : existing?.lastExecutedStageKey || '',
+            lastExecutedTaskKey: hasEventValue(event, 'lastExecutedTaskKey')
+                ? eventValue(event, 'lastExecutedTaskKey') || ''
+                : existing?.lastExecutedTaskKey || '',
             startedOnUtc: toUtcText(eventValue(event, 'startedOnUtc') || existing?.startedOnUtc || eventValue(event, 'occurredOnUtc')),
             lastUpdatedOnUtc: toUtcText(eventValue(event, 'lastUpdatedOnUtc') || eventValue(event, 'occurredOnUtc') || existing?.lastUpdatedOnUtc),
             reactiveRevision: String(eventValue(event, 'revision') || existing?.reactiveRevision || ''),

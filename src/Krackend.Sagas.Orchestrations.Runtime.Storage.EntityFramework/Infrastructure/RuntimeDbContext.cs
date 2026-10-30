@@ -221,6 +221,8 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.StatisticsRevision).HasDefaultValue(0L).IsConcurrencyToken();
         builder.Property(x => x.CurrentStageKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.CurrentTaskKey).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.LastExecutedStageKey).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.LastExecutedTaskKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.CurrentParallelGroupKey).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.FinalOutcome).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.ErrorSummary).HasMaxLength(4000).IsRequired(false);

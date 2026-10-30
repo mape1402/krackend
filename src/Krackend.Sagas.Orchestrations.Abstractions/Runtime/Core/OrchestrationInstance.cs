@@ -64,6 +64,20 @@ public sealed class OrchestrationInstance
     public string CurrentTaskKey { get; set; }
 
     /// <summary>
+    /// Gets or sets the most recently executed stage key.
+    /// This is retained after a terminal transition so diagnostics can show
+    /// the last meaningful execution location without treating it as current work.
+    /// </summary>
+    public string LastExecutedStageKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the most recently executed task key.
+    /// This is retained after a terminal transition so diagnostics can show
+    /// the last meaningful execution location without treating it as current work.
+    /// </summary>
+    public string LastExecutedTaskKey { get; set; }
+
+    /// <summary>
     /// Gets or sets current parallel group key.
     /// </summary>
     public string CurrentParallelGroupKey { get; set; }
@@ -158,4 +172,30 @@ public sealed class OrchestrationInstance
     /// Gets or sets metadata.
     /// </summary>
     public Dictionary<string, JsonNode> Metadata { get; set; } = new();
+
+    /// <summary>
+    /// Records the current execution cursor as the last meaningful location.
+    /// A blank current cursor intentionally leaves the previous execution
+    /// location intact when a stage or the whole instance is completed.
+    /// </summary>
+    public void CaptureLastExecutionCursor()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentStageKey))
+        {
+            return;
+        }
+
+        LastExecutedStageKey = CurrentStageKey;
+        LastExecutedTaskKey = CurrentTaskKey ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Clears the active execution cursor after preserving its last meaningful value.
+    /// </summary>
+    public void ClearCurrentExecutionCursor()
+    {
+        CaptureLastExecutionCursor();
+        CurrentStageKey = string.Empty;
+        CurrentTaskKey = string.Empty;
+    }
 }

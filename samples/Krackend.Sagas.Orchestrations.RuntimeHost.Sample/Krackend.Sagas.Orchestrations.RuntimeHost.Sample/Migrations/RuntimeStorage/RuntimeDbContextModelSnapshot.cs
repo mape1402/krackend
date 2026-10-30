@@ -302,6 +302,14 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime?>("IdleSinceUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("LastExecutedStageKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("LastExecutedTaskKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<DateTime>("LastUpdatedOnUtc")
                         .HasColumnType("datetime2");
 

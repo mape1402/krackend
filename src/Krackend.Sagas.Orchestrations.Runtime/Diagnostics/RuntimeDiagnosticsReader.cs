@@ -492,7 +492,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             instance.RetryCount)
         {
             CompletedTaskCount = completedTaskCount,
-            TotalTaskCount = totalTaskCount
+            TotalTaskCount = totalTaskCount,
+            LastExecutedStageKey = instance.LastExecutedStageKey,
+            LastExecutedTaskKey = instance.LastExecutedTaskKey
         };
     }
 

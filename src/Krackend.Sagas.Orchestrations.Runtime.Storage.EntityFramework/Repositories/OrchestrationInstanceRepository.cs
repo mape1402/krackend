@@ -15,6 +15,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
+        instance.CaptureLastExecutionCursor();
         instance.StatisticsRevision = 1;
         DbContext.OrchestrationInstances.Add(instance);
         AddStatisticsObservation(instance, false);
@@ -23,6 +24,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default)
     {
+        instance.CaptureLastExecutionCursor();
         var existing = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instance.Id);
         var originalRevision = existing is null
             ? instance.StatisticsRevision

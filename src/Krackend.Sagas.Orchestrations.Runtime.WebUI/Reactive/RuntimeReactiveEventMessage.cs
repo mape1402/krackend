@@ -32,7 +32,11 @@ public sealed record RuntimeReactiveEventMessage(
     [property: JsonIgnore] object Payload,
     string ProducedBy,
     int? CompletedTaskCount = null,
-    int? TotalTaskCount = null)
+    int? TotalTaskCount = null,
+    string CurrentStageKey = null,
+    string CurrentTaskKey = null,
+    string LastExecutedStageKey = null,
+    string LastExecutedTaskKey = null)
 {
     /// <summary>
     /// Creates a SignalR payload from a runtime reactive event.
@@ -66,5 +70,9 @@ public sealed record RuntimeReactiveEventMessage(
             null,
             eventData.ProducedBy,
             eventData.CompletedTaskCount,
-            eventData.TotalTaskCount);
+            eventData.TotalTaskCount,
+            eventData.CurrentStageKey,
+            eventData.CurrentTaskKey,
+            eventData.LastExecutedStageKey,
+            eventData.LastExecutedTaskKey);
 }
