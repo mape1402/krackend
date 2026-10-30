@@ -136,10 +136,6 @@
     function renderStatusCenter(total) {
         const visual = document.getElementById('runtime-status-chart')?.querySelector('[data-z-chart-visual]');
         if (!visual) return;
-        if (isManualDashboard) {
-            visual.querySelector('[data-dashboard-status-center]')?.remove();
-            return;
-        }
         let center = visual.querySelector('[data-dashboard-status-center]');
         if (!center) {
             center = document.createElement('div');
@@ -180,6 +176,10 @@
         const summary = root.querySelector('[data-dashboard-status-total]');
         const value = root.querySelector('[data-dashboard-status-total-value]');
         if (!summary || !value) return;
+        if (isManualDashboard) {
+            summary.hidden = true;
+            return;
+        }
         summary.hidden = total === 0;
         value.textContent = dashboardNumber(total);
     }
