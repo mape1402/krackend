@@ -47,6 +47,9 @@ public sealed class TaskResponseTimeoutScheduleRequest
 
     /// <summary>Gets the UTC instant at which the timeout action becomes eligible.</summary>
     public required DateTime DueOnUtc { get; init; }
+
+    /// <summary>Terminal timer being replaced, used as a stable deduplication generation.</summary>
+    public string RecoveryOfActionId { get; init; }
 }
 
 /// <summary>Identifies a scheduled timeout that should be cancelled after a callback.</summary>

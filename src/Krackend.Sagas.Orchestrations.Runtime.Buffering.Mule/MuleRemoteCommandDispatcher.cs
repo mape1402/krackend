@@ -234,7 +234,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             });
         }
 
-        private static string BuildDeduplicationKey(RemoteCommand command)
+        internal static string BuildDeduplicationKey(RemoteCommand command)
         {
             if (!string.IsNullOrWhiteSpace(command.DispatchId))
             {

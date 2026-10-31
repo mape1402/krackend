@@ -269,7 +269,7 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
             request.TaskExecutionId,
             request.TaskExecutionAttemptId,
             request.AttemptNumber,
-            request.DueOnUtc);
+            request.DueOnUtc) + (string.IsNullOrWhiteSpace(request.RecoveryOfActionId) ? "" : $":repair:{request.RecoveryOfActionId}");
 
     private static string BuildDeduplicationKey(
         Id taskExecutionId,

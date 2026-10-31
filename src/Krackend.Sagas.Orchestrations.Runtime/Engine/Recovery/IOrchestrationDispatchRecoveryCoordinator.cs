@@ -1,10 +1,16 @@
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+
 /// <summary>
 /// Reconciles persisted task delivery intents that were not acknowledged by their execution provider.
 /// </summary>
 public interface IOrchestrationDispatchRecoveryCoordinator
 {
+    /// <summary>Attempts to recover one pending delivery under its owning instance lease.</summary>
+    Task<bool> RecoverDispatchAsync(Id dispatchId, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
     /// <summary>
     /// Attempts to recover a bounded set of pending durable task deliveries.
     /// </summary>

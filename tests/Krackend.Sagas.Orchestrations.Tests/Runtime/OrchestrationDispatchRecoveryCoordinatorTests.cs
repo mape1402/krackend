@@ -16,6 +16,20 @@ using NSubstitute;
 public sealed class OrchestrationDispatchRecoveryCoordinatorTests
 {
     [Fact]
+    public async Task RecoverDispatchTargetsOnlySelectedInstanceAndUsesItsLease()
+    {
+        var fixture = new RecoveryFixture();
+        var state = CreateState();
+        state.Dispatch.Metadata["Runtime.Delivery.ProviderKey"] = JsonValue.Create("builtin");
+        state.Dispatch.Metadata["Runtime.Delivery.Command"] = Serialize(CreateCommand(state));
+        fixture.Arrange(state);
+
+        Assert.True(await fixture.Coordinator.RecoverDispatchAsync(state.Dispatch.Id));
+        Assert.Single(fixture.Provider.RecoveryRequests);
+        await fixture.LeaseCoordinator.Received(1).TryExecuteAsync(state.Instance.Id,
+            Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), waitForLease: false);
+    }
+    [Fact]
     public async Task RecoverPendingDispatchesRequeuesPersistedCommandWithoutCreatingAnotherAttempt()
     {
         var fixture = new RecoveryFixture();

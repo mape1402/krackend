@@ -52,7 +52,7 @@ internal sealed class DefaultOrchestrationCompensationRecoveryCoordinator : IOrc
             var handled = false;
             var acquired = await _coordinator.TryExecuteAsync(
                 candidate.OrchestrationInstanceId,
-                async token => handled = await RecoverCompensationAsync(candidate.Id, token),
+                async token => handled = await RecoverCompensationCoreAsync(candidate.Id, token),
                 cancellationToken,
                 waitForLease: false);
             if (acquired && handled)
@@ -64,7 +64,18 @@ internal sealed class DefaultOrchestrationCompensationRecoveryCoordinator : IOrc
         return recovered;
     }
 
-    private async Task<bool> RecoverCompensationAsync(Id compensationId, CancellationToken cancellationToken)
+    public async Task<bool> RecoverCompensationAsync(Id compensationId, CancellationToken cancellationToken = default)
+    {
+        var compensation = await _compensationRepository.TryGetById(compensationId, cancellationToken);
+        if (compensation is null) return false;
+        var handled = false;
+        var acquired = await _coordinator.TryExecuteAsync(compensation.OrchestrationInstanceId,
+            async token => handled = await RecoverCompensationCoreAsync(compensationId, token),
+            cancellationToken, waitForLease: false);
+        return acquired && handled;
+    }
+
+    private async Task<bool> RecoverCompensationCoreAsync(Id compensationId, CancellationToken cancellationToken)
     {
         var compensation = await _compensationRepository.TryGetById(compensationId, cancellationToken);
         if (compensation is null || !IsPending(compensation.Status))

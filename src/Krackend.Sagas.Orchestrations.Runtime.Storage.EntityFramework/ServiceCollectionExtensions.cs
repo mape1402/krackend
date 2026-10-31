@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Operations;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Operations;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
@@ -70,6 +71,7 @@ public static class ServiceCollectionExtensions
         storageOptions.ConfigureDataProtection?.Invoke(dataProtection);
 
         services.Replace(ServiceDescriptor.Scoped<IRuntimeStorageUnitOfWork, RuntimeStorageUnitOfWork>());
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationDurableActionStateReader, OrchestrationDurableActionStateReader>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeDesignNodeRepository, RuntimeDesignNodeRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactRepository, RuntimeArtifactRepository>());
         services.Replace(ServiceDescriptor.Scoped<IRuntimeArtifactDeploymentHistoryRepository, RuntimeArtifactDeploymentHistoryRepository>());

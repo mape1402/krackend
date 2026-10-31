@@ -781,3 +781,29 @@ Si un deploy no llega:
 8. Revisar `ReleaseTarget.Status`.
 9. Revisar `ReleaseAttempt.ErrorMessage`.
 10. Confirmar validaciones runtime de environment, version, checksum y payload.
+
+### Reconcile an active saga
+
+The runtime instance detail page offers **Reconcile saga** for `Running`, `Idle`, and
+`Compensating` instances. The operator action obtains the instance lease and records
+request and completion transitions. It checks the latest task attempt, current stage,
+dispatch, response deadline, and compensation state. It can re-evaluate persisted
+execution state, process an expired timeout, restore a missing or terminal response
+timer, and invoke the existing pending-delivery and compensation recovery paths.
+A still-active response wait is left in place. Reconciliation never sends a new
+command solely because a delivery action is missing: delivery may have happened, so
+such a case is reported for investigation. Provider acceptance or completion is
+rechecked before it is reported as recovered. A busy instance reports `Busy`.
+
+Mule can locate actions by deduplication identity. When runtime Entity Framework
+storage is configured, reconciliation additionally reads the persisted Mule action
+status. A fast-lane action that has not yet reached durable storage is reported as
+unverified rather than assumed to be active or terminal. If the provider does not
+expose action status, unknown work is reported for intervention. Repeating a timer
+replacement uses the prior terminal action ID as a stable deduplication generation.
+
+To restrict reconciliation, configure an ASP.NET Core authorization policy and set
+`OrchestratorRuntimeWebUIOptions.ManagePolicy` to its name. When the option is empty,
+the action follows the host's existing page authentication/authorization settings;
+the runtime UI does not invent an administrative role. The host is responsible for
+configuring the intended protection. Reconciliation has no separate REST endpoint.

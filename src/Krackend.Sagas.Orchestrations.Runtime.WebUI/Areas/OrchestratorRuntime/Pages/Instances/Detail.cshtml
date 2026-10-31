@@ -113,6 +113,13 @@
                 <i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Recover saga</span>
             </button>
         }
+        @if (Model.CanReconcile)
+        {
+            <form method="post" asp-page-handler="Reconcile" data-orchestrator-busy="true" data-busy-title="Reconciling saga">
+                <input type="hidden" name="instanceId" value="@instance.Id" />
+                <button type="submit" class="z-button z-button-primary od-instance-replay"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Reconcile saga</span></button>
+            </form>
+        }
         @if (!string.IsNullOrWhiteSpace(Model.RecoveryMessage))
         {
             <p class="od-instance-operation-message od-instance-operation-@((TempData["RecoveryTone"]?.ToString()) ?? "neutral")">@Model.RecoveryMessage</p>
