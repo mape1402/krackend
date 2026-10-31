@@ -7,10 +7,12 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 public sealed class RuntimeInstancesPageModelTests
@@ -245,6 +247,41 @@ public sealed class RuntimeInstancesPageModelTests
 
         Assert.IsType<NotFoundResult>(await page.OnPostRecoverAsync("not-an-id"));
         await recovery.DidNotReceiveWithAnyArgs().RecoverTerminalAsync(default, default, default);
+    }
+
+    [Fact]
+    public async Task DetailPageReconcilesActiveSagaAndShowsFindings()
+    {
+        var id = Ulid.NewUlid().ToString();
+        var service = Substitute.For<IOrchestrationReconciliationService>();
+        service.ReconcileAsync(id, Arg.Any<CancellationToken>()).Returns(
+            new OrchestrationReconciliationResult("Intervention", [new("Intervention", "Delivery is uncertain.")]));
+        var page = new DetailModel(new FakeRuntimeDiagnosticsReader { DetailStatus = "Running" },
+            Substitute.For<IOrchestrationRecoveryService>(), Options.Create(new OrchestratorRuntimeWebUIOptions()), service);
+        AttachPageContext(page);
+        await page.OnGetAsync(id);
+        Assert.True(page.CanReconcile);
+        var result = await page.OnPostReconcileAsync(id);
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Contains("Delivery is uncertain", page.RecoveryMessage);
+        Assert.Equal("danger", page.TempData["RecoveryTone"]);
+        await service.Received(1).ReconcileAsync(id, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReconciliationRequiresConfiguredManagementPolicy()
+    {
+        var id = Ulid.NewUlid().ToString();
+        var service = Substitute.For<IOrchestrationReconciliationService>();
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object>(), Arg.Is("runtime-manage"))
+            .Returns(AuthorizationResult.Failed());
+        var page = new DetailModel(new FakeRuntimeDiagnosticsReader(), Substitute.For<IOrchestrationRecoveryService>(),
+            Options.Create(new OrchestratorRuntimeWebUIOptions { ManagePolicy = "runtime-manage" }), service);
+        AttachPageContext(page);
+        page.HttpContext.RequestServices = new ServiceCollection().AddSingleton(authorization).BuildServiceProvider();
+        Assert.IsType<ForbidResult>(await page.OnPostReconcileAsync(id));
+        await service.DidNotReceiveWithAnyArgs().ReconcileAsync(default);
     }
 
     [Fact]

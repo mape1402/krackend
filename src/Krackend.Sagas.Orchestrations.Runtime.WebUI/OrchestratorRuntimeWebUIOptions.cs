@@ -12,6 +12,9 @@ public sealed class OrchestratorRuntimeWebUIOptions
     /// </summary>
     public string RoutePrefix { get; set; } = "runtime";
 
+    /// <summary>Optional authorization policy for operator actions in the runtime UI.</summary>
+    public string ManagePolicy { get; set; } = string.Empty;
+
     /// <summary>
     /// Gets the visual theme and branding options used by the Runtime Web UI.
     /// </summary>
@@ -29,6 +32,7 @@ public sealed class OrchestratorRuntimeWebUIOptions
         }
 
         RoutePrefix = source.RoutePrefix;
+        ManagePolicy = source.ManagePolicy;
         Theme.ApplyFrom(source.Theme);
     }
 }

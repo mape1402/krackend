@@ -68,7 +68,7 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
             var handled = false;
             var acquired = await _coordinator.TryExecuteAsync(
                 task.OrchestrationInstanceId,
-                async token => handled = await RecoverDispatchAsync(candidate.Id, token),
+                async token => handled = await RecoverDispatchCoreAsync(candidate.Id, token),
                 cancellationToken,
                 waitForLease: false);
             if (acquired && handled)
@@ -80,7 +80,21 @@ internal sealed class DefaultOrchestrationDispatchRecoveryCoordinator : IOrchest
         return recovered;
     }
 
-    private async Task<bool> RecoverDispatchAsync(Id dispatchId, CancellationToken cancellationToken)
+    public async Task<bool> RecoverDispatchAsync(Id dispatchId, CancellationToken cancellationToken = default)
+    {
+        var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
+        if (dispatch is null) return false;
+        var attempt = await _attemptRepository.GetById(dispatch.TaskExecutionAttemptId, cancellationToken);
+        if (attempt is null) return false;
+        var task = await _taskRepository.GetById(attempt.TaskExecutionId, cancellationToken);
+        if (task is null) return false;
+        var handled = false;
+        var acquired = await _coordinator.TryExecuteAsync(task.OrchestrationInstanceId,
+            async token => handled = await RecoverDispatchCoreAsync(dispatchId, token), cancellationToken, waitForLease: false);
+        return acquired && handled;
+    }
+
+    private async Task<bool> RecoverDispatchCoreAsync(Id dispatchId, CancellationToken cancellationToken)
     {
         var dispatch = await _dispatchRepository.TryGetById(dispatchId, cancellationToken);
         if (dispatch is null || !IsQueuePending(dispatch.DispatchStatus))

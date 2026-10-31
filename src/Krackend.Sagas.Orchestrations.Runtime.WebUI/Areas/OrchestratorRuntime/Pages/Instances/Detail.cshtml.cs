@@ -4,6 +4,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances;
 
@@ -13,15 +15,18 @@ public sealed class DetailModel : PageModel
     private readonly IRuntimeDiagnosticsReader _diagnostics;
     private readonly IOrchestrationRecoveryService _recovery;
     private readonly OrchestratorRuntimeWebUIOptions _options;
+    private readonly IOrchestrationReconciliationService _reconciliation;
 
     public DetailModel(
         IRuntimeDiagnosticsReader diagnostics,
         IOrchestrationRecoveryService recovery,
-        IOptions<OrchestratorRuntimeWebUIOptions> options)
+        IOptions<OrchestratorRuntimeWebUIOptions> options,
+        IOrchestrationReconciliationService reconciliation = null)
     {
         _diagnostics = diagnostics;
         _recovery = recovery;
         _options = options.Value;
+        _reconciliation = reconciliation;
     }
 
     public InstanceDetailModel Detail { get; private set; }
@@ -43,9 +48,32 @@ public sealed class DetailModel : PageModel
     /// <summary>Gets whether the persisted terminal instance can be recovered by an operator.</summary>
     public bool CanRecover => Detail?.Instance?.Status is "DeadLettered" or "Failed";
 
+    /// <summary>Gets whether the active saga can be inspected for missing work.</summary>
+    public bool CanReconcile => Detail?.Instance?.Status is "Running" or "Idle" or "Compensating";
+
     /// <summary>Gets the non-sensitive result of the latest recovery request.</summary>
     [TempData]
     public string RecoveryMessage { get; set; }
+
+    /// <summary>Diagnoses and reconciles the selected active saga.</summary>
+    public async Task<IActionResult> OnPostReconcileAsync(string instanceId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out _)) return NotFound();
+        if (!string.IsNullOrWhiteSpace(_options.ManagePolicy))
+        {
+            var authorization = HttpContext.RequestServices.GetRequiredService<IAuthorizationService>();
+            if (!(await authorization.AuthorizeAsync(User, null, _options.ManagePolicy)).Succeeded) return Forbid();
+        }
+        if (_reconciliation is null) throw new InvalidOperationException("Saga reconciliation is not configured.");
+        var result = await _reconciliation.ReconcileAsync(instanceId, cancellationToken);
+        if (result.Status == "NotFound") return NotFound();
+        RecoveryMessage = string.Join(" ", result.Findings.Select(finding => $"[{finding.Status}] {finding.Message}"));
+        if (RecoveryMessage.Length > 2000)
+            RecoveryMessage = RecoveryMessage[..1900] + "... Full findings are available in the reconciliation activity payload.";
+        if (PageContext?.HttpContext is not null)
+            TempData["RecoveryTone"] = result.Status == "Recovered" ? "success" : result.Status is "Intervention" or "Invalid" ? "danger" : "neutral";
+        return RedirectToPage(new { instanceId });
+    }
 
     public async Task<IActionResult> OnGetAsync(string instanceId, CancellationToken cancellationToken = default, string section = null, string stageKey = null, string taskKey = null, int? attempt = null)
     {

@@ -53,6 +53,34 @@ public sealed class TaskResponseTimeoutSchedulingTests
     }
 
     [Fact]
+    public async Task ReplacingTerminalTimerUsesStableDistinctDeduplicationKey()
+    {
+        using var fixture = CreateFixture();
+        var actions = new List<DurableAction>();
+        fixture.Storage.AddAsync(Arg.Do<DurableAction>(actions.Add), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        fixture.Storage.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        fixture.Storage.FindByDeduplicationKeyAsync(Arg.Any<ActionKey>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<MuleUlid?>(actions.First(x => x.DeduplicationKey == call.ArgAt<string>(1)).Id));
+        fixture.Serializer.Serialize(Arg.Any<TaskResponseTimeoutActionRequest>()).Returns("{}");
+        var oldAction = MuleUlid.NewUlid().ToString();
+        var due = DateTime.UtcNow.AddMinutes(1);
+        fixture.Task.ResponseDeadlineUtc = due;
+        var request = new TaskResponseTimeoutScheduleRequest
+        {
+            OrchestrationInstanceId = fixture.Task.OrchestrationInstanceId, TaskExecutionId = fixture.Task.Id,
+            TaskExecutionAttemptId = fixture.Attempt.Id, DispatchId = fixture.Dispatch.Id,
+            AttemptNumber = fixture.Attempt.AttemptNumber, DueOnUtc = due, RecoveryOfActionId = oldAction
+        };
+
+        var first = await fixture.Scheduler.ScheduleAsync(request);
+        var second = await fixture.Scheduler.ScheduleAsync(request);
+
+        Assert.Equal(first.ActionId, second.ActionId);
+        Assert.EndsWith(":repair:" + oldAction, actions[0].DeduplicationKey);
+        Assert.Equal(actions[0].DeduplicationKey, actions[1].DeduplicationKey);
+    }
+
+    [Fact]
     public async Task CancelAsyncCancelsOnlyAValidPersistedMuleReference()
     {
         var fixture = CreateFixture();
