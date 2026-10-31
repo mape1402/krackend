@@ -1223,10 +1223,12 @@ public sealed class MessagingDecisionE2ETests
         var dueOnUtc = task.WaitingSinceUtc!.Value.AddSeconds(2);
 
         var blocked = await processor.ProcessDueTimeoutsAsync(dueOnUtc);
+        var blockedTimeout = await processor.ProcessTaskTimeoutAsync(task.Id, dueOnUtc);
         task = await harness.GetTaskAsync(command);
 
         Assert.NotNull(lease);
         Assert.Equal(0, blocked);
+        Assert.True(blockedTimeout.RetryRequired);
         Assert.Equal(TaskExecutionStatus.WaitingResponse, task.Status);
 
         await instanceRepository.ReleaseLease(instanceId, "timer-on-other-runtime-node");

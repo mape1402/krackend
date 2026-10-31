@@ -454,7 +454,47 @@ public sealed class TaskResponseTimeoutSchedulingTests
             DueOnUtc = dueOnUtc
         };
 
-    private static TimeoutSchedulerFixture CreateFixture()
+    [Fact]
+    public async Task RepairAsyncProcessesOverdueWaitEvenWhenConsumedActionReferenceRemains()
+    {
+        var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        using var fixture = CreateFixture(processor);
+        fixture.Task.TimeoutActionId = MuleUlid.NewUlid().ToString();
+        fixture.Task.ResponseDeadlineUtc = DateTime.UtcNow.AddMinutes(-1);
+        fixture.Tasks.GetResponseTimeoutsDue(Arg.Any<DateTime>(), 10, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<TaskExecution>>([fixture.Task]));
+        processor.ProcessTaskTimeoutAsync(fixture.Task.Id, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(true)));
+
+        Assert.Equal(1, await fixture.Scheduler.RepairAsync(10));
+        await processor.Received(1).ProcessTaskTimeoutAsync(fixture.Task.Id, Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+        await fixture.Storage.DidNotReceive().AddAsync(Arg.Any<DurableAction>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TimeoutActionRemainsRetryableWhenInstanceIsBusy()
+    {
+        var processor = Substitute.For<IOrchestrationTimeoutProcessor>();
+        var scheduler = Substitute.For<ITaskResponseTimeoutScheduler>();
+        var taskId = Id.New();
+        processor.ProcessTaskTimeoutAsync(taskId, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(false, RetryRequired: true)));
+        var action = new TaskResponseTimeoutAction(processor, scheduler);
+        var context = new MuleActionContext<TaskResponseTimeoutActionRequest>(
+            new DurableAction { Key = ActionKey.From("TaskResponseTimeout"), Lane = "runtime-timeout", Status = DurableActionStatus.Pending },
+            new ServiceCollection().BuildServiceProvider(),
+            new TaskResponseTimeoutActionRequest
+            {
+                OrchestrationInstanceId = Id.New().ToString(), TaskExecutionId = taskId.ToString(),
+                TaskExecutionAttemptId = Id.New().ToString(), DispatchId = Id.New().ToString(),
+                AttemptNumber = 1, DueOnUtc = DateTime.UtcNow
+            });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await action.ExecuteAsync(context, CancellationToken.None));
+        await scheduler.DidNotReceive().ScheduleAsync(Arg.Any<TaskResponseTimeoutScheduleRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    private static TimeoutSchedulerFixture CreateFixture(IOrchestrationTimeoutProcessor? timeoutProcessor = null)
     {
         var instanceId = Id.New();
         var task = new TaskExecution
@@ -511,6 +551,8 @@ public sealed class TaskResponseTimeoutSchedulingTests
         services.Replace(ServiceDescriptor.Scoped(_ => attempts));
         services.Replace(ServiceDescriptor.Scoped(_ => dispatches));
         services.Replace(ServiceDescriptor.Scoped(_ => coordinator));
+        if (timeoutProcessor is not null)
+            services.Replace(ServiceDescriptor.Scoped(_ => timeoutProcessor));
 
         var provider = services.BuildServiceProvider();
         var scope = provider.CreateScope();

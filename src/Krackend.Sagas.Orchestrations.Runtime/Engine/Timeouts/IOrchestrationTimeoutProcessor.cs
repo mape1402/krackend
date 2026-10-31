@@ -29,7 +29,8 @@ public interface IOrchestrationTimeoutProcessor
 /// <summary>Result of processing a single response timeout action.</summary>
 public sealed record TaskResponseTimeoutProcessingResult(
     bool Applied,
-    DateTime? RescheduleOnUtc = null)
+    DateTime? RescheduleOnUtc = null,
+    bool RetryRequired = false)
 {
     /// <summary>Gets a result for a stale or already-resolved timeout action.</summary>
     public static TaskResponseTimeoutProcessingResult Ignored { get; } = new(false);

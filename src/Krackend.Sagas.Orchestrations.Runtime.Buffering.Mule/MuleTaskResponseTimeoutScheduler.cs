@@ -129,6 +129,29 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
     public async Task<int> RepairAsync(int take = 100, CancellationToken cancellationToken = default)
     {
         var repaired = 0;
+        // A completed/dead-lettered timer can still have a reference on a waiting task.
+        // Recheck a bounded page of expired waits under the normal instance lease, rather
+        // than trusting that reference or recreating a deduplicated, already-consumed action.
+        var overdue = await _tasks.GetResponseTimeoutsDue(DateTime.UtcNow, Math.Max(1, take), cancellationToken);
+        foreach (var task in overdue)
+        {
+            try
+            {
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var processor = scope.ServiceProvider.GetRequiredService<IOrchestrationTimeoutProcessor>();
+                var result = await processor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
+                if (result.Applied) repaired++;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Could not repair overdue response timeout for task '{TaskId}'.", task.Id);
+            }
+        }
+
         var missing = await _tasks.GetResponseTimeoutsMissingAction(Math.Max(1, take), cancellationToken);
         foreach (var task in missing)
         {

@@ -21,6 +21,13 @@ public sealed class TaskResponseTimeoutAction(
             DateTime.UtcNow,
             cancellationToken);
 
+        // Let Mule retain and retry this action. Scheduling another action with the same
+        // deadline would deduplicate against the action currently being executed.
+        if (result.RetryRequired)
+        {
+            throw new InvalidOperationException("Task response timeout is still pending; retry processing after instance contention or an early wake-up.");
+        }
+
         if (result.RescheduleOnUtc is not { } rescheduleOnUtc)
         {
             return;

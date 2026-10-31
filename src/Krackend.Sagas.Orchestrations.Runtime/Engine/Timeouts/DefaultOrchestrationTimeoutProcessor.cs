@@ -98,7 +98,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             async token => result = await TryProcessTaskCoreAsync(task, utcNow, token),
             cancellationToken);
 
-        return acquired ? result : TaskResponseTimeoutProcessingResult.Ignored;
+        return acquired ? result : new TaskResponseTimeoutProcessingResult(false, RetryRequired: true);
     }
 
     private async Task<TaskResponseTimeoutProcessingResult> TryProcessTaskCoreAsync(
@@ -133,7 +133,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         var dueOnUtc = task.ResponseDeadlineUtc ?? task.WaitingSinceUtc.Value.Add(timeoutPolicy.Timeout.Value);
         if (dueOnUtc > utcNow)
         {
-            return TaskResponseTimeoutProcessingResult.Ignored;
+            return new TaskResponseTimeoutProcessingResult(false, RetryRequired: true);
         }
 
         var waitGraceResult = await TryApplyWaitGraceAsync(instance, task, timeoutPolicy, utcNow, cancellationToken);
