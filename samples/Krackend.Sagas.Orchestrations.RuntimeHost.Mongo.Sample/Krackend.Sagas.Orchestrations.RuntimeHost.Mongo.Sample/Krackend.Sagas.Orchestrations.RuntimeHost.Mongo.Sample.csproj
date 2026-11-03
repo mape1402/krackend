@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis\Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon\Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime.WebUI\Krackend.Sagas.Orchestrations.Runtime.WebUI.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.Runtime\Krackend.Sagas.Orchestrations.Runtime.csproj" />
     <ProjectReference Include="..\..\..\src\Krackend.Sagas.Orchestrations.WolfAuth\Krackend.Sagas.Orchestrations.WolfAuth.csproj" />

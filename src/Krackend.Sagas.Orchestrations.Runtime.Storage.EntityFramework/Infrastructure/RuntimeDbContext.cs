@@ -14,7 +14,7 @@ public sealed class RuntimeDbContext : DbContext
 {
     private readonly RuntimeEntityFrameworkStorageOptions storageOptions;
 
-    internal int ModelCustomizationCacheKey => storageOptions.ConfigureModel?.GetHashCode() ?? 0;
+    internal Action<ModelBuilder> ModelCustomizationCacheKey => storageOptions.ConfigureModel;
 
     public RuntimeDbContext(DbContextOptions<RuntimeDbContext> options)
         : this(options, Options.Create(new RuntimeEntityFrameworkStorageOptions()))
@@ -90,18 +90,8 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureRuntimeExtensionPackages(modelBuilder);
         ConfigureDataProtectionKeys(modelBuilder);
         modelBuilder.UseMuleModel();
-        ConfigureMuleReplayProviderCompatibility(modelBuilder);
         base.OnModelCreating(modelBuilder);
         storageOptions.ConfigureModel?.Invoke(modelBuilder);
-    }
-
-    private static void ConfigureMuleReplayProviderCompatibility(ModelBuilder modelBuilder)
-    {
-        // MongoDB requires every primary-key property to map to the reserved _id element.
-        // Relational and in-memory providers ignore this provider-specific annotation.
-        modelBuilder.Entity<MuleReplay>()
-            .Property(x => x.RequestId)
-            .HasAnnotation("Mongo:ElementName", "_id");
     }
 
     private static void ConfigureDataProtectionKeys(ModelBuilder modelBuilder)
@@ -246,7 +236,7 @@ public sealed class RuntimeDbContext : DbContext
         var builder = modelBuilder.Entity<SagaStatisticsObservation>();
         builder.ToTable("SagaStatisticsObservations");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasMaxLength(64).HasAnnotation("Mongo:ElementName", "_id");
+        builder.Property(x => x.Id).HasMaxLength(64);
         builder.Property(x => x.InstanceId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.ArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationKey).HasMaxLength(256).IsRequired();
@@ -263,7 +253,7 @@ public sealed class RuntimeDbContext : DbContext
         var builder = modelBuilder.Entity<SagaStatisticsProjection>();
         builder.ToTable("SagaStatisticsProjections");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasMaxLength(26).HasAnnotation("Mongo:ElementName", "_id");
+        builder.Property(x => x.Id).HasMaxLength(26);
         builder.Property(x => x.ArtifactId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationKey).HasMaxLength(256).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
@@ -277,7 +267,7 @@ public sealed class RuntimeDbContext : DbContext
         var builder = modelBuilder.Entity<SagaStatisticsBackfillCheckpoint>();
         builder.ToTable("SagaStatisticsBackfillCheckpoints");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasMaxLength(64).HasAnnotation("Mongo:ElementName", "_id");
+        builder.Property(x => x.Id).HasMaxLength(64);
     }
 
     private static void ConfigureStages(ModelBuilder modelBuilder)
