@@ -622,6 +622,48 @@ public sealed class DecisionControlRetryTests
             branchInstance));
     }
 
+    [Theory]
+    [InlineData(0, "")]
+    [InlineData(1, "Same")]
+    [InlineData(3, "Same,pending,last")]
+    [InlineData(20, "Same,pending,last")]
+    public void ParallelPlanningPreservesOrderCaseAndPayloadWithPriorExecutions(int limit, string expectedKeys)
+    {
+        var artifact = CreateArtifact();
+        var baseStage = artifact.StageDefinitions.Single();
+        var template = baseStage.TaskDefinitions.Single();
+        var group = Id.New();
+        var tasks = new[] { "same", "Same", "pending", "last" }
+            .Select((key, index) => template with
+            {
+                Id = Id.New(), Key = key, Order = index + 1,
+                ExecutionMode = TaskExecutionMode.Parallel, ParallelGroupId = group
+            }).ToArray();
+        var stage = baseStage with { TaskDefinitions = tasks,
+            ParallelGroups = [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, limit)] };
+        var instance = CreateInstance(OrchestrationInstanceStatus.Running);
+        var stageExecution = new StageExecution { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+            StageKey = stage.Key, Status = StageExecutionStatus.Running };
+        var executions = new[] { CreateTaskExecution(TaskExecutionStatus.Completed, "same"),
+            CreateTaskExecution(TaskExecutionStatus.Completed, "same"), CreateTaskExecution(TaskExecutionStatus.Completed, "other") };
+        var payload = JsonNode.Parse("""{"order":123,"items":[1,2]}""")!;
+
+        var decisions = InvokeDecisionControlPrivateStatic<IReadOnlyCollection<IDecision>>(
+            "BuildNextTaskDecisions", instance, new[] { stage }, stage, stageExecution, tasks, executions,
+            payload, Array.Empty<MetadataDescriptorArtifact>(), artifact.ExecutionPolicy)!;
+
+        if (limit == 0)
+        {
+            Assert.Equal("complete-stage", Assert.Single(decisions).Kind);
+            return;
+        }
+        Assert.All(decisions, decision => Assert.Equal("dispatch-task", decision.Kind));
+        Assert.Equal(expectedKeys.Split(','), decisions.Select(decision =>
+            ((TaskArtifact)decision.GetType().GetProperty("Task")!.GetValue(decision)!).Key));
+        Assert.All(decisions, decision => Assert.Equal(payload.ToJsonString(),
+            decision.GetType().GetProperty("Payload")!.GetValue(decision)));
+    }
+
     [Fact]
     public void PrivateRetryPolicyHelpersCoverTimeoutAndContinueBranches()
     {
