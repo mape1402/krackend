@@ -67,9 +67,11 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
                 || x.Status == OrchestrationInstanceStatus.Running
                 || x.Status == OrchestrationInstanceStatus.Idle
                 || x.Status == OrchestrationInstanceStatus.Compensating)
+            .Select(x => new { x.StartedOnUtc, x.CompletedOnUtc, x.FailedOnUtc, x.StoppedOnUtc, x.CompensatedOnUtc })
             .ToArrayAsync(cancellationToken);
 
-        return BuildTraffic(instances, firstBucketUtc, nowUtc, bucketSize);
+        return BuildTraffic(instances.Select(x => new TrafficInstance(x.StartedOnUtc, x.CompletedOnUtc,
+            x.FailedOnUtc, x.StoppedOnUtc, x.CompensatedOnUtc)).ToArray(), firstBucketUtc, nowUtc, bucketSize);
     }
 
     private async Task<RuntimeReactiveEvent> BuildReactiveEvent(ExecutionTransition transition, CancellationToken cancellationToken)
@@ -157,7 +159,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
     }
 
     private static IReadOnlyCollection<RuntimeTrafficPoint> BuildTraffic(
-        IReadOnlyCollection<OrchestrationInstance> instances,
+        IReadOnlyCollection<TrafficInstance> instances,
         DateTime firstBucketUtc,
         DateTime nowUtc,
         TimeSpan bucketSize)
@@ -177,14 +179,14 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         return buckets;
     }
 
-    private static bool IsActiveInBucket(OrchestrationInstance instance, DateTime bucketStartUtc, DateTime bucketEndUtc)
+    private static bool IsActiveInBucket(TrafficInstance instance, DateTime bucketStartUtc, DateTime bucketEndUtc)
     {
         var terminalOnUtc = GetTerminalOnUtc(instance);
         return instance.StartedOnUtc < bucketEndUtc
             && (terminalOnUtc is null || terminalOnUtc.Value >= bucketStartUtc);
     }
 
-    private static DateTime? GetTerminalOnUtc(OrchestrationInstance instance)
+    private static DateTime? GetTerminalOnUtc(TrafficInstance instance)
     {
         var terminalTimes = new[]
         {
@@ -199,6 +201,9 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             .OrderBy(value => value)
             .FirstOrDefault();
     }
+
+    private sealed record TrafficInstance(DateTime StartedOnUtc, DateTime? CompletedOnUtc,
+        DateTime? FailedOnUtc, DateTime? StoppedOnUtc, DateTime? CompensatedOnUtc);
 
     private static TimeSpan GetBucketSize(DateTime sinceUtc, DateTime nowUtc)
         => nowUtc - sinceUtc > TimeSpan.FromHours(2)

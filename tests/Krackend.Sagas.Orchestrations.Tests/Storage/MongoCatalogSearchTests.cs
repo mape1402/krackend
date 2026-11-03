@@ -82,6 +82,16 @@ public sealed class MongoCatalogSearchTests
         Assert.Equal(1, item.CompletedTaskCount);
         Assert.Null(item.SnapshotPayload);
 
+        var recent = await ((IRuntimeInstanceRecentSummaryReader)repository).GetRecentSummaries(10);
+        var summary = Assert.Single(recent);
+        Assert.Equal("1.2.3", summary.OrchestrationVersion);
+        Assert.Equal(3, summary.TotalTaskCount);
+        Assert.Equal(1, summary.CompletedTaskCount);
+        Assert.Null(summary.SnapshotPayload);
+        var traffic = await scope.ServiceProvider.GetRequiredService<IExecutionTransitionRepository>()
+            .GetTraffic(DateTime.UtcNow.AddHours(-1));
+        Assert.Contains(traffic, point => point.Started > 0);
+
         // EnsureCreated adds new model indexes without removing existing ones.
         var updatedServices = new ServiceCollection();
         updatedServices.AddLogging();

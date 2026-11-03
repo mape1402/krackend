@@ -13,6 +13,42 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeInstanceCatalogTests
 {
     [Fact]
+    public async Task DashboardReadsOnlySummaryFieldsInRecentOrder()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var commands = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlite(connection)
+            .LogTo(commands.Add, [Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted]));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repo = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var older = Instance("older", DateTime.UtcNow.AddMinutes(-1), OrchestrationInstanceStatus.Completed);
+        var recent = Instance("recent", DateTime.UtcNow, OrchestrationInstanceStatus.Running);
+        recent.SnapshotPayload = System.Text.Json.Nodes.JsonNode.Parse("{\"large\":\"payload\"}");
+        recent.OrchestrationVersion = "1.2.3";
+        recent.TotalTaskCount = 3;
+        recent.CompletedTaskCount = 1;
+        await repo.Create(older);
+        await repo.Create(recent);
+        commands.Clear();
+        var reader = ActivatorUtilities.CreateInstance<Krackend.Sagas.Orchestrations.Runtime.Diagnostics.RuntimeDiagnosticsReader>(scope.ServiceProvider);
+
+        var snapshot = await reader.GetSnapshot();
+
+        Assert.Equal(["recent", "older"], snapshot.Instances.Select(x => x.OrchestrationDefinitionKey));
+        Assert.Equal("1.2.3", snapshot.Instances.First().OrchestrationVersion);
+        Assert.Equal(1, snapshot.Instances.First().CompletedTaskCount);
+        Assert.DoesNotContain(commands, x => x.Contains("SnapshotPayload", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, x => x.Contains("Metadata", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, x => x.Contains("RuntimeOrchestrationArtifacts", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task RelationalPageReadsProjectedFieldsWithoutPayloadOrArtifactQueries()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
