@@ -214,8 +214,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             IReadOnlyCollection<MetadataDescriptorArtifact> metadataDescriptors,
             ExecutionPolicyArtifact orchestrationExecutionPolicy)
         {
-            var nextTask = tasks.FirstOrDefault(task =>
-                taskExecutions.All(execution => execution.TaskKey != task.Key));
+            var executedTaskKeys = taskExecutions.Select(execution => execution.TaskKey).ToHashSet(StringComparer.Ordinal);
+            var nextTask = tasks.FirstOrDefault(task => !executedTaskKeys.Contains(task.Key));
             if (nextTask is null)
             {
                 return [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
@@ -243,14 +243,23 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             var maxParallelAgents = group?.MaxParallelAgents ?? int.MaxValue;
             var groupTasks = tasks
                 .Where(x => x.ParallelGroupId == nextTask.ParallelGroupId)
-                .Where(task => taskExecutions.All(execution => execution.TaskKey != task.Key))
+                .Where(task => !executedTaskKeys.Contains(task.Key))
                 .Take(maxParallelAgents)
-                .Select(task => new DispatchTaskDecision(
+                .ToArray();
+
+            if (groupTasks.Length == 0)
+                return [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
+                {
+                    MetadataDescriptors = metadataDescriptors
+                }];
+
+            var serializedPayload = dispatchPayload?.ToJsonString();
+            return groupTasks.Select(task => new DispatchTaskDecision(
                     instance.Id,
                     currentStageExecution.Id,
                     currentStage.Key,
                     task,
-                    dispatchPayload?.ToJsonString())
+                    serializedPayload)
                 {
                     MetadataDescriptors = metadataDescriptors,
                     OrchestrationExecutionPolicy = orchestrationExecutionPolicy,
@@ -258,13 +267,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 })
                 .Cast<IDecision>()
                 .ToArray();
-
-            return groupTasks.Length == 0
-                ? [new CompleteStageDecision(instance.Id, currentStageExecution.Id, currentStage, stages)
-                {
-                    MetadataDescriptors = metadataDescriptors
-                }]
-                : groupTasks;
         }
 
         private static StageArtifact ResolveCurrentStage(

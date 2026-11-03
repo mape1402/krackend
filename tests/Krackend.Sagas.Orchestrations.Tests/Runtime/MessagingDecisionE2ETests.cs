@@ -1754,30 +1754,36 @@ public sealed class MessagingDecisionE2ETests
                 [],
                 MessagingTask("task.parallel.a", 1, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
                 MessagingTask("task.parallel.b", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
-                MessagingTask("task.after.parallel", 3))));
+                MessagingTask("task.parallel.c", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
+                MessagingTask("task.after.parallel", 4))));
 
         await harness.StartAsync(BusinessPayload("trigger"), "correlation-parallel");
 
-        Assert.Equal(2, harness.Dispatcher.Commands.Count);
+        Assert.Equal(3, harness.Dispatcher.Commands.Count);
         var firstParallel = harness.Dispatcher.Commands.Single(command => command.TaskKey == "task.parallel.a");
         var secondParallel = harness.Dispatcher.Commands.Single(command => command.TaskKey == "task.parallel.b");
+        var thirdParallel = harness.Dispatcher.Commands.Single(command => command.TaskKey == "task.parallel.c");
+        Assert.Equal(firstParallel.Payload, secondParallel.Payload);
+        Assert.Equal(firstParallel.Payload, thirdParallel.Payload);
 
         await harness.ForwardAsync(firstParallel, BusinessPayload("parallel-a"), Success());
-        Assert.Equal(2, harness.Dispatcher.Commands.Count);
+        Assert.Equal(3, harness.Dispatcher.Commands.Count);
         Assert.Equal(1, (await harness.GetInstanceAsync(firstParallel)).CompletedTaskCount);
 
         await harness.ForwardAsync(secondParallel, BusinessPayload("parallel-b"), Success());
-
         Assert.Equal(3, harness.Dispatcher.Commands.Count);
-        var afterParallel = harness.Dispatcher.Commands[2];
+        await harness.ForwardAsync(thirdParallel, BusinessPayload("parallel-c"), Success());
+
+        Assert.Equal(4, harness.Dispatcher.Commands.Count);
+        var afterParallel = harness.Dispatcher.Commands[3];
         Assert.Equal("task.after.parallel", afterParallel.TaskKey);
 
         await harness.ForwardAsync(afterParallel, BusinessPayload("after-parallel"), Success());
 
         var instance = await harness.GetInstanceAsync(firstParallel);
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
-        Assert.Equal(3, instance.TotalTaskCount);
-        Assert.Equal(3, instance.CompletedTaskCount);
+        Assert.Equal(4, instance.TotalTaskCount);
+        Assert.Equal(4, instance.CompletedTaskCount);
     }
 
     [Fact]
