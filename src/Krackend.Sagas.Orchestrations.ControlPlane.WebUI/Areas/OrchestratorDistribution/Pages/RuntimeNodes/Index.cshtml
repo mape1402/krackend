@@ -43,27 +43,32 @@
 </section>
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "runtimeNodeModal", Title = "Create runtime node", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_RuntimeNodeBasic", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"runtimeNodeBasicForm\" class=\"z-button z-button-primary\" id=\"runtimeNodeModalSubmitButton\">Create</button>")
 })
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "runtimeNodeViewModal", Title = "Runtime node", Eyebrow = null, Size = "full",
     Body = await Html.PartialAsync("_RuntimeNodeView", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-primary js-open-runtime-node-setup\">Configure</button><button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "runtimeNodeSetupModal", Title = "Configure runtime node", Eyebrow = null, Size = "full",
     Body = await Html.PartialAsync("_RuntimeNodeSetup", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"setupBackButton\">Back</button><button type=\"button\" class=\"z-button z-button-primary\" id=\"setupNextButton\">Next</button><button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "runtimeNodeCredentialModal", Title = "Import Runtime credentials", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_RuntimeNodeCredentials", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"runtimeNodeCredentialForm\" class=\"z-button z-button-primary\" id=\"runtimeNodeCredentialSubmitButton\">Import and continue</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "generatedCredentialsModal", Title = "Generated credentials", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_GeneratedCredentials", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"copyGeneratedCredentialsButton\">Copy</button><button type=\"button\" class=\"z-button z-button-primary\" data-z-dialog-close>Done</button>")

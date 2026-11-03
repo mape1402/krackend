@@ -96,6 +96,7 @@
 {
     @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
     {
+    CloseOnBackdrop = false,
         Id = "rejectModal", Title = "Reject review", Eyebrow = null,
         Body = await Html.PartialAsync("_RejectReview", Model),
         Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"rejectReviewForm\" class=\"z-button z-button-danger\">Reject</button>")
@@ -105,6 +106,7 @@
 {
     @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
     {
+    CloseOnBackdrop = false,
         Id = "abortModal", Title = "Abort review", Eyebrow = null,
         Body = await Html.PartialAsync("_AbortReview", Model),
         Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"abortReviewForm\" class=\"z-button z-button-danger\">Abort</button>")
@@ -114,6 +116,7 @@
 {
     @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
     {
+    CloseOnBackdrop = false,
         Id = "deployModal", Title = "Deploy approved version", Eyebrow = null, Size = "wide",
         Body = await Html.PartialAsync("_DeployReview", Model),
         Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"deployReviewForm\" class=\"z-button z-button-primary\">Deploy version</button>")

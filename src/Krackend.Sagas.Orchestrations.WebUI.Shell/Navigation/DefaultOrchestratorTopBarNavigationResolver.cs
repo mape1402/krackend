@@ -10,7 +10,6 @@ namespace Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 /// <summary>Provides the default contextual hierarchy used by Krackend screens.</summary>
 public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorTopBarNavigationResolver
 {
-    private readonly IUrlHelperFactory _urlHelperFactory;
     private readonly IOptions<OrchestratorTopBarNavigationOptions> _options;
 
     /// <summary>Initializes the resolver.</summary>
@@ -18,7 +17,7 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
         IUrlHelperFactory urlHelperFactory,
         IOptions<OrchestratorTopBarNavigationOptions> options)
     {
-        _urlHelperFactory = urlHelperFactory ?? throw new ArgumentNullException(nameof(urlHelperFactory));
+        ArgumentNullException.ThrowIfNull(urlHelperFactory);
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
@@ -36,8 +35,7 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             return new ZoorceTopBarBackOptions
             {
                 Visible = configured.Visible,
-                Label = string.IsNullOrWhiteSpace(configured.Label) ? "Back" : configured.Label.Trim(),
-                Url = configured.Url?.Trim()
+                Label = "Back"
             };
         }
 
@@ -52,82 +50,73 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             if (!values.ContainsKey(query.Key)) values[query.Key] = query.Value.ToString();
         }
 
-        var target = ResolveDefault(area, page, values);
-        if (target is null)
+        if (!HasDefaultBackAction(area, page, values))
         {
             return null;
         }
 
-        var routeValues = new RouteValueDictionary(target.Value.Values) { ["area"] = target.Value.Area };
-        var url = _urlHelperFactory.GetUrlHelper(viewContext).Page(target.Value.Page, routeValues);
-        return string.IsNullOrWhiteSpace(url)
-            ? null
-            : new ZoorceTopBarBackOptions { Visible = true, Label = target.Value.Label, Url = url };
+        return new ZoorceTopBarBackOptions { Visible = true, Label = "Back" };
     }
 
-    private static BackTarget? ResolveDefault(string area, string page, RouteValueDictionary values)
+    private static bool HasDefaultBackAction(string area, string page, RouteValueDictionary values)
     {
         if (Matches(area, page, "OrchestratorDesign", "/Orchestrations/Create"))
         {
-            return new("OrchestratorDesign", "/Orchestrations/Index", "Back to orchestrations");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorDesign", "/Orchestrations/Details"))
         {
-            return new("OrchestratorDesign", "/Orchestrations/Index", "Back to orchestrations");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorDesign", "/OrchestrationVersions/Details") && Has(values, "orchestrationId"))
         {
-            return new("OrchestratorDesign", "/Orchestrations/Details", "Back to orchestration", new { orchestrationId = Value(values, "orchestrationId") });
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorDesign", "/OrchestrationStages/Details") &&
             Has(values, "orchestrationId") && Has(values, "versionId"))
         {
-            return new("OrchestratorDesign", "/OrchestrationVersions/Details", "Back to roadmap", new
-            {
-                orchestrationId = Value(values, "orchestrationId"),
-                versionId = Value(values, "versionId")
-            });
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorDesign", "/Reviews/Details"))
         {
-            return new("OrchestratorDesign", "/Reviews/Index", "Back to reviews");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorDistribution", "/ArtifactReleases/Index") && Has(values, "orchestrationId"))
         {
-            return new("OrchestratorDistribution", "/ArtifactReleases/Index", "Back to artifacts");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorDistribution", "/Promotions/Index") && Has(values, "orchestrationId"))
         {
-            return new("OrchestratorDistribution", "/Promotions/Index", "Back to releases");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorRuntime", "/Artifacts/Index") && Has(values, "orchestrationKey"))
         {
-            return new("OrchestratorRuntime", "/Artifacts/Index", "Back to runtime artifacts");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorRuntime", "/DesignNodes/PendingReleases"))
         {
-            return new("OrchestratorRuntime", "/DesignNodes/Index", "Back to design nodes");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorRuntime", "/Instances/History"))
         {
-            return new("OrchestratorRuntime", "/Instances/Index", "Back to instances");
+            return true;
         }
 
         if (Matches(area, page, "OrchestratorRuntime", "/Instances/Detail"))
         {
-            return new("OrchestratorRuntime", "/Instances/Index", "Back to instances");
+            return true;
         }
 
-        return null;
+        return false;
     }
 
     private static bool Matches(string area, string page, string expectedArea, string expectedPage)
@@ -140,5 +129,4 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
     private static string Value(RouteValueDictionary values, string key)
         => values.TryGetValue(key, out var value) ? value?.ToString() ?? string.Empty : string.Empty;
 
-    private readonly record struct BackTarget(string Area, string Page, string Label, object Values = null);
 }

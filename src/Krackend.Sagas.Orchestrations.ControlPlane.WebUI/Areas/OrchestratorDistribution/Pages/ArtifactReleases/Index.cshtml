@@ -36,6 +36,7 @@
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "artifactDetailsModal", Title = "Artifact details", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_ArtifactDetails"),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")

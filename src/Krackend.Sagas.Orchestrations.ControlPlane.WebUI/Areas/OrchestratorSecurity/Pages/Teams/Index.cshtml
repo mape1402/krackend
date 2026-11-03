@@ -44,12 +44,14 @@
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "teamModal", Title = "Create team", Eyebrow = null,
     Body = await Html.PartialAsync("_TeamForm", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"teamForm\" class=\"z-button z-button-primary\" id=\"teamModalSubmitButton\">Create</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "membersModal", Title = "Team members", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_TeamMembers", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")

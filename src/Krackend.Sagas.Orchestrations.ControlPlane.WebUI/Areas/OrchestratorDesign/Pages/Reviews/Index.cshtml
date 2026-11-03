@@ -38,21 +38,25 @@
 </section>
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "reviewCatalogDialog", Title = "Review", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_ReviewCatalogDetail"),
     Footer = new HtmlString("<a class=\"z-button z-button-ghost\" data-review-roadmap>Open roadmap</a><button type=\"button\" class=\"z-button z-button-secondary\" data-review-action=\"abort\">Abort</button><button type=\"button\" class=\"z-button z-button-danger\" data-review-action=\"reject\">Reject</button><button type=\"submit\" form=\"catalogReviewApproveForm\" class=\"z-button z-button-primary\" data-review-action=\"approve\">Approve</button><button type=\"button\" class=\"z-button z-button-primary\" data-review-action=\"deploy\">Deploy</button><button type=\"submit\" form=\"catalogReviewApplyForm\" class=\"z-button z-button-primary\" data-review-action=\"apply\">Apply</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "reviewCatalogRejectDialog", Title = "Reject review", Eyebrow = null,
     Body = await Html.PartialAsync("_ReviewCatalogReject"),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"catalogReviewRejectForm\" class=\"z-button z-button-danger\">Reject</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "reviewCatalogAbortDialog", Title = "Abort review", Eyebrow = null,
     Body = await Html.PartialAsync("_ReviewCatalogAbort"),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"catalogReviewAbortForm\" class=\"z-button z-button-danger\">Abort</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "reviewCatalogDeployDialog", Title = "Deploy approved version", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_ReviewCatalogDeploy"),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"catalogReviewDeployForm\" class=\"z-button z-button-primary\">Deploy version</button>")

@@ -105,6 +105,17 @@ public sealed class DetailsModel : PageModel
 
     public string EditTaskPayloadJson { get; private set; } = string.Empty;
 
+    public async Task<IActionResult> OnGetButterMorphContextAsync(string context,
+        [FromServices] Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.IOrchestrationButterMorphDesignerContextParser parser,
+        [FromServices] global::ButterMorph.Web.Razor.IButterMorphDesignerHost mappingHost,
+        [FromServices] global::ButterMorph.Web.Razor.IButterMorphValidationDesignerHost validationHost,
+        CancellationToken cancellationToken)
+    {
+        var versioned = await Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.OrchestrationButterMorphContextVersion.ResolveAsync(
+            context, parser, _schemaContextService, mappingHost, validationHost, cancellationToken);
+        return versioned is null ? BadRequest() : new JsonResult(new { context = versioned });
+    }
+
     public async Task<IActionResult> OnGetAsync(string orchestrationId, string versionId, string stageId, string editTaskId = "", CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(orchestrationId) || string.IsNullOrWhiteSpace(versionId) || string.IsNullOrWhiteSpace(stageId))

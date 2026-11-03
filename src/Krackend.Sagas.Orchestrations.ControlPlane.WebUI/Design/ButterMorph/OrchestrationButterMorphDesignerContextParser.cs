@@ -161,7 +161,8 @@ public sealed class OrchestrationButterMorphDesignerContextParser : IOrchestrati
         }
 
         var parts = contextKey.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 3 || !string.Equals(parts[0], prefix, StringComparison.Ordinal))
+        if ((parts.Length != 3 && parts.Length != 4) || !string.Equals(parts[0], prefix, StringComparison.Ordinal) ||
+            (parts.Length == 4 && (parts[3].Length != 64 || !parts[3].All(Uri.IsHexDigit))))
         {
             return false;
         }
