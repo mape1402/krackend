@@ -23,9 +23,10 @@
     </style>
 }
 
-<section class="od-list-shell">
+<section class="od-list-shell" data-roadmap-section="task" data-version-id="@Model.VersionId" data-stage-id="@Model.StageId" data-editable="@Model.CanEdit.ToString().ToLowerInvariant()">
     <div class="od-panel-head">
         <h2 class="od-panel-title">Tasks</h2>
+        @if (Model.CanEdit) { <button type="button" class="z-button z-button-ghost js-roadmap-paste">Paste task</button> }
         <span class="od-item-meta">@(Model.CanEdit ? "Drag cards to reorder" : "Read-only tasks")</span>
     </div>
 
@@ -121,8 +122,10 @@
                                                         @(Model.CanEdit ? "Edit task" : "View task")
                                                     </button>
                                                 </li>
+                                                <li><button type="button" class="dropdown-item js-roadmap-copy" data-element-type="task" data-element-id="@groupedTask.Id">Copy task</button></li>
                                                 @if (Model.CanEdit)
                                                 {
+                                                    <li><button type="button" class="dropdown-item js-roadmap-clone" data-element-type="task" data-element-id="@groupedTask.Id">Clone task</button></li>
                                                     <li><hr class="dropdown-divider" /></li>
                                                     <li>
                                                         <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
@@ -195,8 +198,10 @@
                                         @(Model.CanEdit ? "Edit task" : "View task")
                                     </button>
                                 </li>
+                                <li><button type="button" class="dropdown-item js-roadmap-copy" data-element-type="task" data-element-id="@task.Id">Copy task</button></li>
                                 @if (Model.CanEdit)
                                 {
+                                    <li><button type="button" class="dropdown-item js-roadmap-clone" data-element-type="task" data-element-id="@task.Id">Clone task</button></li>
                                     <li><hr class="dropdown-divider" /></li>
                                     <li>
                                         <form method="post" asp-page-handler="DeleteTask" class="od-inline-form" data-confirm="true" data-confirm-title="Delete task" data-confirm-message="Delete this task from the stage?" data-confirm-accept="Delete" data-confirm-type="warning" data-orchestrator-busy="true" data-busy-title="Deleting task" data-busy-message="Design is removing the task definition.">
@@ -260,6 +265,7 @@
 }
 
 @section Scripts {
+<script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-roadmap-clipboard.js" asp-append-version="true"></script>
 <script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.3"></script>
 <script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-buttermorph-contrast.js" asp-append-version="true"></script>
 <script>
