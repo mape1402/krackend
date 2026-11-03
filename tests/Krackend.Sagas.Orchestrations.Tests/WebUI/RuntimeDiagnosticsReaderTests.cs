@@ -557,15 +557,53 @@ public sealed class RuntimeDiagnosticsReaderTests
     public void StatusClass_MapsRuntimeStatuses(string status, string expectedClass)
         => Assert.Equal(expectedClass, RuntimeDiagnosticsReader.StatusClass(status));
 
-    private static RuntimeDiagnosticsReader CreateReader(RuntimeDiagnosticsStore store)
+    [Fact]
+    public async Task DetailUsesBatchesAndPreservesAttemptOrderingAndDispatchLookup()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        var task = new TaskExecution { Id = Id.New(), OrchestrationInstanceId = store.Instance.Id,
+            StageExecutionId = store.Stage.Id, TaskKey = "other", Status = TaskExecutionStatus.Running };
+        store.ExtraTasks = [task];
+        var second = new TaskExecutionAttempt { Id = Id.New(), TaskExecutionId = task.Id,
+            AttemptNumber = 2, DispatchId = Id.New() };
+        var first = new TaskExecutionAttempt { Id = Id.New(), TaskExecutionId = task.Id, AttemptNumber = 1 };
+        var explicitDispatch = new TaskDispatch { Id = second.DispatchId.Value, TaskExecutionAttemptId = second.Id,
+            DispatchType = "Messaging", DispatchStatus = "Sent", Destination = "explicit" };
+        var legacyDispatch = new TaskDispatch { Id = Id.New(), TaskExecutionAttemptId = first.Id,
+            DispatchType = "Messaging", DispatchStatus = "Sent", Destination = "legacy" };
+        var attempts = new BatchAttemptRepository(store, [second, store.Attempt, first]);
+        var dispatches = new BatchDispatchRepository(store, [store.Dispatch, explicitDispatch], [legacyDispatch]);
+
+        var detail = await CreateReader(store, attempts, dispatches).GetDetail(store.Instance.Id.ToString());
+
+        var other = detail.Tasks.Single(x => x.Id == task.Id.ToString());
+        Assert.Equal([1, 2], other.Attempts.Select(x => x.AttemptNumber));
+        Assert.Equal(["legacy", "explicit"], other.Attempts.Select(x => x.Dispatch.Destination));
+        Assert.Equal(1, attempts.BatchCalls);
+        Assert.Equal(1, dispatches.IdCalls);
+        Assert.Equal(1, dispatches.AttemptCalls);
+    }
+
+    [Fact]
+    public async Task DetailReportsMissingDispatchWithBatchReader()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        var attempts = new BatchAttemptRepository(store, [store.Attempt]);
+        var dispatches = new BatchDispatchRepository(store, [], []);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            CreateReader(store, attempts, dispatches).GetDetail(store.Instance.Id.ToString()));
+    }
+
+    private static RuntimeDiagnosticsReader CreateReader(RuntimeDiagnosticsStore store,
+        ITaskExecutionAttemptRepository? attempts = null, ITaskDispatchRepository? dispatches = null)
     {
         return new RuntimeDiagnosticsReader(
             new ArtifactRepositoryStub(store),
             new InstanceRepositoryStub(store),
             new StageRepositoryStub(store),
             new TaskRepositoryStub(store),
-            new AttemptRepositoryStub(store),
-            new DispatchRepositoryStub(store),
+            attempts ?? new AttemptRepositoryStub(store),
+            dispatches ?? new DispatchRepositoryStub(store),
             new CompensationRepositoryStub(store),
             new TransitionRepositoryStub(store));
     }
@@ -947,7 +985,7 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task<IReadOnlyCollection<TaskExecution>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskExecution>>(Array.Empty<TaskExecution>());
     }
 
-    private sealed class AttemptRepositoryStub(RuntimeDiagnosticsStore store) : ITaskExecutionAttemptRepository
+    private class AttemptRepositoryStub(RuntimeDiagnosticsStore store) : ITaskExecutionAttemptRepository
     {
         public Task Create(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(TaskExecutionAttempt attempt, CancellationToken cancellationToken = default) => throw new NotImplementedException();
@@ -957,7 +995,35 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>(Array.Empty<TaskExecutionAttempt>());
     }
 
-    private sealed class DispatchRepositoryStub(RuntimeDiagnosticsStore store) : ITaskDispatchRepository
+    private sealed class BatchAttemptRepository(RuntimeDiagnosticsStore store, IReadOnlyCollection<TaskExecutionAttempt> attempts)
+        : AttemptRepositoryStub(store), ITaskExecutionAttemptBatchReader
+    {
+        public int BatchCalls { get; private set; }
+        public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionIds(IReadOnlyCollection<Id> ids, CancellationToken cancellationToken = default)
+        {
+            BatchCalls++;
+            return Task.FromResult(attempts);
+        }
+    }
+
+    private sealed class BatchDispatchRepository(RuntimeDiagnosticsStore store, IReadOnlyCollection<TaskDispatch> byId,
+        IReadOnlyCollection<TaskDispatch> byAttempt) : DispatchRepositoryStub(store), ITaskDispatchBatchReader
+    {
+        public int IdCalls { get; private set; }
+        public int AttemptCalls { get; private set; }
+        public Task<IReadOnlyCollection<TaskDispatch>> GetByIds(IReadOnlyCollection<Id> ids, CancellationToken cancellationToken = default)
+        {
+            IdCalls++;
+            return Task.FromResult(byId);
+        }
+        public Task<IReadOnlyCollection<TaskDispatch>> GetByAttemptIds(IReadOnlyCollection<Id> ids, CancellationToken cancellationToken = default)
+        {
+            AttemptCalls++;
+            return Task.FromResult(byAttempt);
+        }
+    }
+
+    private class DispatchRepositoryStub(RuntimeDiagnosticsStore store) : ITaskDispatchRepository
     {
         public Task Create(TaskDispatch dispatch, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(TaskDispatch dispatch, CancellationToken cancellationToken = default) => throw new NotImplementedException();

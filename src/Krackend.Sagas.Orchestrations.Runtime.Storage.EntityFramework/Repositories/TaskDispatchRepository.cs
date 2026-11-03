@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispatchRepository, ITaskDispatchCancellationRepository
+internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispatchRepository, ITaskDispatchCancellationRepository, ITaskDispatchBatchReader
 {
     public TaskDispatchRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -57,6 +57,30 @@ internal sealed class TaskDispatchRepository : RuntimeRepositoryBase, ITaskDispa
 
     public async Task<TaskDispatch> TryGetById(Id dispatchId, CancellationToken cancellationToken = default)
         => await DbContext.TaskDispatches.AsNoTracking().FirstOrDefaultAsync(x => x.Id == dispatchId, cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskDispatch>> GetByIds(
+        IReadOnlyCollection<Id> dispatchIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dispatchIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var results = new List<TaskDispatch>();
+        foreach (var batch in dispatchIds.Distinct().Chunk(200))
+            results.AddRange(await DbContext.TaskDispatches.AsNoTracking()
+                .Where(x => batch.Contains(x.Id)).ToArrayAsync(cancellationToken));
+        return results;
+    }
+
+    public async Task<IReadOnlyCollection<TaskDispatch>> GetByAttemptIds(
+        IReadOnlyCollection<Id> attemptIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(attemptIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var results = new List<TaskDispatch>();
+        foreach (var batch in attemptIds.Distinct().Chunk(200))
+            results.AddRange(await DbContext.TaskDispatches.AsNoTracking()
+                .Where(x => batch.Contains(x.TaskExecutionAttemptId)).ToArrayAsync(cancellationToken));
+        return results;
+    }
 
     public async Task<TaskDispatch> GetByCommandId(string commandId, CancellationToken cancellationToken = default)
         => await DbContext.TaskDispatches.AsNoTracking().FirstOrDefaultAsync(x => x.CommandId == commandId, cancellationToken)
