@@ -1225,6 +1225,8 @@ public sealed class RemoteCommandDispatchActionTests
             SagaId = Id.New().ToString(),
             ExecutionKey = "sales.sale.created",
             Status = OrchestrationInstanceStatus.Running,
+            TotalTaskCount = 1,
+            CompletedTaskCount = 0,
             StartedOnUtc = DateTime.UtcNow,
             LastUpdatedOnUtc = DateTime.UtcNow
         };
@@ -1299,6 +1301,7 @@ public sealed class RemoteCommandDispatchActionTests
         Assert.Equal("Completed", dispatch.DispatchStatus);
         Assert.Equal(TaskExecutionStatus.Completed, task.Status);
         Assert.Equal(TaskExecutionStatus.Completed, attempt.Status);
+        Assert.Equal(1, instance.CompletedTaskCount);
     }
 
     [Fact]

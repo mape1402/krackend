@@ -1370,6 +1370,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var artifact = RuntimeArtifact(new SemanticVersion(4, 0, 0), RuntimeOrchestrationArtifactStatus.Ready);
         await artifactRepository.Upsert(artifact);
         var instance = Instance(artifact.Id, OrchestrationInstanceStatus.Running, now.AddMinutes(-5));
+        instance.OrchestrationVersion = artifact.Version.ToString();
         await instanceRepository.Create(instance);
         var stage = new StageExecution
         {

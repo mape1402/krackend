@@ -214,6 +214,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.TriggerIntakeId).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.StartIdempotencyKey).HasMaxLength(512).IsRequired(false);
         builder.Property(x => x.OrchestrationDefinitionKey).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.OrchestrationVersion).HasMaxLength(64).IsRequired(false);
         builder.Property(x => x.CorrelationId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.SagaId).HasMaxLength(256).IsRequired();
         builder.Property(x => x.ExecutionKey).HasMaxLength(512).IsRequired();

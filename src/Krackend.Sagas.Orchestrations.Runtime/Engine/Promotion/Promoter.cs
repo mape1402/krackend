@@ -85,6 +85,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 Id = instanceId,
                 OrchestrationDefinitionKey = resolvedArtifact.RuntimeArtifact.OrchestrationDefinitionKey,
                 RuntimeOrchestrationArtifactId = resolvedArtifact.RuntimeArtifact.Id,
+                OrchestrationVersion = resolvedArtifact.RuntimeArtifact.Version.ToString(),
+                TotalTaskCount = (resolvedArtifact.Artifact.StageDefinitions ?? [])
+                    .Where(stage => stage.IsEnabled)
+                    .Sum(stage => (stage.TaskDefinitions ?? []).Count(task => task.IsEnabled)),
+                CompletedTaskCount = 0,
                 TriggerIntakeId = default,
                 StartIdempotencyKey = startIdempotencyKey,
                 CorrelationId = correlationId,

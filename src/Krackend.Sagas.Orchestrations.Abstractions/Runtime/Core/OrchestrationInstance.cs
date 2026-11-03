@@ -23,6 +23,24 @@ public sealed class OrchestrationInstance
     /// </summary>
     public Id RuntimeOrchestrationArtifactId { get; set; }
 
+    /// <summary>Version of the artifact used to create the instance, or null for older instances.</summary>
+    public string OrchestrationVersion { get; set; }
+
+    /// <summary>Number of enabled tasks, or null when historical progress is unknown.</summary>
+    public int? TotalTaskCount { get; set; }
+
+    /// <summary>Number of enabled tasks completed or skipped, or null when unknown.</summary>
+    public int? CompletedTaskCount { get; set; }
+
+    /// <summary>Records completed tasks as part of the same state transition.</summary>
+    public void RecordCompletedTasks(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        if (CompletedTaskCount is not { } completed || TotalTaskCount is not { } total) return;
+        CompletedTaskCount = total < 0 || completed < 0 || completed > total || count > total - completed
+            ? null : completed + count;
+    }
+
     /// <summary>
     /// Gets or sets trigger intake id.
     /// </summary>

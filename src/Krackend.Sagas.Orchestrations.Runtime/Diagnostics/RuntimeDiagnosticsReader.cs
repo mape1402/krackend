@@ -54,14 +54,13 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     {
         var summary = await BuildRuntimeSummary(cancellationToken);
         var instances = await _instanceRepository.GetRecent(1000, cancellationToken);
-        var artifactVersions = await BuildArtifactVersionMap(cancellationToken);
         var nowUtc = DateTime.UtcNow;
         var traffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-1), cancellationToken);
         var hourlyTraffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-24), cancellationToken);
 
         return new RuntimeDashboardSnapshotModel(
             summary,
-            instances.Select(instance => ToRow(instance, artifactVersions.GetValueOrDefault(instance.RuntimeOrchestrationArtifactId))).ToArray(),
+            instances.Select(instance => ToRow(instance)).ToArray(),
             traffic.Select(ToTraffic).ToArray(),
             hourlyTraffic.Select(ToTraffic).ToArray());
     }
@@ -87,21 +86,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             throw new NotSupportedException("The configured runtime storage does not support paged instance diagnostics.");
 
         var result = await catalog.GetPage(query, cancellationToken);
-        var artifacts = new Dictionary<Id, InstanceArtifactInfo>();
-        foreach (var artifactId in result.Items.Select(x => x.RuntimeOrchestrationArtifactId).Distinct())
-        {
-            try
-            {
-                var artifact = await _runtimeArtifactRepository.GetById(artifactId, cancellationToken);
-                artifacts[artifactId] = InstanceArtifactInfo.From(artifact, DeserializeArtifact(artifact));
-            }
-            catch (KeyNotFoundException)
-            {
-                artifacts[artifactId] = InstanceArtifactInfo.Empty;
-            }
-        }
-
-        return new RuntimeInstancePageModel(result.Items.Select(x => ToRow(x, artifacts.GetValueOrDefault(x.RuntimeOrchestrationArtifactId))).ToArray(),
+        return new RuntimeInstancePageModel(result.Items.Select(x => ToRow(x)).ToArray(),
             result.TotalCount, result.PageNumber, result.PageSize);
     }
 
@@ -199,12 +184,6 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         {
             return null;
         }
-    }
-
-    private async Task<IReadOnlyDictionary<Id, string>> BuildArtifactVersionMap(CancellationToken cancellationToken)
-    {
-        var artifacts = await _runtimeArtifactRepository.GetAll(cancellationToken);
-        return artifacts.ToDictionary(x => x.Id, x => x.Version.ToString());
     }
 
     private async Task<RuntimeSummaryModel> BuildRuntimeSummary(CancellationToken cancellationToken)
@@ -460,17 +439,17 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         };
 
     private static InstanceRowModel ToRow(OrchestrationInstance instance, string orchestrationVersion = null)
-        => ToRow(instance, new InstanceArtifactInfo(orchestrationVersion, Array.Empty<ArtifactTaskPosition>()));
+        => ToRow(instance, new InstanceArtifactInfo(orchestrationVersion));
 
     private static InstanceRowModel ToRow(OrchestrationInstance instance, InstanceArtifactInfo artifact)
     {
         artifact ??= InstanceArtifactInfo.Empty;
-        var (completedTaskCount, totalTaskCount) = artifact.GetProgress(instance);
+        var progress = RuntimeReactiveProgressCalculator.TryCalculate(instance, null);
         var status = PublicInstanceStatus(instance.Status);
         return new InstanceRowModel(
             instance.Id.ToString(),
             instance.OrchestrationDefinitionKey,
-            artifact.Version ?? string.Empty,
+            instance.OrchestrationVersion ?? artifact.Version ?? string.Empty,
             instance.CorrelationId,
             instance.SagaId,
             instance.ExecutionKey,
@@ -491,8 +470,8 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             instance.CompensatedOnUtc,
             instance.RetryCount)
         {
-            CompletedTaskCount = completedTaskCount,
-            TotalTaskCount = totalTaskCount,
+            CompletedTaskCount = progress?.CompletedTaskCount,
+            TotalTaskCount = progress?.TotalTaskCount,
             LastExecutedStageKey = instance.LastExecutedStageKey,
             LastExecutedTaskKey = instance.LastExecutedTaskKey
         };
@@ -511,48 +490,13 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             _ => status.ToString()
         };
 
-    private sealed record ArtifactTaskPosition(string StageKey, string TaskKey, int Position);
-
-    private sealed record InstanceArtifactInfo(string Version, IReadOnlyCollection<ArtifactTaskPosition> Tasks)
+    private sealed record InstanceArtifactInfo(string Version)
     {
-        public static readonly InstanceArtifactInfo Empty = new(null, Array.Empty<ArtifactTaskPosition>());
+        public static readonly InstanceArtifactInfo Empty = new((string)null);
 
         public static InstanceArtifactInfo From(RuntimeOrchestrationArtifact runtimeArtifact, OrchestrationArtifact artifact)
         {
-            if (runtimeArtifact is null || artifact is null)
-            {
-                return new InstanceArtifactInfo(runtimeArtifact?.Version.ToString(), Array.Empty<ArtifactTaskPosition>());
-            }
-
-            var position = 0;
-            var tasks = (artifact.StageDefinitions ?? Array.Empty<StageArtifact>())
-                .Where(stage => stage.IsEnabled)
-                .OrderBy(stage => stage.Order)
-                .SelectMany(stage => (stage.TaskDefinitions ?? Array.Empty<TaskArtifact>())
-                    .Where(task => task.IsEnabled)
-                    .OrderBy(task => task.Order)
-                    .Select(task => new ArtifactTaskPosition(stage.Key, task.Key, ++position)))
-                .ToArray();
-            return new InstanceArtifactInfo(runtimeArtifact.Version.ToString(), tasks);
-        }
-
-        public (int Completed, int Total) GetProgress(OrchestrationInstance instance)
-        {
-            var total = Tasks.Count;
-            if (total == 0)
-            {
-                return (0, 0);
-            }
-
-            if (PublicInstanceStatus(instance.Status) is "Completed" or "Failed" or "DeadLettered")
-            {
-                return (total, total);
-            }
-
-            var current = Tasks.FirstOrDefault(task =>
-                string.Equals(task.StageKey, instance.CurrentStageKey, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(task.TaskKey, instance.CurrentTaskKey, StringComparison.OrdinalIgnoreCase));
-            return current is null ? (0, total) : (Math.Max(0, current.Position - 1), total);
+            return new InstanceArtifactInfo(runtimeArtifact?.Version.ToString());
         }
     }
 

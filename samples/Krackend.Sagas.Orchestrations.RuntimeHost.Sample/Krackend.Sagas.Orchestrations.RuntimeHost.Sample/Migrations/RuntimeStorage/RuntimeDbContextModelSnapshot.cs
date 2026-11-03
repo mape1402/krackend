@@ -260,6 +260,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.Property<DateTime?>("CompletedOnUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("CompletedTaskCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("CorrelationId")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -321,6 +324,10 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("OrchestrationVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("RetryCount")
                         .HasColumnType("int");
 
@@ -356,6 +363,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<DateTime?>("StoppedOnUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("TotalTaskCount")
+                        .HasColumnType("int");
 
                     b.Property<byte[]>("TriggerIntakeId")
                         .IsRequired()

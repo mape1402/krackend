@@ -373,6 +373,8 @@ public sealed class MessagingDecisionE2ETests
 
         Assert.Single(harness.Dispatcher.Commands);
         Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        Assert.Equal(1, instance.TotalTaskCount);
+        Assert.Equal(0, instance.CompletedTaskCount);
         Assert.Equal(TaskExecutionStatus.Failed, task.Status);
         Assert.Equal("PermanentFailure", attempt.ErrorCode);
     }
@@ -639,6 +641,8 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetTransitionsAsync(command);
 
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
+        Assert.Equal(1, instance.TotalTaskCount);
+        Assert.Equal(1, instance.CompletedTaskCount);
         Assert.Equal("first-response", attempt.ResponsePayload!["value"]!.GetValue<string>());
         Assert.Equal(1, transitions.Count(transition => transition.TransitionType == "TaskCallbackCompleted"));
         Assert.DoesNotContain(transitions, transition => transition.TransitionType == "TaskCallbackFailed");
@@ -1504,7 +1508,9 @@ public sealed class MessagingDecisionE2ETests
     {
         using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
             Stage("stage-skipped", 1, EnabledCondition("false"), MessagingTask("task.not.sent", 1)),
-            Stage("stage-next", 2, MessagingTask("task.after.stage.skip", 1))));
+            Stage("stage-next", 2, MessagingTask("task.after.stage.skip", 1),
+                MessagingTask("task.disabled", 2) with { IsEnabled = false }),
+            Stage("stage-disabled", 3, MessagingTask("task.in.disabled.stage", 1)) with { IsEnabled = false }));
 
         await harness.StartAsync(BusinessPayload("trigger"), "correlation-stage-condition");
 
@@ -1520,6 +1526,8 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
         Assert.Equal(StageExecutionStatus.Skipped, stages[0].Status);
         Assert.Equal(StageExecutionStatus.Completed, stages[1].Status);
+        Assert.Equal(2, instance.TotalTaskCount);
+        Assert.Equal(2, instance.CompletedTaskCount);
         Assert.Contains(transitions, transition => transition.TransitionType == "StageSkipped");
     }
 
@@ -1566,6 +1574,8 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
         Assert.Contains(tasks, task => task.TaskKey == "task.skipped" && task.Status == TaskExecutionStatus.Skipped);
         Assert.Contains(tasks, task => task.TaskKey == "task.after.task.skip" && task.Status == TaskExecutionStatus.Completed);
+        Assert.Equal(2, instance.TotalTaskCount);
+        Assert.Equal(2, instance.CompletedTaskCount);
         Assert.Contains(transitions, transition => transition.TransitionType == "TaskSkipped");
     }
 
@@ -1689,6 +1699,8 @@ public sealed class MessagingDecisionE2ETests
 
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
         Assert.Contains(stages, stage => stage.StageKey == "stage-middle" && stage.Status == StageExecutionStatus.Skipped);
+        Assert.Equal(3, instance.TotalTaskCount);
+        Assert.Equal(3, instance.CompletedTaskCount);
         Assert.DoesNotContain(harness.Dispatcher.Commands, command => command.TaskKey == "task.middle");
         Assert.Contains(transitions, transition => transition.TransitionType == "BranchTaken");
     }
@@ -1752,6 +1764,7 @@ public sealed class MessagingDecisionE2ETests
 
         await harness.ForwardAsync(firstParallel, BusinessPayload("parallel-a"), Success());
         Assert.Equal(2, harness.Dispatcher.Commands.Count);
+        Assert.Equal(1, (await harness.GetInstanceAsync(firstParallel)).CompletedTaskCount);
 
         await harness.ForwardAsync(secondParallel, BusinessPayload("parallel-b"), Success());
 
@@ -1763,6 +1776,8 @@ public sealed class MessagingDecisionE2ETests
 
         var instance = await harness.GetInstanceAsync(firstParallel);
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
+        Assert.Equal(3, instance.TotalTaskCount);
+        Assert.Equal(3, instance.CompletedTaskCount);
     }
 
     [Fact]

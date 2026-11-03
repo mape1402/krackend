@@ -178,6 +178,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             DateTime now,
             CancellationToken cancellationToken)
         {
+            instance.RecordCompletedTasks((decision.Stage.TaskDefinitions ?? []).Count(task => task.IsEnabled));
             var stageExecution = new StageExecution
             {
                 Id = Id.New(),

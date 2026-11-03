@@ -252,6 +252,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering.Mule
             {
                 task.Status = TaskExecutionStatus.Completed;
                 task.CompletedOnUtc = now;
+                instance.RecordCompletedTasks(1);
             }
 
             if (!IsTerminal(attempt.Status))

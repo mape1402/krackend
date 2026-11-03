@@ -177,6 +177,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
             foreach (var stageToSkip in stagesToSkip)
             {
+                if (stageToSkip.IsEnabled)
+                    instance.RecordCompletedTasks((stageToSkip.TaskDefinitions ?? []).Count(task => task.IsEnabled));
                 var skipped = new StageExecution
                 {
                     Id = Id.New(),

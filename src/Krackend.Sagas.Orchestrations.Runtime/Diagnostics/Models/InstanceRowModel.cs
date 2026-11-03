@@ -31,13 +31,13 @@ public sealed record InstanceRowModel(
     /// Gets the number of enabled orchestration tasks that are already complete
     /// for the instance. This is a diagnostics-only, display-safe progress value.
     /// </summary>
-    public int CompletedTaskCount { get; init; }
+    public int? CompletedTaskCount { get; init; }
 
     /// <summary>
     /// Gets the number of enabled orchestration tasks defined by the deployed
     /// artifact. Disabled design elements are intentionally excluded.
     /// </summary>
-    public int TotalTaskCount { get; init; }
+    public int? TotalTaskCount { get; init; }
 
     /// <summary>
     /// Gets the most recently executed stage. This is distinct from the

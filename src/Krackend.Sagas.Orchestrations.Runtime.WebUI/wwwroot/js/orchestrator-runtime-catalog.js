@@ -211,13 +211,18 @@
         return container;
     };
     const renderProgress = item => {
-        const total = Number(item.totalTaskCount || 0);
-        const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount || 0)));
         const container = document.createElement('span');
         container.className = 'od-instance-progress';
+        if (item.totalTaskCount == null || item.completedTaskCount == null) {
+            container.dataset.progressState = 'unknown';
+            container.textContent = '—';
+            return container;
+        }
+        const total = Number(item.totalTaskCount);
+        const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount)));
         container.dataset.progressState = `${complete}/${total}`;
         if (!total) {
-            container.textContent = '—';
+            container.textContent = '0/0';
             return container;
         }
         const meter = document.createElement('span');
@@ -272,9 +277,9 @@
         }
         const progress = row.querySelector('[data-z-grid-field="progress"]');
         if (progress) {
-            const total = Number(item.totalTaskCount || 0);
-            const complete = Math.min(total, Math.max(0, Number(item.completedTaskCount || 0)));
-            const state = `${complete}/${total}`;
+            const total = item.totalTaskCount == null ? null : Number(item.totalTaskCount);
+            const complete = item.completedTaskCount == null ? null : Number(item.completedTaskCount);
+            const state = total === null || complete === null ? 'unknown' : `${Math.min(total, Math.max(0, complete))}/${total}`;
             if (progress.firstElementChild?.dataset.progressState !== state) progress.replaceChildren(renderProgress(item));
         }
         for (const [field, lastField, kind] of [
@@ -409,8 +414,10 @@
             // The reactive payload carries the server-side projection. Keep the
             // row's existing values only for older publishers that do not yet
             // include progress, never calculate task state in the browser.
-            completedTaskCount: Number(eventValue(event, 'completedTaskCount') ?? existing?.completedTaskCount ?? 0),
-            totalTaskCount: Number(eventValue(event, 'totalTaskCount') ?? existing?.totalTaskCount ?? 0)
+            completedTaskCount: eventValue(event, 'progressKnown') === false ? null
+                : eventValue(event, 'completedTaskCount') ?? existing?.completedTaskCount ?? null,
+            totalTaskCount: eventValue(event, 'progressKnown') === false ? null
+                : eventValue(event, 'totalTaskCount') ?? existing?.totalTaskCount ?? null
         };
     };
     const patchVisibleRow = item => {

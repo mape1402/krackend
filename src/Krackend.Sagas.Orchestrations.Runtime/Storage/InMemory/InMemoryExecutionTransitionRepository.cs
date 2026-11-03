@@ -73,7 +73,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                     ? task.TaskKey
                     : null;
             _store.Artifacts.TryGetValue(instance.RuntimeOrchestrationArtifactId, out var artifact);
-            var orchestrationVersion = artifact?.Version.ToString();
+            var orchestrationVersion = instance.OrchestrationVersion;
             var progress = RuntimeReactiveProgressCalculator.TryCalculate(instance, artifact);
 
             return new RuntimeReactiveEvent
@@ -106,6 +106,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 LastUpdatedOnUtc = instance.LastUpdatedOnUtc,
                 CompletedTaskCount = progress?.CompletedTaskCount,
                 TotalTaskCount = progress?.TotalTaskCount,
+                ProgressKnown = progress.HasValue,
                 OccurredOnUtc = transition.OccurredOnUtc,
                 Message = transition.Message,
                 Payload = transition.Payload,
