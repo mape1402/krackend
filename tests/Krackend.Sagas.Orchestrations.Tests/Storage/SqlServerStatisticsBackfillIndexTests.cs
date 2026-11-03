@@ -11,6 +11,7 @@ using Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,6 +21,36 @@ public sealed class SqlServerStatisticsBackfillIndexTests
 {
     private const string PreviousMigration = "20261101010000_AddInstanceProgressProjection";
     private const string Password = "Krackend_12345!";
+    private const string ObservationEntity = "Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.SagaStatisticsObservation";
+
+    [Fact]
+    public void ActivityIndexIsOptInAndRespectsHostMappingsAndOverrides()
+    {
+        using var defaultProvider = CreateSqlProvider(model => model.UseKrackendSqlServerOptimizations());
+        using var filtered = CreateSqlProvider(model =>
+        {
+            var entity = model.Model.FindEntityType(ObservationEntity)!;
+            model.Entity(entity.ClrType).Property<bool>("StatusChanged").HasColumnName("changed]flag");
+            model.UseKrackendSqlServerOptimizations(options => options.FilterStatisticsActivityIndex = true);
+        });
+        using var overridden = CreateSqlProvider(model =>
+        {
+            model.UseKrackendSqlServerOptimizations(options => options.FilterStatisticsActivityIndex = true);
+            var entity = model.Model.FindEntityType(ObservationEntity)!;
+            model.Entity(entity.ClrType).HasIndex("OrchestrationKey", "OccurredOnUtc").HasFilter(null);
+        });
+        using var defaultScope = defaultProvider.CreateScope();
+        using var filteredScope = filtered.CreateScope();
+        using var overriddenScope = overridden.CreateScope();
+        var baseline = ActivityIndex(defaultScope.ServiceProvider.GetRequiredService<RuntimeDbContext>());
+        var index = ActivityIndex(filteredScope.ServiceProvider.GetRequiredService<RuntimeDbContext>());
+        var hostOverride = ActivityIndex(overriddenScope.ServiceProvider.GetRequiredService<RuntimeDbContext>());
+        Assert.Null(baseline.GetFilter());
+        Assert.Null(baseline.FindAnnotation("SqlServer:Include"));
+        Assert.Equal("[Processed] = 1 AND [changed]]flag] = 1 AND [IsBackfill] = 0", index.GetFilter());
+        Assert.Equal(["Status"], (string[])index.FindAnnotation("SqlServer:Include")!.Value!);
+        Assert.Null(hostOverride.GetFilter());
+    }
 
     [Fact]
     public void FilteringIsConfiguredByTheSqlHostOnly()
@@ -103,6 +134,33 @@ public sealed class SqlServerStatisticsBackfillIndexTests
         Assert.Equal(legacyIds.OrderBy(id => id.ToString()), before.OrderBy(id => id.ToString()));
         Assert.Null(await IndexFilter(db));
 
+        await migrator.MigrateAsync("20261102060000_FilterStatisticsBackfillIndex");
+        Assert.Null((await ActivityIndexInfo(db)).Filter);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO [Runtime].[SagaStatisticsObservations]
+                ([Id], [InstanceId], [ArtifactId], [OrchestrationKey], [Revision], [Status], [StartedOnUtc], [OccurredOnUtc], [Processed], [StatusChanged], [StatusFirstReached], [IsBackfill])
+            VALUES
+                ('activity-1', CONVERT(binary(16), 1), CONVERT(binary(16), 10), 'activity-test', 1, 'Running', '2026-10-01T12:00:00', '2026-10-01T12:00:00', 1, 1, 0, 0),
+                ('activity-2', CONVERT(binary(16), 2), CONVERT(binary(16), 10), 'activity-test', 1, 'Running', '2026-10-01T12:00:00', '2026-10-01T12:00:00', 0, 1, 0, 0),
+                ('activity-3', CONVERT(binary(16), 3), CONVERT(binary(16), 10), 'activity-test', 1, 'Running', '2026-10-01T12:00:00', '2026-10-01T12:00:00', 1, 0, 0, 0),
+                ('activity-4', CONVERT(binary(16), 4), CONVERT(binary(16), 10), 'activity-test', 1, 'Running', '2026-10-01T12:00:00', '2026-10-01T12:00:00', 1, 1, 0, 1)
+            """);
+        var statistics = scope.ServiceProvider.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var start = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+        var query = new SagaStatisticsDashboardQuery(start, start.AddDays(1), "activity-test");
+        var activityBefore = await statistics.GetActivityAsync(query, SagaStatisticsActivityBucket.Day);
+        Assert.Equal(1, Assert.Single(activityBefore).Count);
+        await migrator.MigrateAsync();
+        var activityIndex = await ActivityIndexInfo(db);
+        Assert.Contains("Processed", activityIndex.Filter, StringComparison.Ordinal);
+        Assert.Contains("StatusChanged", activityIndex.Filter, StringComparison.Ordinal);
+        Assert.Contains("IsBackfill", activityIndex.Filter, StringComparison.Ordinal);
+        Assert.Equal(1, activityIndex.StatusIncluded);
+        Assert.Equal(activityBefore, await statistics.GetActivityAsync(query, SagaStatisticsActivityBucket.Day));
+        Assert.False(db.Database.HasPendingModelChanges());
+        await migrator.MigrateAsync("20261102060000_FilterStatisticsBackfillIndex");
+        Assert.Null((await ActivityIndexInfo(db)).Filter);
+        Assert.Equal(activityBefore, await statistics.GetActivityAsync(query, SagaStatisticsActivityBucket.Day));
         await migrator.MigrateAsync();
         Assert.Contains("[StatisticsRevision]", await IndexFilter(db), StringComparison.Ordinal);
         Assert.Equal(before, await PendingIds(db));
@@ -156,6 +214,26 @@ public sealed class SqlServerStatisticsBackfillIndexTests
     private static Microsoft.EntityFrameworkCore.Metadata.IIndex RevisionIndex(RuntimeDbContext db)
         => db.Model.FindEntityType(typeof(OrchestrationInstance))!.GetIndexes()
             .Single(index => index.Properties.Count == 1 && index.Properties[0].Name == nameof(OrchestrationInstance.StatisticsRevision));
+
+    private static Microsoft.EntityFrameworkCore.Metadata.IReadOnlyIndex ActivityIndex(RuntimeDbContext db)
+        => db.GetService<IDesignTimeModel>().Model.FindEntityType(ObservationEntity)!.GetIndexes()
+            .Single(index => index.Properties.Select(property => property.Name).SequenceEqual(["OrchestrationKey", "OccurredOnUtc"]));
+
+    private static async Task<(string? Filter, int StatusIncluded)> ActivityIndexInfo(RuntimeDbContext db)
+    {
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT i.filter_definition,
+                (SELECT COUNT(*) FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                    WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 1 AND c.name = 'Status')
+            FROM sys.indexes i WHERE i.object_id = OBJECT_ID(N'[Runtime].[SagaStatisticsObservations]')
+                AND i.name = N'IX_SagaStatisticsObservations_OrchestrationKey_OccurredOnUtc'
+            """;
+        await using var result = await command.ExecuteReaderAsync();
+        Assert.True(await result.ReadAsync());
+        return (result.IsDBNull(0) ? null : result.GetString(0), result.GetInt32(1));
+    }
 
     private static Task<Id[]> PendingIds(RuntimeDbContext db)
         => db.OrchestrationInstances.AsNoTracking().Where(x => x.StatisticsRevision == 0)

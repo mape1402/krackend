@@ -1254,7 +1254,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("InstanceId", "Revision")
                         .IsUnique();
 
-                    b.HasIndex("OrchestrationKey", "OccurredOnUtc");
+                    b.HasIndex("OrchestrationKey", "OccurredOnUtc")
+                        .HasFilter("[Processed] = 1 AND [StatusChanged] = 1 AND [IsBackfill] = 0")
+                        .IncludeProperties("Status");
 
                     b.HasIndex("Processed", "InstanceId", "Revision");
 

@@ -18,7 +18,7 @@ public sealed class RuntimeSqlServerStorageModelCustomizer
     {
         ConfigureSqlServerIdColumns(modelBuilder);
         ConfigureSqlServerRuntimeDesignNodeIndexes(modelBuilder);
-        modelBuilder.UseKrackendSqlServerOptimizations();
+        modelBuilder.UseKrackendSqlServerOptimizations(options => options.FilterStatisticsActivityIndex = true);
     }
 
     private void ConfigureSqlServerIdColumns(ModelBuilder modelBuilder)
