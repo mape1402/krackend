@@ -145,6 +145,9 @@ public sealed class RuntimeReactiveEvent
     /// </summary>
     public int? TotalTaskCount { get; set; }
 
+    /// <summary>Whether the progress fields contain a known projection; null denotes an older publisher.</summary>
+    public bool? ProgressKnown { get; set; }
+
     /// <summary>
     /// Gets or sets event time.
     /// </summary>

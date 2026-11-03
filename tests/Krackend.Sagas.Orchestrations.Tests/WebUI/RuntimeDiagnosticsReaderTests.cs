@@ -62,13 +62,15 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
-    public void ReactiveProgressUsesOnlyEnabledArtifactTasksWithoutLoadingStorage()
+    public void ReactiveProgressUsesPersistedCountsWithoutLoadingArtifact()
     {
         var store = RuntimeDiagnosticsStore.Create();
         store.UseArtifactWithPendingConfiguredItems();
         store.Instance.Status = OrchestrationInstanceStatus.Running;
         store.Instance.CurrentStageKey = "reserve-stock";
         store.Instance.CurrentTaskKey = "notify-customer";
+        store.Instance.CompletedTaskCount = 1;
+        store.Instance.TotalTaskCount = 3;
 
         var active = RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact);
 
@@ -77,14 +79,15 @@ public sealed class RuntimeDiagnosticsReaderTests
         Assert.Equal(3, active.Value.TotalTaskCount);
 
         store.Instance.Status = OrchestrationInstanceStatus.Completed;
+        store.Instance.CompletedTaskCount = 2;
         var completed = RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact);
 
-        Assert.Equal(3, completed!.Value.CompletedTaskCount);
+        Assert.Equal(2, completed!.Value.CompletedTaskCount);
         Assert.Equal(3, completed.Value.TotalTaskCount);
     }
 
     [Fact]
-    public void ReactiveProgressReturnsNullWhenArtifactPayloadCannotBeRead()
+    public void ReactiveProgressReturnsNullWhenProjectionIsUnknownOrInvalid()
     {
         var store = RuntimeDiagnosticsStore.Create();
         store.Artifact.ArtifactPayload = JsonNode.Parse("""{"version":"not-a-semver"}""")!;
@@ -92,6 +95,9 @@ public sealed class RuntimeDiagnosticsReaderTests
         Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact));
         Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(null!, store.Artifact));
         Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, null!));
+        store.Instance.CompletedTaskCount = 4;
+        store.Instance.TotalTaskCount = 3;
+        Assert.Null(RuntimeReactiveProgressCalculator.TryCalculate(store.Instance, store.Artifact));
     }
 
     [Fact]
@@ -146,6 +152,7 @@ public sealed class RuntimeDiagnosticsReaderTests
     {
         var bucket = new DateTime(2026, 8, 12, 12, 1, 0, DateTimeKind.Utc);
         var store = RuntimeDiagnosticsStore.Create();
+        store.Instance.OrchestrationVersion = "1.0.0";
         store.TrafficPoints = [new RuntimeTrafficPoint(bucket, 2, 3, 4, 5)];
         var reader = CreateReader(store);
 

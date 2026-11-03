@@ -12,6 +12,42 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 
 public sealed class RuntimeInstanceCatalogTests
 {
+    [Fact]
+    public async Task RelationalPageReadsProjectedFieldsWithoutPayloadOrArtifactQueries()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var commands = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        services.AddOrchestratorRuntimeStorageEntityFramework(options => options.UseSqlite(connection)
+            .LogTo(commands.Add, [Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted]));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var instance = Instance("large-payload", DateTime.UtcNow, OrchestrationInstanceStatus.Running);
+        instance.SnapshotPayload = System.Text.Json.Nodes.JsonNode.Parse("{\"large\":\"payload\"}");
+        instance.OrchestrationVersion = "1.2.3";
+        instance.TotalTaskCount = 3;
+        instance.CompletedTaskCount = 1;
+        await repository.Create(instance);
+        commands.Clear();
+
+        var page = await ((IRuntimeInstanceCatalogRepository)repository).GetPage(new RuntimeInstanceCatalogQuery());
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal("1.2.3", item.OrchestrationVersion);
+        Assert.Equal(3, item.TotalTaskCount);
+        Assert.Equal(1, item.CompletedTaskCount);
+        Assert.Null(item.SnapshotPayload);
+        Assert.Equal(2, commands.Count);
+        Assert.DoesNotContain(commands, command => command.Contains("SnapshotPayload", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, command => command.Contains("Metadata", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, command => command.Contains("RuntimeOrchestrationArtifacts", StringComparison.OrdinalIgnoreCase));
+    }
+
     public static IEnumerable<object[]> SortCases()
     {
         foreach (var relational in new[] { false, true })

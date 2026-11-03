@@ -159,6 +159,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             DateTime now,
             CancellationToken cancellationToken)
         {
+            instance.RecordCompletedTasks(1);
             var taskExecution = new TaskExecution
             {
                 Id = Id.New(),

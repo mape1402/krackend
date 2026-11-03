@@ -36,7 +36,8 @@ public sealed record RuntimeReactiveEventMessage(
     string CurrentStageKey = null,
     string CurrentTaskKey = null,
     string LastExecutedStageKey = null,
-    string LastExecutedTaskKey = null)
+    string LastExecutedTaskKey = null,
+    bool? ProgressKnown = null)
 {
     /// <summary>
     /// Creates a SignalR payload from a runtime reactive event.
@@ -74,5 +75,6 @@ public sealed record RuntimeReactiveEventMessage(
             eventData.CurrentStageKey,
             eventData.CurrentTaskKey,
             eventData.LastExecutedStageKey,
-            eventData.LastExecutedTaskKey);
+            eventData.LastExecutedTaskKey,
+            eventData.ProgressKnown);
 }

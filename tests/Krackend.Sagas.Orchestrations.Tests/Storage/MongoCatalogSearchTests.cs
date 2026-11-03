@@ -28,6 +28,44 @@ public sealed class MongoCatalogSearchTests
     private const string MongoImage = "mongo:8.0.4";
 
     [Fact]
+    public async Task RuntimeInstancePageLoadsProjectedProgressInMongo()
+    {
+        await using var mongo = new ContainerBuilder()
+            .WithImage(MongoImage)
+            .WithPortBinding(27017, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(27017))
+            .Build();
+        await mongo.StartAsync();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddKrackendOrchestrationsRuntime();
+        services.AddOrchestratorRuntimeStorageEntityFramework(options =>
+            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "instance_grid_test"));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
+        await db.Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        await repository.Create(new OrchestrationInstance
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = Id.New(), TriggerIntakeId = Id.New(),
+            OrchestrationDefinitionKey = "sales", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "sales:1",
+            OrchestrationVersion = "1.2.3", TotalTaskCount = 3, CompletedTaskCount = 1,
+            StartedOnUtc = DateTime.UtcNow, LastUpdatedOnUtc = DateTime.UtcNow,
+            SnapshotPayload = JsonNode.Parse("{\"large\":\"payload\"}")
+        });
+
+        var page = await ((IRuntimeInstanceCatalogRepository)repository).GetPage(new RuntimeInstanceCatalogQuery());
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal("1.2.3", item.OrchestrationVersion);
+        Assert.Equal(3, item.TotalTaskCount);
+        Assert.Equal(1, item.CompletedTaskCount);
+        Assert.Null(item.SnapshotPayload);
+    }
+
+    [Fact]
     public async Task RuntimeArtifactGroupsAreFilteredAndPagedInMongo()
     {
         await using var mongo = new ContainerBuilder()

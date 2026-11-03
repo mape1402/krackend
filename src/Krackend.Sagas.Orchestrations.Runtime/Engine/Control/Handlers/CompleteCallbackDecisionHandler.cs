@@ -114,6 +114,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             instance.LastUpdatedOnUtc = now;
             if (succeeded)
             {
+                instance.RecordCompletedTasks(1);
                 instance.SnapshotPayload = _payloadState.ApplyCallbackPayload(
                     instance,
                     stage.StageKey,
@@ -197,7 +198,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             }
 
             return succeeded &&
-                task.Status is not (TaskExecutionStatus.Completed or TaskExecutionStatus.Compensated) &&
+                task.Status is not (TaskExecutionStatus.Completed or TaskExecutionStatus.CompletedWithErrors or
+                    TaskExecutionStatus.Skipped or TaskExecutionStatus.Compensated) &&
                 task.LastAttemptNumber <= attempt.AttemptNumber &&
                 instance.Status is (OrchestrationInstanceStatus.Idle
                     or OrchestrationInstanceStatus.Running) &&

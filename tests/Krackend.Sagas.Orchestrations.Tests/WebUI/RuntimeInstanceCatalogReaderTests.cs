@@ -29,7 +29,7 @@ public sealed class RuntimeInstanceCatalogReaderTests
     }
 
     [Fact]
-    public async Task MapsPageAndHandlesMissingArtifact()
+    public async Task MapsProjectedPageWithoutLoadingArtifacts()
     {
         var instances = Substitute.For<IOrchestrationInstanceRepository, IRuntimeInstanceCatalogRepository>();
         var catalog = (IRuntimeInstanceCatalogRepository)instances;
@@ -37,7 +37,8 @@ public sealed class RuntimeInstanceCatalogReaderTests
         var entry = new OrchestrationInstance
         {
             Id = Id.New(), RuntimeOrchestrationArtifactId = artifactId, TriggerIntakeId = Id.New(),
-            OrchestrationDefinitionKey = "sales", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "execution"
+            OrchestrationDefinitionKey = "sales", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "execution",
+            OrchestrationVersion = "1.2.3", TotalTaskCount = 4, CompletedTaskCount = 2
         };
         catalog.GetPage(Arg.Any<RuntimeInstanceCatalogQuery>(), Arg.Any<CancellationToken>())
             .Returns(new RuntimeInstanceCatalogPage([entry], 30, 2, 25));
@@ -48,7 +49,13 @@ public sealed class RuntimeInstanceCatalogReaderTests
         var result = await reader.GetInstances(new RuntimeInstanceCatalogQuery(2));
 
         Assert.Equal(30, result.TotalCount);
-        Assert.Equal("sales", Assert.Single(result.Items).OrchestrationDefinitionKey);
+        var row = Assert.Single(result.Items);
+        Assert.Equal("sales", row.OrchestrationDefinitionKey);
+        Assert.Equal("1.2.3", row.OrchestrationVersion);
+        Assert.Equal(4, row.TotalTaskCount);
+        Assert.Equal(2, row.CompletedTaskCount);
+        await artifacts.DidNotReceiveWithAnyArgs().GetById(default);
+        await artifacts.DidNotReceiveWithAnyArgs().GetAll();
     }
 
     private static RuntimeDiagnosticsReader CreateReader(IOrchestrationInstanceRepository instances, IRuntimeArtifactRepository artifacts)

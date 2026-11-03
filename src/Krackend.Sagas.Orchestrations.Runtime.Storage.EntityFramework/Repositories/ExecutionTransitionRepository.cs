@@ -92,7 +92,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
         var taskKey = GetTaskKey(transition.TaskExecutionId);
         var runtimeArtifact = DbContext.RuntimeOrchestrationArtifacts.Local
             .FirstOrDefault(x => x.Id == instance.RuntimeOrchestrationArtifactId);
-        var orchestrationVersion = runtimeArtifact?.Version.ToString();
+        var orchestrationVersion = instance.OrchestrationVersion;
         var progress = RuntimeReactiveProgressCalculator.TryCalculate(instance, runtimeArtifact);
         return new RuntimeReactiveEvent
         {
@@ -124,6 +124,7 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             LastUpdatedOnUtc = instance.LastUpdatedOnUtc,
             CompletedTaskCount = progress?.CompletedTaskCount,
             TotalTaskCount = progress?.TotalTaskCount,
+            ProgressKnown = progress.HasValue,
             OccurredOnUtc = transition.OccurredOnUtc,
             Message = transition.Message,
             Payload = transition.Payload,

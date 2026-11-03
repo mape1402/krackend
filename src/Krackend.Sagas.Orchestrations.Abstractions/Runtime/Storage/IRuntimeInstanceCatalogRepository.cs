@@ -5,7 +5,10 @@ namespace Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 /// <summary>Queries runtime instances for diagnostic catalogs without loading the complete history.</summary>
 public interface IRuntimeInstanceCatalogRepository
 {
-    /// <summary>Returns a filtered, deterministically ordered page of instances.</summary>
+    /// <summary>
+    /// Returns a filtered, deterministically ordered page of instance summaries.
+    /// Snapshot payload and metadata are not guaranteed; load an instance by id for its full state.
+    /// </summary>
     Task<RuntimeInstanceCatalogPage> GetPage(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default);
 }
 

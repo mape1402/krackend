@@ -175,7 +175,33 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
             _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
         };
-        var items = await ordered.ThenBy(x => x.Id).Skip(skip).Take(size).ToArrayAsync(cancellationToken);
+        var rows = await ordered.ThenBy(x => x.Id).Skip(skip).Take(size)
+            .Select(x => new
+            {
+                x.Id, x.OrchestrationDefinitionKey, x.RuntimeOrchestrationArtifactId,
+                x.OrchestrationVersion, x.TotalTaskCount, x.CompletedTaskCount,
+                x.CorrelationId, x.SagaId, x.ExecutionKey, x.Status,
+                x.CurrentStageKey, x.CurrentTaskKey, x.LastExecutedStageKey, x.LastExecutedTaskKey,
+                x.CurrentParallelGroupKey, x.StartedOnUtc, x.LastUpdatedOnUtc, x.WaitingSinceUtc,
+                x.CompletedOnUtc, x.FailedOnUtc, x.ErrorSummary, x.FinalOutcome, x.StoppedOnUtc,
+                x.CompensationStartedOnUtc, x.CompensatedOnUtc, x.RetryCount
+            }).ToArrayAsync(cancellationToken);
+        var items = rows.Select(x => new OrchestrationInstance
+        {
+            Id = x.Id, OrchestrationDefinitionKey = x.OrchestrationDefinitionKey,
+            RuntimeOrchestrationArtifactId = x.RuntimeOrchestrationArtifactId,
+            OrchestrationVersion = x.OrchestrationVersion, TotalTaskCount = x.TotalTaskCount,
+            CompletedTaskCount = x.CompletedTaskCount, CorrelationId = x.CorrelationId,
+            SagaId = x.SagaId, ExecutionKey = x.ExecutionKey, Status = x.Status,
+            CurrentStageKey = x.CurrentStageKey, CurrentTaskKey = x.CurrentTaskKey,
+            LastExecutedStageKey = x.LastExecutedStageKey, LastExecutedTaskKey = x.LastExecutedTaskKey,
+            CurrentParallelGroupKey = x.CurrentParallelGroupKey, StartedOnUtc = x.StartedOnUtc,
+            LastUpdatedOnUtc = x.LastUpdatedOnUtc, WaitingSinceUtc = x.WaitingSinceUtc,
+            CompletedOnUtc = x.CompletedOnUtc, FailedOnUtc = x.FailedOnUtc,
+            ErrorSummary = x.ErrorSummary, FinalOutcome = x.FinalOutcome, StoppedOnUtc = x.StoppedOnUtc,
+            CompensationStartedOnUtc = x.CompensationStartedOnUtc, CompensatedOnUtc = x.CompensatedOnUtc,
+            RetryCount = x.RetryCount
+        }).ToArray();
         return new RuntimeInstanceCatalogPage(items, count, page, size);
     }
 
