@@ -175,22 +175,36 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
-        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        var commands = new List<string>();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection)
+            .LogTo(commands.Add, [Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted]));
         using var scope = provider.CreateScope();
         await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
-        await repository.Create(Instance(Id.New(), OrchestrationInstanceStatus.Completed, DateTime.UtcNow));
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Completed, DateTime.UtcNow);
+        instance.CurrentStageKey = "current-stage";
+        instance.CurrentTaskKey = "current-task";
+        instance.Metadata["keep"] = JsonValue.Create("original")!;
+        await repository.Create(instance);
         using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM SagaStatisticsObservations";
         await command.ExecuteNonQueryAsync();
-        command.CommandText = "UPDATE OrchestrationInstances SET StatisticsRevision = 0";
+        command.CommandText = "UPDATE OrchestrationInstances SET StatisticsRevision = 0, LastExecutedStageKey = '', LastExecutedTaskKey = ''";
         await command.ExecuteNonQueryAsync();
         scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().ChangeTracker.Clear();
+        commands.Clear();
 
         var backfill = scope.ServiceProvider.GetRequiredService<ISagaStatisticsBackfill>();
         Assert.False(await backfill.ProcessAsync(10));
         Assert.True(await backfill.ProcessAsync(10));
         Assert.True(await backfill.ProcessAsync(10));
+        Assert.DoesNotContain(commands, x => x.Contains("SnapshotPayload", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, x => x.Contains("Metadata", StringComparison.OrdinalIgnoreCase));
+        var restored = await repository.GetById(instance.Id);
+        Assert.Equal("S-1", restored.SnapshotPayload!["saleId"]!.GetValue<string>());
+        Assert.Equal("original", restored.Metadata["keep"]!.GetValue<string>());
+        Assert.Equal("current-stage", restored.LastExecutedStageKey);
+        Assert.Equal("current-task", restored.LastExecutedTaskKey);
         command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsObservations WHERE Revision = 1 AND IsBackfill = 1";
         Assert.Equal(1L, await command.ExecuteScalarAsync());
         command.CommandText = "SELECT COUNT(*) FROM SagaStatisticsBackfillCheckpoints";
