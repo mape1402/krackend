@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -152,6 +152,10 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .Take(take)
             .ToArrayAsync(cancellationToken);
 
+    public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecentSummaries(int take, CancellationToken cancellationToken = default)
+        => await ReadSummaries(DbContext.OrchestrationInstances.AsNoTracking()
+            .OrderByDescending(x => x.LastUpdatedOnUtc).Take(take), cancellationToken);
+
     public async Task<RuntimeInstanceCatalogPage> GetPage(RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -175,7 +179,13 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             (_, false) => source.OrderBy(x => x.LastUpdatedOnUtc),
             _ => source.OrderByDescending(x => x.LastUpdatedOnUtc)
         };
-        var rows = await ordered.ThenBy(x => x.Id).Skip(skip).Take(size)
+        var items = await ReadSummaries(ordered.ThenBy(x => x.Id).Skip(skip).Take(size), cancellationToken);
+        return new RuntimeInstanceCatalogPage(items, count, page, size);
+    }
+
+    private static async Task<OrchestrationInstance[]> ReadSummaries(IQueryable<OrchestrationInstance> source, CancellationToken cancellationToken)
+    {
+        var rows = await source
             .Select(x => new
             {
                 x.Id, x.OrchestrationDefinitionKey, x.RuntimeOrchestrationArtifactId,
@@ -186,7 +196,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 x.CompletedOnUtc, x.FailedOnUtc, x.ErrorSummary, x.FinalOutcome, x.StoppedOnUtc,
                 x.CompensationStartedOnUtc, x.CompensatedOnUtc, x.RetryCount
             }).ToArrayAsync(cancellationToken);
-        var items = rows.Select(x => new OrchestrationInstance
+        return rows.Select(x => new OrchestrationInstance
         {
             Id = x.Id, OrchestrationDefinitionKey = x.OrchestrationDefinitionKey,
             RuntimeOrchestrationArtifactId = x.RuntimeOrchestrationArtifactId,
@@ -202,7 +212,6 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             CompensationStartedOnUtc = x.CompensationStartedOnUtc, CompensatedOnUtc = x.CompensatedOnUtc,
             RetryCount = x.RetryCount
         }).ToArray();
-        return new RuntimeInstanceCatalogPage(items, count, page, size);
     }
 
     public async Task<IReadOnlyDictionary<OrchestrationInstanceStatus, long>> GetStatusCounts(

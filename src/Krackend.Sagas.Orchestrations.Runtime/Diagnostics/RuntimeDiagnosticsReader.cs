@@ -53,7 +53,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     public async Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
     {
         var summary = await BuildRuntimeSummary(cancellationToken);
-        var instances = await _instanceRepository.GetRecent(1000, cancellationToken);
+        var instances = _instanceRepository is IRuntimeInstanceRecentSummaryReader summaries
+            ? await summaries.GetRecentSummaries(1000, cancellationToken)
+            : await _instanceRepository.GetRecent(1000, cancellationToken);
         var nowUtc = DateTime.UtcNow;
         var traffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-1), cancellationToken);
         var hourlyTraffic = await _transitionRepository.GetTraffic(nowUtc.AddHours(-24), cancellationToken);

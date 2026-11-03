@@ -594,12 +594,24 @@ public sealed class RuntimeDiagnosticsReaderTests
             CreateReader(store, attempts, dispatches).GetDetail(store.Instance.Id.ToString()));
     }
 
+    [Fact]
+    public async Task SnapshotUsesSummaryReaderWithoutChangingRows()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        var expected = await CreateReader(store).GetSnapshot();
+        var summaries = new SummaryInstanceRepository(store);
+        var actual = await CreateReader(store, instances: summaries).GetSnapshot();
+        Assert.Equal(expected.Instances, actual.Instances);
+        Assert.Equal(1, summaries.Calls);
+    }
+
     private static RuntimeDiagnosticsReader CreateReader(RuntimeDiagnosticsStore store,
-        ITaskExecutionAttemptRepository? attempts = null, ITaskDispatchRepository? dispatches = null)
+        ITaskExecutionAttemptRepository? attempts = null, ITaskDispatchRepository? dispatches = null,
+        IOrchestrationInstanceRepository? instances = null)
     {
         return new RuntimeDiagnosticsReader(
             new ArtifactRepositoryStub(store),
-            new InstanceRepositoryStub(store),
+            instances ?? new InstanceRepositoryStub(store),
             new StageRepositoryStub(store),
             new TaskRepositoryStub(store),
             attempts ?? new AttemptRepositoryStub(store),
@@ -951,7 +963,18 @@ public sealed class RuntimeDiagnosticsReaderTests
         public Task<RuntimeOrchestrationArtifact> GetActive(string orchestrationDefinitionKey, CancellationToken cancellationToken = default) => Task.FromResult(store.Artifact);
     }
 
-    private sealed class InstanceRepositoryStub(RuntimeDiagnosticsStore store) : IOrchestrationInstanceRepository
+    private sealed class SummaryInstanceRepository(RuntimeDiagnosticsStore store)
+        : InstanceRepositoryStub(store), IRuntimeInstanceRecentSummaryReader
+    {
+        public int Calls { get; private set; }
+        public Task<IReadOnlyCollection<OrchestrationInstance>> GetRecentSummaries(int take, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyCollection<OrchestrationInstance>>([store.Instance]);
+        }
+    }
+
+    private class InstanceRepositoryStub(RuntimeDiagnosticsStore store) : IOrchestrationInstanceRepository
     {
         public Task Create(OrchestrationInstance instance, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task Update(OrchestrationInstance instance, CancellationToken cancellationToken = default) => throw new NotImplementedException();
