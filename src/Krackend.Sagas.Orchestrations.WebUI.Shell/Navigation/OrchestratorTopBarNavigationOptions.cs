@@ -17,9 +17,9 @@ public sealed class OrchestratorTopBarBackOverrideOptions
     /// <summary>Gets or sets whether the action is visible.</summary>
     public bool Visible { get; set; } = true;
 
-    /// <summary>Gets or sets the accessible label and tooltip.</summary>
+    /// <summary>Retained for compatibility. The back action uses the label "Back".</summary>
     public string Label { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the relative or HTTP(S) navigation target.</summary>
+    /// <summary>Retained for compatibility. The back action uses browser history.</summary>
     public string Url { get; set; } = string.Empty;
 }

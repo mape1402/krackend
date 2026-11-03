@@ -34,7 +34,7 @@ using System.Reflection;
 public sealed class WebUINavigationTests
 {
     [Fact]
-    public void TopBarNavigationResolverProvidesTheVersionsParentWithoutUsingBrowserHistory()
+    public void TopBarNavigationResolverUsesBrowserHistoryForVersionDetails()
     {
         var url = Substitute.For<IUrlHelper>();
         url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
@@ -50,8 +50,8 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(result);
         Assert.True(result.Visible);
-        Assert.Equal("Back to orchestration", result.Label);
-        Assert.Equal("/admin/design/orchestrations/one", result.Url);
+        Assert.Equal("Back", result.Label);
+        Assert.True(string.IsNullOrEmpty(result.Url));
     }
 
     [Fact]
@@ -69,18 +69,17 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(result);
         Assert.True(result.Visible);
-        Assert.Equal("Back to instances", result.Label);
-        Assert.Equal("/runtime/instances", result.Url);
+        Assert.Equal("Back", result.Label);
+        Assert.True(string.IsNullOrEmpty(result.Url));
     }
 
     [Theory]
-    [InlineData("OrchestratorDesign", "/Orchestrations/Create", "Back to orchestrations")]
-    [InlineData("OrchestratorDistribution", "/ArtifactReleases/Index", "Back to artifacts")]
-    [InlineData("OrchestratorDistribution", "/Promotions/Index", "Back to releases")]
+    [InlineData("OrchestratorDesign", "/Orchestrations/Create")]
+    [InlineData("OrchestratorDistribution", "/ArtifactReleases/Index")]
+    [InlineData("OrchestratorDistribution", "/Promotions/Index")]
     public void TopBarNavigationResolverProvidesContextualParentsForNestedCatalogFlows(
         string area,
-        string page,
-        string expectedLabel)
+        string page)
     {
         var url = Substitute.For<IUrlHelper>();
         url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
@@ -97,8 +96,8 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(result);
         Assert.True(result.Visible);
-        Assert.Equal(expectedLabel, result.Label);
-        Assert.Equal("/parent", result.Url);
+        Assert.Equal("Back", result.Label);
+        Assert.True(string.IsNullOrEmpty(result.Url));
     }
 
     [Fact]
@@ -119,8 +118,8 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(overrideResult);
         Assert.True(overrideResult.Visible);
-        Assert.Equal("Review queue", overrideResult.Label);
-        Assert.Equal("/ops/reviews", overrideResult.Url);
+        Assert.Equal("Back", overrideResult.Label);
+        Assert.True(string.IsNullOrEmpty(overrideResult.Url));
         Assert.Null(defaultResult);
     }
 

@@ -255,6 +255,7 @@
     </form>
     @await Component.InvokeAsync("ZoorceDialog", new Zoorce.Web.UI.Foundation.Components.ZoorceDialogOptions
     {
+    CloseOnBackdrop = false,
         Id = "recoverSagaDialog",
         Title = "Recover saga",
         Eyebrow = "Terminal recovery",

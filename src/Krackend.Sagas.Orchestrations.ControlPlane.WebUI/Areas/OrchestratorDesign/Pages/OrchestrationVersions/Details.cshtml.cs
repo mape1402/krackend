@@ -23,6 +23,18 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class DetailsModel : PageModel
 {
+    public async Task<IActionResult> OnGetButterMorphContextAsync(string context,
+        [FromServices] Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.IOrchestrationButterMorphDesignerContextParser parser,
+        [FromServices] IOrchestrationSchemaContextApplicationService schemas,
+        [FromServices] global::ButterMorph.Web.Razor.IButterMorphDesignerHost mappingHost,
+        [FromServices] global::ButterMorph.Web.Razor.IButterMorphValidationDesignerHost validationHost,
+        CancellationToken cancellationToken)
+    {
+        var versioned = await Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.OrchestrationButterMorphContextVersion.ResolveAsync(
+            context, parser, schemas, mappingHost, validationHost, cancellationToken);
+        return versioned is null ? BadRequest() : new JsonResult(new { context = versioned });
+    }
+
     private readonly IOrchestrationApplicationService _orchestrationService;
     private readonly IOrchestrationVersionApplicationService _versionService;
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;

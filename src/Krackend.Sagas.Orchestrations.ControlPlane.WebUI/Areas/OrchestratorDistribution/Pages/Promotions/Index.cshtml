@@ -82,6 +82,7 @@ else
     footer.AppendHtml(await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "createReleaseSubmitButton", Text = "Create release" }));
     @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
     {
+    CloseOnBackdrop = false,
         Id = "createReleaseModal", Title = "Create release", Eyebrow = null, Size = "wide",
         Body = await Html.PartialAsync("_CreateRelease", Model),
         Footer = footer
@@ -91,6 +92,7 @@ else
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "allowedNodesModal", Title = "Allowed nodes", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_AllowedNodes", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"allowedNodesCancelButton\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"allowedNodesForm\" class=\"z-button z-button-primary\" id=\"saveAllowedNodesButton\">Save policy</button>")
@@ -98,6 +100,7 @@ else
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "releaseDetailsModal", Title = "Release details", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_ReleaseDetails", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")

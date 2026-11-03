@@ -59,6 +59,7 @@
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "artifactImportModal",
     Title = "Import runtime artifact",
     Eyebrow = "Portable release candidate",
@@ -73,6 +74,7 @@
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "artifactHistoryModal",
     Title = "Artifact history",
     Eyebrow = null,

@@ -36,12 +36,14 @@
 </section>
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "newVersionModal", Title = "Create draft", Eyebrow = null,
     Body = await Html.PartialAsync("_CreateDraft", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"createDraftForm\" class=\"z-button z-button-primary\" id=\"versionModalSubmitButton\">Create draft</button>")
 })
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "importDraftModal", Title = "Import draft", Eyebrow = "Portable orchestration version", Size = "medium",
     Body = await Html.PartialAsync("_ImportDraft", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"importDraftForm\" class=\"z-button z-button-primary\" id=\"importDraftSubmit\" disabled>Import draft</button>")

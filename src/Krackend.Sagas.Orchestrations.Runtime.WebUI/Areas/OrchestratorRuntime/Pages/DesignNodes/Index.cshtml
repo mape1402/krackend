@@ -43,26 +43,31 @@
 </section>
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "designNodeBasicModal", Title = "Edit data", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_DesignNodeBasic", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"designNodeBasicForm\" class=\"z-button z-button-primary\">Save</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "designNodeViewModal", Title = "Design node", Eyebrow = null, Size = "full",
     Body = await Html.PartialAsync("_DesignNodeView", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "designNodeSetupModal", Title = "Configure design node", Eyebrow = null, Size = "full",
     Body = await Html.PartialAsync("_DesignNodeSetup", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"setupBackButton\">Back</button><button type=\"button\" class=\"z-button z-button-primary\" id=\"setupNextButton\">Next</button><button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Close</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "designNodeCredentialModal", Title = "Import Design credentials", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_DesignNodeCredentials", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"designNodeCredentialForm\" class=\"z-button z-button-primary\">Import and continue</button>")
 })
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "generatedCredentialsModal", Title = "Generated Runtime credentials", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_GeneratedCredentials", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" id=\"copyGeneratedCredentialsButton\">Copy</button><button type=\"button\" class=\"z-button z-button-primary\" data-z-dialog-close>Done</button>")

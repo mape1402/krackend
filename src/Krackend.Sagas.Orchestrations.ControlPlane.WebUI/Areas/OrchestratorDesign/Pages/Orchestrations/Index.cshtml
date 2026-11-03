@@ -44,6 +44,7 @@
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions
 {
+    CloseOnBackdrop = false,
     Id = "createOrchestrationModal", Title = "Create orchestration", Eyebrow = null, Size = "wide",
     Body = await Html.PartialAsync("_OrchestrationForm", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"orchestrationForm\" class=\"z-button z-button-primary\" id=\"orchestrationModalSubmitButton\">Create</button>")

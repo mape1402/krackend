@@ -185,12 +185,14 @@
 </div>
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "newStageModal", Title = "Create stage", Eyebrow = null,
     Body = await Html.PartialAsync("_StageForm", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"stageForm\" class=\"z-button z-button-primary\" id=\"stageModalSubmitButton\">Create</button>")
 })
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions {
+    CloseOnBackdrop = false,
     Id = "triggerModal", Title = "Create trigger", Eyebrow = null, Size = "full",
     Body = await Html.PartialAsync("_TriggerForm", Model),
     Footer = new HtmlString("<button type=\"button\" class=\"z-button z-button-ghost\" data-z-dialog-close>Cancel</button><button type=\"submit\" form=\"triggerForm\" class=\"z-button z-button-primary\" id=\"triggerModalSubmitButton\">Create</button>")
@@ -456,7 +458,8 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
             return;
         }
 
-        const contextKey = `orchestration-stage-execution-condition:${orchestrationVersionId}:${stageId}`;
+        const contextKey = await window.KrackendButterMorphContext(`orchestration-stage-execution-condition:${orchestrationVersionId}:${stageId}`);
+        if (!contextKey) return;
         const designerUrl = orchestrationVersionCanEdit
             ? `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=edit`
             : `/buttermorph/validations/viewer?context=${encodeURIComponent(contextKey)}`;
@@ -908,7 +911,7 @@ window.addEventListener('message', event => {
         });
     }
 
-    function openTriggerButterMorph(kind) {
+    async function openTriggerButterMorph(kind) {
         const triggerId = triggerIdInput.value || '';
         if (!triggerId) {
             notifyMissingTrigger();
@@ -930,7 +933,8 @@ window.addEventListener('message', event => {
         const route = canEdit
             ? (kind === 'condition' ? '/buttermorph/validations/designer' : '/buttermorph/designer')
             : (kind === 'condition' ? '/buttermorph/validations/viewer' : '/buttermorph/mappings/viewer');
-        const contextKey = `${prefix}:${orchestrationVersionId}:${triggerId}`;
+        const contextKey = await window.KrackendButterMorphContext(`${prefix}:${orchestrationVersionId}:${triggerId}`);
+        if (!contextKey) return;
         const mode = canEdit ? '&mode=edit' : '';
         window.ButterMorphHost.openFrame(`${route}?context=${encodeURIComponent(contextKey)}${mode}`, {
             title: kind === 'condition' ? 'ButterMorph trigger compensation condition' : 'ButterMorph trigger compensation transformation',
