@@ -23,6 +23,23 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class DetailsModel : PageModel
 {
+    public async Task<IActionResult> OnGetRoadmapElementAsync(string elementType, string elementId, string versionId,
+        [FromServices] RoadmapElementPackageService service, CancellationToken cancellationToken)
+    {
+        try { return new JsonResult(new { package = await service.CopyAsync(elementType, elementId, versionId, cancellationToken) }); }
+        catch (Exception error) when (error is InvalidOperationException or FormatException or KeyNotFoundException or System.Text.Json.JsonException)
+        { return BadRequest(new { message = error.Message }); }
+    }
+
+    public async Task<IActionResult> OnPostPasteRoadmapElementAsync([FromBody] RoadmapElementPasteRequest request,
+        [FromServices] RoadmapElementPackageService service, CancellationToken cancellationToken)
+    {
+        if (request is null || request.ElementType is not ("stage" or "trigger")) return BadRequest(new { message = "Only stages or triggers can be pasted here." });
+        try { return new JsonResult(new { id = await service.PasteAsync(request.Package, request.ElementType, request.VersionId, null, cancellationToken) }); }
+        catch (Exception error) when (error is InvalidOperationException or FormatException or KeyNotFoundException or FluentValidation.ValidationException or System.Text.Json.JsonException)
+        { return BadRequest(new { message = error.Message }); }
+    }
+
     public async Task<IActionResult> OnGetButterMorphContextAsync(string context,
         [FromServices] Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.IOrchestrationButterMorphDesignerContextParser parser,
         [FromServices] IOrchestrationSchemaContextApplicationService schemas,

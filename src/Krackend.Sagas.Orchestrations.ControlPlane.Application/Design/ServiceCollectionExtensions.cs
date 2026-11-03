@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBranchRuleApplicationService, BranchRuleApplicationService>();
         services.AddScoped<IOrchestrationArtifactPayloadFactory, OrchestrationArtifactPayloadFactory>();
         services.AddScoped<IOrchestrationVersionPackageService, OrchestrationVersionPackageService>();
+        services.AddScoped<RoadmapElementPackageService>();
         services.AddScoped<IOrchestrationLifecycleArtifactPayloadFactory, OrchestrationLifecycleArtifactPayloadFactory>();
         services.AddScoped<IOrchestrationVersionArtifactSnapshotBuilder, OrchestrationVersionArtifactSnapshotBuilder>();
         services.AddScoped<IOrchestrationSchemaBindingSnapshotResolver, OrchestrationSchemaBindingSnapshotResolver>();

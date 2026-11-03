@@ -105,6 +105,23 @@ public sealed class DetailsModel : PageModel
 
     public string EditTaskPayloadJson { get; private set; } = string.Empty;
 
+    public async Task<IActionResult> OnGetRoadmapElementAsync(string elementType, string elementId, string versionId,
+        [FromServices] RoadmapElementPackageService service, CancellationToken cancellationToken)
+    {
+        try { return new JsonResult(new { package = await service.CopyAsync(elementType, elementId, versionId, cancellationToken) }); }
+        catch (Exception error) when (error is InvalidOperationException or FormatException or KeyNotFoundException or System.Text.Json.JsonException)
+        { return BadRequest(new { message = error.Message }); }
+    }
+
+    public async Task<IActionResult> OnPostPasteRoadmapElementAsync([FromBody] RoadmapElementPasteRequest request,
+        [FromServices] RoadmapElementPackageService service, CancellationToken cancellationToken)
+    {
+        if (request is null || request.ElementType != "task") return BadRequest(new { message = "Only tasks can be pasted here." });
+        try { return new JsonResult(new { id = await service.PasteAsync(request.Package, request.ElementType, request.VersionId, request.StageId, cancellationToken) }); }
+        catch (Exception error) when (error is InvalidOperationException or FormatException or KeyNotFoundException or FluentValidation.ValidationException or System.Text.Json.JsonException)
+        { return BadRequest(new { message = error.Message }); }
+    }
+
     public async Task<IActionResult> OnGetButterMorphContextAsync(string context,
         [FromServices] Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.IOrchestrationButterMorphDesignerContextParser parser,
         [FromServices] global::ButterMorph.Web.Razor.IButterMorphDesignerHost mappingHost,
