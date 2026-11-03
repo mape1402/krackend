@@ -423,7 +423,16 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
     });
 ```
 
-The same pattern is available for Control Plane storage. The sample hosts keep their SQL Server-specific model customization beside their migrations so another host can choose a different EF Core provider without changing Krackend packages.
+The runtime also offers optional provider packages. The host may add
+`Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer` and call
+`modelBuilder.UseKrackendSqlServerOptimizations()` inside `ConfigureModel`. The
+filtered statistics backfill index is enabled by default; pass
+`options => options.FilterStatisticsBackfillIndex = false` to disable it, or
+override the EF index configuration later in the same callback. Configure custom
+column names before applying the package's defaults. The host owns, generates,
+reviews, and applies the corresponding migrations.
+
+The same host customization pattern is available for Control Plane storage.
 
 Distribution credential protection:
 
@@ -453,8 +462,19 @@ MongoDB sample hosts are included to validate that provider choice belongs to th
 builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
     db => db.UseMongoDB(
         builder.Configuration.GetConnectionString("Runtime")!,
-        builder.Configuration.GetValue("Mongo:DatabaseName", "KrackendRuntime")));
+        builder.Configuration.GetValue("Mongo:DatabaseName", "KrackendRuntime")),
+    storage => storage.ConfigureModel = model => model.UseKrackendMongoRuntimeModel());
 ```
+
+The runtime host must reference `Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo`
+and import its namespace for `UseKrackendMongoRuntimeModel`. Existing Mongo runtime
+hosts must add that package and configure it when upgrading: Mongo-specific key
+mappings no longer live in the common EF adapter. Host model configuration may
+continue after the call to customize other mappings. The Mongo sample explicitly
+calls `EnsureCreatedAsync`, which creates model indexes and can add new indexes to
+an existing database. Existing indexes are not modified or deleted automatically;
+changing or removing them requires an explicit host-controlled database operation.
+Use the Mongo provider's named `HasIndex` overload for custom index names.
 
 The Mongo samples expect MongoDB to run as a replica set because the orchestration runtime uses transactions for durable state changes.
 

@@ -14,9 +14,12 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Storage;
@@ -40,12 +43,27 @@ public sealed class MongoCatalogSearchTests
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
         services.AddOrchestratorRuntimeStorageEntityFramework(options =>
-            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "instance_grid_test"));
+            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "instance_grid_test"),
+            storage => storage.ConfigureModel = model =>
+            {
+                model.UseKrackendMongoRuntimeModel();
+                model.Entity<OrchestrationInstance>().HasIndex(x => x.RetryCount, "IX_Test_RetryCount");
+            });
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
         db.Database.AutoTransactionBehavior = AutoTransactionBehavior.Never;
         await db.Database.EnsureCreatedAsync();
+        await db.Database.EnsureCreatedAsync();
+        var database = new MongoClient($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}")
+            .GetDatabase("instance_grid_test");
+        var collection = database.GetCollection<BsonDocument>("OrchestrationInstances");
+        using (var indexes = await collection.Indexes.ListAsync())
+        {
+            var initialIndexes = await indexes.ToListAsync();
+            Assert.Contains(initialIndexes, index => index["key"].AsBsonDocument.Contains("StatisticsRevision"));
+            Assert.Contains(initialIndexes, index => index["name"] == "IX_Test_RetryCount");
+        }
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
         await repository.Create(new OrchestrationInstance
         {
@@ -63,6 +81,26 @@ public sealed class MongoCatalogSearchTests
         Assert.Equal(3, item.TotalTaskCount);
         Assert.Equal(1, item.CompletedTaskCount);
         Assert.Null(item.SnapshotPayload);
+
+        // EnsureCreated adds new model indexes without removing existing ones.
+        var updatedServices = new ServiceCollection();
+        updatedServices.AddLogging();
+        updatedServices.AddKrackendOrchestrationsRuntime();
+        updatedServices.AddOrchestratorRuntimeStorageEntityFramework(options =>
+            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "instance_grid_test"),
+            storage => storage.ConfigureModel = model =>
+            {
+                model.UseKrackendMongoRuntimeModel();
+                model.Entity<OrchestrationInstance>().HasIndex(x => x.RetryCount, "IX_Test_RetryCount");
+                model.Entity<OrchestrationInstance>().HasIndex(x => new { x.RetryCount, x.StartedOnUtc }, "IX_Test_ChangedRetryCount");
+            });
+        await using var updatedProvider = updatedServices.BuildServiceProvider();
+        using var updatedScope = updatedProvider.CreateScope();
+        await updatedScope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        using var updatedIndexes = await collection.Indexes.ListAsync();
+        var existingIndexes = await updatedIndexes.ToListAsync();
+        Assert.Contains(existingIndexes, index => index["name"] == "IX_Test_RetryCount");
+        Assert.Contains(existingIndexes, index => index["name"] == "IX_Test_ChangedRetryCount");
     }
 
     [Fact]
@@ -78,7 +116,8 @@ public sealed class MongoCatalogSearchTests
         services.AddLogging();
         services.AddKrackendOrchestrationsRuntime();
         services.AddOrchestratorRuntimeStorageEntityFramework(options =>
-            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "runtime_catalog_tests"));
+            options.UseMongoDB($"mongodb://{mongo.Hostname}:{mongo.GetMappedPublicPort(27017)}", "runtime_catalog_tests"),
+            storage => storage.ConfigureModel = model => model.UseKrackendMongoRuntimeModel());
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();

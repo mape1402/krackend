@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer</PackageId>
+    <Description>Optional SQL Server model optimizations for the orchestration runtime.</Description>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework\Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+  </ItemGroup>
+</Project>

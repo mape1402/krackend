@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.Runtime.DependencyInjection;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Extensions;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -29,6 +30,7 @@ public sealed class EntityFrameworkStorageCustomizationTests
         using var dbContext = new RuntimeDbContext(options);
 
         Assert.NotNull(dbContext.Model.FindEntityType(typeof(RuntimeOrchestrationArtifact)));
+        Assert.Null(dbContext.Model.FindEntityType("Mule.MuleReplay")?.FindProperty("RequestId")?.FindAnnotation("Mongo:ElementName"));
     }
 
     [Fact]
@@ -55,7 +57,12 @@ public sealed class EntityFrameworkStorageCustomizationTests
         services.AddOrchestratorRuntimeStorageEntityFramework(
             options => options.UseMongoDB(
                 "mongodb://localhost:27017",
-                $"krackend-runtime-model-{Guid.NewGuid():N}"));
+                $"krackend-runtime-model-{Guid.NewGuid():N}"),
+            storage => storage.ConfigureModel = model =>
+            {
+                model.UseKrackendMongoRuntimeModel();
+                model.Entity<RuntimeDesignNode>().Property(x => x.Name).HasMaxLength(512);
+            });
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -71,6 +78,12 @@ public sealed class EntityFrameworkStorageCustomizationTests
         Assert.Equal(
             "_id",
             muleReplay?.FindProperty("RequestId")?.FindAnnotation("Mongo:ElementName")?.Value);
+        foreach (var name in new[] { "SagaStatisticsObservation", "SagaStatisticsProjection", "SagaStatisticsBackfillCheckpoint" })
+        {
+            var type = dbContext.Model.FindEntityType($"Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.{name}");
+            Assert.Equal("_id", type?.FindProperty("Id")?.FindAnnotation("Mongo:ElementName")?.Value);
+        }
+        Assert.Equal(512, GetMaxLength<RuntimeDesignNode>(dbContext, nameof(RuntimeDesignNode.Name)));
     }
 #endif
 

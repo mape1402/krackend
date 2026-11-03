@@ -386,7 +386,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .IsUnique()
                         .HasFilter("[StartIdempotencyKey] IS NOT NULL");
 
-                    b.HasIndex("StatisticsRevision");
+                    b.HasIndex("StatisticsRevision")
+                        .HasFilter("[StatisticsRevision] = 0");
 
                     b.HasIndex("DispatchCancellationPending", "LastUpdatedOnUtc");
 

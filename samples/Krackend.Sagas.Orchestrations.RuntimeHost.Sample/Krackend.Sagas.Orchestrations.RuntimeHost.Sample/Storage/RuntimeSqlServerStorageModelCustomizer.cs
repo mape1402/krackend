@@ -1,5 +1,6 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.SqlServer;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
@@ -7,7 +8,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Storage;
 /// <summary>
 /// Applies SQL Server-specific storage details for the runtime sample host.
 /// </summary>
-internal sealed class RuntimeSqlServerStorageModelCustomizer
+public sealed class RuntimeSqlServerStorageModelCustomizer
 {
     /// <summary>
     /// Customizes the portable runtime storage model for SQL Server sample migrations.
@@ -17,6 +18,7 @@ internal sealed class RuntimeSqlServerStorageModelCustomizer
     {
         ConfigureSqlServerIdColumns(modelBuilder);
         ConfigureSqlServerRuntimeDesignNodeIndexes(modelBuilder);
+        modelBuilder.UseKrackendSqlServerOptimizations();
     }
 
     private void ConfigureSqlServerIdColumns(ModelBuilder modelBuilder)

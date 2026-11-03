@@ -5,6 +5,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip.Redis;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
+using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI;
 using Krackend.Sagas.Orchestrations.Runtime.WebUI.Reactive;
@@ -92,7 +93,7 @@ builder.Services.AddOrchestratorRuntimeStorageEntityFramework(
     options =>
     {
         options.UseMongoDB(mongoConnectionString, mongoDatabaseName);
-    });
+    }, storage => storage.ConfigureModel = model => model.UseKrackendMongoRuntimeModel());
 
 builder.Services
     .AddKrackendOrchestrationsRuntime()
