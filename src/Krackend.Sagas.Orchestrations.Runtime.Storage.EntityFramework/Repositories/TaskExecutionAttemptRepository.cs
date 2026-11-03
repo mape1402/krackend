@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, ITaskExecutionAttemptRepository
+internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, ITaskExecutionAttemptRepository, ITaskExecutionAttemptBatchReader
 {
     public TaskExecutionAttemptRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -39,6 +39,18 @@ internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, IT
             .Where(x => x.TaskExecutionId == taskExecutionId)
             .OrderBy(x => x.AttemptNumber)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionIds(
+        IReadOnlyCollection<Id> taskExecutionIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(taskExecutionIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var results = new List<TaskExecutionAttempt>();
+        foreach (var batch in taskExecutionIds.Distinct().Chunk(200))
+            results.AddRange(await DbContext.TaskExecutionAttempts.AsNoTracking()
+                .Where(x => batch.Contains(x.TaskExecutionId)).ToArrayAsync(cancellationToken));
+        return results;
+    }
 
     public async Task<IReadOnlyCollection<TaskExecutionAttempt>> GetWaitingResponseOlderThan(DateTime dueBeforeUtc, CancellationToken cancellationToken = default)
         => await DbContext.TaskExecutionAttempts.AsNoTracking()

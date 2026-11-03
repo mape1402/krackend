@@ -211,16 +211,51 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         IReadOnlyDictionary<string, string> stageById,
         CancellationToken cancellationToken)
     {
+        ILookup<Id, TaskExecutionAttempt> attemptsByTask = null;
+        if (_attemptRepository is ITaskExecutionAttemptBatchReader attemptBatchReader)
+        {
+            var attempts = await attemptBatchReader.GetByTaskExecutionIds(tasks.Select(x => x.Id).ToArray(), cancellationToken);
+            attemptsByTask = attempts.ToLookup(x => x.TaskExecutionId);
+        }
+
+        Dictionary<Id, TaskDispatch> dispatchesById = null;
+        Dictionary<Id, TaskDispatch> dispatchesByAttempt = null;
+        if (attemptsByTask is not null && _dispatchRepository is ITaskDispatchBatchReader dispatchBatchReader)
+        {
+            var attempts = attemptsByTask.SelectMany(x => x).ToArray();
+            var byId = await dispatchBatchReader.GetByIds(
+                attempts.Where(x => x.DispatchId.HasValue).Select(x => x.DispatchId.Value).ToArray(), cancellationToken);
+            var byAttempt = await dispatchBatchReader.GetByAttemptIds(
+                attempts.Where(x => !x.DispatchId.HasValue).Select(x => x.Id).ToArray(), cancellationToken);
+            dispatchesById = byId.GroupBy(x => x.Id).ToDictionary(x => x.Key, x => x.First());
+            dispatchesByAttempt = byAttempt.GroupBy(x => x.TaskExecutionAttemptId).ToDictionary(x => x.Key, x => x.First());
+        }
+
         var taskDetails = new List<TaskDetailModel>();
         foreach (var task in tasks)
         {
-            var attempts = (await _attemptRepository.GetByTaskExecutionId(task.Id, cancellationToken)).OrderBy(x => x.AttemptNumber).ToArray();
+            var attempts = (attemptsByTask is null
+                ? await _attemptRepository.GetByTaskExecutionId(task.Id, cancellationToken)
+                : attemptsByTask[task.Id]).OrderBy(x => x.AttemptNumber).ToArray();
             var attemptDetails = new List<TaskAttemptDetailModel>();
             foreach (var attempt in attempts)
             {
-                var dispatch = attempt.DispatchId is null
-                    ? await _dispatchRepository.GetByAttemptId(attempt.Id, cancellationToken)
-                    : await _dispatchRepository.GetById(attempt.DispatchId.Value, cancellationToken);
+                TaskDispatch dispatch;
+                if (dispatchesById is null)
+                {
+                    dispatch = attempt.DispatchId is null
+                        ? await _dispatchRepository.GetByAttemptId(attempt.Id, cancellationToken)
+                        : await _dispatchRepository.GetById(attempt.DispatchId.Value, cancellationToken);
+                }
+                else if (attempt.DispatchId is { } dispatchId)
+                {
+                    if (!dispatchesById.TryGetValue(dispatchId, out dispatch))
+                        throw new KeyNotFoundException($"Task dispatch '{dispatchId}' was not found.");
+                }
+                else if (!dispatchesByAttempt.TryGetValue(attempt.Id, out dispatch))
+                {
+                    throw new KeyNotFoundException($"Task dispatch for attempt '{attempt.Id}' was not found.");
+                }
 
                 attemptDetails.Add(new TaskAttemptDetailModel(
                     attempt.Id.ToString(),
