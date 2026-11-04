@@ -28,7 +28,7 @@ Hosts must apply their own EF migrations for the new runtime instance projection
 - **Observable runtime.** The Runtime UI exposes separate dashboard, instances, statistics, history, and artifact areas with scoped live updates. SignalR carries compact deltas so active views do not need to reload their data for each state change.
 - **Safer Pigeon outcomes.** Terminal Pigeon consumer rejections become non-retryable orchestration failures, while client diagnostics can preserve full exception details for the matching task attempt.
 
-Review the [orchestration reference](docs/sagas-orchestrations.md) and the [end-to-end walkthrough](docs/sagas-orchestrations-end-to-end.md) before upgrading a host. The release requires host-owned storage migrations for the new Control Plane lifecycle and Runtime durability fields.
+Review the [current Sagas API and configuration reference](docs/krackend-sagas-api-configuration.md) and the [end-to-end walkthrough](docs/sagas-orchestrations-end-to-end.md) before upgrading a host. The release requires host-owned storage migrations for the new Control Plane lifecycle and Runtime durability fields.
 
 ## Packages
 
@@ -640,7 +640,7 @@ app.MapOrchestratorArtifactDeliveryEndpoints();
 app.MapKrackendOrchestrationsControlPlaneApi();
 ```
 
-See [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) for the full package, function, endpoint, storage, WebUI, bootstrap, and migration-ownership reference. See [docs/sagas-orchestrations-end-to-end.md](docs/sagas-orchestrations-end-to-end.md) for the complete Orchestrator walkthrough with models, lifecycle steps, distribution flow, runtime execution, playbooks, risks, and diagnostics.
+See [docs/krackend-sagas-api-configuration.md](docs/krackend-sagas-api-configuration.md) for the current Sagas package, API, configuration, endpoint, Redis, storage, and host-integration reference. See [docs/sagas-orchestrations-end-to-end.md](docs/sagas-orchestrations-end-to-end.md) for the Orchestrator walkthrough with models, lifecycle steps, distribution flow, runtime execution, playbooks, risks, and diagnostics. The older [docs/sagas-orchestrations.md](docs/sagas-orchestrations.md) includes historical package names and examples.
 
 ## Release
 
