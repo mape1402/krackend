@@ -16,9 +16,12 @@
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="Mule.DurableActions.EntityFrameworkCore" />
     <PackageReference Include="Mule.DurableActions.FastLane.Redis" />
+    <PackageReference Include="Mule.DurableActions.InMemory" Version="2.2.0" />
+    <PackageReference Include="Pigeon.Messaging.InMemory" Version="4.2.0" />
     <PackageReference Include="Pigeon.Messaging.Rabbit" />
     <PackageReference Include="SquirrelBox" />
-    <PackageReference Include="SquirrelBox.Messaging.Pigeon" Version="2.2.0" />
+    <PackageReference Include="SquirrelBox.InMemory" Version="4.2.1" />
+    <PackageReference Include="SquirrelBox.Messaging.Pigeon" Version="4.2.1" />
     <PackageReference Include="Testcontainers" Version="4.9.0" />
     <PackageReference Include="TurtlePath.Spider" Version="1.6.3" />
   </ItemGroup>

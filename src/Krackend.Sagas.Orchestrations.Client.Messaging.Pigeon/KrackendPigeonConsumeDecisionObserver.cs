@@ -11,9 +11,8 @@ using System.Text.Json.Nodes;
 /// corresponding orchestration failure reply.
 /// </summary>
 /// <remarks>
-/// This observer deliberately only reacts to <see cref="PigeonConsumeDecision.Reject"/>.
-/// Retry, defer, skip, and already-processed decisions retain Pigeon's normal
-/// semantics and must not complete an orchestration task.
+/// A typed outcome takes precedence over the transport settlement. If no typed
+/// outcome is supplied, a transport rejection is treated as a failure.
 /// </remarks>
 internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionObserver
 {
@@ -38,7 +37,7 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
         IOrchestrationExecutionResultMetadataSetter resultMetadataSetter,
         IOrchestrationPropagationMetadataAccessor propagationMetadataAccessor,
         IOrchestrationPropagationMetadataSetter propagationMetadataSetter,
-        ILogger logger)
+        ILoggerFactory loggerFactory)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _messageMetadataAccessor = messageMetadataAccessor ?? throw new ArgumentNullException(nameof(messageMetadataAccessor));
@@ -47,28 +46,48 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
         _resultMetadataSetter = resultMetadataSetter ?? throw new ArgumentNullException(nameof(resultMetadataSetter));
         _propagationMetadataAccessor = propagationMetadataAccessor ?? throw new ArgumentNullException(nameof(propagationMetadataAccessor));
         _propagationMetadataSetter = propagationMetadataSetter ?? throw new ArgumentNullException(nameof(propagationMetadataSetter));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _logger = (loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory)))
+            .CreateLogger<KrackendPigeonConsumeDecisionObserver>();
     }
 
     public async ValueTask ObserveAsync(ConsumeDecisionObservation observation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(observation);
 
-        if (observation.Result.Decision != PigeonConsumeDecision.Reject)
+        var outcome = observation.Result.Outcome;
+        if (outcome is not null
+            ? outcome.Kind != PigeonConsumeOutcomeKind.Rejected
+            : observation.Result.Decision != PigeonConsumeDecision.Reject)
         {
-            _logger.LogDebug("Ignoring non-terminal Pigeon consume decision {Decision}.", observation.Result.Decision);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                TryGetOrchestrationMetadata(observation.Context, out var ignoredMetadata);
+                _logger.LogDebug(
+                    "Pigeon consume decision does not require an orchestration failure reply. SagaId={SagaId} OrchestrationInstanceId={OrchestrationInstanceId} TaskExecutionId={TaskExecutionId} Attempt={Attempt} Topic={Topic} Subscription={Subscription} MessageId={MessageId} Decision={Decision} Outcome={Outcome}",
+                    ignoredMetadata?.SagaId,
+                    ignoredMetadata?.OrchestrationInstanceId,
+                    ignoredMetadata?.TaskExecutionId,
+                    ignoredMetadata?.Attempt,
+                    observation.Context.Topic,
+                    observation.Context.Subscription,
+                    observation.Context.MessageId,
+                    observation.Result.Decision,
+                    outcome?.Kind);
+            }
             return;
         }
 
         if (!TryGetOrchestrationMetadata(observation.Context, out var messageMetadata))
         {
-            _logger.LogDebug("Ignoring terminal Pigeon consume decision because the message is not orchestrated.");
+            _logger.LogDebug("Ignoring terminal Pigeon consume decision because the message is not orchestrated. Topic={Topic} Subscription={Subscription} MessageId={MessageId} Decision={Decision} Outcome={Outcome}",
+                observation.Context.Topic, observation.Context.Subscription, observation.Context.MessageId,
+                observation.Result.Decision, outcome?.Kind);
             return;
         }
 
         if (messageMetadata.ReplyAddress is null)
         {
-            _logger.LogDebug(
+            _logger.LogWarning(
                 "Ignoring terminal Pigeon consume decision without a reply address. {SagaId} {OrchestrationInstanceId} {TaskExecutionId} {Attempt}",
                 messageMetadata.SagaId,
                 messageMetadata.OrchestrationInstanceId,
@@ -86,11 +105,15 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
         try
         {
             _logger.LogInformation(
-                "Received terminal Pigeon rejection. {SagaId} {OrchestrationInstanceId} {TaskExecutionId} {Attempt} {Outcome} {ErrorCode}",
+                "Received terminal Pigeon rejection. SagaId={SagaId} OrchestrationInstanceId={OrchestrationInstanceId} TaskExecutionId={TaskExecutionId} Attempt={Attempt} Topic={Topic} Subscription={Subscription} MessageId={MessageId} Decision={Decision} Outcome={Outcome} ErrorCode={ErrorCode}",
                 messageMetadata.SagaId,
                 messageMetadata.OrchestrationInstanceId,
                 messageMetadata.TaskExecutionId,
                 messageMetadata.Attempt,
+                observation.Context.Topic,
+                observation.Context.Subscription,
+                observation.Context.MessageId,
+                observation.Result.Decision,
                 observation.Result.Outcome?.Kind,
                 resultMetadata.ErrorCode);
 

@@ -68,7 +68,6 @@ public static class ServiceCollectionExtensions
 
         RegisterPigeonClientServices(builder.Services);
         var pigeonBuilder = builder.Services.AddPigeon(configuration, configure);
-        pigeonBuilder.AddConsumeDecisionObserver<KrackendPigeonConsumeDecisionObserver>(ObserverFailureBehavior.Fail);
         configurePigeon(pigeonBuilder);
 
         return builder;
@@ -80,6 +79,8 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, PigeonOrchestrationClientPublisher>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeInterceptor, KrackendClientConsumeInterceptor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeExecutionInterceptor, KrackendClientConsumeInterceptor>());
+        // Pigeon treats directly registered global observers as Fail on error.
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeDecisionObserver, KrackendPigeonConsumeDecisionObserver>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishInterceptor, KrackendClientPublishInterceptor>());
     }
 }

@@ -439,6 +439,9 @@ public sealed class AdaptersAndContractsTests
             Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder, configuration, _ => { }, null!));
 
         var returned = Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(builder);
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType.Name == "IConsumeDecisionObserver" &&
+            descriptor.ImplementationType?.Name == "KrackendPigeonConsumeDecisionObserver");
         var configured = Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(
             builder,
             configuration,
@@ -459,6 +462,9 @@ public sealed class AdaptersAndContractsTests
             descriptor.ServiceType.Name == "IPublishInterceptor" &&
             descriptor.ImplementationType?.Name == "KrackendClientPublishInterceptor");
         Assert.Contains(services, descriptor =>
+            descriptor.ImplementationType?.Name == "KrackendPigeonConsumeDecisionObserver");
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType.Name == "IConsumeDecisionObserver" &&
             descriptor.ImplementationType?.Name == "KrackendPigeonConsumeDecisionObserver");
     }
 

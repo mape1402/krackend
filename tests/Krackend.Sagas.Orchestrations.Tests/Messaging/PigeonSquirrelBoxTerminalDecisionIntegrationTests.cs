@@ -23,19 +23,26 @@ public sealed class PigeonSquirrelBoxTerminalDecisionIntegrationTests
 {
     private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
-    [Fact]
-    public async Task MissingIdempotencyRejectionPublishesATypedFailureBeforeBusinessHandling()
+    [Theory]
+    [InlineData(InboxOpenState.MissingIdempotencyKey, InboxPolicyAction.Reject, PigeonConsumeOutcomeKind.Rejected)]
+    [InlineData(InboxOpenState.PayloadConflict, InboxPolicyAction.Reject, PigeonConsumeOutcomeKind.Rejected)]
+    [InlineData(InboxOpenState.DuplicateCompleted, InboxPolicyAction.Replay, PigeonConsumeOutcomeKind.AlreadyProcessed)]
+    public async Task InboxDecisionControlsCallbackBeforeBusinessHandling(
+        InboxOpenState state, InboxPolicyAction action, PigeonConsumeOutcomeKind expectedOutcome)
     {
         var inboxMessages = Substitute.For<IInboxMessageService>();
         inboxMessages.OpenAsync(Arg.Any<InboxMessageContext>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(CreateRejectedInboxOpen()));
+            .Returns(ValueTask.FromResult(CreateInboxOpen(state, action)));
 
+        var metadataEnricher = Substitute.For<ISquirrelBoxMessageMetadataEnricher>();
+        metadataEnricher.Create(Arg.Any<SquirrelBoxIdentity>()).Returns(SquirrelBoxMessageMetadata.Empty);
         var squirrelBoxInterceptor = new SquirrelBoxPigeonDecisionInterceptor(
             inboxMessages,
+            metadataEnricher,
             Substitute.For<IInboxMuleScheduler>(),
             Substitute.For<IInboxService>(),
             Substitute.For<IPigeonConsumeEnvelopeFactory>(),
-            Options.Create(new SquirrelBoxPigeonOptions()));
+            Options.Create(new SquirrelBoxPigeonOptions { RejectedDecision = PigeonConsumeDecision.AckAndSkip }));
 
         var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
         var resultScope = new ResultMetadataScope();
@@ -75,14 +82,21 @@ public sealed class PigeonSquirrelBoxTerminalDecisionIntegrationTests
 
         await krackendObserver.ObserveAsync(new ConsumeDecisionObservation(context, decision), CancellationToken.None);
 
-        Assert.Equal(PigeonConsumeDecision.Reject, decision.Decision);
         Assert.False(businessHandlerExecuted);
+        Assert.Equal(PigeonConsumeDecision.AckAndSkip, decision.Decision);
+        Assert.Equal(expectedOutcome, decision.Outcome?.Kind);
+        if (expectedOutcome == PigeonConsumeOutcomeKind.AlreadyProcessed)
+        {
+            Assert.Equal(0, callbackPublisher.PublishCount);
+            return;
+        }
+
         Assert.Equal(1, callbackPublisher.PublishCount);
         Assert.Same(orchestrationMetadata.ReplyAddress, callbackPublisher.Address);
         Assert.False(callbackPublisher.Result!.Succeeded);
         Assert.Equal("Rejected", callbackPublisher.Result.Status);
-        Assert.Equal("Pigeon.Consume.Rejected", callbackPublisher.Result.ErrorCode);
-        Assert.Null(callbackPublisher.Result.ErrorType);
+        Assert.Equal($"SquirrelBox.Inbox.{state}", callbackPublisher.Result.ErrorCode);
+        Assert.Equal("SquirrelBox.Inbox", callbackPublisher.Result.ErrorType);
         Assert.False(callbackPublisher.Result.IsRetryableCandidate);
         Assert.NotNull(callbackPublisher.Result.CompletedOnUtc);
         Assert.Equal("saga-1", callbackPublisher.Message!.SagaId);
@@ -90,12 +104,12 @@ public sealed class PigeonSquirrelBoxTerminalDecisionIntegrationTests
         Assert.Equal("task-1", callbackPublisher.Message.TaskExecutionId);
     }
 
-    private static InboxMessageOpenResult CreateRejectedInboxOpen()
+    private static InboxMessageOpenResult CreateInboxOpen(InboxOpenState state, InboxPolicyAction action)
     {
-        var open = new InboxOpenResult(InboxOpenState.MissingIdempotencyKey);
+        var open = new InboxOpenResult(state);
         var decision = new InboxDecision(
-            InboxOpenState.MissingIdempotencyKey,
-            InboxPolicyAction.Reject,
+            state,
+            action,
             null!);
         return new InboxMessageOpenResult(open, decision);
     }
@@ -122,7 +136,7 @@ public sealed class PigeonSquirrelBoxTerminalDecisionIntegrationTests
                 resultScope,
                 propagationScope,
                 propagationScope,
-                NullLogger.Instance
+                NullLoggerFactory.Instance
             ],
             culture: null)!;
     }
