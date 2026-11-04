@@ -10,6 +10,9 @@ public sealed class KnOwlSchemaRegistryOptions
     /// </summary>
     public const string DefaultCatalogPath = "contracts/artifacts";
 
+    /// <summary>Gets the default bounded deployed-contract search path.</summary>
+    public const string DefaultSearchPath = "contracts/artifacts/search";
+
     /// <summary>
     /// Gets the default exact event contract path exposed by KnOwl Control Plane.
     /// </summary>
@@ -54,6 +57,9 @@ public sealed class KnOwlSchemaRegistryOptions
     /// Gets or sets the relative path used to read the deployed contract artifact catalog.
     /// </summary>
     public string CatalogPath { get; set; } = DefaultCatalogPath;
+
+    /// <summary>Gets or sets the relative path used to search deployed contract summaries.</summary>
+    public string SearchPath { get; set; } = DefaultSearchPath;
 
     /// <summary>
     /// Gets or sets the relative path template used to read an exact deployed event contract.

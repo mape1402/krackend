@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.1.0] - 2026-11-04
+
+### Added
+
+- Added explicit reconciliation for stalled orchestration instances, with durable-work inspection and recovery from the Runtime UI.
+- Added cloning of roadmap tasks, stages, and triggers, and clipboard copy and paste between roadmaps.
+- Added optional SQL Server and MongoDB runtime EF model configuration packages; hosts remain responsible for selecting and configuring their providers.
+
+### Changed
+
+- Projected orchestration version and progress onto runtime instances so the instances grid no longer resolves an artifact for each row. Disabled tasks are excluded and skipped tasks count as completed.
+- Reduced runtime instance-detail, dashboard, statistics-backfill, and parallel-decision overhead; added optional SQL Server statistics indexes.
+- Updated ButterMorph to 2.1.5 and KnOwl.Contracts to 2.4.3. Contract autocomplete now uses KnOwl's bounded server-side search and transfers summaries instead of the complete schema catalog. KnOwl Control Plane 2.4.3 or later and a storage provider supporting that search are required.
+- Updated the orchestration client to handle Pigeon typed consume decisions and the corresponding SquirrelBox integration.
+
+### Fixed
+
+- Fixed response-timeout processing under lease contention and recovery of overdue waits.
+- Fixed designer navigation and refreshed schema contexts when trigger or task contracts change; protected simultaneous saves of the same mapping or condition against lost updates.
+- Prevented capture dialogs from closing when users click outside them.
+
+### Upgrade notes
+
+- Hosts own their EF migrations. Runtime hosts must add the instance progress projection fields; SQL Server hosts can apply the sample migrations and provider-specific indexes where appropriate.
+- Existing Control Plane databases require the `ConcurrencyToken` fields described in the README. Initialize existing rows or documents and drain older Control Plane instances before deploying the new version.
+- The designer save protection covers concurrent edits of the same mapping or condition. Atomic protection against contract or metadata changes occurring during a save remains pending.
+
+------
+
 ## [v6.0.0] - 2026-10-30
 
 ### Breaking Changes

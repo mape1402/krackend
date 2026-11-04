@@ -9,448 +9,101 @@ namespace Krackend.Sagas.Orchestrations.Tests.SchemaRegistry;
 
 public sealed class KnOwlSchemaContractCatalogProviderTests
 {
-    [Fact]
-    public async Task SearchAsync_WhenProviderIsDisabled_ReturnsEmptyWithoutCallingCatalog()
+    [Theory]
+    [InlineData(SchemaContractKind.Event, "event")]
+    [InlineData(SchemaContractKind.Command, "command")]
+    [InlineData(SchemaContractKind.CommandRequest, "command")]
+    public async Task Search_DelegatesFilteringAndLimitToKnOwl(SchemaContractKind kind, string type)
     {
-        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
-        var provider = CreateProvider(options => options.Enabled = false, catalog);
-
+        var client = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        client.SearchAsync(type, "sales & orders", 50, Arg.Any<CancellationToken>())
+            .Returns(Found(Summary(ContractArtifactType.Event, "sales.orders")));
+        var provider = CreateProvider(client);
         var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
         {
-            ContractKind = SchemaContractKind.Event
+            ContractKind = kind, SearchText = " sales & orders ", Take = 50
         });
+        Assert.Equal(kind, Assert.Single(result).ContractKind);
+        await client.Received(1).SearchAsync(type, "sales & orders", 50, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetAllDeployedAsync(Arg.Any<CancellationToken>());
+    }
 
-        Assert.Empty(result);
-        await catalog.DidNotReceive().GetAllDeployedAsync(Arg.Any<CancellationToken>());
+    [Theory]
+    [InlineData(0, 25)]
+    [InlineData(-1, 25)]
+    [InlineData(500, 100)]
+    public async Task Search_NormalizesLimit(int requested, int expected)
+    {
+        var client = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        client.SearchAsync("event", "", expected, Arg.Any<CancellationToken>()).Returns(Found());
+        await CreateProvider(client).SearchAsync(new() { ContractKind = SchemaContractKind.Event, Take = requested });
+        await client.Received(1).SearchAsync("event", "", expected, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task SearchAsync_WhenEnabledWithoutBaseUri_ReturnsEmptyWithoutCallingCatalog()
+    public async Task Search_CommandResponses_ExcludesLegacyRequestsWithoutReplies()
     {
-        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
-        var provider = CreateProvider(options => options.Enabled = true, catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event
-        });
-
-        Assert.Empty(result);
-        await catalog.DidNotReceive().GetAllDeployedAsync(Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task SearchAsync_ReturnsDeployedEventContractsMatchingSearchText()
-    {
-        var eventId = Guid.NewGuid();
-        var catalog = CreateCatalogClient(
-            CreateArtifact(eventId, ContractArtifactType.Event, "events.sales.sale.created", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.inventory.changed", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.sales.sale.created", "0.9.0", sourceStatus: "Draft"));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-                options.ProviderKey = "knowl-control";
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = "sale",
-            Take = 10
-        });
-
-        var item = Assert.Single(result);
-        Assert.Equal("knowl-control", item.ProviderKey);
-        Assert.Equal(eventId.ToString(), item.ContractId);
-        Assert.Equal("events.sales.sale.created", item.ContractKey);
-        Assert.Equal("1.0.0", item.ContractVersion);
-        Assert.Equal(SchemaContractKind.Event, item.ContractKind);
-        Assert.Equal("events.sales.sale.created v1.0.0", item.DisplayName);
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenCommandCatalogIsRequested_ReturnsCommandRequestAsCommand()
-    {
-        var catalog = CreateCatalogClient(
-            CreateArtifact(
-                Guid.NewGuid(),
-                ContractArtifactType.CommandRequest,
-                "inventories.reserve",
-                "1.1.0",
-                contentHash: "request-11",
-                createdAtUtc: DateTime.UtcNow.AddMinutes(-1)),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.CommandReply, "inventories.reserve", "1.1.0", contentHash: "reply-11"),
-            CreateArtifact(
-                Guid.NewGuid(),
-                ContractArtifactType.CommandRequest,
-                "inventories.reserve",
-                "1.0.0",
-                contentHash: "request-10",
-                createdAtUtc: DateTime.UtcNow.AddMinutes(-2)));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Command,
-            SearchText = "inventories",
-            Take = 10
-        });
-
+        var request = Summary(ContractArtifactType.CommandRequest, "legacy.request.only");
+        var command = Summary(ContractArtifactType.Command, "modern.command");
+        var reply = Summary(ContractArtifactType.CommandReply, "legacy.has.reply");
+        var client = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        client.SearchAsync("command", "", 100, Arg.Any<CancellationToken>())
+            .Returns(Found(command, request with { ArtifactType = ContractArtifactType.Command }));
+        client.SearchAsync("request", "", 100, Arg.Any<CancellationToken>()).Returns(Found(request));
+        client.SearchAsync("reply", "", 100, Arg.Any<CancellationToken>()).Returns(Found(reply));
+        var result = await CreateProvider(client).SearchAsync(new() { ContractKind = SchemaContractKind.CommandResponse });
         Assert.Equal(2, result.Count);
-        Assert.All(result, item => Assert.Equal(SchemaContractKind.Command, item.ContractKind));
-        Assert.All(result, item => Assert.StartsWith("request-", item.ContentHash, StringComparison.Ordinal));
-        Assert.Equal("1.1.0", result.First().ContractVersion);
+        Assert.Contains(result, x => x.ContractKey == "modern.command");
+        Assert.Contains(result, x => x.ContractKey == "legacy.has.reply");
+        Assert.DoesNotContain(result, x => x.ContractKey == "legacy.request.only");
+        Assert.All(result, x => Assert.Equal(SchemaContractKind.CommandResponse, x.ContractKind));
     }
 
     [Fact]
-    public async Task SearchAsync_ReturnsNewestContractsFirst()
+    public async Task Search_Unspecified_PreservesKindsAndCombinesBeforeLimit()
     {
-        var oldest = CreateArtifact(
-            Guid.NewGuid(),
-            ContractArtifactType.Event,
-            "events.sales.sale.created",
-            "1.0.0",
-            createdAtUtc: new DateTime(2026, 8, 20, 10, 0, 0, DateTimeKind.Utc));
-        var newest = CreateArtifact(
-            Guid.NewGuid(),
-            ContractArtifactType.Event,
-            "events.sales.sale.created",
-            "1.0.1",
-            createdAtUtc: new DateTime(2026, 8, 20, 11, 0, 0, DateTimeKind.Utc));
-        var catalog = CreateCatalogClient(oldest, newest);
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = "sale",
-            Take = 10
-        });
-
-        Assert.Collection(
-            result,
-            item => Assert.Equal("1.0.1", item.ContractVersion),
-            item => Assert.Equal("1.0.0", item.ContractVersion));
+        var request = Summary(ContractArtifactType.CommandRequest, "legacy.request") with { CreatedAtUtc = DateTime.UtcNow.AddMinutes(-1) };
+        var command = Summary(ContractArtifactType.Command, "modern.command") with { CreatedAtUtc = DateTime.UtcNow.AddMinutes(-2) };
+        var reply = Summary(ContractArtifactType.CommandReply, "legacy.reply") with { CreatedAtUtc = DateTime.UtcNow.AddMinutes(-3) };
+        var evt = Summary(ContractArtifactType.Event, "event") with { CreatedAtUtc = DateTime.UtcNow };
+        var client = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        client.SearchAsync("command", "", 100, Arg.Any<CancellationToken>()).Returns(Found(request with { ArtifactType = ContractArtifactType.Command }, command));
+        client.SearchAsync("request", "", 100, Arg.Any<CancellationToken>()).Returns(Found(request));
+        client.SearchAsync("reply", "", 100, Arg.Any<CancellationToken>()).Returns(Found(reply));
+        client.SearchAsync("event", "", 100, Arg.Any<CancellationToken>()).Returns(Found(evt));
+        var result = await CreateProvider(client).SearchAsync(new() { ContractKind = SchemaContractKind.Unspecified, Take = 3 });
+        Assert.Collection(result,
+            x => Assert.Equal(SchemaContractKind.Event, x.ContractKind),
+            x => Assert.Equal(SchemaContractKind.CommandRequest, x.ContractKind),
+            x => Assert.Equal(SchemaContractKind.Command, x.ContractKind));
     }
 
     [Fact]
-    public async Task SearchAsync_WhenKnOwlReturnsCompoundCommandArtifact_ExposesItForCommandInputs()
+    public async Task Search_WhenUnavailable_ReportsErrorInsteadOfReturningAnEmptyCatalog()
     {
-        var catalog = CreateCatalogClient(
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Command, "commands.sales.sale.create", "1.0.0", contentHash: "compound-command"));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var commandResult = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Command,
-            SearchText = "sales"
-        });
-        var requestResult = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.CommandRequest,
-            SearchText = "sales"
-        });
-
-        var commandItem = Assert.Single(commandResult);
-        var requestItem = Assert.Single(requestResult);
-        Assert.Equal(SchemaContractKind.Command, commandItem.ContractKind);
-        Assert.Equal(SchemaContractKind.CommandRequest, requestItem.ContractKind);
-        Assert.Equal("commands.sales.sale.create", commandItem.ContractKey);
-        Assert.Equal("commands.sales.sale.create", requestItem.ContractKey);
+        var client = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        client.SearchAsync("event", "", 25, Arg.Any<CancellationToken>())
+            .Returns(new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Unavailable, Message = "KnOwl 2.4.3 required" });
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateProvider(client).SearchAsync(new() { ContractKind = SchemaContractKind.Event }));
+        Assert.Contains("2.4.3", error.Message);
+        await client.DidNotReceive().GetAllDeployedAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task SearchAsync_WhenKindIsUnspecified_MapsAllDeployedArtifactKinds()
+    public async Task Search_Disabled_DoesNotCallKnowl()
     {
-        var catalog = CreateCatalogClient(
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.sales.sale.created", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.CommandRequest, "commands.inventory.reserve.request", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.CommandReply, "commands.inventory.reserve.reply", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Command, "commands.sales.sale.create", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), (ContractArtifactType)999, "contracts.unknown", ""));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-                options.ProviderKey = " ";
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Unspecified,
-            SearchText = " ",
-            Take = 0
-        });
-
-        Assert.Equal(5, result.Count);
-        Assert.All(result, item => Assert.Equal("knowl", item.ProviderKey));
-        Assert.Contains(result, item => item.ContractKind == SchemaContractKind.Event);
-        Assert.Contains(result, item => item.ContractKind == SchemaContractKind.CommandRequest);
-        Assert.Contains(result, item => item.ContractKind == SchemaContractKind.CommandResponse);
-        Assert.Contains(result, item => item.ContractKind == SchemaContractKind.Command);
-        Assert.Contains(result, item =>
-            item.ContractKind == SchemaContractKind.Unspecified &&
-            item.ContractKey == "contracts.unknown" &&
-            item.DisplayName == "contracts.unknown");
+        var client = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
+        var provider = new KnOwlSchemaContractCatalogProvider(Options.Create(new KnOwlSchemaRegistryOptions { Enabled = false }), client);
+        Assert.Empty(await provider.SearchAsync(new() { ContractKind = SchemaContractKind.Event }));
+        await client.DidNotReceiveWithAnyArgs().SearchAsync(default!, default!, default, default);
     }
 
-    [Fact]
-    public async Task SearchAsync_WhenCatalogContainsIncompleteContracts_FiltersAndMapsFallbackValues()
-    {
-        var emptyId = Guid.Empty;
-        var catalog = CreateCatalogClient(
-            null!,
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.filtered.draft", "1.0.0", sourceStatus: null!),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.filtered.empty-schema", "1.0.0", payloadSchemaJson: " "),
-            CreateArtifact(emptyId, ContractArtifactType.Event, null!, null!, contentHash: null!));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
+    private static KnOwlSchemaContractCatalogProvider CreateProvider(IKnOwlControlPlaneContractCatalogClient client)
+        => new(Options.Create(new KnOwlSchemaRegistryOptions { BaseUri = new Uri("https://knowl.local") }), client);
 
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            Take = 10
-        });
+    private static KnOwlContractSearchResult Found(params KnOwlContractSummary[] summaries)
+        => new() { Status = KnOwlContractCatalogStatus.Found, Contracts = summaries };
 
-        var item = Assert.Single(result);
-        Assert.Empty(item.ContractId);
-        Assert.Empty(item.ContractKey);
-        Assert.Empty(item.ContractVersion);
-        Assert.Empty(item.ContentHash);
-        Assert.Empty(item.DisplayName);
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenSearchTextTargetsSecondaryFields_MatchesVersionHashAndId()
-    {
-        var id = Guid.NewGuid();
-        var catalog = CreateCatalogClient(
-            CreateArtifact(id, ContractArtifactType.Event, "events.primary", "2.5.0", contentHash: "secondary-hash"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.other", "1.0.0", contentHash: "other-hash"));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var byVersion = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = "2.5"
-        });
-        var byHash = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = "secondary"
-        });
-        var byId = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = id.ToString("N")[..8]
-        });
-        var noMatch = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = "missing"
-        });
-
-        Assert.Single(byVersion);
-        Assert.Single(byHash);
-        Assert.Single(byId);
-        Assert.Empty(noMatch);
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenTakeExceedsMaximum_ClampsResultsToOneHundredAndGroupsDuplicates()
-    {
-        var artifacts = Enumerable.Range(0, 120)
-            .Select(index => CreateArtifact(
-                Guid.NewGuid(),
-                ContractArtifactType.Event,
-                $"events.batch.{index:000}",
-                "1.0.0",
-                createdAtUtc: DateTime.UtcNow.AddMinutes(-index)))
-            .Concat(new[]
-            {
-                CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.batch.000", "1.0.0", createdAtUtc: DateTime.UtcNow.AddMinutes(1))
-            })
-            .ToArray();
-        var catalog = CreateCatalogClient(artifacts);
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event,
-            SearchText = "events.batch",
-            Take = 500
-        });
-
-        Assert.Equal(100, result.Count);
-        Assert.Equal(100, result.Select(item => item.ContractKey).Distinct(StringComparer.OrdinalIgnoreCase).Count());
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenUnsupportedKindIsRequested_ReturnsEmpty()
-    {
-        var catalog = CreateCatalogClient(
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Event, "events.sales.sale.created", "1.0.0"));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = (SchemaContractKind)999,
-            SearchText = "events"
-        });
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenCommandResponseIsRequested_ReturnsRepliesAndCompoundCommands()
-    {
-        var catalog = CreateCatalogClient(
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.CommandReply, "commands.inventory.reserve", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.Command, "commands.sales.sale.create", "1.0.0"),
-            CreateArtifact(Guid.NewGuid(), ContractArtifactType.CommandRequest, "commands.inventory.reserve", "1.0.0"));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.CommandResponse,
-            SearchText = "commands"
-        });
-
-        Assert.Equal(2, result.Count);
-        Assert.All(result, item => Assert.Equal(SchemaContractKind.CommandResponse, item.ContractKind));
-        Assert.Contains(result, item => item.ContractKey == "commands.inventory.reserve");
-        Assert.Contains(result, item => item.ContractKey == "commands.sales.sale.create");
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenCatalogIsUnavailable_ReturnsEmpty()
-    {
-        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
-        catalog.GetAllDeployedAsync(Arg.Any<CancellationToken>())
-            .Returns(KnOwlContractCatalogResult.Failed(KnOwlContractCatalogStatus.Unavailable, "down"));
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(new SchemaContractCatalogSearchRequest
-        {
-            ContractKind = SchemaContractKind.Event
-        });
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public async Task SearchAsync_WhenCatalogReturnsNull_ReturnsEmpty()
-    {
-        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
-        catalog.GetAllDeployedAsync(Arg.Any<CancellationToken>())
-            .Returns((KnOwlContractCatalogResult)null!);
-        var provider = CreateProvider(
-            options =>
-            {
-                options.Enabled = true;
-                options.BaseUri = new Uri("https://knowl-control-plane.local");
-            },
-            catalog);
-
-        var result = await provider.SearchAsync(null!);
-
-        Assert.Empty(result);
-    }
-
-    private static KnOwlSchemaContractCatalogProvider CreateProvider(
-        Action<KnOwlSchemaRegistryOptions> configure,
-        IKnOwlControlPlaneContractCatalogClient catalog)
-    {
-        var options = new KnOwlSchemaRegistryOptions();
-        configure(options);
-        return new KnOwlSchemaContractCatalogProvider(Options.Create(options), catalog);
-    }
-
-    private static IKnOwlControlPlaneContractCatalogClient CreateCatalogClient(params ContractArtifact[] artifacts)
-    {
-        var catalog = Substitute.For<IKnOwlControlPlaneContractCatalogClient>();
-        catalog.GetAllDeployedAsync(Arg.Any<CancellationToken>())
-            .Returns(KnOwlContractCatalogResult.FoundMany(artifacts));
-        return catalog;
-    }
-
-    private static ContractArtifact CreateArtifact(
-        Guid id,
-        ContractArtifactType artifactType,
-        string topic,
-        string version,
-        string sourceStatus = "Deployed",
-        string contentHash = "schema-hash",
-        string payloadSchemaJson = "{\"type\":\"object\"}",
-        DateTime? createdAtUtc = null)
-        => new()
-        {
-            Id = id,
-            ArtifactType = artifactType,
-            ContractKey = topic,
-            VersionNumber = version,
-            PayloadSchemaJson = payloadSchemaJson,
-            ContentHash = contentHash,
-            SourceStatus = sourceStatus,
-            CreatedAtUtc = createdAtUtc ?? DateTime.UtcNow
-        };
+    private static KnOwlContractSummary Summary(ContractArtifactType type, string key)
+        => new() { Id = Guid.NewGuid(), ArtifactType = type, ContractKey = key, VersionNumber = "1.0.0", HasUsableSchema = true };
 }

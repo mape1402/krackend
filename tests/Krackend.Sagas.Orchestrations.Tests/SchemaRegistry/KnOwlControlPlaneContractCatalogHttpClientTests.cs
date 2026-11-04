@@ -10,6 +10,62 @@ namespace Krackend.Sagas.Orchestrations.Tests.SchemaRegistry;
 public sealed class KnOwlControlPlaneContractCatalogHttpClientTests
 {
     [Fact]
+    public async Task SearchAsync_UsesBoundedSearchAndReadsSummaries()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(
+            """[{"id":"11111111-1111-1111-1111-111111111111","artifactType":0,"contractKey":"orders.created","versionNumber":"1.0.0","contentHash":"hash","hasUsableSchema":true}]"""));
+        var client = CreateClient(handler, options => options.SearchPath = "custom/search");
+        var result = await client.SearchAsync("event", "sales & café/#", 200);
+        Assert.Equal(KnOwlContractCatalogStatus.Found, result.Status);
+        Assert.Equal("/custom/search", handler.RequestUri.AbsolutePath);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(handler.RequestUri.Query);
+        Assert.Equal("event", query["type"].ToString());
+        Assert.Equal("sales & café/#", query["q"].ToString());
+        Assert.Equal("100", query["limit"].ToString());
+        Assert.Equal("orders.created", Assert.Single(result.Contracts).ContractKey);
+        Assert.True(result.Contracts[0].HasUsableSchema);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.NotImplemented)]
+    public async Task SearchAsync_WhenServerDoesNotSupportSearch_ReportsCompatibilityProblem(HttpStatusCode status)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("{}", status));
+        var result = await CreateClient(handler).SearchAsync("event", "", 25);
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, result.Status);
+        Assert.Contains("2.4.3", result.Message);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenCallerCancels_PropagatesCancellation()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => throw new OperationCanceledException());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateClient(handler).SearchAsync("event", "", 25, cancellation.Token));
+    }
+
+    [Fact]
+    public async Task SearchAsync_UsesHostAuthenticationAndReportsAuthorizationFailure()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("{}", HttpStatusCode.Unauthorized));
+        var result = await CreateClient(handler, requestConfigurator: new BearerCatalogRequestConfigurator()).SearchAsync("event", "", 25);
+        Assert.Equal("Bearer", handler.LastAuthorizationScheme);
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, result.Status);
+        Assert.Contains("authentication", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenResponseIsMalformedOrTimesOut_ReportsUnavailable()
+    {
+        var malformed = CreateClient(new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json("{")));
+        var timeout = CreateClient(new RecordingHttpMessageHandler(_ => throw new OperationCanceledException()));
+        Assert.Equal(KnOwlContractCatalogStatus.Unavailable, (await malformed.SearchAsync("event", "", 25)).Status);
+        Assert.Contains("timed out", (await timeout.SearchAsync("event", "", 25)).Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GetAllDeployedAsync_UsesKnOwlCatalogRouteAndDeserializesContracts()
     {
         var handler = new RecordingHttpMessageHandler(_ => RecordingHttpMessageHandler.Json(

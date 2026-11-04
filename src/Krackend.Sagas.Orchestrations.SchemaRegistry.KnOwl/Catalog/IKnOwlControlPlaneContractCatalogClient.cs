@@ -7,6 +7,10 @@ namespace Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.Catalog;
 /// </summary>
 public interface IKnOwlControlPlaneContractCatalogClient
 {
+    /// <summary>Searches deployed contract summaries without fetching their schemas.</summary>
+    Task<KnOwlContractSearchResult> SearchAsync(string type, string text, int limit, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The configured KnOwl catalog client does not support bounded search.");
+
     /// <summary>
     /// Gets every deployed contract artifact exposed by the KnOwl Control Plane catalog.
     /// </summary>
