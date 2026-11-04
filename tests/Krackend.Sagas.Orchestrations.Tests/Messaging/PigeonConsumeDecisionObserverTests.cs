@@ -105,6 +105,58 @@ public sealed class PigeonConsumeDecisionObserverTests
         Assert.Equal(0, publisher.PublishCount);
     }
 
+    [Theory]
+    [InlineData(PigeonConsumeDecision.AckAndSkip)]
+    [InlineData(PigeonConsumeDecision.Retry)]
+    [InlineData(PigeonConsumeDecision.Defer)]
+    [InlineData(PigeonConsumeDecision.Reject)]
+    public async Task TypedRejectionPublishesRegardlessOfSettlement(PigeonConsumeDecision decision)
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+        var context = new ConsumeContext();
+        SetOrchestrationMetadata(context, CreateOrchestrationMetadata());
+
+        await observer.ObserveAsync(new ConsumeDecisionObservation(context, new PigeonConsumeDecisionResult(decision, "rejected")
+        {
+            Outcome = new PigeonConsumeOutcome
+            {
+                Kind = PigeonConsumeOutcomeKind.Rejected,
+                Failure = new PigeonConsumeFailure { Code = "typed.failure", IsRetryable = false }
+            }
+        }), CancellationToken.None);
+
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Equal("typed.failure", publisher.ResultMetadata!.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(PigeonConsumeOutcomeKind.Unspecified)]
+    [InlineData(PigeonConsumeOutcomeKind.Skipped)]
+    [InlineData(PigeonConsumeOutcomeKind.AlreadyProcessed)]
+    [InlineData(PigeonConsumeOutcomeKind.RetryRequested)]
+    [InlineData(PigeonConsumeOutcomeKind.Deferred)]
+    public async Task NonRejectedTypedOutcomeNeverPublishesFailureEvenWhenSettlementIsReject(PigeonConsumeOutcomeKind kind)
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+        var context = new ConsumeContext();
+        SetOrchestrationMetadata(context, CreateOrchestrationMetadata());
+
+        await observer.ObserveAsync(new ConsumeDecisionObservation(context, new PigeonConsumeDecisionResult(PigeonConsumeDecision.Reject, "settlement")
+        {
+            Outcome = new PigeonConsumeOutcome { Kind = kind }
+        }), CancellationToken.None);
+
+        Assert.Equal(0, publisher.PublishCount);
+    }
+
     [Fact]
     public async Task RejectedDecisionWithoutAReplyAddressIsIgnored()
     {
@@ -251,7 +303,7 @@ public sealed class PigeonConsumeDecisionObserverTests
                 resultScope,
                 propagationScope,
                 propagationScope,
-                NullLogger.Instance
+                NullLoggerFactory.Instance
             ],
             culture: null)!;
     }

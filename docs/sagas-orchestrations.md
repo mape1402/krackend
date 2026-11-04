@@ -330,6 +330,20 @@ builder.Services
 
 The same full-builder overload is available from the Client Pigeon adapter.
 
+The Client adapter also registers its consume decision observer when Pigeon is
+configured separately by the host. A typed `Rejected` outcome produces a
+failure callback; `AlreadyProcessed`, `Skipped`, `RetryRequested`, and
+`Deferred` do not produce a synthetic result. When no typed outcome is present,
+a physical `Reject` retains the generic failure behavior. Pigeon 4.2 observes
+only decisions that stop dispatch; a decision of `Continue` is not sent to the
+observer. Failures before dispatch, including deserialization errors, also
+cannot currently be observed by this adapter.
+
+Callbacks use Pigeon's normal publish pipeline. A host can enable an outbox and
+configure its predicate to include callback topics. Durable storage and eventual
+delivery depend on that host configuration; the Client does not enable or
+configure an outbox itself. `AlreadyProcessed` does not reconstruct a lost reply.
+
 Use this package only in hosts that want Pigeon. The runtime core does not require it.
 
 ## Design Module
