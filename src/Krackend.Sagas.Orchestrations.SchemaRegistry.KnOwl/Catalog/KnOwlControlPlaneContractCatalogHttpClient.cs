@@ -39,6 +39,42 @@ public sealed class KnOwlControlPlaneContractCatalogHttpClient : IKnOwlControlPl
     }
 
     /// <inheritdoc />
+    public async Task<KnOwlContractSearchResult> SearchAsync(string type, string text, int limit, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var path = NormalizePath(_options.SearchPath, KnOwlSchemaRegistryOptions.DefaultSearchPath);
+            var separator = path.Contains('?') ? "&" : "?";
+            var requestUri = $"{path}{separator}type={Uri.EscapeDataString(type ?? string.Empty)}&q={Uri.EscapeDataString(text ?? string.Empty)}&limit={Math.Clamp(limit, 1, 100)}";
+            using var response = await SendJsonRequestAsync(requestUri, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var failure = MapHttpFailure(response.StatusCode);
+                var message = response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.NotImplemented
+                    ? "KnOwl contract search is unavailable. The server and its storage must support the bounded search introduced in KnOwl 2.4.3."
+                    : failure.Message;
+                return new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Unavailable, Message = message };
+            }
+
+            if (!IsJsonResponse(response))
+                return new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Unavailable, Message = MapNonJsonSuccess().Message };
+
+            var contracts = await response.Content.ReadFromJsonAsync<KnOwlContractSummary[]>(cancellationToken);
+            if (contracts is null)
+                return new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Unavailable, Message = "KnOwl contract search returned an empty JSON document." };
+            return new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Found, Contracts = contracts };
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Unavailable, Message = "KnOwl contract search timed out." };
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or JsonException or NotSupportedException)
+        {
+            return new KnOwlContractSearchResult { Status = KnOwlContractCatalogStatus.Unavailable, Message = $"KnOwl contract search failed: {exception.Message}" };
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<KnOwlContractCatalogResult> GetAllDeployedAsync(CancellationToken cancellationToken = default)
     {
         try

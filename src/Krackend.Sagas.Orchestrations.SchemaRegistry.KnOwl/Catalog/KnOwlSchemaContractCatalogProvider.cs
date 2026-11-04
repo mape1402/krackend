@@ -3,20 +3,13 @@ using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.SchemaRegistry.KnOwl.Catalog;
 
-/// <summary>
-/// Exposes deployed KnOwl Control Plane contract artifacts as schema registry catalog items.
-/// </summary>
+/// <summary>Exposes deployed KnOwl contracts as schema registry catalog items.</summary>
 public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogProvider
 {
-    private const string DefaultProviderKey = "knowl";
     private readonly IKnOwlControlPlaneContractCatalogClient _catalogClient;
     private readonly KnOwlSchemaRegistryOptions _options;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="KnOwlSchemaContractCatalogProvider"/> class.
-    /// </summary>
-    /// <param name="options">KnOwl schema registry options.</param>
-    /// <param name="catalogClient">KnOwl Control Plane catalog client.</param>
+    /// <summary>Initializes a KnOwl catalog provider.</summary>
     public KnOwlSchemaContractCatalogProvider(
         IOptions<KnOwlSchemaRegistryOptions> options,
         IKnOwlControlPlaneContractCatalogClient catalogClient)
@@ -27,7 +20,7 @@ public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogP
     }
 
     /// <inheritdoc />
-    public string ProviderKey => string.IsNullOrWhiteSpace(_options.ProviderKey) ? DefaultProviderKey : _options.ProviderKey;
+    public string ProviderKey => string.IsNullOrWhiteSpace(_options.ProviderKey) ? "knowl" : _options.ProviderKey;
 
     /// <inheritdoc />
     public async Task<IReadOnlyCollection<SchemaContractCatalogItem>> SearchAsync(
@@ -36,41 +29,66 @@ public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogP
     {
         request ??= new SchemaContractCatalogSearchRequest();
         if (!_options.Enabled || _options.BaseUri is null)
-        {
             return Array.Empty<SchemaContractCatalogItem>();
-        }
-
-        var catalogResult = await _catalogClient.GetAllDeployedAsync(cancellationToken);
-        if (catalogResult?.Status != KnOwlContractCatalogStatus.Found)
-        {
-            return Array.Empty<SchemaContractCatalogItem>();
-        }
 
         var take = request.Take <= 0 ? 25 : Math.Min(request.Take, 100);
-        return catalogResult.Contracts
-            .Where(contract => contract is not null)
-            .Where(contract => string.Equals(contract.SourceStatus, "Deployed", StringComparison.OrdinalIgnoreCase))
-            .Where(contract => HasPayloadSchema(contract))
-            .Where(contract => MatchesKind(contract, request.ContractKind))
-            .Where(contract => MatchesSearchText(contract, request.SearchText))
-            .OrderByDescending(contract => contract.CreatedAtUtc)
-            .ThenBy(contract => contract.ContractKey, StringComparer.OrdinalIgnoreCase)
-            .ThenByDescending(contract => contract.VersionNumber, StringComparer.OrdinalIgnoreCase)
-            .Select(contract => Map(contract, request.ContractKind))
-            .GroupBy(item => $"{item.ContractKind}|{item.ContractKey}|{item.ContractVersion}", StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+        var text = request.SearchText?.Trim() ?? string.Empty;
+        var kind = request.ContractKind;
+        if (kind is not (SchemaContractKind.Event or SchemaContractKind.Command or SchemaContractKind.CommandRequest or SchemaContractKind.CommandResponse or SchemaContractKind.Unspecified))
+            return Array.Empty<SchemaContractCatalogItem>();
+
+        // A command search already collapses modern commands and legacy requests.
+        if (kind is SchemaContractKind.Event or SchemaContractKind.Command or SchemaContractKind.CommandRequest)
+        {
+            var results = await Search(kind == SchemaContractKind.Event ? "event" : "command", text, take, cancellationToken);
+            return results.Where(x => x.HasUsableSchema)
+                .Select(x => Map(x, kind))
+                .ToArray();
+        }
+
+        // The command endpoint represents legacy requests as commands. Fetch requests as well
+        // so those representatives are not incorrectly presented as response-capable commands.
+        // Each stream is bounded to 100, so any member of the first 100 merged results is
+        // present in the first 100 results of its original stream.
+        var commandsTask = Search("command", text, 100, cancellationToken);
+        var requestsTask = Search("request", text, 100, cancellationToken);
+        var repliesTask = Search("reply", text, 100, cancellationToken);
+        var eventsTask = kind == SchemaContractKind.Unspecified
+            ? Search("event", text, 100, cancellationToken)
+            : Task.FromResult<IReadOnlyList<KnOwlContractSummary>>(Array.Empty<KnOwlContractSummary>());
+        await Task.WhenAll(commandsTask, requestsTask, repliesTask, eventsTask);
+        var requestIds = requestsTask.Result.Select(x => x.Id).ToHashSet();
+        var modernCommands = commandsTask.Result.Where(x => !requestIds.Contains(x.Id));
+        var candidates = kind == SchemaContractKind.CommandResponse
+            ? modernCommands.Concat(repliesTask.Result)
+            : eventsTask.Result.Concat(modernCommands).Concat(requestsTask.Result).Concat(repliesTask.Result);
+
+        return candidates.Where(x => x.HasUsableSchema)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenBy(x => x.ContractKey, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.ContractKey, StringComparer.Ordinal)
+            .ThenBy(x => x.VersionNumber, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.VersionNumber, StringComparer.Ordinal)
+            .ThenBy(x => x.Id)
+            .Select(x => Map(x, kind == SchemaContractKind.Unspecified ? MapKind(x.ArtifactType) : kind))
+            .GroupBy(x => (x.ContractKind, Key: (x.ContractKey ?? string.Empty).ToUpperInvariant(), Version: (x.ContractVersion ?? string.Empty).ToUpperInvariant()))
+            .Select(x => x.First())
             .Take(take)
             .ToArray();
     }
 
-    private SchemaContractCatalogItem Map(ContractArtifact contract, SchemaContractKind requestedKind)
+    private async Task<IReadOnlyList<KnOwlContractSummary>> Search(string type, string text, int limit, CancellationToken cancellationToken)
     {
-        var kind = requestedKind is SchemaContractKind.Command or SchemaContractKind.CommandRequest or SchemaContractKind.CommandResponse
-            ? requestedKind
-            : MapKind(contract.ArtifactType);
+        var result = await _catalogClient.SearchAsync(type, text, limit, cancellationToken);
+        if (result is null || result.Status != KnOwlContractCatalogStatus.Found)
+            throw new InvalidOperationException(result?.Message ?? "KnOwl contract search returned no result.");
+        return result.Contracts;
+    }
+
+    private SchemaContractCatalogItem Map(KnOwlContractSummary contract, SchemaContractKind kind)
+    {
         var key = contract.ContractKey ?? string.Empty;
         var version = contract.VersionNumber ?? string.Empty;
-
         return new SchemaContractCatalogItem
         {
             ProviderKey = ProviderKey,
@@ -83,49 +101,12 @@ public sealed class KnOwlSchemaContractCatalogProvider : ISchemaContractCatalogP
         };
     }
 
-    private static bool MatchesKind(ContractArtifact contract, SchemaContractKind requestedKind)
+    private static SchemaContractKind MapKind(ContractArtifactType type) => type switch
     {
-        return requestedKind switch
-        {
-            SchemaContractKind.Unspecified => true,
-            SchemaContractKind.Event => contract.ArtifactType == ContractArtifactType.Event,
-            SchemaContractKind.Command => contract.ArtifactType is ContractArtifactType.Command or ContractArtifactType.CommandRequest,
-            SchemaContractKind.CommandRequest => contract.ArtifactType is ContractArtifactType.Command or ContractArtifactType.CommandRequest,
-            SchemaContractKind.CommandResponse => contract.ArtifactType is ContractArtifactType.Command or ContractArtifactType.CommandReply,
-            _ => false
-        };
-    }
-
-    private static SchemaContractKind MapKind(ContractArtifactType artifactType)
-    {
-        return artifactType switch
-        {
-            ContractArtifactType.Event => SchemaContractKind.Event,
-            ContractArtifactType.CommandRequest => SchemaContractKind.CommandRequest,
-            ContractArtifactType.CommandReply => SchemaContractKind.CommandResponse,
-            ContractArtifactType.Command => SchemaContractKind.Command,
-            _ => SchemaContractKind.Unspecified
-        };
-    }
-
-    private static bool MatchesSearchText(ContractArtifact contract, string searchText)
-    {
-        if (string.IsNullOrWhiteSpace(searchText))
-        {
-            return true;
-        }
-
-        var normalized = searchText.Trim();
-        return Contains(contract.ContractKey, normalized) ||
-            Contains(contract.VersionNumber, normalized) ||
-            Contains(contract.ContentHash, normalized) ||
-            Contains(contract.Id == Guid.Empty ? string.Empty : contract.Id.ToString(), normalized);
-    }
-
-    private static bool Contains(string value, string searchText)
-        => !string.IsNullOrWhiteSpace(value) &&
-            value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
-
-    private static bool HasPayloadSchema(ContractArtifact contract)
-        => !string.IsNullOrWhiteSpace(contract.PayloadSchemaJson);
+        ContractArtifactType.Event => SchemaContractKind.Event,
+        ContractArtifactType.Command => SchemaContractKind.Command,
+        ContractArtifactType.CommandRequest => SchemaContractKind.CommandRequest,
+        ContractArtifactType.CommandReply => SchemaContractKind.CommandResponse,
+        _ => SchemaContractKind.Unspecified
+    };
 }

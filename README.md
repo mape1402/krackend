@@ -12,6 +12,12 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
 
+## Version 6.1 highlights
+
+`v6.1.0` improves orchestration recovery, runtime monitoring, and the roadmap editor. Instance lists read projected version and progress data; the designer supports cloning and clipboard transfer of roadmap elements; and stalled instances can be reconciled through the runtime. The KnOwl adapter uses bounded server-side contract searches, while ButterMorph 2.1.5 provides the current designer session integration.
+
+Hosts must apply their own EF migrations for the new runtime instance projection and Control Plane concurrency tokens. See the [v6.1.0 upgrade notes](CHANGELOG.md#v610---2026-11-04) and the storage guidance below. KnOwl contract autocomplete requires Control Plane 2.4.3 or later.
+
 ## Version 6.0 highlights
 
 `v6.0.0` is a major orchestration release. It replaces the former direct version lifecycle with reviewed, applied deployment artifacts; adds portable orchestration-version packages; and hardens the runtime around durable dispatch cancellation, replay, response-timeout ownership, and recovery across replicas.
@@ -526,6 +532,8 @@ builder.Services.AddKrackendKnOwlSchemaRegistry(options =>
 The KnOwl adapter reads deployed contracts from the KnOwl Control Plane. Event bindings resolve one event artifact, while command bindings can resolve the command request and reply artifacts together so orchestration artifacts keep immutable snapshots for validation, transformation, runtime dispatch, and response handling.
 
 Hosts can override the KnOwl catalog route templates when their Control Plane exposes a custom API shape, and can register `IKnOwlControlPlaneCatalogRequestConfigurator` when catalog requests need host-owned authentication headers.
+
+Contract autocomplete requires KnOwl Control Plane 2.4.3 or later and a storage provider that supports deployed-contract search. The adapter sends the search text, contract type, and result limit to `contracts/artifacts/search` (configurable with `SearchPath`); search results contain summaries rather than schema documents. Full schemas are retrieved through the existing exact or latest contract routes when a contract is resolved. KnOwl returns at most 100 results per search and matches an artifact ID as a complete GUID. A server without bounded search is reported as unavailable rather than falling back to downloading the entire catalog.
 
 Minimal runtime host setup:
 
