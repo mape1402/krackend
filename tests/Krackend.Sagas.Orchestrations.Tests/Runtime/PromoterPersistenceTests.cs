@@ -34,6 +34,9 @@ public sealed class PromoterPersistenceTests
         var instance = Assert.Single(fixture.Instances);
         Assert.Equal(OrchestrationInstanceStatus.Created, instance.Status);
         Assert.Equal("corr-1", instance.CorrelationId);
+        Assert.Equal("1.0.0", instance.OrchestrationVersion);
+        Assert.Equal(0, instance.TotalTaskCount);
+        Assert.Equal(0, instance.CompletedTaskCount);
         var transition = Assert.Single(fixture.Transitions);
         Assert.Equal(instance.Id, transition.OrchestrationInstanceId);
         Assert.Equal("InstancePromoted", transition.TransitionType);
