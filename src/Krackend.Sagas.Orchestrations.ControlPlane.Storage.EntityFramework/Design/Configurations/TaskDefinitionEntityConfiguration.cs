@@ -19,6 +19,7 @@ internal sealed class TaskDefinitionEntityConfiguration : IEntityTypeConfigurati
     {
         builder.ToTable("TaskDefinitions");
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.ConcurrencyToken).HasMaxLength(32).HasDefaultValue(string.Empty).IsRequired().IsConcurrencyToken();
 
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.StageDefinitionId).HasConversion(new IdToBytesConverter());

@@ -73,35 +73,53 @@ public sealed class TriggerBindingRepository : ITriggerBindingRepository
     /// <summary>
     /// Executes SetCompensationExecutionCondition.
     /// </summary>
-    public async Task SetCompensationExecutionCondition(Id triggerBindingId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+    public Task SetCompensationExecutionCondition(Id triggerBindingId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+        => SetCompensationExecutionConditionCore(triggerBindingId, executionCondition, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetCompensationExecutionConditionIfUnchanged(Id id, ExecutionCondition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetCompensationExecutionConditionCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetCompensationExecutionConditionCore(Id triggerBindingId, ExecutionCondition executionCondition, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.TriggerBindings.FirstOrDefaultAsync(x => x.Id == triggerBindingId, cancellationToken)
             ?? throw new KeyNotFoundException($"TriggerBinding '{triggerBindingId}' was not found.");
 
         var definition = current.ToDefinition();
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureCondition(expectedRevision, definition.CompensationDefinition?.ExecutionCondition);
         definition.CompensationDefinition = EnsureCompensation(definition.CompensationDefinition);
         definition.CompensationDefinition.ExecutionCondition = executionCondition;
         definition.CompensationDefinition.HasExecutionCondition = executionCondition is not null;
 
         current.CompensationDefinition = definition.ToEntity().CompensationDefinition;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>
     /// Executes SetCompensationTransformation.
     /// </summary>
-    public async Task SetCompensationTransformation(Id triggerBindingId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+    public Task SetCompensationTransformation(Id triggerBindingId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+        => SetCompensationTransformationCore(triggerBindingId, transformation, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetCompensationTransformationIfUnchanged(Id id, TransformationDefinition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetCompensationTransformationCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetCompensationTransformationCore(Id triggerBindingId, TransformationDefinition transformation, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.TriggerBindings.FirstOrDefaultAsync(x => x.Id == triggerBindingId, cancellationToken)
             ?? throw new KeyNotFoundException($"TriggerBinding '{triggerBindingId}' was not found.");
 
         var definition = current.ToDefinition();
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureTransformation(expectedRevision, definition.CompensationDefinition?.Transformation);
         definition.CompensationDefinition = EnsureCompensation(definition.CompensationDefinition);
         definition.CompensationDefinition.Transformation = transformation;
         definition.CompensationDefinition.HasTransformation = transformation is not null;
 
         current.CompensationDefinition = definition.ToEntity().CompensationDefinition;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>

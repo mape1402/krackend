@@ -22,10 +22,10 @@ public sealed class SetTaskCompensationTransformationCommandHandler : IRequestHa
     /// <inheritdoc />
     public async Task<bool> Handle(SetTaskCompensationTransformationCommand request, CancellationToken cancellationToken)
     {
-        await _repository.SetCompensationTransformation(
-            PrimitiveParser.ParseId(request.Id),
-            request.Transformation,
-            cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.ExpectedDesignRevision))
+            await _repository.SetCompensationTransformation(PrimitiveParser.ParseId(request.Id), request.Transformation, cancellationToken);
+        else
+            await _repository.SetCompensationTransformationIfUnchanged(PrimitiveParser.ParseId(request.Id), request.Transformation, request.ExpectedDesignRevision, cancellationToken);
         return true;
     }
 }

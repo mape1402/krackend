@@ -38,6 +38,10 @@ public interface IStageRepository
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     Task SetExecutionCondition(Id stageDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default);
 
+    /// <summary>Saves a condition only when its persisted designer revision matches.</summary>
+    Task SetExecutionConditionIfUnchanged(Id id, ExecutionCondition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This storage provider does not support atomic designer saves.");
+
     /// <summary>
     /// Deletes a stage definition by its identifier.
     /// </summary>

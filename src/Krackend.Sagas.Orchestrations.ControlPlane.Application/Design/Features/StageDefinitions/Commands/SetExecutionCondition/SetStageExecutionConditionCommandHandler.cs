@@ -27,7 +27,10 @@ public sealed class SetStageExecutionConditionCommandHandler : IRequestHandler<S
     /// <returns>True when the operation completes successfully.</returns>
     public async Task<bool> Handle(SetStageExecutionConditionCommand request, CancellationToken cancellationToken)
     {
-        await _repository.SetExecutionCondition(PrimitiveParser.ParseId(request.Id), request.ExecutionCondition, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.ExpectedDesignRevision))
+            await _repository.SetExecutionCondition(PrimitiveParser.ParseId(request.Id), request.ExecutionCondition, cancellationToken);
+        else
+            await _repository.SetExecutionConditionIfUnchanged(PrimitiveParser.ParseId(request.Id), request.ExecutionCondition, request.ExpectedDesignRevision, cancellationToken);
         return true;
     }
 }

@@ -208,7 +208,7 @@
 
 @section Scripts {
 <script src="~/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-roadmap-clipboard.js" asp-append-version="true"></script>
-<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.3"></script>
+<script src="/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.5"></script>
 <script src="/_content/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/js/orchestrator-buttermorph-contrast.js" asp-append-version="true"></script>
 <script>
 const orchestrationVersionCanEdit = @Model.CanEdit.ToString().ToLowerInvariant();
@@ -465,8 +465,7 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
             return;
         }
 
-        const contextKey = await window.KrackendButterMorphContext(`orchestration-stage-execution-condition:${orchestrationVersionId}:${stageId}`);
-        if (!contextKey) return;
+        const contextKey = `orchestration-stage-execution-condition:${orchestrationVersionId}:${stageId}`;
         const designerUrl = orchestrationVersionCanEdit
             ? `/buttermorph/validations/designer?context=${encodeURIComponent(contextKey)}&mode=edit`
             : `/buttermorph/validations/viewer?context=${encodeURIComponent(contextKey)}`;
@@ -940,8 +939,7 @@ window.addEventListener('message', event => {
         const route = canEdit
             ? (kind === 'condition' ? '/buttermorph/validations/designer' : '/buttermorph/designer')
             : (kind === 'condition' ? '/buttermorph/validations/viewer' : '/buttermorph/mappings/viewer');
-        const contextKey = await window.KrackendButterMorphContext(`${prefix}:${orchestrationVersionId}:${triggerId}`);
-        if (!contextKey) return;
+        const contextKey = `${prefix}:${orchestrationVersionId}:${triggerId}`;
         const mode = canEdit ? '&mode=edit' : '';
         window.ButterMorphHost.openFrame(`${route}?context=${encodeURIComponent(contextKey)}${mode}`, {
             title: kind === 'condition' ? 'ButterMorph trigger compensation condition' : 'ButterMorph trigger compensation transformation',

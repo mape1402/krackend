@@ -19,6 +19,7 @@ internal sealed class StageDefinitionEntityConfiguration : IEntityTypeConfigurat
     {
         builder.ToTable("StageDefinitions");
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.ConcurrencyToken).HasMaxLength(32).HasDefaultValue(string.Empty).IsRequired().IsConcurrencyToken();
 
         builder.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         builder.Property(x => x.OrchestrationVersionId).HasConversion(new IdToBytesConverter());
