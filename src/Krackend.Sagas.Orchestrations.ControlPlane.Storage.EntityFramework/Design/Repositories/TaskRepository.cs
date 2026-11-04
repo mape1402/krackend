@@ -89,10 +89,20 @@ public sealed class TaskRepository : ITaskRepository
     /// <summary>
     /// Executes SetExecutionCondition.
     /// </summary>
-    public async Task SetExecutionCondition(Id taskDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+    public Task SetExecutionCondition(Id taskDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+        => SetExecutionConditionCore(taskDefinitionId, executionCondition, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetExecutionConditionIfUnchanged(Id id, ExecutionCondition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetExecutionConditionCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetExecutionConditionCore(Id taskDefinitionId, ExecutionCondition executionCondition, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.TaskDefinitions.FirstOrDefaultAsync(x => x.Id == taskDefinitionId, cancellationToken)
             ?? throw new KeyNotFoundException($"TaskDefinition '{taskDefinitionId}' was not found.");
+
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureCondition(expectedRevision, current.ToDefinition().ExecutionCondition);
 
         current.ExecutionCondition = executionCondition is null
             ? null
@@ -119,16 +129,26 @@ public sealed class TaskRepository : ITaskRepository
             CompensationDefinition = null
         }.ToEntity().ExecutionCondition;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>
     /// Executes SetTransformation.
     /// </summary>
-    public async Task SetTransformation(Id taskDefinitionId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+    public Task SetTransformation(Id taskDefinitionId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+        => SetTransformationCore(taskDefinitionId, transformation, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetTransformationIfUnchanged(Id id, TransformationDefinition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetTransformationCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetTransformationCore(Id taskDefinitionId, TransformationDefinition transformation, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.TaskDefinitions.FirstOrDefaultAsync(x => x.Id == taskDefinitionId, cancellationToken)
             ?? throw new KeyNotFoundException($"TaskDefinition '{taskDefinitionId}' was not found.");
+
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureTransformation(expectedRevision, current.ToDefinition().Transformation);
 
         current.Transformation = transformation is null
             ? null
@@ -155,41 +175,59 @@ public sealed class TaskRepository : ITaskRepository
                 CompensationDefinition = null
             }.ToEntity().Transformation;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>
     /// Executes SetCompensationExecutionCondition.
     /// </summary>
-    public async Task SetCompensationExecutionCondition(Id taskDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+    public Task SetCompensationExecutionCondition(Id taskDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+        => SetCompensationExecutionConditionCore(taskDefinitionId, executionCondition, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetCompensationExecutionConditionIfUnchanged(Id id, ExecutionCondition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetCompensationExecutionConditionCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetCompensationExecutionConditionCore(Id taskDefinitionId, ExecutionCondition executionCondition, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.TaskDefinitions.FirstOrDefaultAsync(x => x.Id == taskDefinitionId, cancellationToken)
             ?? throw new KeyNotFoundException($"TaskDefinition '{taskDefinitionId}' was not found.");
 
         var definition = current.ToDefinition();
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureCondition(expectedRevision, definition.CompensationDefinition?.ExecutionCondition);
         definition.CompensationDefinition = EnsureCompensation(definition.CompensationDefinition);
         definition.CompensationDefinition.ExecutionCondition = executionCondition;
         definition.CompensationDefinition.HasExecutionCondition = executionCondition is not null;
 
         current.CompensationDefinition = definition.ToEntity().CompensationDefinition;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>
     /// Executes SetCompensationTransformation.
     /// </summary>
-    public async Task SetCompensationTransformation(Id taskDefinitionId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+    public Task SetCompensationTransformation(Id taskDefinitionId, TransformationDefinition transformation, CancellationToken cancellationToken = default)
+        => SetCompensationTransformationCore(taskDefinitionId, transformation, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetCompensationTransformationIfUnchanged(Id id, TransformationDefinition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetCompensationTransformationCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetCompensationTransformationCore(Id taskDefinitionId, TransformationDefinition transformation, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.TaskDefinitions.FirstOrDefaultAsync(x => x.Id == taskDefinitionId, cancellationToken)
             ?? throw new KeyNotFoundException($"TaskDefinition '{taskDefinitionId}' was not found.");
 
         var definition = current.ToDefinition();
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureTransformation(expectedRevision, definition.CompensationDefinition?.Transformation);
         definition.CompensationDefinition = EnsureCompensation(definition.CompensationDefinition);
         definition.CompensationDefinition.Transformation = transformation;
         definition.CompensationDefinition.HasTransformation = transformation is not null;
 
         current.CompensationDefinition = definition.ToEntity().CompensationDefinition;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>

@@ -5,6 +5,7 @@ using global::ButterMorph.SchemaDesign;
 using global::ButterMorph.Web.Razor;
 using global::ButterMorph.Abstractions;
 using global::ButterMorph.Core;
+using global::ButterMorph.Design;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
@@ -13,6 +14,13 @@ using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.TransformationConfi
 using Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph;
 using Krackend.Sagas.Orchestrations.SchemaRegistry;
 using NSubstitute;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Reflection;
 using DesignSchemaContractSnapshot = Krackend.Sagas.Orchestrations.ControlPlane.Design.Core.SchemaContractSnapshot;
 
@@ -937,6 +945,314 @@ public sealed class OrchestrationButterMorphCompensationDesignerHostTests
         Assert.True(clearCondition.Succeeded);
         Assert.NotNull(capturedClearCondition);
         Assert.Null(capturedClearCondition!.ExecutionCondition);
+    }
+
+    [Theory]
+    [InlineData("orchestration-task-transform", true)]
+    [InlineData("orchestration-task-compensation-transform", true)]
+    [InlineData("orchestration-trigger-compensation-transform", true)]
+    [InlineData("orchestration-task-execution-condition", false)]
+    [InlineData("orchestration-task-compensation-execution-condition", false)]
+    [InlineData("orchestration-trigger-compensation-execution-condition", false)]
+    [InlineData("orchestration-stage-execution-condition", false)]
+    public async Task ChangedSchemaRejectsStaleDesignerSave(string kind, bool isMapping)
+    {
+        var schema = CreateSchemaContextWithBindings();
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(_ => schema);
+        schemas.GetForStage(Arg.Any<GetStageSchemaContextQuery>()).Returns(_ => schema);
+        schemas.GetForTaskCompensation(Arg.Any<GetTaskCompensationSchemaContextQuery>()).Returns(_ => schema);
+        schemas.GetForTriggerCompensation(Arg.Any<GetTriggerCompensationSchemaContextQuery>()).Returns(_ => schema);
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var triggers = Substitute.For<ITriggerBindingApplicationService>();
+        var stages = Substitute.For<IStageApplicationService>();
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var context = $"{kind}:version-1:element-1";
+        var mapping = new OrchestrationButterMorphDesignerHost(schemas, tasks, triggers, parser, CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        var validation = new OrchestrationButterMorphValidationDesignerHost(schemas, stages, tasks, triggers, parser, CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+
+        if (isMapping)
+        {
+            var initial = await mapping.Load(new ButterMorphDesignerLoadRequest { ContextKey = context });
+            Assert.True(initial.HasSchemaSnapshot);
+            Assert.NotEmpty(initial.DesignRevision);
+            schema = schema with { Signature = "updated-schema" };
+            var result = await mapping.Save(new ButterMorphDesignerSaveRequest
+            {
+                ContextKey = context, DslContent = "local work",
+                ExpectedSchemaRevision = initial.SchemaRevision, ExpectedDesignRevision = initial.DesignRevision
+            });
+            Assert.False(result.Succeeded);
+            Assert.True(result.IsConflict);
+            Assert.Equal("updated-schema", result.SchemaRevision);
+        }
+        else
+        {
+            var initial = await validation.Load(new ButterMorphValidationDesignerLoadRequest { ContextKey = context });
+            Assert.NotEmpty(initial.DesignRevision);
+            schema = schema with { Signature = "updated-schema" };
+            var result = await validation.Save(new ButterMorphValidationDesignerSaveRequest
+            {
+                ContextKey = context, DslContent = "local work",
+                ExpectedSchemaRevision = initial.SchemaRevision, ExpectedDesignRevision = initial.DesignRevision
+            });
+            Assert.False(result.Succeeded);
+            Assert.True(result.IsConflict);
+            Assert.Equal("updated-schema", result.SchemaRevision);
+        }
+
+        await tasks.DidNotReceiveWithAnyArgs().SetTransformation(default!);
+        await tasks.DidNotReceiveWithAnyArgs().SetExecutionCondition(default!);
+        await tasks.DidNotReceiveWithAnyArgs().SetCompensationTransformation(default!);
+        await tasks.DidNotReceiveWithAnyArgs().SetCompensationExecutionCondition(default!);
+        await triggers.DidNotReceiveWithAnyArgs().SetCompensationTransformation(default!);
+        await triggers.DidNotReceiveWithAnyArgs().SetCompensationExecutionCondition(default!);
+        await stages.DidNotReceiveWithAnyArgs().SetExecutionCondition(default!);
+    }
+
+    [Fact]
+    public async Task MappingHostDetectsChangedDesignAndClearsRemovedSchemas()
+    {
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        var schema = CreateSchemaContextWithBindings();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(_ => schema);
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var dsl = "first mapping";
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(_ => new TaskDefinitionModel { Transformation = CreateTransformation(dsl) });
+        var host = new OrchestrationButterMorphDesignerHost(schemas, tasks, Substitute.For<ITriggerBindingApplicationService>(),
+            new OrchestrationButterMorphDesignerContextParser(), CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        const string context = "orchestration-task-transform:version-1:task-1";
+
+        var initial = await host.Load(new ButterMorphDesignerLoadRequest { ContextKey = context });
+        Assert.True(initial.HasSchemaSnapshot);
+        Assert.Single(initial.SourceSchemas);
+        Assert.NotNull(initial.TargetSchema);
+        dsl = "changed elsewhere";
+        var conflict = await host.Save(new ButterMorphDesignerSaveRequest
+        {
+            ContextKey = context, DslContent = "local work",
+            ExpectedSchemaRevision = initial.SchemaRevision, ExpectedDesignRevision = initial.DesignRevision
+        });
+        Assert.True(conflict.IsConflict);
+        await tasks.DidNotReceiveWithAnyArgs().SetTransformation(default!);
+
+        schema = schema with { Sources = [], Target = null, Signature = "removed" };
+        var refreshed = await host.Load(new ButterMorphDesignerLoadRequest { ContextKey = context });
+        Assert.True(refreshed.HasSchemaSnapshot);
+        Assert.Empty(refreshed.SourceSchemas);
+        Assert.Null(refreshed.TargetSchema);
+        Assert.Equal("changed elsewhere", refreshed.InitialDslContent);
+    }
+
+    [Fact]
+    public async Task ValidationHostReturnsNewRevisionAfterSaveAndRejectsChangedDesign()
+    {
+        var schema = CreateSchemaContext();
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(schema);
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var dsl = "original";
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(_ => new TaskDefinitionModel { ExecutionCondition = CreateCondition(dsl) });
+        tasks.SetExecutionCondition(Arg.Any<SetTaskExecutionConditionCommand>()).Returns(true);
+        var host = new OrchestrationButterMorphValidationDesignerHost(schemas, Substitute.For<IStageApplicationService>(), tasks,
+            Substitute.For<ITriggerBindingApplicationService>(), new OrchestrationButterMorphDesignerContextParser(),
+            CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        const string context = "orchestration-task-execution-condition:version-1:task-1";
+        var initial = await host.Load(new ButterMorphValidationDesignerLoadRequest { ContextKey = context });
+        var saved = await host.Save(new ButterMorphValidationDesignerSaveRequest
+        {
+            ContextKey = context, DslContent = "updated", ExpectedSchemaRevision = initial.SchemaRevision, ExpectedDesignRevision = initial.DesignRevision
+        });
+        Assert.True(saved.Succeeded);
+        Assert.Equal(initial.SchemaRevision, saved.SchemaRevision);
+        Assert.NotEqual(initial.DesignRevision, saved.DesignRevision);
+
+        dsl = "changed by another editor";
+        var conflict = await host.Save(new ButterMorphValidationDesignerSaveRequest
+        {
+            ContextKey = context, DslContent = "local", ExpectedSchemaRevision = initial.SchemaRevision, ExpectedDesignRevision = initial.DesignRevision
+        });
+        Assert.True(conflict.IsConflict);
+        await tasks.Received(1).SetExecutionCondition(Arg.Any<SetTaskExecutionConditionCommand>());
+    }
+
+    [Fact]
+    public async Task MappingHostReportsConflictWhenTheAtomicWriteLosesARace()
+    {
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(CreateSchemaContextWithBindings());
+        var tasks = Substitute.For<ITaskApplicationService>();
+        tasks.GetById(Arg.Any<GetTaskDefinitionByIdQuery>()).Returns(new TaskDefinitionModel { Transformation = CreateTransformation("original") });
+        tasks.SetTransformation(Arg.Any<SetTaskTransformationCommand>())
+            .Returns(_ => Task.FromException<bool>(new OrchestrationDesignerConcurrencyException()));
+        var host = new OrchestrationButterMorphDesignerHost(schemas, tasks, Substitute.For<ITriggerBindingApplicationService>(),
+            new OrchestrationButterMorphDesignerContextParser(), CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        const string context = "orchestration-task-transform:version-1:task-1";
+        var snapshot = await host.Load(new ButterMorphDesignerLoadRequest { ContextKey = context });
+        var result = await host.Save(new ButterMorphDesignerSaveRequest
+        {
+            ContextKey = context, DslContent = "unsaved", ExpectedSchemaRevision = snapshot.SchemaRevision, ExpectedDesignRevision = snapshot.DesignRevision
+        });
+        Assert.False(result.Succeeded);
+        Assert.True(result.IsConflict);
+        Assert.Equal(snapshot.SchemaRevision, result.SchemaRevision);
+        await tasks.Received(1).SetTransformation(Arg.Is<SetTaskTransformationCommand>(command => command.ExpectedDesignRevision == snapshot.DesignRevision));
+    }
+
+    [Fact]
+    public async Task UpdatedContractsChangeMappingAndConditionFields()
+    {
+        var schema = CreateSchemaContextWithBindings();
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(_ => schema);
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var triggers = Substitute.For<ITriggerBindingApplicationService>();
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var mapping = new OrchestrationButterMorphDesignerHost(schemas, tasks, triggers, parser, CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        var validation = new OrchestrationButterMorphValidationDesignerHost(schemas, Substitute.For<IStageApplicationService>(), tasks,
+            triggers, parser, CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        const string mappingContext = "orchestration-task-transform:version-1:task-1";
+        const string conditionContext = "orchestration-task-execution-condition:version-1:task-1";
+        var initial = await mapping.Load(new ButterMorphDesignerLoadRequest { ContextKey = mappingContext });
+        Assert.Contains(initial.SourceSchemas["trigger"].Root.Children, node => node.Name == "id");
+
+        schema.Sources[0].SchemaBinding.Snapshot.SchemaJson = schema.Sources[0].SchemaBinding.Snapshot.SchemaJson.Replace("\"id\"", "\"customerId\"");
+        schema.Target.SchemaBinding.Snapshot.SchemaJson = schema.Target.SchemaBinding.Snapshot.SchemaJson.Replace("\"id\"", "\"requestId\"");
+        schema = schema with { Signature = "updated-contracts" };
+        var updated = await mapping.Load(new ButterMorphDesignerLoadRequest { ContextKey = mappingContext });
+        var condition = await validation.Load(new ButterMorphValidationDesignerLoadRequest { ContextKey = conditionContext });
+        Assert.True(updated.HasSchemaSnapshot);
+        Assert.Contains(updated.SourceSchemas["trigger"].Root.Children, node => node.Name == "customerId");
+        Assert.DoesNotContain(updated.SourceSchemas["trigger"].Root.Children, node => node.Name == "id");
+        Assert.Contains(updated.TargetSchema.Root.Children, node => node.Name == "requestId");
+        Assert.Contains(condition.SourceSchemas["trigger"].Root.Children, node => node.Name == "customerId");
+        Assert.Equal("updated-contracts", condition.SchemaRevision);
+    }
+
+    [Fact]
+    public async Task DesignerPagesReloadChangedTriggerAndTaskContractsThroughHttp()
+    {
+        var schema = CreateSchemaContextWithBindings();
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(_ => schema);
+        var tasks = Substitute.For<ITaskApplicationService>();
+        var triggers = Substitute.For<ITriggerBindingApplicationService>();
+        var parser = new OrchestrationButterMorphDesignerContextParser();
+        var mapping = new OrchestrationButterMorphDesignerHost(schemas, tasks, triggers, parser, CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        var validation = new OrchestrationButterMorphValidationDesignerHost(schemas, Substitute.For<IStageApplicationService>(), tasks,
+            triggers, parser, CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ServiceCollectionExtensions.AddOrchestratorDesignWebUI(builder.Services);
+        builder.Services.AddRazorPages().AddApplicationPart(typeof(DesignerModel).Assembly);
+        builder.Services.RemoveAll<IButterMorphDesignerHost>();
+        builder.Services.RemoveAll<IButterMorphValidationDesignerHost>();
+        builder.Services.AddSingleton<IButterMorphDesignerHost>(mapping);
+        builder.Services.AddSingleton<IButterMorphValidationDesignerHost>(validation);
+        await using var app = builder.Build();
+        app.MapButterMorphDesigner("/buttermorph");
+        await app.StartAsync();
+        var client = app.GetTestClient();
+        const string mappingUrl = "/buttermorph/designer?context=orchestration-task-transform%3Aversion-1%3Atask-1&session=editor-one";
+        const string validationUrl = "/buttermorph/validations/designer?context=orchestration-task-execution-condition%3Aversion-1%3Atask-1&session=editor-two";
+        var before = await client.GetStringAsync(mappingUrl);
+        Assert.Contains("id", before, StringComparison.Ordinal);
+
+        schema.Sources[0].SchemaBinding.Snapshot.SchemaJson = schema.Sources[0].SchemaBinding.Snapshot.SchemaJson.Replace("\"id\"", "\"customerId\"");
+        schema.Target.SchemaBinding.Snapshot.SchemaJson = schema.Target.SchemaBinding.Snapshot.SchemaJson.Replace("\"id\"", "\"requestId\"");
+        schema = schema with { Signature = "updated-contracts" };
+        var updatedMapping = await client.GetStringAsync(mappingUrl);
+        var updatedCondition = await client.GetStringAsync(validationUrl);
+        Assert.Contains("customerId", updatedMapping, StringComparison.Ordinal);
+        Assert.Contains("requestId", updatedMapping, StringComparison.Ordinal);
+        Assert.Contains("customerId", updatedCondition, StringComparison.Ordinal);
+        var hostScript = await client.GetStringAsync("/_content/ButterMorph.Web.Razor/buttermorph/buttermorph-host.js?v=2.1.5");
+        Assert.Contains("CloseSession", hostScript, StringComparison.Ordinal);
+        await app.StopAsync();
+    }
+
+    [Fact]
+    public async Task DesignerRefreshesRealHostSchemasWithoutLosingDirtyMappingAndClosesSession()
+    {
+        var schema = CreateSchemaContextWithBindings();
+        var schemas = Substitute.For<IOrchestrationSchemaContextApplicationService>();
+        schemas.GetForTask(Arg.Any<GetTaskSchemaContextQuery>()).Returns(_ => schema);
+        var host = new OrchestrationButterMorphDesignerHost(schemas, Substitute.For<ITaskApplicationService>(),
+            Substitute.For<ITriggerBindingApplicationService>(), new OrchestrationButterMorphDesignerContextParser(),
+            CreateImporter(), new OrchestrationButterMorphSourceMetadataFactory());
+        var services = new ServiceCollection();
+        services.AddLogging();
+        Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ServiceCollectionExtensions.AddOrchestratorDesignWebUI(services);
+        services.RemoveAll<IButterMorphDesignerHost>();
+        services.AddSingleton<IButterMorphDesignerHost>(host);
+        await using var provider = services.BuildServiceProvider();
+        const string context = "orchestration-task-transform:version-1:task-1";
+        const string editor = "editor-one";
+        var handle = new ButterMorphDesignerSessionHandle { Kind = ButterMorphDesignerSessionKind.Mapping, ContextKey = context, SessionId = editor };
+
+        DesignerModel Page(string session)
+        {
+            var http = new DefaultHttpContext { RequestServices = provider };
+            http.Request.QueryString = QueryString.Create(new Dictionary<string, string?> { ["context"] = context, ["session"] = session });
+            var model = ActivatorUtilities.CreateInstance<DesignerModel>(provider);
+            model.PageContext = new PageContext { HttpContext = http };
+            return model;
+        }
+
+        await Page(editor).OnGet();
+        var manager = provider.GetRequiredService<IButterMorphDesignerSessionManager>();
+        var store = provider.GetRequiredService<IMappingDesignSessionStore>();
+        var session = store.GetOrCreate(handle.StorageKey);
+        var mapping = session.AddPathMapping("$trigger.id", "id");
+        Assert.True(mapping.Succeeded);
+        manager.MarkDirty(handle);
+        schema = schema with { Sources = [], Target = null, Signature = "removed" };
+
+        var refreshed = Page(editor);
+        await refreshed.OnGet();
+        Assert.Empty(session.Document.SourceSchemas);
+        Assert.True(string.IsNullOrEmpty(session.Document.TargetSchema.Key));
+        Assert.Empty(session.Document.TargetSchema.Root.Children);
+        Assert.NotEmpty(session.Document.Mappings);
+        Assert.True(manager.GetSnapshot(handle).HasPendingRemoteChanges);
+
+        await Page("editor-two").OnGet();
+        var second = new ButterMorphDesignerSessionHandle { Kind = ButterMorphDesignerSessionKind.Mapping, ContextKey = context, SessionId = "editor-two" };
+        Assert.NotSame(session, store.GetOrCreate(second.StorageKey));
+        Assert.False(manager.GetSnapshot(second).IsDirty);
+        refreshed.OnPostCloseSession();
+        Assert.Null(manager.GetSnapshot(handle));
+        Assert.NotSame(session, store.GetOrCreate(handle.StorageKey));
+    }
+
+    [Fact]
+    public async Task SessionCapacityAndAbandonedEditorCleanupUseButterMorphPolicy()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ServiceCollectionExtensions.AddOrchestratorDesignWebUI(services);
+        services.Configure<ButterMorphRazorDesignerOptions>(options =>
+        {
+            options.Sessions.MaximumSessions = 1;
+            options.Sessions.HeartbeatTimeout = TimeSpan.FromMinutes(3);
+            options.Sessions.InactiveTimeout = TimeSpan.FromMinutes(20);
+        });
+        await using var provider = services.BuildServiceProvider();
+        var manager = provider.GetRequiredService<IButterMorphDesignerSessionManager>();
+        var store = provider.GetRequiredService<IMappingDesignSessionStore>();
+        var first = new ButterMorphDesignerSessionHandle { Kind = ButterMorphDesignerSessionKind.Mapping, ContextKey = "context", SessionId = "first" };
+        var second = new ButterMorphDesignerSessionHandle { Kind = ButterMorphDesignerSessionKind.Mapping, ContextKey = "context", SessionId = "second" };
+        manager.Acquire(first);
+        var oldSession = store.GetOrCreate(first.StorageKey);
+        Assert.Throws<ButterMorphDesignerSessionCapacityException>(() => manager.Acquire(second));
+        var now = DateTimeOffset.UtcNow;
+        Assert.Equal(0, manager.SweepExpired(now.AddMinutes(4)));
+        Assert.False(manager.GetSnapshot(first).IsActive);
+        Assert.Equal(1, manager.SweepExpired(now.AddMinutes(25)));
+        Assert.Null(manager.GetSnapshot(first));
+        Assert.NotSame(oldSession, store.GetOrCreate(first.StorageKey));
+        Assert.NotNull(manager.Acquire(second));
     }
 
     private static OrchestrationSchemaContext CreateSchemaContext()

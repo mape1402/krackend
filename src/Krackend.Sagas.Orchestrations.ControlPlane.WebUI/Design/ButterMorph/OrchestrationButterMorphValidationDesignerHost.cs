@@ -86,27 +86,61 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
     {
         try
         {
+            ButterMorphValidationDesignerLoadResult current = null;
+            if (OrchestrationButterMorphRevisions.HasExpectedRevisions(request.ExpectedSchemaRevision, request.ExpectedDesignRevision))
+            {
+                current = await Load(new ButterMorphValidationDesignerLoadRequest { ContextKey = request.ContextKey });
+                if (string.IsNullOrWhiteSpace(current.SchemaRevision))
+                    return CreateSaveFailure(current.Message);
+                if (!OrchestrationButterMorphRevisions.Matches(request.ExpectedSchemaRevision, request.ExpectedDesignRevision, current.SchemaRevision, current.DesignRevision))
+                    return new ButterMorphValidationDesignerSaveResult
+                    {
+                        Succeeded = false,
+                        IsConflict = true,
+                        Message = "The schema or saved condition changed. Your edits have not been saved.",
+                        SchemaRevision = current.SchemaRevision,
+                        DesignRevision = current.DesignRevision
+                    };
+            }
+
+            ButterMorphValidationDesignerSaveResult result;
             if (_contextParser.TryParseStageExecutionCondition(request.ContextKey, out var stageContext))
             {
-                return await SaveStageCondition(request, stageContext);
+                result = await SaveStageCondition(request, stageContext);
             }
-
-            if (_contextParser.TryParseTaskExecutionCondition(request.ContextKey, out var taskContext))
+            else if (_contextParser.TryParseTaskExecutionCondition(request.ContextKey, out var taskContext))
             {
-                return await SaveTaskCondition(request, taskContext);
+                result = await SaveTaskCondition(request, taskContext);
             }
-
-            if (_contextParser.TryParseTaskCompensationExecutionCondition(request.ContextKey, out var taskCompensationContext))
+            else if (_contextParser.TryParseTaskCompensationExecutionCondition(request.ContextKey, out var taskCompensationContext))
             {
-                return await SaveTaskCompensationCondition(request, taskCompensationContext);
+                result = await SaveTaskCompensationCondition(request, taskCompensationContext);
             }
-
-            if (_contextParser.TryParseTriggerCompensationExecutionCondition(request.ContextKey, out var triggerCompensationContext))
+            else if (_contextParser.TryParseTriggerCompensationExecutionCondition(request.ContextKey, out var triggerCompensationContext))
             {
-                return await SaveTriggerCompensationCondition(request, triggerCompensationContext);
+                result = await SaveTriggerCompensationCondition(request, triggerCompensationContext);
             }
+            else
+                return CreateSaveFailure("Invalid orchestration execution condition context.");
 
-            return CreateSaveFailure("Invalid orchestration execution condition context.");
+            if (result.Succeeded && current is not null)
+            {
+                result.SchemaRevision = current.SchemaRevision;
+                result.DesignRevision = OrchestrationButterMorphRevisions.ForDesign(request.DslContent);
+            }
+            return result;
+        }
+        catch (OrchestrationDesignerConcurrencyException)
+        {
+            var current = await Load(new ButterMorphValidationDesignerLoadRequest { ContextKey = request.ContextKey });
+            return new ButterMorphValidationDesignerSaveResult
+            {
+                Succeeded = false,
+                IsConflict = true,
+                Message = "The condition changed while it was being saved. Your edits have not been saved.",
+                SchemaRevision = current.SchemaRevision,
+                DesignRevision = current.DesignRevision
+            };
         }
         catch (Exception exception)
         {
@@ -179,6 +213,8 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
             SourceSchemas = sources,
             SourceMetadata = _sourceMetadataFactory.Create(schemaContext),
             InitialDslContent = initialDsl ?? string.Empty,
+            SchemaRevision = sources.Count == schemaContext.Sources.Count ? schemaContext.Signature : string.Empty,
+            DesignRevision = OrchestrationButterMorphRevisions.ForDesign(initialDsl),
             Message = diagnostics.Count == 0 ? string.Empty : string.Join(Environment.NewLine, diagnostics)
         };
     }
@@ -190,7 +226,8 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         var updated = await _stageApplicationService.SetExecutionCondition(
             new SetStageExecutionConditionCommand(
                 designerContext.StageDefinitionId,
-                CreateCondition(request.DslContent)));
+                CreateCondition(request.DslContent))
+            { ExpectedDesignRevision = request.ExpectedDesignRevision });
 
         return new ButterMorphValidationDesignerSaveResult
         {
@@ -206,7 +243,8 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         var updated = await _taskApplicationService.SetExecutionCondition(
             new SetTaskExecutionConditionCommand(
                 designerContext.TaskDefinitionId,
-                CreateCondition(request.DslContent)));
+                CreateCondition(request.DslContent))
+            { ExpectedDesignRevision = request.ExpectedDesignRevision });
 
         return new ButterMorphValidationDesignerSaveResult
         {
@@ -222,7 +260,8 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         var updated = await _taskApplicationService.SetCompensationExecutionCondition(
             new SetTaskCompensationExecutionConditionCommand(
                 designerContext.TaskDefinitionId,
-                CreateCondition(request.DslContent)));
+                CreateCondition(request.DslContent))
+            { ExpectedDesignRevision = request.ExpectedDesignRevision });
 
         return new ButterMorphValidationDesignerSaveResult
         {
@@ -238,7 +277,8 @@ public sealed class OrchestrationButterMorphValidationDesignerHost : IButterMorp
         var updated = await _triggerBindingApplicationService.SetCompensationExecutionCondition(
             new SetTriggerCompensationExecutionConditionCommand(
                 designerContext.TriggerBindingId,
-                CreateCondition(request.DslContent)));
+                CreateCondition(request.DslContent))
+            { ExpectedDesignRevision = request.ExpectedDesignRevision });
 
         return new ButterMorphValidationDesignerSaveResult
         {

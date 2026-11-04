@@ -8,6 +8,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Storage.EntityFramework.Des
 /// </summary>
 public sealed class StageDefinitionEntity
 {
+    /// <summary>Gets or sets the portable optimistic concurrency token.</summary>
+    public string ConcurrencyToken { get; set; } = string.Empty;
+
     /// <summary>
     /// Gets or sets Id.
     /// </summary>

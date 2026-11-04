@@ -8,5 +8,9 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.Application.Design;
 /// </summary>
 public sealed record SetTaskCompensationTransformationCommand(
     string Id,
-    TransformationDefinition Transformation) : IRequest<bool>;
+    TransformationDefinition Transformation) : IRequest<bool>
+{
+    /// <summary>Gets the expected persisted designer revision, when atomic saving is required.</summary>
+    public string ExpectedDesignRevision { get; init; } = string.Empty;
+}
 

@@ -201,7 +201,7 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 - `Krackend.Sagas.Orchestrations.WebUI.Shell`, `ControlPlane.WebUI`, and `Runtime.WebUI` provide Razor UI modules for host applications.
 - `Krackend.Sagas.Orchestrations.ControlPlane.Api` and `Runtime.Api` expose optional REST endpoints over the same application/runtime services used by the WebUI modules.
 - `Krackend.Sagas.Orchestrations.WolfAuth` adds optional WebUI authentication gates over host-owned WolfAuth/ASP.NET Core authentication. Krackend no longer ships its own subject, role, permission, or security storage packages.
-- Control Plane and runtime ButterMorph integration is aligned with ButterMorph `2.1.3` for schema design, mapping, execution-condition authoring, runtime transforms, and runtime validations.
+- Control Plane and runtime ButterMorph integration is aligned with ButterMorph `2.1.5` for schema design, mapping, execution-condition authoring, runtime transforms, and runtime validations.
 
 ### Web UI and themes
 
@@ -375,7 +375,15 @@ ButterMorph compensation contexts include the data that is technically available
 
 The Control Plane WebUI opens ButterMorph directly for compensation execution conditions and transformations. Trigger compensation is edited in its own tab with the same task configuration surface used by regular tasks, including timeout, retry, and on-error policy settings.
 
-Krackend `v5.2.2` uses ButterMorph `2.1.3` across the Control Plane designer, schema designer, runtime transform adapter, and validation adapter. Hosts only need to register the Krackend packages; the ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
+The ButterMorph package family is versioned centrally by Krackend so design-time snapshots and runtime execution stay on the same mapping engine.
+
+The mapping and execution-condition designers use isolated in-memory ButterMorph sessions. A multi-replica Control Plane must route an editor's requests to the same replica. Sessions close when the embedded editor closes and abandoned sessions expire under ButterMorph's retention policy. The payload schema designer used for metadata has a separate lifecycle.
+
+Designer saves compare the schema and design revisions last loaded by the editor with the current values and report conflicts without replacing the local draft. Changes to the same task, stage, or trigger are also protected by an EF optimistic concurrency token during the write. A concurrent schema change in another record is still subject to the interval between checking the schema and committing the design.
+
+The Control Plane EF model requires a non-null `ConcurrencyToken` string of up to 32 characters on `TaskDefinitions`, `StageDefinitions`, and `TriggerBindings`. Before deploying to an existing relational database, the host must add these columns and initialize existing rows to the empty string through its EF migration. MongoDB hosts must likewise initialize the field on existing documents before deploying. Drain older Control Plane instances during this upgrade: instances that do not update the tokens cannot participate in the concurrency check. EF manages the tokens independently of the database provider after the upgrade.
+
+Custom Control Plane storage implementations must implement the conditional designer-save operations on the task, stage, and trigger repositories. Their default implementations reject the save rather than silently bypassing the concurrency check.
 
 Authentication model:
 

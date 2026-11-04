@@ -53,6 +53,14 @@ public interface ITriggerBindingRepository
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     Task SetCompensationTransformation(Id triggerBindingId, TransformationDefinition transformation, CancellationToken cancellationToken = default);
 
+    /// <summary>Saves a compensation condition only when its persisted designer revision matches.</summary>
+    Task SetCompensationExecutionConditionIfUnchanged(Id id, ExecutionCondition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This storage provider does not support atomic designer saves.");
+
+    /// <summary>Saves a compensation transformation only when its persisted designer revision matches.</summary>
+    Task SetCompensationTransformationIfUnchanged(Id id, TransformationDefinition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This storage provider does not support atomic designer saves.");
+
     /// <summary>
     /// Returns all trigger bindings that belong to one orchestration version.
     /// </summary>

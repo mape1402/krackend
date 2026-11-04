@@ -22,10 +22,10 @@ public sealed class SetTaskCompensationExecutionConditionCommandHandler : IReque
     /// <inheritdoc />
     public async Task<bool> Handle(SetTaskCompensationExecutionConditionCommand request, CancellationToken cancellationToken)
     {
-        await _repository.SetCompensationExecutionCondition(
-            PrimitiveParser.ParseId(request.Id),
-            request.ExecutionCondition,
-            cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.ExpectedDesignRevision))
+            await _repository.SetCompensationExecutionCondition(PrimitiveParser.ParseId(request.Id), request.ExecutionCondition, cancellationToken);
+        else
+            await _repository.SetCompensationExecutionConditionIfUnchanged(PrimitiveParser.ParseId(request.Id), request.ExecutionCondition, request.ExpectedDesignRevision, cancellationToken);
         return true;
     }
 }

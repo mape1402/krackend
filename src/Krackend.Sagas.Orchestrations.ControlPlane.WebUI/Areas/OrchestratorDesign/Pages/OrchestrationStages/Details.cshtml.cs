@@ -122,15 +122,11 @@ public sealed class DetailsModel : PageModel
         { return BadRequest(new { message = error.Message }); }
     }
 
-    public async Task<IActionResult> OnGetButterMorphContextAsync(string context,
-        [FromServices] Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.IOrchestrationButterMorphDesignerContextParser parser,
-        [FromServices] global::ButterMorph.Web.Razor.IButterMorphDesignerHost mappingHost,
-        [FromServices] global::ButterMorph.Web.Razor.IButterMorphValidationDesignerHost validationHost,
-        CancellationToken cancellationToken)
+    public IActionResult OnGetButterMorphContext(string context,
+        [FromServices] Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.IOrchestrationButterMorphDesignerContextParser parser)
     {
-        var versioned = await Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.OrchestrationButterMorphContextVersion.ResolveAsync(
-            context, parser, _schemaContextService, mappingHost, validationHost, cancellationToken);
-        return versioned is null ? BadRequest() : new JsonResult(new { context = versioned });
+        var stable = Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.ButterMorph.OrchestrationButterMorphContextCompatibility.Resolve(context, parser);
+        return stable is null ? BadRequest() : new JsonResult(new { context = stable });
     }
 
     public async Task<IActionResult> OnGetAsync(string orchestrationId, string versionId, string stageId, string editTaskId = "", CancellationToken cancellationToken = default)

@@ -95,6 +95,22 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
     {
         try
         {
+            if (OrchestrationButterMorphRevisions.HasExpectedRevisions(request.ExpectedSchemaRevision, request.ExpectedDesignRevision))
+            {
+                var current = await Load(new ButterMorphDesignerLoadRequest { ContextKey = request.ContextKey });
+                if (string.IsNullOrWhiteSpace(current.SchemaRevision))
+                    return new ButterMorphDesignerSaveResult { Succeeded = false, Message = current.Message };
+                if (!OrchestrationButterMorphRevisions.Matches(request.ExpectedSchemaRevision, request.ExpectedDesignRevision, current.SchemaRevision, current.DesignRevision))
+                    return new ButterMorphDesignerSaveResult
+                    {
+                        Succeeded = false,
+                        IsConflict = true,
+                        Message = "The schema or saved transformation changed. Your edits have not been saved.",
+                        SchemaRevision = current.SchemaRevision,
+                        DesignRevision = current.DesignRevision
+                    };
+            }
+
             if (_contextParser.TryParseTaskTransformation(request.ContextKey, out var taskContext))
             {
                 var schemaContext = await _schemaContextService.GetForTask(new GetTaskSchemaContextQuery(
@@ -103,8 +119,9 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
                 var updated = await _taskApplicationService.SetTransformation(
                     new SetTaskTransformationCommand(
                         taskContext.TaskDefinitionId,
-                        CreateTransformation(request.DslContent, schemaContext.Signature, GetTargetSchemaHash(schemaContext))));
-                return CreateSaveResult(updated, "Transformation");
+                        CreateTransformation(request.DslContent, schemaContext.Signature, GetTargetSchemaHash(schemaContext)))
+                    { ExpectedDesignRevision = request.ExpectedDesignRevision });
+                return CreateSaveResult(updated, "Transformation", schemaContext.Signature, request.DslContent);
             }
 
             if (_contextParser.TryParseTaskCompensationTransformation(request.ContextKey, out var compensationContext))
@@ -115,8 +132,9 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
                 var updated = await _taskApplicationService.SetCompensationTransformation(
                     new SetTaskCompensationTransformationCommand(
                         compensationContext.TaskDefinitionId,
-                        CreateTransformation(request.DslContent, schemaContext.Signature, GetTargetSchemaHash(schemaContext))));
-                return CreateSaveResult(updated, "Compensation transformation");
+                        CreateTransformation(request.DslContent, schemaContext.Signature, GetTargetSchemaHash(schemaContext)))
+                    { ExpectedDesignRevision = request.ExpectedDesignRevision });
+                return CreateSaveResult(updated, "Compensation transformation", schemaContext.Signature, request.DslContent);
             }
 
             if (_contextParser.TryParseTriggerCompensationTransformation(request.ContextKey, out var triggerContext))
@@ -127,14 +145,27 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
                 var updated = await _triggerBindingApplicationService.SetCompensationTransformation(
                     new SetTriggerCompensationTransformationCommand(
                         triggerContext.TriggerBindingId,
-                        CreateTransformation(request.DslContent, schemaContext.Signature, GetTargetSchemaHash(schemaContext))));
-                return CreateSaveResult(updated, "Trigger compensation transformation");
+                        CreateTransformation(request.DslContent, schemaContext.Signature, GetTargetSchemaHash(schemaContext)))
+                    { ExpectedDesignRevision = request.ExpectedDesignRevision });
+                return CreateSaveResult(updated, "Trigger compensation transformation", schemaContext.Signature, request.DslContent);
             }
 
             return new ButterMorphDesignerSaveResult
             {
                 Succeeded = false,
                 Message = "Invalid orchestration transformation context."
+            };
+        }
+        catch (OrchestrationDesignerConcurrencyException)
+        {
+            var current = await Load(new ButterMorphDesignerLoadRequest { ContextKey = request.ContextKey });
+            return new ButterMorphDesignerSaveResult
+            {
+                Succeeded = false,
+                IsConflict = true,
+                Message = "The transformation changed while it was being saved. Your edits have not been saved.",
+                SchemaRevision = current.SchemaRevision,
+                DesignRevision = current.DesignRevision
             };
         }
         catch (Exception exception)
@@ -162,12 +193,20 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
             diagnostics.Add("The current task does not have a usable request schema target.");
         }
 
+        // Do not replace an existing catalog with a partial snapshot if a binding
+        // could not be loaded. A deliberately absent target is still complete.
+        var complete = sources.Count == schemaContext.Sources.Count &&
+            (target is not null || schemaContext.Target?.SchemaBinding is null);
+
         return new ButterMorphDesignerLoadResult
         {
-            SourceSchemas = sources,
-            SourceMetadata = _sourceMetadataFactory.Create(schemaContext),
-            TargetSchema = target,
+            SourceSchemas = complete ? sources : new Dictionary<string, IStructureSchema>(StringComparer.Ordinal),
+            SourceMetadata = complete ? _sourceMetadataFactory.Create(schemaContext) : new Dictionary<string, ButterMorphDesignerSourceMetadata>(StringComparer.Ordinal),
+            TargetSchema = complete ? target : null,
+            HasSchemaSnapshot = complete,
             InitialDslContent = initialDsl ?? string.Empty,
+            SchemaRevision = complete ? schemaContext.Signature : string.Empty,
+            DesignRevision = OrchestrationButterMorphRevisions.ForDesign(initialDsl),
             ShowSchemaActions = false,
             Message = diagnostics.Count == 0 ? string.Empty : string.Join(Environment.NewLine, diagnostics)
         };
@@ -275,11 +314,13 @@ public sealed class OrchestrationButterMorphDesignerHost : IButterMorphDesignerH
     private static string GetTargetSchemaHash(OrchestrationSchemaContext schemaContext)
         => schemaContext.Target?.SchemaBinding?.Snapshot?.ContentHash ?? string.Empty;
 
-    private static ButterMorphDesignerSaveResult CreateSaveResult(bool updated, string label)
+    private static ButterMorphDesignerSaveResult CreateSaveResult(bool updated, string label, string schemaRevision, string dsl)
         => new()
         {
             Succeeded = updated,
-            Message = updated ? $"{label} saved." : $"{label} could not be saved."
+            Message = updated ? $"{label} saved." : $"{label} could not be saved.",
+            SchemaRevision = updated ? schemaRevision : string.Empty,
+            DesignRevision = updated ? OrchestrationButterMorphRevisions.ForDesign(dsl) : string.Empty
         };
 
     private static ButterMorphDesignerLoadResult CreateLoadFailure(string message)

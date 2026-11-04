@@ -67,10 +67,20 @@ public sealed class StageRepository : IStageRepository
     /// <summary>
     /// Executes SetExecutionCondition.
     /// </summary>
-    public async Task SetExecutionCondition(Id stageDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+    public Task SetExecutionCondition(Id stageDefinitionId, ExecutionCondition executionCondition, CancellationToken cancellationToken = default)
+        => SetExecutionConditionCore(stageDefinitionId, executionCondition, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task SetExecutionConditionIfUnchanged(Id id, ExecutionCondition value, string expectedRevision, CancellationToken cancellationToken = default)
+        => SetExecutionConditionCore(id, value, expectedRevision ?? string.Empty, cancellationToken);
+
+    private async Task SetExecutionConditionCore(Id stageDefinitionId, ExecutionCondition executionCondition, string expectedRevision, CancellationToken cancellationToken)
     {
         var current = await _dbContext.StageDefinitions.FirstOrDefaultAsync(x => x.Id == stageDefinitionId, cancellationToken)
             ?? throw new KeyNotFoundException($"StageDefinition '{stageDefinitionId}' was not found.");
+
+        if (expectedRevision is not null)
+            DesignerConcurrencyGuard.EnsureCondition(expectedRevision, current.ToDefinition().ExecutionCondition);
 
         current.ExecutionCondition = executionCondition is null
             ? null
@@ -92,7 +102,7 @@ public sealed class StageRepository : IStageRepository
 
         // Ensure EF marks the JSON/complex property as modified for persistence.
         _dbContext.StageDefinitions.Update(current);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await DesignerConcurrencyGuard.SaveAsync(_dbContext, expectedRevision is not null, cancellationToken);
     }
 
     /// <summary>

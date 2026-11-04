@@ -27,7 +27,10 @@ public sealed class SetTaskTransformationCommandHandler : IRequestHandler<SetTas
     /// <returns>True when the operation completes successfully.</returns>
     public async Task<bool> Handle(SetTaskTransformationCommand request, CancellationToken cancellationToken)
     {
-        await _repository.SetTransformation(PrimitiveParser.ParseId(request.Id), request.Transformation, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.ExpectedDesignRevision))
+            await _repository.SetTransformation(PrimitiveParser.ParseId(request.Id), request.Transformation, cancellationToken);
+        else
+            await _repository.SetTransformationIfUnchanged(PrimitiveParser.ParseId(request.Id), request.Transformation, request.ExpectedDesignRevision, cancellationToken);
         return true;
     }
 }

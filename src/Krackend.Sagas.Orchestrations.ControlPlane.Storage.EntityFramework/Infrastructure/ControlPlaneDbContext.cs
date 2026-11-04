@@ -164,9 +164,13 @@ public sealed class ControlPlaneDbContext : DbContext
     /// </summary>
     /// <returns>The number of state entries written to the database.</returns>
     public override int SaveChanges()
+        => SaveChanges(acceptAllChangesOnSuccess: true);
+
+    /// <inheritdoc />
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        NormalizePolymorphicDiscriminators();
-        return base.SaveChanges();
+        PrepareChanges();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     /// <summary>
@@ -175,9 +179,13 @@ public sealed class ControlPlaneDbContext : DbContext
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <returns>The number of state entries written to the database.</returns>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+
+    /// <inheritdoc />
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        NormalizePolymorphicDiscriminators();
-        return base.SaveChangesAsync(cancellationToken);
+        PrepareChanges();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     /// <summary>
@@ -240,7 +248,7 @@ public sealed class ControlPlaneDbContext : DbContext
         }
     }
 
-    private void NormalizePolymorphicDiscriminators()
+    private void PrepareChanges()
     {
         var trackedStages = ChangeTracker.Entries<StageDefinitionEntity>()
             .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
@@ -248,6 +256,7 @@ public sealed class ControlPlaneDbContext : DbContext
 
         foreach (var stage in trackedStages)
         {
+            stage.ConcurrencyToken = Guid.NewGuid().ToString("N");
             EnsureConditionConfigurationType(stage.ExecutionCondition?.Configuration);
         }
 
@@ -266,6 +275,7 @@ public sealed class ControlPlaneDbContext : DbContext
 
         foreach (var task in trackedTasks)
         {
+            task.ConcurrencyToken = Guid.NewGuid().ToString("N");
             EnsureTaskConfigurationType(task.Configuration, task.Kind);
             EnsureConditionConfigurationType(task.ExecutionCondition?.Configuration);
             EnsureTransformationConfigurationType(task.Transformation?.Configuration);
@@ -288,6 +298,7 @@ public sealed class ControlPlaneDbContext : DbContext
 
         foreach (var trigger in trackedTriggers)
         {
+            trigger.ConcurrencyToken = Guid.NewGuid().ToString("N");
             EnsureTriggerChannelType(trigger.TriggerChannel);
         }
     }
