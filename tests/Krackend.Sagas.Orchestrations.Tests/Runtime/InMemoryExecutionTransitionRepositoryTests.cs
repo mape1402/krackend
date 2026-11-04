@@ -195,6 +195,30 @@ public sealed class InMemoryExecutionTransitionRepositoryTests
     }
 
     [Fact]
+    public async Task CreatePublishesProjectedVersionAndProgressWhenArtifactIsMissing()
+    {
+        var publisher = new RecordingRuntimeReactiveEventPublisher();
+        using var provider = CreateProvider(publisher);
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var instanceId = Id.New();
+        var instance = Instance(instanceId, Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        instance.OrchestrationVersion = "1.2.3";
+        instance.TotalTaskCount = 3;
+        instance.CompletedTaskCount = 1;
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+
+        await services.GetRequiredService<IExecutionTransitionRepository>().Create(
+            Transition(instanceId, "TaskCompleted", DateTime.UtcNow));
+
+        var published = Assert.Single(publisher.Events);
+        Assert.Equal("1.2.3", published.OrchestrationVersion);
+        Assert.True(published.ProgressKnown);
+        Assert.Equal(1, published.CompletedTaskCount);
+        Assert.Equal(3, published.TotalTaskCount);
+    }
+
+    [Fact]
     public async Task GetTrafficBucketsActiveStartedCompletedAndFailedInstances()
     {
         var publisher = new RecordingRuntimeReactiveEventPublisher();
@@ -304,8 +328,9 @@ public sealed class InMemoryExecutionTransitionRepositoryTests
         var attemptId = Id.New();
 
         await SeedArtifact(services, artifactId);
-        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(
-            Instance(instanceId, artifactId, OrchestrationInstanceStatus.Running, DateTime.UtcNow.AddMinutes(-1)));
+        var instance = Instance(instanceId, artifactId, OrchestrationInstanceStatus.Running, DateTime.UtcNow.AddMinutes(-1));
+        instance.OrchestrationVersion = "1.2.3";
+        await services.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
         await services.GetRequiredService<IStageExecutionRepository>().Create(new StageExecution
         {
             Id = stageId,
