@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.1.1] - 2026-11-04
+
+### Fixed
+
+- Publish a successful orchestration callback when Pigeon skips a command already processed by SquirrelBox, preserving the original orchestration metadata without rerunning the handler. The callback does not reconstruct the original business response payload.
+- Move roadmap paste actions into a compact floating menu and replace copy confirmations with a non-blocking toast.
+
+------
+
 ## [v6.1.0] - 2026-11-04
 
 ### Added

@@ -23,10 +23,20 @@
     </style>
 }
 
+@if (Model.CanEdit)
+{
+    <div class="od-roadmap-dial dropup">
+        <button type="button" class="od-roadmap-dial-trigger" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Task paste actions" title="Paste actions"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><button type="button" class="dropdown-item js-roadmap-paste" data-paste-target="task">Paste task</button></li>
+        </ul>
+    </div>
+}
+<div class="od-roadmap-toast" data-roadmap-toast role="status" aria-live="polite" hidden></div>
+
 <section class="od-list-shell" data-roadmap-section="task" data-version-id="@Model.VersionId" data-stage-id="@Model.StageId" data-editable="@Model.CanEdit.ToString().ToLowerInvariant()">
     <div class="od-panel-head">
         <h2 class="od-panel-title">Tasks</h2>
-        @if (Model.CanEdit) { <button type="button" class="z-button z-button-ghost js-roadmap-paste">Paste task</button> }
         <span class="od-item-meta">@(Model.CanEdit ? "Drag cards to reorder" : "Read-only tasks")</span>
     </div>
 

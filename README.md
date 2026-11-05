@@ -12,6 +12,10 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
 
+## Version 6.1.1 highlights
+
+`v6.1.1` sends a successful orchestration callback when Pigeon skips an already processed command, preserving its orchestration metadata without invoking the handler again. This callback does not restore the original business response payload; response validation still applies. The roadmap editor also groups paste actions in a floating menu and confirms copies with a non-blocking toast.
+
 ## Version 6.1 highlights
 
 `v6.1.0` improves orchestration recovery, runtime monitoring, and the roadmap editor. Instance lists read projected version and progress data; the designer supports cloning and clipboard transfer of roadmap elements; and stalled instances can be reconciled through the runtime. The KnOwl adapter uses bounded server-side contract searches, while ButterMorph 2.1.5 provides the current designer session integration.
