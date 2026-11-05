@@ -7,8 +7,8 @@ using global::Pigeon.Messaging.Consuming.Dispatching;
 using System.Text.Json.Nodes;
 
 /// <summary>
-/// Converts a terminal Pigeon rejection for an orchestrated operation into its
-/// corresponding orchestration failure reply.
+/// Publishes orchestration replies for terminal Pigeon rejections and successfully
+/// processed duplicate messages.
 /// </summary>
 /// <remarks>
 /// A typed outcome takes precedence over the transport settlement. If no typed
@@ -55,6 +55,13 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
         ArgumentNullException.ThrowIfNull(observation);
 
         var outcome = observation.Result.Outcome;
+        if (observation.Result.Decision == PigeonConsumeDecision.AckAndSkip &&
+            outcome?.Kind == PigeonConsumeOutcomeKind.AlreadyProcessed)
+        {
+            await PublishAlreadyProcessedAsync(observation, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (outcome is not null
             ? outcome.Kind != PigeonConsumeOutcomeKind.Rejected
             : observation.Result.Decision != PigeonConsumeDecision.Reject)
@@ -154,6 +161,60 @@ internal sealed class KrackendPigeonConsumeDecisionObserver : IConsumeDecisionOb
                 _resultMetadataSetter.Set(previousResultMetadata);
             }
 
+            _propagationMetadataSetter.Set(previousPropagationMetadata);
+        }
+    }
+
+    private async Task PublishAlreadyProcessedAsync(ConsumeDecisionObservation observation, CancellationToken cancellationToken)
+    {
+        if (!TryGetOrchestrationMetadata(observation.Context, out var messageMetadata) ||
+            messageMetadata.ReplyAddress is null ||
+            string.IsNullOrWhiteSpace(messageMetadata.ReplyAddress.Transport) ||
+            string.IsNullOrWhiteSpace(messageMetadata.ReplyAddress.SettingsPayload))
+        {
+            return;
+        }
+
+        var previousMessageMetadata = _messageMetadataAccessor.Get();
+        var previousResultMetadata = _resultMetadataAccessor.Get();
+        var previousPropagationMetadata = _propagationMetadataAccessor.Get();
+        var resultMetadata = new OrchestrationExecutionResultMetadata
+        {
+            Succeeded = true,
+            Status = "AlreadyProcessed",
+            CompletedOnUtc = DateTime.UtcNow
+        };
+        AddMetadataGroup(resultMetadata.Metadata, DecisionMetadataKey, observation.Result.Metadata);
+        AddMetadataGroup(resultMetadata.Metadata, ReplyMetadataKey, observation.Context.ReplyMetadata);
+
+        try
+        {
+            _messageMetadataSetter.Set(messageMetadata);
+            _resultMetadataSetter.Set(resultMetadata);
+            _propagationMetadataSetter.Set(_propagationMetadataMapper.Capture(observation.Context));
+
+            await _publisher.PublishAsync(null!, messageMetadata.ReplyAddress, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Published orchestration success reply for already processed Pigeon consumption. SagaId={SagaId} OrchestrationInstanceId={OrchestrationInstanceId} TaskExecutionId={TaskExecutionId} Attempt={Attempt} Topic={Topic} Subscription={Subscription} MessageId={MessageId} Decision={Decision} Outcome={Outcome}",
+                messageMetadata.SagaId, messageMetadata.OrchestrationInstanceId, messageMetadata.TaskExecutionId,
+                messageMetadata.Attempt, observation.Context.Topic, observation.Context.Subscription,
+                observation.Context.MessageId, observation.Result.Decision, observation.Result.Outcome?.Kind);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception,
+                "Failed to publish orchestration success reply for already processed Pigeon consumption. SagaId={SagaId} OrchestrationInstanceId={OrchestrationInstanceId} TaskExecutionId={TaskExecutionId} Attempt={Attempt}",
+                messageMetadata.SagaId, messageMetadata.OrchestrationInstanceId, messageMetadata.TaskExecutionId, messageMetadata.Attempt);
+            throw;
+        }
+        finally
+        {
+            _messageMetadataSetter.Set(previousMessageMetadata);
+            if (previousResultMetadata is null)
+                _resultMetadataSetter.Clear();
+            else
+                _resultMetadataSetter.Set(previousResultMetadata);
             _propagationMetadataSetter.Set(previousPropagationMetadata);
         }
     }

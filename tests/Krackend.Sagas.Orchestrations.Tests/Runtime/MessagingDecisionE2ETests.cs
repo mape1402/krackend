@@ -24,11 +24,62 @@ using Krackend.Sagas.Orchestrations.Tests.Runtime.Support;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
+using Pigeon.Messaging.Consuming.Dispatching;
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json.Nodes;
 
 public sealed class MessagingDecisionE2ETests
 {
     private static readonly SemanticVersion MessagingVersion = new(1, 0, 0);
+
+    [Fact]
+    public async Task AlreadyProcessedPigeonReplyCompletesWaitingTaskWithoutRetryOrCompensation()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage-one", 1, MessagingTask("task.once", 1,
+                retryPolicy: RetryPolicy(2, "TransientFailure"),
+                timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(60), "TimedOut"),
+                onErrorPolicy: OnErrorPolicy.StopAndCompensate))));
+        await harness.StartAsync(BusinessPayload("trigger"), "correlation-duplicate");
+        var command = Assert.Single(harness.Dispatcher.Commands);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, (await harness.GetTaskAsync(command)).Status);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var clientBuilder = services.AddKrackendOrchestrationsClient();
+        Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.ServiceCollectionExtensions.AddPigeon(clientBuilder);
+        services.Replace(ServiceDescriptor.Scoped<IOrchestrationClientPublisher, RecordingOrchestrationClientPublisher>());
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var observer = scope.ServiceProvider.GetServices<IConsumeDecisionObserver>()
+            .Single(x => x.GetType().Name == "KrackendPigeonConsumeDecisionObserver");
+        var context = new ConsumeContext();
+        var field = typeof(ConsumeContext).GetField("_metadata", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var metadata = (ConcurrentDictionary<string, object>)field.GetValue(context)!;
+        metadata[OrchestrationMetadataConstants.OrchestrationMessageMetadataKey] = command.MessageMetadata;
+        var decision = new PigeonConsumeDecisionResult(PigeonConsumeDecision.AckAndSkip)
+        {
+            Outcome = new PigeonConsumeOutcome { Kind = PigeonConsumeOutcomeKind.AlreadyProcessed }
+        };
+
+        await observer.ObserveAsync(new ConsumeDecisionObservation(context, decision), CancellationToken.None);
+
+        var publisher = (RecordingOrchestrationClientPublisher)scope.ServiceProvider.GetRequiredService<IOrchestrationClientPublisher>();
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Same(command.MessageMetadata, publisher.MessageMetadata);
+        Assert.Same(command.MessageMetadata.ReplyAddress, publisher.Address);
+        await harness.ForwardAsync(command, publisher.Payload as JsonNode, publisher.ResultMetadata);
+
+        Assert.Equal(TaskExecutionStatus.Completed, (await harness.GetTaskAsync(command)).Status);
+        Assert.Equal(OrchestrationInstanceStatus.Completed, (await harness.GetInstanceAsync(command)).Status);
+        Assert.Null((await harness.GetTaskAsync(command)).ResponseDeadlineUtc);
+        Assert.Single(harness.Dispatcher.Commands);
+        Assert.Empty(await harness.GetCompensationsAsync(command));
+        var transitions = await harness.GetTransitionsAsync(command);
+        Assert.Contains(transitions, x => x.TransitionType == "TaskCallbackCompleted");
+        Assert.DoesNotContain(transitions, x => x.TransitionType is "TaskRetryScheduled" or "TaskTimedOut" or "TaskCallbackFailed");
+    }
 
     [Fact]
     public async Task EngineCompletesConfiguredMessagingStagesWhenCallbacksSucceed()
