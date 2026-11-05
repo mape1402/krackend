@@ -87,7 +87,13 @@ public sealed class PigeonSquirrelBoxTerminalDecisionIntegrationTests
         Assert.Equal(expectedOutcome, decision.Outcome?.Kind);
         if (expectedOutcome == PigeonConsumeOutcomeKind.AlreadyProcessed)
         {
-            Assert.Equal(0, callbackPublisher.PublishCount);
+            Assert.Equal(1, callbackPublisher.PublishCount);
+            Assert.Same(orchestrationMetadata.ReplyAddress, callbackPublisher.Address);
+            Assert.Same(orchestrationMetadata, callbackPublisher.Message);
+            Assert.True(callbackPublisher.Result!.Succeeded);
+            Assert.Equal("AlreadyProcessed", callbackPublisher.Result.Status);
+            Assert.Null(callbackPublisher.Result.IsRetryableCandidate);
+            Assert.NotNull(callbackPublisher.Result.CompletedOnUtc);
             return;
         }
 

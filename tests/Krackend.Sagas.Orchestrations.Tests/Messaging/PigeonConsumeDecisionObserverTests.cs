@@ -2,6 +2,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Messaging;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Client.Publishing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pigeon.Messaging.Consuming.Dispatching;
@@ -12,6 +13,116 @@ using System.Text.Json.Nodes;
 public sealed class PigeonConsumeDecisionObserverTests
 {
     private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+    [Fact]
+    public async Task AlreadyProcessedAckPublishesSuccessAndRestoresScopes()
+    {
+        var priorMessage = new OrchestrationMessageMetadata { CorrelationId = "prior" };
+        var priorResult = new OrchestrationExecutionResultMetadata { Status = "prior" };
+        var priorPropagation = new OrchestrationPropagationMetadata { Items = { ["prior"] = JsonValue.Create("value") } };
+        var messageScope = new MessageMetadataScope(priorMessage);
+        var resultScope = new ResultMetadataScope(priorResult);
+        var propagationScope = new PropagationMetadataScope(priorPropagation);
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var observer = CreateObserver(publisher, messageScope, resultScope, propagationScope);
+        var metadata = CreateOrchestrationMetadata();
+        var context = new ConsumeContext { RawMetadata = new Dictionary<string, string> { ["audit.context"] = "{\"request\":\"req-1\"}" } };
+        SetOrchestrationMetadata(context, metadata);
+        var before = DateTime.UtcNow;
+
+        await observer.ObserveAsync(AlreadyProcessed(context), CancellationToken.None);
+
+        var after = DateTime.UtcNow;
+        Assert.Equal(1, publisher.PublishCount);
+        Assert.Null(publisher.Payload);
+        Assert.Same(metadata.ReplyAddress, publisher.Address);
+        Assert.Same(metadata, publisher.MessageMetadata);
+        Assert.Equal("saga-1", publisher.MessageMetadata!.SagaId);
+        Assert.Equal("instance-1", publisher.MessageMetadata.OrchestrationInstanceId);
+        Assert.Equal("task-1", publisher.MessageMetadata.TaskExecutionId);
+        Assert.Equal(3, publisher.MessageMetadata.Attempt);
+        Assert.True(publisher.ResultMetadata!.Succeeded);
+        Assert.Equal("AlreadyProcessed", publisher.ResultMetadata.Status);
+        Assert.Null(publisher.ResultMetadata.ErrorCode);
+        Assert.Null(publisher.ResultMetadata.IsRetryableCandidate);
+        Assert.InRange(publisher.ResultMetadata.CompletedOnUtc!.Value, before, after);
+        Assert.Equal(DateTimeKind.Utc, publisher.ResultMetadata.CompletedOnUtc.Value.Kind);
+        Assert.Equal("req-1", publisher.PropagationMetadata!.Items["audit.context"]!["request"]!.GetValue<string>());
+        Assert.Same(priorMessage, messageScope.Value);
+        Assert.Same(priorResult, resultScope.Value);
+        Assert.Equal("value", propagationScope.Value.Items["prior"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(false, null, null)]
+    [InlineData(true, null, null)]
+    [InlineData(true, "", "{}")]
+    [InlineData(true, "messaging", "")]
+    public async Task AlreadyProcessedWithoutValidReplyAddressIsIgnored(bool hasMetadata, string? transport, string? settings)
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var context = new ConsumeContext();
+        if (hasMetadata)
+            SetOrchestrationMetadata(context, new OrchestrationMessageMetadata
+            {
+                ReplyAddress = transport is null ? null! : new OrchestrationReplyAddress { Transport = transport, SettingsPayload = settings! }
+            });
+
+        await CreateObserver(publisher, messageScope, resultScope, propagationScope).ObserveAsync(AlreadyProcessed(context), CancellationToken.None);
+
+        Assert.Equal(0, publisher.PublishCount);
+    }
+
+    [Fact]
+    public async Task AlreadyProcessedPublishFailurePropagatesAndRestoresScopes()
+    {
+        var priorMessage = new OrchestrationMessageMetadata { CorrelationId = "prior" };
+        var priorResult = new OrchestrationExecutionResultMetadata { Status = "prior" };
+        var messageScope = new MessageMetadataScope(priorMessage);
+        var resultScope = new ResultMetadataScope(priorResult);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope, throwOnPublish: true);
+        var context = new ConsumeContext();
+        SetOrchestrationMetadata(context, CreateOrchestrationMetadata());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateObserver(publisher, messageScope, resultScope, propagationScope)
+            .ObserveAsync(AlreadyProcessed(context), CancellationToken.None).AsTask());
+
+        Assert.Same(priorMessage, messageScope.Value);
+        Assert.Same(priorResult, resultScope.Value);
+    }
+
+    [Fact]
+    public async Task AlreadyProcessedLogsSuccessfulReplyAndIdentity()
+    {
+        var messageScope = new MessageMetadataScope(new OrchestrationMessageMetadata());
+        var resultScope = new ResultMetadataScope(null);
+        var propagationScope = new PropagationMetadataScope(new OrchestrationPropagationMetadata());
+        var publisher = new RecordingPublisher(messageScope, resultScope, propagationScope);
+        var loggerFactory = new CapturingLoggerFactory();
+        var context = new ConsumeContext { Topic = "orders", Subscription = "billing", MessageId = "message-1" };
+        SetOrchestrationMetadata(context, CreateOrchestrationMetadata());
+
+        await CreateObserver(publisher, messageScope, resultScope, propagationScope, loggerFactory)
+            .ObserveAsync(AlreadyProcessed(context), CancellationToken.None);
+
+        var log = Assert.Single(loggerFactory.Logger.Messages);
+        Assert.Contains("saga-1", log);
+        Assert.Contains("instance-1", log);
+        Assert.Contains("task-1", log);
+        Assert.Contains("Attempt=3", log);
+        Assert.Contains("Decision=AckAndSkip", log);
+        Assert.Contains("Outcome=AlreadyProcessed", log);
+    }
+
+    private static ConsumeDecisionObservation AlreadyProcessed(ConsumeContext context)
+        => new(context, new PigeonConsumeDecisionResult(PigeonConsumeDecision.AckAndSkip)
+        {
+            Outcome = new PigeonConsumeOutcome { Kind = PigeonConsumeOutcomeKind.AlreadyProcessed }
+        });
 
     [Fact]
     public async Task RejectedDecisionPublishesTypedFailureAndRestoresTheScope()
@@ -285,7 +396,8 @@ public sealed class PigeonConsumeDecisionObserverTests
         RecordingPublisher publisher,
         MessageMetadataScope messageScope,
         ResultMetadataScope resultScope,
-        PropagationMetadataScope propagationScope)
+        PropagationMetadataScope propagationScope,
+        ILoggerFactory? loggerFactory = null)
     {
         var type = Assembly.Load("Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon").GetType(
             "Krackend.Sagas.Orchestrations.Client.Messaging.Pigeon.KrackendPigeonConsumeDecisionObserver",
@@ -303,7 +415,7 @@ public sealed class PigeonConsumeDecisionObserverTests
                 resultScope,
                 propagationScope,
                 propagationScope,
-                NullLoggerFactory.Instance
+                loggerFactory ?? NullLoggerFactory.Instance
             ],
             culture: null)!;
     }
@@ -371,6 +483,23 @@ public sealed class PigeonConsumeDecisionObserverTests
             }
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        public CapturingLogger Logger { get; } = new();
+        public void AddProvider(ILoggerProvider provider) { }
+        public ILogger CreateLogger(string categoryName) => Logger;
+        public void Dispose() { }
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
     }
 
     private sealed class MessageMetadataScope : IOrchestrationMessageMetadataAccessor, IOrchestrationMessageMetadataSetter
