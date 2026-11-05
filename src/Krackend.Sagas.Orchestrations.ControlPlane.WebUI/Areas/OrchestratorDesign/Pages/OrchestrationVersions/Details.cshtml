@@ -19,12 +19,23 @@
     <div class="alert alert-secondary">This version is read-only because its status is @Model.SelectedVersion?.Status.</div>
 }
 
+@if (Model.CanEdit)
+{
+    <div class="od-roadmap-dial dropup">
+        <button type="button" class="od-roadmap-dial-trigger" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Roadmap paste actions" title="Paste actions"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><button type="button" class="dropdown-item js-roadmap-paste" data-paste-target="trigger">Paste trigger</button></li>
+            <li><button type="button" class="dropdown-item js-roadmap-paste" data-paste-target="stage">Paste stage</button></li>
+        </ul>
+    </div>
+}
+<div class="od-roadmap-toast" data-roadmap-toast role="status" aria-live="polite" hidden></div>
+
 <div class="od-roadmap-layout">
     <aside class="od-list-shell od-roadmap-side">
         <div class="od-trigger-shell" data-roadmap-section="trigger" data-version-id="@Model.VersionId" data-editable="@Model.CanEdit.ToString().ToLowerInvariant()">
             <div class="od-trigger-head">
                 <h2 class="od-panel-title">Triggers</h2>
-                @if (Model.CanEdit) { <button type="button" class="z-button z-button-ghost js-roadmap-paste">Paste trigger</button> }
             </div>
 
             <div class="od-vertical-cards">
@@ -94,7 +105,6 @@
     <section class="od-list-shell od-roadmap-main" data-roadmap-section="stage" data-version-id="@Model.VersionId" data-editable="@Model.CanEdit.ToString().ToLowerInvariant()">
         <div class="od-panel-head">
             <h2 class="od-panel-title">Stages</h2>
-            @if (Model.CanEdit) { <button type="button" class="z-button z-button-ghost js-roadmap-paste">Paste stage</button> }
             <span class="od-item-meta">@(Model.CanEdit ? "Drag cards to reorder, click a card to open" : "Click a card to open")</span>
         </div>
 

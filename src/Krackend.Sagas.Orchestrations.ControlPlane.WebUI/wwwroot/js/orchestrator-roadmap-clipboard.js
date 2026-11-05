@@ -2,11 +2,19 @@
     const sections = [...document.querySelectorAll('[data-roadmap-section]')];
     if (!sections.length) return;
     const message = (title, text, type = 'info') => window.OrchestratorMessages?.notify({ title, message: text, type });
-    const notice = 'Tasks are copied outside parallel groups. Only literal true/false conditions are kept; transformations, navigation rules and parallel groups are not copied.';
+    const toast = document.querySelector('[data-roadmap-toast]');
+    let toastTimer;
+    const showToast = text => {
+        if (!toast) return;
+        toast.textContent = text;
+        toast.hidden = false;
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => { toast.hidden = true; }, 3000);
+    };
     try {
         if (sessionStorage.getItem('krackend-roadmap-copied')) {
             sessionStorage.removeItem('krackend-roadmap-copied');
-            message('Roadmap element created', notice);
+            showToast('Roadmap element created.');
         }
     } catch { /* Browser storage is optional. */ }
 
@@ -56,7 +64,9 @@
         if (!button) return;
         event.preventDefault();
         event.stopPropagation();
-        const section = button.closest('[data-roadmap-section]');
+        const section = button.dataset.pasteTarget
+            ? sections.find(item => item.dataset.roadmapSection === button.dataset.pasteTarget && item.dataset.editable === 'true')
+            : button.closest('[data-roadmap-section]');
         if (!section) return;
         run(async () => {
             if (button.classList.contains('js-roadmap-paste')) return doPaste(section);
@@ -65,7 +75,7 @@
             try {
                 if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
                 await navigator.clipboard.writeText(data);
-                message('Copied', notice);
+                showToast(`${button.dataset.elementType[0].toUpperCase()}${button.dataset.elementType.slice(1)} copied to clipboard.`);
             } catch { window.prompt('Copy the roadmap element (Ctrl+C):', data); }
         });
     });
