@@ -254,6 +254,12 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<int?>("IdleDurationSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxInstanceDurationSeconds")
+                        .HasColumnType("int");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");

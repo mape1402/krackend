@@ -24,4 +24,7 @@ public sealed class RuntimeIngressStandupRequest
     /// Gets or sets when the standup was requested.
     /// </summary>
     public DateTime RequestedOnUtc { get; set; }
+
+    /// <summary>Identifies a refresh after active trigger configurations change.</summary>
+    public string RefreshToken { get; set; }
 }

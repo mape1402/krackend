@@ -17,6 +17,22 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class RuntimeArtifactsIndexPageModelTests
 {
     [Fact]
+    public async Task RollbackRequestReportsAcceptedSchedulingWithoutClaimingCompletion()
+    {
+        var rollback = Substitute.For<IRuntimeArtifactRollbackService>();
+        rollback.RollbackAsync("artifact", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new RuntimeArtifactDeploymentResult { Accepted = true, Status = "Pending", Message = "Awaiting connector readiness." });
+        var model = CreateModel(new ArtifactRepositoryStub(), rollback: rollback);
+
+        var result = await model.OnPostRollbackAsync("artifact");
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("Rollback requested", model.TempData["OrchestratorMessage.Title"]);
+        Assert.Equal("Awaiting connector readiness.", model.TempData["OrchestratorMessage.Body"]);
+        await rollback.Received(1).RollbackAsync("artifact", "runtime-ui", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task OnGetAsync_DoesNotLoadAllArtifacts()
     {
         var repository = new ArtifactRepositoryStub(
@@ -215,13 +231,14 @@ public sealed class RuntimeArtifactsIndexPageModelTests
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeArtifactReadyNotifier? notifier = null,
         IRuntimeArtifactDeploymentHistoryRepository? history = null,
-        IRuntimeArtifactTransferService? transfer = null)
+        IRuntimeArtifactTransferService? transfer = null,
+        IRuntimeArtifactRollbackService? rollback = null)
     {
         var model = new IndexModel(
             artifactRepository,
             history ?? new DeploymentHistoryRepositoryStub(),
             notifier ?? new RecordingRuntimeArtifactReadyNotifier(),
-            transfer ?? Substitute.For<IRuntimeArtifactTransferService>());
+            transfer ?? Substitute.For<IRuntimeArtifactTransferService>(), rollback);
         model.TempData = new TempDataDictionary(new DefaultHttpContext(), new EmptyTempDataProvider());
         return model;
     }

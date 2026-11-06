@@ -99,6 +99,9 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IRuntimeIngressStandupScheduler, EntityFrameworkRuntimeIngressStandupScheduler>());
         services.Replace(ServiceDescriptor.Scoped<IGetAllIngressConfigurationsAccessor, RuntimeIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IGetIngressConfigurationByArtifactAccessor, RuntimeIngressConfigurationAccessor>());
+        services.Replace(ServiceDescriptor.Scoped<IGetStagedIngressConfigurationAccessor, RuntimeIngressConfigurationAccessor>());
+        services.Replace(ServiceDescriptor.Scoped<IGetRollbackIngressConfigurationAccessor, RuntimeIngressConfigurationAccessor>());
+        services.Replace(ServiceDescriptor.Scoped<IGetArchivedBackchannelConfigurationAccessor, RuntimeIngressConfigurationAccessor>());
         services.Replace(ServiceDescriptor.Scoped<IControlPlaneDistributionSourceProvider, RuntimeDesignNodeDistributionSourceProvider>());
         services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
         return services;

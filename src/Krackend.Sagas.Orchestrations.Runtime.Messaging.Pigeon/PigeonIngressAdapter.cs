@@ -4,6 +4,9 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using global::Pigeon.Messaging;
+using global::Pigeon.Messaging.Consuming.Management;
 using global::Pigeon.Messaging.Consuming.Configuration;
 using global::Pigeon.Messaging.Contracts;
 using global::Pigeon.Messaging.Topology;
@@ -19,6 +22,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
         private readonly IMessagingIngressConfigurationSelector _ingressSelector;
         private readonly ILogger<PigeonIngressAdapter> _logger;
         private readonly ITopologyProvisioningService _topologyProvisioning;
+        private readonly IOptions<GlobalSettings> _settings;
+        private readonly IPigeonConsumerReadiness _readiness;
+        private readonly IOptions<PigeonConsumerReadinessOptions> _readinessOptions;
 
         public PigeonIngressAdapter(
             IConsumingConfigurator consumingConfigurator,
@@ -40,16 +46,58 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
             IMessagingIngressConfigurationSelector ingressSelector,
             ILogger<PigeonIngressAdapter> logger,
             ITopologyProvisioningService topologyProvisioning)
+            : this(consumingConfigurator, consumerRegistry, ingressSelector, logger, topologyProvisioning, null, null)
+        {
+        }
+
+        public PigeonIngressAdapter(
+            IConsumingConfigurator consumingConfigurator,
+            IPigeonIngressConsumerRegistry consumerRegistry,
+            IMessagingIngressConfigurationSelector ingressSelector,
+            ILogger<PigeonIngressAdapter> logger,
+            ITopologyProvisioningService topologyProvisioning,
+            IOptions<GlobalSettings> settings)
+            : this(consumingConfigurator, consumerRegistry, ingressSelector, logger, topologyProvisioning, settings, null)
+        {
+        }
+
+        public PigeonIngressAdapter(
+            IConsumingConfigurator consumingConfigurator,
+            IPigeonIngressConsumerRegistry consumerRegistry,
+            IMessagingIngressConfigurationSelector ingressSelector,
+            ILogger<PigeonIngressAdapter> logger,
+            ITopologyProvisioningService topologyProvisioning,
+            IOptions<GlobalSettings> settings,
+            IPigeonConsumerReadiness readiness)
+            : this(consumingConfigurator, consumerRegistry, ingressSelector, logger, topologyProvisioning, settings, readiness, null)
+        {
+        }
+
+        public PigeonIngressAdapter(
+            IConsumingConfigurator consumingConfigurator,
+            IPigeonIngressConsumerRegistry consumerRegistry,
+            IMessagingIngressConfigurationSelector ingressSelector,
+            ILogger<PigeonIngressAdapter> logger,
+            ITopologyProvisioningService topologyProvisioning,
+            IOptions<GlobalSettings> settings,
+            IPigeonConsumerReadiness readiness = null,
+            IOptions<PigeonConsumerReadinessOptions> readinessOptions = null)
         {
             _consumingConfigurator = consumingConfigurator ?? throw new ArgumentNullException(nameof(consumingConfigurator));
             _consumerRegistry = consumerRegistry ?? throw new ArgumentNullException(nameof(consumerRegistry));
             _ingressSelector = ingressSelector ?? throw new ArgumentNullException(nameof(ingressSelector));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _topologyProvisioning = topologyProvisioning;
+            _settings = settings;
+            _readiness = readiness;
+            _readinessOptions = readinessOptions;
         }
 
         public async Task ConnectAsync(MessagingConfiguration configuration, CancellationToken cancellationToken = default)
         {
+            if (configuration.IsStaged && (_settings?.Value is null ||
+                _settings.Value.ConsumerExecution?.AcknowledgementMode != MessageAcknowledgementMode.OnHandlerSuccess))
+                throw new IngressStandupConfigurationException("Staged rollout requires Pigeon acknowledgement mode OnHandlerSuccess.");
             var version = SemanticVersion.Parse(configuration.Version);
             var endpointKey = BuildEndpointKey(configuration.Topic, configuration.Version, SubscriptionName);
             var registration = new PigeonIngressConsumerRegistration(
@@ -59,12 +107,30 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 configuration.Version,
                 SubscriptionName);
 
-            if (!_consumerRegistry.TryAttach(registration, out var shouldRegisterEndpoint) ||
-                !shouldRegisterEndpoint)
+            var attached = _consumerRegistry.TryAttach(registration, out var shouldRegisterEndpoint);
+            if (!attached)
             {
+                if (configuration.IsStaged && _readiness is not null)
+                    await WaitUntilReadyAsync(configuration, cancellationToken);
                 return;
             }
 
+            if (!shouldRegisterEndpoint)
+            {
+                try
+                {
+                    if (configuration.IsStaged && _readiness is not null)
+                        await WaitUntilReadyAsync(configuration, cancellationToken);
+                }
+                catch
+                {
+                    _consumerRegistry.ForgetConnector(configuration.ConnectorId);
+                    throw;
+                }
+                return;
+            }
+
+            var registeredEndpoint = false;
             try
             {
                 if (_topologyProvisioning is not null)
@@ -86,7 +152,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                     IngressConfigurationReadingResult dataset;
                     do
                     {
-                        dataset = await reader.ReadAsync(cancellationToken);
+                        dataset = await reader.ReadAsync(context.CancellationToken);
                         configurations.AddRange(dataset.Configurations);
                     }
                     while (dataset.HasMoreItems);
@@ -104,8 +170,18 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                         await context.RejectAsync(
                             new IngressMessageRejectedException(
                                 $"The matching orchestration trigger for '{configuration.Topic}' v{configuration.Version} is deprecated."),
-                            cancellationToken);
+                            context.CancellationToken);
                         return;
+                    }
+
+                    if (processableIngress.Length == 0)
+                    {
+                        // A staged connector can start before its artifact is routable.
+                        // Never acknowledge a delivery that has no active destination.
+                        // Let execution interceptors record the failure before
+                        // Pigeon requests redelivery in OnHandlerSuccess mode.
+                        throw new InvalidOperationException(
+                            $"No active orchestration ingress matches '{configuration.Topic}' v{configuration.Version}.");
                     }
 
                     foreach (var ingress in processableIngress)
@@ -119,11 +195,12 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                             MessageMetadata = messageMetadataAccessor.Get(),
                             PropagationMetadata = propagationMetadataAccessor.Get(),
                             ExecutionResultMetadata = resultMetadataAccessor.Get()
-                        }, cancellationToken);
+                        }, context.CancellationToken);
                     }
 
-                    await context.CompleteAsync(cancellationToken);
+                    await context.CompleteAsync(context.CancellationToken);
                 });
+                registeredEndpoint = true;
             }
             catch (InvalidOperationException ex) when (IsAlreadyRegistered(ex))
             {
@@ -138,32 +215,58 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 _consumerRegistry.ForgetConnector(configuration.ConnectorId);
                 throw;
             }
+
+            if (configuration.IsStaged && _readiness is not null)
+            {
+                try
+                {
+                    await WaitUntilReadyAsync(configuration, cancellationToken);
+                }
+                catch
+                {
+                    if (registeredEndpoint)
+                        await DisconnectAsync(configuration.ConnectorId, CancellationToken.None);
+                    else
+                        _consumerRegistry.ForgetConnector(configuration.ConnectorId);
+                    throw;
+                }
+            }
+        }
+
+        private async Task WaitUntilReadyAsync(MessagingConfiguration configuration, CancellationToken cancellationToken)
+        {
+            var seconds = Math.Max(1, _readinessOptions?.Value.TimeoutSeconds ?? 60);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+            try
+            {
+                await _readiness.WaitUntilReadyAsync(configuration.Topic, configuration.Version, SubscriptionName, timeout.Token)
+                    .WaitAsync(TimeSpan.FromSeconds(seconds), cancellationToken);
+            }
+            catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Pigeon consumer readiness timed out after {seconds} seconds.", exception);
+            }
         }
 
         public Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default)
         {
-            if (!_consumerRegistry.TryDetach(
-                connectorId,
-                out var registration,
-                out var shouldRemoveEndpoint) ||
-                !shouldRemoveEndpoint)
+            _consumerRegistry.RemoveConnector(connectorId, registration =>
             {
-                return Task.CompletedTask;
-            }
-
-            var version = SemanticVersion.Parse(registration.Version);
-            try
-            {
-                _consumingConfigurator.RemoveConsumer(registration.Topic, version);
-            }
-            catch (InvalidOperationException ex) when (IsAlreadyRemoved(ex))
-            {
-                _logger.LogInformation(
-                    "Pigeon consumer for topic '{Topic}' version '{Version}' subscription '{Subscription}' was already removed.",
-                    registration.Topic,
-                    registration.Version,
-                    registration.Subscription);
-            }
+                var version = SemanticVersion.Parse(registration.Version);
+                try
+                {
+                    _consumingConfigurator.RemoveConsumer(registration.Topic, version);
+                }
+                catch (InvalidOperationException ex) when (IsAlreadyRemoved(ex))
+                {
+                    _logger.LogInformation(
+                        "Pigeon consumer for topic '{Topic}' version '{Version}' subscription '{Subscription}' was already removed.",
+                        registration.Topic,
+                        registration.Version,
+                        registration.Subscription);
+                }
+            });
 
             return Task.CompletedTask;
         }

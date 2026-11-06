@@ -31,7 +31,7 @@
             @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
                 Id = "runtime-artifact-groups-grid", AriaLabel = "runtime orchestrations", Binding = new ZoorceDataBindingOptions { Source = source },
                 LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
-                Columns = [new("displayName", "Orchestration", false), new("versionCount", "Versions", false), new("activeCount", "Active", false), new("latest", "Latest deployment", false), new("actions", "Actions", false)]
+                Columns = [new("displayName", "Orchestration", false), new("versionCount", "Versions", false), new("activeCount", "Runtime enabled", false), new("latest", "Latest deployment", false), new("actions", "Actions", false)]
             })
         }
         else
@@ -39,7 +39,7 @@
             @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
                 Id = "runtime-artifact-versions-grid", AriaLabel = "runtime artifact versions", Binding = new ZoorceDataBindingOptions { Source = source },
                 LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
-                Columns = [new("version", "Version", false), new("lifecycleStatus", "Lifecycle", false), new("status", "Runtime state", false), new("deployed", "Deployed", false), new("lastReleaseId", "Release", false), new("actions", "Actions", false)]
+                Columns = [new("version", "Version", false), new("lifecycleStatus", "Lifecycle", false), new("status", "Runtime state", false), new("triggerReception", "Enabled triggers", false), new("deployed", "Deployed", false), new("lastReleaseId", "Release", false), new("actions", "Actions", false)]
             })
         }
     </div>
@@ -55,6 +55,10 @@
 
 <form method="post" asp-page-handler="RequestStandup" id="artifact-standup-form" data-orchestrator-busy="true" data-busy-title="Requesting standup">
     <input type="hidden" name="artifactId" />
+</form>
+<form method="post" asp-page-handler="Rollback" id="artifact-rollback-form" data-orchestrator-busy="true" data-busy-title="Requesting rollback">
+    <input type="hidden" name="artifactId" />
+    <input type="hidden" name="orchestrationKey" value="@Model.OrchestrationKey" />
 </form>
 
 @await Component.InvokeAsync("ZoorceDialog", new ZoorceDialogOptions

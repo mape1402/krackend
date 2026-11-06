@@ -93,6 +93,10 @@ public sealed class CreateOrchestrationVersionCommandHandler : IRequestHandler<C
             return;
         }
 
+        targetVersion.MaxInstanceDurationSeconds = source.MaxInstanceDurationSeconds;
+        targetVersion.IdleDurationSeconds = source.IdleDurationSeconds;
+        await _repository.Update(targetVersion, cancellationToken);
+
         await CloneTriggers(targetVersion.Id, source, cancellationToken);
         await CloneVariables(targetVersion.Id, source, cancellationToken);
         var idMaps = await CloneStagesGroupsAndTasks(targetVersion.Id, source, cancellationToken);

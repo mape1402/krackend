@@ -15,7 +15,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Distribution;
 /// <summary>
 /// Default runtime artifact installer.
 /// </summary>
-public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymentService
+public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymentService, IRuntimeArtifactRollbackService
 {
     private readonly IRuntimeArtifactRepository _artifactRepository;
     private readonly IRuntimeStorageUnitOfWork _unitOfWork;
@@ -26,6 +26,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
     private readonly IOrchestrationInstanceRepository _instanceRepository;
     private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
     private readonly IRuntimeTriggerClaimRepository _triggerClaimRepository;
+    private readonly IRuntimeIngressConfigurationKeyBuilder _ingressKeyBuilder;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RuntimeArtifactDeploymentService"/> class.
@@ -39,7 +40,8 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         IRuntimeArtifactSerializer artifactSerializer,
         IOrchestrationInstanceRepository instanceRepository,
         IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository,
-        IRuntimeTriggerClaimRepository triggerClaimRepository)
+        IRuntimeTriggerClaimRepository triggerClaimRepository,
+        IRuntimeIngressConfigurationKeyBuilder ingressKeyBuilder = null)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
@@ -50,6 +52,7 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
         _triggerClaimRepository = triggerClaimRepository ?? throw new ArgumentNullException(nameof(triggerClaimRepository));
+        _ingressKeyBuilder = ingressKeyBuilder ?? new DefaultRuntimeIngressConfigurationKeyBuilder();
     }
 
     /// <inheritdoc />
@@ -89,6 +92,69 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         {
             return Rejected(exception.Message);
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<RuntimeArtifactDeploymentResult> RollbackAsync(string artifactId, string requestedBy, CancellationToken cancellationToken = default)
+    {
+        if (!Ulid.TryParse(artifactId, out var parsed)) return Rejected("Artifact id is invalid.");
+        if (_projectionScheduler is not IRuntimeDurableRolloutProjectionScheduler ||
+            _ingressConfigurationRepository is not IRuntimeSelectiveTriggerIngressRepository ||
+            _ingressConfigurationRepository is not IRuntimeReactivatableTriggerIngressRepository ||
+            _triggerClaimRepository is not IRuntimeSelectiveTriggerClaimRepository ||
+            _artifactRepository is not IRuntimeArtifactRolloutTransitionRepository ||
+            _deploymentHistoryRepository is not IRuntimeArtifactRollbackStatusRepository)
+            return Rejected("The configured runtime storage does not support durable staged rollback.");
+
+        RuntimeOrchestrationArtifact target;
+        try { target = await _artifactRepository.GetById(new Id(parsed), cancellationToken); }
+        catch (KeyNotFoundException) { return Rejected("The rollback target was not found."); }
+        if (!target.IsActive || target.Status != RuntimeOrchestrationArtifactStatus.Ready ||
+            target.LifecycleStatus != RuntimeOrchestrationLifecycleStatus.Active)
+            return Rejected("Only an active, ready orchestration version can be used as a rollback target.");
+
+        OrchestrationArtifact definition;
+        try { definition = _artifactSerializer.Deserialize(target.ArtifactPayload.ToJsonString()); }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
+        { return Rejected($"The rollback target cannot be read: {exception.Message}"); }
+        var identities = GetTriggerIdentities(definition);
+        var targetKeys = definition.TriggerBindings.Where(x => x.IsEnabled && x.TriggerChannel is EventTriggerChannelArtifact)
+            .Select(_ingressKeyBuilder.BuildTriggerKey).Distinct(StringComparer.Ordinal).ToArray();
+        if (identities.Count == 0 || targetKeys.Length == 0) return Rejected("The rollback target has no enabled messaging triggers.");
+        var activeIngress = await _ingressConfigurationRepository.GetActiveByArtifactIdAsync(target.Id, cancellationToken);
+        if (!activeIngress.Any(x => x.IngressKind == IngressKind.Backchannel))
+            return Rejected("The rollback target has no active backchannel for its existing instances.");
+
+        var conflicts = await FindTriggerConflictsAsync(target.ArtifactPayload, target.Id, cancellationToken);
+        if (conflicts.Any(x => !string.Equals(x.OrchestrationDefinitionKey, target.OrchestrationDefinitionKey, StringComparison.OrdinalIgnoreCase)))
+            return Rejected("A trigger belongs to a different orchestration and cannot be replaced by rollback.");
+        var replacements = await BuildRollbackReplacementsAsync(identities, conflicts, cancellationToken);
+        if (replacements.Length == 0)
+            return Rejected("No active version with matching triggers was found to roll back.");
+        var now = DateTime.UtcNow;
+        var operationId = $"runtime-rollback:{Id.New()}";
+        target.IngressGeneration = Math.Max(target.IngressGeneration, 0) + 1;
+        target.Notes = $"Rollback requested by '{requestedBy ?? string.Empty}'.";
+
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_unitOfWork.DeferAutoSave())
+        {
+            var claim = await ClaimTriggersAsync(identities, target.Id, conflicts.Select(x => x.Id).ToArray(), cancellationToken);
+            if (!claim.Succeeded) return Rejected("Another deployment owns one of the target triggers. Refresh and retry.");
+            await _artifactRepository.Upsert(target, cancellationToken);
+            await _deploymentHistoryRepository.Append(new RuntimeArtifactDeploymentRecord
+            {
+                Id = Id.New(), RuntimeOrchestrationArtifactId = target.Id, OrchestrationDefinitionKey = target.OrchestrationDefinitionKey,
+                OrchestrationVersion = target.Version.ToString(), ControlPlaneArtifactId = operationId, ReleaseId = operationId,
+                ArtifactType = "orchestration-version.rollback-requested", ReleaseStrategy = "Rollback",
+                LifecycleStatus = target.LifecycleStatus, RuntimeStatus = RuntimeOrchestrationArtifactStatus.Pending, AppliedOnUtc = now
+            }, cancellationToken);
+            await ScheduleProjectionAsync(target, requestedBy, now, cancellationToken, identities, replacements, targetKeys, operationId);
+            await _unitOfWork.SaveChanges(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return Accepted(target, RuntimeOrchestrationArtifactStatus.Pending,
+            $"Rollback to '{target.OrchestrationDefinitionKey}' v{target.Version} was requested and awaits connector preparation.");
     }
 
     private async Task<RuntimeArtifactDeploymentResult> DeployNewVersionAsync(
@@ -140,16 +206,23 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         }
 
         var conflictingArtifacts = await FindTriggerConflictsAsync(payload, existingArtifact?.Id, cancellationToken);
+        if (conflictingArtifacts.Any(x => !string.Equals(x.OrchestrationDefinitionKey, package.OrchestrationDefinitionKey, StringComparison.OrdinalIgnoreCase)))
+            return Rejected("A trigger is already owned by a different orchestration; rollout cannot replace it.");
         if (conflictingArtifacts.Count > 0 && strategy == RuntimeReleaseStrategy.Direct)
         {
             return Rejected(
                 "Direct deployment would create competing trigger ingress. Use Rollout to replace the active trigger subscription.");
         }
 
+        if (conflictingArtifacts.Count > 0 && _ingressConfigurationRepository is not IRuntimeSelectiveTriggerIngressRepository)
+            return Rejected("The configured ingress repository does not support selective rollout handoff.");
+        if (conflictingArtifacts.Count > 0 && _projectionScheduler is not IRuntimeDurableRolloutProjectionScheduler)
+            return Rejected("The configured projection scheduler does not support durable staged rollout.");
+
         var now = DateTime.UtcNow;
-        var ingressGeneration = existingArtifact?.ArtifactChecksum.Value == package.Checksum
-            ? Math.Max(existingArtifact.IngressGeneration, 1)
-            : (existingArtifact?.IngressGeneration ?? 0) + 1;
+        // Every new attempt needs a distinct generation, even with the same
+        // payload, so an older in-flight action cannot apply stale handoff data.
+        var ingressGeneration = Math.Max(existingArtifact?.IngressGeneration ?? 0, 0) + 1;
         var artifact = new RuntimeOrchestrationArtifact
         {
             Id = existingArtifact?.Id ?? artifactId,
@@ -196,14 +269,9 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
 
             await _artifactRepository.Upsert(artifact, cancellationToken);
             await AppendHistoryAsync(artifact, package, now, cancellationToken);
-            if (conflictingArtifacts.Count > 0)
-            {
-                await _ingressConfigurationRepository.DeactivateTriggersForArtifactsAsync(
-                    conflictingArtifacts.Select(x => x.Id).ToArray(),
-                    cancellationToken);
-            }
-
-            await ScheduleProjectionAsync(artifact, sourceKey, now, cancellationToken);
+            var incomingIdentities = TryGetTriggerIdentities(payload);
+            var replacements = BuildRolloutReplacements(incomingIdentities, conflictingArtifacts);
+            await ScheduleProjectionAsync(artifact, sourceKey, now, cancellationToken, incomingIdentities, replacements);
             await _unitOfWork.SaveChanges(cancellationToken);
         }
 
@@ -300,25 +368,32 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
             return Rejected("Only a deprecated orchestration version can be archived.");
         }
 
-        var recoverable = await _instanceRepository.GetRecoverable(int.MaxValue, cancellationToken);
-        if (recoverable.Any(x => x.RuntimeOrchestrationArtifactId == artifact.Id))
-        {
-            return Rejected("The orchestration version still has active SAGA instances and cannot be archived.");
-        }
-
-        artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived;
-        artifact.LastReleaseId = package.ReleaseId ?? string.Empty;
-        artifact.LastControlPlaneArtifactId = package.ArtifactId;
-        artifact.ReleaseStrategy = RuntimeReleaseStrategy.Direct.ToString();
-        artifact.IsActive = false;
-        artifact.Status = RuntimeOrchestrationArtifactStatus.Retired;
-        artifact.RetiredOnUtc = DateTime.UtcNow;
-        artifact.IngressGeneration = Math.Max(artifact.IngressGeneration, 1) + 1;
-        artifact.Notes = $"Archived from '{sourceKey}' release '{package.ReleaseId}' target '{package.ReleaseTargetId}'.";
-
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         using (_unitOfWork.DeferAutoSave())
         {
+            if (_artifactRepository is IRuntimeArtifactLifecycleFenceRepository fence)
+            {
+                if (!await fence.TryFenceLifecycle(artifact.Id, artifact.IngressGeneration, cancellationToken))
+                    return Rejected("The orchestration version changed while archive was being prepared. Refresh and retry.");
+                await _unitOfWork.SaveChanges(cancellationToken);
+                artifact.IngressGeneration = checked(artifact.IngressGeneration + 1);
+            }
+            var hasActiveInstances = _instanceRepository is IOrchestrationArtifactInstanceReader reader
+                ? await reader.HasActiveInstances(artifact.Id, cancellationToken)
+                : (await _instanceRepository.GetRecoverable(int.MaxValue, cancellationToken))
+                    .Any(x => x.RuntimeOrchestrationArtifactId == artifact.Id);
+            if (hasActiveInstances)
+                return Rejected("The orchestration version still has active SAGA instances or instances being processed and cannot be archived.");
+
+            artifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived;
+            artifact.LastReleaseId = package.ReleaseId ?? string.Empty;
+            artifact.LastControlPlaneArtifactId = package.ArtifactId;
+            artifact.ReleaseStrategy = RuntimeReleaseStrategy.Direct.ToString();
+            artifact.IsActive = false;
+            artifact.Status = RuntimeOrchestrationArtifactStatus.Retired;
+            artifact.RetiredOnUtc = DateTime.UtcNow;
+            artifact.IngressGeneration = Math.Max(artifact.IngressGeneration, 1) + 1;
+            artifact.Notes = $"Archived from '{sourceKey}' release '{package.ReleaseId}' target '{package.ReleaseTargetId}'.";
             await ReleaseTriggersAsync([artifact.Id], cancellationToken);
             await _artifactRepository.Upsert(artifact, cancellationToken);
             await AppendHistoryAsync(artifact, package, artifact.RetiredOnUtc!.Value, cancellationToken);
@@ -615,15 +690,65 @@ public sealed class RuntimeArtifactDeploymentService : IRuntimeArtifactDeploymen
         RuntimeOrchestrationArtifact artifact,
         string sourceKey,
         DateTime now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string> rolloutTriggerIdentities = null,
+        RuntimeArtifactTriggerReplacement[] rolloutReplacements = null,
+        string[] rollbackTargetKeys = null,
+        string rollbackOperationId = null)
     {
         await _projectionScheduler.ScheduleProjectionAsync(new RuntimeArtifactProjectionRequest
         {
             ArtifactId = artifact.Id.ToString(),
             IngressGeneration = artifact.IngressGeneration,
             RequestedBy = sourceKey,
-            RequestedOnUtc = now
+            RequestedOnUtc = now,
+            RolloutTriggerIdentities = rolloutTriggerIdentities?.ToArray() ?? [],
+            RolloutReplacements = rolloutReplacements ?? [],
+            RollbackTargetTriggerKeys = rollbackTargetKeys ?? [],
+            RollbackOperationId = rollbackOperationId
         }, cancellationToken);
+    }
+
+    private RuntimeArtifactTriggerReplacement[] BuildRolloutReplacements(
+        HashSet<string> incomingIdentities, IReadOnlyCollection<RuntimeOrchestrationArtifact> conflictingArtifacts)
+        => conflictingArtifacts.Select(previous =>
+        {
+            var definition = _artifactSerializer.Deserialize(previous.ArtifactPayload.ToJsonString());
+            return new RuntimeArtifactTriggerReplacement
+            {
+                ArtifactId = previous.Id.ToString(),
+                ConfigurationKeys = definition.TriggerBindings.Where(trigger => trigger.IsEnabled &&
+                    trigger.TriggerChannel is EventTriggerChannelArtifact channel &&
+                    incomingIdentities.Contains($"{IngressTransport.Messaging}|{Normalize(channel.Topic)}|{Normalize(channel.Version.ToString())}"))
+                    .Select(_ingressKeyBuilder.BuildTriggerKey).ToArray()
+            };
+        }).ToArray();
+
+    private async Task<RuntimeArtifactTriggerReplacement[]> BuildRollbackReplacementsAsync(
+        HashSet<string> targetIdentities, IReadOnlyCollection<RuntimeOrchestrationArtifact> conflicts, CancellationToken cancellationToken)
+    {
+        var replacements = new List<RuntimeArtifactTriggerReplacement>();
+        foreach (var source in conflicts)
+        {
+            var definition = _artifactSerializer.Deserialize(source.ArtifactPayload.ToJsonString());
+            var active = (await _ingressConfigurationRepository.GetActiveByArtifactIdAsync(source.Id, cancellationToken))
+                .Where(x => x.IngressKind == IngressKind.Trigger)
+                .Select(x => x.ConfigurationKey).ToHashSet(StringComparer.Ordinal);
+            var triggers = definition.TriggerBindings.Where(x => x.IsEnabled && x.TriggerChannel is EventTriggerChannelArtifact)
+                .Select(x => (Key: _ingressKeyBuilder.BuildTriggerKey(x), Channel: (EventTriggerChannelArtifact)x.TriggerChannel))
+                .Where(x => active.Contains(x.Key))
+                .Select(x => (x.Key, Identity: $"{IngressTransport.Messaging}|{Normalize(x.Channel.Topic)}|{Normalize(x.Channel.Version.ToString())}"))
+                .ToArray();
+            if (!triggers.Any(x => targetIdentities.Contains(x.Identity))) continue;
+            replacements.Add(new RuntimeArtifactTriggerReplacement
+            {
+                ArtifactId = source.Id.ToString(),
+                ConfigurationKeys = triggers.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToArray(),
+                ReleaseTriggerIdentities = triggers.Select(x => x.Identity).Where(x => !targetIdentities.Contains(x))
+                    .Distinct(StringComparer.Ordinal).ToArray()
+            });
+        }
+        return replacements.ToArray();
     }
 
     private Task<RuntimeTriggerClaimResult> ClaimTriggersAsync(

@@ -64,4 +64,20 @@ internal sealed class PigeonIngressConsumerRegistry : IPigeonIngressConsumerRegi
 
     public void ForgetConnector(string connectorId)
         => TryDetach(connectorId, out _, out _);
+
+    public void RemoveConnector(string connectorId, Action<PigeonIngressConsumerRegistration> removeEndpoint)
+    {
+        ArgumentNullException.ThrowIfNull(removeEndpoint);
+        lock (_sync)
+        {
+            if (!_connectors.TryGetValue(connectorId, out var registration)) return;
+            if (!_endpointConnectors.TryGetValue(registration.EndpointKey, out var connectorIds) || !connectorIds.Contains(connectorId))
+                throw new InvalidOperationException("The Pigeon connector registry is inconsistent.");
+            if (connectorIds.Count == 1)
+                removeEndpoint(registration);
+            _connectors.Remove(connectorId);
+            connectorIds.Remove(connectorId);
+            if (connectorIds.Count == 0) _endpointConnectors.Remove(registration.EndpointKey);
+        }
+    }
 }

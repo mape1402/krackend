@@ -29,6 +29,13 @@ public interface IRuntimeTriggerClaimRepository
     Task ReleaseAsync(IReadOnlyCollection<Id> artifactIds, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Releases selected identities only while they remain owned by the specified artifact.</summary>
+public interface IRuntimeSelectiveTriggerClaimRepository
+{
+    /// <summary>Participates in the current storage transaction when one is active.</summary>
+    Task ReleaseOwnedAsync(Id artifactId, IReadOnlyCollection<string> identities, CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// Returns the result of an attempt to claim runtime trigger identities.
 /// </summary>

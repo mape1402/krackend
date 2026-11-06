@@ -38,6 +38,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     private readonly ISagaEngine _sagaEngine;
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
+    private readonly ArchivedRecoveryIngressPreparer _archivedIngressPreparer;
 
     public DefaultOrchestrationRecoveryService(
         IOrchestrationInstanceRepository instanceRepository,
@@ -52,7 +53,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         ITaskDispatchReplayService taskDispatchReplayService,
         IRuntimeStorageUnitOfWork storageUnitOfWork,
         IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator,
-        IOrchestrationInstanceCoordinator coordinator = null)
+        IOrchestrationInstanceCoordinator coordinator = null,
+        ArchivedRecoveryIngressPreparer archivedIngressPreparer = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -67,6 +69,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         _storageUnitOfWork = storageUnitOfWork ?? throw new ArgumentNullException(nameof(storageUnitOfWork));
         _dispatchCancellationCoordinator = dispatchCancellationCoordinator ?? throw new ArgumentNullException(nameof(dispatchCancellationCoordinator));
         _coordinator = coordinator ?? PassthroughOrchestrationInstanceCoordinator.Instance;
+        _archivedIngressPreparer = archivedIngressPreparer;
     }
 
     public async Task<OrchestrationRecoveryResult> ReplayAsync(
@@ -131,6 +134,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 $"Instance '{instance.Id}' is not in a recoverable status.");
         }
 
+        var preparationFailure = await PrepareArchivedIngressAsync(instance, cancellationToken);
+        if (preparationFailure is not null) return preparationFailure;
         var resolvedArtifact = await _artifactResolver.ResolveAsync(
             instance.RuntimeOrchestrationArtifactId.ToString(),
             cancellationToken);
@@ -276,6 +281,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 $"Task '{task.TaskKey}' is not failed or timed out and cannot be replayed.");
         }
 
+        var preparationFailure = await PrepareArchivedIngressAsync(instance, cancellationToken);
+        if (preparationFailure is not null) return preparationFailure;
         var resolvedArtifact = await _artifactResolver.ResolveAsync(
             instance.RuntimeOrchestrationArtifactId.ToString(),
             cancellationToken);
@@ -397,11 +404,19 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 $"Task '{task.TaskKey}' must be failed before its durable delivery can be replayed.");
         }
 
+        var preparationFailure = await PrepareArchivedIngressAsync(instance, cancellationToken);
+        if (preparationFailure is not null) return preparationFailure;
         var now = DateTime.UtcNow;
         var requestId = GetOrCreateDispatchReplayRequestId(dispatch);
         if (!isPendingReplay)
         {
             await MarkDispatchReplayPendingAsync(instance, task, attempt, dispatch, reason, now, cancellationToken);
+        }
+        else if (!instance.Metadata.ContainsKey(ReplayRequestedOnUtcMetadataKey))
+        {
+            // A replay scheduled before lifetime policies existed needs an anchor.
+            instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+            await _instanceRepository.Update(instance, cancellationToken);
         }
 
         TaskDispatchReplayResult providerResult;
@@ -487,6 +502,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.IdleSinceUtc = null;
         instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
+        instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
 
         await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
         using var autoSave = _storageUnitOfWork.DeferAutoSave();
@@ -801,6 +817,22 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             Message = message,
             ProducedBy = nameof(DefaultOrchestrationRecoveryService)
         }, cancellationToken);
+    }
+
+    private async Task<OrchestrationRecoveryResult> PrepareArchivedIngressAsync(OrchestrationInstance instance, CancellationToken cancellationToken)
+    {
+        if (_archivedIngressPreparer is null) return null;
+        try
+        {
+            await _archivedIngressPreparer.PrepareAsync(instance.RuntimeOrchestrationArtifactId, cancellationToken);
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                $"Recovery could not prepare the orchestration backchannel: {exception.Message}");
+        }
     }
 
     private static ForwardIntent BuildForwardIntent(OrchestrationInstance instance, string payload)

@@ -7,16 +7,247 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging;
 using Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
+using Pigeon.Messaging;
+using Pigeon.Messaging.Consuming.Management;
 using Pigeon.Messaging.Consuming.Configuration;
 using Pigeon.Messaging.Consuming.Dispatching;
 using Pigeon.Messaging.Contracts;
+using SquirrelBox;
+using SquirrelBox.Messaging.Pigeon;
 using PigeonVersion = Pigeon.Messaging.Contracts.SemanticVersion;
 
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 public sealed class PigeonIngressAdapterTests
 {
+    [Fact]
+    public async Task StagedConnectorCanRegisterWithoutPigeonReadiness()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings], null)!;
+
+        await adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true
+        });
+        Assert.Single(consuming.Added);
+    }
+
+    [Fact]
+    public async Task StagedConnectorReusesSharedConsumerWithoutReadinessAndKeepsItAfterOldDisconnects()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings], null)!;
+        await adapter.ConnectAsync(new MessagingConfiguration { ConnectorId = "old", Topic = "events.orders", Version = "1.0.0" });
+        await adapter.ConnectAsync(new MessagingConfiguration { ConnectorId = "new", Topic = "events.orders", Version = "1.0.0", IsStaged = true });
+
+        await adapter.DisconnectAsync("old");
+
+        Assert.Single(consuming.Added);
+        Assert.Empty(consuming.Removed);
+        await adapter.DisconnectAsync("new");
+        Assert.Single(consuming.Removed);
+    }
+
+    [Fact]
+    public async Task StagedConnectorWaitsForConfirmedPigeonReadiness()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var readiness = Substitute.For<IPigeonConsumerReadiness>();
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings, readiness], null)!;
+
+        await adapter.ConnectAsync(new MessagingConfiguration { ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true });
+        Assert.Single(consuming.Added);
+        await readiness.Received(1).WaitUntilReadyAsync("events.orders", "1.0.0", "Default", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FailedReadinessRemovesNewStagedConsumer()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var readiness = Substitute.For<IPigeonConsumerReadiness>();
+        readiness.WaitUntilReadyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new TimeoutException("consumer not ready"));
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings, readiness], null)!;
+
+        await Assert.ThrowsAsync<TimeoutException>(() => adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true
+        }));
+        Assert.Single(consuming.Removed);
+    }
+
+    [Fact]
+    public async Task FailedReadinessDoesNotDisconnectThePreviousSharedConsumer()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var readiness = Substitute.For<IPigeonConsumerReadiness>();
+        readiness.WaitUntilReadyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new TimeoutException("consumer not ready"));
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings, readiness], null)!;
+        await adapter.ConnectAsync(new MessagingConfiguration { ConnectorId = "old", Topic = "events.orders", Version = "1.0.0" });
+
+        await Assert.ThrowsAsync<TimeoutException>(() => adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true
+        }));
+
+        Assert.Single(consuming.Added);
+        Assert.Empty(consuming.Removed);
+        await adapter.DisconnectAsync("old");
+        Assert.Single(consuming.Removed);
+    }
+
+    [Fact]
+    public async Task FailedReadinessDoesNotRemoveAnExternallyRegisteredConsumer()
+    {
+        var consuming = new RecordingConsumingConfigurator { AddException = new InvalidOperationException("Consumer is already registered.") };
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var readiness = Substitute.For<IPigeonConsumerReadiness>();
+        readiness.WaitUntilReadyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new TimeoutException("consumer not ready"));
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings, readiness], null)!;
+
+        await Assert.ThrowsAsync<TimeoutException>(() => adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true
+        }));
+
+        Assert.Empty(consuming.Removed);
+    }
+
+    [Fact]
+    public async Task StagedReadinessCannotHangTheRollout()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = MessageAcknowledgementMode.OnHandlerSuccess }
+        });
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readiness = Substitute.For<IPigeonConsumerReadiness>();
+        readiness.WaitUntilReadyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(completion.Task);
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null,
+                settings, readiness, Options.Create(new PigeonConsumerReadinessOptions { TimeoutSeconds = 1 })], null)!;
+
+        await Assert.ThrowsAsync<TimeoutException>(() => adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true
+        }));
+        Assert.Single(consuming.Removed);
+        completion.SetResult();
+    }
+
+    [Theory]
+    [InlineData(MessageAcknowledgementMode.OnReceive)]
+    [InlineData(MessageAcknowledgementMode.Manual)]
+    public async Task StagedConnectorRequiresAcknowledgementAfterHandler(MessageAcknowledgementMode mode)
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var assembly = typeof(Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.ServiceCollectionExtensions).Assembly;
+        var adapterType = assembly.GetType("Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon.PigeonIngressAdapter", true)!;
+        var settings = Options.Create(new GlobalSettings
+        {
+            ConsumerExecution = new ConsumerExecutionSettings { AcknowledgementMode = mode }
+        });
+        var adapter = (IMessagingIngressAdapter)Activator.CreateInstance(adapterType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [consuming, CreateRegistry(assembly), Substitute.For<IMessagingIngressConfigurationSelector>(), CreateLogger(adapterType), null, settings], null)!;
+
+        await Assert.ThrowsAsync<IngressStandupConfigurationException>(() => adapter.ConnectAsync(new MessagingConfiguration
+        {
+            ConnectorId = "staged", Topic = "events.orders", Version = "1.0.0", IsStaged = true
+        }));
+        Assert.Empty(consuming.Added);
+    }
+
+    [Fact]
+    public async Task DeliveryWithoutActiveIngressFailsInsteadOfAcknowledging()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var selector = Substitute.For<IMessagingIngressConfigurationSelector>();
+        selector.SelectMatching(Arg.Any<IReadOnlyCollection<IngressConfiguration>>(), "events.orders", "1.0.0")
+            .Returns(Array.Empty<IngressConfiguration>());
+        var intake = new RecordingIntakeBuffer();
+        await using var provider = CreateProvider(intake,
+            new StaticMessageMetadataAccessor(new OrchestrationMessageMetadata()),
+            new StaticPropagationMetadataAccessor(new OrchestrationPropagationMetadata()),
+            new StaticExecutionResultMetadataAccessor(new OrchestrationExecutionResultMetadata()),
+            new PagedIngressAccessor([new IngressConfigurationReadingResult { HasMoreItems = false, Configurations = [] }]));
+        var adapter = CreateAdapter(consuming, selector);
+        await adapter.ConnectAsync(new MessagingConfiguration { ConnectorId = "connector", Topic = "events.orders", Version = "1.0.0" });
+        var context = new ConsumeContext { Services = provider, Topic = "events.orders", Subscription = "Default", MessageVersion = PigeonVersion.Parse("1.0.0") };
+        var completed = false;
+        typeof(ConsumeContext).GetField("_completeAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(context, (Func<CancellationToken, Task>)(_ => { completed = true; return Task.CompletedTask; }));
+
+        var inbox = Substitute.For<IInboxService>();
+        inbox.Current.Returns(new InboxContext(new InboxEntry(), "test", true));
+        var interceptor = new SquirrelBoxPigeonExecutionInterceptor(inbox);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await interceptor.InvokeAsync(context, async (ctx, _) => await consuming.Handler!(ctx, JsonNode.Parse("{}")!), default));
+
+        Assert.False(completed);
+        Assert.Empty(intake.Items);
+        await inbox.Received(1).FailCurrentAsync(Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+        await inbox.DidNotReceiveWithAnyArgs().CompleteCurrentAsync(default!, default);
+    }
+
     [Fact]
     public void ConstructorRejectsNullIngressSelectorAndLogger()
     {
@@ -77,6 +308,8 @@ public sealed class PigeonIngressAdapterTests
                 new IngressConfigurationReadingResult { HasMoreItems = false, Configurations = [ingressB] }
             ]));
         var adapter = CreateAdapter(consuming, selector);
+        using var startupCancellation = new CancellationTokenSource();
+        using var deliveryCancellation = new CancellationTokenSource();
 
         await adapter.ConnectAsync(new MessagingConfiguration
         {
@@ -85,7 +318,8 @@ public sealed class PigeonIngressAdapterTests
             Version = "1.0.0",
             IngressKind = IngressKind.Trigger,
             IngressTransport = IngressTransport.Messaging
-        });
+        }, startupCancellation.Token);
+        startupCancellation.Cancel();
 
         Assert.NotNull(consuming.Handler);
 
@@ -95,10 +329,12 @@ public sealed class PigeonIngressAdapterTests
             Services = provider,
             Topic = "events.sales.sale.created",
             Subscription = "Default",
-            MessageVersion = PigeonVersion.Parse("1.0.0")
+            MessageVersion = PigeonVersion.Parse("1.0.0"),
+            CancellationToken = deliveryCancellation.Token
         }, payload);
 
         Assert.Equal(2, intake.Items.Count);
+        Assert.All(intake.CancellationTokens, token => Assert.Equal(deliveryCancellation.Token, token));
         Assert.Equal(["artifact-a", "artifact-b"], intake.Items.Select(x => x.ArtifactId));
         Assert.Equal("S-1", intake.Items[0].Payload!["saleId"]!.GetValue<string>());
         Assert.Same(messageMetadata, intake.Items[0].MessageMetadata);
@@ -184,6 +420,22 @@ public sealed class PigeonIngressAdapterTests
         Assert.Single(consuming.Added);
         Assert.Single(consuming.Removed);
         Assert.Equal("events.sales.sale.created", consuming.Removed.Single().Topic);
+    }
+
+    [Fact]
+    public async Task FailedDisconnectKeepsEndpointRegisteredForRetry()
+    {
+        var consuming = new RecordingConsumingConfigurator();
+        var adapter = CreateAdapter(consuming, Substitute.For<IMessagingIngressConfigurationSelector>());
+        var configuration = new MessagingConfiguration { ConnectorId = "connector-1", Topic = "events.sales.sale.created", Version = "1.0.0" };
+        await adapter.ConnectAsync(configuration);
+        consuming.RemoveException = new InvalidOperationException("The broker is temporarily unavailable.");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => adapter.DisconnectAsync(configuration.ConnectorId));
+        consuming.RemoveException = null;
+
+        await adapter.DisconnectAsync(configuration.ConnectorId);
+
+        Assert.Equal(2, consuming.Removed.Count);
     }
 
     [Fact]
@@ -381,9 +633,12 @@ public sealed class PigeonIngressAdapterTests
     private sealed class RecordingIntakeBuffer : IIntakeBuffer
     {
         public List<WorkItem> Items { get; } = new();
+        public List<CancellationToken> CancellationTokens { get; } = new();
 
         public Task EnqueueWorkAsync(WorkItem workItem, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            CancellationTokens.Add(cancellationToken);
             Items.Add(workItem);
             return Task.CompletedTask;
         }

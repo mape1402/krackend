@@ -150,7 +150,8 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.Version).HasMaxLength(64).HasConversion(new SemanticVersionConverter()).IsRequired();
         builder.Property(x => x.ArtifactChecksum).HasMaxLength(256).HasConversion(new ChecksumConverter()).IsRequired();
         builder.Property(x => x.ArtifactPayload).HasConversion(new JsonNodeConverter()).IsRequired();
-        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationArtifactStatus.Pending).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationArtifactStatus.Pending).IsRequired().IsConcurrencyToken();
+        builder.Property(x => x.IngressGeneration).IsConcurrencyToken();
         builder.Property(x => x.LifecycleStatus).HasConversion<string>().HasMaxLength(64).HasDefaultValue(RuntimeOrchestrationLifecycleStatus.Active).IsRequired();
         builder.Property(x => x.LastReleaseId).HasMaxLength(128).IsRequired(false);
         builder.Property(x => x.LastControlPlaneArtifactId).HasMaxLength(128).IsRequired(false);
@@ -178,7 +179,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.Property(x => x.ArtifactType).HasMaxLength(128).IsRequired();
         builder.Property(x => x.ReleaseStrategy).HasMaxLength(64).IsRequired();
         builder.Property(x => x.LifecycleStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
-        builder.Property(x => x.RuntimeStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RuntimeStatus).HasConversion<string>().HasMaxLength(64).IsRequired().IsConcurrencyToken();
         builder.HasIndex(x => new { x.OrchestrationDefinitionKey, x.AppliedOnUtc });
         builder.HasIndex(x => x.ControlPlaneArtifactId).IsUnique();
         builder.HasIndex(x => x.ReleaseId);
@@ -190,7 +191,9 @@ public sealed class RuntimeDbContext : DbContext
         builder.ToTable("RuntimeTriggerClaims");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasMaxLength(1024).IsRequired();
-        builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter());
+        // Ownership changes must compare the previously read owner so concurrent
+        // rollouts cannot both replace the same trigger claim.
+        builder.Property(x => x.RuntimeOrchestrationArtifactId).HasConversion(new IdToBytesConverter()).IsConcurrencyToken();
         builder.HasIndex(x => x.RuntimeOrchestrationArtifactId);
     }
 

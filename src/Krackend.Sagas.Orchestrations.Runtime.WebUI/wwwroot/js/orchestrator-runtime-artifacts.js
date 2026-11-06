@@ -83,6 +83,13 @@
             });
             group.append(standup);
         }
+        if (item.isActive && item.status === 'Ready' && item.lifecycleStatus === 'Active' && item.totalTriggerCount > 0) {
+            const rollback = iconButton('bi-arrow-counterclockwise', `Rollback to version ${item.version}`);
+            rollback.addEventListener('click', () => {
+                const form = document.getElementById('artifact-rollback-form'); form.elements.artifactId.value = item.id; form.requestSubmit();
+            });
+            group.append(rollback);
+        }
         return group;
     };
     const cardActions = item => {
@@ -115,6 +122,14 @@
             });
             standupEntry.append(standup); menu.append(standupEntry);
         }
+        if (kind !== 'groups' && item.isActive && item.status === 'Ready' && item.lifecycleStatus === 'Active' && item.totalTriggerCount > 0) {
+            const rollbackEntry = document.createElement('li');
+            const rollback = make('button', 'dropdown-item', 'Rollback to this version'); rollback.type = 'button';
+            rollback.addEventListener('click', () => {
+                const form = document.getElementById('artifact-rollback-form'); form.elements.artifactId.value = item.id; form.requestSubmit();
+            });
+            rollbackEntry.append(rollback); menu.append(rollbackEntry);
+        }
         dropdown.append(toggle, menu); return dropdown;
     };
     const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
@@ -140,8 +155,11 @@
         const header = make('div', 'od-runtime-instance-header');
         header.append(window.KrackendCatalogUI.cardIcon('box-seam'), make('h3', '', kind === 'groups' ? item.key : `Version ${item.version}`), cardActions(item));
         card.append(header);
-        if (kind === 'groups') card.append(make('p', 'od-runtime-card-meta', `${item.versionCount} versions · ${item.activeCount} active`));
-        else [item.lifecycleStatus, item.status].filter(Boolean).forEach(value => card.append(window.KrackendCatalogUI.status(value)));
+        if (kind === 'groups') card.append(make('p', 'od-runtime-card-meta', `${item.versionCount} versions · ${item.activeCount} runtime enabled`));
+        else {
+            [item.lifecycleStatus, item.status].filter(Boolean).forEach(value => card.append(window.KrackendCatalogUI.status(value)));
+            card.append(make('p', 'od-runtime-card-meta', item.triggerReception || 'Trigger reception unavailable'));
+        }
         cards.append(card);
     };
     const load = async reset => {
@@ -257,7 +275,9 @@
         historyId = item.id; historyPage = 0; historyHasMore = true; historyLoading = false; historyGeneration++;
         historyItems.replaceChildren(); historyDetails.replaceChildren();
         const details = make('dl', 'od-artifact-details');
-        [['Version', item.version], ['Lifecycle', item.lifecycleStatus], ['Runtime state', item.status], ['Ingress', item.isActive ? 'Active' : 'Removed'],
+        [['Version', item.version], ['Lifecycle', item.lifecycleStatus], ['Runtime state', item.status],
+            ['Ingress', item.isActive ? (item.lifecycleStatus === 'Archived' ? 'Backchannel only' : 'Active') : 'Removed'],
+            ['Trigger reception', item.triggerReception || 'Unavailable'],
             ['Generation', item.ingressGeneration], ['Deployed', `${item.deployed} UTC`], ['Latest release', item.lastReleaseId || '-'],
             ['Control artifact', item.lastControlPlaneArtifactId || '-'], ['Checksum', item.checksum],
             ['Activated', item.activatedOnUtc || '-'], ['Projection started', item.projectionStartedOnUtc || '-'],

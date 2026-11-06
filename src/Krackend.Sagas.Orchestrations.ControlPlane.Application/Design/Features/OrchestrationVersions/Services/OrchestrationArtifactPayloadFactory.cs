@@ -45,6 +45,8 @@ public sealed class OrchestrationArtifactPayloadFactory : IOrchestrationArtifact
             version.VersionLabel,
             version.Notes)
         {
+            MaxInstanceDurationSeconds = version.MaxInstanceDurationSeconds,
+            IdleDurationSeconds = version.IdleDurationSeconds,
             MetadataDescriptors = (version.MetadataDescriptors ?? [])
                 .OrderBy(x => x.Key, StringComparer.Ordinal)
                 .Select(MapMetadataDescriptor)

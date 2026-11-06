@@ -50,7 +50,7 @@ internal sealed class DefaultOrchestrationIdleProcessor : IOrchestrationIdleProc
                     current.Id,
                     null,
                     null,
-                    "The 20-minute reconciliation idle window expired without a valid callback."), token);
+                    "The reconciliation idle window expired without a valid callback."), token);
                 applied = true;
             }, cancellationToken, waitForLease: false);
 

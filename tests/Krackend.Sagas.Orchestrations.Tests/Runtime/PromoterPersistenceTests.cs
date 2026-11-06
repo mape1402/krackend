@@ -16,6 +16,57 @@ using NSubstitute;
 
 public sealed class PromoterPersistenceTests
 {
+    [Theory]
+    [InlineData(RuntimeOrchestrationLifecycleStatus.Archived, RuntimeOrchestrationArtifactStatus.Ready, true)]
+    [InlineData(RuntimeOrchestrationLifecycleStatus.Deprecated, RuntimeOrchestrationArtifactStatus.Ready, true)]
+    [InlineData(RuntimeOrchestrationLifecycleStatus.Active, RuntimeOrchestrationArtifactStatus.Pending, true)]
+    [InlineData(RuntimeOrchestrationLifecycleStatus.Active, RuntimeOrchestrationArtifactStatus.Ready, false)]
+    public async Task PromoteRejectsNewInstancesWhenVersionCannotReceiveTriggers(
+        RuntimeOrchestrationLifecycleStatus lifecycle, RuntimeOrchestrationArtifactStatus status, bool active)
+    {
+        var fixture = new PromotionFixture();
+        fixture.ResolvedArtifact.RuntimeArtifact.LifecycleStatus = lifecycle;
+        fixture.ResolvedArtifact.RuntimeArtifact.Status = status;
+        fixture.ResolvedArtifact.RuntimeArtifact.IsActive = active;
+
+        var result = await fixture.Promoter.PromoteToInstanceAsync(new PromotionRequest
+        {
+            ArtifactId = fixture.ResolvedArtifact.RuntimeArtifact.Id.ToString(),
+            Payload = JsonNode.Parse("{\"orderId\":\"order-1\"}")
+        });
+
+        Assert.False(result.Success);
+        Assert.Contains("not active and ready", result.ErrorMessage);
+        Assert.Empty(fixture.Instances);
+        Assert.Empty(fixture.Transitions);
+        Assert.Equal(0, fixture.StateTransaction.ExecutionCount);
+        await fixture.TriggerPayloadValidator.DidNotReceiveWithAnyArgs().ValidateAsync(default!, default!, default);
+    }
+
+    [Fact]
+    public async Task DuplicateTriggerStillFindsItsExistingInstanceAfterVersionIsArchived()
+    {
+        var fixture = new PromotionFixture();
+        fixture.ResolvedArtifact.RuntimeArtifact.LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived;
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = fixture.ResolvedArtifact.RuntimeArtifact.Id,
+            OrchestrationDefinitionKey = "orders_created", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "orders:existing"
+        };
+        fixture.InstanceRepository.TryGetByStartIdempotencyKey("existing", Arg.Any<CancellationToken>()).Returns(Task.FromResult(instance));
+
+        var result = await fixture.Promoter.PromoteToInstanceAsync(new PromotionRequest
+        {
+            ArtifactId = fixture.ResolvedArtifact.RuntimeArtifact.Id.ToString(), StartIdempotencyKey = "existing"
+        });
+
+        Assert.True(result.Success);
+        Assert.True(result.AlreadyPromoted);
+        Assert.Equal(instance.Id.ToString(), result.InstanceId);
+        await fixture.ArtifactResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        Assert.Empty(fixture.Instances);
+    }
+
     [Fact]
     public async Task PromoteToInstancePersistsTheInstanceAndPromotionTransitionInOneStateTransaction()
     {
@@ -114,7 +165,9 @@ public sealed class PromoterPersistenceTests
                 ArtifactType = "orchestration.deploy",
                 Version = artifact.Version,
                 ArtifactChecksum = artifact.Checksum,
-                ArtifactPayload = JsonNode.Parse("{}")!
+                ArtifactPayload = JsonNode.Parse("{}")!,
+                Status = RuntimeOrchestrationArtifactStatus.Ready,
+                IsActive = true
             },
             Artifact = artifact
         };

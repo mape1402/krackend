@@ -36,6 +36,8 @@ internal sealed class ImmediateRuntimeArtifactProjectionScheduler : IRuntimeArti
         RuntimeArtifactProjectionRequest request,
         CancellationToken cancellationToken = default)
     {
+        if ((request.RolloutReplacements?.Length ?? 0) > 0 || (request.RollbackTargetTriggerKeys?.Length ?? 0) > 0)
+            throw new IngressProjectionConfigurationException("Rollout requires a durable projection and standup scheduler.");
         var artifactId = new Id(Ulid.Parse(request.ArtifactId));
         var artifact = await _artifactRepository.GetById(artifactId, cancellationToken);
         if (artifact.IngressGeneration != request.IngressGeneration)

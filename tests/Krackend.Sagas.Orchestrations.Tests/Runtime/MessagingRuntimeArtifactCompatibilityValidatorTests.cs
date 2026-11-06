@@ -58,6 +58,17 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidatorTests
         Assert.True(result.Succeeded, result.ErrorMessage);
     }
 
+    [Theory]
+    [InlineData(-1, 1200)]
+    [InlineData(86400, 0)]
+    public async Task ValidateAsync_RejectsInvalidInstanceLifetimePolicies(int maximumSeconds, int idleSeconds)
+    {
+        var artifact = CreateArtifact() with { MaxInstanceDurationSeconds = maximumSeconds, IdleDurationSeconds = idleSeconds };
+        var result = await ValidateAsync(artifact);
+        Assert.False(result.Succeeded);
+        Assert.Equal("InvalidInstanceLifetimePolicy", result.ErrorCode);
+    }
+
     [Fact]
     public async Task ValidateAsync_WhenConstructedWithAdapterRegistryOverload_ReturnsSuccess()
     {

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class RuntimeArtifactDeploymentHistoryRepository : RuntimeRepositoryBase, IRuntimeArtifactDeploymentHistoryRepository, IRuntimeArtifactHistoryCatalog
+internal sealed class RuntimeArtifactDeploymentHistoryRepository : RuntimeRepositoryBase, IRuntimeArtifactDeploymentHistoryRepository, IRuntimeArtifactHistoryCatalog, IRuntimeArtifactRollbackStatusRepository
 {
     public RuntimeArtifactDeploymentHistoryRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -25,6 +25,17 @@ internal sealed class RuntimeArtifactDeploymentHistoryRepository : RuntimeReposi
             .OrderByDescending(x => x.AppliedOnUtc)
             .ThenByDescending(x => x.Id)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<bool> TrySetRollbackStatus(string operationId, RuntimeOrchestrationArtifactStatus status, CancellationToken cancellationToken = default)
+    {
+        var record = await DbContext.RuntimeArtifactDeploymentHistory.FirstOrDefaultAsync(x =>
+            x.ControlPlaneArtifactId == operationId && x.ArtifactType == "orchestration-version.rollback-requested", cancellationToken);
+        if (record is null || status is not (RuntimeOrchestrationArtifactStatus.Ready or RuntimeOrchestrationArtifactStatus.Failed)) return false;
+        if (record.RuntimeStatus == RuntimeOrchestrationArtifactStatus.Ready) return status == RuntimeOrchestrationArtifactStatus.Ready;
+        record.RuntimeStatus = status;
+        await SaveChanges(cancellationToken);
+        return true;
+    }
 
     public async Task<RuntimeArtifactHistoryPage> GetPage(Id artifactId, int page, int pageSize, CancellationToken cancellationToken = default)
     {

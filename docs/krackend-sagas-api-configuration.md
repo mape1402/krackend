@@ -1,6 +1,6 @@
 # Krackend.Sagas.Orchestrations: API and configuration
 
-This reference covers the `Krackend.Sagas.Orchestrations.*` package family in this branch, prepared for version 6.1.0. It is intended for developers integrating a Runtime host, Control Plane host, or client service. Package names, options, and routes were checked against `src`; the public API inventory at the end was generated from the compiled assemblies.
+This reference covers the `Krackend.Sagas.Orchestrations.*` package family for version 6.2.0. It is intended for developers integrating a Runtime host, Control Plane host, or client service. The 6.2 lifecycle and configuration additions are documented below; the generated public API inventory at the end is a 6.1 snapshot and does not include every 6.2 addition.
 
 The .NET index is a snapshot of this revision. Its signatures are intended for reference rather than as ready-to-compile snippets: consult the source and package XML metadata for nullability, attributes, generic constraints, and exact signatures. The inventory includes public implementation types as well as contracts; listing a type does not automatically make it a recommended extension point.
 
@@ -42,6 +42,48 @@ For a design and operations walkthrough, see the [end-to-end manual](sagas-orche
 | `.SchemaRegistry.KnOwl` | HTTP adapter for the KnOwl deployed-contract catalog. |
 | `.WebUI.Shell` | Shared UI shell, navigation, and theme. |
 | `.WolfAuth` | Optional shell integration with host-configured authentication. |
+
+## Orchestration lifetime, archive, rollout, and rollback
+
+### Lifetime and Idle policy
+
+In the Control Plane, configure maximum instance lifetime and Idle duration on the draft roadmap version. These values are saved in the deployed artifact, so an installed version uses its own policy. `MaxInstanceDurationSeconds` and `IdleDurationSeconds` are nullable integer seconds: `null` inherits the runtime default, a maximum of `0` disables lifetime expiration for that version, and an explicit Idle duration must be positive. An explicit maximum must be non-negative. Existing artifacts without these values inherit the defaults as well.
+
+The runtime defaults to a maximum lifetime of 86,400 seconds and an Idle window of 1,200 seconds. The lifetime supervisor scans at startup and every 86,400 seconds by default. It examines Running instances using their start time or latest recovery replay time, coordinates the transition with the instance lease, and moves overdue instances to Idle. The existing Idle processor subsequently moves instances whose Idle window expires to DeadLettered. This is a maximum execution lifetime, not a last-activity detector: an instance that is still actively processing can also reach the limit. Adjust the policy for long-running workflows.
+
+Detection occurs on the next scan, so the limit is not a precise timer and can be exceeded by up to another scan interval under normal operation. Lease contention or runtime outages can delay processing further. Set `Runtime:Timeouts:Enabled` to `false` to disable timeout background processing, including this supervisor. To alter its defaults without changing an orchestration version:
+
+```json
+{
+  "Runtime": {
+    "Timeouts": {
+      "Enabled": true,
+      "DefaultInstanceLifetimeSeconds": 86400,
+      "DefaultIdleDurationSeconds": 1200,
+      "InstanceLifetimeScanIntervalSeconds": 86400,
+      "InstanceLifetimeBatchSize": 100
+    }
+  }
+}
+```
+
+### Deprecation, archive, and recovery
+
+Deprecation stops new trigger intake while preserving callbacks for existing work. Archiving requires a deprecated version and rejects the operation while it has active instances or active mutation leases. Lifetime expiration and the Idle window provide a path for old stuck instances to become DeadLettered, after which archive can be retried; neither transition removes the instance.
+
+Recovering an instance of an archived version prepares and reactivates only its backchannel. The lifecycle remains Archived and triggers remain disabled. Once no active instances or mutation leases remain, the lifetime scan retires the temporary backchannel; replicas close their local connectors on their next scan. Automatic cleanup requires timeout and coordination services, transactional storage, and repository support for checking active leases. The scan is daily by default, so cleanup is not immediate.
+
+### Rollout and rollback
+
+A staged rollout keeps the old matching triggers active while the new artifact is projected and its consumers are registered. The storage transaction then switches trigger routing. The Runtime UI can request rollback to an installed active and ready version through `IRuntimeArtifactRollbackService.RollbackAsync(artifactId, requestedBy, cancellationToken)`. On a successful handoff, the target's triggers are restored and active versions being replaced have their exclusive triggers disabled. Their backchannels remain active for in-flight instances. The deployment history records Pending, Ready, or Failed; a scheduling response alone does not mean the handoff has completed.
+
+For Pigeon, use `OnHandlerSuccess` and a transport that supports retry/redelivery. The adapter retains a shared consumer when versions use the same endpoint. Pigeon 4.2.0 does not confirm that a newly registered consumer is connected to the broker. By default, the runtime proceeds after registration and cannot automatically roll back an asynchronous startup failure. Use durable queues and monitor consumer health. A host that can verify its transport may register `IPigeonConsumerReadiness.WaitUntilReadyAsync(topic, version, subscription, cancellationToken)` to require that confirmation. The optional timeout is configured with `Runtime:Pigeon:ConsumerReadiness:TimeoutSeconds`, default `60`. Registration alone is not proof of readiness.
+
+### Storage and extension contracts
+
+Hosts own their provider, database and migration strategy. Add nullable `MaxInstanceDurationSeconds` and `IdleDurationSeconds` integer fields to the Control Plane version storage before upgrading; the SQL Server sample provides a migration. Runtime policy storage adds no columns. Runtime EF storage requires a provider with server-side `ExecuteUpdate` for atomic leases and transaction support for coordinated handoffs and cleanup. EF Core InMemory does not support the atomic update; the separate Krackend in-memory runtime store is intended for non-durable tests.
+
+Custom storage may implement `IOrchestrationLifetimeScanRepository` for a paged global instance scan, or `IOrchestrationLifetimeCandidateRepository` for the per-artifact fallback. `IRuntimeArtifactLifetimePolicyRepository` provides paged artifact policies. Archived cleanup uses `IArchivedRecoveryRetirementRepository`, `IArchivedRecoveryBatchRepository`, and `IOrchestrationArtifactActivityBatchReader`. Staged handoff requires durable projection, transactional storage, selective ingress and trigger-claim support. The core interfaces do not select a database engine.
 
 ## Host composition
 
@@ -122,6 +164,10 @@ The following sections are bound automatically through `BindConfiguration` in `A
 | `Runtime:Gossip:RedisConnectionString` | string | `null` | Explicit Redis adapter connection; when blank, `AddRedisGossip` uses `ConnectionStrings:Redis`. |
 | `Runtime:Timeouts:Enabled` | bool | `true` | Enables the timeout recovery scanner. |
 | `Runtime:Timeouts:ScanIntervalSeconds` | int | `5` | Scan interval. This is not the timeout configured on a task. |
+| `Runtime:Timeouts:DefaultInstanceLifetimeSeconds` | int | `86400` | Default maximum instance lifetime; zero disables the default. |
+| `Runtime:Timeouts:DefaultIdleDurationSeconds` | int | `1200` | Default idle reconciliation window. |
+| `Runtime:Timeouts:InstanceLifetimeScanIntervalSeconds` | int | `86400` | Interval between lifetime scans; the first scan runs at startup. |
+| `Runtime:Timeouts:InstanceLifetimeBatchSize` | int | `100` | Candidate page size, constrained to 1–1000. |
 | `Runtime:Coordination:Enabled` | bool | `true` | Enables per-instance coordination. |
 | `Runtime:Coordination:LeaseDurationSeconds` | int | `30` | Lease duration. |
 | `Runtime:Coordination:LeaseUnavailableWaitMilliseconds` | int | `2000` | Maximum wait when a lease is busy. |
@@ -506,6 +552,10 @@ The following tables were generated by constructing public `*Options` classes wi
 | --- | --- | --- | --- |
 | `Enabled` | `bool` | `true` | Gets or sets a value indicating whether the timeout scanner is enabled. |
 | `ScanIntervalSeconds` | `int` | `5` | Gets or sets the interval, in seconds, between timeout scans. |
+| `DefaultInstanceLifetimeSeconds` | `int` | `86400` | Default maximum instance lifetime in seconds; zero disables it. |
+| `DefaultIdleDurationSeconds` | `int` | `1200` | Default idle reconciliation window in seconds. |
+| `InstanceLifetimeScanIntervalSeconds` | `int` | `86400` | Interval between instance lifetime scans. |
+| `InstanceLifetimeBatchSize` | `int` | `100` | Maximum candidates per page. |
 
 ### `Krackend.Sagas.Orchestrations.Runtime.Execution.RuntimeExecutionOptions`
 

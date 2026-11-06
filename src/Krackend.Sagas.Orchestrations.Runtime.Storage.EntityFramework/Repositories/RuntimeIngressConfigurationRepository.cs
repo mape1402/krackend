@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryBase, IRuntimeIngressConfigurationRepository
+internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryBase, IRuntimeIngressConfigurationRepository, IRuntimeSelectiveTriggerIngressRepository, IRuntimeReactivatableTriggerIngressRepository
 {
     public RuntimeIngressConfigurationRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -100,6 +100,28 @@ internal sealed class RuntimeIngressConfigurationRepository : RuntimeRepositoryB
         }
 
         await SaveChanges(cancellationToken);
+    }
+
+    public async Task DeactivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default)
+    {
+        if (configurationKeys is null || configurationKeys.Count == 0) return;
+        var rows = await DbContext.RuntimeIngressConfigurations.Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+            x.IsActive && x.IngressKind == IngressKind.Trigger && configurationKeys.Contains(x.ConfigurationKey)).ToArrayAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        foreach (var row in rows) { row.IsActive = false; row.UpdatedOnUtc = now; row.DeactivatedOnUtc = now; }
+        await SaveChanges(cancellationToken);
+    }
+
+    public async Task<int> ActivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default)
+    {
+        if (configurationKeys is null || configurationKeys.Count == 0) return 0;
+        var rows = await DbContext.RuntimeIngressConfigurations.Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+            x.IngressKind == IngressKind.Trigger && x.MessageDisposition == IngressMessageDisposition.Process &&
+            configurationKeys.Contains(x.ConfigurationKey)).ToArrayAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        foreach (var row in rows) { row.IsActive = true; row.UpdatedOnUtc = now; row.DeactivatedOnUtc = null; }
+        await SaveChanges(cancellationToken);
+        return rows.Length;
     }
 
     public async Task<IReadOnlyCollection<RuntimeIngressConfiguration>> ReadActiveAsync(

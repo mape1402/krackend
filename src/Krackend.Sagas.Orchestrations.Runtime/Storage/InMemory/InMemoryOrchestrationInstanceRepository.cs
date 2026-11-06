@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
+    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -187,6 +187,38 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .OrderBy(static x => x.LastUpdatedOnUtc)
                 .Take(take)
                 .ToArray());
+
+        public Task<IReadOnlyCollection<Id>> GetLifetimeCandidates(
+            Id artifactId, DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Id>>(_store.Instances.Values
+                .Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+                    x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= startedOnOrBeforeUtc)
+                .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id)
+                .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).Select(x => x.Id).ToArray());
+
+        public Task<IReadOnlyCollection<OrchestrationLifetimeCandidate>> GetLifetimeCandidatePage(
+            DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<OrchestrationLifetimeCandidate>>(_store.Instances.Values
+                .Where(x => x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= startedOnOrBeforeUtc)
+                .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id)
+                .Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
+                .Select(x => new OrchestrationLifetimeCandidate(x.Id, x.RuntimeOrchestrationArtifactId, x.StartedOnUtc)).ToArray());
+
+        public Task<bool> HasActiveInstances(Id artifactId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_store.Instances.Values.Any(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+                ((!IsTerminal(x.Status) && x.Status != OrchestrationInstanceStatus.Failed) ||
+                 (!string.IsNullOrEmpty(x.ActiveLeaseId) && x.ActiveLeaseExpiresOnUtc > DateTime.UtcNow))));
+
+        public Task<IReadOnlyCollection<Id>> GetActiveArtifactIds(IReadOnlyCollection<Id> artifactIds, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var ids = (artifactIds ?? []).ToHashSet();
+            var now = DateTime.UtcNow;
+            return Task.FromResult<IReadOnlyCollection<Id>>(_store.Instances.Values.Where(x => ids.Contains(x.RuntimeOrchestrationArtifactId) &&
+                ((!IsTerminal(x.Status) && x.Status != OrchestrationInstanceStatus.Failed) ||
+                 (!string.IsNullOrEmpty(x.ActiveLeaseId) && x.ActiveLeaseExpiresOnUtc > now)))
+                .Select(x => x.RuntimeOrchestrationArtifactId).Distinct().ToArray());
+        }
 
         public Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default)
         {

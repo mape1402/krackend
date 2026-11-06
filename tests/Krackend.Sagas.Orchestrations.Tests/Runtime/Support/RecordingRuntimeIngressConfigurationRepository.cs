@@ -3,7 +3,7 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime.Support;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
-internal sealed class RecordingRuntimeIngressConfigurationRepository : IRuntimeIngressConfigurationRepository
+internal sealed class RecordingRuntimeIngressConfigurationRepository : IRuntimeIngressConfigurationRepository, IRuntimeSelectiveTriggerIngressRepository, IRuntimeReactivatableTriggerIngressRepository
 {
     private readonly List<RuntimeIngressConfiguration> _configurations = [];
 
@@ -45,6 +45,22 @@ internal sealed class RecordingRuntimeIngressConfigurationRepository : IRuntimeI
         }
 
         return Task.CompletedTask;
+    }
+
+    public Task DeactivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default)
+    {
+        foreach (var row in _configurations.Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+            x.IngressKind == IngressKind.Trigger && configurationKeys.Contains(x.ConfigurationKey))) row.IsActive = false;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default)
+    {
+        var rows = _configurations.Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+            x.IngressKind == IngressKind.Trigger && x.MessageDisposition == IngressMessageDisposition.Process &&
+            configurationKeys.Contains(x.ConfigurationKey)).ToArray();
+        foreach (var row in rows) row.IsActive = true;
+        return Task.FromResult(rows.Length);
     }
 
     public Task<IReadOnlyCollection<RuntimeIngressConfiguration>> ReadActiveAsync(

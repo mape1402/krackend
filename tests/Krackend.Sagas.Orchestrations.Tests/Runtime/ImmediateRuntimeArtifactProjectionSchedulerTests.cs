@@ -14,6 +14,25 @@ namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 public sealed class ImmediateRuntimeArtifactProjectionSchedulerTests
 {
     [Fact]
+    public async Task RolloutRequiresDurableSchedulerAndDoesNotTouchThePreviousVersion()
+    {
+        var artifact = Artifact(RuntimeOrchestrationArtifactStatus.Pending, ingressGeneration: 1);
+        var repository = new ArtifactRepositoryStub(artifact);
+        var projector = new RecordingRuntimeIngressConfigurationProjector();
+        var unitOfWork = new RecordingRuntimeStorageUnitOfWork();
+        var notifier = new RecordingRuntimeArtifactReadyNotifier();
+        using var provider = CreateProvider(repository, projector, unitOfWork, notifier);
+        var scheduler = provider.GetRequiredService<IRuntimeArtifactProjectionScheduler>();
+        var request = Request(artifact.Id, artifact.IngressGeneration);
+        request.RolloutReplacements = [new() { ArtifactId = Id.New().ToString(), ConfigurationKeys = ["trigger:old"] }];
+
+        await Assert.ThrowsAsync<IngressProjectionConfigurationException>(() => scheduler.ScheduleProjectionAsync(request));
+        Assert.Equal(0, projector.ProjectCount);
+        Assert.Equal(0, repository.MarkReadyCount);
+        Assert.Empty(notifier.Messages);
+    }
+
+    [Fact]
     public async Task ScheduleProjectionAsync_WhenIngressGenerationChanged_IgnoresStaleRequest()
     {
         var artifact = Artifact(RuntimeOrchestrationArtifactStatus.Pending, ingressGeneration: 2);

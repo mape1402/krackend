@@ -88,6 +88,32 @@ public sealed class DetailsModel : PageModel
 
     public bool CanEdit => SelectedVersion?.Status == OrchestrationVersionStatus.Draft;
 
+    /// <summary>Updates the instance lifetime policy of an editable roadmap.</summary>
+    public async Task<IActionResult> OnPostInstanceDurationsAsync(
+        string orchestrationId, string versionId, int? maxInstanceDurationSeconds,
+        int? idleDurationSeconds, CancellationToken cancellationToken = default)
+    {
+        if ((ModelState.TryGetValue(nameof(maxInstanceDurationSeconds), out var maxState) && maxState.Errors.Count != 0) ||
+            (ModelState.TryGetValue(nameof(idleDurationSeconds), out var idleState) && idleState.Errors.Count != 0))
+            return BadRequest("Duration values must be valid whole numbers of seconds.");
+        var current = await _versionService.GetById(new GetOrchestrationVersionByIdQuery(versionId), cancellationToken);
+        if (current is null || !string.Equals(current.OrchestrationDefinitionId, orchestrationId, StringComparison.Ordinal))
+            return NotFound();
+        if (current.Status != OrchestrationVersionStatus.Draft)
+            return BadRequest("Only a draft version can be edited.");
+        if (maxInstanceDurationSeconds is < 0 || idleDurationSeconds is <= 0)
+            return BadRequest("Maximum lifetime must be non-negative and idle duration must be positive.");
+
+        await _versionService.Update(new UpdateOrchestrationVersionCommand(
+            versionId, current.VersionLabel, current.Description, current.Checksum, current.Notes, "web-ui")
+        {
+            UpdateInstanceDurations = true,
+            MaxInstanceDurationSeconds = maxInstanceDurationSeconds,
+            IdleDurationSeconds = idleDurationSeconds
+        }, cancellationToken);
+        return RedirectToPage("/OrchestrationVersions/Details", new { area = "OrchestratorDesign", orchestrationId, versionId });
+    }
+
     public IReadOnlyCollection<StageDefinitionModel> Stages { get; private set; } = Array.Empty<StageDefinitionModel>();
 
     public IReadOnlyCollection<TriggerBindingModel> TriggerBindings { get; private set; } = Array.Empty<TriggerBindingModel>();

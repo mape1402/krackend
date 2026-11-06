@@ -66,3 +66,36 @@ public interface IOrchestrationIdleInstanceRepository
         int take = 100,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Provides paged candidates for per-artifact instance lifetime enforcement.</summary>
+public interface IOrchestrationLifetimeCandidateRepository
+{
+    /// <summary>Returns running instances for an artifact started on or before the cutoff.</summary>
+    Task<IReadOnlyCollection<Id>> GetLifetimeCandidates(
+        Id artifactId, DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Reads lifetime candidates across artifacts in a single paged scan.</summary>
+public interface IOrchestrationLifetimeScanRepository
+{
+    /// <summary>Returns running instances started on or before the earliest policy cutoff.</summary>
+    Task<IReadOnlyCollection<OrchestrationLifetimeCandidate>> GetLifetimeCandidatePage(
+        DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Identifiers needed to match a running instance to its deployed lifetime policy.</summary>
+public sealed record OrchestrationLifetimeCandidate(Id InstanceId, Id ArtifactId, DateTime StartedOnUtc);
+
+/// <summary>Provides a bounded existence check for active instances of an artifact.</summary>
+public interface IOrchestrationArtifactInstanceReader
+{
+    /// <summary>Returns whether the artifact has non-terminal instances or an unexpired instance mutation lease.</summary>
+    Task<bool> HasActiveInstances(Id artifactId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Reads active or currently leased instance owners for a bounded artifact batch.</summary>
+public interface IOrchestrationArtifactActivityBatchReader
+{
+    /// <summary>Returns distinct artifact ids with non-terminal instances or an unexpired mutation lease.</summary>
+    Task<IReadOnlyCollection<Id>> GetActiveArtifactIds(IReadOnlyCollection<Id> artifactIds, CancellationToken cancellationToken = default);
+}

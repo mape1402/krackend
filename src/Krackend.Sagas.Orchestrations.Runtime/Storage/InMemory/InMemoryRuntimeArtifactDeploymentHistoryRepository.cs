@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
-internal sealed class InMemoryRuntimeArtifactDeploymentHistoryRepository : IRuntimeArtifactDeploymentHistoryRepository, IRuntimeArtifactHistoryCatalog
+internal sealed class InMemoryRuntimeArtifactDeploymentHistoryRepository : IRuntimeArtifactDeploymentHistoryRepository, IRuntimeArtifactHistoryCatalog, IRuntimeArtifactRollbackStatusRepository
 {
     private readonly InMemoryRuntimeStore _store;
 
@@ -34,5 +34,18 @@ internal sealed class InMemoryRuntimeArtifactDeploymentHistoryRepository : IRunt
         var records = _store.ArtifactDeploymentHistory.Values.Where(x => x.RuntimeOrchestrationArtifactId == artifactId)
             .OrderByDescending(x => x.AppliedOnUtc).ThenByDescending(x => x.Id.ToString()).ToArray();
         return Task.FromResult(new RuntimeArtifactHistoryPage(records.Skip((page - 1) * pageSize).Take(pageSize).ToArray(), records.LongLength, page, pageSize));
+    }
+
+    public Task<bool> TrySetRollbackStatus(string operationId, RuntimeOrchestrationArtifactStatus status, CancellationToken cancellationToken = default)
+    {
+        var record = _store.ArtifactDeploymentHistory.Values.FirstOrDefault(x => x.ControlPlaneArtifactId == operationId &&
+            x.ArtifactType == "orchestration-version.rollback-requested");
+        if (record is null || status is not (RuntimeOrchestrationArtifactStatus.Ready or RuntimeOrchestrationArtifactStatus.Failed)) return Task.FromResult(false);
+        lock (record)
+        {
+            if (record.RuntimeStatus == RuntimeOrchestrationArtifactStatus.Ready) return Task.FromResult(status == RuntimeOrchestrationArtifactStatus.Ready);
+            record.RuntimeStatus = status;
+            return Task.FromResult(true);
+        }
     }
 }

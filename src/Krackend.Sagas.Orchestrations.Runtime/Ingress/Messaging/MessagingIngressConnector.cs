@@ -1,6 +1,6 @@
 ﻿namespace Krackend.Sagas.Orchestrations.Runtime.Ingress.Messaging
 {
-    internal class MessagingIngressConnector : IIngressConector
+    internal class MessagingIngressConnector : IIngressConector, IRevalidatableIngressConector
     {
         private readonly IMessagingIngressAdapter _messagingAdapter;
         private readonly IMessagingConfigurationSerializer _serializer;
@@ -16,6 +16,7 @@
             var config = _serializer.Deserialize(configuration.SettingsPayload);
             config.IngressKind = configuration.IngressKind;
             config.ArtifactId = configuration.ArtifactId;
+            config.IsStaged = configuration.IsStaged;
             config.IngressTransport = configuration.IngressTransport;
             config.ConnectorId = configuration.Id;
 
@@ -26,5 +27,8 @@
         {
             return _messagingAdapter.DisconnectAsync(connectorId, cancellationToken);
         }
+
+        public Task RevalidateAsync(IngressConfiguration configuration, CancellationToken cancellationToken = default)
+            => ConnectAsync(configuration, cancellationToken);
     }
 }

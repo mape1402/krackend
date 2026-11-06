@@ -12,6 +12,12 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
 
+## Version 6.2 highlights
+
+`v6.2.0` adds per-version orchestration lifetime and Idle policies, background supervision of existing instances, recovery for archived versions, and staged rollout and rollback controls. Versions without explicit settings inherit a 24-hour maximum lifetime and a 20-minute Idle window. Lifetime scans run at startup and daily by default, so expiration is detected on the next scan rather than exactly at the deadline.
+
+Before upgrading, hosts must add two nullable Control Plane version fields, `MaxInstanceDurationSeconds` and `IdleDurationSeconds`; the SQL Server sample includes a migration. Runtime storage requires no new columns for this policy. Hosts remain responsible for their EF provider and migrations. Pigeon 4.2.0 cannot confirm broker consumer readiness by itself: staged rollout and rollback proceed after registration unless the host provides a readiness implementation. See the [Sagas configuration reference](docs/krackend-sagas-api-configuration.md#orchestration-lifetime-archive-rollout-and-rollback) and [upgrade notes](CHANGELOG.md#v620---2026-11-06).
+
 ## Version 6.1.1 highlights
 
 `v6.1.1` sends a successful orchestration callback when Pigeon skips an already processed command, preserving its orchestration metadata without invoking the handler again. This callback does not restore the original business response payload; response validation still applies. The roadmap editor also groups paste actions in a floating menu and confirms copies with a non-blocking toast.
@@ -361,6 +367,26 @@ Transport and infrastructure adapters receive operational state changes through 
 
 Runtime reconciliation runs in the background and can also be invoked through `IOrchestrationRuntimeReconciler`. It repairs only durable inconsistencies: unresolved physical dispatch cancellations, persisted-but-unconfirmed dispatches, compensation delivery intents, and awaited tasks missing their durable timeout reference. It does not enumerate every healthy `Running` or `Waiting` saga or re-enter the saga engine globally. This preserves restart and failover recovery without turning normal runtime load into repeated work.
 
+The lifetime supervisor separately checks running instances against their deployed version's maximum lifetime. Versions without a policy inherit the runtime default of 24 hours; the default idle window is 20 minutes. Both values can be set on a draft roadmap in the Control Plane; a maximum of zero disables expiration for that version. The supervisor scans on startup and once per day by default, so an instance started before an upgrade can enter `Idle` on the first scan. Hosts can change the defaults and scan interval through `Runtime:Timeouts`. Saga and task recovery start a new lifetime window; valid late callbacks do not extend the existing idle deadline.
+
+Expiration is detected by the next scan, so it is not an exact deadline: with the default daily interval, detection can take up to another day. The Entity Framework and in-memory repositories scan candidates across versions in pages, then acquire a lease only for instances whose version policy can have expired. Custom instance repositories can implement `IOrchestrationLifetimeScanRepository` for this paged scan or `IOrchestrationLifetimeCandidateRepository` for the compatible per-artifact fallback. A custom artifact repository can implement `IRuntimeArtifactLifetimePolicyRepository` to read policies in pages; otherwise the supervisor loads active artifacts using the existing repository API.
+
+Hosts own their Control Plane storage migrations. Add the two nullable integer fields `MaxInstanceDurationSeconds` and `IdleDurationSeconds` to `OrchestrationVersions` before deploying the updated Control Plane; the SQL Server sample host includes a migration. Runtime storage does not add fields for this policy.
+
+The SQL Server sample's existing migration snapshot predates the `ConcurrencyToken` properties on `StageDefinitions`, `TaskDefinitions`, and `TriggerBindings`. EF reports these pre-existing differences as pending model changes. The lifetime migration does not add those columns; reconcile the sample host's existing schema and migrations before running automatic migrations.
+
+For a staged Pigeon rollout or archived recovery, the consumer acknowledgement mode must be `OnHandlerSuccess`. A delivery with no active matching ingress fails through the execution pipeline before Pigeon requests retry, so an idempotency inbox does not mark it complete or race with redelivery. The transport must support retry/redelivery. `Manual` and `OnReceive` are rejected for staged connector preparation.
+
+Pigeon 4.2.0 does not expose a transport-independent confirmation that an asynchronously started consumer is accepting deliveries. Staged rollouts and archived recoveries therefore proceed after consumer registration by default; `Ready` does not guarantee the broker accepted a newly registered consumer, and a later startup failure cannot automatically roll back the version. Use durable broker queues and monitor consumer health. Hosts that can independently verify their transport may register an `IPigeonConsumerReadiness` implementation to require confirmation; the optional wait defaults to 60 seconds and can be changed with `Runtime:Pigeon:ConsumerReadiness:TimeoutSeconds`. Registration alone does not satisfy that confirmation contract. The [Pigeon readiness requirement](docs/pigeon-consumer-readiness-requirement.md) describes the capability needed for a general solution.
+
+Recovering an instance of an archived version prepares its backchannel before dispatching work and keeps the version's triggers disabled. The version remains archived. After its last active instance and mutation lease finish, the lifetime scan retires the restored backchannel; each replica closes its stale local connector on its next scan. The scan runs at startup and daily by default, so connector cleanup is not immediate. Entity Framework storage uses the existing generation and instance lease to coordinate archive, recovery and retirement. Automatic retirement requires `Runtime:Timeouts:Enabled` and `Runtime:Coordination:Enabled`, transactional storage, and an instance repository that reports active leases. Custom storage can provide `IArchivedRecoveryRetirementRepository`, `IArchivedRecoveryBatchRepository` and `IOrchestrationArtifactActivityBatchReader`; otherwise the cleanup is skipped. Artifact activity is checked in batches rather than scanning the instances table once per archived version.
+
+The Entity Framework runtime storage requires a provider that supports server-side `ExecuteUpdate` for atomic instance leases. The EF Core InMemory provider does not support that operation; use Krackend's in-memory runtime storage for non-durable tests, or an EF provider that supports atomic updates. The host remains responsible for choosing and configuring its provider.
+
+Staged rollout also requires a durable projection scheduler implementing `IRuntimeDurableRolloutProjectionScheduler`; the Entity Framework scheduler implements it. A conflicting rollout is rejected before changing trigger ownership when this capability is unavailable.
+
+The Runtime UI's rollback action prepares an earlier active version and switches its triggers back after consumer registration. The active versions being replaced also have their exclusive triggers disabled; their backchannels remain available for in-flight instances. Its history records whether the requested switch is pending, ready or failed.
+
 ```json
 {
   "Runtime": {
@@ -372,6 +398,12 @@ Runtime reconciliation runs in the background and can also be invoked through `I
       "Enabled": true,
       "ScanIntervalSeconds": 15,
       "BatchSize": 100
+    },
+    "Timeouts": {
+      "DefaultInstanceLifetimeSeconds": 86400,
+      "DefaultIdleDurationSeconds": 1200,
+      "InstanceLifetimeScanIntervalSeconds": 86400,
+      "InstanceLifetimeBatchSize": 100
     }
   }
 }

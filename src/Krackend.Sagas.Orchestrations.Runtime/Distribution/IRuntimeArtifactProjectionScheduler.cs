@@ -14,3 +14,8 @@ public interface IRuntimeArtifactProjectionScheduler
         RuntimeArtifactProjectionRequest request,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Indicates that staged rollout projection survives process restarts.</summary>
+public interface IRuntimeDurableRolloutProjectionScheduler : IRuntimeArtifactProjectionScheduler
+{
+}

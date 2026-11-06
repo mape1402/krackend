@@ -70,10 +70,14 @@ public sealed class ControlPlaneEntityFrameworkDesignRepositoryTests
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationVersionRepository>();
         var definitionId = Id.New();
         var first = Version(definitionId, 1); first.Status = OrchestrationVersionStatus.Deployed; first.VersionLabel = "First release";
+        first.MaxInstanceDurationSeconds = 172800; first.IdleDurationSeconds = 3600;
         var second = Version(definitionId, 2); second.Status = OrchestrationVersionStatus.Deployed; second.VersionLabel = "Second release";
         var draft = Version(definitionId, 3); draft.Version = null; draft.VersionLabel = string.Empty;
         first.CreatedOnUtc = DateTime.UtcNow.AddMinutes(-1); second.CreatedOnUtc = DateTime.UtcNow;
         await repository.Create(first);
+        var savedPolicy = await repository.GetById(first.Id);
+        Assert.Equal(172800, savedPolicy.MaxInstanceDurationSeconds);
+        Assert.Equal(3600, savedPolicy.IdleDurationSeconds);
         await repository.Create(second);
         await repository.Create(draft);
         var settings = new PagedSettings(1, 1, [],

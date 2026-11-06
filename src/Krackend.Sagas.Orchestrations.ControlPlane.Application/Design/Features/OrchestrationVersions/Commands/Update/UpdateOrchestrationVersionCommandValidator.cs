@@ -15,6 +15,10 @@ public sealed class UpdateOrchestrationVersionCommandValidator : AbstractValidat
         RuleFor(x => x.Id).NotEmpty().Must(ValidationRules.IsUlid);
         RuleFor(x => x.Checksum).NotEmpty();
         RuleFor(x => x.UpdatedBy).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.MaxInstanceDurationSeconds).GreaterThanOrEqualTo(0)
+            .When(x => x.UpdateInstanceDurations && x.MaxInstanceDurationSeconds.HasValue);
+        RuleFor(x => x.IdleDurationSeconds).GreaterThan(0)
+            .When(x => x.UpdateInstanceDurations && x.IdleDurationSeconds.HasValue);
     }
 }
 

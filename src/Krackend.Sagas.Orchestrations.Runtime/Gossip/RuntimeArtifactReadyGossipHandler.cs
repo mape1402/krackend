@@ -26,7 +26,8 @@ internal sealed class RuntimeArtifactReadyGossipHandler : IRuntimeArtifactReadyG
             ArtifactId = message.ArtifactId,
             IngressGeneration = message.IngressGeneration,
             Reason = "gossip",
-            RequestedOnUtc = DateTime.UtcNow
+            RequestedOnUtc = DateTime.UtcNow,
+            RefreshToken = message.RefreshToken
         }, cancellationToken);
     }
 }

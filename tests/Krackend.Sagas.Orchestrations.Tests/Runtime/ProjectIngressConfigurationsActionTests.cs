@@ -8,6 +8,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Gossip;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.Fakes;
+using Krackend.Sagas.Orchestrations.Tests.Runtime.Support;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mule;
@@ -16,6 +17,60 @@ using System.Text.Json.Nodes;
 
 public sealed class ProjectIngressConfigurationsActionTests
 {
+    [Fact]
+    public async Task FailedRolloutProjectionLeavesPreviousTriggerActive()
+    {
+        var artifactId = Id.New();
+        var oldId = Id.New();
+        var artifact = CreateArtifact(artifactId, 1);
+        var projector = Substitute.For<IRuntimeIngressConfigurationProjector>();
+        projector.ProjectAsync(artifact, Arg.Any<CancellationToken>())
+            .Returns(_ => throw new IngressProjectionConfigurationException("invalid projection"));
+        var ingress = new RecordingRuntimeIngressConfigurationRepository();
+        var oldTrigger = new RuntimeIngressConfiguration
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = oldId, ConfigurationKey = "trigger:old",
+            IngressKind = IngressKind.Trigger, SettingsPayload = "{}", IsActive = true
+        };
+        await ingress.UpsertForArtifactAsync(oldId, [oldTrigger]);
+        var repository = Substitute.For<IRuntimeArtifactRepository, IRuntimeArtifactRolloutTransitionRepository>();
+        repository.GetById(artifactId, Arg.Any<CancellationToken>()).Returns(artifact);
+        ((IRuntimeArtifactRolloutTransitionRepository)repository)
+            .TryMarkRolloutProjectionStarted(artifactId, 1, Arg.Any<CancellationToken>()).Returns(true);
+        var action = new ProjectIngressConfigurationsAction(repository, projector,
+            new NoopRuntimeStorageUnitOfWork(), Substitute.For<IRuntimeArtifactReadyNotifier>(),
+            NullLogger<ProjectIngressConfigurationsAction>.Instance, new DefaultMuleTerminalFailureMarker());
+        var context = CreateContext(artifactId, 1);
+        context.Payload.RolloutTriggerIdentities = ["MESSAGING|ORDERS|1.0.0"];
+        context.Payload.RolloutReplacements = [new() { ArtifactId = oldId.ToString(), ConfigurationKeys = ["trigger:old"] }];
+
+        await Assert.ThrowsAsync<IngressProjectionConfigurationException>(async () => await action.ExecuteAsync(context, default));
+        await projector.Received(1).ProjectAsync(artifact, Arg.Any<CancellationToken>());
+        Assert.True(oldTrigger.IsActive);
+    }
+
+    [Fact]
+    public async Task StaleRolloutCannotDeactivateCurrentTrigger()
+    {
+        var oldId = Id.New();
+        var ingress = new RecordingRuntimeIngressConfigurationRepository();
+        var oldTrigger = new RuntimeIngressConfiguration
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = oldId, ConfigurationKey = "trigger:old",
+            IngressKind = IngressKind.Trigger, SettingsPayload = "{}", IsActive = true
+        };
+        await ingress.UpsertForArtifactAsync(oldId, [oldTrigger]);
+        var claims = new RecordingRuntimeTriggerClaimRepository { NextResult = RuntimeTriggerClaimResult.Conflict(Id.New()) };
+        var request = new RuntimeArtifactProjectionRequest
+        {
+            ArtifactId = Id.New().ToString(), RolloutTriggerIdentities = ["MESSAGING|ORDERS|1.0.0"],
+            RolloutReplacements = [new() { ArtifactId = oldId.ToString(), ConfigurationKeys = ["trigger:old"] }]
+        };
+
+        await Assert.ThrowsAsync<IngressProjectionConfigurationException>(() => RuntimeArtifactRolloutHandoff.ApplyAsync(request, ingress, claims));
+        Assert.True(oldTrigger.IsActive);
+    }
+
     [Fact]
     public async Task ExecuteAsync_WhenIngressGenerationIsStale_SkipsProjectionAndNotification()
     {

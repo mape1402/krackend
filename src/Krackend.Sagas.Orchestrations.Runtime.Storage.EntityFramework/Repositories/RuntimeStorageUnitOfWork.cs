@@ -95,9 +95,20 @@ internal sealed class RuntimeStorageUnitOfWork : IRuntimeStorageUnitOfWork
 
         public async ValueTask DisposeAsync()
         {
-            if (!_committed)
-                _unitOfWork._pendingEvents.Clear();
-            await _transaction.DisposeAsync();
+            try
+            {
+                await _transaction.DisposeAsync();
+            }
+            finally
+            {
+                if (!_committed)
+                {
+                    _unitOfWork._pendingEvents.Clear();
+                    // Rolled-back entities must not be flushed by a later error
+                    // update using the same scoped DbContext.
+                    _unitOfWork._dbContext.ChangeTracker.Clear();
+                }
+            }
         }
     }
 

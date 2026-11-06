@@ -77,6 +77,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Messaging.Pigeon
                 .AddPublishInterceptor<KrackendPublishInterceptor>();
             configurePigeon(pigeonBuilder);
 
+            builder.Services.AddOptions<PigeonConsumerReadinessOptions>()
+                .Bind(configuration.GetSection("Runtime:Pigeon:ConsumerReadiness"));
+
             builder.Services.TryAddSingleton<IPigeonIngressConsumerRegistry, PigeonIngressConsumerRegistry>();
             builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IRuntimeDegradationHandler, PigeonRuntimeDegradationHandler>());
             builder.Services.Replace(ServiceDescriptor.Scoped<IMessagingIngressAdapter, PigeonIngressAdapter>());

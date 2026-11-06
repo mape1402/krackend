@@ -34,6 +34,13 @@ public sealed class UpdateOrchestrationVersionCommandHandler : IRequestHandler<U
         current.Description = request.Description;
         current.Checksum = new Checksum(request.Checksum);
         current.Notes = request.Notes;
+        if (request.UpdateInstanceDurations)
+        {
+            if (request.MaxInstanceDurationSeconds is < 0 || request.IdleDurationSeconds is <= 0)
+                throw new ArgumentOutOfRangeException(nameof(request), "Maximum lifetime must be non-negative and idle duration must be positive.");
+            current.MaxInstanceDurationSeconds = request.MaxInstanceDurationSeconds;
+            current.IdleDurationSeconds = request.IdleDurationSeconds;
+        }
         current.UpdatedOnUtc = DateTime.UtcNow;
         current.UpdatedBy = request.UpdatedBy;
 

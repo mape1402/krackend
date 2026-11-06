@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.2.0] - 2026-11-06
+
+### Added
+
+- Configure maximum instance lifetime and the Idle window per orchestration version in the Control Plane. Unconfigured versions inherit runtime defaults of 24 hours and 20 minutes.
+- Supervise existing Running instances at startup and on a configurable interval, transitioning expired instances through Idle to DeadLettered so inactive versions can eventually be archived.
+- Recover instances of archived versions using their backchannel without re-enabling triggers; retire the temporary backchannel after the recovered work and its leases finish.
+- Request a staged rollback from the Runtime UI. The target's triggers are restored, the replaced versions' exclusive triggers are disabled, and existing backchannels remain available.
+
+### Changed
+
+- Stage rollout and rollback trigger handoffs, track their outcomes, preserve active instance callbacks, and refresh runtime replicas after rollback. Shared Pigeon consumers are retained while their routing changes.
+- Use atomic provider-neutral EF updates for instance leases and batched scans for lifetime policies and archived recovery cleanup.
+
+### Upgrade notes
+
+- Hosts must add nullable integer `MaxInstanceDurationSeconds` and `IdleDurationSeconds` fields to the Control Plane `Design.OrchestrationVersions` table or equivalent collection. The SQL Server sample provides a migration. No Runtime policy columns are added. Hosts own their provider configuration and migrations.
+- The first lifetime scan runs at startup, then daily by default. Detection may take up to an additional scan interval. Set a version's maximum lifetime to zero to disable expiration for that version, or adjust runtime defaults before upgrading.
+- Pigeon staged operations require `OnHandlerSuccess` and a transport supporting retry/redelivery. Pigeon 4.2.0 does not confirm broker consumer readiness; without an optional host-provided `IPigeonConsumerReadiness`, the runtime proceeds after registration and cannot automatically roll back a later consumer startup failure.
+- EF runtime storage requires a provider supporting atomic server-side `ExecuteUpdate` and transactions for coordinated operations. EF Core InMemory does not support atomic leases; use Krackend's in-memory runtime storage for non-durable tests.
+
+------
+
 ## [v6.1.1] - 2026-11-04
 
 ### Fixed

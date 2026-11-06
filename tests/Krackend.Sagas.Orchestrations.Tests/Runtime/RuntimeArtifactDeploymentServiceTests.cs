@@ -20,6 +20,26 @@ using NSubstitute;
 
 public sealed class RuntimeArtifactDeploymentServiceTests
 {
+    [Fact]
+    public async Task RolloutWithoutDurableSchedulerIsRejectedBeforeChangingOwnership()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        repository.Add(CreateRuntimeArtifact("sales.sale.created", Version, "old", RuntimeOrchestrationArtifactStatus.Ready, 1,
+            [EventTrigger("events.sales.sale.created")]));
+        var scheduler = Substitute.For<IRuntimeArtifactProjectionScheduler>();
+        var claims = new RecordingRuntimeTriggerClaimRepository();
+        var package = CreatePackage("sales.sale.created", new SemanticVersion(1, 0, 1), "new", Id.New(),
+            triggers: [EventTrigger("events.sales.sale.created")]);
+        package.ReleaseStrategy = "Rollout";
+
+        var result = await CreateService(repository, scheduler, triggerClaims: claims).DeployAsync(package, "test");
+
+        Assert.False(result.Accepted);
+        Assert.Contains("durable", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(claims.ClaimRequests);
+        Assert.Equal(0, repository.UpsertCount);
+    }
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly SemanticVersion Version = new(1, 0, 0);
 
@@ -113,17 +133,24 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
-    public async Task DeployAsync_RolloutDeactivatesOnlyTheConflictingTrigger()
+    public async Task DeployAsync_RolloutKeepsCurrentTriggerUntilProjectionHandoff()
     {
         var repository = new TestRuntimeArtifactDeploymentRepository();
         var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        var replaced = EventTrigger("events.sales.sale.created");
+        var unaffected = EventTrigger("events.sales.other");
         var current = repository.Add(CreateRuntimeArtifact(
             "sales.sale.created", Version, "checksum-old", RuntimeOrchestrationArtifactStatus.Ready, 1,
-            [EventTrigger("events.sales.sale.created")]));
+            [replaced, unaffected]));
         var ingress = new RecordingRuntimeIngressConfigurationRepository();
+        var replacedIngress = Ingress(current.Id, IngressKind.Trigger);
+        replacedIngress.ConfigurationKey = $"trigger:{replaced.Id}".ToLowerInvariant();
+        var unaffectedIngress = Ingress(current.Id, IngressKind.Trigger);
+        unaffectedIngress.ConfigurationKey = $"trigger:{unaffected.Id}".ToLowerInvariant();
         await ingress.UpsertForArtifactAsync(current.Id,
         [
-            Ingress(current.Id, IngressKind.Trigger),
+            replacedIngress,
+            unaffectedIngress,
             Ingress(current.Id, IngressKind.Backchannel)
         ]);
         var package = CreatePackage(
@@ -132,11 +159,16 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         package.ArtifactType = "orchestration-version.new";
         package.ReleaseStrategy = "Rollout";
 
-        var result = await CreateService(repository, scheduler, ingress: ingress).DeployAsync(package, "design-a");
+        var claims = new RecordingRuntimeTriggerClaimRepository();
+        var result = await CreateService(repository, scheduler, ingress: ingress, triggerClaims: claims).DeployAsync(package, "design-a");
 
         Assert.True(result.Accepted, result.Message);
-        Assert.Single(scheduler.Requests);
-        Assert.False(ingress.Configurations.Single(x => x.IngressKind == IngressKind.Trigger).IsActive);
+        var request = Assert.Single(scheduler.Requests);
+        Assert.True(replacedIngress.IsActive);
+        Assert.Equal(current.Id.ToString(), Assert.Single(request.RolloutReplacements).ArtifactId);
+        await RuntimeArtifactRolloutHandoff.ApplyAsync(request, ingress, claims);
+        Assert.False(replacedIngress.IsActive);
+        Assert.True(unaffectedIngress.IsActive);
         Assert.True(ingress.Configurations.Single(x => x.IngressKind == IngressKind.Backchannel).IsActive);
     }
 
@@ -188,6 +220,24 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         Assert.True(result.Accepted, result.Message);
         var claim = Assert.Single(claims.ClaimRequests);
         Assert.Equal([current.Id], claim.ReplaceableArtifactIds);
+    }
+
+    [Fact]
+    public async Task DeployAsync_RolloutCannotStealTheTriggerOfAnotherOrchestration()
+    {
+        var repository = new TestRuntimeArtifactDeploymentRepository();
+        var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
+        repository.Add(CreateRuntimeArtifact("other.orchestration", Version, "old", RuntimeOrchestrationArtifactStatus.Ready, 1,
+            [EventTrigger("events.shared")]));
+        var package = CreatePackage("sales.sale.created", new SemanticVersion(1, 0, 1), "new", Id.New(),
+            triggers: [EventTrigger("events.shared")]);
+        package.ReleaseStrategy = "Rollout";
+
+        var result = await CreateService(repository, scheduler).DeployAsync(package, "design-a");
+
+        Assert.False(result.Accepted);
+        Assert.Contains("different orchestration", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(scheduler.Requests);
     }
 
     [Fact]
@@ -476,7 +526,7 @@ public sealed class RuntimeArtifactDeploymentServiceTests
     }
 
     [Fact]
-    public async Task DeployAsync_WhenExistingFailedArtifactHasSameChecksum_RequeuesProjectionWithSameGeneration()
+    public async Task DeployAsync_WhenExistingFailedArtifactHasSameChecksum_UsesNewGeneration()
     {
         var repository = new TestRuntimeArtifactDeploymentRepository();
         var scheduler = new RecordingRuntimeArtifactProjectionScheduler();
@@ -500,7 +550,7 @@ public sealed class RuntimeArtifactDeploymentServiceTests
         Assert.Equal(RuntimeOrchestrationArtifactStatus.Pending.ToString(), result.Status);
         Assert.Single(scheduler.Requests);
         Assert.Equal(existing.Id.ToString(), scheduler.Requests[0].ArtifactId);
-        Assert.Equal(existing.IngressGeneration, scheduler.Requests[0].IngressGeneration);
+        Assert.Equal(7, scheduler.Requests[0].IngressGeneration);
         Assert.Equal(1, repository.UpsertCount);
     }
 
@@ -1091,7 +1141,7 @@ public sealed class RuntimeArtifactDeploymentServiceTests
 
     private static RuntimeArtifactDeploymentService CreateService(
         TestRuntimeArtifactDeploymentRepository repository,
-        RecordingRuntimeArtifactProjectionScheduler scheduler,
+        IRuntimeArtifactProjectionScheduler scheduler,
         IRuntimeArtifactCompatibilityValidator? compatibilityValidator = null,
         RecordingRuntimeIngressConfigurationRepository? ingress = null,
         IOrchestrationInstanceRepository? instances = null,

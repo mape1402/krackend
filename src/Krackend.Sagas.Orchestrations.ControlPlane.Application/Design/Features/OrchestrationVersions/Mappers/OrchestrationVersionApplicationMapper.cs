@@ -22,6 +22,8 @@ public sealed class OrchestrationVersionApplicationMapper : IOrchestrationVersio
             Version = source.Version?.ToString() ?? string.Empty,
             Status = source.Status,
             VersionLabel = source.VersionLabel ?? string.Empty,
+            MaxInstanceDurationSeconds = source.MaxInstanceDurationSeconds,
+            IdleDurationSeconds = source.IdleDurationSeconds,
             Description = source.Description ?? string.Empty,
             Checksum = source.Checksum.ToString(),
             Notes = source.Notes ?? string.Empty,
