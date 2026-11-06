@@ -108,6 +108,8 @@ public sealed class MessagingRuntimeArtifactCompatibilityValidator : IRuntimeArt
         OrchestrationArtifact artifact,
         CancellationToken cancellationToken)
     {
+        if (artifact.MaxInstanceDurationSeconds is < 0 || artifact.IdleDurationSeconds is <= 0)
+            return Failure("InvalidInstanceLifetimePolicy", "Maximum instance lifetime must be non-negative and idle duration must be positive.");
         var stages = artifact.StageDefinitions?.OrderBy(stage => stage.Order).ToArray() ?? [];
         var bundleResult = await ValidateRequiredBundlesAsync(artifact, cancellationToken);
         if (!bundleResult.Succeeded)

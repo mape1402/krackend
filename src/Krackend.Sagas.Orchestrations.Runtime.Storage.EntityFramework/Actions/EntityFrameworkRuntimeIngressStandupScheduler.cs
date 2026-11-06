@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
@@ -45,6 +47,11 @@ internal sealed class EntityFrameworkRuntimeIngressStandupScheduler : IRuntimeIn
 
         var key = ActionKey.From(RuntimeArtifactActionNames.StandUpArtifactIngress);
         var deduplicationKey = $"{request.ArtifactId}:{request.IngressGeneration}:{_replicaIdentity.ReplicaBootId}";
+        if (!string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            var input = $"{deduplicationKey}:{request.RefreshToken}";
+            deduplicationKey = $"refresh:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input)))}";
+        }
         var current = await _dbContext.Set<DurableAction>().FirstOrDefaultAsync(
             x => x.Key == key && x.DeduplicationKey == deduplicationKey,
             cancellationToken);

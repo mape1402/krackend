@@ -9,7 +9,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Reposito
 /// <summary>
 /// Uses a database uniqueness constraint as the cross-host trigger ownership lock.
 /// </summary>
-internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimRepository
+internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimRepository, IRuntimeSelectiveTriggerClaimRepository
 {
     private readonly RuntimeDbContext _dbContext;
 
@@ -54,7 +54,10 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
             if (known.TryGetValue(key, out var current))
             {
                 current.RuntimeOrchestrationArtifactId = artifactId;
-                current.UpdatedOnUtc = now;
+                // Some providers retain only millisecond precision. An unchanged
+                // owner must still perform a real write during the handoff.
+                var next = current.UpdatedOnUtc.AddMilliseconds(1);
+                current.UpdatedOnUtc = now >= next ? now : next;
                 continue;
             }
 
@@ -76,7 +79,7 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
         catch (DbUpdateException)
         {
             foreach (var entry in _dbContext.ChangeTracker.Entries<RuntimeTriggerClaim>()
-                         .Where(entry => entry.State == EntityState.Added)
+                         .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
                          .ToArray())
             {
                 entry.State = EntityState.Detached;
@@ -104,6 +107,18 @@ internal sealed class RuntimeTriggerClaimRepository : IRuntimeTriggerClaimReposi
 
         var claims = await _dbContext.RuntimeTriggerClaims
             .Where(claim => ids.Contains(claim.RuntimeOrchestrationArtifactId))
+            .ToArrayAsync(cancellationToken);
+        _dbContext.RuntimeTriggerClaims.RemoveRange(claims);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task ReleaseOwnedAsync(Id artifactId, IReadOnlyCollection<string> identities, CancellationToken cancellationToken = default)
+    {
+        var keys = Normalize(identities);
+        if (keys.Length == 0) return;
+        var claims = await _dbContext.RuntimeTriggerClaims
+            .Where(claim => claim.RuntimeOrchestrationArtifactId == artifactId && keys.Contains(claim.Id))
             .ToArrayAsync(cancellationToken);
         _dbContext.RuntimeTriggerClaims.RemoveRange(claims);
         await _dbContext.SaveChangesAsync(cancellationToken);

@@ -32,6 +32,9 @@ public sealed class RuntimeArtifactReadyGossipMessage
     /// </summary>
     public DateTime OccurredOnUtc { get; set; }
 
+    /// <summary>Requests a fresh connector read even if the generation was already applied locally.</summary>
+    public string RefreshToken { get; set; }
+
     /// <summary>
     /// Creates a gossip message from a runtime artifact.
     /// </summary>

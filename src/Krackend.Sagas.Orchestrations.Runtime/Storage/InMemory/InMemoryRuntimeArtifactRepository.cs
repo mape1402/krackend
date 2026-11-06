@@ -5,7 +5,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryRuntimeArtifactRepository : IRuntimeArtifactRepository, IRuntimeArtifactUiCatalog
+    internal sealed class InMemoryRuntimeArtifactRepository : IRuntimeArtifactRepository, IRuntimeArtifactUiCatalog, IRuntimeArtifactLifetimePolicyRepository
     {
         private readonly InMemoryRuntimeStore _store;
         private readonly IRuntimeIngressConfigurationRepository _ingressConfigurationRepository;
@@ -110,6 +110,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult<IReadOnlyCollection<RuntimeOrchestrationArtifact>>(
                 _store.Artifacts.Values.ToArray());
 
+        public Task<IReadOnlyCollection<RuntimeArtifactLifetimePolicyItem>> GetLifetimePolicyPage(
+            int skip, int take, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyCollection<RuntimeArtifactLifetimePolicyItem>>(_store.Artifacts.Values
+                .Where(x => x.IsActive).OrderBy(x => x.Id).Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
+                .Select(x => new RuntimeArtifactLifetimePolicyItem(x.Id, x.ArtifactPayload)).ToArray());
+        }
+
         public Task<RuntimeArtifactGroupPage> GetGroups(int page, int pageSize, string search, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -131,11 +140,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                     (x.LastReleaseId?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false) ||
                     (x.LastControlPlaneArtifactId?.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)))
                 .OrderByDescending(x => x.DeployedOnUtc).ThenBy(x => x.Id.ToString()).ToArray();
-            var rows = versions.Skip((page - 1) * pageSize).Take(pageSize).Select(x => new RuntimeArtifactCatalogItem(
+            var pageVersions = versions.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+            var pageIds = pageVersions.Select(x => x.Id).ToHashSet();
+            var counts = _store.IngressConfigurations.Values.Where(t => pageIds.Contains(t.RuntimeOrchestrationArtifactId) && t.IngressKind == IngressKind.Trigger)
+                .GroupBy(t => t.RuntimeOrchestrationArtifactId).ToDictionary(g => g.Key,
+                    g => (Total: g.Count(), Active: g.Count(t => t.IsActive && t.MessageDisposition == IngressMessageDisposition.Process)));
+            var rows = pageVersions.Select(x => new RuntimeArtifactCatalogItem(
                 x.Id, x.OrchestrationDefinitionKey, x.Version.ToString(), x.Status.ToString(), x.LifecycleStatus.ToString(),
                 x.LastReleaseId, x.LastControlPlaneArtifactId, x.ReleaseStrategy, x.IsActive, x.IngressGeneration,
                 x.ArtifactChecksum.Value, x.DeployedOnUtc, x.ActivatedOnUtc, x.ProjectionStartedOnUtc,
-                x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError)).ToArray();
+                x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError)
+                {
+                    ActiveTriggerCount = counts.GetValueOrDefault(x.Id).Active,
+                    TotalTriggerCount = counts.GetValueOrDefault(x.Id).Total
+                }).ToArray();
             return Task.FromResult(new RuntimeArtifactVersionPage(rows, versions.LongLength, page, pageSize));
         }
 
@@ -150,6 +168,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             => Task.FromResult(_store.Artifacts.Values.FirstOrDefault(x =>
                     x.OrchestrationDefinitionKey == orchestrationDefinitionKey &&
                     x.IsActive &&
+                    x.LifecycleStatus == RuntimeOrchestrationLifecycleStatus.Active &&
                     x.Status == RuntimeOrchestrationArtifactStatus.Ready)
                 ?? throw new KeyNotFoundException($"Active runtime artifact '{orchestrationDefinitionKey}' was not found."));
     }

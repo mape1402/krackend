@@ -12,4 +12,10 @@ internal sealed record EnterIdleInstanceDecision(
     string Reason) : IDecision
 {
     public string Kind => "enter-idle-instance";
+
+    /// <summary>Identifies the lifetime window being expired, if applicable.</summary>
+    public DateTime? LifetimeAnchorUtc { get; init; }
+
+    /// <summary>Idle duration already resolved by a batch processor, in seconds.</summary>
+    public int? IdleDurationSeconds { get; init; }
 }

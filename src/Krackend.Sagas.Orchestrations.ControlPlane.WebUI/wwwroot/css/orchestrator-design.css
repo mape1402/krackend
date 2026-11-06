@@ -183,6 +183,13 @@ main.container {
     align-items: start;
 }
 
+.od-instance-policy { margin-bottom: 1rem; color: var(--od-text); }
+.od-instance-policy summary { cursor: pointer; font-weight: 650; }
+.od-instance-policy-form { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; padding: .75rem 0; }
+.od-instance-policy-form label { display: grid; gap: .3rem; font-size: .85rem; }
+.od-instance-policy-form input { border: 1px solid var(--od-border); border-radius: 6px; background: var(--od-surface); color: var(--od-text); padding: .4rem .55rem; }
+.od-instance-policy-form small { flex-basis: 100%; color: var(--od-muted); }
+
 .od-roadmap-main {
     min-width: 0;
 }

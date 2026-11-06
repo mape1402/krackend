@@ -31,6 +31,22 @@
 }
 <div class="od-roadmap-toast" data-roadmap-toast role="status" aria-live="polite" hidden></div>
 
+<details class="od-instance-policy">
+    <summary>Instance lifetime policy</summary>
+    <form method="post" asp-page-handler="InstanceDurations" class="od-instance-policy-form">
+        <input type="hidden" name="orchestrationId" value="@Model.OrchestrationId" />
+        <input type="hidden" name="versionId" value="@Model.VersionId" />
+        <label>Maximum lifetime (seconds)
+            <input type="number" name="maxInstanceDurationSeconds" min="0" value="@Model.SelectedVersion?.MaxInstanceDurationSeconds" placeholder="Runtime default" disabled="@(!Model.CanEdit)" />
+        </label>
+        <label>Idle window (seconds)
+            <input type="number" name="idleDurationSeconds" min="1" value="@Model.SelectedVersion?.IdleDurationSeconds" placeholder="Runtime default" disabled="@(!Model.CanEdit)" />
+        </label>
+        <small>Leave blank to inherit the runtime defaults (24 hours maximum and 20 minutes idle unless overridden by the runtime host). A maximum of 0 disables expiration.</small>
+        @if (Model.CanEdit) { <button type="submit" class="z-button z-button-primary">Save policy</button> }
+    </form>
+</details>
+
 <div class="od-roadmap-layout">
     <aside class="od-list-shell od-roadmap-side">
         <div class="od-trigger-shell" data-roadmap-section="trigger" data-version-id="@Model.VersionId" data-editable="@Model.CanEdit.ToString().ToLowerInvariant()">

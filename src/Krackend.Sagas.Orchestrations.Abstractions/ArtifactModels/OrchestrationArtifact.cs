@@ -48,6 +48,12 @@ public sealed record OrchestrationArtifact(
     /// </summary>
     public int ArtifactSchemaVersion { get; init; } = OrchestrationArtifactSchemaVersions.Current;
 
+    /// <summary>Maximum instance lifetime in seconds; null inherits the runtime default and zero disables expiration.</summary>
+    public int? MaxInstanceDurationSeconds { get; init; }
+
+    /// <summary>Idle window in seconds; null inherits the runtime default.</summary>
+    public int? IdleDurationSeconds { get; init; }
+
     /// <summary>
     /// Gets transversal metadata descriptor snapshots available to orchestration mappings and execution conditions.
     /// </summary>

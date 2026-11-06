@@ -103,6 +103,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddEnumerable(ServiceDescriptor.Scoped<IExecutionSandboxProvider, BuiltInLocalExecutionSandboxProvider>());
             services.TryAddScoped<ITaskAttemptDispatcher, TaskAttemptDispatcher>();
             services.TryAddScoped<IOrchestrationTimeoutProcessor, DefaultOrchestrationTimeoutProcessor>();
+            services.TryAddScoped<OrchestrationLifetimeProcessor>();
+            services.TryAddScoped<ArchivedRecoveryRetirementProcessor>();
             services.TryAddScoped<IOrchestrationIdleProcessor, DefaultOrchestrationIdleProcessor>();
             services.TryAddScoped<ITaskResponseTimeoutDeadlineResolver, TaskResponseTimeoutDeadlineResolver>();
             services.TryAddScoped<ITaskResponseTimeoutScheduler, NoopTaskResponseTimeoutScheduler>();
@@ -118,6 +120,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddSingleton<IOrchestrationArtifactMigrator, DefaultOrchestrationArtifactMigrator>();
             services.TryAddScoped<IRuntimeArtifactSerializer, DefaultRuntimeArtifactSerializer>();
             services.TryAddScoped<IRuntimeArtifactResolver, DefaultRuntimeArtifactResolver>();
+            services.TryAddScoped<ArchivedRecoveryIngressPreparer>();
             services.TryAddScoped<IResolvedOrchestrationArtifactAccessor, DefaultResolvedOrchestrationArtifactAccessor>();
             services.TryAddSingleton<IRuntimeReactiveEventPublisher, NoopRuntimeReactiveEventPublisher>();
             services.TryAddScoped<IRemoteCommandDispatcher, RemoteCommandDispatcher>();
@@ -147,6 +150,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddSingleton<IRuntimeDesignNodeSecretProtector, DataProtectionRuntimeDesignNodeSecretProtector>();
             services.TryAddScoped<IControlPlaneDistributionSourceProvider, RuntimeDesignNodeDistributionSourceProvider>();
             services.TryAddScoped<IRuntimeArtifactDeploymentService, RuntimeArtifactDeploymentService>();
+            services.TryAddScoped<IRuntimeArtifactRollbackService, RuntimeArtifactDeploymentService>();
             services.TryAddScoped<IRuntimeArtifactTransferService, RuntimeArtifactTransferService>();
             services.TryAddScoped<IRuntimeArtifactCompatibilityValidator, MessagingRuntimeArtifactCompatibilityValidator>();
             services.TryAddScoped<IRuntimeArtifactDeliveryEndpointAuthenticator, RuntimeArtifactDeliveryEndpointAuthenticator>();
@@ -192,6 +196,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.AddHostedService<RuntimeOperationalMonitorBackgroundService>();
             services.AddHostedService<RuntimeReconciliationBackgroundService>();
             services.AddHostedService<OrchestrationTimeoutBackgroundService>();
+            services.AddHostedService<OrchestrationLifetimeBackgroundService>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RuntimeReadyArtifactStartupService>());
 
             return new KrackendOrchestrationsRuntimeBuilder(services);

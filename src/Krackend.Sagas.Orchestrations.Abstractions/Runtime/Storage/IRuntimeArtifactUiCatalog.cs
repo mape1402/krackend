@@ -26,7 +26,13 @@ public sealed record RuntimeArtifactCatalogItem(
     Id Id, string OrchestrationKey, string Version, string Status, string LifecycleStatus,
     string LastReleaseId, string LastControlPlaneArtifactId, string ReleaseStrategy, bool IsActive,
     long IngressGeneration, string Checksum, DateTime DeployedOnUtc, DateTime? ActivatedOnUtc,
-    DateTime? ProjectionStartedOnUtc, DateTime? ProjectionCompletedOnUtc, DateTime? ProjectionFailedOnUtc, string ProjectionError);
+    DateTime? ProjectionStartedOnUtc, DateTime? ProjectionCompletedOnUtc, DateTime? ProjectionFailedOnUtc, string ProjectionError)
+{
+    /// <summary>Active processable trigger configurations projected for this artifact.</summary>
+    public int ActiveTriggerCount { get; init; }
+    /// <summary>Trigger configurations known for this artifact.</summary>
+    public int TotalTriggerCount { get; init; }
+}
 
 /// <summary>Reads the bounded history of one runtime artifact.</summary>
 public interface IRuntimeArtifactHistoryCatalog

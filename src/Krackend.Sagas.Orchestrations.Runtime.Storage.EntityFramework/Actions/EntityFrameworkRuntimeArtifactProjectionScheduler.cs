@@ -11,7 +11,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Actions;
 /// <summary>
 /// Schedules artifact projection work by writing Mule durable actions through the runtime DbContext.
 /// </summary>
-internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRuntimeArtifactProjectionScheduler
+internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRuntimeDurableRolloutProjectionScheduler
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly RuntimeDbContext _dbContext;
@@ -48,6 +48,10 @@ internal sealed class EntityFrameworkRuntimeArtifactProjectionScheduler : IRunti
         {
             if (current.Status == DurableActionStatus.Failed)
             {
+                // A new deployment attempt can have a different trigger owner.
+                // Do not reuse the failed action's obsolete handoff instructions.
+                current.Payload = JsonSerializer.Serialize(request, SerializerOptions);
+                current.PayloadType = typeof(RuntimeArtifactProjectionRequest).AssemblyQualifiedName!;
                 current.Status = DurableActionStatus.Pending;
                 current.Attempts = 0;
                 current.LastError = null;

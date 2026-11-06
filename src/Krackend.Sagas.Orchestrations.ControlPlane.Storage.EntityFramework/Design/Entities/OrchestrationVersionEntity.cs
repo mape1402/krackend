@@ -41,6 +41,12 @@ public sealed class OrchestrationVersionEntity
     /// </summary>
     public string VersionLabel { get; set; }
 
+    /// <summary>Maximum instance lifetime in seconds; null inherits the runtime default and zero disables expiration.</summary>
+    public int? MaxInstanceDurationSeconds { get; set; }
+
+    /// <summary>Idle window in seconds; null inherits the runtime default.</summary>
+    public int? IdleDurationSeconds { get; set; }
+
     /// <summary>
     /// Gets or sets Description.
     /// </summary>

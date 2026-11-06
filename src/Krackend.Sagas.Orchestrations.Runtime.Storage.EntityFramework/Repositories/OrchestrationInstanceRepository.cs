@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -77,73 +77,34 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
 
     public async Task<OrchestrationInstanceLease> TryAcquireLease(Id instanceId, string leaseId, DateTime nowUtc, DateTime expiresOnUtc, CancellationToken cancellationToken = default)
     {
-        if (DbContext.Database.IsRelational())
-        {
-            var affected = await DbContext.OrchestrationInstances
-                .Where(x =>
-                    x.Id == instanceId &&
-                    (x.ActiveLeaseId == null ||
-                     x.ActiveLeaseId == string.Empty ||
-                     x.ActiveLeaseId == leaseId ||
-                     x.ActiveLeaseExpiresOnUtc == null ||
-                     x.ActiveLeaseExpiresOnUtc <= nowUtc))
-                .ExecuteUpdateAsync(updates => updates
-                    .SetProperty(x => x.ActiveLeaseId, leaseId)
-                    .SetProperty(x => x.ActiveLeaseExpiresOnUtc, expiresOnUtc),
-                    cancellationToken);
+        var affected = await DbContext.OrchestrationInstances
+            .Where(x => x.Id == instanceId &&
+                (x.ActiveLeaseId == null || x.ActiveLeaseId == string.Empty || x.ActiveLeaseId == leaseId ||
+                 x.ActiveLeaseExpiresOnUtc == null || x.ActiveLeaseExpiresOnUtc <= nowUtc))
+            .ExecuteUpdateAsync(updates => updates
+                .SetProperty(x => x.ActiveLeaseId, leaseId)
+                .SetProperty(x => x.ActiveLeaseExpiresOnUtc, expiresOnUtc), cancellationToken);
+        if (affected == 1) return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
 
-            if (affected == 1)
-            {
-                return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
-            }
-
-            var exists = await DbContext.OrchestrationInstances
-                .AsNoTracking()
-                .AnyAsync(x => x.Id == instanceId, cancellationToken);
-            if (!exists)
-            {
-                throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
-            }
-
-            return null;
-        }
-
-        var instance = await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken)
+        // Some providers report modified rather than matched rows. A repeated
+        // renewal with the same expiry may therefore report zero changes.
+        var current = await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.Id == instanceId)
+            .Select(x => new { x.ActiveLeaseId, x.ActiveLeaseExpiresOnUtc })
+            .FirstOrDefaultAsync(cancellationToken)
             ?? throw new KeyNotFoundException($"Orchestration instance '{instanceId}' was not found.");
-
-        if (!string.IsNullOrWhiteSpace(instance.ActiveLeaseId) &&
-            !string.Equals(instance.ActiveLeaseId, leaseId, StringComparison.Ordinal) &&
-            instance.ActiveLeaseExpiresOnUtc > nowUtc)
-        {
-            return null;
-        }
-
-        instance.ActiveLeaseId = leaseId;
-        instance.ActiveLeaseExpiresOnUtc = expiresOnUtc;
-        await SaveChanges(cancellationToken);
-        return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, expiresOnUtc);
+        if (string.Equals(current.ActiveLeaseId, leaseId, StringComparison.Ordinal) && current.ActiveLeaseExpiresOnUtc > nowUtc)
+            return new OrchestrationInstanceLease(instanceId, leaseId, nowUtc, current.ActiveLeaseExpiresOnUtc.Value);
+        return null;
     }
 
     public async Task ReleaseLease(Id instanceId, string leaseId, CancellationToken cancellationToken = default)
     {
-        if (DbContext.Database.IsRelational())
-        {
-            await DbContext.OrchestrationInstances
-                .Where(x => x.Id == instanceId && x.ActiveLeaseId == leaseId)
-                .ExecuteUpdateAsync(updates => updates
-                    .SetProperty(x => x.ActiveLeaseId, (string)null)
-                    .SetProperty(x => x.ActiveLeaseExpiresOnUtc, (DateTime?)null),
-                    cancellationToken);
-            return;
-        }
-
-        var instance = await DbContext.OrchestrationInstances.FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken);
-        if (instance is not null && instance.ActiveLeaseId == leaseId)
-        {
-            instance.ActiveLeaseId = null;
-            instance.ActiveLeaseExpiresOnUtc = null;
-            await SaveChanges(cancellationToken);
-        }
+        await DbContext.OrchestrationInstances
+            .Where(x => x.Id == instanceId && x.ActiveLeaseId == leaseId)
+            .ExecuteUpdateAsync(updates => updates
+                .SetProperty(x => x.ActiveLeaseId, (string)null)
+                .SetProperty(x => x.ActiveLeaseExpiresOnUtc, (DateTime?)null), cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<OrchestrationInstance>> GetRecent(int take = 50, CancellationToken cancellationToken = default)
@@ -285,6 +246,53 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .OrderBy(x => x.LastUpdatedOnUtc)
             .Take(take)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<Id>> GetLifetimeCandidates(
+        Id artifactId, DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+                x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= startedOnOrBeforeUtc)
+            .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<OrchestrationLifetimeCandidate>> GetLifetimeCandidatePage(
+        DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var rows = await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= startedOnOrBeforeUtc)
+            .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
+            .Select(x => new { x.Id, x.RuntimeOrchestrationArtifactId, x.StartedOnUtc })
+            .ToArrayAsync(cancellationToken);
+        return rows.Select(x => new OrchestrationLifetimeCandidate(x.Id, x.RuntimeOrchestrationArtifactId, x.StartedOnUtc)).ToArray();
+    }
+
+    public Task<bool> HasActiveInstances(Id artifactId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        return DbContext.OrchestrationInstances.AsNoTracking().AnyAsync(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+            ((x.Status != OrchestrationInstanceStatus.Stopped && x.Status != OrchestrationInstanceStatus.Compensated &&
+              x.Status != OrchestrationInstanceStatus.Completed && x.Status != OrchestrationInstanceStatus.CompletedWithErrors &&
+              x.Status != OrchestrationInstanceStatus.Failed && x.Status != OrchestrationInstanceStatus.DeadLettered &&
+              x.Status != OrchestrationInstanceStatus.Aborted) ||
+             (x.ActiveLeaseId != null && x.ActiveLeaseId != "" && x.ActiveLeaseExpiresOnUtc > now)), cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<Id>> GetActiveArtifactIds(IReadOnlyCollection<Id> artifactIds, CancellationToken cancellationToken = default)
+    {
+        if (artifactIds is null || artifactIds.Count == 0) return [];
+        var now = DateTime.UtcNow;
+        return await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => artifactIds.Contains(x.RuntimeOrchestrationArtifactId) &&
+                ((x.Status != OrchestrationInstanceStatus.Stopped && x.Status != OrchestrationInstanceStatus.Compensated &&
+                  x.Status != OrchestrationInstanceStatus.Completed && x.Status != OrchestrationInstanceStatus.CompletedWithErrors &&
+                  x.Status != OrchestrationInstanceStatus.Failed && x.Status != OrchestrationInstanceStatus.DeadLettered &&
+                  x.Status != OrchestrationInstanceStatus.Aborted) ||
+                 (x.ActiveLeaseId != null && x.ActiveLeaseId != "" && x.ActiveLeaseExpiresOnUtc > now)))
+            .Select(x => x.RuntimeOrchestrationArtifactId).Distinct().ToArrayAsync(cancellationToken);
+    }
 
     public async Task<RuntimeInstanceSummary> GetSummary(DateTime recentSinceUtc, CancellationToken cancellationToken = default)
     {

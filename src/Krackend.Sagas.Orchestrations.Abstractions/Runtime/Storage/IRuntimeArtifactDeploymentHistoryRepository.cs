@@ -13,3 +13,10 @@ public interface IRuntimeArtifactDeploymentHistoryRepository
     /// <summary>Reads deployment history in newest-first order.</summary>
     Task<IReadOnlyCollection<RuntimeArtifactDeploymentRecord>> GetAll(CancellationToken cancellationToken = default);
 }
+
+/// <summary>Updates the outcome of an explicitly recorded rollback request.</summary>
+public interface IRuntimeArtifactRollbackStatusRepository
+{
+    /// <summary>Sets the request outcome, preserving a successful outcome against late failures.</summary>
+    Task<bool> TrySetRollbackStatus(string operationId, RuntimeOrchestrationArtifactStatus status, CancellationToken cancellationToken = default);
+}

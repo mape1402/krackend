@@ -27,6 +27,10 @@ public sealed class OrchestrationVersionModel
     /// Gets or sets the version label.
     /// </summary>
     public string VersionLabel { get; set; } = string.Empty;
+    /// <summary>Maximum instance lifetime in seconds; null inherits the runtime default and zero disables expiration.</summary>
+    public int? MaxInstanceDurationSeconds { get; set; }
+    /// <summary>Idle window in seconds; null inherits the runtime default.</summary>
+    public int? IdleDurationSeconds { get; set; }
     /// <summary>
     /// Gets or sets the description.
     /// </summary>

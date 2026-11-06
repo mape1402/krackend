@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryRuntimeIngressConfigurationRepository : IRuntimeIngressConfigurationRepository
+    internal sealed class InMemoryRuntimeIngressConfigurationRepository : IRuntimeIngressConfigurationRepository, IRuntimeSelectiveTriggerIngressRepository, IRuntimeReactivatableTriggerIngressRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -95,6 +95,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task DeactivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var row in _store.IngressConfigurations.Values.Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+                x.IsActive && x.IngressKind == IngressKind.Trigger && configurationKeys.Contains(x.ConfigurationKey)))
+            { row.IsActive = false; row.UpdatedOnUtc = now; row.DeactivatedOnUtc = now; }
+            return Task.CompletedTask;
+        }
+
+        public Task<int> ActivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default)
+        {
+            var rows = _store.IngressConfigurations.Values.Where(x => x.RuntimeOrchestrationArtifactId == artifactId &&
+                x.IngressKind == IngressKind.Trigger && x.MessageDisposition == IngressMessageDisposition.Process &&
+                configurationKeys.Contains(x.ConfigurationKey)).ToArray();
+            var now = DateTime.UtcNow;
+            foreach (var row in rows) { row.IsActive = true; row.UpdatedOnUtc = now; row.DeactivatedOnUtc = null; }
+            return Task.FromResult(rows.Length);
         }
 
         public Task<IReadOnlyCollection<RuntimeIngressConfiguration>> ReadActiveAsync(

@@ -15,6 +15,9 @@
         /// </summary>
         public string ArtifactId { get; set; }
 
+        /// <summary>Indicates preparation before rollout activation.</summary>
+        public bool IsStaged { get; set; }
+
         /// <summary>
         /// Gets or sets the messaging topic consumed by the ingress.
         /// </summary>

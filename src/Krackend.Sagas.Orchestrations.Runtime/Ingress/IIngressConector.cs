@@ -19,3 +19,10 @@ public interface IIngressConector
     /// <param name="cancellationToken">Cancellation token.</param>
     Task DisconnectAsync(string connectorId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Rechecks an already registered connector before a rollback handoff.</summary>
+public interface IRevalidatableIngressConector
+{
+    /// <summary>Confirms that an existing local ingress connector is ready.</summary>
+    Task RevalidateAsync(IngressConfiguration configuration, CancellationToken cancellationToken = default);
+}

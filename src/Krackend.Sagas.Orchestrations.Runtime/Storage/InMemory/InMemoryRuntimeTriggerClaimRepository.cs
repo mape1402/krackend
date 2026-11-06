@@ -7,7 +7,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 /// <summary>
 /// Thread-safe in-memory implementation used by local hosts and tests.
 /// </summary>
-internal sealed class InMemoryRuntimeTriggerClaimRepository : IRuntimeTriggerClaimRepository
+internal sealed class InMemoryRuntimeTriggerClaimRepository : IRuntimeTriggerClaimRepository, IRuntimeSelectiveTriggerClaimRepository
 {
     private readonly InMemoryRuntimeStore _store;
 
@@ -77,6 +77,18 @@ internal sealed class InMemoryRuntimeTriggerClaimRepository : IRuntimeTriggerCla
             }
         }
 
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task ReleaseOwnedAsync(Id artifactId, IReadOnlyCollection<string> identities, CancellationToken cancellationToken = default)
+    {
+        lock (_store.TriggerClaimsGate)
+        {
+            foreach (var key in Normalize(identities))
+                if (_store.TriggerClaims.TryGetValue(key, out var claim) && claim.RuntimeOrchestrationArtifactId == artifactId)
+                    _store.TriggerClaims.TryRemove(key, out _);
+        }
         return Task.CompletedTask;
     }
 

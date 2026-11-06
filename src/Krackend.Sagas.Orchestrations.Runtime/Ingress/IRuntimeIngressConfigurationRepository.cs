@@ -60,3 +60,34 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
             CancellationToken cancellationToken = default);
     }
 }
+
+namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
+{
+    /// <summary>Atomically restores archived callback routing after local transport preparation.</summary>
+    public interface IArchivedRecoveryActivationRepository
+    {
+        /// <summary>
+        /// Activates only backchannels for the expected retired generation, preserves archived lifecycle,
+        /// and returns the new generation. Returns null when the expected state has changed or has no backchannel.
+        /// The operation must participate in the runtime storage unit of work.
+        /// </summary>
+        Task<long?> TryActivateArchivedBackchannelsAsync(Id artifactId, long expectedGeneration, CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>Supports reactivating previously projected triggers during a rollback.</summary>
+    public interface IRuntimeReactivatableTriggerIngressRepository
+    {
+        /// <summary>Activates matching processable triggers and returns the number of matching configurations.</summary>
+        Task<int> ActivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default);
+    }
+}
+
+namespace Krackend.Sagas.Orchestrations.Runtime.Ingress
+{
+    /// <summary>Supports selecting individual triggers during a rollout handoff.</summary>
+    public interface IRuntimeSelectiveTriggerIngressRepository
+    {
+        /// <summary>Deactivates only the specified trigger configuration keys for an artifact.</summary>
+        Task DeactivateTriggersAsync(Id artifactId, IReadOnlyCollection<string> configurationKeys, CancellationToken cancellationToken = default);
+    }
+}

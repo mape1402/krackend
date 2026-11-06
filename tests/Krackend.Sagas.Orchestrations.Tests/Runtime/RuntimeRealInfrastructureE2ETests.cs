@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -441,6 +442,68 @@ public sealed class RuntimeRealInfrastructureE2ETests
         Assert.Contains(paymentAttempts, attempt => attempt.ErrorCode == "PaymentRejected");
         Assert.Single(compensations);
         Assert.NotEqual("Failed", compensations[0].Status);
+    }
+
+    [Fact(Timeout = 180_000)]
+    public async Task RolloutAndRollbackUseSharedConsumerAndDisableNewOnlyTriggerWithRealMessaging()
+    {
+        var suffix = NewSuffix();
+        var versionOne = new SemanticVersion(2, 20, 0);
+        var versionTwo = new SemanticVersion(2, 20, 1);
+        var triggerTopic = Topic(suffix, "events.rollout.shared");
+        var newOnlyTopic = Topic(suffix, "events.rollout.new-only");
+        var taskTopic = Topic(suffix, "commands.rollout.old");
+        var newTaskTopic = Topic(suffix, "commands.rollout.new");
+        var key = Topic(suffix, "rollout.shared");
+
+        await using var services = await RealMessagingServiceHost.StartAsync(_infrastructure,
+            [new RealMessagingConsumerEndpoint(taskTopic, versionOne.ToString()),
+             new RealMessagingConsumerEndpoint(newTaskTopic, versionTwo.ToString())]);
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
+        var oldArtifact = Artifact(key, versionOne, $"old-{suffix}",
+            [EventTrigger(triggerTopic, versionOne)],
+            Stage("old", 1, MessagingTask("old.task", 1, versionOne, topic: taskTopic)));
+        var newOnlyTrigger = EventTrigger(newOnlyTopic, versionOne);
+        var newArtifact = Artifact(key, versionTwo, $"new-{suffix}",
+            [EventTrigger(triggerTopic, versionOne), newOnlyTrigger],
+            Stage("new", 1, MessagingTask("new.task", 1, versionTwo, topic: newTaskTopic)))
+            with { OrchestrationDefinitionId = oldArtifact.OrchestrationDefinitionId };
+        var oldDeployment = await runtime.DeployAndWaitReadyAsync(CreatePackage(oldArtifact));
+        var initial = $"corr-{suffix}-before";
+        await runtime.PublishTriggerAsync(triggerTopic, versionOne.ToString(), BusinessPayload(("phase", "before")), initial);
+        Assert.Equal(oldDeployment.RuntimeArtifactId,
+            (await runtime.WaitForInstanceStatusAsync(initial, OrchestrationInstanceStatus.Completed)).RuntimeOrchestrationArtifactId.ToString());
+        var package = CreatePackage(newArtifact);
+        package.ReleaseStrategy = "Rollout";
+        var deployment = await runtime.DeployAndWaitReadyAsync(package);
+        foreach (var (topic, phase) in new[] { (triggerTopic, "shared"), (newOnlyTopic, "new-only") })
+        {
+            var correlation = $"corr-{suffix}-{phase}";
+            await runtime.PublishTriggerAsync(topic, versionOne.ToString(), BusinessPayload(("phase", phase)), correlation);
+            Assert.Equal(deployment.RuntimeArtifactId,
+                (await runtime.WaitForInstanceStatusAsync(correlation, OrchestrationInstanceStatus.Completed)).RuntimeOrchestrationArtifactId.ToString());
+        }
+
+        await using var scope = runtime.Services.CreateAsyncScope();
+        var rollback = await scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRollbackService>()
+            .RollbackAsync(oldDeployment.RuntimeArtifactId, "real-infra-e2e");
+        Assert.True(rollback.Accepted, rollback.Message);
+        var oldId = new Id(System.Ulid.Parse(oldDeployment.RuntimeArtifactId));
+        var newId = new Id(System.Ulid.Parse(deployment.RuntimeArtifactId));
+        var newOnlyKey = scope.ServiceProvider.GetRequiredService<Krackend.Sagas.Orchestrations.Runtime.Ingress.IRuntimeIngressConfigurationKeyBuilder>()
+            .BuildTriggerKey(newOnlyTrigger);
+        await PollingAssert.EventuallyAsync(() => runtime.QueryAsync(db => db.RuntimeArtifactDeploymentHistory.AsNoTracking()
+                .AnyAsync(x => x.RuntimeOrchestrationArtifactId == oldId && x.ArtifactType == "orchestration-version.rollback-requested" &&
+                    x.RuntimeStatus == RuntimeOrchestrationArtifactStatus.Ready)),
+            ready => ready, "Rollback did not complete", TimeSpan.FromSeconds(60));
+        Assert.False(await runtime.QueryAsync(db => db.RuntimeIngressConfigurations.AsNoTracking()
+            .Where(x => x.RuntimeOrchestrationArtifactId == newId && x.ConfigurationKey == newOnlyKey)
+            .Select(x => x.IsActive).SingleAsync()));
+        var after = $"corr-{suffix}-after";
+        await runtime.PublishTriggerAsync(triggerTopic, versionOne.ToString(), BusinessPayload(("phase", "after")), after);
+        Assert.Equal(oldDeployment.RuntimeArtifactId,
+            (await runtime.WaitForInstanceStatusAsync(after, OrchestrationInstanceStatus.Completed)).RuntimeOrchestrationArtifactId.ToString());
+        await WaitForInvocationCountAsync(services.Scenario, taskTopic, 2);
     }
 
     [Fact(Timeout = 240_000)]

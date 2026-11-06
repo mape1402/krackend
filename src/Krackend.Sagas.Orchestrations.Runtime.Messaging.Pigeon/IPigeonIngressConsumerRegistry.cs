@@ -11,5 +11,7 @@ internal interface IPigeonIngressConsumerRegistry
         out PigeonIngressConsumerRegistration registration,
         out bool shouldRemoveEndpoint);
 
+    void RemoveConnector(string connectorId, Action<PigeonIngressConsumerRegistration> removeEndpoint);
+
     void ForgetConnector(string connectorId);
 }

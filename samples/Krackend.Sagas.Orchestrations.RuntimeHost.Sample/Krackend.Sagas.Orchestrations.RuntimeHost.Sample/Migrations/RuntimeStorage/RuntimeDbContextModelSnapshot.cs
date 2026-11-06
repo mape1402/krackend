@@ -447,6 +447,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasColumnType("binary(16)");
 
                     b.Property<string>("RuntimeStatus")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -489,6 +490,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasColumnType("datetime2");
 
                     b.Property<long>("IngressGeneration")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<bool>("IsActive")
@@ -547,6 +549,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<string>("Status")
                         .IsRequired()
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)")
@@ -582,6 +585,7 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<byte[]>("RuntimeOrchestrationArtifactId")
                         .IsRequired()
+                        .IsConcurrencyToken()
                         .HasColumnType("binary(16)");
 
                     b.Property<DateTime>("UpdatedOnUtc")

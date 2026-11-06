@@ -15,6 +15,9 @@
         /// </summary>
         public string ArtifactId { get; set; }
 
+        /// <summary>Indicates that the connector is being prepared before rollout activation.</summary>
+        public bool IsStaged { get; set; }
+
         /// <summary>
         /// Gets or sets the orchestration definition key that owns the artifact.
         /// </summary>

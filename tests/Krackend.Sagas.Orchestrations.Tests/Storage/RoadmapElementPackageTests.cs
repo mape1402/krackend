@@ -226,6 +226,16 @@ public sealed class RoadmapElementPackageTests
         var cookie = tokenResponse.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
         client.DefaultRequestHeaders.Add("Cookie", cookie);
         client.DefaultRequestHeaders.Add("RequestVerificationToken", token);
+        using var policyResponse = await client.PostAsync("/roadmap-version?handler=InstanceDurations", new FormUrlEncodedContent(
+            new Dictionary<string, string> { ["orchestrationId"] = version.OrchestrationDefinitionId.ToString(),
+                ["versionId"] = version.Id.ToString(), ["maxInstanceDurationSeconds"] = "172800", ["idleDurationSeconds"] = "3600" }));
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, policyResponse.StatusCode);
+        using (var policyScope = app.Services.CreateScope())
+        {
+            var saved = await policyScope.ServiceProvider.GetRequiredService<IOrchestrationVersionRepository>().GetById(version.Id);
+            Assert.Equal(172800, saved.MaxInstanceDurationSeconds);
+            Assert.Equal(3600, saved.IdleDurationSeconds);
+        }
         using var result = await client.PostAsJsonAsync("/roadmap-stage?handler=PasteRoadmapElement",
             new RoadmapElementPasteRequest(package, "task", version.Id.ToString(), stage.Id.ToString()));
         result.EnsureSuccessStatusCode();

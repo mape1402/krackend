@@ -19,6 +19,7 @@ public sealed class IndexModel : PageModel
     private readonly IRuntimeArtifactDeploymentHistoryRepository _deploymentHistoryRepository;
     private readonly IRuntimeArtifactReadyNotifier _artifactReadyNotifier;
     private readonly IRuntimeArtifactTransferService _artifactTransferService;
+    private readonly IRuntimeArtifactRollbackService _rollbackService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IndexModel"/> class.
@@ -27,12 +28,14 @@ public sealed class IndexModel : PageModel
         IRuntimeArtifactRepository artifactRepository,
         IRuntimeArtifactDeploymentHistoryRepository deploymentHistoryRepository,
         IRuntimeArtifactReadyNotifier artifactReadyNotifier,
-        IRuntimeArtifactTransferService artifactTransferService)
+        IRuntimeArtifactTransferService artifactTransferService,
+        IRuntimeArtifactRollbackService rollbackService = null)
     {
         _artifactRepository = artifactRepository ?? throw new ArgumentNullException(nameof(artifactRepository));
         _deploymentHistoryRepository = deploymentHistoryRepository ?? throw new ArgumentNullException(nameof(deploymentHistoryRepository));
         _artifactReadyNotifier = artifactReadyNotifier ?? throw new ArgumentNullException(nameof(artifactReadyNotifier));
         _artifactTransferService = artifactTransferService ?? throw new ArgumentNullException(nameof(artifactTransferService));
+        _rollbackService = rollbackService;
     }
 
     /// <summary>Orchestration selected for version details.</summary>
@@ -143,6 +146,8 @@ public sealed class IndexModel : PageModel
         {
             items = result.Items.Select(x => new { id = x.Id.ToString(), key = x.Id.ToString(), x.Version, x.Status, x.LifecycleStatus,
                 x.LastReleaseId, x.LastControlPlaneArtifactId, x.ReleaseStrategy, x.IsActive, x.IngressGeneration, x.Checksum,
+                x.ActiveTriggerCount, x.TotalTriggerCount,
+                triggerReception = x.IsActive && x.Status == "Ready" ? $"{x.ActiveTriggerCount} of {x.TotalTriggerCount} enabled" : "Not enabled",
                 deployed = x.DeployedOnUtc.ToString("yyyy-MM-dd HH:mm:ss"), x.ActivatedOnUtc, x.ProjectionStartedOnUtc,
                 x.ProjectionCompletedOnUtc, x.ProjectionFailedOnUtc, x.ProjectionError }),
             totalCount = result.TotalCount, hasMore = (long)result.PageNumber * result.PageSize < result.TotalCount
@@ -197,6 +202,25 @@ public sealed class IndexModel : PageModel
         }
 
         return RedirectToPage();
+    }
+
+    /// <summary>Requests a staged rollback to an installed version.</summary>
+    public async Task<IActionResult> OnPostRollbackAsync(string artifactId, CancellationToken cancellationToken = default)
+    {
+        if (_rollbackService is null) return StatusCode(503);
+        try
+        {
+            var requestedBy = User?.Identity?.Name;
+            var result = await _rollbackService.RollbackAsync(artifactId,
+                string.IsNullOrWhiteSpace(requestedBy) ? "runtime-ui" : requestedBy, cancellationToken);
+            SetMessage(result.Accepted ? "Rollback requested" : "Rollback rejected", result.Message,
+                result.Accepted ? "success" : "warning");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            SetMessage("Rollback failed", exception.Message, "error");
+        }
+        return RedirectToPage(new { orchestrationKey = OrchestrationKey });
     }
 
     private void SetMessage(string title, string body, string type)

@@ -10,11 +10,45 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Runtime.Gossip;
+using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.Fakes;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 public sealed class OrchestrationRecoveryServiceTests
 {
+    [Fact]
+    public async Task RecoverArchivedInstanceDoesNotResumeWhenBackchannelIsUnavailable()
+    {
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+        var artifacts = Substitute.For<IRuntimeArtifactRepository, IArchivedRecoveryActivationRepository>();
+        artifacts.GetById(instance.RuntimeOrchestrationArtifactId, Arg.Any<CancellationToken>()).Returns(Task.FromResult(new RuntimeOrchestrationArtifact
+        {
+            Id = instance.RuntimeOrchestrationArtifactId, LifecycleStatus = RuntimeOrchestrationLifecycleStatus.Archived,
+            Status = RuntimeOrchestrationArtifactStatus.Retired, IsActive = false, IngressGeneration = 7,
+            OrchestrationDefinitionKey = "order.flow", ArtifactType = "orchestration-version-snapshot",
+            Version = new SemanticVersion(1, 0, 0), ArtifactChecksum = new Checksum("checksum"), ArtifactPayload = new JsonObject()
+        }));
+        var registry = Substitute.For<IIngressRegistry, IArchivedRecoveryIngressRegistry>();
+        ((IArchivedRecoveryIngressRegistry)registry).PrepareArchivedRecoveryAsync(instance.RuntimeOrchestrationArtifactId.ToString(), 7, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<IArchivedRecoveryIngressPreparation>(new InvalidOperationException("Broker not ready")));
+        var preparer = new ArchivedRecoveryIngressPreparer(artifacts, new NoopRuntimeStorageUnitOfWork(), registry,
+            Substitute.For<IRuntimeArtifactReadyNotifier>(), NullLogger<ArchivedRecoveryIngressPreparer>.Instance);
+        var fixture = new RecoveryFixture(preparer);
+        fixture.InstanceRepository.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult(instance));
+
+        var result = await fixture.Service.RecoverTerminalAsync(instance.Id.ToString());
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Broker not ready", result.Message);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        await fixture.InstanceRepository.DidNotReceiveWithAnyArgs().Update(default!, default);
+        await fixture.ArtifactResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        Assert.Empty(fixture.Forwards);
+        Assert.Empty(fixture.Dispatches);
+    }
+
     [Fact]
     public async Task ReplayRejectsInvalidInstanceId()
     {
@@ -350,6 +384,7 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Equal("ReplayPending", dispatch.DispatchStatus);
         Assert.False(task.Metadata.ContainsKey("ManualReplay"));
         Assert.NotNull(dispatch.Metadata["Recovery.DispatchReplayRequestId"]);
+        Assert.NotNull(instance.Metadata["Recovery.ReplayRequestedOnUtc"]);
         Assert.Equal("dependency recovered", dispatch.Metadata["Recovery.DispatchReplayReason"]!.GetValue<string>());
         Assert.Equal("provider-action-1", dispatch.Metadata["Recovery.DispatchReplayProviderActionId"]!.GetValue<string>());
         Assert.Equal(["TaskDispatchReplayRequested", "TaskDispatchReplayScheduled"], fixture.Transitions.Select(x => x.TransitionType));
@@ -392,11 +427,15 @@ public sealed class OrchestrationRecoveryServiceTests
         Assert.Equal(["TaskDispatchReplayRequested", "TaskDispatchReplayRejected"], fixture.Transitions.Select(x => x.TransitionType));
     }
 
-    [Fact]
-    public async Task ReplaySpecificPendingDispatchResumesWithTheSameIdempotencyKey()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReplaySpecificPendingDispatchResumesWithTheSameIdempotencyKey(bool hasLifetimeAnchor)
     {
         var fixture = new RecoveryFixture();
         var instance = CreateInstance(OrchestrationInstanceStatus.Running);
+        var existingAnchor = DateTime.UtcNow.AddMinutes(-1);
+        if (hasLifetimeAnchor) instance.Metadata["Recovery.ReplayRequestedOnUtc"] = JsonValue.Create(existingAnchor);
         var task = CreateFailedTask(instance.Id);
         task.Status = TaskExecutionStatus.Running;
         var attempt = new TaskExecutionAttempt
@@ -426,6 +465,8 @@ public sealed class OrchestrationRecoveryServiceTests
         var result = await fixture.Service.ReplayDispatchAsync(instance.Id.ToString(), task.Id.ToString(), dispatch.Id.ToString());
 
         Assert.True(result.Succeeded);
+        Assert.NotNull(instance.Metadata["Recovery.ReplayRequestedOnUtc"]);
+        if (hasLifetimeAnchor) Assert.Equal(existingAnchor, instance.Metadata["Recovery.ReplayRequestedOnUtc"]!.GetValue<DateTime>());
         Assert.Equal(dispatch.Metadata["Recovery.DispatchReplayRequestId"]!.GetValue<string>(), requestId);
         Assert.Single(fixture.Transitions);
         Assert.Equal("TaskDispatchReplayScheduled", fixture.Transitions[0].TransitionType);
@@ -742,7 +783,7 @@ public sealed class OrchestrationRecoveryServiceTests
 
     private sealed class RecoveryFixture
     {
-        public RecoveryFixture()
+        public RecoveryFixture(ArchivedRecoveryIngressPreparer preparer = null)
         {
             InstanceRepository.Update(Arg.Any<OrchestrationInstance>(), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
@@ -773,7 +814,8 @@ public sealed class OrchestrationRecoveryServiceTests
                 DispatchRepository,
                 DispatchReplayService,
                 new NoopRuntimeStorageUnitOfWork(),
-                DispatchCancellationCoordinator);
+                DispatchCancellationCoordinator,
+                archivedIngressPreparer: preparer);
         }
 
         public IOrchestrationInstanceRepository InstanceRepository { get; } =

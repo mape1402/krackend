@@ -157,6 +157,8 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
             Version = null,
             Status = OrchestrationVersionStatus.Draft,
             VersionLabel = string.Empty,
+            MaxInstanceDurationSeconds = artifact.MaxInstanceDurationSeconds,
+            IdleDurationSeconds = artifact.IdleDurationSeconds,
             Description = string.Empty,
             Checksum = new Checksum($"draft:{targetId}"),
             DraftSlot = $"open:{definitionId}",
@@ -282,6 +284,7 @@ public sealed class OrchestrationVersionPackageService : IOrchestrationVersionPa
     {
         Id = source.Id, OrchestrationDefinitionId = source.OrchestrationDefinitionId, Version = source.Version ?? new SemanticVersion(0, 0, 0),
         Status = source.Status, VersionLabel = source.VersionLabel, Description = source.Description, Checksum = source.Checksum,
+        MaxInstanceDurationSeconds = source.MaxInstanceDurationSeconds, IdleDurationSeconds = source.IdleDurationSeconds,
         TriggerBindings = source.TriggerBindings, VariableDefinitions = source.VariableDefinitions, StageDefinitions = source.StageDefinitions,
         MetadataDescriptors = source.MetadataDescriptors, Notes = source.Notes, CreatedOnUtc = source.CreatedOnUtc, CreatedBy = source.CreatedBy,
     };

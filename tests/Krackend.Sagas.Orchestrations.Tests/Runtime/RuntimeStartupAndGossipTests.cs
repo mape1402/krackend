@@ -79,6 +79,7 @@ public sealed class RuntimeStartupAndGossipTests
         using var scope = provider.CreateScope();
         var handler = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactReadyGossipHandler>();
         var message = Message();
+        message.RefreshToken = "rollback-operation";
 
         await handler.HandleAsync(message);
 
@@ -86,6 +87,7 @@ public sealed class RuntimeStartupAndGossipTests
             Arg.Is<RuntimeIngressStandupRequest>(request =>
                 request.ArtifactId == message.ArtifactId &&
                 request.IngressGeneration == message.IngressGeneration &&
+                request.RefreshToken == "rollback-operation" &&
                 request.Reason == "gossip"),
             Arg.Any<CancellationToken>());
     }

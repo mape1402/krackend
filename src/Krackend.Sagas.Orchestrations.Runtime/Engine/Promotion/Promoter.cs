@@ -57,6 +57,16 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             }
 
             var resolvedArtifact = await _artifactResolver.ResolveAsync(request.ArtifactId, cancellationToken);
+            if (!resolvedArtifact.RuntimeArtifact.IsActive ||
+                resolvedArtifact.RuntimeArtifact.Status != RuntimeOrchestrationArtifactStatus.Ready ||
+                resolvedArtifact.RuntimeArtifact.LifecycleStatus != RuntimeOrchestrationLifecycleStatus.Active)
+            {
+                return new PromotionResult
+                {
+                    Success = false,
+                    ErrorMessage = "The orchestration version is not active and ready to start new instances."
+                };
+            }
             _artifactAccessor.Set(resolvedArtifact);
             var validationResult = await _triggerPayloadValidator.ValidateAsync(
                 resolvedArtifact,

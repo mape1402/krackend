@@ -9,6 +9,9 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
+using System.Text.Json.Nodes;
 using NSubstitute;
 
 public sealed class EnterIdleInstanceDecisionHandlerTests
@@ -69,6 +72,65 @@ public sealed class EnterIdleInstanceDecisionHandlerTests
     }
 
     [Fact]
+    public async Task LifetimeExpirationDoesNotRenewIdleWindowWhenCallbackResumesTheSameExpiredRun()
+    {
+        var instance = Instance(OrchestrationInstanceStatus.Running);
+        var instances = Substitute.For<IOrchestrationInstanceRepository>();
+        instances.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        var handler = new EnterIdleInstanceDecisionHandler(instances,
+            Substitute.For<IExecutionTransitionRepository>(), Substitute.For<IOrchestrationDispatchCancellationCoordinator>());
+        var anchor = DateTime.UtcNow.AddDays(-3);
+        var decision = new EnterIdleInstanceDecision(instance.Id, null, null, "lifetime expired") { LifetimeAnchorUtc = anchor };
+
+        await handler.HandleAsync(decision);
+        var originalDeadline = instance.IdleExpiresOnUtc;
+        instance.Status = OrchestrationInstanceStatus.Running;
+        instance.IdleExpiresOnUtc = null;
+        await handler.HandleAsync(decision);
+
+        Assert.Equal(originalDeadline, instance.IdleExpiresOnUtc);
+    }
+
+    [Fact]
+    public async Task IdleWindowUsesTheVersionPolicy()
+    {
+        var instance = Instance(OrchestrationInstanceStatus.Running);
+        var instances = Substitute.For<IOrchestrationInstanceRepository>();
+        instances.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        var runtimeArtifact = new RuntimeOrchestrationArtifact { Id = instance.RuntimeOrchestrationArtifactId,
+            OrchestrationDefinitionKey = "orders", ArtifactType = "new", Version = new(1, 0, 0),
+            ArtifactChecksum = new("hash"), ArtifactPayload = new JsonObject(), IsActive = true };
+        var definition = new OrchestrationArtifact(Id.New(), Id.New(), "orders", "Orders", "sales",
+            new(1, 0, 0), new("hash"), [], [], []) { IdleDurationSeconds = 3600 };
+        var resolver = Substitute.For<IRuntimeArtifactResolver>();
+        resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ResolvedOrchestrationArtifact { RuntimeArtifact = runtimeArtifact, Artifact = definition });
+        var handler = new EnterIdleInstanceDecisionHandler(instances, Substitute.For<IExecutionTransitionRepository>(),
+            Substitute.For<IOrchestrationDispatchCancellationCoordinator>(), artifacts: resolver);
+        var before = DateTime.UtcNow;
+
+        await handler.HandleAsync(new EnterIdleInstanceDecision(instance.Id, null, null, "timeout"));
+
+        Assert.InRange(instance.IdleExpiresOnUtc!.Value, before.AddSeconds(3600), DateTime.UtcNow.AddSeconds(3600));
+    }
+
+    [Fact]
+    public async Task PreResolvedLifetimePolicyAvoidsReadingTheArtifactAgain()
+    {
+        var instance = Instance(OrchestrationInstanceStatus.Running);
+        var instances = Substitute.For<IOrchestrationInstanceRepository>();
+        instances.GetById(instance.Id, Arg.Any<CancellationToken>()).Returns(instance);
+        var resolver = Substitute.For<IRuntimeArtifactResolver>();
+        var handler = new EnterIdleInstanceDecisionHandler(instances, Substitute.For<IExecutionTransitionRepository>(),
+            Substitute.For<IOrchestrationDispatchCancellationCoordinator>(), artifacts: resolver);
+
+        await handler.HandleAsync(new EnterIdleInstanceDecision(instance.Id, null, null, "lifetime") { IdleDurationSeconds = 300 });
+
+        await resolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        Assert.NotNull(instance.IdleExpiresOnUtc);
+    }
+
+    [Fact]
     public void ConstructorRejectsRequiredDependencies()
     {
         var instances = Substitute.For<IOrchestrationInstanceRepository>();
@@ -125,7 +187,7 @@ public sealed class DefaultOrchestrationIdleProcessorTests
         await deadLetter.Received(1).HandleAsync(
             Arg.Is<DeadLetterInstanceDecision>(decision =>
                 decision.InstanceId == candidate.Id &&
-                decision.Reason.Contains("20-minute", StringComparison.OrdinalIgnoreCase)),
+                decision.Reason.Contains("idle window expired", StringComparison.OrdinalIgnoreCase)),
             Arg.Any<CancellationToken>());
     }
 

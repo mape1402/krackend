@@ -1,4 +1,5 @@
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Runtime.Ingress;
@@ -57,15 +58,26 @@ public sealed class StandUpArtifactIngressAction : IMuleAction<RuntimeIngressSta
         var request = context.Payload ?? throw new InvalidOperationException("Ingress standup request payload is required.");
         try
         {
-            await _ingressRegistry.StandUpOneAsync(request.ArtifactId, request.IngressGeneration, cancellationToken);
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                await _ingressRegistry.StandUpOneAsync(request.ArtifactId, request.IngressGeneration, cancellationToken);
+            else
+            {
+                var artifact = await _artifactRepository.GetById(new Id(System.Ulid.Parse(request.ArtifactId)), cancellationToken);
+                if (artifact.IngressGeneration != request.IngressGeneration || !artifact.IsActive ||
+                    artifact.Status != RuntimeOrchestrationArtifactStatus.Ready) return;
+                if (_ingressRegistry is not IRefreshIngressRegistry refresh)
+                    throw new IngressStandupConfigurationException("The runtime cannot refresh ingress after rollback.");
+                await refresh.RefreshOneAsync(request.ArtifactId, request.IngressGeneration, cancellationToken);
+            }
         }
         catch (IngressStandupConfigurationException exception)
         {
-            await _artifactRepository.MarkProjectionFailed(
-                new Id(System.Ulid.Parse(request.ArtifactId)),
-                request.IngressGeneration,
-                exception.Message,
-                cancellationToken);
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                await _artifactRepository.MarkProjectionFailed(
+                    new Id(System.Ulid.Parse(request.ArtifactId)),
+                    request.IngressGeneration,
+                    exception.Message,
+                    cancellationToken);
 
             _logger.LogWarning(
                 exception,

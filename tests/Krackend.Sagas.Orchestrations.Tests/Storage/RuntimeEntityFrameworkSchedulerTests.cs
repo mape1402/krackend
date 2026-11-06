@@ -24,6 +24,25 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public async Task RollbackRefreshIsDurableAndDistinctFromEarlierStandup()
+    {
+        var commitNotifier = Substitute.For<IMuleCommitNotifier>();
+        await using var provider = CreateProvider(commitNotifier);
+        using var scope = provider.CreateScope();
+        var scheduler = scope.ServiceProvider.GetRequiredService<IRuntimeIngressStandupScheduler>();
+        await scheduler.ScheduleStandupAsync(StandupRequest("artifact-1", 4, "startup"));
+        var refresh = StandupRequest("artifact-1", 4, "gossip");
+        refresh.RefreshToken = "rollback-operation";
+        await scheduler.ScheduleStandupAsync(refresh);
+        await scheduler.ScheduleStandupAsync(refresh);
+        var context = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        var actions = await context.Set<DurableAction>().ToArrayAsync();
+        Assert.Equal(2, actions.Length);
+        var refreshAction = Assert.Single(actions.Where(x => x.DeduplicationKey.StartsWith("refresh:", StringComparison.Ordinal)));
+        Assert.Equal("rollback-operation", JsonSerializer.Deserialize<RuntimeIngressStandupRequest>(refreshAction.Payload, SerializerOptions)!.RefreshToken);
+    }
+
+    [Fact]
     public async Task ProjectionSchedulerCreatesDurableActionAndNotifiesMule()
     {
         var commitNotifier = Substitute.For<IMuleCommitNotifier>();
@@ -32,6 +51,8 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         var scheduler = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactProjectionScheduler>();
 
         var request = ProjectionRequest("artifact-1", 7);
+        request.RolloutTriggerIdentities = ["MESSAGING|ORDERS|1.0.0"];
+        request.RolloutReplacements = [new() { ArtifactId = "previous", ConfigurationKeys = ["trigger:old"] }];
         await scheduler.ScheduleProjectionAsync(request);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
@@ -46,6 +67,8 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         Assert.Equal(typeof(RuntimeArtifactProjectionRequest).AssemblyQualifiedName, action.PayloadType);
         Assert.Equal(request.ArtifactId, payload.ArtifactId);
         Assert.Equal(request.IngressGeneration, payload.IngressGeneration);
+        Assert.Equal("MESSAGING|ORDERS|1.0.0", Assert.Single(payload.RolloutTriggerIdentities));
+        Assert.Equal("trigger:old", Assert.Single(Assert.Single(payload.RolloutReplacements).ConfigurationKeys));
         await commitNotifier.Received(1).NotifySavedAsync(action.Id, action.Lane, Arg.Any<CancellationToken>());
     }
 
@@ -86,7 +109,9 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         await dbContext.SaveChangesAsync();
 
         var scheduler = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactProjectionScheduler>();
-        await scheduler.ScheduleProjectionAsync(ProjectionRequest("artifact-failed", 4));
+        var request = ProjectionRequest("artifact-failed", 4);
+        request.RolloutReplacements = [new() { ArtifactId = "current-owner", ConfigurationKeys = ["trigger:new"] }];
+        await scheduler.ScheduleProjectionAsync(request);
 
         var action = Assert.Single(await dbContext.Set<DurableAction>().ToArrayAsync());
         Assert.Equal(DurableActionStatus.Pending, action.Status);
@@ -97,6 +122,8 @@ public sealed class RuntimeEntityFrameworkSchedulerTests
         Assert.Null(action.NextAttemptOnUtc);
         Assert.Null(action.CompletedOnUtc);
         Assert.Null(action.TerminalOnUtc);
+        var payload = JsonSerializer.Deserialize<RuntimeArtifactProjectionRequest>(action.Payload, SerializerOptions)!;
+        Assert.Equal("current-owner", Assert.Single(payload.RolloutReplacements).ArtifactId);
         await commitNotifier.Received(1).NotifySavedAsync(existing.Id, existing.Lane, Arg.Any<CancellationToken>());
     }
 

@@ -17,7 +17,8 @@ public enum RuntimeOrchestrationLifecycleStatus
     Deprecated = 2,
 
     /// <summary>
-    /// The version is retained only as deployment history and has no ingress.
+    /// The version accepts no new instances. A backchannel may be temporarily
+    /// restored while failed or dead-lettered instances are recovered.
     /// </summary>
     Archived = 3
 }
