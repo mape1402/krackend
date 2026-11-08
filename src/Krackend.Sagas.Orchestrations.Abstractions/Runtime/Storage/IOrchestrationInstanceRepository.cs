@@ -86,6 +86,16 @@ public interface IOrchestrationLifetimeScanRepository
 /// <summary>Identifiers needed to match a running instance to its deployed lifetime policy.</summary>
 public sealed record OrchestrationLifetimeCandidate(Id InstanceId, Id ArtifactId, DateTime StartedOnUtc);
 
+/// <summary>Reads projected expiration deadlines and legacy instances requiring one-time projection.</summary>
+public interface IOrchestrationExpirationRepository
+{
+    /// <summary>Reads only running instances whose projected expiration deadline has elapsed.</summary>
+    Task<IReadOnlyCollection<Id>> GetExpiredInstances(DateTime utcNow, int skip, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads recoverable legacy instances that do not yet have an effective lifetime policy.</summary>
+    Task<IReadOnlyCollection<Id>> GetUnprojectedInstances(int skip, int take, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Provides a bounded existence check for active instances of an artifact.</summary>
 public interface IOrchestrationArtifactInstanceReader
 {

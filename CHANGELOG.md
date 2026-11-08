@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.3.0] - 2026-11-08
+
+### Added
+
+- Project the effective maximum lifetime, Idle duration, and UTC expiration deadline onto each orchestration instance. Recovery starts a new execution window using the projected policy.
+- Project policies for recoverable legacy instances at runtime startup in lease-protected batches. The backfill preserves existing Idle deadlines and retries instances whose leases or artifacts are unavailable.
+
+### Fixed
+
+- Query Running instances directly by their indexed expiration deadline rather than scanning candidates against artifact policies. Entering Idle uses the instance's projected Idle duration.
+- Keep EF tracking bounded to each processing batch and preserve optimistic concurrency when a fresh instance replaces an older locally tracked copy.
+
+### Upgrade notes
+
+- Runtime hosts must add nullable `MaxInstanceDurationSeconds`, `IdleDurationSeconds`, and `ExpiresOnUtc` fields and an index on `(Status, ExpiresOnUtc, Id)` to instance storage. The SQL Server sample provides a migration; each host owns its provider configuration and migrations.
+- Stop older Runtime writers during the upgrade because they do not populate the new projection. A null maximum identifies an unprojected legacy instance; zero disables expiration. The startup backfill processes recoverable legacy instances and retries unavailable rows on a later scan.
+- Custom instance repositories must implement `IOrchestrationExpirationRepository` to support projected expiration scans and the legacy backfill. The runtime does not fall back to scanning artifact policies.
+
+------
+
 ## [v6.2.0] - 2026-11-06
 
 ### Added

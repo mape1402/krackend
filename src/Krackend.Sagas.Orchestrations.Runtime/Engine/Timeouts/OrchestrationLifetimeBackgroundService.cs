@@ -14,6 +14,7 @@ internal sealed class OrchestrationLifetimeBackgroundService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var backfillComplete = false;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -24,6 +25,9 @@ internal sealed class OrchestrationLifetimeBackgroundService(
                     var admission = scope.ServiceProvider.GetService<IRuntimeAdmissionController>();
                     if (admission is null || admission.CanAccept(RuntimeAdmissionOperation.TimeoutProcessing))
                     {
+                        if (!backfillComplete)
+                            backfillComplete = await scope.ServiceProvider.GetRequiredService<OrchestrationLifetimeBackfill>()
+                                .ProcessAsync(stoppingToken);
                         var processed = await scope.ServiceProvider.GetRequiredService<OrchestrationLifetimeProcessor>()
                             .ProcessAsync(DateTime.UtcNow, stoppingToken);
                         logger.LogInformation("Orchestration lifetime scan moved {InstanceCount} instance(s) to idle.", processed);

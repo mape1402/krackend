@@ -23,6 +23,15 @@ public sealed class OrchestrationInstance
     /// </summary>
     public Id RuntimeOrchestrationArtifactId { get; set; }
 
+    /// <summary>Effective lifetime in seconds; zero disables expiration and null identifies an unprojected legacy instance.</summary>
+    public int? MaxInstanceDurationSeconds { get; set; }
+
+    /// <summary>Effective idle window in seconds, projected from the deployed version.</summary>
+    public int? IdleDurationSeconds { get; set; }
+
+    /// <summary>UTC deadline for the current execution window, or null when expiration is disabled or not yet projected.</summary>
+    public DateTime? ExpiresOnUtc { get; set; }
+
     /// <summary>Version of the artifact used to create the instance, or null for older instances.</summary>
     public string OrchestrationVersion { get; set; }
 

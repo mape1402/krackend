@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
+internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
 {
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -26,9 +26,9 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
     {
         instance.CaptureLastExecutionCursor();
         var existing = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instance.Id);
-        var originalRevision = existing is null
-            ? instance.StatisticsRevision
-            : DbContext.Entry(existing).Property(x => x.StatisticsRevision).OriginalValue;
+        var originalRevision = ReferenceEquals(existing, instance)
+            ? DbContext.Entry(existing).Property(x => x.StatisticsRevision).OriginalValue
+            : instance.StatisticsRevision;
         instance.StatisticsRevision = Math.Max(instance.StatisticsRevision, existing?.StatisticsRevision ?? 0) + 1;
         DetachLocalTrackedEntity(DbContext.OrchestrationInstances, instance);
         DbContext.OrchestrationInstances.Update(instance);
@@ -256,6 +256,21 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             .Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
             .Select(x => x.Id)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<Id>> GetExpiredInstances(DateTime utcNow, int skip, int take, CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.Status == OrchestrationInstanceStatus.Running && x.ExpiresOnUtc != null && x.ExpiresOnUtc <= utcNow)
+            .OrderBy(x => x.ExpiresOnUtc).ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).Select(x => x.Id).ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<Id>> GetUnprojectedInstances(int skip, int take, CancellationToken cancellationToken = default)
+        => await DbContext.OrchestrationInstances.AsNoTracking()
+            .Where(x => x.MaxInstanceDurationSeconds == null &&
+                (x.Status == OrchestrationInstanceStatus.Created || x.Status == OrchestrationInstanceStatus.Running ||
+                 x.Status == OrchestrationInstanceStatus.Idle || x.Status == OrchestrationInstanceStatus.Failed ||
+                 x.Status == OrchestrationInstanceStatus.DeadLettered))
+            .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).Select(x => x.Id).ToArrayAsync(cancellationToken);
 
     public async Task<IReadOnlyCollection<OrchestrationLifetimeCandidate>> GetLifetimeCandidatePage(
         DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)

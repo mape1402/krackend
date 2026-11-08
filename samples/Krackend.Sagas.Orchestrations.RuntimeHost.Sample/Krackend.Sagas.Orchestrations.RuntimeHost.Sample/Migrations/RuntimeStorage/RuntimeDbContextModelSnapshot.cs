@@ -292,6 +292,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<DateTime?>("ExpiresOnUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("FailedOnUtc")
                         .HasColumnType("datetime2");
 
@@ -301,6 +304,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<DateTime?>("IdleExpiresOnUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("IdleDurationSeconds")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("IdleSinceUtc")
                         .HasColumnType("datetime2");
@@ -318,6 +324,9 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
 
                     b.Property<string>("Metadata")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("MaxInstanceDurationSeconds")
+                        .HasColumnType("int");
 
                     b.Property<string>("OrchestrationDefinitionKey")
                         .IsRequired()
@@ -394,6 +403,8 @@ namespace Krackend.Sagas.Orchestrations.RuntimeHost.Sample.Migrations.RuntimeSto
                     b.HasIndex("StartedOnUtc", "Status");
 
                     b.HasIndex("Status", "IdleExpiresOnUtc");
+
+                    b.HasIndex("Status", "ExpiresOnUtc", "Id");
 
                     b.HasIndex("Status", "LastUpdatedOnUtc");
 

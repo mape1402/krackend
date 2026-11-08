@@ -347,6 +347,32 @@ public sealed class OrchestrationRecoveryServiceTests
     }
 
     [Fact]
+    public async Task ReplayLegacyDispatchProjectsAndRestartsItsLifetimeWindow()
+    {
+        var fixture = new RecoveryFixture();
+        var instance = CreateInstance(OrchestrationInstanceStatus.DeadLettered);
+        instance.MaxInstanceDurationSeconds = null;
+        instance.IdleDurationSeconds = null;
+        instance.ExpiresOnUtc = null;
+        var task = CreateFailedTask(instance.Id);
+        var attempt = new TaskExecutionAttempt { Id = Id.New(), TaskExecutionId = task.Id, AttemptNumber = 1, Status = TaskExecutionStatus.Failed };
+        var dispatch = new TaskDispatch { Id = Id.New(), TaskExecutionAttemptId = attempt.Id, DispatchType = "Messaging", DispatchStatus = "Failed" };
+        fixture.ArrangeDispatchReplay(instance, task, attempt, dispatch);
+        fixture.ArtifactResolver.ResolveAsync(instance.RuntimeOrchestrationArtifactId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CreateResolvedArtifact(instance.RuntimeOrchestrationArtifactId)));
+        fixture.DispatchReplayService.ReplayAsync(Arg.Any<TaskDispatchReplayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(TaskDispatchReplayResult.Success("Scheduled", "Scheduled.")));
+        var before = DateTime.UtcNow;
+
+        var result = await fixture.Service.ReplayDispatchAsync(instance.Id.ToString(), task.Id.ToString(), dispatch.Id.ToString());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(86400, instance.MaxInstanceDurationSeconds);
+        Assert.Equal(1200, instance.IdleDurationSeconds);
+        Assert.InRange(instance.ExpiresOnUtc!.Value, before.AddDays(1), DateTime.UtcNow.AddDays(1));
+    }
+
+    [Fact]
     public async Task ReplaySpecificFailedDispatchSchedulesTheProviderWithoutCreatingANewTaskAttempt()
     {
         var fixture = new RecoveryFixture();
@@ -695,6 +721,9 @@ public sealed class OrchestrationRecoveryServiceTests
             CurrentStageKey = currentStageKey,
             CurrentTaskKey = currentTaskKey,
             StartedOnUtc = DateTime.UtcNow.AddMinutes(-20),
+            MaxInstanceDurationSeconds = 86400,
+            IdleDurationSeconds = 1200,
+            ExpiresOnUtc = DateTime.UtcNow.AddHours(24),
             LastUpdatedOnUtc = DateTime.UtcNow.AddMinutes(-1),
             FailedOnUtc = failedOnUtc ?? (status is OrchestrationInstanceStatus.Failed or OrchestrationInstanceStatus.DeadLettered ? DateTime.UtcNow.AddMinutes(-1) : null),
             StoppedOnUtc = stoppedOnUtc,

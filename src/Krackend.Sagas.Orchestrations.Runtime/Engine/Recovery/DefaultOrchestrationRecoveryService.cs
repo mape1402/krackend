@@ -6,6 +6,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 
@@ -39,6 +41,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
     private readonly ArchivedRecoveryIngressPreparer _archivedIngressPreparer;
+    private readonly OrchestrationTimeoutOptions _timeoutOptions;
 
     public DefaultOrchestrationRecoveryService(
         IOrchestrationInstanceRepository instanceRepository,
@@ -54,7 +57,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         IRuntimeStorageUnitOfWork storageUnitOfWork,
         IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator,
         IOrchestrationInstanceCoordinator coordinator = null,
-        ArchivedRecoveryIngressPreparer archivedIngressPreparer = null)
+        ArchivedRecoveryIngressPreparer archivedIngressPreparer = null,
+        IOptions<OrchestrationTimeoutOptions> timeoutOptions = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -70,6 +74,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         _dispatchCancellationCoordinator = dispatchCancellationCoordinator ?? throw new ArgumentNullException(nameof(dispatchCancellationCoordinator));
         _coordinator = coordinator ?? PassthroughOrchestrationInstanceCoordinator.Instance;
         _archivedIngressPreparer = archivedIngressPreparer;
+        _timeoutOptions = timeoutOptions?.Value ?? new OrchestrationTimeoutOptions();
     }
 
     public async Task<OrchestrationRecoveryResult> ReplayAsync(
@@ -139,6 +144,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         var resolvedArtifact = await _artifactResolver.ResolveAsync(
             instance.RuntimeOrchestrationArtifactId.ToString(),
             cancellationToken);
+        EnsureProjectedPolicy(instance, resolvedArtifact.Artifact);
         var stages = (resolvedArtifact.Artifact.StageDefinitions ?? [])
             .Where(x => x.IsEnabled)
             .OrderBy(x => x.Order)
@@ -187,6 +193,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+        InstanceLifetimePolicy.ResetDeadline(instance, now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
         await _instanceRepository.Update(instance, cancellationToken);
         await CreateReplayTransition(
@@ -286,6 +293,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         var resolvedArtifact = await _artifactResolver.ResolveAsync(
             instance.RuntimeOrchestrationArtifactId.ToString(),
             cancellationToken);
+        EnsureProjectedPolicy(instance, resolvedArtifact.Artifact);
         var stages = (resolvedArtifact.Artifact.StageDefinitions ?? [])
             .Where(x => x.IsEnabled)
             .OrderBy(x => x.Order)
@@ -407,6 +415,15 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         var preparationFailure = await PrepareArchivedIngressAsync(instance, cancellationToken);
         if (preparationFailure is not null) return preparationFailure;
         var now = DateTime.UtcNow;
+        var needsLifetimeProjection = instance.MaxInstanceDurationSeconds is null;
+        if (needsLifetimeProjection)
+        {
+            var resolved = await _artifactResolver.ResolveAsync(instance.RuntimeOrchestrationArtifactId.ToString(), cancellationToken);
+            if (resolved?.Artifact is null)
+                return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                    "The orchestration lifetime policy could not be resolved for this legacy instance.");
+            EnsureProjectedPolicy(instance, resolved.Artifact);
+        }
         var requestId = GetOrCreateDispatchReplayRequestId(dispatch);
         if (!isPendingReplay)
         {
@@ -416,6 +433,13 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         {
             // A replay scheduled before lifetime policies existed needs an anchor.
             instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+            InstanceLifetimePolicy.ResetDeadline(instance, now);
+            await _instanceRepository.Update(instance, cancellationToken);
+        }
+        else if (needsLifetimeProjection)
+        {
+            // Preserve the already-scheduled replay window while projecting a legacy instance.
+            InstanceLifetimePolicy.ResetDeadline(instance, InstanceLifetimePolicy.ReadRecoveryAnchor(instance) ?? now);
             await _instanceRepository.Update(instance, cancellationToken);
         }
 
@@ -503,6 +527,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+        InstanceLifetimePolicy.ResetDeadline(instance, now);
 
         await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
         using var autoSave = _storageUnitOfWork.DeferAutoSave();
@@ -711,6 +736,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             failedTask.Metadata[TaskReplayReasonMetadataKey] = JsonValue.Create(reason.Trim());
         }
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+        InstanceLifetimePolicy.ResetDeadline(instance, now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
 
         await _taskAttemptDispatcher.DispatchAsync(
@@ -768,6 +794,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         instance.IdleExpiresOnUtc = null;
         instance.LastUpdatedOnUtc = now;
         instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+        InstanceLifetimePolicy.ResetDeadline(instance, now);
         instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
 
         await _stageRepository.Update(failedStage, cancellationToken);
@@ -833,6 +860,12 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
                 $"Recovery could not prepare the orchestration backchannel: {exception.Message}");
         }
+    }
+
+    private void EnsureProjectedPolicy(OrchestrationInstance instance, OrchestrationArtifact artifact)
+    {
+        if (instance.MaxInstanceDurationSeconds is null)
+            InstanceLifetimePolicy.Project(instance, artifact, _timeoutOptions, instance.StartedOnUtc);
     }
 
     private static ForwardIntent BuildForwardIntent(OrchestrationInstance instance, string payload)

@@ -1,5 +1,6 @@
 using DotNet.Testcontainers.Builders;
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Core;
 using Krackend.Sagas.Orchestrations.ControlPlane.Design.Storage;
 using Krackend.Sagas.Orchestrations.ControlPlane.Security.Core;
@@ -18,6 +19,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Ingress;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Mongo;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
@@ -62,6 +64,27 @@ public sealed class MongoCatalogSearchTests
         var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
         await db.Database.EnsureCreatedAsync();
         var artifacts = scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>();
+        var legacyDefinition = new OrchestrationArtifact(Id.New(), Id.New(), "legacy.orders", "Orders", "sales",
+            new SemanticVersion(1, 0, 0), new Checksum("legacy"), [], [], []) { MaxInstanceDurationSeconds = 86400, IdleDurationSeconds = 1200 };
+        var legacyArtifactId = Id.New();
+        await artifacts.Upsert(new RuntimeOrchestrationArtifact
+        {
+            Id = legacyArtifactId, OrchestrationDefinitionKey = legacyDefinition.Key, SourceOrchestrationVersionId = legacyDefinition.OrchestrationVersionId,
+            ArtifactType = "orchestration-version-snapshot", Version = legacyDefinition.Version, ArtifactChecksum = legacyDefinition.Checksum,
+            ArtifactPayload = System.Text.Json.JsonSerializer.SerializeToNode(legacyDefinition,
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!,
+            Status = RuntimeOrchestrationArtifactStatus.Ready, IsActive = true
+        });
+        var legacyInstance = new OrchestrationInstance
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = legacyArtifactId, TriggerIntakeId = Id.New(),
+            OrchestrationDefinitionKey = "legacy.orders", CorrelationId = "legacy-corr", SagaId = "legacy-saga", ExecutionKey = "legacy-execution",
+            StartedOnUtc = DateTime.UtcNow.AddDays(-2), LastUpdatedOnUtc = DateTime.UtcNow.AddDays(-2), Status = OrchestrationInstanceStatus.Running
+        };
+        var legacyInstances = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        await legacyInstances.Create(legacyInstance);
+        Assert.True(await scope.ServiceProvider.GetRequiredService<OrchestrationLifetimeBackfill>().ProcessAsync());
+        Assert.NotNull((await legacyInstances.GetById(legacyInstance.Id)).ExpiresOnUtc);
         var artifact = new RuntimeOrchestrationArtifact
         {
             Id = Id.New(), OrchestrationDefinitionKey = "archived.orders", SourceOrchestrationVersionId = Id.New(),
@@ -271,6 +294,8 @@ public sealed class MongoCatalogSearchTests
             var initialIndexes = await indexes.ToListAsync();
             Assert.Contains(initialIndexes, index => index["key"].AsBsonDocument.Contains("StatisticsRevision"));
             Assert.Contains(initialIndexes, index => index["name"] == "IX_Test_RetryCount");
+            Assert.Contains(initialIndexes, index => index["key"].AsBsonDocument.Contains("Status") &&
+                index["key"].AsBsonDocument.Contains("ExpiresOnUtc"));
         }
         var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
         await repository.Create(new OrchestrationInstance
@@ -278,6 +303,7 @@ public sealed class MongoCatalogSearchTests
             Id = Id.New(), RuntimeOrchestrationArtifactId = Id.New(), TriggerIntakeId = Id.New(),
             OrchestrationDefinitionKey = "sales", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "sales:1",
             OrchestrationVersion = "1.2.3", TotalTaskCount = 3, CompletedTaskCount = 1,
+            MaxInstanceDurationSeconds = 0, IdleDurationSeconds = 1200,
             StartedOnUtc = DateTime.UtcNow, LastUpdatedOnUtc = DateTime.UtcNow,
             SnapshotPayload = JsonNode.Parse("{\"large\":\"payload\"}")
         });
@@ -307,7 +333,8 @@ public sealed class MongoCatalogSearchTests
             OrchestrationDefinitionKey = "sales", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "sales:overdue",
             StartIdempotencyKey = "sales:overdue:start",
             Status = OrchestrationInstanceStatus.Running, StartedOnUtc = DateTime.UtcNow.AddDays(-2),
-            LastUpdatedOnUtc = DateTime.UtcNow.AddDays(-2)
+            LastUpdatedOnUtc = DateTime.UtcNow.AddDays(-2), MaxInstanceDurationSeconds = 86400,
+            IdleDurationSeconds = 1200, ExpiresOnUtc = DateTime.UtcNow.AddDays(-1)
         };
         await repository.Create(overdue);
         var lifetimeCandidates = Assert.IsAssignableFrom<IOrchestrationLifetimeCandidateRepository>(repository);
@@ -316,6 +343,31 @@ public sealed class MongoCatalogSearchTests
         var globalCandidate = Assert.Single(await globalCandidates.GetLifetimeCandidatePage(DateTime.UtcNow.AddDays(-1), 0, 100));
         Assert.Equal(overdue.Id, globalCandidate.InstanceId);
         Assert.Equal(lifetimeArtifactId, globalCandidate.ArtifactId);
+        var expiration = Assert.IsAssignableFrom<IOrchestrationExpirationRepository>(repository);
+        Assert.Contains(overdue.Id, await expiration.GetExpiredInstances(DateTime.UtcNow, 0, 100));
+        await collection.UpdateOneAsync(Builders<BsonDocument>.Filter.Eq("ExecutionKey", "sales:overdue"),
+            Builders<BsonDocument>.Update.Unset("MaxInstanceDurationSeconds").Unset("IdleDurationSeconds").Unset("ExpiresOnUtc"));
+        Assert.Contains(overdue.Id, await expiration.GetUnprojectedInstances(0, 100));
+        var lifetimeArtifact = new OrchestrationArtifact(Id.New(), Id.New(), "sales", "Sales", "sales",
+            new SemanticVersion(1, 0, 0), new Checksum("lifetime"), [], [], []) { MaxInstanceDurationSeconds = 86400, IdleDurationSeconds = 1200 };
+        await scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>().Upsert(new RuntimeOrchestrationArtifact
+        {
+            Id = lifetimeArtifactId, OrchestrationDefinitionKey = "sales", SourceOrchestrationVersionId = lifetimeArtifact.OrchestrationVersionId,
+            ArtifactType = "orchestration-version-snapshot", Version = lifetimeArtifact.Version, ArtifactChecksum = lifetimeArtifact.Checksum,
+            ArtifactPayload = System.Text.Json.JsonSerializer.SerializeToNode(lifetimeArtifact,
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!,
+            Status = RuntimeOrchestrationArtifactStatus.Ready, IsActive = true
+        });
+        var standaloneBackfill = new OrchestrationLifetimeBackfill(repository,
+            scope.ServiceProvider.GetRequiredService<IRuntimeArtifactRepository>(), scope.ServiceProvider.GetRequiredService<IRuntimeArtifactSerializer>(),
+            scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceCoordinator>(), Options.Create(new OrchestrationTimeoutOptions()),
+            NullLogger<OrchestrationLifetimeBackfill>.Instance);
+        Assert.True(await standaloneBackfill.ProcessAsync());
+        var projected = await repository.GetById(overdue.Id);
+        Assert.Equal(86400, projected.MaxInstanceDurationSeconds);
+        Assert.Equal(1200, projected.IdleDurationSeconds);
+        Assert.NotNull(projected.ExpiresOnUtc);
+        Assert.Contains(overdue.Id, await expiration.GetExpiredInstances(DateTime.UtcNow, 0, 100));
         Assert.True(await Assert.IsAssignableFrom<IOrchestrationArtifactInstanceReader>(repository).HasActiveInstances(lifetimeArtifactId));
 
         var leasedArtifactId = Id.New();

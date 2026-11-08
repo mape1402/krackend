@@ -104,6 +104,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.DependencyInjection
             services.TryAddScoped<ITaskAttemptDispatcher, TaskAttemptDispatcher>();
             services.TryAddScoped<IOrchestrationTimeoutProcessor, DefaultOrchestrationTimeoutProcessor>();
             services.TryAddScoped<OrchestrationLifetimeProcessor>();
+            services.TryAddScoped<OrchestrationLifetimeBackfill>();
             services.TryAddScoped<ArchivedRecoveryRetirementProcessor>();
             services.TryAddScoped<IOrchestrationIdleProcessor, DefaultOrchestrationIdleProcessor>();
             services.TryAddScoped<ITaskResponseTimeoutDeadlineResolver, TaskResponseTimeoutDeadlineResolver>();

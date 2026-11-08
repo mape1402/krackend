@@ -41,6 +41,33 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task UpdatingFreshInstanceIgnoresAnOlderLocallyTrackedCopyButRejectsStaleWrites()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var firstScope = provider.CreateScope();
+        using var secondScope = provider.CreateScope();
+        await firstScope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var first = firstScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var original = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow);
+        await first.Create(original);
+        var stale = await first.GetById(original.Id);
+        var updated = await second.GetById(original.Id);
+        updated.ErrorSummary = "second scope";
+        await second.Update(updated);
+        var fresh = await first.GetById(original.Id);
+        fresh.ErrorSummary = "fresh copy";
+
+        await first.Update(fresh);
+
+        Assert.Equal("fresh copy", (await second.GetById(original.Id)).ErrorSummary);
+        stale.ErrorSummary = "stale copy";
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.Update(stale));
+    }
+
+    [Fact]
     public async Task UnsupportedEfProviderDoesNotPretendToAcquireAnAtomicLease()
     {
         await using var provider = CreateProvider();
@@ -599,6 +626,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
 
         Assert.Single(commands.Where(x => x.Contains("SELECT", StringComparison.OrdinalIgnoreCase) &&
             x.Contains("FROM \"OrchestrationInstances\"", StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(commands, x => x.Contains("FROM \"RuntimeOrchestrationArtifacts\"", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -842,6 +870,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var recent = Instance(artifact.Id, OrchestrationInstanceStatus.Running, now);
         await instances.Create(old);
         await instances.Create(recent);
+        Assert.True(await setupServices.GetRequiredService<OrchestrationLifetimeBackfill>().ProcessAsync());
         var package = new RuntimeArtifactDeliveryPackage
         {
             ArtifactId = Id.New().ToString(), ArtifactType = "orchestration-version.archived", ReleaseStrategy = "Direct",
@@ -893,6 +922,47 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
     }
 
     [Fact]
+    public async Task ExpirationSupervisorReadsOnlyExpiredProjectedInstancesWithoutArtifacts()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var commands = new List<string>();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection)
+            .LogTo(commands.Add, [RelationalEventId.CommandExecuted]));
+        using var scope = provider.CreateScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var now = DateTime.UtcNow;
+        var expired = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddDays(-2));
+        expired.MaxInstanceDurationSeconds = 86400;
+        expired.IdleDurationSeconds = 300;
+        expired.ExpiresOnUtc = now.AddHours(-1);
+        var future = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddDays(-2));
+        future.MaxInstanceDurationSeconds = 604800;
+        future.IdleDurationSeconds = 1200;
+        future.ExpiresOnUtc = now.AddDays(5);
+        var disabled = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddDays(-2));
+        disabled.MaxInstanceDurationSeconds = 0;
+        disabled.IdleDurationSeconds = 1200;
+        var instances = services.GetRequiredService<IOrchestrationInstanceRepository>();
+        await instances.Create(expired);
+        await instances.Create(future);
+        await instances.Create(disabled);
+        db.ChangeTracker.Clear();
+        commands.Clear();
+
+        Assert.Equal(1, await services.GetRequiredService<OrchestrationLifetimeProcessor>().ProcessAsync(now));
+
+        Assert.Equal(OrchestrationInstanceStatus.Idle, (await instances.GetById(expired.Id)).Status);
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await instances.GetById(future.Id)).Status);
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await instances.GetById(disabled.Id)).Status);
+        Assert.DoesNotContain(commands, x => x.Contains("FROM \"RuntimeOrchestrationArtifacts\"", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(commands, x => x.Contains("ExpiresOnUtc", StringComparison.OrdinalIgnoreCase) &&
+            x.Contains("OrchestrationInstances", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task LifetimeSupervisorMovesAnExistingOverdueSagaToIdleUsingEfStorage()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -910,6 +980,8 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var now = DateTime.UtcNow;
         var old = Instance(artifact.Id, OrchestrationInstanceStatus.Running, now.AddDays(-2));
         await instances.Create(old);
+
+        Assert.True(await services.GetRequiredService<OrchestrationLifetimeBackfill>().ProcessAsync());
 
         var changed = await services.GetRequiredService<OrchestrationLifetimeProcessor>().ProcessAsync(now);
 
@@ -943,6 +1015,8 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
             .Select(i => Instance(artifact.Id, OrchestrationInstanceStatus.Running, now.AddDays(-2).AddSeconds(i))));
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
+
+        Assert.True(await services.GetRequiredService<OrchestrationLifetimeBackfill>().ProcessAsync());
 
         var changed = await services.GetRequiredService<OrchestrationLifetimeProcessor>().ProcessAsync(now);
 
