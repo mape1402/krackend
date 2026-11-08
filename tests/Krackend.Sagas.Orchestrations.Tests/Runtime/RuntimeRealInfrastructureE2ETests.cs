@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Metadata;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Distribution;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
@@ -23,6 +24,38 @@ public sealed class RuntimeRealInfrastructureE2ETests
     public RuntimeRealInfrastructureE2ETests(RuntimeRealInfrastructureFixture infrastructure)
     {
         _infrastructure = infrastructure;
+    }
+
+    [Fact(Timeout = 180_000)]
+    public async Task RuntimeQueriesProjectedExpirationUsingRealSqlServer()
+    {
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
+        await using var scope = runtime.Services.CreateAsyncScope();
+        var instances = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var instance = new OrchestrationInstance
+        {
+            Id = Id.New(), RuntimeOrchestrationArtifactId = Id.New(), TriggerIntakeId = Id.New(),
+            OrchestrationDefinitionKey = "real.expiration", CorrelationId = NewSuffix(), SagaId = NewSuffix(),
+            ExecutionKey = NewSuffix(), Status = OrchestrationInstanceStatus.Running,
+            StartedOnUtc = now.AddHours(-1), LastUpdatedOnUtc = now.AddHours(-1),
+            MaxInstanceDurationSeconds = 3720, IdleDurationSeconds = 300, ExpiresOnUtc = now.AddMinutes(2)
+        };
+        await instances.Create(instance);
+        var candidates = await Assert.IsAssignableFrom<IOrchestrationExpirationRepository>(instances)
+            .GetExpiredInstances(now.AddMinutes(3), 0, 100);
+        Assert.Contains(instance.Id, candidates);
+
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<OrchestrationLifetimeProcessor>().ProcessAsync(now.AddMinutes(3)));
+        var persisted = await instances.GetById(instance.Id);
+        Assert.Equal(OrchestrationInstanceStatus.Idle, persisted.Status);
+        Assert.InRange(persisted.IdleExpiresOnUtc!.Value, now.AddMinutes(4), DateTime.UtcNow.AddMinutes(6));
+
+        await using var connection = new Microsoft.Data.SqlClient.SqlConnection(runtime.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID('[Runtime].[OrchestrationInstances]') AND name = 'IX_OrchestrationInstances_Status_ExpiresOnUtc_Id'";
+        Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync()));
     }
 
     [Fact(Timeout = 180_000)]

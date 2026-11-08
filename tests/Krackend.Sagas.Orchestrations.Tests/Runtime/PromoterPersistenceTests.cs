@@ -88,6 +88,9 @@ public sealed class PromoterPersistenceTests
         Assert.Equal("1.0.0", instance.OrchestrationVersion);
         Assert.Equal(0, instance.TotalTaskCount);
         Assert.Equal(0, instance.CompletedTaskCount);
+        Assert.Equal(86400, instance.MaxInstanceDurationSeconds);
+        Assert.Equal(1200, instance.IdleDurationSeconds);
+        Assert.Equal(instance.StartedOnUtc.AddHours(24), instance.ExpiresOnUtc);
         var transition = Assert.Single(fixture.Transitions);
         Assert.Equal(instance.Id, transition.OrchestrationInstanceId);
         Assert.Equal("InstancePromoted", transition.TransitionType);

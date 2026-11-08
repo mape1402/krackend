@@ -17,153 +17,138 @@ using NSubstitute;
 public sealed class OrchestrationLifetimeProcessorTests
 {
     [Fact]
-    public async Task GlobalPagingDoesNotSkipExpiredRowsWhenOtherPoliciesLeaveRowsRunning()
+    public void DisabledExpirationIsProjectedWithoutADeadline()
+    {
+        var instance = Instance(null);
+        var artifact = new OrchestrationArtifact(Id.New(), Id.New(), "orders", "Orders", "sales",
+            new(1, 0, 0), new("hash"), [], [], []) { MaxInstanceDurationSeconds = 0, IdleDurationSeconds = 300 };
+        InstanceLifetimePolicy.Project(instance, artifact, new OrchestrationTimeoutOptions(), DateTime.UtcNow);
+
+        Assert.Equal(0, instance.MaxInstanceDurationSeconds);
+        Assert.Equal(300, instance.IdleDurationSeconds);
+        Assert.Null(instance.ExpiresOnUtc);
+        InstanceLifetimePolicy.ResetDeadline(instance, DateTime.UtcNow.AddHours(1));
+        Assert.Null(instance.ExpiresOnUtc);
+    }
+
+    [Fact]
+    public async Task ScansOnlyProjectedDeadlinesAndContinuesPastBusyCandidates()
     {
         var now = DateTime.UtcNow;
-        var fastId = Id.New();
-        var slowId = Id.New();
-        var instancesData = Enumerable.Range(0, 5).Select(i => Instance(i is 1 or 3 ? slowId : fastId,
-            now.AddHours(-2).AddSeconds(i))).ToArray();
-        var artifacts = Substitute.For<IRuntimeArtifactRepository, IRuntimeArtifactLifetimePolicyRepository>();
-        ((IRuntimeArtifactLifetimePolicyRepository)artifacts).GetLifetimePolicyPage(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult<IReadOnlyCollection<RuntimeArtifactLifetimePolicyItem>>(
-                new[] { new RuntimeArtifactLifetimePolicyItem(fastId, new JsonObject { ["max"] = 60 }),
-                        new RuntimeArtifactLifetimePolicyItem(slowId, new JsonObject { ["max"] = 86400 }) }
-                    .Skip(call.ArgAt<int>(0)).Take(call.ArgAt<int>(1)).ToArray()));
-        var serializer = Substitute.For<IRuntimeArtifactSerializer>();
-        serializer.Deserialize(Arg.Any<string>()).Returns(call => new OrchestrationArtifact(
-            Id.New(), Id.New(), "orders", "Orders", "sales", new(1, 0, 0), new("hash"), [], [], [])
-            { MaxInstanceDurationSeconds = JsonNode.Parse(call.Arg<string>())!["max"]!.GetValue<int>() });
-        var repository = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationLifetimeScanRepository>();
-        repository.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(call => instancesData.Single(x => x.Id == call.Arg<Id>()));
-        var scan = (IOrchestrationLifetimeScanRepository)repository;
-        scan.GetLifetimeCandidatePage(Arg.Any<DateTime>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult<IReadOnlyCollection<OrchestrationLifetimeCandidate>>(instancesData
-                .Where(x => x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= call.ArgAt<DateTime>(0))
-                .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id).Skip(call.ArgAt<int>(1)).Take(call.ArgAt<int>(2))
-                .Select(x => new OrchestrationLifetimeCandidate(x.Id, x.RuntimeOrchestrationArtifactId, x.StartedOnUtc)).ToArray()));
+        var rows = Enumerable.Range(0, 5).Select(i => Instance(now.AddMinutes(-i - 1))).ToArray();
+        var repository = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationExpirationRepository>();
+        var expiration = (IOrchestrationExpirationRepository)repository;
+        expiration.GetExpiredInstances(now, Arg.Any<int>(), 2, Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyCollection<Id>>(rows.Where(x => x.Status == OrchestrationInstanceStatus.Running)
+                .OrderBy(x => x.ExpiresOnUtc).ThenBy(x => x.Id).Skip(call.ArgAt<int>(1)).Take(2).Select(x => x.Id).ToArray()));
+        repository.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(call => rows.Single(x => x.Id == call.Arg<Id>()));
+        var busy = rows[4].Id;
         var coordinator = Substitute.For<IOrchestrationInstanceCoordinator>();
         coordinator.TryExecuteAsync(Arg.Any<Id>(), Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), false)
-            .Returns(async call => { await call.Arg<Func<CancellationToken, Task>>()(call.Arg<CancellationToken>()); return true; });
+            .Returns(async call => { if (call.Arg<Id>() == busy) return false; await call.Arg<Func<CancellationToken, Task>>()(call.Arg<CancellationToken>()); return true; });
         var idle = Substitute.For<IDecisionHandler<EnterIdleInstanceDecision>>();
         idle.HandleAsync(Arg.Any<EnterIdleInstanceDecision>(), Arg.Any<CancellationToken>())
-            .Returns(call => { instancesData.Single(x => x.Id == call.Arg<EnterIdleInstanceDecision>().InstanceId).Status = OrchestrationInstanceStatus.Idle; return Task.CompletedTask; });
-        var processor = new OrchestrationLifetimeProcessor(artifacts, serializer, repository, coordinator, idle,
+            .Returns(call => { rows.Single(x => x.Id == call.Arg<EnterIdleInstanceDecision>().InstanceId).Status = OrchestrationInstanceStatus.Idle; return Task.CompletedTask; });
+        var processor = new OrchestrationLifetimeProcessor(repository, coordinator, idle,
             Options.Create(new OrchestrationTimeoutOptions { InstanceLifetimeBatchSize = 2 }), NullLogger<OrchestrationLifetimeProcessor>.Instance);
 
-        Assert.Equal(3, await processor.ProcessAsync(now));
-        Assert.Equal(2, instancesData.Count(x => x.Status == OrchestrationInstanceStatus.Running));
-        Assert.All(instancesData.Where(x => x.RuntimeOrchestrationArtifactId == fastId), x => Assert.Equal(OrchestrationInstanceStatus.Idle, x.Status));
+        Assert.Equal(4, await processor.ProcessAsync(now));
+        Assert.Equal(OrchestrationInstanceStatus.Running, rows.Single(x => x.Id == busy).Status);
+        await idle.Received(4).HandleAsync(Arg.Is<EnterIdleInstanceDecision>(x => x.IdleDurationSeconds == 1200), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GlobalScanMatchesPoliciesWithoutQueryingPerArtifactOrLockingUnexpiredInstances()
+    public async Task ContinuesPagingWhenAnIdleTransitionCommitsButCancellationFails()
     {
         var now = DateTime.UtcNow;
-        var shortId = Id.New();
-        var longId = Id.New();
-        var disabledId = Id.New();
-        var old = new[] { Instance(shortId, now.AddHours(-2)), Instance(longId, now.AddHours(-2)), Instance(disabledId, now.AddHours(-2)) };
-        var artifacts = Substitute.For<IRuntimeArtifactRepository, IRuntimeArtifactLifetimePolicyRepository>();
-        ((IRuntimeArtifactLifetimePolicyRepository)artifacts).GetLifetimePolicyPage(0, 10, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyCollection<RuntimeArtifactLifetimePolicyItem>>([
-                new(shortId, new JsonObject { ["max"] = 60 }),
-                new(longId, new JsonObject { ["max"] = 86400 }),
-                new(disabledId, new JsonObject { ["max"] = 0 })]));
-        var serializer = Substitute.For<IRuntimeArtifactSerializer>();
-        serializer.Deserialize(Arg.Any<string>()).Returns(call => new OrchestrationArtifact(
-            Id.New(), Id.New(), "orders", "Orders", "sales", new(1, 0, 0), new("hash"), [], [], [])
-            { MaxInstanceDurationSeconds = JsonNode.Parse(call.Arg<string>())!["max"]!.GetValue<int>() });
-        var instances = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationLifetimeScanRepository, IOrchestrationLifetimeCandidateRepository>();
-        var scan = (IOrchestrationLifetimeScanRepository)instances;
-        scan.GetLifetimeCandidatePage(Arg.Any<DateTime>(), 0, 10, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyCollection<OrchestrationLifetimeCandidate>>(old.Select(x =>
-                new OrchestrationLifetimeCandidate(x.Id, x.RuntimeOrchestrationArtifactId, x.StartedOnUtc)).ToArray()));
-        instances.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(call => old.Single(x => x.Id == call.Arg<Id>()));
+        var rows = Enumerable.Range(0, 3).Select(i => Instance(now.AddMinutes(-i - 1))).ToArray();
+        var repository = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationExpirationRepository>();
+        ((IOrchestrationExpirationRepository)repository).GetExpiredInstances(now, Arg.Any<int>(), 2, Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyCollection<Id>>(rows.Where(x => x.Status == OrchestrationInstanceStatus.Running)
+                .OrderBy(x => x.ExpiresOnUtc).ThenBy(x => x.Id).Skip(call.ArgAt<int>(1)).Take(2).Select(x => x.Id).ToArray()));
+        repository.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(call => rows.Single(x => x.Id == call.Arg<Id>()));
         var coordinator = Substitute.For<IOrchestrationInstanceCoordinator>();
         coordinator.TryExecuteAsync(Arg.Any<Id>(), Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), false)
             .Returns(async call => { await call.Arg<Func<CancellationToken, Task>>()(call.Arg<CancellationToken>()); return true; });
         var idle = Substitute.For<IDecisionHandler<EnterIdleInstanceDecision>>();
-        var processor = new OrchestrationLifetimeProcessor(artifacts, serializer, instances, coordinator, idle,
-            Options.Create(new OrchestrationTimeoutOptions { InstanceLifetimeBatchSize = 10 }), NullLogger<OrchestrationLifetimeProcessor>.Instance);
+        idle.HandleAsync(Arg.Any<EnterIdleInstanceDecision>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var row = rows.Single(x => x.Id == call.Arg<EnterIdleInstanceDecision>().InstanceId);
+            row.Status = OrchestrationInstanceStatus.Idle;
+            if (row == rows[2]) throw new InvalidOperationException("cancellation failed after commit");
+            return Task.CompletedTask;
+        });
+        var processor = new OrchestrationLifetimeProcessor(repository, coordinator, idle,
+            Options.Create(new OrchestrationTimeoutOptions { InstanceLifetimeBatchSize = 2 }), NullLogger<OrchestrationLifetimeProcessor>.Instance);
 
-        Assert.Equal(1, await processor.ProcessAsync(now));
-        await scan.Received(1).GetLifetimeCandidatePage(now.AddSeconds(-60), 0, 10, Arg.Any<CancellationToken>());
-        await ((IOrchestrationLifetimeCandidateRepository)instances).DidNotReceiveWithAnyArgs()
-            .GetLifetimeCandidates(default, default, default, default, default);
-        await instances.Received(1).GetById(old[0].Id, Arg.Any<CancellationToken>());
-        await instances.DidNotReceive().GetById(old[1].Id, Arg.Any<CancellationToken>());
-        await instances.DidNotReceive().GetById(old[2].Id, Arg.Any<CancellationToken>());
+        Assert.Equal(2, await processor.ProcessAsync(now));
+        Assert.All(rows, row => Assert.Equal(OrchestrationInstanceStatus.Idle, row.Status));
     }
 
     [Fact]
-    public async Task DisabledVersionDoesNotScanOrExpireItsInstances()
+    public async Task BackfillRetriesUnavailableArtifactsWithoutQueryingThemPerInstance()
     {
-        var artifact = new RuntimeOrchestrationArtifact { Id = Id.New(), OrchestrationDefinitionKey = "orders", ArtifactType = "new",
-            Version = new(1, 0, 0), ArtifactChecksum = new("hash"), ArtifactPayload = new JsonObject(), IsActive = true };
-        var artifacts = Substitute.For<IRuntimeArtifactRepository, IRuntimeArtifactLifetimePolicyRepository>();
-        ((IRuntimeArtifactLifetimePolicyRepository)artifacts).GetLifetimePolicyPage(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyCollection<RuntimeArtifactLifetimePolicyItem>>([new(artifact.Id, artifact.ArtifactPayload)]));
-        var serializer = Substitute.For<IRuntimeArtifactSerializer>();
-        serializer.Deserialize(Arg.Any<string>()).Returns(new OrchestrationArtifact(
-            Id.New(), Id.New(), "orders", "Orders", "sales", new(1, 0, 0), new("hash"), [], [], []) { MaxInstanceDurationSeconds = 0 });
-        var instances = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationLifetimeCandidateRepository>();
-        var processor = new OrchestrationLifetimeProcessor(artifacts, serializer, instances,
-            Substitute.For<IOrchestrationInstanceCoordinator>(), Substitute.For<IDecisionHandler<EnterIdleInstanceDecision>>(),
-            Options.Create(new OrchestrationTimeoutOptions()), NullLogger<OrchestrationLifetimeProcessor>.Instance);
+        var artifactId = Id.New();
+        var rows = new[] { Instance(null), Instance(null) };
+        foreach (var row in rows) { row.RuntimeOrchestrationArtifactId = artifactId; row.MaxInstanceDurationSeconds = null; }
+        var repository = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationExpirationRepository>();
+        ((IOrchestrationExpirationRepository)repository).GetUnprojectedInstances(0, 100, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<Id>>(rows.Select(x => x.Id).ToArray()));
+        repository.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(call => rows.Single(x => x.Id == call.Arg<Id>()));
+        var artifacts = Substitute.For<IRuntimeArtifactRepository>();
+        artifacts.GetById(artifactId, Arg.Any<CancellationToken>()).Returns<Task<RuntimeOrchestrationArtifact>>(_ => throw new KeyNotFoundException());
+        var coordinator = Substitute.For<IOrchestrationInstanceCoordinator>();
+        coordinator.TryExecuteAsync(Arg.Any<Id>(), Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), false)
+            .Returns(async call => { await call.Arg<Func<CancellationToken, Task>>()(call.Arg<CancellationToken>()); return true; });
+        var backfill = new OrchestrationLifetimeBackfill(repository, artifacts, Substitute.For<IRuntimeArtifactSerializer>(), coordinator,
+            Options.Create(new OrchestrationTimeoutOptions()), NullLogger<OrchestrationLifetimeBackfill>.Instance);
 
-        Assert.Equal(0, await processor.ProcessAsync(DateTime.UtcNow));
-        await ((IOrchestrationLifetimeCandidateRepository)instances).DidNotReceiveWithAnyArgs()
-            .GetLifetimeCandidates(default, default, default, default, default);
+        Assert.False(await backfill.ProcessAsync());
+        await artifacts.Received(1).GetById(artifactId, Arg.Any<CancellationToken>());
+        await repository.DidNotReceiveWithAnyArgs().Update(default!, default);
     }
 
     [Fact]
-    public async Task ScanExpiresOldInstancesInPagesWithoutExpiringRecentlyRecoveredOnes()
+    public async Task BackfillReadsEachArtifactOnceAndPreservesReplayAnchor()
     {
         var now = DateTime.UtcNow;
         var artifactId = Id.New();
-        var artifact = new RuntimeOrchestrationArtifact
+        var rows = new[] { Instance(null), Instance(null) };
+        foreach (var row in rows) { row.RuntimeOrchestrationArtifactId = artifactId; row.MaxInstanceDurationSeconds = null; }
+        rows[0].Metadata["Recovery.ReplayRequestedOnUtc"] = JsonValue.Create(now.AddHours(-1));
+        rows[0].Metadata["Lifetime.ExpirationAnchorOnUtc"] = JsonValue.Create(now.AddHours(-1));
+        rows[0].Metadata["Lifetime.IdleDeadlineOnUtc"] = JsonValue.Create(now.AddMinutes(10));
+        var repository = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationExpirationRepository>();
+        ((IOrchestrationExpirationRepository)repository).GetUnprojectedInstances(Arg.Any<int>(), 100, Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<IReadOnlyCollection<Id>>(rows.Where(x => x.MaxInstanceDurationSeconds is null)
+                .Skip(call.ArgAt<int>(0)).Select(x => x.Id).ToArray()));
+        repository.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>()).Returns(call => rows.Single(x => x.Id == call.Arg<Id>()));
+        var artifacts = Substitute.For<IRuntimeArtifactRepository>();
+        artifacts.GetById(artifactId, Arg.Any<CancellationToken>()).Returns(new RuntimeOrchestrationArtifact
         {
             Id = artifactId, OrchestrationDefinitionKey = "orders", ArtifactType = "new", Version = new(1, 0, 0),
-            ArtifactChecksum = new("hash"), ArtifactPayload = new JsonObject(), IsActive = true
-        };
-        var old = Enumerable.Range(0, 5).Select(i => Instance(artifactId, now.AddDays(-5).AddMinutes(i))).ToArray();
-        old[0].Metadata["Recovery.ReplayRequestedOnUtc"] = JsonValue.Create(now.AddMinutes(-5));
-        var instances = Substitute.For<IOrchestrationInstanceRepository, IOrchestrationLifetimeCandidateRepository>();
-        var candidates = (IOrchestrationLifetimeCandidateRepository)instances;
-        instances.GetById(Arg.Any<Id>(), Arg.Any<CancellationToken>())
-            .Returns(call => old.Single(x => x.Id == call.Arg<Id>()));
-        candidates.GetLifetimeCandidates(artifactId, Arg.Any<DateTime>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult<IReadOnlyCollection<Id>>(old
-                .Where(x => x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= call.ArgAt<DateTime>(1))
-                .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id).Skip(call.ArgAt<int>(2)).Take(call.ArgAt<int>(3)).Select(x => x.Id).ToArray()));
-        var artifacts = Substitute.For<IRuntimeArtifactRepository, IRuntimeArtifactLifetimePolicyRepository>();
-        ((IRuntimeArtifactLifetimePolicyRepository)artifacts).GetLifetimePolicyPage(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyCollection<RuntimeArtifactLifetimePolicyItem>>([new(artifact.Id, artifact.ArtifactPayload)]));
+            ArtifactChecksum = new("hash"), ArtifactPayload = new JsonObject()
+        });
         var serializer = Substitute.For<IRuntimeArtifactSerializer>();
-        serializer.Deserialize(Arg.Any<string>()).Returns(new OrchestrationArtifact(
-            Id.New(), Id.New(), "orders", "Orders", "sales", new(1, 0, 0), new("hash"), [], [], []));
+        serializer.Deserialize(Arg.Any<string>()).Returns(new OrchestrationArtifact(Id.New(), Id.New(), "orders", "Orders", "sales",
+            new(1, 0, 0), new("hash"), [], [], []) { MaxInstanceDurationSeconds = 7200, IdleDurationSeconds = 300 });
         var coordinator = Substitute.For<IOrchestrationInstanceCoordinator>();
         coordinator.TryExecuteAsync(Arg.Any<Id>(), Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), false)
             .Returns(async call => { await call.Arg<Func<CancellationToken, Task>>()(call.Arg<CancellationToken>()); return true; });
-        var idle = Substitute.For<IDecisionHandler<EnterIdleInstanceDecision>>();
-        idle.HandleAsync(Arg.Any<EnterIdleInstanceDecision>(), Arg.Any<CancellationToken>())
-            .Returns(call => { old.Single(x => x.Id == call.Arg<EnterIdleInstanceDecision>().InstanceId).Status = OrchestrationInstanceStatus.Idle; return Task.CompletedTask; });
-        var processor = new OrchestrationLifetimeProcessor(artifacts, serializer, instances, coordinator, idle,
-            Options.Create(new OrchestrationTimeoutOptions { DefaultInstanceLifetimeSeconds = 86400, InstanceLifetimeBatchSize = 2 }),
-            NullLogger<OrchestrationLifetimeProcessor>.Instance);
+        var backfill = new OrchestrationLifetimeBackfill(repository, artifacts, serializer, coordinator,
+            Options.Create(new OrchestrationTimeoutOptions()), NullLogger<OrchestrationLifetimeBackfill>.Instance);
 
-        Assert.Equal(4, await processor.ProcessAsync(now));
-        Assert.Equal(OrchestrationInstanceStatus.Running, old[0].Status);
-        Assert.All(old.Skip(1), x => Assert.Equal(OrchestrationInstanceStatus.Idle, x.Status));
-        await ((IRuntimeArtifactLifetimePolicyRepository)artifacts).Received(1)
-            .GetLifetimePolicyPage(0, 2, Arg.Any<CancellationToken>());
-        await artifacts.DidNotReceiveWithAnyArgs().GetAll(default);
-        await artifacts.DidNotReceiveWithAnyArgs().GetById(default, default);
+        Assert.True(await backfill.ProcessAsync());
+        Assert.Equal(now.AddHours(1), rows[0].ExpiresOnUtc);
+        Assert.Equal(rows[0].ExpiresOnUtc, rows[0].Metadata["Lifetime.ExpirationAnchorOnUtc"]!.GetValue<DateTime>());
+        Assert.Equal(rows[1].StartedOnUtc.AddHours(2), rows[1].ExpiresOnUtc);
+        Assert.All(rows, row => Assert.Equal(300, row.IdleDurationSeconds));
+        await artifacts.Received(1).GetById(artifactId, Arg.Any<CancellationToken>());
     }
 
-    private static OrchestrationInstance Instance(Id artifactId, DateTime started)
-        => new() { Id = Id.New(), RuntimeOrchestrationArtifactId = artifactId, OrchestrationDefinitionKey = "orders",
-            CorrelationId = "correlation", SagaId = "saga", ExecutionKey = "execution", StartedOnUtc = started,
-            LastUpdatedOnUtc = started, Status = OrchestrationInstanceStatus.Running };
+    private static OrchestrationInstance Instance(DateTime? expiry)
+        => new() { Id = Id.New(), RuntimeOrchestrationArtifactId = Id.New(), OrchestrationDefinitionKey = "orders",
+            CorrelationId = "correlation", SagaId = "saga", ExecutionKey = "execution", StartedOnUtc = DateTime.UtcNow.AddDays(-2),
+            LastUpdatedOnUtc = DateTime.UtcNow, Status = OrchestrationInstanceStatus.Running,
+            MaxInstanceDurationSeconds = 86400, IdleDurationSeconds = 1200, ExpiresOnUtc = expiry };
 }

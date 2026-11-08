@@ -121,14 +121,13 @@ public sealed class SqlServerStatisticsBackfillIndexTests
         var activeId = Id.New();
         var now = DateTime.UtcNow;
         foreach (var (id, revision) in new[] { (legacyIds[0], 0L), (legacyIds[1], 0L), (activeId, 7L) })
-            db.OrchestrationInstances.Add(new OrchestrationInstance
-            {
-                Id = id, RuntimeOrchestrationArtifactId = Id.New(), TriggerIntakeId = Id.New(),
-                OrchestrationDefinitionKey = "test", CorrelationId = id.ToString(), SagaId = id.ToString(),
-                ExecutionKey = id.ToString(), Status = OrchestrationInstanceStatus.Running,
-                StartedOnUtc = now, LastUpdatedOnUtc = now, StatisticsRevision = revision
-            });
-        await db.SaveChangesAsync();
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO [Runtime].[OrchestrationInstances]
+                    ([Id], [RuntimeOrchestrationArtifactId], [TriggerIntakeId], [OrchestrationDefinitionKey], [CorrelationId], [SagaId],
+                     [ExecutionKey], [Status], [StartedOnUtc], [LastUpdatedOnUtc], [StatisticsRevision], [RetryCount], [DispatchCancellationPending])
+                VALUES ({id.Value.ToByteArray()}, {Id.New().Value.ToByteArray()}, {Id.New().Value.ToByteArray()}, {"test"}, {id.ToString()}, {id.ToString()},
+                        {id.ToString()}, {"Running"}, {now}, {now}, {revision}, {0}, {false})
+                """);
         db.ChangeTracker.Clear();
         var before = await PendingIds(db);
         Assert.Equal(legacyIds.OrderBy(id => id.ToString()), before.OrderBy(id => id.ToString()));

@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
+    internal sealed class InMemoryOrchestrationInstanceRepository : IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -195,6 +195,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                     x.Status == OrchestrationInstanceStatus.Running && x.StartedOnUtc <= startedOnOrBeforeUtc)
                 .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id)
                 .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).Select(x => x.Id).ToArray());
+
+        public Task<IReadOnlyCollection<Id>> GetExpiredInstances(DateTime utcNow, int skip, int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Id>>(_store.Instances.Values
+                .Where(x => x.Status == OrchestrationInstanceStatus.Running && x.ExpiresOnUtc != null && x.ExpiresOnUtc <= utcNow)
+                .OrderBy(x => x.ExpiresOnUtc).ThenBy(x => x.Id).Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
+                .Select(x => x.Id).ToArray());
+
+        public Task<IReadOnlyCollection<Id>> GetUnprojectedInstances(int skip, int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<Id>>(_store.Instances.Values
+                .Where(x => x.MaxInstanceDurationSeconds == null && x.Status is (OrchestrationInstanceStatus.Created or
+                    OrchestrationInstanceStatus.Running or OrchestrationInstanceStatus.Idle or OrchestrationInstanceStatus.Failed or
+                    OrchestrationInstanceStatus.DeadLettered))
+                .OrderBy(x => x.StartedOnUtc).ThenBy(x => x.Id).Skip(Math.Max(0, skip)).Take(Math.Max(1, take))
+                .Select(x => x.Id).ToArray());
 
         public Task<IReadOnlyCollection<OrchestrationLifetimeCandidate>> GetLifetimeCandidatePage(
             DateTime startedOnOrBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)

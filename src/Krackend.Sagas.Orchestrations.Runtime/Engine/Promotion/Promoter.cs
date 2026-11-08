@@ -6,6 +6,8 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Persistence;
 using Krackend.Sagas.Orchestrations.Runtime.Metadata;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
+using Microsoft.Extensions.Options;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
 {
@@ -19,6 +21,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
         private readonly ITriggerPayloadValidator _triggerPayloadValidator;
         private readonly IOrchestrationPropagationMetadataStore _propagationMetadataStore;
         private readonly IRuntimeStateTransaction _stateTransaction;
+        private readonly OrchestrationTimeoutOptions _timeoutOptions;
 
         public Promoter(
             IRuntimeArtifactResolver artifactResolver,
@@ -28,7 +31,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             IOrchestrationPayloadState payloadState,
             ITriggerPayloadValidator triggerPayloadValidator,
             IOrchestrationPropagationMetadataStore propagationMetadataStore = null,
-            IRuntimeStateTransaction stateTransaction = null)
+            IRuntimeStateTransaction stateTransaction = null,
+            IOptions<OrchestrationTimeoutOptions> timeoutOptions = null)
         {
             _artifactResolver = artifactResolver ?? throw new ArgumentNullException(nameof(artifactResolver));
             _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
@@ -38,6 +42,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
             _triggerPayloadValidator = triggerPayloadValidator ?? throw new ArgumentNullException(nameof(triggerPayloadValidator));
             _propagationMetadataStore = propagationMetadataStore ?? new DefaultOrchestrationPropagationMetadataStore();
             _stateTransaction = stateTransaction;
+            _timeoutOptions = timeoutOptions?.Value ?? new OrchestrationTimeoutOptions();
         }
 
         public async Task<PromotionResult> PromoteToInstanceAsync(PromotionRequest request, CancellationToken cancellationToken = default)
@@ -115,6 +120,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Promotion
                 ErrorSummary = string.Empty,
                 SnapshotPayload = _payloadState.CreateInitialPayload(request.Payload)
             };
+            InstanceLifetimePolicy.Project(instance, resolvedArtifact.Artifact, _timeoutOptions, now);
             AddTriggerMetadataDiagnostics(instance, triggerMetadata);
             Add(instance, "StartIdempotencyKey", startIdempotencyKey);
             _propagationMetadataStore.Save(instance, request.PropagationMetadata);

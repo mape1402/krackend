@@ -226,6 +226,7 @@ public sealed class RuntimeDbContext : DbContext
         builder.HasIndex(x => x.LastUpdatedOnUtc);
         builder.HasIndex(x => x.StatisticsRevision);
         builder.HasIndex(x => new { x.StartedOnUtc, x.Status });
+        builder.HasIndex(x => new { x.Status, x.ExpiresOnUtc, x.Id });
         builder.HasIndex(x => new { x.Status, x.LastUpdatedOnUtc });
           builder.HasIndex(x => new { x.Status, x.IdleExpiresOnUtc });
         builder.HasIndex(x => new { x.DispatchCancellationPending, x.LastUpdatedOnUtc });

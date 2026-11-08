@@ -52,7 +52,7 @@ internal sealed class EnterIdleInstanceDecisionHandler : IDecisionHandler<EnterI
         }
 
         var previousStatus = instance.Status;
-        var configuredIdleSeconds = decision.IdleDurationSeconds;
+        var configuredIdleSeconds = decision.IdleDurationSeconds ?? instance.IdleDurationSeconds;
         if (!configuredIdleSeconds.HasValue && _artifacts is not null)
             configuredIdleSeconds = (await _artifacts.ResolveAsync(instance.RuntimeOrchestrationArtifactId.ToString(), cancellationToken)).Artifact.IdleDurationSeconds;
         var idleSeconds = configuredIdleSeconds ?? _options?.Value.DefaultIdleDurationSeconds ?? (int)IdleWindow.TotalSeconds;
