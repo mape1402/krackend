@@ -34,6 +34,12 @@ public sealed record RuntimeInstanceCatalogQuery(
 {
     /// <summary>Optional set of concrete statuses represented by a public status group.</summary>
     public IReadOnlyCollection<OrchestrationInstanceStatus> Statuses { get; init; }
+
+    /// <summary>Optional exact orchestration definition key.</summary>
+    public string OrchestrationKey { get; init; }
+
+    /// <summary>Optional exact projected orchestration version.</summary>
+    public string OrchestrationVersion { get; init; }
 }
 
 /// <summary>Supported instance ordering fields.</summary>

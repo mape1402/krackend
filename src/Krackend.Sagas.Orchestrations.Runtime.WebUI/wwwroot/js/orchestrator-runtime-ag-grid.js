@@ -56,14 +56,10 @@
         return agGrid.themeQuartz.withParams({ accentColor: c('--primary', '#087a57'), backgroundColor: c('--surface', '#fff'),
             foregroundColor: c('--text', '#15251f'), borderColor: c('--border', '#d6e2dc'), fontSize: 10, spacing: 6 });
     }
-    function visibleRows(gridApi) {
-        const first = gridApi.paginationGetCurrentPage() * gridApi.paginationGetPageSize();
-        const last = first + gridApi.paginationGetPageSize(), rows = [];
-        gridApi.forEachNode(node => { if (node.data && node.rowIndex >= first && node.rowIndex < last) rows.push(node.data); });
+    function loadedRows(gridApi) {
+        const rows = [];
+        gridApi.forEachNode(node => { if (node.data) rows.push(node.data); });
         return rows;
-    }
-    function currentSort(gridApi) {
-        return gridApi.getColumnState().filter(column => column.sort).map(column => ({ colId: column.colId, sort: column.sort }));
     }
     function listUrl(startRow, sortModel) {
         const url = new URL(root.dataset.source, location.href);
@@ -78,7 +74,7 @@
     function updateSelection(gridApi) {
         root.querySelector('[data-selection-bar]').hidden = selectedRows.size === 0;
         root.querySelector('[data-selection-count]').textContent = String(selectedRows.size);
-        const header = grid.querySelector('[data-select-page]'), rows = visibleRows(gridApi);
+        const header = grid.querySelector('[data-select-loaded]'), rows = loadedRows(gridApi);
         if (header) {
             const checked = rows.filter(row => selectedRows.has(String(row.id))).length;
             header.checked = rows.length > 0 && checked === rows.length;
@@ -89,26 +85,14 @@
     class SelectionHeader {
         init(params) {
             this.element = document.createElement('input'); this.element.type = 'checkbox';
-            this.element.dataset.selectPage = ''; this.element.setAttribute('aria-label', 'Select current page');
-            this.element.addEventListener('change', async () => {
-                const checked = this.element.checked, page = params.api.paginationGetCurrentPage();
-                const size = params.api.paginationGetPageSize(), first = page * size;
-                const sort = currentSort(params.api), snapshot = `${revision}|${page}|${size}|${listUrl(first, sort)}`;
-                const message = root.querySelector('[data-selection-message]'); message.textContent = '';
-                let rows = visibleRows(params.api);
-                try {
-                    if (rows.length < Math.min(size, Math.max(0, params.api.paginationGetRowCount() - first))) {
-                        this.element.disabled = true;
-                        const pages = await Promise.all(Array.from({ length: Math.ceil(size / 25) }, (_, i) =>
-                            fetch(listUrl(first + i * 25, sort), { headers: { Accept: 'application/json' } }).then(response => {
-                                if (!response.ok) throw new Error('Unable to select this page'); return response.json();
-                            })));
-                        if (snapshot !== `${revision}|${params.api.paginationGetCurrentPage()}|${params.api.paginationGetPageSize()}|${listUrl(first, currentSort(params.api))}`) return;
-                        rows = pages.flatMap(result => result.items);
-                    }
-                    rows.forEach(row => checked ? selectedRows.set(String(row.id), row) : selectedRows.delete(String(row.id)));
-                } catch { message.textContent = 'Unable to select this page.'; root.querySelector('[data-selection-bar]').hidden = false; }
-                finally { if (!params.api.isDestroyed()) { params.api.refreshCells({ columns: ['selection'], force: true }); updateSelection(params.api); if (message.textContent) root.querySelector('[data-selection-bar]').hidden = false; } }
+            this.element.dataset.selectLoaded = ''; this.element.setAttribute('aria-label', 'Select loaded rows');
+            this.element.title = 'Select loaded rows';
+            this.element.addEventListener('change', () => {
+                const checked = this.element.checked;
+                root.querySelector('[data-selection-message]').textContent = '';
+                loadedRows(params.api).forEach(row => checked ? selectedRows.set(String(row.id), row) : selectedRows.delete(String(row.id)));
+                params.api.refreshCells({ columns: ['selection'], force: true });
+                updateSelection(params.api);
             });
         }
         getGui() { return this.element; }
@@ -147,10 +131,10 @@
             root.querySelector('[data-runtime-loaded-copy]').textContent = `${Number(result.totalCount).toLocaleString()} matching instances`;
         } catch (error) { params.failCallback(); if (requestRevision === revision) root.querySelector('[data-runtime-loaded-copy]').textContent = 'Unable to load instances'; }
     } };
-    api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20, pagination: true, paginationPageSize: 25, paginationPageSizeSelector: [25, 50, 100],
+    api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20,
         maxConcurrentDatasourceRequests: 1, blockLoadDebounceMillis: 100, columnDefs, defaultColDef: { sortable: true, resizable: true, minWidth: 80 },
         rowHeight: 45, headerHeight: 34, getRowId: p => String(p.data.id), suppressMultiSort: true,
-        onPaginationChanged: e => updateSelection(e.api), onModelUpdated: e => updateSelection(e.api),
+        onModelUpdated: e => updateSelection(e.api),
         onCellClicked: e => { if (!e.data) return; if (e.event?.target?.closest('.copy-id')) { navigator.clipboard?.writeText(String(e.value || '')); return; } renderInspector(e.data); } });
     function refresh() { revision++; api.setGridOption('datasource', datasource); }
     function renderCounts() {

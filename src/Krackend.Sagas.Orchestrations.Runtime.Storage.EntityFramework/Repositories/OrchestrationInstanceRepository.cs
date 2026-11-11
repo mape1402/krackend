@@ -227,6 +227,16 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         }
         if (query.Status is { } status) source = source.Where(x => x.Status == status);
         if (query.Statuses is { Count: > 0 }) source = source.Where(x => query.Statuses.Contains(x.Status));
+        if (!string.IsNullOrWhiteSpace(query.OrchestrationKey))
+        {
+            var key = query.OrchestrationKey.Trim();
+            source = source.Where(x => x.OrchestrationDefinitionKey == key);
+        }
+        if (!string.IsNullOrWhiteSpace(query.OrchestrationVersion))
+        {
+            var version = query.OrchestrationVersion.Trim();
+            source = source.Where(x => x.OrchestrationVersion == version);
+        }
         if (query.StartedFromUtc is { } startedFrom) source = source.Where(x => x.StartedOnUtc >= startedFrom);
         if (query.StartedBeforeUtc is { } startedBefore) source = source.Where(x => x.StartedOnUtc < startedBefore);
         if (query.ActiveOnly)

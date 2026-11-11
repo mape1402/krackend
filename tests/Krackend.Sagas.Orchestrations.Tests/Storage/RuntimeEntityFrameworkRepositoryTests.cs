@@ -41,6 +41,46 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task CatalogFiltersProjectedScopeStatusAndUtcDatesBeforePaging()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var start = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+        var cases = new[]
+        {
+            ("orders", "1.0.0", OrchestrationInstanceStatus.Completed, start),
+            ("orders", "1.0.0", OrchestrationInstanceStatus.Compensated, start.AddHours(2)),
+            ("orders", "2.0.0", OrchestrationInstanceStatus.Completed, start.AddHours(3)),
+            ("returns", "1.0.0", OrchestrationInstanceStatus.Completed, start.AddHours(4)),
+            ("orders", "1.0.0", OrchestrationInstanceStatus.Running, start.AddHours(5)),
+            ("orders", "1.0.0", OrchestrationInstanceStatus.Completed, start.AddDays(1))
+        };
+        foreach (var (key, version, status, time) in cases)
+        {
+            var instance = Instance(Id.New(), status, time);
+            instance.OrchestrationDefinitionKey = key; instance.OrchestrationVersion = version;
+            await repository.Create(instance);
+        }
+        var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(repository);
+        var query = new RuntimeInstanceCatalogQuery(1, 1, Sort: RuntimeInstanceCatalogSort.Started, Descending: false,
+            StartedFromUtc: start, StartedBeforeUtc: start.AddDays(1))
+        {
+            OrchestrationKey = " orders ", OrchestrationVersion = " 1.0.0 ",
+            Statuses = [OrchestrationInstanceStatus.Completed, OrchestrationInstanceStatus.Compensated]
+        };
+        var first = await catalog.GetPage(query);
+        var second = await catalog.GetPage(query with { PageNumber = 2 });
+        Assert.Equal(2, first.TotalCount); Assert.Equal(2, second.TotalCount);
+        Assert.Equal(start, Assert.Single(first.Items).StartedOnUtc);
+        Assert.Equal(start.AddHours(2), Assert.Single(second.Items).StartedOnUtc);
+    }
+
+    [Fact]
     public async Task FailureScopeBackfillIsBoundedAndDoesNotMisattributeUnknownEvents()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

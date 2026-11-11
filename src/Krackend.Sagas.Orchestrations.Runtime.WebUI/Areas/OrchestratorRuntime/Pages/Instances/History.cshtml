@@ -1,5 +1,4 @@
 @page
-@using Zoorce.Web.UI.Foundation.Components
 @{
     ViewData["Title"] = "Instance history";
     var from = DateTime.UtcNow.Date.AddDays(-30).ToString("yyyy-MM-dd");
@@ -8,19 +7,23 @@
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
-<section class="runtime-reference instances-reference" data-instance-history data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+<section class="runtime-reference instances-reference" data-instance-history data-default-from="@from" data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
     <div class="grid-surface history-surface">
         <div class="grid-commandbar">
-            <label class="search-box"><i class="bi bi-search"></i><input type="search" data-history-search aria-label="Search history" placeholder="Search instances…" /></label>
-            <form class="od-history-filters" data-history-filters>
-                <label>From <input class="z-form-input" type="date" data-history-from value="@from" aria-label="From (UTC)" /></label>
-                <label>Through <input class="z-form-input" type="date" data-history-through aria-label="Through (UTC)" /></label>
-                <span data-history-apply>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeHistoryApplyButton", Text = "Apply", Tone = "primary" })</span>
-                <span class="od-trace-error" data-history-error role="alert" hidden>From must not be after through.</span>
-            </form>
+            <label class="search-box"><i class="bi bi-search" aria-hidden="true"></i><input type="search" data-history-search aria-label="Search history" placeholder="Search orchestration, correlation, saga…" /></label>
+            <span class="history-context">Dates filter by start time · UTC</span>
         </div>
+        <form class="od-history-filters history-filters" data-history-filters>
+            <label>Orchestration <input class="z-form-input" type="search" data-history-orchestration placeholder="Exact key" /></label>
+            <label>Version <input class="z-form-input" type="search" data-history-version placeholder="All versions" /></label>
+            <label>Status <select class="z-form-input" data-history-status><option value="">All statuses</option><option value="running">Running</option><option value="idle">Idle</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="deadlettered">Dead lettered</option><option value="attention">Attention</option></select></label>
+            <label>Started from (UTC) <input class="z-form-input" type="date" data-history-from value="@from" min="0001-01-01" max="9999-12-31" /></label>
+            <label>Through (UTC) <input class="z-form-input" type="date" data-history-through min="0001-01-01" max="9999-12-31" /></label>
+            <div class="history-filter-actions"><button class="z-button z-button-primary" type="submit" data-history-apply>Apply</button><button class="z-button z-button-secondary" type="button" data-history-clear>Clear</button></div>
+            <span class="od-trace-error" data-history-error role="alert" hidden>From must not be after through.</span>
+        </form>
         <div id="historyGrid" aria-label="Instance history grid"></div>
-        <div class="grid-footer"><span>Instance history · UTC</span><span data-history-count aria-live="polite"></span></div>
+        <div class="grid-footer"><span data-history-message role="status" aria-live="polite"></span><span data-history-count aria-live="polite"></span></div>
     </div>
 </section>
 @section Scripts {
