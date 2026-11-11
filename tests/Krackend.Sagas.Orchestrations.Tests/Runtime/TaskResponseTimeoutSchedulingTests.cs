@@ -500,6 +500,29 @@ public sealed class TaskResponseTimeoutSchedulingTests
     }
 
     [Fact]
+    public async Task RepairSharesCacheAcrossTasksButCreatesANewCacheForEachPass()
+    {
+        var processor = Substitute.For<IOrchestrationTimeoutProcessor, IOrchestrationTimeoutBatchProcessor>();
+        var batchProcessor = (IOrchestrationTimeoutBatchProcessor)processor;
+        var batches = new List<OrchestrationTimeoutBatchContext>();
+        batchProcessor.ProcessTaskTimeoutAsync(Arg.Any<Id>(), Arg.Any<DateTime>(),
+                Arg.Do<OrchestrationTimeoutBatchContext>(batches.Add), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new TaskResponseTimeoutProcessingResult(true)));
+        using var fixture = CreateFixture(processor);
+        var second = new TaskExecution { Id = Id.New(), OrchestrationInstanceId = fixture.Task.OrchestrationInstanceId, TaskKey = "second" };
+        fixture.Tasks.GetResponseTimeoutsDue(Arg.Any<DateTime>(), 10, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyCollection<TaskExecution>>([fixture.Task, second]));
+
+        Assert.Equal(2, await fixture.Scheduler.RepairAsync(10));
+        Assert.Equal(2, await fixture.Scheduler.RepairAsync(10));
+
+        Assert.Equal(4, batches.Count);
+        Assert.Same(batches[0], batches[1]);
+        Assert.Same(batches[2], batches[3]);
+        Assert.NotSame(batches[0], batches[2]);
+    }
+
+    [Fact]
     public async Task TimeoutActionRemainsRetryableWhenInstanceIsBusy()
     {
         var processor = Substitute.For<IOrchestrationTimeoutProcessor>();

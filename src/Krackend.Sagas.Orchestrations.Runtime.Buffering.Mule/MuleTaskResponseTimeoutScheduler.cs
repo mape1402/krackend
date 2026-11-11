@@ -133,13 +133,16 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         // Recheck a bounded page of expired waits under the normal instance lease, rather
         // than trusting that reference or recreating a deduplicated, already-consumed action.
         var overdue = await _tasks.GetResponseTimeoutsDue(DateTime.UtcNow, Math.Max(1, take), cancellationToken);
+        var batch = new OrchestrationTimeoutBatchContext();
         foreach (var task in overdue)
         {
             try
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var processor = scope.ServiceProvider.GetRequiredService<IOrchestrationTimeoutProcessor>();
-                var result = await processor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
+                var result = processor is IOrchestrationTimeoutBatchProcessor batchProcessor
+                    ? await batchProcessor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, batch, cancellationToken)
+                    : await processor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
                 if (result.Applied) repaired++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
