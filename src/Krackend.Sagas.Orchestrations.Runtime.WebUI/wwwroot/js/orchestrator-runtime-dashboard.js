@@ -18,6 +18,7 @@
         activityEpoch: 0,
         topOrchestrationsEpoch: 0,
         failureEpoch: 0,
+        loadGeneration: 0,
         rankingLimit: 5,
         values: null,
         activity: null,
@@ -464,10 +465,11 @@
         }
         try {
             const cohort = await fetchJson('cohort', root.dataset.cohortUrl);
-            if (epoch !== state.cohortEpoch) return;
+            if (epoch !== state.cohortEpoch) return false;
             renderCohort(cohort);
+            return true;
         } catch (error) {
-            if (isAbort(error) || epoch !== state.cohortEpoch) return;
+            if (isAbort(error) || epoch !== state.cohortEpoch) return false;
             setMetricLoading(false);
             state.values = null;
             root.querySelectorAll('[data-dashboard-metric]').forEach(element => { element.textContent = '—'; });
@@ -475,6 +477,7 @@
             showError('status', error);
             showError('funnel', error);
             showError('effectiveness', error);
+            return false;
         }
     }
 
@@ -519,6 +522,8 @@
     }
 
     function loadDashboard({ showLoading = false } = {}) {
+        const generation = ++state.loadGeneration;
+        const scope = { orchestrationKey: state.orchestrationKey, orchestrationVersion: state.orchestrationVersion, hours: state.hours };
         const loads = [
             loadCohort({ showLoading }),
             loadActivity({ showLoading })
@@ -526,14 +531,13 @@
         if (root.dataset.topOrchestrationsUrl) loads.push(loadTopOrchestrations({ showLoading }));
         if (root.dataset.failuresUrl) loads.push(loadFailures({ showLoading }));
         return Promise.allSettled(loads).then(results => {
+            if (generation !== state.loadGeneration || closed) return results;
             // Consumers such as Statistics own their progress button.  They
             // must complete only when every independently loaded panel has
             // settled, never on an arbitrary UI timer.
             root.dispatchEvent(new CustomEvent('krackend:dashboard-loaded', {
                 detail: {
-                    orchestrationKey: state.orchestrationKey,
-                    orchestrationVersion: state.orchestrationVersion,
-                    hours: state.hours,
+                    ...scope,
                     results
                 }
             }));
@@ -548,6 +552,7 @@
             replaceChart('runtime-failures-chart', []);
             if (empty) { empty.hidden = false; empty.querySelector('strong').textContent = 'Loading failure events…'; }
             const footer = root.querySelector('[data-failure-detail]'); if (footer) footer.hidden = true;
+            root.querySelectorAll('[data-failures-history], [data-failure-unclassified]').forEach(element => { element.hidden = true; });
             clearError('failures');
         }
         try {
@@ -568,6 +573,12 @@
             }
             const history = root.querySelector('[data-failures-history]');
             if (history) history.hidden = report.historyComplete;
+            const unclassified = root.querySelector('[data-failure-unclassified]');
+            if (unclassified) {
+                const count = Number(report.unclassifiedCount || 0);
+                unclassified.hidden = count === 0;
+                unclassified.textContent = count ? `${dashboardNumber(count)} events cannot be assigned to a scope and may include this selection.` : '';
+            }
             if (!report.historyComplete && !failuresTimer) {
                 failuresTimer = window.setTimeout(() => { failuresTimer = 0; void loadFailures(); }, 30000);
             }
@@ -626,6 +637,26 @@
             syncPeriodButtons();
         }
         void loadDashboard({ showLoading: true });
+    });
+
+    root.addEventListener('krackend:dashboard-invalidate', () => {
+        state.loadGeneration++; state.cohortEpoch++; state.activityEpoch++; state.failureEpoch++;
+        requests.forEach(controller => controller.abort());
+        window.clearTimeout(failuresTimer); failuresTimer = 0;
+        window.clearTimeout(statisticsTimer); statisticsTimer = 0;
+        state.orchestrationKey = ''; state.orchestrationVersion = ''; state.values = null;
+        ['runtime-status-chart', 'runtime-effectiveness-chart', 'runtime-activity-chart', 'runtime-failures-chart'].forEach(id => replaceChart(id, []));
+        root.querySelectorAll('[data-dashboard-metric]').forEach(element => { element.textContent = '—'; });
+        root.querySelectorAll('[data-dashboard-metric-share]').forEach(element => { element.textContent = 'Select a scope'; });
+        setMetricLoading(false);
+        window.KrackendRuntimeSparklines?.clear(root, 'Select a scope');
+        ['status', 'effectiveness', 'activity', 'failures'].forEach(section => { setLoading(section, false); clearError(section); });
+        setPanelEmpty('status', true); setPanelEmpty('effectiveness', true); setActivityEmpty(true);
+        const activity = root.querySelector('[data-dashboard-activity-empty]');
+        if (activity) { activity.querySelector('strong').textContent = 'Select a scope to load activity'; activity.querySelector('span').textContent = 'Statistics remain idle until an orchestration is selected.'; }
+        const empty = root.querySelector('[data-dashboard-failures-empty]');
+        if (empty) { empty.hidden = false; empty.querySelector('strong').textContent = 'Select a scope to load failure events'; }
+        root.querySelectorAll('[data-failures-history], [data-failure-unclassified], [data-failure-detail], [data-dashboard-status-detail], [data-dashboard-effectiveness-detail]').forEach(element => { element.hidden = true; });
     });
 
     let statisticsTimer;

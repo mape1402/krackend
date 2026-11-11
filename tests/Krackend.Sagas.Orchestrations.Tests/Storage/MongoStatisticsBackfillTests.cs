@@ -37,6 +37,7 @@ public sealed class MongoStatisticsBackfillTests
                 if (hello.GetValue("isWritablePrimary", false).ToBoolean()) break;
             }
             catch (MongoException) when (DateTime.UtcNow < deadline) { }
+            catch (TimeoutException) when (DateTime.UtcNow < deadline) { }
             if (DateTime.UtcNow >= deadline) throw new TimeoutException("Mongo replica set did not elect a primary.");
             await Task.Delay(250);
         }
@@ -56,6 +57,7 @@ public sealed class MongoStatisticsBackfillTests
             Id = Id.New(), RuntimeOrchestrationArtifactId = Id.New(), TriggerIntakeId = Id.New(),
             OrchestrationDefinitionKey = "orders", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "orders:1", StartIdempotencyKey = "start-orders",
             CurrentStageKey = "stage", CurrentTaskKey = "task", StartedOnUtc = now, LastUpdatedOnUtc = now,
+            OrchestrationVersion = "1.0.0",
             SnapshotPayload = JsonNode.Parse("{\"value\":\"original\"}"),
             Metadata = { ["keep"] = JsonValue.Create("original")! }, StatisticsRevision = 0
         };
@@ -110,6 +112,18 @@ public sealed class MongoStatisticsBackfillTests
             .GetFailuresAsync(failureTime.AddSeconds(-1), failureTime.AddSeconds(1));
         Assert.True(failureReport.HistoryComplete);
         Assert.Equal(3, Assert.Single(failureReport.Items).Count);
+        var failureEvents = client.GetDatabase("statistics_backfill_test").GetCollection<BsonDocument>("SagaFailureEvents");
+        await failureEvents.UpdateManyAsync(Builders<BsonDocument>.Filter.Empty,
+            Builders<BsonDocument>.Update.Unset("ScopeProjectionVersion").Unset("OrchestrationKey").Unset("OrchestrationVersion"));
+        db.ChangeTracker.Clear();
+        var scopeBackfill = scope.ServiceProvider.GetRequiredService<ISagaFailureScopeBackfill>();
+        for (var i = 0; i < 8 && !await scopeBackfill.ProcessAsync(2); i++) { }
+        var scopedFailures = await Assert.IsAssignableFrom<ISagaFailureScopedStatisticsReader>(
+            scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsReader>())
+            .GetFailuresAsync(failureTime.AddSeconds(-1), failureTime.AddSeconds(1), "orders", "1.0.0");
+        Assert.True(scopedFailures.HistoryComplete);
+        Assert.Equal(3, Assert.Single(scopedFailures.Items).Count);
+        Assert.Equal(0, scopedFailures.UnclassifiedCount);
 
         var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(
             scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>());

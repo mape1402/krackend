@@ -86,6 +86,7 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
         services.Replace(ServiceDescriptor.Scoped<ISagaFailureStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
         services.Replace(ServiceDescriptor.Scoped<ISagaFailureStatisticsBackfill, SagaFailureStatisticsBackfill>());
+        services.Replace(ServiceDescriptor.Scoped<ISagaFailureScopeBackfill, SagaFailureScopeBackfill>());
         services.Replace(ServiceDescriptor.Scoped<IStageExecutionRepository, StageExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionRepository, TaskExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionAttemptRepository, TaskExecutionAttemptRepository>());

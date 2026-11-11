@@ -41,6 +41,47 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task FailureScopeBackfillIsBoundedAndDoesNotMisattributeUnknownEvents()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var repo = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow.AddMinutes(-2);
+        var first = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-1)); first.OrchestrationDefinitionKey = "orders"; first.OrchestrationVersion = "1.0.0";
+        var second = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-1)); second.OrchestrationDefinitionKey = "orders"; second.OrchestrationVersion = "2.0.0";
+        var third = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-1)); third.OrchestrationDefinitionKey = "returns"; third.OrchestrationVersion = "1.0.0";
+        var unknownVersion = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-1)); unknownVersion.OrchestrationDefinitionKey = "orders";
+        foreach (var instance in new[] { first, second, third, unknownVersion }) await repo.Create(instance);
+        foreach (var id in new[] { first.Id, second.Id, third.Id, unknownVersion.Id, Id.New() })
+            db.ExecutionTransitions.Add(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = id, OccurredOnUtc = now, TransitionType = "TaskTimedOut" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var eventBackfill = scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsBackfill>();
+        for (var i = 0; i < 10 && !await eventBackfill.ProcessAsync(2); i++) { }
+        var reader = Assert.IsAssignableFrom<ISagaFailureScopedStatisticsReader>(scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsReader>());
+        var before = await reader.GetFailuresAsync(now.AddMinutes(-1), now.AddMinutes(1), "orders", "1.0.0");
+        Assert.False(before.HistoryComplete); Assert.Equal(5, before.UnclassifiedCount);
+        var backfill = scope.ServiceProvider.GetRequiredService<ISagaFailureScopeBackfill>();
+        Assert.False(await backfill.ProcessAsync(2));
+        Assert.Equal(2, await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM SagaFailureEvents WHERE ScopeProjectionVersion = 1").SingleAsync());
+        for (var i = 0; i < 5 && !await backfill.ProcessAsync(2); i++) { }
+        var scoped = await reader.GetFailuresAsync(now.AddMinutes(-1), now.AddMinutes(1), "orders", "1.0.0");
+        Assert.True(scoped.HistoryComplete); Assert.Equal(1, Assert.Single(scoped.Items).Count); Assert.Equal(2, scoped.UnclassifiedCount);
+        var allVersions = await reader.GetFailuresAsync(now.AddMinutes(-1), now.AddMinutes(1), "orders", null);
+        Assert.Equal(3, Assert.Single(allVersions.Items).Count); Assert.Equal(1, allVersions.UnclassifiedCount);
+        Assert.True(await backfill.ProcessAsync(2));
+        db.ChangeTracker.Clear();
+        var transitions = scope.ServiceProvider.GetRequiredService<IExecutionTransitionRepository>();
+        await transitions.Create(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = first.Id, OccurredOnUtc = now, TransitionType = "TaskCallbackFailed" });
+        var latest = await reader.GetFailuresAsync(now.AddMinutes(-1), now.AddMinutes(1), "orders", "1.0.0");
+        Assert.Equal(2, latest.Items.Sum(x => x.Count)); Assert.Equal(2, latest.UnclassifiedCount);
+    }
+
+    [Fact]
     public async Task FailureProjectionRecordsNewEventsAndBackfillsHistoricalEventsInBoundedPages()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

@@ -17,13 +17,7 @@ body:has([data-runtime-statistics]) { height: auto; overflow: auto; }
 body:has([data-runtime-statistics]) .z-app-shell, body:has([data-runtime-statistics]) .z-page-shell { height: auto; min-height: 100vh; }
 body:has([data-runtime-statistics]) .z-main { overflow: visible; }
 .statistics-reference[data-runtime-statistics] { height: auto; }
-.statistics-reference .od-statistics-workspace { grid-template-columns: minmax(18rem, 1.35fr) minmax(15rem, .8fr) minmax(17rem, 1fr); grid-template-areas: 'parameters effectiveness funnel' 'activity activity status'; grid-template-rows: minmax(260px, auto) minmax(310px, auto); overflow: visible; }
-.statistics-reference .od-statistics-workspace > [data-dashboard-panel="effectiveness"] { grid-area: effectiveness; display: block; }
-.statistics-reference .od-statistics-workspace > [data-dashboard-panel="status"] { grid-area: status; }
-.statistics-reference .od-statistics-workspace > [data-dashboard-panel="activity"] { grid-area: activity; }
-.statistics-reference .od-statistics-workspace > [data-dashboard-panel="funnel"] { grid-area: funnel; }
-@media(max-width: 1050px) { .statistics-reference .od-statistics-workspace { grid-template-columns: 1fr 1fr; grid-template-areas: 'parameters effectiveness' 'activity activity' 'status funnel'; grid-template-rows: auto 310px 310px; } }
-@media(max-width: 700px) { .statistics-reference .od-statistics-workspace { grid-template-columns: 1fr; grid-template-areas: 'parameters' 'effectiveness' 'activity' 'status' 'funnel'; grid-template-rows: auto repeat(4, 310px); } }
+.statistics-reference .od-statistics-workspace { overflow: visible; }
 /* Dashboard and instance cards follow the supplied reference. */
 .runtime-reference { --data-primary:var(--z-data-primary,#2477c9); --data-tertiary:var(--z-data-tertiary,#c13e9a); --data-quinary:var(--z-data-quinary,#0a8075); }
 
@@ -72,3 +66,18 @@ body:has([data-runtime-statistics]) .z-main { overflow: visible; }
 .instances-reference .od-monitor-counters { margin-bottom:4px; }
 .instances-reference .instance-metric-context { margin:0 0 8px; }
 @media(max-width:700px){ .runtime-reference .runtime-signal { flex-wrap:wrap; } .runtime-reference .runtime-signal .metric-context { flex-basis:100%; } }
+.statistics-reference .od-statistics-workspace { grid-template-columns:minmax(0,1.35fr) minmax(14rem,.72fr) minmax(18rem,1fr); grid-template-areas:'parameters parameters parameters' 'activity activity status' 'effectiveness failures failures'; grid-template-rows:auto clamp(205px,calc((100vh - 385px)*.55),330px) clamp(175px,calc((100vh - 385px)*.45),280px); }
+.statistics-reference .od-statistics-parameters { grid-area:parameters; grid-template-columns:minmax(13rem,1fr) minmax(11rem,.8fr) minmax(14rem,.7fr); align-items:end; gap:.6rem; }
+.statistics-reference .od-statistics-heading { grid-column:1 / -1; display:flex; justify-content:space-between; align-items:center; gap:.75rem; }
+.statistics-reference .od-statistics-actions { margin:0; }
+.statistics-reference .statistics-period { flex-shrink:0; }
+.statistics-reference .reference-chart { min-height:0; }
+.statistics-reference .od-statistics-workspace > [data-dashboard-panel="activity"] { grid-area:activity; }
+.statistics-reference .od-statistics-workspace > [data-dashboard-panel="status"] { grid-area:status; }
+.statistics-reference .od-statistics-workspace > [data-dashboard-panel="effectiveness"] { grid-area:effectiveness; display:block; }
+.statistics-reference .od-statistics-workspace > [data-dashboard-panel="failures"] { grid-area:failures; }
+.statistics-reference [data-failure-unclassified] { display:block; color:var(--warning); }
+.statistics-reference [data-failure-unclassified][hidden] { display:none; }
+@media(min-width:1051px) { .statistics-reference .od-statistics-parameters { position:relative; grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr) minmax(14rem,.8fr) auto; } .statistics-reference .od-statistics-heading { grid-column:4; grid-row:1; display:grid; gap:.32rem; align-self:end; } .statistics-reference .od-statistics-live-indicator:not([hidden]) { position:absolute; top:-.75rem; right:.9rem; margin:0; } }
+@media(max-width:1050px) { .statistics-reference .od-statistics-workspace { grid-template-columns:1fr 1fr; grid-template-areas:'parameters parameters' 'activity activity' 'status effectiveness' 'failures failures'; grid-template-rows:auto 310px 310px 300px; } .statistics-reference .od-statistics-parameters { grid-template-columns:1fr 1fr; } .statistics-reference .od-statistics-actions { grid-column:1 / -1; } }
+@media(max-width:700px) { .statistics-reference .od-statistics-workspace { grid-template-columns:1fr; grid-template-areas:'parameters' 'activity' 'status' 'effectiveness' 'failures'; grid-template-rows:auto repeat(4,310px); } .statistics-reference .od-statistics-parameters { grid-template-columns:1fr; } .statistics-reference .od-statistics-actions { grid-column:auto; } .statistics-reference .od-statistics-heading { flex-wrap:wrap; } }

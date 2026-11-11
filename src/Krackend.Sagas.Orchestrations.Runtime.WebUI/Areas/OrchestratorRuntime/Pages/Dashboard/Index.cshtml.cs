@@ -86,12 +86,21 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
     }
 
     /// <summary>Returns recorded failure event counts for the selected UTC period.</summary>
-    public async Task<IActionResult> OnGetFailuresAsync(int days = 7, int? hours = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> OnGetFailuresAsync(int days = 7, int? hours = null, CancellationToken cancellationToken = default,
+        string orchestrationKey = null, string orchestrationVersion = null)
     {
         if (services.GetService(typeof(ISagaFailureStatisticsReader)) is not ISagaFailureStatisticsReader reader)
             return Unavailable();
-        var query = CreateQuery(days, null, null, hours);
-        return Json(await reader.GetFailuresAsync(query.FromUtc, query.BeforeUtc, cancellationToken));
+        var key = NormalizeKey(orchestrationKey);
+        var version = NormalizeVersion(orchestrationVersion);
+        if (version is not null && key is null) return BadRequest("An orchestration key is required when selecting a version.");
+        SagaStatisticsDashboardQuery query;
+        try { query = CreateQuery(days, key, version, hours).Normalize(); }
+        catch (ArgumentException exception) { return BadRequest(exception.Message); }
+        if (key is null) return Json(await reader.GetFailuresAsync(query.FromUtc, query.BeforeUtc, cancellationToken));
+        if (reader is not ISagaFailureScopedStatisticsReader scoped)
+            return StatusCode(503, "The configured statistics reader does not support scoped failure events.");
+        return Json(await scoped.GetFailuresAsync(query.FromUtc, query.BeforeUtc, key, version, cancellationToken));
     }
 
     /// <summary>Returns the independently loaded ranking of the most frequently started orchestrations.</summary>

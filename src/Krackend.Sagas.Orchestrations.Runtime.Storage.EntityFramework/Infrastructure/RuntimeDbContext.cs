@@ -286,7 +286,11 @@ public sealed class RuntimeDbContext : DbContext
         events.Property(x => x.Id).HasConversion(new IdToBytesConverter());
         events.Property(x => x.OrchestrationInstanceId).HasConversion(new IdToBytesConverter());
         events.Property(x => x.TransitionType).HasMaxLength(128).IsRequired();
+        events.Property(x => x.OrchestrationKey).HasMaxLength(256);
+        events.Property(x => x.OrchestrationVersion).HasMaxLength(64);
         events.HasIndex(x => new { x.TransitionType, x.OccurredOnUtc });
+        events.HasIndex(x => new { x.OrchestrationKey, x.OrchestrationVersion, x.TransitionType, x.OccurredOnUtc });
+        events.HasIndex(x => new { x.ScopeProjectionVersion, x.OccurredOnUtc });
         var checkpoints = modelBuilder.Entity<SagaFailureBackfillCheckpoint>();
         checkpoints.ToTable("SagaFailureBackfillCheckpoints");
         checkpoints.HasKey(x => x.Id);

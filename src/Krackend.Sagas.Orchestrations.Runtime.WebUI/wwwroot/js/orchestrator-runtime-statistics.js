@@ -13,6 +13,7 @@
     let debounce = 0;
     let isTracking = false;
     let scopeLoaded = false;
+    let scopeInvalidated = true;
 
     const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
     const setBusy = busy => {
@@ -50,7 +51,12 @@
     const invalidateScope = () => {
         if (isTracking) setTracking(false);
         scopeLoaded = false;
+        setBusy(false);
         setTrackingAvailability();
+        if (!scopeInvalidated) {
+            scopeInvalidated = true;
+            root.dispatchEvent(new CustomEvent('krackend:dashboard-invalidate'));
+        }
     };
 
     async function suggestions(source, search) {
@@ -136,6 +142,7 @@
             orchestration?.focus();
             return;
         }
+        scopeInvalidated = false;
         setBusy(true);
         root.dispatchEvent(new CustomEvent('krackend:dashboard-load', { bubbles: false, detail: { orchestrationKey: key, orchestrationVersion: version?.value.trim() || '' } }));
     }
@@ -145,8 +152,8 @@
         setBusy(false);
         const detail = event.detail || {};
         const requestedKey = orchestration?.value.trim() || '';
-        const cohortLoaded = Array.isArray(detail.results) && detail.results[0]?.status === 'fulfilled';
-        scopeLoaded = Boolean(requestedKey && detail.orchestrationKey === requestedKey && cohortLoaded);
+        const cohortLoaded = Array.isArray(detail.results) && detail.results[0]?.status === 'fulfilled' && detail.results[0]?.value === true;
+        scopeLoaded = Boolean(requestedKey && detail.orchestrationKey === requestedKey && detail.orchestrationVersion === (version?.value.trim() || '') && cohortLoaded);
         setTrackingAvailability();
     });
     root.addEventListener('krackend:dashboard-live-state', event => setLiveIndicator(event.detail?.state));

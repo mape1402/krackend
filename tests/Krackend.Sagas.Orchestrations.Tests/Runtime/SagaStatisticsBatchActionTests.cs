@@ -18,6 +18,21 @@ public sealed class SagaStatisticsBatchActionTests
         await action.ExecuteAsync(null!, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task FailureScopeBackfillStartsAfterHistoricalEventsAreProjected()
+    {
+        var events = Substitute.For<ISagaFailureStatisticsBackfill>();
+        var scopes = Substitute.For<ISagaFailureScopeBackfill>();
+        events.ProcessAsync(200, Arg.Any<CancellationToken>()).Returns(false, true);
+        using var services = new ServiceCollection().AddSingleton(events).AddSingleton(scopes).BuildServiceProvider();
+        var action = new SagaStatisticsBatchAction(services, Options.Create(new SagaStatisticsMuleOptions { BatchSize = 200 }), NullLogger<SagaStatisticsBatchAction>.Instance);
+
+        await action.ExecuteAsync(null!, CancellationToken.None);
+        await scopes.DidNotReceive().ProcessAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await action.ExecuteAsync(null!, CancellationToken.None);
+        await scopes.Received(1).ProcessAsync(200, Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(0, 0, false)]
     [InlineData(1, 1, false)]

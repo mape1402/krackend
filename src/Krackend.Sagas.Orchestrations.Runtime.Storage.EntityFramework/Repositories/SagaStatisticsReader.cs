@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatisticsReader, ISagaStatisticsCohortActivityReader, ISagaFailureStatisticsReader
+internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatisticsReader, ISagaStatisticsCohortActivityReader, ISagaFailureScopedStatisticsReader
 {
     public async Task<SagaFailureReport> GetFailuresAsync(DateTime fromUtc, DateTime beforeUtc, CancellationToken cancellationToken = default)
     {
@@ -20,6 +20,34 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
         }
         var complete = await db.SagaFailureBackfillCheckpoints.AsNoTracking().AnyAsync(x => x.Id == SagaFailureStatisticsBackfill.CheckpointId && x.Completed, cancellationToken);
         return new SagaFailureReport(counts, complete);
+    }
+
+    public async Task<SagaFailureReport> GetFailuresAsync(DateTime fromUtc, DateTime beforeUtc, string orchestrationKey,
+        string orchestrationVersion, CancellationToken cancellationToken = default)
+    {
+        if (fromUtc >= beforeUtc) throw new ArgumentException("The failure statistics start must precede its end.");
+        if (string.IsNullOrWhiteSpace(orchestrationKey)) throw new ArgumentException("An orchestration key is required.", nameof(orchestrationKey));
+        var key = orchestrationKey.Trim();
+        var version = string.IsNullOrWhiteSpace(orchestrationVersion) ? null : orchestrationVersion.Trim();
+        var source = db.SagaFailureEvents.AsNoTracking().Where(item => item.OccurredOnUtc >= fromUtc && item.OccurredOnUtc < beforeUtc);
+        var scoped = source.Where(item => item.OrchestrationKey == key);
+        if (version is not null) scoped = scoped.Where(item => item.OrchestrationVersion == version);
+        var counts = new List<SagaFailureCount>(SagaFailureStatistics.Categories.Count);
+        foreach (var category in SagaFailureStatistics.Categories)
+        {
+            var types = category.Value;
+            var count = await scoped.LongCountAsync(item => types.Contains(item.TransitionType), cancellationToken);
+            if (count > 0) counts.Add(new SagaFailureCount(category.Key, count));
+        }
+        var unknown = await source.LongCountAsync(item => item.OrchestrationKey == null || item.OrchestrationKey == "" ||
+            (version != null && item.OrchestrationKey == key && (item.OrchestrationVersion == null || item.OrchestrationVersion == "")), cancellationToken);
+        var checkpoints = await db.SagaFailureBackfillCheckpoints.AsNoTracking().Where(item => item.Completed &&
+            (item.Id == SagaFailureStatisticsBackfill.CheckpointId || item.Id == SagaFailureScopeBackfill.CheckpointId))
+            .Select(item => item.Id).ToArrayAsync(cancellationToken);
+        var pending = await source.AnyAsync(item => item.ScopeProjectionVersion == null, cancellationToken);
+        var complete = checkpoints.Contains(SagaFailureStatisticsBackfill.CheckpointId) &&
+            checkpoints.Contains(SagaFailureScopeBackfill.CheckpointId) && !pending;
+        return new SagaFailureReport(counts, complete) { UnclassifiedCount = unknown };
     }
     public async Task<SagaStatisticsReport> GetReportAsync(DateTime fromUtc, DateTime beforeUtc, string orchestrationKey = null,
         CancellationToken cancellationToken = default)
