@@ -13,6 +13,23 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeInstanceCatalogTests
 {
     [Fact]
+    public async Task InMemoryCatalogFiltersProjectedOrchestrationAndVersion()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(); services.AddKrackendOrchestrationsRuntime();
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var first = Instance("orders", DateTime.UtcNow, OrchestrationInstanceStatus.Completed); first.OrchestrationVersion = "1.0.0";
+        var otherVersion = Instance("orders", DateTime.UtcNow, OrchestrationInstanceStatus.Completed); otherVersion.OrchestrationVersion = "2.0.0";
+        var otherKey = Instance("returns", DateTime.UtcNow, OrchestrationInstanceStatus.Completed); otherKey.OrchestrationVersion = "1.0.0";
+        await repository.Create(first); await repository.Create(otherVersion); await repository.Create(otherKey);
+        var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(repository);
+        var page = await catalog.GetPage(new RuntimeInstanceCatalogQuery { OrchestrationKey = " orders ", OrchestrationVersion = " 1.0.0 " });
+        Assert.Equal(first.Id, Assert.Single(page.Items).Id);
+    }
+
+    [Fact]
     public async Task DashboardReadsOnlySummaryFieldsInRecentOrder()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -71,7 +88,10 @@ public sealed class RuntimeInstanceCatalogTests
         await repository.Create(instance);
         commands.Clear();
 
-        var page = await ((IRuntimeInstanceCatalogRepository)repository).GetPage(new RuntimeInstanceCatalogQuery());
+        var page = await ((IRuntimeInstanceCatalogRepository)repository).GetPage(new RuntimeInstanceCatalogQuery
+        {
+            OrchestrationKey = "large-payload", OrchestrationVersion = "1.2.3"
+        });
 
         var item = Assert.Single(page.Items);
         Assert.Equal("1.2.3", item.OrchestrationVersion);

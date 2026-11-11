@@ -127,6 +127,13 @@ public sealed class MongoStatisticsBackfillTests
 
         var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(
             scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>());
+        var scoped = await catalog.GetPage(new RuntimeInstanceCatalogQuery
+        {
+            OrchestrationKey = "orders", OrchestrationVersion = "1.0.0",
+            StartedFromUtc = now.AddMinutes(-1), StartedBeforeUtc = now.AddMinutes(1)
+        });
+        Assert.Equal(instance.Id, Assert.Single(scoped.Items).Id);
+        Assert.Empty((await catalog.GetPage(new RuntimeInstanceCatalogQuery { OrchestrationKey = "orders", OrchestrationVersion = "2.0.0" })).Items);
         var completed = await catalog.GetPage(new RuntimeInstanceCatalogQuery
         {
             Statuses = [OrchestrationInstanceStatus.Completed]

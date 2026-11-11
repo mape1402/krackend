@@ -78,6 +78,19 @@ public sealed class RuntimeInstancesPageModelTests
     }
 
     [Fact]
+    public async Task ListPassesOrchestrationVersionAndPublicStatusGroup()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var page = CreatePage(reader, "runtime");
+        Assert.IsType<JsonResult>(await page.OnGetListAsync(orchestrationKey: " orders ", orchestrationVersion: " 1.2.3 ", statusGroup: "completed"));
+        Assert.Equal("orders", reader.LastQuery.OrchestrationKey);
+        Assert.Equal("1.2.3", reader.LastQuery.OrchestrationVersion);
+        Assert.Contains(OrchestrationInstanceStatus.Completed, reader.LastQuery.Statuses);
+        Assert.Contains(OrchestrationInstanceStatus.Compensated, reader.LastQuery.Statuses);
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetListAsync(statusGroup: "unknown"));
+    }
+
+    [Fact]
     public async Task RecentRangeIsBoundedAndCannotBeCombinedWithExplicitDates()
     {
         var reader = new FakeRuntimeDiagnosticsReader();

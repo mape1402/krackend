@@ -64,7 +64,8 @@ public sealed class IndexModel : PageModel
     public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
         string search = null, string sort = null, bool descending = false, string status = null,
         CancellationToken cancellationToken = default, DateTimeOffset? startedFrom = null,
-        DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null, string statusGroup = null)
+        DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null, string statusGroup = null,
+        string orchestrationKey = null, string orchestrationVersion = null)
     {
         if (_diagnosticsReader is not IRuntimeInstanceCatalogReader catalog)
             return StatusCode(503, "The configured runtime storage does not support paged diagnostics.");
@@ -97,7 +98,11 @@ public sealed class IndexModel : PageModel
             result = await catalog.GetInstances(new RuntimeInstanceCatalogQuery(Math.Max(page, 1), Math.Clamp(pageSize, 1, 100),
                 search?.Trim() ?? string.Empty, selectedStatus, sortField, string.IsNullOrEmpty(sort) || descending,
                 startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly)
-                { Statuses = string.IsNullOrWhiteSpace(statusGroup) ? null : statusGroups[statusGroup] }, cancellationToken);
+                {
+                    Statuses = string.IsNullOrWhiteSpace(statusGroup) ? null : statusGroups[statusGroup],
+                    OrchestrationKey = string.IsNullOrWhiteSpace(orchestrationKey) ? null : orchestrationKey.Trim(),
+                    OrchestrationVersion = string.IsNullOrWhiteSpace(orchestrationVersion) ? null : orchestrationVersion.Trim()
+                }, cancellationToken);
         }
         catch (NotSupportedException)
         {
