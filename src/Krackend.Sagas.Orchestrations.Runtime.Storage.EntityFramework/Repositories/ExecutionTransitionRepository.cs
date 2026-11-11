@@ -28,14 +28,21 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
     public async Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default)
     {
         DbContext.ExecutionTransitions.Add(transition);
-        if (SagaFailureStatistics.IsFailure(transition.TransitionType))
+        var isFailure = SagaFailureStatistics.IsFailure(transition.TransitionType);
+        // The reactive publisher already needs this instance. Resolve it once and
+        // reuse it to project failure scope without another lookup per event.
+        var instance = isFailure ? await FindInstance(transition.OrchestrationInstanceId, cancellationToken) : null;
+        if (isFailure)
             DbContext.SagaFailureEvents.Add(new SagaFailureEvent
             {
                 Id = transition.Id, OrchestrationInstanceId = transition.OrchestrationInstanceId,
-                OccurredOnUtc = transition.OccurredOnUtc, TransitionType = transition.TransitionType
+                OccurredOnUtc = transition.OccurredOnUtc, TransitionType = transition.TransitionType,
+                OrchestrationKey = string.IsNullOrWhiteSpace(instance?.OrchestrationDefinitionKey) ? null : instance.OrchestrationDefinitionKey.Trim(),
+                OrchestrationVersion = string.IsNullOrWhiteSpace(instance?.OrchestrationVersion) ? null : instance.OrchestrationVersion.Trim(),
+                ScopeProjectionVersion = 1
             });
         await SaveChanges(cancellationToken);
-        var eventData = await BuildReactiveEvent(transition, cancellationToken);
+        var eventData = await BuildReactiveEvent(transition, cancellationToken, instance, isFailure);
         if (eventData is not null)
         {
             if (_unitOfWork is RuntimeStorageUnitOfWork unitOfWork)
@@ -81,11 +88,17 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
             x.FailedOnUtc, x.StoppedOnUtc, x.CompensatedOnUtc)).ToArray(), firstBucketUtc, nowUtc, bucketSize);
     }
 
-    private async Task<RuntimeReactiveEvent> BuildReactiveEvent(ExecutionTransition transition, CancellationToken cancellationToken)
+    private Task<OrchestrationInstance> FindInstance(Id instanceId, CancellationToken cancellationToken)
     {
-        var instance = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == transition.OrchestrationInstanceId)
-            ?? await DbContext.OrchestrationInstances.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == transition.OrchestrationInstanceId, cancellationToken);
+        var tracked = DbContext.OrchestrationInstances.Local.FirstOrDefault(x => x.Id == instanceId);
+        return tracked is not null ? Task.FromResult(tracked) : DbContext.OrchestrationInstances.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == instanceId, cancellationToken);
+    }
+
+    private async Task<RuntimeReactiveEvent> BuildReactiveEvent(ExecutionTransition transition, CancellationToken cancellationToken,
+        OrchestrationInstance instance = null, bool instanceResolved = false)
+    {
+        if (!instanceResolved) instance = await FindInstance(transition.OrchestrationInstanceId, cancellationToken);
 
         if (instance is null)
         {

@@ -25,7 +25,11 @@ public static class SagaFailureStatistics
 public sealed record SagaFailureCount(string Category, long Count);
 
 /// <summary>Failure counts and whether historic transitions have been fully projected.</summary>
-public sealed record SagaFailureReport(IReadOnlyCollection<SagaFailureCount> Items, bool HistoryComplete);
+public sealed record SagaFailureReport(IReadOnlyCollection<SagaFailureCount> Items, bool HistoryComplete)
+{
+    /// <summary>Events that cannot be classified for the requested scope.</summary>
+    public long UnclassifiedCount { get; init; }
+}
 
 /// <summary>Reads the independent failure-event projection.</summary>
 public interface ISagaFailureStatisticsReader
@@ -34,9 +38,24 @@ public interface ISagaFailureStatisticsReader
     Task<SagaFailureReport> GetFailuresAsync(DateTime fromUtc, DateTime beforeUtc, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Reads failure events filtered by their projected orchestration and version.</summary>
+public interface ISagaFailureScopedStatisticsReader : ISagaFailureStatisticsReader
+{
+    /// <summary>Counts events for one orchestration and an optional version.</summary>
+    Task<SagaFailureReport> GetFailuresAsync(DateTime fromUtc, DateTime beforeUtc, string orchestrationKey,
+        string orchestrationVersion, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Projects a bounded batch of historical failure transitions.</summary>
 public interface ISagaFailureStatisticsBackfill
 {
     /// <summary>Processes one historical page, returning true after the initial history is complete.</summary>
+    Task<bool> ProcessAsync(int batchSize, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Enriches historical failure events with their orchestration scope.</summary>
+public interface ISagaFailureScopeBackfill
+{
+    /// <summary>Processes a bounded page and reports whether the initial pass is complete.</summary>
     Task<bool> ProcessAsync(int batchSize, CancellationToken cancellationToken = default);
 }

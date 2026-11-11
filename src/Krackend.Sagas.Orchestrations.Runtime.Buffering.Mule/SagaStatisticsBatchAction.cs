@@ -20,7 +20,14 @@ public sealed class SagaStatisticsBatchAction(IServiceProvider services, IOption
         var failures = services.GetService<ISagaFailureStatisticsBackfill>();
         if (failures is not null)
         {
-            try { await failures.ProcessAsync(size, cancellationToken); }
+            try
+            {
+                if (await failures.ProcessAsync(size, cancellationToken))
+                {
+                    var scopeBackfill = services.GetService<ISagaFailureScopeBackfill>();
+                    if (scopeBackfill is not null) await scopeBackfill.ProcessAsync(size, cancellationToken);
+                }
+            }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception exception) { logger.LogWarning(exception, "Could not project historical failure events; the next statistics batch will retry."); }
         }

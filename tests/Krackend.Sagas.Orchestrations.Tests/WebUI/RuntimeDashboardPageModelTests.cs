@@ -201,6 +201,24 @@ public sealed class RuntimeDashboardPageModelTests
     }
 
     [Fact]
+    public async Task FailureEndpointValidatesAndPassesTheSelectedScope()
+    {
+        var reader = Substitute.For<ISagaFailureScopedStatisticsReader>();
+        reader.GetFailuresAsync(Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SagaFailureReport(Array.Empty<SagaFailureCount>(), true));
+        using var services = new ServiceCollection().AddSingleton<ISagaFailureStatisticsReader>(reader)
+            .AddSingleton<TimeProvider>(new FixedTimeProvider(Now)).BuildServiceProvider();
+        var page = CreatePage(services);
+        Assert.IsType<JsonResult>(await page.OnGetFailuresAsync(hours: 24, orchestrationKey: " orders ", orchestrationVersion: " 1.2.3 "));
+        await reader.Received(1).GetFailuresAsync(Now.UtcDateTime.AddHours(-24), Now.UtcDateTime, "orders", "1.2.3", Arg.Any<CancellationToken>());
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetFailuresAsync(orchestrationVersion: "1.2.3"));
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetFailuresAsync(orchestrationKey: "orders", orchestrationVersion: "1.2"));
+        var legacy = Substitute.For<ISagaFailureStatisticsReader>();
+        using var legacyServices = new ServiceCollection().AddSingleton(legacy).BuildServiceProvider();
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await CreatePage(legacyServices).OnGetFailuresAsync(orchestrationKey: "orders")).StatusCode);
+    }
+
+    [Fact]
     public async Task LegacyStatsEndpointRemainsAvailableWithoutTheDashboardProjectionReader()
     {
         var reader = new FakeLegacyReader();

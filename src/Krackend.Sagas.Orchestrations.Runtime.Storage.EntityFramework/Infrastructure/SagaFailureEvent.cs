@@ -8,6 +8,9 @@ internal sealed class SagaFailureEvent
     public Id OrchestrationInstanceId { get; set; }
     public DateTime OccurredOnUtc { get; set; }
     public string TransitionType { get; set; }
+    public string OrchestrationKey { get; set; }
+    public string OrchestrationVersion { get; set; }
+    public int? ScopeProjectionVersion { get; set; }
 }
 
 internal sealed class SagaFailureBackfillCheckpoint
