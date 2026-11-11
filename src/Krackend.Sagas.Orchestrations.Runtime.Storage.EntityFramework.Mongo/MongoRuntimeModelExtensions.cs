@@ -15,6 +15,8 @@ public static class MongoRuntimeModelExtensions
         MapKey(modelBuilder, prefix + "SagaStatisticsObservation", "Id");
         MapKey(modelBuilder, prefix + "SagaStatisticsProjection", "Id");
         MapKey(modelBuilder, prefix + "SagaStatisticsBackfillCheckpoint", "Id");
+        MapKey(modelBuilder, prefix + "SagaFailureEvent", "Id");
+        MapKey(modelBuilder, prefix + "SagaFailureBackfillCheckpoint", "Id");
         return modelBuilder;
     }
 

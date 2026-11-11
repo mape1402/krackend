@@ -1,66 +1,63 @@
 @page
 @using System.Text.Json
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.IndexModel
 @{
     ViewData["Title"] = "Instances";
-    var counters = new[] {
-        ("total", "Total instances", "layers"), ("running", "Running", "activity"), ("idle", "Idle", "pause-circle"),
-        ("completed", "Completed", "check2-circle"), ("deadLettered", "Dead lettered", "inbox"), ("failed", "Failed", "exclamation-circle")
-    };
+    var counters = new[] { ("total", "Total instances", "layers", "primary", ""), ("running", "Running", "activity", "info", "running"), ("idle", "Idle", "pause-circle", "warning", "idle"),
+        ("completed", "Completed", "check2-circle", "success", "completed"), ("deadLettered", "Dead lettered", "inbox", "warning", "deadlettered"), ("failed", "Failed", "exclamation-circle", "danger", "failed") };
 }
-
 @section Head {
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
-
-<section class="od-panel od-instances-panel">
-    <div data-runtime-catalog data-source="@Url.Page(null, "List")" data-counts-source="@Url.Page(null, "Counts")" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
-        <div class="od-monitor-counters" aria-label="Instance totals" aria-live="polite">
-            @foreach (var counter in counters)
-            {
-                @await Component.InvokeAsync("ZoorceCard", new ZoorceCardOptions { Id = $"monitor-metric-{counter.Item1}", Title = counter.Item2,
-                    Body = new HtmlString($"<div class=\"od-dashboard-metric-body\"><span class=\"od-metric-icon\" aria-hidden=\"true\"><i class=\"bi bi-{counter.Item3}\"></i></span><span class=\"od-dashboard-metric-skeleton\" data-monitor-metric-skeleton=\"{counter.Item1}\"><span class=\"z-skeleton z-skeleton-line z-skeleton-animate\"></span></span><div class=\"od-dashboard-metric-data\" data-monitor-metric-data=\"{counter.Item1}\" hidden><strong data-monitor-count=\"{counter.Item1}\">0</strong><small data-monitor-share=\"{counter.Item1}\"></small></div></div>") })
-            }
-        </div>
-        <span data-runtime-refresh>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeInstancesRefreshButton", Text = "Refresh", Tone = "primary" })</span>
-        <div class="od-runtime-view-controls" role="group" aria-label="Instance filters">
-            <div class="od-runtime-view-controls-end">
-                <div class="od-live-indicator" data-live-state="connecting" title="Live connection"><span class="od-live-dot"></span><span data-live-label>Connecting</span></div>
-                <div class="od-dashboard-period od-monitor-periods" role="group" aria-label="Instance time range">
-                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="1" aria-pressed="false">1h</button>
-                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="3" aria-pressed="false">3h</button>
-                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="6" aria-pressed="false">6h</button>
-                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="12" aria-pressed="false">12h</button>
-                    <button type="button" class="od-dashboard-period-option" data-runtime-scope-value="24" aria-pressed="true">24h</button>
+<section class="runtime-reference instances-reference" data-runtime-catalog data-source="@Url.Page(null, "List")" data-counts-source="@Url.Page(null, "Counts")" data-activity-source="@Url.Page("/Dashboard/Index", "Activity", new { area = "OrchestratorRuntime" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+    <div class="od-monitor-counters instance-metrics" aria-label="Instance totals" aria-live="polite">
+        @foreach (var counter in counters) {
+            <button type="button" class="fleet-card" style="--accent:var(--@counter.Item4)" data-status-group="@counter.Item5" aria-pressed="@(counter.Item5 == "" ? "true" : "false")"><span class="fleet-label"><i class="bi bi-@counter.Item3 fleet-icon"></i>@counter.Item2</span><span data-monitor-metric-skeleton="@counter.Item1"><span class="z-skeleton z-skeleton-line z-skeleton-animate"></span></span><span class="fleet-value-line" data-monitor-metric-data="@counter.Item1" hidden><strong data-monitor-count="@counter.Item1">0</strong><small class="fleet-share" data-monitor-share="@counter.Item1"></small></span><span data-metric-spark="@counter.Item1" title="Observed status transitions in the selected period"></span></button>
+        }
+    </div>
+    <p class="metric-context instance-metric-context">Counts: current status of instances started in the selected period · Mini charts: recorded transitions for those instances.</p>
+    <div class="instances-workspace" data-workspace>
+        <section class="grid-surface" aria-label="Instances data grid">
+            <div class="grid-commandbar">
+                <label class="search-box"><i class="bi bi-search"></i><input data-instance-search type="search" placeholder="Search orchestration, correlation, saga…" aria-label="Search instances" /></label>
+                <div class="status-tabs" role="group" aria-label="Status filter">
+                    @foreach (var filter in new[] { ("", "All"), ("attention", "Attention"), ("running", "Running"), ("idle", "Idle"), ("completed", "Completed") }) {
+                        <button type="button" data-status-group="@filter.Item1" aria-pressed="@(filter.Item1 == "" ? "true" : "false")">@filter.Item2</button>
+                    }
+                </div>
+                <div class="commandbar-end">
+                    <div class="time-range" role="group" aria-label="Instance time range">
+                        @foreach (var hours in new[] { 1, 3, 6, 12, 24 }) { <button type="button" data-runtime-scope-value="@hours" aria-pressed="@(hours == 24 ? "true" : "false")">@(hours)h</button> }
+                    </div>
+                    <button class="icon-button subtle" type="button" data-runtime-refresh title="Refresh" aria-label="Refresh"><i class="bi bi-arrow-clockwise"></i></button>
+                    <button class="icon-button subtle" type="button" data-density title="Toggle density" aria-label="Toggle density"><i class="bi bi-arrows-collapse"></i></button>
+                    <button class="icon-button subtle" type="button" data-fit-columns title="Fit columns" aria-label="Fit columns"><i class="bi bi-layout-three-columns"></i></button>
                 </div>
             </div>
-        </div>
-        <div data-runtime-grid-view>
-            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
-            {
-                Id = "runtime-instances-grid", AriaLabel = "runtime instances", Binding = new ZoorceDataBindingOptions
-                {
-                    Source = Url.Page(null, "List", new { recentHours = 24 }),
-                    InvalidationScope = "runtime.instances"
-                },
-                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
-                RealtimeBehavior = ZoorceDataGridRealtimeBehavior.Patch,
-                Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
-                    new("status", "Status"), new("progress", "Progress", false), new("currentStageKey", "Stage", false), new("currentTaskKey", "Task", false),
-                    new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated")]
-            })
-        </div>
-        <div class="od-grid-loaded-copy" data-runtime-loaded-copy aria-live="polite"></div>
+            <div class="selection-bar" data-selection-bar hidden><span><strong data-selection-count>0</strong> selected</span><button type="button" data-inspect-selected><i class="bi bi-layout-sidebar-inset-reverse"></i> Inspect first</button><button type="button" data-copy-selected><i class="bi bi-copy"></i> Copy IDs</button><span data-selection-message role="status"></span><button type="button" class="danger-ghost" data-clear-selection><i class="bi bi-x-lg"></i> Clear</button></div>
+            <div id="instancesGrid" aria-label="Runtime instances grid"></div>
+            <div class="grid-footer"><div class="od-live-indicator" data-live-state="connecting"><span class="od-live-dot"></span><span data-live-label>Connecting</span></div><span data-runtime-loaded-copy aria-live="polite"></span></div>
+        </section>
+        <aside class="instance-inspector" data-inspector aria-label="Instance inspector" aria-hidden="true">
+            <div class="inspector-head"><div><span class="eyebrow">Instance inspector</span><h2 data-inspector-title>Select an instance</h2></div><button class="icon-button subtle" type="button" data-close-inspector aria-label="Close inspector"><i class="bi bi-x-lg"></i></button></div>
+            <div class="inspector-content" data-inspector-content hidden>
+                <div class="inspector-status-row"><span data-inspector-status></span><span data-inspector-updated></span></div>
+                <div class="inspector-progress"><div><strong>Execution progress</strong><span data-inspector-progress-label></span></div><div class="progress-track"><span data-inspector-progress></span></div></div>
+                <dl class="metadata-grid" data-inspector-metadata></dl>
+                <div class="inspector-section"><div class="section-title"><h3>Current execution</h3></div><div data-inspector-execution></div></div>
+                <div class="inspector-actions"><a class="z-button z-button-primary" data-inspector-detail>Full detail</a></div>
+            </div>
+        </aside>
     </div>
 </section>
-
 @section Scripts {
     <script>window.KrackendRuntimeMonitor = { hubPath: @Html.Raw(JsonSerializer.Serialize(Model.LiveHubPath)) };</script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-catalog.js" asp-append-version="true"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.3.0/dist/ag-grid-community.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-sparklines.js" asp-append-version="true"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-ag-grid.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-monitor.js" asp-append-version="true"></script>
 }

@@ -227,7 +227,11 @@ Krackend Sagas Orchestrations is split into composable libraries so the runtime,
 
 ### Web UI and themes
 
-The Control Plane and Runtime UIs use the Zoorce application shell and data grids. Catalogs offer grid and card views, retain the selected view in the browser, and load additional results as the user scrolls. Search, sorting, and paging are performed by the configured storage provider.
+The Control Plane and Runtime UIs use the Zoorce application shell and controls. Runtime Dashboard and Statistics charts use Apache ECharts; the Runtime Instances and History tables use AG Grid Community. These libraries are loaded from their configured CDN URLs, so the browser must be able to reach them. Instance search, status filtering, sorting, and paging run in the configured storage provider; the grid does not load the complete instance history.
+
+The Runtime dashboard also displays recorded failure events by category. New events are projected as they are recorded; existing transition history is reconstructed incrementally by the Mule statistics job, and the dashboard indicates while that reconstruction is incomplete. Counts represent failure events, including repeated failures, rather than unique failed instances. Apply the host's runtime EF migration before enabling the projection. The runtime model remains provider-independent; each host configures its own provider and schema lifecycle.
+
+Dashboard cards count the current states of instances started in the selected period. Their small charts show recorded state changes for that same cohort, not historical snapshots of the card counts; a single instance can change state more than once. The activity chart uses the same cohort and reports transitions recorded during the selected period. Failure causes are a separate event view covering all failure events in the period, including those belonging to older instances. Statistics recorded before the projection was enabled may not contain transition history. Live dashboard totals refresh from committed statistics projections with coalesced notifications.
 
 Configure the light and dark palettes when registering the UI in each host. The same configuration supplies the Zoorce shell and, in the Control Plane, the embedded ButterMorph designers. Existing top-level color properties are aliases for the light palette.
 

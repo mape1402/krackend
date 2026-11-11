@@ -1,7 +1,6 @@
 @page
 @using System.Text.Json
 @using Microsoft.AspNetCore.Html
-@using Zoorce.Web.UI.Charts
 @using Zoorce.Web.UI.Foundation.Components
 @using Zoorce.Web.UI.Foundation.Skeleton
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Dashboard.IndexModel
@@ -9,50 +8,37 @@
     ViewData["Title"] = "Dashboard";
     var metrics = new[]
     {
-        ("Total instances", "layers", "total"), ("In progress", "activity", "running"),
-        ("Idle", "pause-circle", "idle"), ("Completed", "check2-circle", "completed"),
-        ("Dead lettered", "inbox", "deadLettered"), ("Failed", "exclamation-circle", "failed")
+        ("Total instances", "layers", "total", "primary"), ("In progress", "activity", "running", "info"),
+        ("Idle", "pause-circle", "idle", "warning"), ("Completed", "check2-circle", "completed", "success"),
+        ("Dead lettered", "inbox", "deadLettered", "warning"), ("Failed", "exclamation-circle", "failed", "danger")
     };
-    var emptySeries = new[] { new ZoorceChartSeries("Loading", new[] { new ZoorceChartPoint("", 0) }) };
 }
 @section Head {
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
 
-<section class="od-dashboard" data-runtime-dashboard
+<section class="od-dashboard runtime-reference dashboard-view" data-runtime-dashboard
          data-cohort-url="@Url.Page(null, "Cohort")"
          data-activity-url="@Url.Page(null, "Activity")"
          data-top-orchestrations-url="@Url.Page(null, "TopOrchestrations")"
+         data-failures-url="@Url.Page(null, "Failures")"
          data-hours="@Model.Hours">
+    <div class="dashboard-toolbar"><div class="runtime-signal"><span class="pulse-dot"></span><strong>Runtime statistics</strong><small data-dashboard-live>Connecting</small><small class="metric-context">Counts: current instance status · Mini charts: recorded transitions</small></div><div class="segmented dashboard-periods dashboard-period" data-dashboard-period role="group" aria-label="Statistics period">@foreach (var period in new[] { (1, "1h"), (6, "6h"), (24, "24h"), (168, "7d"), (720, "30d"), (2160, "90d") }) { <button type="button" class="od-dashboard-period-option" data-dashboard-period-value="@period.Item1" aria-pressed="@(period.Item1 == Model.Hours ? "true" : "false")">@period.Item2</button> }</div></div>
     <div class="od-dashboard-metrics" data-dashboard-metrics aria-live="polite">
         @foreach (var metric in metrics)
         {
-            @await Component.InvokeAsync("ZoorceCard", new ZoorceCardOptions
-            {
-                Id = $"runtime-metric-{metric.Item3}",
-                Title = metric.Item1,
-                Body = new HtmlString($"<div class=\"od-dashboard-metric-body\"><span class=\"od-metric-icon\" aria-hidden=\"true\"><i class=\"bi bi-{metric.Item2}\"></i></span><span class=\"od-dashboard-metric-skeleton\" data-dashboard-metric-skeleton=\"{metric.Item3}\"><span class=\"z-skeleton z-skeleton-line z-skeleton-animate\"></span></span><div class=\"od-dashboard-metric-data\" data-dashboard-metric-data=\"{metric.Item3}\" hidden><strong data-dashboard-metric=\"{metric.Item3}\">0</strong><small data-dashboard-metric-share=\"{metric.Item3}\"></small></div></div>")
-            })
+            <article class="metric-card metric-card-@metric.Item3" style="--accent:var(--@metric.Item4)">
+                <header class="metric-card-head"><span class="metric-card-icon"><i class="bi bi-@metric.Item2"></i></span><span class="metric-card-label">@metric.Item1</span><span class="metric-trend" data-metric-trend="@metric.Item3" hidden></span></header>
+                <div class="metric-card-content"><div class="metric-card-value"><span data-dashboard-metric-skeleton="@metric.Item3"><span class="z-skeleton z-skeleton-line z-skeleton-animate"></span></span><div data-dashboard-metric-data="@metric.Item3" hidden><strong data-dashboard-metric="@metric.Item3">0</strong><small data-dashboard-metric-share="@metric.Item3"></small></div></div><div data-metric-spark="@metric.Item3" title="Observed status transitions in the selected period"></div></div>
+            </article>
         }
     </div>
 
     <div class="od-dashboard-charts">
         <section class="od-dashboard-activity" data-dashboard-panel="activity">
-            <div class="od-dashboard-panel-toolbar">
-                <div class="od-dashboard-period" data-dashboard-period role="group" aria-label="Statistics period">
-                    @foreach (var period in new[] { (1, "1h"), (6, "6h"), (24, "24h"), (168, "7d"), (720, "30d"), (2160, "90d") })
-                    {
-                        <button type="button" class="od-dashboard-period-option" data-dashboard-period-value="@period.Item1"
-                                aria-pressed="@(period.Item1 == Model.Hours ? "true" : "false")">@period.Item2</button>
-                    }
-                </div>
-            </div>
             <div class="od-dashboard-chart-shell">
-                @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
-                {
-                    Id = "runtime-activity-chart", Title = "Observed activity", Summary = "Completed, dead-lettered and failed transitions.",
-                    Kind = ZoorceChartKind.Area, Size = ZoorceChartSize.Wide, MinimumValue = 0, Series = emptySeries
-                })
+            <header class="reference-chart-header"><h2>Observed activity</h2><p>Completed, dead-lettered and failed changes for instances started in this period.</p></header><div id="runtime-activity-chart" class="reference-chart" data-echart-kind="activity" aria-label="Observed activity"></div>
                 <div class="od-dashboard-skeleton" data-dashboard-loading="activity">
                     @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "11rem", AriaLabel = "Loading activity" })
                 </div>
@@ -66,11 +52,8 @@
         </section>
 
         <section class="od-dashboard-chart-shell" data-dashboard-panel="status">
-            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
-            {
-                Id = "runtime-status-chart", Title = "Current status", Summary = "Current status distribution for instances started in the selected period.",
-                Kind = ZoorceChartKind.Donut, ShowLegend = false, ShowTooltip = false, Series = emptySeries
-            })
+            <header class="reference-chart-header"><h2>Current status</h2><p>Distribution of the selected cohort.</p></header><div id="runtime-status-chart" class="reference-chart" data-echart-kind="status" aria-label="Current status"></div>
+            <footer class="reference-chart-footer" data-dashboard-status-detail hidden></footer>
             <p class="od-dashboard-status-hint">Hover over the chart to inspect the full status breakdown.</p>
             <div id="runtime-status-tooltip" class="z-tooltip od-dashboard-status-tooltip" data-dashboard-status-tooltip role="tooltip" hidden></div>
             <div class="od-dashboard-empty" data-dashboard-empty="status" hidden>
@@ -84,31 +67,8 @@
             <p class="od-dashboard-panel-error" data-dashboard-error="status" hidden></p>
         </section>
 
-        <section class="od-dashboard-chart-shell" data-dashboard-panel="funnel">
-            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
-            {
-                Id = "runtime-funnel-chart", Title = "Success conversion", Summary = "Instances that completed successfully from the selected cohort.",
-                Kind = ZoorceChartKind.Funnel, ShowLegend = false, Series = emptySeries
-            })
-            <div class="od-dashboard-outcome" data-dashboard-outcome aria-live="polite" hidden></div>
-            <div class="od-dashboard-empty" data-dashboard-empty="funnel" hidden>
-                <i class="bi bi-funnel" aria-hidden="true"></i>
-                <strong>No instance data in this period</strong>
-                <span>Choose a wider range to inspect earlier activity.</span>
-            </div>
-            <div class="od-dashboard-skeleton" data-dashboard-loading="funnel">
-                    @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading completion path" })
-            </div>
-            <p class="od-dashboard-panel-error" data-dashboard-error="funnel" hidden></p>
-        </section>
-
         <section class="od-dashboard-chart-shell" data-dashboard-panel="effectiveness">
-            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
-            {
-                Id = "runtime-effectiveness-chart", Title = "Success rate", Summary = "Completed successfully among terminal instances.",
-                Kind = ZoorceChartKind.Gauge, ShowLegend = false, ShowTooltip = false, MinimumValue = 0, MaximumValue = 100,
-                ValueSuffix = "%", Series = emptySeries
-            })
+            <header class="reference-chart-header"><h2>Terminal success</h2><p>Completed successfully among terminal instances.</p></header><div id="runtime-effectiveness-chart" class="reference-chart" data-echart-kind="gauge" aria-label="Terminal success"></div>
             <div class="od-dashboard-effectiveness-detail" data-dashboard-effectiveness-detail aria-live="polite" hidden></div>
             <div class="od-dashboard-empty" data-dashboard-empty="effectiveness" hidden>
                 <i class="bi bi-speedometer2" aria-hidden="true"></i>
@@ -124,18 +84,14 @@
         <section class="od-dashboard-chart-shell od-dashboard-top-orchestrations" data-dashboard-panel="top-orchestrations">
             <div class="od-dashboard-panel-toolbar">
                 <div class="od-dashboard-period" data-dashboard-ranking-limit role="group" aria-label="Most started orchestrations limit">
-                    @foreach (var limit in new[] { 10, 15, 20, 25 })
+                    @foreach (var limit in new[] { 5, 10, 15 })
                     {
                         <button type="button" class="od-dashboard-period-option" data-dashboard-ranking-limit-value="@limit"
-                                aria-pressed="@(limit == 10 ? "true" : "false")">@limit</button>
+                                aria-pressed="@(limit == 5 ? "true" : "false")">@limit</button>
                     }
                 </div>
             </div>
-            @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions
-            {
-                Id = "runtime-top-orchestrations-chart", Title = "Most started orchestrations", Summary = "Started instances in the selected period.",
-                Kind = ZoorceChartKind.Bar, ShowLegend = false, Series = emptySeries
-            })
+            <header class="reference-chart-header"><h2>Most active orchestrations</h2><p>Started instances in the selected period.</p></header><div id="runtime-top-orchestrations-chart" class="reference-chart" data-echart-kind="ranking" aria-label="Most active orchestrations"></div>
             <div class="od-dashboard-skeleton" data-dashboard-loading="top-orchestrations">
                 @await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "12rem", AriaLabel = "Loading orchestration ranking" })
             </div>
@@ -146,11 +102,16 @@
             <p class="od-dashboard-panel-error" data-dashboard-error="top-orchestrations" hidden></p>
         </section>
 
+        <section class="od-dashboard-chart-shell reference-failures" data-dashboard-panel="failures"><header class="reference-chart-header"><h2>Failure causes</h2><p>All failure events in this period, including older instances.</p><small data-failures-history>Historical data is being reconstructed.</small></header><div id="runtime-failures-chart" class="reference-chart" data-echart-kind="causes" aria-label="Failure events"></div><div class="od-dashboard-empty" data-dashboard-failures-empty hidden><strong>No failure events in this period</strong></div><p class="od-dashboard-panel-error" data-dashboard-error="failures" hidden></p></section>
+
     </div>
 </section>
 
 @section Scripts {
     <script>window.KrackendRuntimeDashboard = { hubPath: @Html.Raw(JsonSerializer.Serialize(Model.LiveHubPath)) };</script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-echarts.js" asp-append-version="true"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-sparklines.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-dashboard.js" asp-append-version="true"></script>
 }

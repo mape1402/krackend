@@ -41,6 +41,42 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task FailureProjectionRecordsNewEventsAndBackfillsHistoricalEventsInBoundedPages()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var instance = Instance(Id.New(), OrchestrationInstanceStatus.Running, DateTime.UtcNow.AddHours(-1));
+        await scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>().Create(instance);
+        var timestamp = DateTime.UtcNow.AddMinutes(-10);
+        db.ExecutionTransitions.AddRange(Enumerable.Range(0, 5).Select(_ => new ExecutionTransition
+        {
+            Id = Id.New(), OrchestrationInstanceId = instance.Id, OccurredOnUtc = timestamp, TransitionType = "TaskTimedOut"
+        }));
+        db.ExecutionTransitions.Add(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+            OccurredOnUtc = timestamp, TransitionType = "TaskCompleted" });
+        await db.SaveChangesAsync();
+        var transitions = scope.ServiceProvider.GetRequiredService<IExecutionTransitionRepository>();
+        await transitions.Create(new ExecutionTransition { Id = Id.New(), OrchestrationInstanceId = instance.Id,
+            OccurredOnUtc = timestamp, TransitionType = "TaskCallbackFailed" });
+        var reader = scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsReader>();
+        var before = await reader.GetFailuresAsync(timestamp.AddSeconds(-1), timestamp.AddSeconds(1));
+        Assert.False(before.HistoryComplete);
+        Assert.Equal(1, Assert.Single(before.Items).Count);
+        var backfill = scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsBackfill>();
+        for (var i = 0; i < 10 && !await backfill.ProcessAsync(2); i++) { }
+        var report = await reader.GetFailuresAsync(timestamp.AddSeconds(-1), timestamp.AddSeconds(1));
+        Assert.True(report.HistoryComplete);
+        Assert.Equal(5, Assert.Single(report.Items.Where(x => x.Category == "Timeout")).Count);
+        Assert.Equal(1, Assert.Single(report.Items.Where(x => x.Category == "Callback failure")).Count);
+        Assert.Equal(6, report.Items.Sum(x => x.Count));
+        Assert.True(await backfill.ProcessAsync(2));
+    }
+
+    [Fact]
     public async Task UpdatingFreshInstanceIgnoresAnOlderLocallyTrackedCopyButRejectsStaleWrites()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -1130,6 +1166,34 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         Assert.Equal(2, (await reader.GetCohortAsync(new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1)))).Total);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => reader.GetActivityAsync(query, (SagaStatisticsActivityBucket)99));
         await Assert.ThrowsAsync<ArgumentNullException>(() => reader.GetActivityAsync(null!, SagaStatisticsActivityBucket.Day));
+    }
+
+    [Fact]
+    public async Task DashboardActivityCanExcludeTransitionsFromOlderInstances()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RuntimeDbContext>().Database.EnsureCreatedAsync();
+        var repository = scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>();
+        var now = DateTime.UtcNow;
+        var older = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddHours(-2));
+        var recent = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddMinutes(-30));
+        var atStart = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddHours(-1));
+        var atEnd = Instance(Id.New(), OrchestrationInstanceStatus.Running, now.AddHours(1));
+        await repository.Create(older); await repository.Create(recent); await repository.Create(atStart); await repository.Create(atEnd);
+        older.Status = OrchestrationInstanceStatus.DeadLettered; older.LastUpdatedOnUtc = now; await repository.Update(older);
+        recent.Status = OrchestrationInstanceStatus.DeadLettered; recent.LastUpdatedOnUtc = now; await repository.Update(recent);
+        atStart.Status = OrchestrationInstanceStatus.DeadLettered; atStart.LastUpdatedOnUtc = now; await repository.Update(atStart);
+        atEnd.Status = OrchestrationInstanceStatus.DeadLettered; atEnd.LastUpdatedOnUtc = now; await repository.Update(atEnd);
+        await scope.ServiceProvider.GetRequiredService<ISagaStatisticsBatchProcessor>().ProcessAsync(20);
+        var reader = scope.ServiceProvider.GetRequiredService<ISagaStatisticsDashboardReader>();
+        var query = new SagaStatisticsDashboardQuery(now.AddHours(-1), now.AddHours(1));
+        var all = await reader.GetActivityAsync(query, SagaStatisticsActivityBucket.Hour);
+        var cohort = await reader.GetActivityAsync(query with { RestrictActivityToStartedCohort = true }, SagaStatisticsActivityBucket.Hour);
+        Assert.Equal(4, all.Where(item => item.Status == OrchestrationInstanceStatus.DeadLettered).Sum(item => item.Count));
+        Assert.Equal(2, cohort.Where(item => item.Status == OrchestrationInstanceStatus.DeadLettered).Sum(item => item.Count));
     }
 
     [Fact]

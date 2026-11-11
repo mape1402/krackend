@@ -3,11 +3,13 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
 internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, IOrchestrationInstanceRepository, IOrchestrationIdleInstanceRepository, IOrchestrationLifetimeCandidateRepository, IOrchestrationLifetimeScanRepository, IOrchestrationExpirationRepository, IOrchestrationArtifactInstanceReader, IOrchestrationArtifactActivityBatchReader, IOrchestrationDispatchCancellationIntentRepository, IRuntimeInstanceCatalogRepository, IRuntimeInstanceStatusCountsRepository, IRuntimeInstanceRecentSummaryReader
 {
+    private static readonly ConcurrentDictionary<string, bool> ProvidersWithoutStatusGrouping = new();
     public OrchestrationInstanceRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
     {
@@ -179,9 +181,32 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
         RuntimeInstanceCatalogQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        return await ApplyCatalogFilters(query).GroupBy(x => x.Status)
-            .Select(group => new { Status = group.Key, Count = group.LongCount() })
-            .ToDictionaryAsync(item => item.Status, item => item.Count, cancellationToken);
+        var source = ApplyCatalogFilters(query);
+        var provider = DbContext.Database.ProviderName ?? string.Empty;
+        if (!ProvidersWithoutStatusGrouping.ContainsKey(provider))
+        {
+            try
+            {
+                return await source.GroupBy(x => x.Status)
+                    .Select(group => new { Status = group.Key, Count = group.LongCount() })
+                    .ToDictionaryAsync(item => item.Status, item => item.Count, cancellationToken);
+            }
+            catch (InvalidOperationException exception) when (exception.Message.Contains("GroupBy", StringComparison.Ordinal)
+                && exception.Message.Contains("could not be translated", StringComparison.OrdinalIgnoreCase))
+            {
+                ProvidersWithoutStatusGrouping.TryAdd(provider, true);
+            }
+        }
+
+        // Some EF providers cannot translate GroupBy. Keep the work on the
+        // provider with a fixed number of counts, never a query per instance.
+        var counts = new Dictionary<OrchestrationInstanceStatus, long>();
+        foreach (var status in Enum.GetValues<OrchestrationInstanceStatus>().Distinct())
+        {
+            var count = await source.LongCountAsync(item => item.Status == status, cancellationToken);
+            if (count > 0) counts.Add(status, count);
+        }
+        return counts;
     }
 
     private IQueryable<OrchestrationInstance> ApplyCatalogFilters(RuntimeInstanceCatalogQuery query)
@@ -201,6 +226,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                     || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
         }
         if (query.Status is { } status) source = source.Where(x => x.Status == status);
+        if (query.Statuses is { Count: > 0 }) source = source.Where(x => query.Statuses.Contains(x.Status));
         if (query.StartedFromUtc is { } startedFrom) source = source.Where(x => x.StartedOnUtc >= startedFrom);
         if (query.StartedBeforeUtc is { } startedBefore) source = source.Where(x => x.StartedOnUtc < startedBefore);
         if (query.ActiveOnly)

@@ -97,6 +97,31 @@ public sealed class MongoStatisticsBackfillTests
         Assert.Equal(1, concurrentSaved.StatisticsRevision);
         var observations = client.GetDatabase("statistics_backfill_test").GetCollection<BsonDocument>("SagaStatisticsObservations");
         Assert.Equal(2, await observations.CountDocumentsAsync(new BsonDocument("IsBackfill", true)));
+
+        var failureTime = DateTime.UtcNow.AddMinutes(-1);
+        db.ExecutionTransitions.AddRange(Enumerable.Range(0, 3).Select(_ => new ExecutionTransition
+        {
+            Id = Id.New(), OrchestrationInstanceId = instance.Id, OccurredOnUtc = failureTime, TransitionType = "TaskTimedOut"
+        }));
+        await db.SaveChangesAsync();
+        var failures = scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsBackfill>();
+        for (var i = 0; i < 8 && !await failures.ProcessAsync(2); i++) { }
+        var failureReport = await scope.ServiceProvider.GetRequiredService<ISagaFailureStatisticsReader>()
+            .GetFailuresAsync(failureTime.AddSeconds(-1), failureTime.AddSeconds(1));
+        Assert.True(failureReport.HistoryComplete);
+        Assert.Equal(3, Assert.Single(failureReport.Items).Count);
+
+        var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(
+            scope.ServiceProvider.GetRequiredService<IOrchestrationInstanceRepository>());
+        var completed = await catalog.GetPage(new RuntimeInstanceCatalogQuery
+        {
+            Statuses = [OrchestrationInstanceStatus.Completed]
+        });
+        Assert.Equal(1, completed.TotalCount);
+        Assert.Equal(concurrentInstance.Id, Assert.Single(completed.Items).Id);
+        var counts = await Assert.IsAssignableFrom<IRuntimeInstanceStatusCountsRepository>(catalog)
+            .GetStatusCounts(new RuntimeInstanceCatalogQuery());
+        Assert.Equal(1, counts[OrchestrationInstanceStatus.Completed]);
     }
 
     private sealed class BeforeSave : SaveChangesInterceptor
