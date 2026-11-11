@@ -12,7 +12,7 @@ using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 
-internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeoutProcessor
+internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeoutProcessor, IOrchestrationTimeoutBatchProcessor
 {
     private const string DefaultTimeoutErrorCode = "TaskTimedOut";
     private const string TimeoutObservedOnUtcMetadataKey = "TimeoutObservedOnUtc";
@@ -62,10 +62,11 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
 
         var waitingTasks = await _taskRepository.GetResponseTimeoutsDue(utcNow, take: 100, cancellationToken);
         var processed = 0;
+        var batch = new OrchestrationTimeoutBatchContext();
 
         foreach (var waitingTask in waitingTasks)
         {
-            var result = await ProcessTaskTimeoutAsync(waitingTask.Id, utcNow, cancellationToken);
+            var result = await ProcessTaskTimeoutAsync(waitingTask.Id, utcNow, batch, cancellationToken);
             if (result.Applied)
             {
                 processed++;
@@ -79,6 +80,29 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         Id taskExecutionId,
         DateTime utcNow,
         CancellationToken cancellationToken = default)
+        => await ProcessTaskTimeoutAsync(taskExecutionId, utcNow, null, cancellationToken);
+
+    public async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
+        Id taskExecutionId,
+        DateTime utcNow,
+        OrchestrationTimeoutBatchContext batch,
+        CancellationToken cancellationToken = default)
+    {
+        var defaultResolver = _artifactResolver as DefaultRuntimeArtifactResolver;
+        var previousBatch = defaultResolver?.TimeoutBatch;
+        if (defaultResolver is not null) defaultResolver.TimeoutBatch = batch;
+        try
+        {
+            return await ProcessTaskTimeoutInBatchAsync(taskExecutionId, utcNow, batch, cancellationToken);
+        }
+        finally
+        {
+            if (defaultResolver is not null) defaultResolver.TimeoutBatch = previousBatch;
+        }
+    }
+
+    private async Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutInBatchAsync(
+        Id taskExecutionId, DateTime utcNow, OrchestrationTimeoutBatchContext batch, CancellationToken cancellationToken)
     {
         await _admissionController.EnsureAcceptedAsync(RuntimeAdmissionOperation.TimeoutProcessing, cancellationToken);
 
@@ -95,7 +119,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
 
         var acquired = await _coordinator.TryExecuteAsync(
             task.OrchestrationInstanceId,
-            async token => result = await TryProcessTaskCoreAsync(task, utcNow, token),
+            async token => result = await TryProcessTaskCoreAsync(task, utcNow, batch, token),
             cancellationToken);
 
         return acquired ? result : new TaskResponseTimeoutProcessingResult(false, RetryRequired: true);
@@ -104,6 +128,7 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
     private async Task<TaskResponseTimeoutProcessingResult> TryProcessTaskCoreAsync(
         TaskExecution waitingTask,
         DateTime utcNow,
+        OrchestrationTimeoutBatchContext batch,
         CancellationToken cancellationToken)
     {
         var task = await _taskRepository.GetById(waitingTask.Id, cancellationToken);
@@ -119,7 +144,9 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         }
 
         var stage = await _stageRepository.GetById(task.StageExecutionId, cancellationToken);
-        var resolvedArtifact = await _artifactResolver.ResolveAsync(instance.RuntimeOrchestrationArtifactId.ToString(), cancellationToken);
+        var resolvedArtifact = batch is null
+            ? await _artifactResolver.ResolveAsync(instance.RuntimeOrchestrationArtifactId.ToString(), cancellationToken)
+            : await batch.ResolveAsync(instance.RuntimeOrchestrationArtifactId, _artifactResolver, cancellationToken);
         var taskArtifact = resolvedArtifact.Artifact.StageDefinitions
             .FirstOrDefault(x => string.Equals(x.Key, stage.StageKey, StringComparison.OrdinalIgnoreCase))?
             .TaskDefinitions

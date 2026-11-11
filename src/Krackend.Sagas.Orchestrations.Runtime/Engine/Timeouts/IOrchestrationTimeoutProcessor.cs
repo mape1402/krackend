@@ -24,6 +24,16 @@ public interface IOrchestrationTimeoutProcessor
         DateTime utcNow,
         CancellationToken cancellationToken = default)
         => Task.FromResult(TaskResponseTimeoutProcessingResult.Ignored);
+
+}
+
+/// <summary>Optional capability for sharing artifact lookups within a timeout repair pass.</summary>
+public interface IOrchestrationTimeoutBatchProcessor
+{
+    /// <summary>Processes one timeout using the supplied pass-local cache.</summary>
+    Task<TaskResponseTimeoutProcessingResult> ProcessTaskTimeoutAsync(
+        Id taskExecutionId, DateTime utcNow, OrchestrationTimeoutBatchContext batch,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Result of processing a single response timeout action.</summary>
