@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Page
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 
@@ -60,7 +61,9 @@ public sealed class RuntimeDashboardPageModelTests
 
     [Theory]
     [InlineData(1)]
+    [InlineData(3)]
     [InlineData(6)]
+    [InlineData(12)]
     public async Task ActivityUsesMinuteBucketsOnlyForTheOneHourDashboardRange(int hours)
     {
         var reader = new FakeDashboardReader();
@@ -85,6 +88,23 @@ public sealed class RuntimeDashboardPageModelTests
         Assert.Equal(Now.UtcDateTime, reader.ActivityQuery.BeforeUtc);
         Assert.Equal(Now.UtcDateTime.AddHours(-1), reader.ActivityQuery.FromUtc);
         Assert.Equal(SagaStatisticsActivityBucket.Minute, reader.ActivityBucket);
+    }
+
+    [Fact]
+    public async Task CohortScopedActivityRequiresAReaderThatSupportsIt()
+    {
+        var scoped = new FakeDashboardReader();
+        using var supported = CreateServices(scoped);
+        var page = CreatePage(supported);
+        Assert.IsType<JsonResult>(await page.OnGetActivityAsync(hours: 24, cohortOnly: true));
+        Assert.True(scoped.ActivityQuery.RestrictActivityToStartedCohort);
+        await page.OnGetActivityAsync(hours: 24);
+        Assert.False(scoped.ActivityQuery.RestrictActivityToStartedCohort);
+
+        var unscoped = Substitute.For<ISagaStatisticsDashboardReader>();
+        using var unsupported = new ServiceCollection().AddSingleton(unscoped).BuildServiceProvider();
+        var unavailable = Assert.IsType<ObjectResult>(await CreatePage(unsupported).OnGetActivityAsync(cohortOnly: true));
+        Assert.Equal(503, unavailable.StatusCode);
     }
 
     [Fact]
@@ -156,6 +176,9 @@ public sealed class RuntimeDashboardPageModelTests
 
         Assert.Equal(6, (reader.TopOrchestrationsQuery.BeforeUtc - reader.TopOrchestrationsQuery.FromUtc).TotalHours);
         Assert.Equal(25, reader.TopOrchestrationsLimit);
+
+        await page.OnGetTopOrchestrationsAsync(hours: 6, limit: 5);
+        Assert.Equal(5, reader.TopOrchestrationsLimit);
         Assert.Contains("sales.sale.created", Serialize(result.Value));
 
         await page.OnGetTopOrchestrationsAsync(hours: 6, limit: 999);
@@ -243,7 +266,7 @@ public sealed class RuntimeDashboardPageModelTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class FakeDashboardReader : ISagaStatisticsDashboardReader
+    private sealed class FakeDashboardReader : ISagaStatisticsCohortActivityReader
     {
         public int FilterCalls { get; private set; }
         public int CohortCalls { get; private set; }

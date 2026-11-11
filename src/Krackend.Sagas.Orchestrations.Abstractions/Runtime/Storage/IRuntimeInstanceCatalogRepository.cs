@@ -30,7 +30,11 @@ public sealed record RuntimeInstanceCatalogQuery(
     bool Descending = true,
     DateTime? StartedFromUtc = null,
     DateTime? StartedBeforeUtc = null,
-    bool ActiveOnly = false);
+    bool ActiveOnly = false)
+{
+    /// <summary>Optional set of concrete statuses represented by a public status group.</summary>
+    public IReadOnlyCollection<OrchestrationInstanceStatus> Statuses { get; init; }
+}
 
 /// <summary>Supported instance ordering fields.</summary>
 public enum RuntimeInstanceCatalogSort { Updated, Started, Orchestration, CorrelationId, SagaId, Status }

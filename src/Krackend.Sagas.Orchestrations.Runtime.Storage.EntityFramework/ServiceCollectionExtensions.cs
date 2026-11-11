@@ -84,6 +84,8 @@ public static class ServiceCollectionExtensions
             new SagaStatisticsReader(provider.GetRequiredService<RuntimeDbContext>())));
         services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
         services.Replace(ServiceDescriptor.Scoped<ISagaStatisticsDashboardReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
+        services.Replace(ServiceDescriptor.Scoped<ISagaFailureStatisticsReader>(provider => provider.GetRequiredService<SagaStatisticsReader>()));
+        services.Replace(ServiceDescriptor.Scoped<ISagaFailureStatisticsBackfill, SagaFailureStatisticsBackfill>());
         services.Replace(ServiceDescriptor.Scoped<IStageExecutionRepository, StageExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionRepository, TaskExecutionRepository>());
         services.Replace(ServiceDescriptor.Scoped<ITaskExecutionAttemptRepository, TaskExecutionAttemptRepository>());

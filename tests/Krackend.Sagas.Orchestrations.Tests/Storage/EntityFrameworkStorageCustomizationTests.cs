@@ -78,7 +78,7 @@ public sealed class EntityFrameworkStorageCustomizationTests
         Assert.Equal(
             "_id",
             muleReplay?.FindProperty("RequestId")?.FindAnnotation("Mongo:ElementName")?.Value);
-        foreach (var name in new[] { "SagaStatisticsObservation", "SagaStatisticsProjection", "SagaStatisticsBackfillCheckpoint" })
+        foreach (var name in new[] { "SagaStatisticsObservation", "SagaStatisticsProjection", "SagaStatisticsBackfillCheckpoint", "SagaFailureEvent", "SagaFailureBackfillCheckpoint" })
         {
             var type = dbContext.Model.FindEntityType($"Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure.{name}");
             Assert.Equal("_id", type?.FindProperty("Id")?.FindAnnotation("Mongo:ElementName")?.Value);

@@ -17,6 +17,13 @@ public sealed class SagaStatisticsBatchAction(IServiceProvider services, IOption
     public async ValueTask ExecuteAsync(MuleActionContext<SagaStatisticsBatchRequest> context, CancellationToken cancellationToken)
     {
         var size = Math.Clamp(options.Value.BatchSize, 1, 1000);
+        var failures = services.GetService<ISagaFailureStatisticsBackfill>();
+        if (failures is not null)
+        {
+            try { await failures.ProcessAsync(size, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { logger.LogWarning(exception, "Could not project historical failure events; the next statistics batch will retry."); }
+        }
         var backfill = services.GetService<ISagaStatisticsBackfill>();
         if (backfill is not null) await backfill.ProcessAsync(size, cancellationToken);
         var processor = services.GetService<ISagaStatisticsBatchProcessor>();

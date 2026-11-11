@@ -149,6 +149,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                         || x.SagaId.Contains(term) || x.ExecutionKey.Contains(term));
             }
             if (query.Status is { } status) source = source.Where(x => x.Status == status);
+            if (query.Statuses is { Count: > 0 }) source = source.Where(x => query.Statuses.Contains(x.Status));
             if (query.StartedFromUtc is { } startedFrom) source = source.Where(x => x.StartedOnUtc >= startedFrom);
             if (query.StartedBeforeUtc is { } startedBefore) source = source.Where(x => x.StartedOnUtc < startedBefore);
             if (query.ActiveOnly)

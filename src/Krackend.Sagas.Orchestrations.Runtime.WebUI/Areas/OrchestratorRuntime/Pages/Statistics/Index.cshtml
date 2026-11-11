@@ -1,7 +1,6 @@
 @page
 @using System.Text.Json
 @using Microsoft.AspNetCore.Html
-@using Zoorce.Web.UI.Charts
 @using Zoorce.Web.UI.Foundation.Components
 @using Zoorce.Web.UI.Foundation.Skeleton
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Statistics.IndexModel
@@ -13,16 +12,14 @@
         ("Idle", "pause-circle", "idle"), ("Completed", "check2-circle", "completed"),
         ("Dead lettered", "inbox", "deadLettered"), ("Failed", "exclamation-circle", "failed")
     };
-    // Zoorce requires one seed series even while Statistics is intentionally idle.
-    // The surrounding empty states obscure this placeholder until a scope is loaded.
-    var emptySeries = new[] { new ZoorceChartSeries("Loading", new[] { new ZoorceChartPoint("", 0) }) };
     var dashboardPage = "/Dashboard/Index";
 }
 @section Head {
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
 
-<section class="od-dashboard od-statistics" data-runtime-statistics data-dashboard-manual-load="true" data-hours="@Model.Hours"
+<section class="od-dashboard od-statistics runtime-reference statistics-reference" data-runtime-statistics data-dashboard-manual-load="true" data-hours="@Model.Hours"
          data-cohort-url="@Url.Page(dashboardPage, "Cohort", new { area = "OrchestratorRuntime" })"
          data-activity-url="@Url.Page(dashboardPage, "Activity", new { area = "OrchestratorRuntime" })">
     <div class="od-dashboard-metrics" data-dashboard-metrics aria-live="polite">
@@ -63,7 +60,7 @@
         </aside>
 
         <section class="od-dashboard-chart-shell is-empty" data-dashboard-panel="effectiveness">
-                @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-effectiveness-chart", Title = "Success rate", Summary = "Completed successfully among terminal instances.", Kind = ZoorceChartKind.Gauge, ShowLegend = false, ShowTooltip = false, MinimumValue = 0, MaximumValue = 100, ValueSuffix = "%", Series = emptySeries })
+                <header class="reference-chart-header"><h2>Success rate</h2></header><div id="runtime-effectiveness-chart" class="reference-chart" data-echart-kind="gauge" aria-label="Success rate"></div>
                 <div class="od-dashboard-effectiveness-detail" data-dashboard-effectiveness-detail hidden></div>
                 <div class="od-dashboard-empty" data-dashboard-empty="effectiveness"><i class="bi bi-speedometer2" aria-hidden="true"></i><strong>No terminal results in this scope</strong><span>Load a scope with completed terminal sagas.</span></div>
                 <div class="od-dashboard-skeleton" data-dashboard-loading="effectiveness" hidden>@await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading success rate" })</div>
@@ -71,7 +68,7 @@
         </section>
 
         <section class="od-dashboard-chart-shell is-empty" data-dashboard-panel="status">
-                @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-status-chart", Title = "Current status", Summary = "Current status distribution for instances started in the selected scope.", Kind = ZoorceChartKind.Donut, ShowLegend = false, ShowTooltip = false, Series = emptySeries })
+                <header class="reference-chart-header"><h2>Current status</h2></header><div id="runtime-status-chart" class="reference-chart" data-echart-kind="status" aria-label="Current status"></div>
                 <div class="od-statistics-status-total" data-dashboard-status-total hidden>
                     <span>Total instances</span>
                     <strong data-dashboard-status-total-value>0</strong>
@@ -93,7 +90,7 @@
                 </div>
             </div>
             <div class="od-dashboard-chart-shell">
-                @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-activity-chart", Title = "Observed activity", Summary = "Completed, dead-lettered and failed transitions.", Kind = ZoorceChartKind.Area, Size = ZoorceChartSize.Wide, MinimumValue = 0, Series = emptySeries })
+                <header class="reference-chart-header"><h2>Observed activity</h2><p>Completed, dead-lettered and failed changes for instances started in this period.</p></header><div id="runtime-activity-chart" class="reference-chart" data-echart-kind="activity" aria-label="Observed activity"></div>
                 <div class="od-dashboard-skeleton" data-dashboard-loading="activity" hidden>@await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "11rem", AriaLabel = "Loading activity" })</div>
                 <div class="od-dashboard-activity-empty" data-dashboard-activity-empty><i class="bi bi-activity" aria-hidden="true"></i><strong>Select a scope to load activity</strong><span>Statistics remain idle until an orchestration is selected.</span></div>
             </div>
@@ -101,7 +98,7 @@
         </section>
 
         <section class="od-dashboard-chart-shell is-empty" data-dashboard-panel="funnel">
-                @await Component.InvokeAsync("ZoorceChart", new ZoorceChartOptions { Id = "runtime-funnel-chart", Title = "Success conversion", Summary = "Instances that completed successfully from the selected scope.", Kind = ZoorceChartKind.Funnel, ShowLegend = false, Series = emptySeries })
+                <header class="reference-chart-header"><h2>Success conversion</h2></header><div id="runtime-funnel-chart" class="reference-chart" data-echart-kind="funnel" aria-label="Success conversion"></div>
                 <div class="od-dashboard-outcome" data-dashboard-outcome hidden></div>
                 <div class="od-dashboard-empty" data-dashboard-empty="funnel"><i class="bi bi-funnel" aria-hidden="true"></i><strong>No instance data in this scope</strong><span>Load an orchestration to inspect its completion path.</span></div>
                 <div class="od-dashboard-skeleton" data-dashboard-loading="funnel" hidden>@await Component.InvokeAsync("ZoorceSkeleton", new ZoorceSkeletonOptions { Shape = ZoorceSkeletonShape.Block, Height = "10rem", AriaLabel = "Loading conversion" })</div>
@@ -113,6 +110,8 @@
 @section Scripts {
     <script>window.KrackendRuntimeDashboard = { hubPath: @Html.Raw(JsonSerializer.Serialize(Model.LiveHubPath)), suggestionsUrl: @Html.Raw(JsonSerializer.Serialize(Url.Page(dashboardPage, "OrchestrationSuggestions", new { area = "OrchestratorRuntime" }))), versionsUrl: @Html.Raw(JsonSerializer.Serialize(Url.Page(dashboardPage, "VersionSuggestions", new { area = "OrchestratorRuntime" }))) };</script>
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-echarts.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-dashboard.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-statistics.js" asp-append-version="true"></script>
 }

@@ -5,8 +5,22 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatisticsReader, ISagaStatisticsDashboardReader
+internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatisticsReader, ISagaStatisticsCohortActivityReader, ISagaFailureStatisticsReader
 {
+    public async Task<SagaFailureReport> GetFailuresAsync(DateTime fromUtc, DateTime beforeUtc, CancellationToken cancellationToken = default)
+    {
+        if (fromUtc >= beforeUtc) throw new ArgumentException("The failure statistics start must precede its end.");
+        var counts = new List<SagaFailureCount>(SagaFailureStatistics.Categories.Count);
+        foreach (var category in SagaFailureStatistics.Categories)
+        {
+            var types = category.Value;
+            var count = await db.SagaFailureEvents.AsNoTracking()
+                .LongCountAsync(item => types.Contains(item.TransitionType) && item.OccurredOnUtc >= fromUtc && item.OccurredOnUtc < beforeUtc, cancellationToken);
+            if (count > 0) counts.Add(new SagaFailureCount(category.Key, count));
+        }
+        var complete = await db.SagaFailureBackfillCheckpoints.AsNoTracking().AnyAsync(x => x.Id == SagaFailureStatisticsBackfill.CheckpointId && x.Completed, cancellationToken);
+        return new SagaFailureReport(counts, complete);
+    }
     public async Task<SagaStatisticsReport> GetReportAsync(DateTime fromUtc, DateTime beforeUtc, string orchestrationKey = null,
         CancellationToken cancellationToken = default)
     {
@@ -104,6 +118,8 @@ internal sealed class SagaStatisticsReader(RuntimeDbContext db) : ISagaStatistic
         var observations = db.SagaStatisticsObservations.AsNoTracking()
             .Where(item => item.Processed && item.StatusChanged && !item.IsBackfill
                 && item.OccurredOnUtc >= query.FromUtc && item.OccurredOnUtc < query.BeforeUtc);
+        if (query.RestrictActivityToStartedCohort)
+            observations = observations.Where(item => item.StartedOnUtc >= query.FromUtc && item.StartedOnUtc < query.BeforeUtc);
         observations = FilterObservations(observations, query);
 
         if (bucket is SagaStatisticsActivityBucket.Minute or SagaStatisticsActivityBucket.Hour)

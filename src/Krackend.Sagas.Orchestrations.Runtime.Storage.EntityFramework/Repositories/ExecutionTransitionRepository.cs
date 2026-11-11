@@ -4,6 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Reactive;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Infrastructure;
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
+using Krackend.Sagas.Orchestrations.Runtime.Statistics;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 
@@ -27,6 +28,12 @@ internal sealed class ExecutionTransitionRepository : RuntimeRepositoryBase, IEx
     public async Task Create(ExecutionTransition transition, CancellationToken cancellationToken = default)
     {
         DbContext.ExecutionTransitions.Add(transition);
+        if (SagaFailureStatistics.IsFailure(transition.TransitionType))
+            DbContext.SagaFailureEvents.Add(new SagaFailureEvent
+            {
+                Id = transition.Id, OrchestrationInstanceId = transition.OrchestrationInstanceId,
+                OccurredOnUtc = transition.OccurredOnUtc, TransitionType = transition.TransitionType
+            });
         await SaveChanges(cancellationToken);
         var eventData = await BuildReactiveEvent(transition, cancellationToken);
         if (eventData is not null)

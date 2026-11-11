@@ -46,6 +46,9 @@ public sealed class RuntimeDbContext : DbContext
 
     internal DbSet<SagaStatisticsBackfillCheckpoint> SagaStatisticsBackfillCheckpoints => Set<SagaStatisticsBackfillCheckpoint>();
 
+    internal DbSet<SagaFailureEvent> SagaFailureEvents => Set<SagaFailureEvent>();
+    internal DbSet<SagaFailureBackfillCheckpoint> SagaFailureBackfillCheckpoints => Set<SagaFailureBackfillCheckpoint>();
+
     public DbSet<StageExecution> StageExecutions => Set<StageExecution>();
 
     public DbSet<TaskExecution> TaskExecutions => Set<TaskExecution>();
@@ -79,6 +82,7 @@ public sealed class RuntimeDbContext : DbContext
         ConfigureStatisticsObservations(modelBuilder);
         ConfigureStatisticsProjections(modelBuilder);
         ConfigureStatisticsBackfill(modelBuilder);
+        ConfigureFailureStatistics(modelBuilder);
         ConfigureStages(modelBuilder);
         ConfigureTasks(modelBuilder);
         ConfigureAttempts(modelBuilder);
@@ -272,6 +276,22 @@ public sealed class RuntimeDbContext : DbContext
         builder.ToTable("SagaStatisticsBackfillCheckpoints");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasMaxLength(64);
+    }
+
+    private static void ConfigureFailureStatistics(ModelBuilder modelBuilder)
+    {
+        var events = modelBuilder.Entity<SagaFailureEvent>();
+        events.ToTable("SagaFailureEvents");
+        events.HasKey(x => x.Id);
+        events.Property(x => x.Id).HasConversion(new IdToBytesConverter());
+        events.Property(x => x.OrchestrationInstanceId).HasConversion(new IdToBytesConverter());
+        events.Property(x => x.TransitionType).HasMaxLength(128).IsRequired();
+        events.HasIndex(x => new { x.TransitionType, x.OccurredOnUtc });
+        var checkpoints = modelBuilder.Entity<SagaFailureBackfillCheckpoint>();
+        checkpoints.ToTable("SagaFailureBackfillCheckpoints");
+        checkpoints.HasKey(x => x.Id);
+        checkpoints.Property(x => x.Id).HasMaxLength(64);
+        checkpoints.Property(x => x.ConcurrencyToken).HasMaxLength(32).IsConcurrencyToken().IsRequired();
     }
 
     private static void ConfigureStages(ModelBuilder modelBuilder)

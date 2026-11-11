@@ -8,6 +8,7 @@
     const isManualDashboard = root.dataset.dashboardManualLoad === 'true';
     const requests = new Map();
     let reconnectTimer;
+    let failuresTimer;
     let closed = false;
     const state = {
         hours: Number(root.dataset.hours) || 168,
@@ -16,13 +17,11 @@
         cohortEpoch: 0,
         activityEpoch: 0,
         topOrchestrationsEpoch: 0,
-        rankingLimit: 10,
+        failureEpoch: 0,
+        rankingLimit: 5,
         values: null,
         activity: null,
         ranking: [],
-        liveEvents: new Map(),
-        liveEventTimer: 0,
-        seenEventIds: new Set(),
         tracking: !isManualDashboard
     };
 
@@ -60,7 +59,9 @@
         const controller = new AbortController();
         requests.set(name, controller);
         try {
-            const response = await fetch(requestUrl(source), {
+            const url = requestUrl(source);
+            if (name === 'activity') url.searchParams.set('cohortOnly', 'true');
+            const response = await fetch(url, {
                 headers: { Accept: 'application/json' },
                 signal: controller.signal
             });
@@ -99,6 +100,7 @@
     }
 
     function replaceChart(id, series) {
+        if (window.KrackendRuntimeCharts?.replace(id, series)) return;
         document.getElementById(id)?.dispatchEvent(new CustomEvent('zoorce:chart:replace', { detail: { series } }));
     }
 
@@ -235,10 +237,8 @@
         const values = {
             total: Number(cohort.total || 0),
             running: statusTotal(statuses, activeStatuses),
-            // Waiting is retained only to present records written before the
-            // Idle lifecycle migration as the same public aggregate state.
-            idle: statusValue(statuses, 'Idle') + statusValue(statuses, 'Waiting'),
-            completed: statusValue(statuses, 'Completed'),
+            idle: statusValue(statuses, 'Idle'),
+            completed: statusValue(statuses, 'Completed') + statusValue(statuses, 'Compensated'),
             deadLettered: statusValue(statuses, 'DeadLettered'),
             failed: statusTotal(statuses, failedStatuses)
         };
@@ -300,6 +300,12 @@
             renderStatusCenter(values.total);
         }));
         renderStatusSummary(values.total);
+        const statusDetail = root.querySelector('[data-dashboard-status-detail]');
+        if (statusDetail) {
+            const incidents = values.deadLettered + values.failed;
+            statusDetail.hidden = values.total === 0;
+            statusDetail.textContent = `${dashboardNumber(incidents)} terminal incidents · ${dashboardShare(incidents, values.total)} of the cohort`;
+        }
         renderStatusTooltip(values);
         setPanelEmpty('status', values.total === 0);
         setLoading('status', false);
@@ -378,7 +384,14 @@
 
     function setActivityEmpty(empty) {
         const emptyState = root.querySelector('[data-dashboard-activity-empty]');
-        if (emptyState) emptyState.hidden = !empty;
+        if (emptyState) {
+            emptyState.hidden = !empty;
+            if (empty && state.orchestrationKey) {
+                const title = emptyState.querySelector('strong'), description = emptyState.querySelector('span');
+                if (title) title.textContent = 'No transitions in this period';
+                if (description) description.textContent = 'Choose a wider range to inspect earlier activity.';
+            }
+        }
         root.querySelector('[data-dashboard-panel="activity"]')?.classList.toggle('is-empty', empty);
     }
 
@@ -419,16 +432,19 @@
         const buckets = [];
         for (let current = bucketStart(start, bucket); current < before; current = bucketStep(current, bucket)) buckets.push(current);
         const statuses = [
-            ['Completed', 'Completed', 'var(--z-success)'],
-            ['Dead lettered', 'DeadLettered', 'var(--z-warning)'],
-            ['Failed', 'Failed', 'var(--z-danger)']
+            ['Completed', ['Completed', 'Compensated'], 'var(--z-success)'],
+            ['Dead lettered', ['DeadLettered'], 'var(--z-warning)'],
+            ['Failed', failedStatuses, 'var(--z-danger)']
         ];
-        const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+        window.KrackendRuntimeSparklines?.render(root, buckets, counts);
+        const countFor = (date, statusNames) => statusNames.reduce((sum, status) => sum + (counts.get(`${date.getTime()}|${status}`) || 0), 0);
+        const total = buckets.reduce((sum, date) => sum + statuses.reduce((n, [, names]) => n + countFor(date, names), 0), 0);
         setActivityEmpty(total === 0);
-        replaceChart('runtime-activity-chart', total === 0 ? [] : statuses.map(([name, status, color]) => ({
+        replaceChart('runtime-activity-chart', total === 0 ? [] : statuses.map(([name, statusNames, color]) => ({
             name,
             color,
-            points: buckets.map(date => ({ label: bucketLabel(date, bucket), value: counts.get(`${date.getTime()}|${status}`) || 0 }))
+            points: buckets.map(date => ({ label: bucketLabel(date, bucket), value: countFor(date, statusNames),
+                partial: date < start || bucketStep(date, bucket) > before }))
         })));
         setLoading('activity', false);
         clearError('activity');
@@ -438,6 +454,10 @@
         const epoch = ++state.cohortEpoch;
         if (showLoading) {
             setMetricLoading(true);
+            replaceChart('runtime-status-chart', []);
+            replaceChart('runtime-effectiveness-chart', []);
+            replaceChart('runtime-funnel-chart', []);
+            const detail = root.querySelector('[data-dashboard-status-detail]'); if (detail) detail.hidden = true;
             setLoading('status', true);
             setLoading('funnel', true);
             setLoading('effectiveness', true);
@@ -449,6 +469,9 @@
         } catch (error) {
             if (isAbort(error) || epoch !== state.cohortEpoch) return;
             setMetricLoading(false);
+            state.values = null;
+            root.querySelectorAll('[data-dashboard-metric]').forEach(element => { element.textContent = '—'; });
+            root.querySelectorAll('[data-dashboard-metric-share]').forEach(element => { element.textContent = 'Unavailable'; });
             showError('status', error);
             showError('funnel', error);
             showError('effectiveness', error);
@@ -458,7 +481,9 @@
     async function loadActivity({ showLoading = false } = {}) {
         const epoch = ++state.activityEpoch;
         if (showLoading) {
+            window.KrackendRuntimeSparklines?.clear(root);
             setActivityEmpty(false);
+            replaceChart('runtime-activity-chart', []);
             setLoading('activity', true);
         }
         try {
@@ -467,6 +492,8 @@
             renderActivity(activity);
         } catch (error) {
             if (isAbort(error) || epoch !== state.activityEpoch) return;
+            window.KrackendRuntimeSparklines?.clear(root, 'Changes unavailable');
+            replaceChart('runtime-activity-chart', []);
             showError('activity', error);
         }
     }
@@ -476,6 +503,7 @@
         const epoch = ++state.topOrchestrationsEpoch;
         if (showLoading) {
             setRankingEmpty(false);
+            replaceChart('runtime-top-orchestrations-chart', []);
             setLoading('top-orchestrations', true);
         }
         try {
@@ -496,6 +524,7 @@
             loadActivity({ showLoading })
         ];
         if (root.dataset.topOrchestrationsUrl) loads.push(loadTopOrchestrations({ showLoading }));
+        if (root.dataset.failuresUrl) loads.push(loadFailures({ showLoading }));
         return Promise.allSettled(loads).then(results => {
             // Consumers such as Statistics own their progress button.  They
             // must complete only when every independently loaded panel has
@@ -510,6 +539,42 @@
             }));
             return results;
         });
+    }
+
+    async function loadFailures({ showLoading = false } = {}) {
+        const epoch = ++state.failureEpoch;
+        const empty = root.querySelector('[data-dashboard-failures-empty]');
+        if (showLoading) {
+            replaceChart('runtime-failures-chart', []);
+            if (empty) { empty.hidden = false; empty.querySelector('strong').textContent = 'Loading failure events…'; }
+            const footer = root.querySelector('[data-failure-detail]'); if (footer) footer.hidden = true;
+            clearError('failures');
+        }
+        try {
+            const report = await fetchJson('failures', root.dataset.failuresUrl);
+            if (epoch !== state.failureEpoch) return;
+            const points = (Array.isArray(report.items) ? report.items : []).map(row => ({ label: row.category,
+                value: Number(row.count || 0) })).sort((a, b) => b.value - a.value);
+            replaceChart('runtime-failures-chart', points.length ? [{ name: 'Failure events', points }] : []);
+            if (empty) { empty.querySelector('strong').textContent = 'No failure events in this period'; empty.hidden = points.length > 0; }
+            const panel = root.querySelector('[data-dashboard-panel="failures"]');
+            if (panel) {
+                let footer = panel.querySelector('[data-failure-detail]');
+                if (!footer) { footer = document.createElement('footer'); footer.className = 'reference-chart-footer'; footer.dataset.failureDetail = ''; panel.append(footer); }
+                const total = points.reduce((sum, point) => sum + point.value, 0);
+                const leading = points.slice(0, 2).reduce((sum, point) => sum + point.value, 0);
+                footer.hidden = total === 0;
+                footer.textContent = `${total ? Math.round(leading * 100 / total) : 0}% in the top two categories · ${dashboardNumber(total)} recorded events`;
+            }
+            const history = root.querySelector('[data-failures-history]');
+            if (history) history.hidden = report.historyComplete;
+            if (!report.historyComplete && !failuresTimer) {
+                failuresTimer = window.setTimeout(() => { failuresTimer = 0; void loadFailures(); }, 30000);
+            }
+            clearError('failures');
+        } catch (error) {
+            if (!isAbort(error) && epoch === state.failureEpoch) { if (empty) empty.hidden = true; showError('failures', error); }
+        }
     }
 
     function syncPeriodButtons() {
@@ -543,7 +608,7 @@
     }
 
     function selectRankingLimit(limit) {
-        if (![10, 15, 20, 25].includes(limit) || limit === state.rankingLimit) return;
+        if (![5, 10, 15].includes(limit) || limit === state.rankingLimit) return;
         state.rankingLimit = limit;
         syncRankingLimitButtons();
         void loadTopOrchestrations({ showLoading: true });
@@ -563,120 +628,55 @@
         void loadDashboard({ showLoading: true });
     });
 
-    function publicStatus(value) {
-        const status = String(value || 'Running');
-        if (['Created', 'Running', 'Waiting', 'WaitingResponse', 'Retrying', 'Compensating'].includes(status)) return 'running';
-        if (status === 'Idle') return 'idle';
-        if (['Completed', 'Compensated'].includes(status)) return 'completed';
-        if (status === 'DeadLettered') return 'deadLettered';
-        if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(status)) return 'failed';
-        return null;
-    }
-
-    function isInstanceTransition(event) {
-        return /^Instance/i.test(String(eventValue(event, 'transitionType') || ''));
-    }
-
-    function isInstanceStart(event) {
-        return /^(InstancePromoted|InstanceStarted)$/i.test(String(eventValue(event, 'transitionType') || ''));
-    }
-
-    function isWithinCurrentRange(value) {
-        const timestamp = asUtcDate(value)?.getTime();
-        const from = asUtcDate(state.activity?.fromUtc)?.getTime();
-        const before = asUtcDate(state.activity?.beforeUtc)?.getTime();
-        return timestamp !== undefined && timestamp !== null && from !== undefined && before !== undefined && timestamp >= from && timestamp < before;
-    }
-
-    function incrementActivity(status, occurredOnUtc) {
-        if (!state.activity || !isWithinCurrentRange(occurredOnUtc)) return;
-        const bucket = String(state.activity.bucket || 'Day').toLowerCase();
-        const key = bucketStart(asUtcDate(occurredOnUtc), bucket).toISOString();
-        const activity = Array.isArray(state.activity.activity) ? state.activity.activity : (state.activity.activity = []);
-        const point = activity.find(item => String(item.bucketUtc) === key && String(item.status) === status);
-        if (point) point.count = Number(point.count || 0) + 1;
-        else activity.push({ bucketUtc: key, status, count: 1 });
-        renderActivity(state.activity);
-    }
-
-    function incrementRanking(event) {
-        if (!isWithinCurrentRange(eventValue(event, 'startedOnUtc') || eventValue(event, 'occurredOnUtc'))) return;
-        const key = String(eventValue(event, 'orchestrationDefinitionKey') || '').trim();
-        if (!key) return;
-        const rows = [...state.ranking];
-        const existing = rows.find(row => String(row.orchestrationKey) === key);
-        if (existing) existing.startedInstances = Number(existing.startedInstances || 0) + 1;
-        else rows.push({ orchestrationKey: key, startedInstances: 1 });
-        rows.sort((left, right) => Number(right.startedInstances || 0) - Number(left.startedInstances || 0));
-        renderTopOrchestrations(rows.slice(0, state.rankingLimit));
-    }
-
-    function applyLiveEvent(event) {
-        const eventId = String(eventValue(event, 'id') || '');
-        if (!eventId || state.seenEventIds.has(eventId) || !isInstanceTransition(event) || !state.values) return;
-        state.seenEventIds.add(eventId);
-        if (state.seenEventIds.size > 4096) state.seenEventIds.delete(state.seenEventIds.values().next().value);
-
-        const after = publicStatus(eventValue(event, 'instanceStatus') || eventValue(event, 'toStatus'));
-        const before = publicStatus(eventValue(event, 'fromStatus'));
-        if (isInstanceStart(event)) {
-            state.values.total += 1;
-            if (after) state.values[after] += 1;
-            incrementRanking(event);
-        } else if (before && after && before !== after) {
-            state.values[before] = Math.max(0, state.values[before] - 1);
-            state.values[after] += 1;
-        }
-        renderCohortValues(state.values);
-        if (after === 'completed') incrementActivity('Completed', eventValue(event, 'occurredOnUtc'));
-        if (after === 'deadLettered') incrementActivity('DeadLettered', eventValue(event, 'occurredOnUtc'));
-        if (after === 'failed') incrementActivity('Failed', eventValue(event, 'occurredOnUtc'));
+    let statisticsTimer;
+    function scheduleStatisticsRefresh() {
+        if (statisticsTimer || !state.tracking) return;
+        statisticsTimer = window.setTimeout(() => {
+            statisticsTimer = 0;
+            if (state.tracking && !closed) {
+                const loads = [loadCohort(), loadActivity()];
+                if (root.dataset.topOrchestrationsUrl) loads.push(loadTopOrchestrations());
+                void Promise.allSettled(loads);
+            }
+        }, 15000);
     }
 
     function queueLiveEvent(event) {
-        const id = String(eventValue(event, 'id') || '');
-        if (!id) return;
-        state.liveEvents.set(id, event);
-        if (state.liveEvents.size > 1024) {
-            state.liveEvents.clear();
-            void loadDashboard();
-            return;
+        const transitionType = String(eventValue(event, 'transitionType') || '');
+        if (root.dataset.failuresUrl && /(?:Failed|TimedOut)$/.test(transitionType) && !failuresTimer) {
+            failuresTimer = window.setTimeout(() => { failuresTimer = 0; void loadFailures(); }, 15000);
         }
-        if (state.liveEventTimer) return;
-        state.liveEventTimer = window.setTimeout(() => {
-            state.liveEventTimer = 0;
-            const events = [...state.liveEvents.values()].sort((left, right) =>
-                (asUtcDate(eventValue(left, 'occurredOnUtc'))?.getTime() || 0) - (asUtcDate(eventValue(right, 'occurredOnUtc'))?.getTime() || 0));
-            state.liveEvents.clear();
-            events.forEach(applyLiveEvent);
-        }, 120);
     }
 
     syncPeriodButtons();
     syncRankingLimitButtons();
     let connection;
-    const notifyLiveState = stateName => root.dispatchEvent(new CustomEvent('krackend:dashboard-live-state', {
-        detail: { tracking: state.tracking, state: stateName }
-    }));
+    const notifyLiveState = stateName => {
+        const indicator = root.querySelector('[data-dashboard-live]');
+        if (indicator) indicator.textContent = ({ connected: 'Live', local: 'Local only', reconnecting: 'Reconnecting', inactive: 'Offline' })[stateName] || stateName;
+        root.dispatchEvent(new CustomEvent('krackend:dashboard-live-state', { detail: { tracking: state.tracking, state: stateName } }));
+    };
     const retry = () => {
         if (closed || !state.tracking) return;
         window.clearTimeout(reconnectTimer);
         reconnectTimer = window.setTimeout(start, 5000);
     };
     const subscribe = async () => connection.invoke('WatchRuntime');
-    // Realtime events already contain the tiny state delta needed by the
-    // dashboard. Statistics projection notifications are deliberately ignored:
-    // querying SQL for every SignalR message made a busy dashboard unusable.
+    // Coalesce notifications and reload committed projections, rather than
+    // guessing cohort totals from individual transitions.
     function createConnection() {
         if (connection || !window.signalR) return connection;
         connection = new signalR.HubConnectionBuilder().withUrl(config.hubPath).withAutomaticReconnect().build();
         connection.on('runtime.transition', queueLiveEvent);
+        connection.on('runtime.statistics.updated', scheduleStatisticsRefresh);
         connection.on('runtime.resync', () => void loadDashboard());
+        connection.on('runtime.fanout.health', synchronized => notifyLiveState(synchronized ? 'connected' : 'local'));
         connection.onreconnecting(() => notifyLiveState('reconnecting'));
         connection.onreconnected(async () => {
             try {
-                await subscribe();
-                notifyLiveState('connected');
+                const synchronized = await subscribe();
+                notifyLiveState(synchronized === false ? 'local' : 'connected');
+                void loadDashboard();
             } catch {
                 notifyLiveState('reconnecting');
                 await connection.stop();
@@ -693,8 +693,8 @@
         if (!createConnection()) return;
         try {
             await connection.start();
-            await subscribe();
-            notifyLiveState('connected');
+            const synchronized = await subscribe();
+            notifyLiveState(synchronized === false ? 'local' : 'connected');
         } catch {
             notifyLiveState('reconnecting');
             if (connection.state !== signalR.HubConnectionState.Disconnected) await connection.stop();
@@ -712,7 +712,7 @@
 
     root.addEventListener('krackend:dashboard-tracking', event => {
         state.tracking = Boolean(event.detail?.enabled);
-        if (state.tracking) void start();
+        if (state.tracking) { void loadDashboard(); void start(); }
         else void stop();
     });
 
@@ -723,8 +723,9 @@
 
     window.addEventListener('pagehide', () => {
         closed = true;
-        window.clearTimeout(state.liveEventTimer);
+        window.clearTimeout(statisticsTimer);
         window.clearTimeout(reconnectTimer);
+        window.clearTimeout(failuresTimer);
         requests.forEach(controller => controller.abort());
         void stop();
     }, { once: true });

@@ -64,13 +64,23 @@ public sealed class IndexModel : PageModel
     public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,
         string search = null, string sort = null, bool descending = false, string status = null,
         CancellationToken cancellationToken = default, DateTimeOffset? startedFrom = null,
-        DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null)
+        DateTimeOffset? startedBefore = null, bool activeOnly = false, int? recentHours = null, string statusGroup = null)
     {
         if (_diagnosticsReader is not IRuntimeInstanceCatalogReader catalog)
             return StatusCode(503, "The configured runtime storage does not support paged diagnostics.");
         var error = ValidateFilters(status, startedFrom, startedBefore, recentHours, out var selectedStatus);
         if (error is not null) return BadRequest(error);
         if (recentHours.HasValue) startedFrom = DateTimeOffset.UtcNow.AddHours(-recentHours.Value);
+        var statusGroups = new Dictionary<string, OrchestrationInstanceStatus[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["running"] = [OrchestrationInstanceStatus.Created, OrchestrationInstanceStatus.Running, OrchestrationInstanceStatus.Waiting, OrchestrationInstanceStatus.Compensating],
+            ["idle"] = [OrchestrationInstanceStatus.Idle],
+            ["completed"] = [OrchestrationInstanceStatus.Completed, OrchestrationInstanceStatus.Compensated],
+            ["failed"] = [OrchestrationInstanceStatus.Failed, OrchestrationInstanceStatus.Stopped, OrchestrationInstanceStatus.Aborted, OrchestrationInstanceStatus.CompletedWithErrors],
+            ["deadlettered"] = [OrchestrationInstanceStatus.DeadLettered],
+            ["attention"] = [OrchestrationInstanceStatus.Failed, OrchestrationInstanceStatus.Stopped, OrchestrationInstanceStatus.Aborted, OrchestrationInstanceStatus.CompletedWithErrors, OrchestrationInstanceStatus.DeadLettered]
+        };
+        if (!string.IsNullOrWhiteSpace(statusGroup) && !statusGroups.ContainsKey(statusGroup)) return BadRequest("The status group is invalid.");
         var sortField = sort switch
         {
             "orchestrationLabel" => RuntimeInstanceCatalogSort.Orchestration,
@@ -78,6 +88,7 @@ public sealed class IndexModel : PageModel
             "sagaId" => RuntimeInstanceCatalogSort.SagaId,
             "status" => RuntimeInstanceCatalogSort.Status,
             "startedOnUtc" => RuntimeInstanceCatalogSort.Started,
+            "lastUpdatedOnUtc" => RuntimeInstanceCatalogSort.Updated,
             _ => RuntimeInstanceCatalogSort.Started
         };
         RuntimeInstancePageModel result;
@@ -85,7 +96,8 @@ public sealed class IndexModel : PageModel
         {
             result = await catalog.GetInstances(new RuntimeInstanceCatalogQuery(Math.Max(page, 1), Math.Clamp(pageSize, 1, 100),
                 search?.Trim() ?? string.Empty, selectedStatus, sortField, string.IsNullOrEmpty(sort) || descending,
-                startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly), cancellationToken);
+                startedFrom?.UtcDateTime, startedBefore?.UtcDateTime, activeOnly)
+                { Statuses = string.IsNullOrWhiteSpace(statusGroup) ? null : statusGroups[statusGroup] }, cancellationToken);
         }
         catch (NotSupportedException)
         {

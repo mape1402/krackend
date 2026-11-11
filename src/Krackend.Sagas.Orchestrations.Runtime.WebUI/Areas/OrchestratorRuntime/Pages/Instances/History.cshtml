@@ -1,32 +1,29 @@
 @page
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
 @using Zoorce.Web.UI.Foundation.Components
 @{
     ViewData["Title"] = "Instance history";
     var from = DateTime.UtcNow.Date.AddDays(-30).ToString("yyyy-MM-dd");
-    var source = Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List", startedFrom = DateTime.UtcNow.Date.AddDays(-30).ToString("O") });
 }
-
 @section Head {
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
+    <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
-
-<section data-instance-history data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
-    <form class="od-history-filters" data-history-filters>
-        <label>From <input class="z-form-input" type="date" data-history-from value="@from" aria-label="From (UTC)" /></label>
-        <label>Through <input class="z-form-input" type="date" data-history-through aria-label="Through (UTC)" /></label>
-        <span data-history-apply>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeHistoryApplyButton", Text = "Apply", Tone = "primary" })</span>
-        <span class="od-trace-error" data-history-error role="alert" hidden>From must not be after through.</span>
-    </form>
-    @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
-        Id = "runtime-history-grid", AriaLabel = "Instance history", Binding = new ZoorceDataBindingOptions { Source = source },
-        LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
-        Columns = [new("orchestrationLabel", "Orchestration"), new("correlationId", "Correlation ID"), new("sagaId", "Saga ID"),
-            new("status", "Status"), new("startedOnUtc", "Started"), new("lastUpdatedOnUtc", "Updated"), new("actions", "Actions", false)]
-    })
+<section class="runtime-reference instances-reference" data-instance-history data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+    <div class="grid-surface history-surface">
+        <div class="grid-commandbar">
+            <label class="search-box"><i class="bi bi-search"></i><input type="search" data-history-search aria-label="Search history" placeholder="Search instances…" /></label>
+            <form class="od-history-filters" data-history-filters>
+                <label>From <input class="z-form-input" type="date" data-history-from value="@from" aria-label="From (UTC)" /></label>
+                <label>Through <input class="z-form-input" type="date" data-history-through aria-label="Through (UTC)" /></label>
+                <span data-history-apply>@await Component.InvokeAsync("ZoorceProgressButton", new ZoorceProgressButtonOptions { Id = "runtimeHistoryApplyButton", Text = "Apply", Tone = "primary" })</span>
+                <span class="od-trace-error" data-history-error role="alert" hidden>From must not be after through.</span>
+            </form>
+        </div>
+        <div id="historyGrid" aria-label="Instance history grid"></div>
+        <div class="grid-footer"><span>Instance history · UTC</span><span data-history-count aria-live="polite"></span></div>
+    </div>
 </section>
-
 @section Scripts {
-    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-history.js" asp-append-version="true"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.3.0/dist/ag-grid-community.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-history-ag-grid.js" asp-append-version="true"></script>
 }

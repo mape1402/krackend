@@ -1,0 +1,258 @@
+(() => {
+    const root = document.querySelector('[data-runtime-catalog]');
+    if (!root) return;
+    const grid = root.querySelector('#instancesGrid');
+    if (!window.agGrid) { grid.textContent = 'The instance grid could not load.'; return; }
+    const search = root.querySelector('[data-instance-search]');
+    const workspace = root.querySelector('[data-workspace]');
+    const inspector = root.querySelector('[data-inspector]');
+    const counts = { total: 0, running: 0, idle: 0, completed: 0, deadLettered: 0, failed: 0 };
+    const pending = [], seen = new Set(), selectedRows = new Map();
+    let hours = 24, statusGroup = '', compact = false, selected = null, countsRequest, sparkRequest, searchTimer, liveTimer, refreshTimer, countsTimer, sparkTimer;
+    let revision = 0;
+    const value = (event, key) => event?.[key] ?? event?.[key[0].toUpperCase() + key.slice(1)];
+    const publicStatus = status => ({ Created: 'Running', Waiting: 'Running', Compensating: 'Running',
+        Compensated: 'Completed', Stopped: 'Failed', Aborted: 'Failed', CompletedWithErrors: 'Failed' }[status] || status || 'Running');
+    const keyFor = status => status ? ({ Running: 'running', Idle: 'idle', Completed: 'completed', DeadLettered: 'deadLettered', Failed: 'failed' }[publicStatus(status)]) : null;
+    const date = input => { if (!input) return null; const text = /(?:Z|[+-]\d\d:\d\d)$/i.test(input) ? input : `${input}Z`; const d = new Date(text); return Number.isNaN(d.getTime()) ? null : d; };
+    const formatDate = input => date(input)?.toLocaleString() || '—';
+    const relativeDate = input => {
+        const value = date(input); if (!value) return '—';
+        const seconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+        const relative = seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`;
+        return `<div class="relative-time"><strong>${relative}</strong><small>${escape(value.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</small></div>`;
+    };
+    const duration = row => {
+        const start = date(row.startedOnUtc); if (!start) return '—';
+        const active = ['Running', 'Idle'].includes(publicStatus(row.status));
+        const end = active ? new Date() : date(row.completedOnUtc || row.failedOnUtc || row.stoppedOnUtc || row.compensatedOnUtc);
+        if (!end) return '—';
+        const seconds = Math.max(0, Math.floor((end - start) / 1000));
+        return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m`;
+    };
+    const escape = text => String(text ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const progress = row => row.totalTaskCount == null || row.completedTaskCount == null ? null
+        : row.totalTaskCount === 0 ? (row.status === 'Completed' ? 100 : 0)
+        : Math.max(0, Math.min(100, Math.round(100 * row.completedTaskCount / row.totalTaskCount)));
+    function rowStatus(row) { const s = publicStatus(row?.status); return `<span class="status-pill status-${escape(s.toLowerCase())}">${escape(s)}</span>`; }
+    function renderInspector(row) {
+        selected = row;
+        workspace.classList.add('inspector-open'); inspector.setAttribute('aria-hidden', 'false');
+        root.querySelector('[data-inspector-content]').hidden = false;
+        root.querySelector('[data-inspector-title]').textContent = row.orchestrationLabel || row.orchestrationDefinitionKey || '';
+        root.querySelector('[data-inspector-status]').innerHTML = rowStatus(row);
+        root.querySelector('[data-inspector-updated]').textContent = formatDate(row.lastUpdatedOnUtc);
+        const p = progress(row);
+        root.querySelector('[data-inspector-progress-label]').textContent = p == null ? 'Not available' : `${p}% · ${row.completedTaskCount}/${row.totalTaskCount} tasks`;
+        root.querySelector('[data-inspector-progress]').style.width = `${p ?? 0}%`;
+        const fields = [['Saga ID', row.sagaId], ['Correlation ID', row.correlationId], ['Version', row.orchestrationVersion], ['Started', formatDate(row.startedOnUtc)]];
+        root.querySelector('[data-inspector-metadata]').innerHTML = fields.map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v || '—')}</dd></div>`).join('');
+        root.querySelector('[data-inspector-execution]').innerHTML = `<strong>${escape(row.currentStageKey || row.lastExecutedStageKey || 'No stage recorded')}</strong><p>${escape(row.currentTaskKey || row.lastExecutedTaskKey || 'No task recorded')}</p>`;
+        root.querySelector('[data-inspector-detail]').href = root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(row.id));
+    }
+    function theme() {
+        const css = getComputedStyle(root);
+        const c = (key, fallback) => css.getPropertyValue(key).trim() || fallback;
+        return agGrid.themeQuartz.withParams({ accentColor: c('--primary', '#087a57'), backgroundColor: c('--surface', '#fff'),
+            foregroundColor: c('--text', '#15251f'), borderColor: c('--border', '#d6e2dc'), fontSize: 10, spacing: 6 });
+    }
+    function visibleRows(gridApi) {
+        const first = gridApi.paginationGetCurrentPage() * gridApi.paginationGetPageSize();
+        const last = first + gridApi.paginationGetPageSize(), rows = [];
+        gridApi.forEachNode(node => { if (node.data && node.rowIndex >= first && node.rowIndex < last) rows.push(node.data); });
+        return rows;
+    }
+    function currentSort(gridApi) {
+        return gridApi.getColumnState().filter(column => column.sort).map(column => ({ colId: column.colId, sort: column.sort }));
+    }
+    function listUrl(startRow, sortModel) {
+        const url = new URL(root.dataset.source, location.href);
+        url.searchParams.set('page', String(Math.floor(startRow / 25) + 1));
+        url.searchParams.set('pageSize', '25'); url.searchParams.set('recentHours', String(hours));
+        if (search.value.trim()) url.searchParams.set('search', search.value.trim());
+        if (statusGroup) url.searchParams.set('statusGroup', statusGroup);
+        const sort = sortModel?.[0];
+        if (sort) { url.searchParams.set('sort', sort.colId); url.searchParams.set('descending', String(sort.sort === 'desc')); }
+        return url;
+    }
+    function updateSelection(gridApi) {
+        root.querySelector('[data-selection-bar]').hidden = selectedRows.size === 0;
+        root.querySelector('[data-selection-count]').textContent = String(selectedRows.size);
+        const header = grid.querySelector('[data-select-page]'), rows = visibleRows(gridApi);
+        if (header) {
+            const checked = rows.filter(row => selectedRows.has(String(row.id))).length;
+            header.checked = rows.length > 0 && checked === rows.length;
+            header.indeterminate = checked > 0 && checked < rows.length;
+            header.disabled = rows.length === 0;
+        }
+    }
+    class SelectionHeader {
+        init(params) {
+            this.element = document.createElement('input'); this.element.type = 'checkbox';
+            this.element.dataset.selectPage = ''; this.element.setAttribute('aria-label', 'Select current page');
+            this.element.addEventListener('change', async () => {
+                const checked = this.element.checked, page = params.api.paginationGetCurrentPage();
+                const size = params.api.paginationGetPageSize(), first = page * size;
+                const sort = currentSort(params.api), snapshot = `${revision}|${page}|${size}|${listUrl(first, sort)}`;
+                const message = root.querySelector('[data-selection-message]'); message.textContent = '';
+                let rows = visibleRows(params.api);
+                try {
+                    if (rows.length < Math.min(size, Math.max(0, params.api.paginationGetRowCount() - first))) {
+                        this.element.disabled = true;
+                        const pages = await Promise.all(Array.from({ length: Math.ceil(size / 25) }, (_, i) =>
+                            fetch(listUrl(first + i * 25, sort), { headers: { Accept: 'application/json' } }).then(response => {
+                                if (!response.ok) throw new Error('Unable to select this page'); return response.json();
+                            })));
+                        if (snapshot !== `${revision}|${params.api.paginationGetCurrentPage()}|${params.api.paginationGetPageSize()}|${listUrl(first, currentSort(params.api))}`) return;
+                        rows = pages.flatMap(result => result.items);
+                    }
+                    rows.forEach(row => checked ? selectedRows.set(String(row.id), row) : selectedRows.delete(String(row.id)));
+                } catch { message.textContent = 'Unable to select this page.'; root.querySelector('[data-selection-bar]').hidden = false; }
+                finally { if (!params.api.isDestroyed()) { params.api.refreshCells({ columns: ['selection'], force: true }); updateSelection(params.api); if (message.textContent) root.querySelector('[data-selection-bar]').hidden = false; } }
+            });
+        }
+        getGui() { return this.element; }
+    }
+    const columnDefs = [
+        { colId: 'selection', width: 42, minWidth: 42, maxWidth: 42, pinned: 'left', sortable: false, resizable: false, headerComponent: SelectionHeader,
+            cellRenderer: p => { if (!p.data) return ''; const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+                checkbox.checked = selectedRows.has(String(p.data.id)); checkbox.setAttribute('aria-label', `Select ${p.data.sagaId || p.data.id}`);
+                checkbox.addEventListener('click', e => e.stopPropagation()); checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) selectedRows.set(String(p.data.id), p.data); else selectedRows.delete(String(p.data.id)); updateSelection(p.api);
+                }); return checkbox; } },
+        { field: 'orchestrationLabel', headerName: 'Orchestration', pinned: 'left', width: 195,
+            cellRenderer: p => p.data ? `<div class="orchestration-cell"><span class="orchestration-glyph"><i class="bi bi-bezier2"></i></span><span class="orchestration-copy"><strong>${escape(p.data.orchestrationDefinitionKey)}</strong><small>${escape(p.data.orchestrationVersion || '')}</small></span></div>` : '' },
+        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID']].map(([field, headerName]) => ({ field, headerName, width: 145,
+            cellRenderer: p => p.data ? `<div class="mono-cell"><span>${escape(p.value || '—')}</span><button class="copy-id" type="button" aria-label="Copy ${headerName}"><i class="bi bi-copy"></i></button></div>` : '' })),
+        { field: 'status', headerName: 'Status', width: 110, cellRenderer: p => p.data ? rowStatus(p.data) : '' },
+        { field: 'progress', headerName: 'Progress', width: 105, sortable: false,
+            cellRenderer: p => { if (!p.data) return ''; const n = progress(p.data); return n == null ? '—' : `<div class="progress-cell"><div class="progress-cell-track"><span style="width:${n}%"></span></div><small>${n}%</small></div>`; } },
+        { field: 'currentStageKey', headerName: 'Current workflow', minWidth: 150, flex: 1, sortable: false,
+            cellRenderer: p => p.data ? `<div class="workflow-cell"><strong>${escape(p.data.currentStageKey || p.data.lastExecutedStageKey || '—')}</strong><small>${escape(p.data.currentTaskKey || p.data.lastExecutedTaskKey || '')}</small></div>` : '' },
+        { field: 'retryCount', headerName: 'Retries', width: 80, sortable: false },
+        { field: 'startedOnUtc', headerName: 'Started', width: 105, cellRenderer: p => p.data ? relativeDate(p.value) : '' },
+        { field: 'lastUpdatedOnUtc', headerName: 'Updated', width: 105, cellRenderer: p => p.data ? relativeDate(p.value) : '' },
+        { headerName: 'Duration', width: 80, sortable: false, cellRenderer: p => p.data ? duration(p.data) : '' }
+    ];
+    let api;
+    const datasource = { getRows: async params => {
+        const requestRevision = revision;
+        const url = listUrl(params.startRow, params.sortModel);
+        try {
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            if (!response.ok) throw new Error('Instances unavailable');
+            const result = await response.json();
+            if (requestRevision !== revision) { params.failCallback(); return; }
+            params.successCallback(result.items, Number(result.totalCount));
+            root.querySelector('[data-runtime-loaded-copy]').textContent = `${Number(result.totalCount).toLocaleString()} matching instances`;
+        } catch (error) { params.failCallback(); if (requestRevision === revision) root.querySelector('[data-runtime-loaded-copy]').textContent = 'Unable to load instances'; }
+    } };
+    api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20, pagination: true, paginationPageSize: 25, paginationPageSizeSelector: [25, 50, 100],
+        maxConcurrentDatasourceRequests: 1, blockLoadDebounceMillis: 100, columnDefs, defaultColDef: { sortable: true, resizable: true, minWidth: 80 },
+        rowHeight: 45, headerHeight: 34, getRowId: p => String(p.data.id), suppressMultiSort: true,
+        onPaginationChanged: e => updateSelection(e.api), onModelUpdated: e => updateSelection(e.api),
+        onCellClicked: e => { if (!e.data) return; if (e.event?.target?.closest('.copy-id')) { navigator.clipboard?.writeText(String(e.value || '')); return; } renderInspector(e.data); } });
+    function refresh() { revision++; api.setGridOption('datasource', datasource); }
+    function renderCounts() {
+        Object.entries(counts).forEach(([key, n]) => { root.querySelector(`[data-monitor-count="${key}"]`).textContent = n.toLocaleString();
+            root.querySelector(`[data-monitor-share="${key}"]`).textContent = key === 'total' ? `${hours}h` : counts.total ? `${Math.round(n * 100 / counts.total)}%` : '0%'; });
+    }
+    async function refreshSparks() {
+        sparkRequest?.abort();
+        if (search.value.trim()) { window.KrackendRuntimeSparklines?.clear(root, 'Changes unavailable for search'); return; }
+        window.KrackendRuntimeSparklines?.clear(root);
+        const controller = new AbortController(); sparkRequest = controller;
+        const url = new URL(root.dataset.activitySource, location.href); url.searchParams.set('hours', String(hours)); url.searchParams.set('cohortOnly', 'true');
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            if (response.ok) {
+                const result = await response.json();
+                if (sparkRequest === controller && !search.value.trim()) window.KrackendRuntimeSparklines?.renderResult(root, result);
+            }
+            else if (sparkRequest === controller) window.KrackendRuntimeSparklines?.clear(root, 'Changes unavailable');
+        } catch (error) { if (error.name !== 'AbortError' && sparkRequest === controller) window.KrackendRuntimeSparklines?.clear(root, 'Changes unavailable'); }
+        finally { if (sparkRequest === controller) sparkRequest = null; }
+    }
+    async function refreshCounts() {
+        countsRequest?.abort(); const controller = new AbortController(); countsRequest = controller;
+        const url = new URL(root.dataset.countsSource, location.href); url.searchParams.set('recentHours', String(hours));
+        if (search.value.trim()) url.searchParams.set('search', search.value.trim());
+        try {
+            const response = await fetch(url, { signal: controller.signal }); if (!response.ok) throw new Error('Counts unavailable');
+            const data = await response.json(), count = key => Number(data[key] || 0);
+            counts.running = count('Created') + count('Running') + count('Waiting') + count('Compensating');
+            counts.idle = count('Idle'); counts.completed = count('Completed') + count('Compensated');
+            counts.deadLettered = count('DeadLettered'); counts.failed = count('Failed') + count('Stopped') + count('Aborted') + count('CompletedWithErrors');
+            counts.total = Object.entries(counts).filter(([k]) => k !== 'total').reduce((sum, [, n]) => sum + n, 0);
+            renderCounts();
+        } catch (error) { if (error.name !== 'AbortError') root.querySelectorAll('[data-monitor-count]').forEach(e => { e.textContent = '—'; }); }
+        finally { if (countsRequest === controller) { countsRequest = null; root.querySelectorAll('[data-monitor-metric-skeleton]').forEach(e => e.hidden = true); root.querySelectorAll('[data-monitor-metric-data]').forEach(e => e.hidden = false); } }
+    }
+    search.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { refresh(); void refreshCounts(); void refreshSparks(); }, 300); });
+    root.querySelectorAll('[data-runtime-scope-value]').forEach(button => button.addEventListener('click', () => {
+        hours = Number(button.dataset.runtimeScopeValue); root.querySelectorAll('[data-runtime-scope-value]').forEach(b => b.setAttribute('aria-pressed', String(b === button))); refresh(); void refreshCounts(); void refreshSparks();
+    }));
+    root.querySelectorAll('[data-status-group]').forEach(button => button.addEventListener('click', () => {
+        statusGroup = button.dataset.statusGroup; root.querySelectorAll('[data-status-group]').forEach(b => { const active = b.dataset.statusGroup === statusGroup; b.setAttribute('aria-pressed', String(active)); b.classList.toggle('is-active', active); }); refresh();
+    }));
+    root.querySelector('[data-runtime-refresh]').addEventListener('click', () => { refresh(); void refreshCounts(); void refreshSparks(); });
+    root.querySelector('[data-density]').addEventListener('click', () => { compact = !compact; api.setGridOption('rowHeight', compact ? 35 : 45); api.resetRowHeights(); });
+    root.querySelector('[data-fit-columns]').addEventListener('click', () => api.sizeColumnsToFit());
+    root.querySelector('[data-close-inspector]').addEventListener('click', () => { selected = null; workspace.classList.remove('inspector-open'); inspector.setAttribute('aria-hidden', 'true'); });
+    root.querySelector('[data-inspect-selected]').addEventListener('click', () => { const first = selectedRows.values().next().value; if (first) renderInspector(first); });
+    root.querySelector('[data-copy-selected]').addEventListener('click', async event => {
+        const button = event.currentTarget, ids = [...selectedRows.values()].map(row => row.sagaId || row.id).join('\n');
+        if (!ids) return;
+        try { await navigator.clipboard.writeText(ids); button.textContent = 'Copied'; }
+        catch { button.textContent = 'Clipboard unavailable'; }
+        setTimeout(() => { button.innerHTML = '<i class="bi bi-copy"></i> Copy IDs'; }, 2000);
+    });
+    root.querySelector('[data-clear-selection]').addEventListener('click', () => { selectedRows.clear(); api.refreshCells({ columns: ['selection'], force: true }); updateSelection(api); });
+    const scheduleCounts = () => { if (!countsTimer) countsTimer = setTimeout(() => { countsTimer = 0; void refreshCounts(); }, 15000); };
+    const scheduleGridRefresh = () => { if (!refreshTimer) refreshTimer = setTimeout(() => { refreshTimer = 0; refresh(); }, 15000); };
+    function updateCountsFromEvent(event, current, transition) {
+        if (!/^Instance/i.test(transition)) return;
+        const started = date(value(event, 'startedOnUtc') || current?.startedOnUtc);
+        if (started && started.getTime() < Date.now() - hours * 3600000) return;
+        // Reconcile committed counts in a bounded batch; a transition alone
+        // cannot establish whether the existing query already included it.
+        scheduleCounts();
+    }
+    function applyEvent(event) {
+        const eventId = String(value(event, 'id') || ''); if (!eventId || seen.has(eventId)) return;
+        seen.add(eventId); if (seen.size > 4096) seen.delete(seen.values().next().value);
+        const id = String(value(event, 'orchestrationInstanceId') || ''); if (!id) return;
+        const node = api.getRowNode(id), current = node?.data;
+        const transition = String(value(event, 'transitionType') || '');
+        const incoming = date(value(event, 'lastUpdatedOnUtc') || value(event, 'occurredOnUtc'))?.getTime() || 0;
+        const previous = date(current?.lastUpdatedOnUtc)?.getTime() || 0;
+        if (incoming < previous) return;
+        if (/^Instance/i.test(transition)) {
+            updateCountsFromEvent(event, current, transition);
+            const started = date(value(event, 'startedOnUtc') || current?.startedOnUtc);
+            if ((!started || started.getTime() >= Date.now() - hours * 3600000) && !sparkTimer)
+                sparkTimer = setTimeout(() => { sparkTimer = 0; void refreshSparks(); }, 15000);
+            if (!current && /^(InstancePromoted|InstanceStarted)$/i.test(transition)) scheduleGridRefresh();
+        }
+        if (!current) return;
+        const next = { ...current, status: publicStatus(value(event, 'instanceStatus') || current.status),
+            currentStageKey: value(event, 'currentStageKey') ?? current.currentStageKey, currentTaskKey: value(event, 'currentTaskKey') ?? current.currentTaskKey,
+            lastExecutedStageKey: value(event, 'lastExecutedStageKey') ?? current.lastExecutedStageKey, lastExecutedTaskKey: value(event, 'lastExecutedTaskKey') ?? current.lastExecutedTaskKey,
+            lastUpdatedOnUtc: value(event, 'lastUpdatedOnUtc') || value(event, 'occurredOnUtc') || current.lastUpdatedOnUtc,
+            completedTaskCount: value(event, 'progressKnown') === false ? null : value(event, 'completedTaskCount') ?? current.completedTaskCount,
+            totalTaskCount: value(event, 'progressKnown') === false ? null : value(event, 'totalTaskCount') ?? current.totalTaskCount };
+        node.setData(next); if (selectedRows.has(id)) selectedRows.set(id, next); if (selected?.id === id) renderInspector(next);
+        if (statusGroup && keyFor(current.status) !== keyFor(next.status)) scheduleGridRefresh();
+    }
+    window.addEventListener('krackend:instances-changed', event => {
+        if (event.detail?.resync) { refresh(); void refreshCounts(); return; }
+        const item = event.detail?.event; if (!item) return;
+        const id = String(value(item, 'orchestrationInstanceId') || ''); if (!id) return;
+        pending.push(item); if (pending.length > 1024) { pending.length = 0; scheduleGridRefresh(); scheduleCounts(); return; }
+        if (!liveTimer) liveTimer = setTimeout(() => { liveTimer = 0; for (const item of pending) applyEvent(item); pending.length = 0; }, 120);
+    });
+    const themeObserver = new MutationObserver(() => api.setGridOption('theme', theme()));
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-bs-theme', 'data-krackend-theme'] });
+    void refreshCounts(); void refreshSparks();
+    window.addEventListener('pagehide', () => { clearTimeout(searchTimer); clearTimeout(liveTimer); clearTimeout(refreshTimer); clearTimeout(countsTimer); clearTimeout(sparkTimer); countsRequest?.abort(); sparkRequest?.abort(); themeObserver.disconnect(); api.destroy(); }, { once: true });
+})();

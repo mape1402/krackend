@@ -61,10 +61,12 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
 
     /// <summary>Returns one independently refreshable activity timeline.</summary>
     public async Task<IActionResult> OnGetActivityAsync(int days = 7, string orchestrationKey = null, string orchestrationVersion = null, int? hours = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool cohortOnly = false)
     {
         var reader = GetDashboardReader();
         if (reader is null) return Unavailable();
+        if (cohortOnly && reader is not ISagaStatisticsCohortActivityReader)
+            return StatusCode(503, "The configured statistics reader does not support cohort-scoped activity.");
         var normalizedHours = NormalizeHours(hours, days);
         var bucket = normalizedHours switch
         {
@@ -73,7 +75,7 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
             2160 => SagaStatisticsActivityBucket.Week,
             _ => SagaStatisticsActivityBucket.Day
         };
-        var query = CreateQuery(days, orchestrationKey, orchestrationVersion, hours);
+        var query = CreateQuery(days, orchestrationKey, orchestrationVersion, hours) with { RestrictActivityToStartedCohort = cohortOnly };
         return Json(new
         {
             query.FromUtc,
@@ -81,6 +83,15 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
             bucket,
             activity = await reader.GetActivityAsync(query, bucket, cancellationToken)
         });
+    }
+
+    /// <summary>Returns recorded failure event counts for the selected UTC period.</summary>
+    public async Task<IActionResult> OnGetFailuresAsync(int days = 7, int? hours = null, CancellationToken cancellationToken = default)
+    {
+        if (services.GetService(typeof(ISagaFailureStatisticsReader)) is not ISagaFailureStatisticsReader reader)
+            return Unavailable();
+        var query = CreateQuery(days, null, null, hours);
+        return Json(await reader.GetFailuresAsync(query.FromUtc, query.BeforeUtc, cancellationToken));
     }
 
     /// <summary>Returns the independently loaded ranking of the most frequently started orchestrations.</summary>
@@ -139,9 +150,9 @@ public sealed class IndexModel(IServiceProvider services, IOptions<OrchestratorR
     private static int NormalizeDays(int days) => days is 1 or 7 or 30 or 90 ? days : 7;
 
     private static int NormalizeHours(int? hours, int days)
-        => hours is 1 or 6 or 24 or 168 or 720 or 2160 ? hours.Value : NormalizeDays(days) * 24;
+        => hours is 1 or 3 or 6 or 12 or 24 or 168 or 720 or 2160 ? hours.Value : NormalizeDays(days) * 24;
 
-    private static int NormalizeRankingLimit(int limit) => limit is 10 or 15 or 20 or 25 ? limit : 10;
+    private static int NormalizeRankingLimit(int limit) => limit is 5 or 10 or 15 or 20 or 25 ? limit : 10;
 
     private static int NormalizeSuggestionTake(int take) => Math.Clamp(take, 1, 50);
 

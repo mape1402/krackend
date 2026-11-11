@@ -43,6 +43,9 @@ public interface ISagaStatisticsDashboardReader
     Task<SagaStatisticsDashboardHealth> GetHealthAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>Indicates that the reader honors cohort-scoped activity queries.</summary>
+public interface ISagaStatisticsCohortActivityReader : ISagaStatisticsDashboardReader { }
+
 /// <summary>Identifies a UTC cohort of orchestration instances.</summary>
 public sealed record SagaStatisticsDashboardQuery(
     DateTime FromUtc,
@@ -50,6 +53,9 @@ public sealed record SagaStatisticsDashboardQuery(
     string? OrchestrationKey = null,
     string? OrchestrationVersion = null)
 {
+    /// <summary>Restricts activity observations to instances started within the selected range.</summary>
+    public bool RestrictActivityToStartedCohort { get; init; }
+
     /// <summary>Returns a normalized query with a valid UTC range.</summary>
     public SagaStatisticsDashboardQuery Normalize()
     {
