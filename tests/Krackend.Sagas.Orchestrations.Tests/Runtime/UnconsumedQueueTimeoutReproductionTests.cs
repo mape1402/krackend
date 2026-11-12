@@ -10,6 +10,44 @@ using static Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure.Real
 [Collection(RuntimeRealInfrastructureCollection.Name)]
 public sealed class UnconsumedQueueTimeoutReproductionTests(RuntimeRealInfrastructureFixture infrastructure)
 {
+    [Fact(Timeout = 240_000)]
+    public async Task ParallelUnconsumedCommandsEachTimeoutAndRetryIndependently()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var version = new SemanticVersion(1, 0, 0);
+        var topics = new[] { $"repro.retry.{suffix}.one", $"repro.retry.{suffix}.two" };
+        var trigger = $"repro.retry.trigger.{suffix}";
+        var group = Id.New();
+        await using var connection = await new ConnectionFactory { Uri = new Uri(infrastructure.RabbitMqConnectionString) }.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        foreach (var topic in topics)
+            await channel.QueueDeclareAsync(topic, durable: false, exclusive: false, autoDelete: false);
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(infrastructure);
+        var artifact = Artifact($"repro-retry-{suffix}", version, $"repro-retry-{suffix}", [EventTrigger(trigger, version)],
+            StageWithGraph("parallel-retry", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                topics.Select((topic, index) => MessagingTask(topic, index + 1, version,
+                    retryPolicy: RetryPolicy(1, "UnconsumedTimeout"),
+                    timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(index == 0 ? 5 : 30), "UnconsumedTimeout"),
+                    executionMode: TaskExecutionMode.Parallel, parallelGroupId: group)).ToArray()));
+        await runtime.DeployAndWaitReadyAsync(CreatePackage(artifact));
+        await runtime.PublishTriggerAsync(trigger, version.ToString(), BusinessPayload(("repro", true)), $"repro-{suffix}");
+        await PollingAssert.EventuallyAsync(
+            () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().Where(t => topics.Contains(t.TaskKey)).ToArrayAsync()),
+            tasks => tasks.Length == 2 && tasks.Any(task => task.TaskKey == topics[0] && task.LastAttemptNumber >= 2) &&
+                tasks.Any(task => task.TaskKey == topics[1] && task.Status == TaskExecutionStatus.WaitingResponse),
+            "The first task should retry while the other parallel task is still waiting.", TimeSpan.FromSeconds(25));
+        await PollingAssert.EventuallyAsync(
+            () => runtime.QueryAsync(db => db.ExecutionTransitions.AsNoTracking()
+                .Where(t => t.TransitionType == "TaskTimedOut").Select(t => t.TaskExecutionId).ToArrayAsync()),
+            transitions => transitions.Where(id => id.HasValue).Select(id => id!.Value).Distinct().Count() == 2,
+            "Both parallel tasks should independently time out even when the first is retrying.", TimeSpan.FromSeconds(60));
+        foreach (var topic in topics)
+        {
+            var queue = await channel.QueueDeclarePassiveAsync(topic);
+            Assert.Equal(0u, queue.ConsumerCount);
+        }
+    }
+
     [Fact(Timeout = 300_000)]
     public async Task ThreeParallelCommandsWithoutConsumersMustTimeOut()
     {

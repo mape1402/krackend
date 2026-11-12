@@ -157,11 +157,19 @@ internal sealed class DefaultOrchestrationReconciliationService(
                     if (attempt is null || attempt.TaskExecutionId != task.Id ||
                         (task.LastAttemptNumber > 0 && task.LastAttemptNumber != attempt.AttemptNumber) ||
                         attempt.Status != TaskExecutionStatus.WaitingResponse || dispatch?.SentOnUtc is null ||
-                        dispatch.TaskExecutionAttemptId != attempt.Id || task.WaitingSinceUtc is null ||
+                        dispatch.TaskExecutionAttemptId != attempt.Id ||
                         !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
                     {
                         findings.Add(new("Intervention", $"Task {task.TaskKey} has inconsistent response-wait tracking."));
                         continue;
+                    }
+                    if (task.WaitingSinceUtc is null)
+                    {
+                        // The current attempt and dispatch agree that the command was sent. Restore the lost
+                        // wait marker from that dispatch; never infer a send time for an uncertain delivery.
+                        task.WaitingSinceUtc = dispatch.SentOnUtc.Value;
+                        await tasks.Update(task, cancellationToken);
+                        findings.Add(new("Recovered", $"Restored response-wait tracking for {task.TaskKey}."));
                     }
                     var due = task.ResponseDeadlineUtc ?? await deadlineResolver.ResolveAsync(id, task.Id, task.WaitingSinceUtc.Value, cancellationToken);
                     if (due is null)

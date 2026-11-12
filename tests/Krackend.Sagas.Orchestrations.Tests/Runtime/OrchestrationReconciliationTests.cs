@@ -235,6 +235,20 @@ public sealed class OrchestrationReconciliationTests
     }
 
     [Fact]
+    public async Task MissingWaitTimestampWithoutConfirmedSendIsNotInvented()
+    {
+        var f = new Fixture();
+        var state = f.ArrangeWait(DateTime.UtcNow.AddSeconds(-1));
+        state.Task.WaitingSinceUtc = null;
+        state.Dispatch.SentOnUtc = null;
+        var result = await f.Service.ReconcileAsync(f.Instance.Id.ToString());
+        Assert.Equal("Intervention", result.Status);
+        Assert.Null(state.Task.WaitingSinceUtc);
+        await f.Timeout.DidNotReceiveWithAnyArgs().ProcessTaskTimeoutAsync(default, default);
+        await f.DispatchRecovery.DidNotReceiveWithAnyArgs().RecoverDispatchAsync(default);
+    }
+
+    [Fact]
     public async Task PendingTaskWithExistingAttemptDoesNotAdvanceOrRepublish()
     {
         var f = new Fixture();

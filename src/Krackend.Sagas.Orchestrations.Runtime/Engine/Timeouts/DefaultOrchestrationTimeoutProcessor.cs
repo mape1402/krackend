@@ -132,7 +132,8 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         CancellationToken cancellationToken)
     {
         var task = await _taskRepository.GetById(waitingTask.Id, cancellationToken);
-        if (task.Status != TaskExecutionStatus.WaitingResponse || task.WaitingSinceUtc is null)
+        if (task.Status != TaskExecutionStatus.WaitingResponse ||
+            (task.WaitingSinceUtc is null && task.ResponseDeadlineUtc is null))
         {
             return TaskResponseTimeoutProcessingResult.Ignored;
         }
@@ -163,6 +164,25 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
             return new TaskResponseTimeoutProcessingResult(false, RetryRequired: true);
         }
 
+        var attempts = await _attemptRepository.GetByTaskExecutionId(task.Id, cancellationToken);
+        var attempt = attempts
+            .OrderByDescending(x => x.AttemptNumber)
+            .FirstOrDefault();
+        if (attempt is null || attempt.Status != TaskExecutionStatus.WaitingResponse ||
+            (task.LastAttemptNumber > 0 && task.LastAttemptNumber != attempt.AttemptNumber))
+        {
+            return TaskResponseTimeoutProcessingResult.Ignored;
+        }
+
+        var dispatch = attempt.DispatchId.HasValue
+            ? await _dispatchRepository.TryGetById(attempt.DispatchId.Value, cancellationToken)
+            : null;
+        if (dispatch?.SentOnUtc is null || dispatch.TaskExecutionAttemptId != attempt.Id ||
+            !string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase))
+        {
+            return TaskResponseTimeoutProcessingResult.Ignored;
+        }
+
         var waitGraceResult = await TryApplyWaitGraceAsync(instance, task, timeoutPolicy, utcNow, cancellationToken);
         if (waitGraceResult == WaitGraceResult.Waiting)
         {
@@ -172,23 +192,6 @@ internal sealed class DefaultOrchestrationTimeoutProcessor : IOrchestrationTimeo
         if (waitGraceResult == WaitGraceResult.Applied)
         {
             return new TaskResponseTimeoutProcessingResult(true, task.ResponseDeadlineUtc);
-        }
-
-        var attempts = await _attemptRepository.GetByTaskExecutionId(task.Id, cancellationToken);
-        var attempt = attempts
-            .OrderByDescending(x => x.AttemptNumber)
-            .FirstOrDefault(x => x.Status == TaskExecutionStatus.WaitingResponse);
-        if (attempt is null)
-        {
-            return TaskResponseTimeoutProcessingResult.Ignored;
-        }
-
-        var dispatch = attempt.DispatchId.HasValue
-            ? await _dispatchRepository.TryGetById(attempt.DispatchId.Value, cancellationToken)
-            : null;
-        if (dispatch?.SentOnUtc is null)
-        {
-            return TaskResponseTimeoutProcessingResult.Ignored;
         }
 
         var errorCode = ResolveTimeoutErrorCode(timeoutPolicy);
