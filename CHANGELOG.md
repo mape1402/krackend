@@ -13,6 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.4.0] - 2026-11-12
+
+### Added
+
+- Add Runtime dashboard, Statistics, Instances, and History views with AG Grid, Apache ECharts, infinite scrolling, row inspectors, and real failure-cause statistics.
+- Project failure events as they occur and progressively reconstruct historical failure events and their orchestration scope in bounded batches.
+- Add instance diagnostics for attempts, task metadata, formatted JSON payloads, trace IDs, and copy actions.
+
+### Changed
+
+- Migrate the remaining Control Plane and Runtime catalog grids to AG Grid, retaining card views, and use contextual return routes and a shared configurable green theme.
+- Group draft, import, creation, and paste actions in Zoorce speed dials. Creating a draft opens its roadmap directly.
+- Cache artifacts within timeout repair passes, avoiding a separate artifact lookup for each instance sharing a version.
+
+### Fixed
+
+- Recover unfinished parallel tasks after a sibling fails or is cancelled, and prevent completion while parallel work remains unresolved.
+- Exclude disabled design stages and tasks from instance details while retaining tasks skipped by conditions.
+- Improve ButterMorph designer contrast for light and dark host themes and provide an EF migration for the Control Plane designer concurrency tokens.
+
+### Upgrade notes
+
+- Runtime EF hosts must add the `SagaFailureEvents` and `SagaFailureBackfillCheckpoints` storage entities and their indexes, including the orchestration key, version, and scope projection fields. The SQL Server sample includes `AddSagaFailureProjection` and `AddFailureEventScope` migrations. Historical failure statistics are rebuilt gradually while statistics scheduling is enabled; counts may be incomplete until backfill finishes.
+- The Control Plane SQL Server sample now includes `AddDesignConcurrencyTokens` for existing databases missing the `ConcurrencyToken` fields on stages, tasks, and triggers. Hosts own their provider configuration and migrations; see the [storage guidance](README.md#sagas-orchestrations) for existing writers and MongoDB documents.
+- Custom dashboard readers must implement `ISagaStatisticsCohortActivityReader` for the cohort-scoped activity view. See the [Sagas configuration reference](docs/krackend-sagas-api-configuration.md) for projection and diagnostics capabilities.
+
+------
+
 ## [v6.3.0] - 2026-11-08
 
 ### Added
