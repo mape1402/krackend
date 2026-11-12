@@ -7,27 +7,6 @@ namespace Krackend.Sagas.Orchestrations.Runtime.WebUI;
 /// </summary>
 public sealed class OrchestratorRuntimeWebUIOptions
 {
-    /// <summary>Creates the Runtime theme with the reference dashboard palette. Hosts may override every color.</summary>
-    public OrchestratorRuntimeWebUIOptions()
-    {
-        var light = Theme.Light;
-        light.PrimaryColor = "#087a57"; light.PrimaryHoverColor = "#056446";
-        light.PrimarySoftColor = "#d9f2e7"; light.SidebarBackgroundColor = "#eef5f1";
-        light.SidebarBrandBackgroundColor = "#e4f0ea"; light.SidebarTextColor = "#17362a";
-        light.SidebarMutedTextColor = "#587267"; light.ContentBackgroundColor = "#f6f8f7";
-        light.TextColor = "#15251f"; light.MutedTextColor = "#52675e"; light.BorderColor = "#d6e2dc";
-        light.SubtleBackgroundColor = "#edf3f0"; light.DataPrimaryColor = "#2477c9";
-        light.DataSecondaryColor = "#7156c5"; light.DataTertiaryColor = "#c13e9a";
-        light.DataQuaternaryColor = "#c57908"; light.DataQuinaryColor = "#0a8075";
-        var dark = Theme.Dark;
-        dark.PrimaryColor = "#20e7a0"; dark.PrimaryHoverColor = "#53f3be"; dark.PrimarySoftColor = "#123f31";
-        dark.SidebarBackgroundColor = "#07120f"; dark.SidebarBrandBackgroundColor = "#06100d";
-        dark.SidebarTextColor = "#eefff8"; dark.SidebarMutedTextColor = "#83a89a";
-        dark.ContentBackgroundColor = "#050b0a"; dark.SurfaceColor = "#0b1613"; dark.ElevatedColor = "#10201b";
-        dark.TextColor = "#edfff7"; dark.MutedTextColor = "#93aa9f"; dark.BorderColor = "#1d3930";
-        dark.SubtleBackgroundColor = "#132720"; dark.SuccessColor = "#20e7a0";
-        dark.InfoColor = "#8eb0ff"; dark.DangerColor = "#ff7586";
-    }
     /// <summary>
     /// Gets or sets the route prefix used by runtime diagnostics pages and live endpoints.
     /// </summary>

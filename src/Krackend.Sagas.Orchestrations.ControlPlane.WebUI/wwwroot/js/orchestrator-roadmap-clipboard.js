@@ -59,17 +59,20 @@
         if (text) await paste(section, text);
     };
     const run = operation => Promise.resolve().then(operation).catch(error => message('Roadmap', error.message || 'The operation failed.', 'error'));
+    document.addEventListener('zoorce:speed-dial:select', event => {
+        const target = { 'paste-trigger': 'trigger', 'paste-stage': 'stage', 'paste-task': 'task' }[event.detail?.value];
+        if (!target || !['roadmap-actions-dial', 'task-actions-dial'].includes(event.target.id)) return;
+        const section = sections.find(item => item.dataset.roadmapSection === target && item.dataset.editable === 'true');
+        if (section) run(() => doPaste(section));
+    });
     document.addEventListener('click', event => {
-        const button = event.target.closest('.js-roadmap-copy, .js-roadmap-clone, .js-roadmap-paste');
+        const button = event.target.closest('.js-roadmap-copy, .js-roadmap-clone');
         if (!button) return;
         event.preventDefault();
         event.stopPropagation();
-        const section = button.dataset.pasteTarget
-            ? sections.find(item => item.dataset.roadmapSection === button.dataset.pasteTarget && item.dataset.editable === 'true')
-            : button.closest('[data-roadmap-section]');
+        const section = button.closest('[data-roadmap-section]');
         if (!section) return;
         run(async () => {
-            if (button.classList.contains('js-roadmap-paste')) return doPaste(section);
             const data = await loadPackage(section, button.dataset.elementType, button.dataset.elementId);
             if (button.classList.contains('js-roadmap-clone')) return paste(section, data);
             try {
@@ -80,31 +83,4 @@
         });
     });
 
-    const menu = document.createElement('div');
-    menu.className = 'dropdown-menu show';
-    menu.hidden = true;
-    menu.style.display = 'none';
-    menu.style.position = 'fixed';
-    menu.style.zIndex = '2000';
-    const pasteButton = document.createElement('button');
-    pasteButton.type = 'button';
-    pasteButton.className = 'dropdown-item';
-    menu.appendChild(pasteButton);
-    document.body.appendChild(menu);
-    let activeSection;
-    sections.forEach(section => section.addEventListener('contextmenu', event => {
-        if (section.dataset.editable !== 'true' || event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-        event.preventDefault();
-        activeSection = section;
-        pasteButton.textContent = `Paste ${section.dataset.roadmapSection}`;
-        menu.style.left = `${Math.min(event.clientX, window.innerWidth - 160)}px`;
-        menu.style.top = `${Math.min(event.clientY, window.innerHeight - 48)}px`;
-        menu.hidden = false;
-        menu.style.display = 'block';
-        pasteButton.focus();
-    }));
-    const hideMenu = () => { menu.hidden = true; menu.style.display = 'none'; };
-    pasteButton.addEventListener('click', () => { hideMenu(); run(() => doPaste(activeSection)); });
-    document.addEventListener('click', event => { if (!menu.contains(event.target)) hideMenu(); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') hideMenu(); });
 })();

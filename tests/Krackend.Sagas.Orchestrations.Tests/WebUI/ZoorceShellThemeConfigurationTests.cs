@@ -9,17 +9,17 @@ namespace Krackend.Sagas.Orchestrations.Tests.WebUI;
 public sealed class ZoorceShellThemeConfigurationTests
 {
     [Fact]
-    public void DefaultPalettesUseCoordinatedBlueTokens()
+    public void DefaultPalettesUseCoordinatedGreenTokens()
     {
         var actual = new ZoorceShellOptions();
         new ZoorceShellThemeConfiguration(Options.Create(new OrchestratorWebUIThemeOptions())).Configure(actual);
-        Assert.Equal("#245fc7", actual.Light.Primary);
-        Assert.Equal("#edf3ff", actual.Light.Sidebar);
-        Assert.Equal("#e4efff", actual.Light.PrimarySoft);
-        Assert.Equal("#8dbaff", actual.Dark.Primary);
-        Assert.Equal("#111624", actual.Dark.Sidebar);
-        Assert.Equal("#1c2433", actual.Dark.Elevated);
-        Assert.Equal("#263a55", actual.Dark.PrimarySoft);
+        Assert.Equal("#087a57", actual.Light.Primary);
+        Assert.Equal("#eef5f1", actual.Light.Sidebar);
+        Assert.Equal("#d9f2e7", actual.Light.PrimarySoft);
+        Assert.Equal("#20e7a0", actual.Dark.Primary);
+        Assert.Equal("#07120f", actual.Dark.Sidebar);
+        Assert.Equal("#10201b", actual.Dark.Elevated);
+        Assert.Equal("#123f31", actual.Dark.PrimarySoft);
     }
 
     [Theory]

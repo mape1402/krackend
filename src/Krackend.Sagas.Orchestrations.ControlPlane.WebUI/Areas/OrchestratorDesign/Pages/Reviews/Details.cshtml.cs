@@ -9,6 +9,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// <summary>Displays and applies an independent orchestration lifecycle review.</summary>
 public sealed class DetailsModel : PageModel
 {
+    [BindProperty] public string ReturnUrl { get; set; }
     private const string Actor = "web-ui";
     private readonly IOrchestrationVersionReviewApplicationService _reviewService;
     private readonly IOrchestrationVersionApplicationService _versionService;
@@ -125,7 +126,7 @@ public sealed class DetailsModel : PageModel
             await operation(cancellationToken);
             return ReturnToCatalog
                 ? RedirectToPage("/Reviews/Index", new { area = "OrchestratorDesign" })
-                : RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId });
+                : RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId, returnUrl = ReturnUrl });
         }
         catch (Exception exception)
         {

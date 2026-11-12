@@ -23,6 +23,7 @@ namespace Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.Orchestr
 /// </summary>
 public sealed class DetailsModel : PageModel
 {
+    [BindProperty] public string ReturnUrl { get; set; }
     public async Task<IActionResult> OnGetRoadmapElementAsync(string elementType, string elementId, string versionId,
         [FromServices] RoadmapElementPackageService service, CancellationToken cancellationToken)
     {
@@ -188,13 +189,13 @@ public sealed class DetailsModel : PageModel
                     var reviewId = await _reviewService.Request(
                         new RequestOrchestrationVersionReviewCommand(versionId, ToReviewOperation(action), actor),
                         cancellationToken);
-                    return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId });
+                    return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId, returnUrl = ReturnUrl });
                 case "OpenReview":
                     var pendingReview = await _reviewService.GetPending(
                         new GetPendingOrchestrationVersionReviewQuery(versionId), cancellationToken);
                     if (pendingReview is not null)
                     {
-                        return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId = pendingReview.Id });
+                        return RedirectToPage("/Reviews/Details", new { area = "OrchestratorDesign", reviewId = pendingReview.Id, returnUrl = ReturnUrl });
                     }
 
                     throw new InvalidOperationException("This version does not have a review awaiting application.");

@@ -25,11 +25,13 @@
 
 @if (Model.CanEdit)
 {
-    <div class="od-roadmap-dial dropup">
-        <button type="button" class="od-roadmap-dial-trigger" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Task paste actions" title="Paste actions"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
-        <ul class="dropdown-menu dropdown-menu-end">
-            <li><button type="button" class="dropdown-item js-roadmap-paste" data-paste-target="task">Paste task</button></li>
-        </ul>
+    <div class="od-roadmap-dial">
+        @await Component.InvokeAsync("ZoorceSpeedDial", new ZoorceSpeedDialOptions {
+            Id = "task-actions-dial", Label = "Task actions",
+            Items = [new ZoorceMenuItem { Value = "add-task", Text = "Add task", Icon = "+" },
+                     new ZoorceMenuItem { Value = "add-parallel-group", Text = "Add parallel group", Icon = "+" },
+                     new ZoorceMenuItem { Value = "paste-task", Text = "Paste task", Icon = "⎘" }]
+        })
     </div>
 }
 <div class="od-roadmap-toast" data-roadmap-toast role="status" aria-live="polite" hidden></div>
@@ -239,16 +241,6 @@
             </article>
         }
 
-        @if (Model.CanEdit)
-        {
-            <article class="od-pipeline-item od-add-item od-add-group-item od-add-actions-item">
-                <div class="od-pipeline-card od-add-actions-card">
-                    <a href="#" id="addParallelGroupButton" class="od-add-link">+ Add parallel group</a>
-                    <span class="od-add-actions-separator" aria-hidden="true"></span>
-                    <button type="button" class="od-add-link js-open-task-modal" data-task-mode="create">+ Add task</button>
-                </div>
-            </article>
-        }
     </div>
 </section>
 
@@ -330,7 +322,6 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
     const canEdit = orchestrationStageCanEdit;
 
     const antiForgeryToken = document.querySelector('meta[name="request-verification-token"]')?.getAttribute('content') || '';
-    const addParallelGroupButton = document.getElementById('addParallelGroupButton');
     const editGroupModalElement = document.getElementById('editParallelGroupModal');
     const editGroupModalTitle = document.getElementById('editParallelGroupModal-title');
     const editGroupIdInput = document.getElementById('editParallelGroupId');
@@ -905,9 +896,8 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         });
     }
 
-    if (addParallelGroupButton) {
-        addParallelGroupButton.addEventListener('click', async event => {
-            event.preventDefault();
+    document.getElementById('task-actions-dial')?.addEventListener('zoorce:speed-dial:select', async event => {
+            if (event.detail.value !== 'add-parallel-group') return;
             if (!canEdit) {
                 return;
             }
@@ -931,8 +921,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
             }
 
             updateGroupEmptyStates();
-        });
-    }
+    });
 
     async function persistOrder() {
         if (!canEdit) {
@@ -1169,6 +1158,18 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
         modalElement?.open?.();
     }
 
+    function openNewTask() {
+        if (!canEdit || !modalTitle || !submitButton || !taskIdInput || !taskIdRawInput) return;
+        modalTitle.textContent = 'Create task';
+        submitButton.textContent = 'Create';
+        applyPayload({});
+        setStageModalReadOnly(modalElement, false, submitButton);
+        openModal();
+    }
+    document.getElementById('task-actions-dial')?.addEventListener('zoorce:speed-dial:select', event => {
+        if (event.detail.value === 'add-task') openNewTask();
+    });
+
     document.querySelectorAll('.js-open-task-modal').forEach(button => {
         button.addEventListener('click', async () => {
             if (!modalTitle || !submitButton || !taskIdInput || !taskIdRawInput) {
@@ -1196,15 +1197,7 @@ function setStageModalReadOnly(modalElement, readOnly, submitButton) {
                 return;
             }
 
-            if (!canEdit) {
-                return;
-            }
-
-            modalTitle.textContent = 'Create task';
-            submitButton.textContent = 'Create';
-            applyPayload({});
-            setStageModalReadOnly(modalElement, false, submitButton);
-            openModal();
+            openNewTask();
         });
     });
 

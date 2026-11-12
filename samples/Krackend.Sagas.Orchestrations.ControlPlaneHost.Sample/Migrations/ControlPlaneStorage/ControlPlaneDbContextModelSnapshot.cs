@@ -440,6 +440,14 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                     b.Property<byte[]>("Id")
                         .HasColumnType("binary(16)");
 
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("");
+
                     b.Property<string>("Description")
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
@@ -487,6 +495,14 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                     b.Property<string>("CompensationDefinition")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("CompensationDefinitionJson");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("");
 
                     b.Property<string>("Configuration")
                         .HasColumnType("nvarchar(max)")
@@ -572,6 +588,14 @@ namespace Krackend.Sagas.Orchestrations.ControlPlaneHost.Sample.Migrations.Contr
                     b.Property<string>("CompensationDefinition")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("CompensationDefinitionJson");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2048)

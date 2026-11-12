@@ -4,7 +4,7 @@
     const kind = root.dataset.catalog;
     const label = root.dataset.label;
     const preferenceKey = `krackend-${kind}-view`;
-    const grid = root.querySelector('[data-z-data-grid]');
+    const grid = root.querySelector('[data-krackend-grid]');
     const gridView = root.querySelector('[data-catalog-grid]');
     const cardView = root.querySelector('[data-catalog-cards]');
     const cards = root.querySelector('[data-catalog-card-items]');
@@ -15,7 +15,7 @@
     const more = root.querySelector('[data-catalog-more]');
     const form = root.querySelector('[data-catalog-action-form]');
     const sentinel = root.querySelector('[data-catalog-sentinel]');
-    const gridSearch = grid.querySelector('[data-z-grid-search]');
+    const gridSearch = grid.querySelector('[data-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-catalog-controls');
     const toolbarEnd = document.createElement('div');
@@ -289,29 +289,18 @@
         group.replaceChildren(dropdown);
         return group;
     };
-    const decorateGrid = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
-        const item = records.get(row.dataset.zGridKey);
-        const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell && !cell.firstElementChild) cell.replaceChildren(compactActions(item));
-        if (item && kind === 'artifacts') {
-            const type = row.querySelector('[data-z-grid-field="artifactType"]');
-            if (type && !type.firstElementChild) {
-                type.replaceChildren(window.KrackendCatalogUI.badge(item.typeLabel, item.typeTone));
+    const catalogGrid = window.KrackendCatalogGrid.mount(grid, {
+        renderCell: (field, item) => {
+            if (field === 'actions') return compactActions(item);
+            if (field === 'artifactType' && kind === 'artifacts') {
+                const badge = window.KrackendCatalogUI.badge(item.typeLabel, item.typeTone);
+                badge.classList.add('od-grid-type');
+                return badge;
             }
-        }
+            return null;
+        },
+        onLoaded: (result, loaded) => { if (!gridView.hidden) setLoadedCount(loaded, Number(result.totalCount ?? 0)); }
     });
-    new MutationObserver(decorateGrid).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
-    grid.addEventListener('zoorce:grid:loaded', event => {
-        const loaded = event.detail.append
-            ? records.size + event.detail.result.items.length
-            : event.detail.result.items.length;
-        const total = Number(event.detail.result.totalCount ?? 0);
-        setLoadedCount(loaded, total);
-        if (!event.detail.append) records.clear();
-        event.detail.result.items.forEach(item => records.set(String(item.id), item));
-        decorateGrid();
-    });
-    grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
 
     const appendCard = item => {
         const card = document.createElement('article');
@@ -373,7 +362,7 @@
             hasMore = result.hasMore;
             empty.hidden = cards.childElementCount !== 0;
             more.hidden = !hasMore;
-            setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
+            if (!cardView.hidden) setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
             if (hasMore && result.items.length) requestAnimationFrame(() => {
                 const rect = sentinel.getBoundingClientRect();
                 if (currentGeneration === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);
@@ -398,7 +387,7 @@
     });
     sort.addEventListener('change', () => load(true));
     if (kind === 'runtime-nodes') document.addEventListener('krackend:runtime-node-updated', () => {
-        grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
+        catalogGrid.refresh();
         if (!cardView.hidden) load(true);
         else page = 0;
     });
@@ -419,10 +408,21 @@
         if (showCards) {
             const changed = search.value !== gridSearch.value;
             search.value = gridSearch.value;
-            if (changed || (page === 0 && !request)) load(true);
+            const previousSort = sort.value;
+            const selectedSort = catalogGrid?.api.getColumnState().find(column => column.sort);
+            if (selectedSort) {
+                const value = selectedSort.colId + (selectedSort.sort === 'desc' ? ':desc' : '');
+                if ([...sort.options].some(option => option.value === value)) sort.value = value;
+            }
+            if (changed || previousSort !== sort.value || (page === 0 && !request)) load(true);
         } else if (gridSearch.value !== search.value) {
             gridSearch.value = search.value;
             gridSearch.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (!showCards && catalogGrid) {
+            const [field, direction] = sort.value.split(':');
+            if (catalogGrid.api.getColumnDef(field)?.sortable)
+                catalogGrid.api.applyColumnState({ state: [{ colId: field, sort: direction === 'desc' ? 'desc' : 'asc' }], defaultState: { sort: null } });
         }
     };
     root.querySelectorAll('[data-catalog-view]').forEach(control => control.addEventListener('click', () => setView(control)));

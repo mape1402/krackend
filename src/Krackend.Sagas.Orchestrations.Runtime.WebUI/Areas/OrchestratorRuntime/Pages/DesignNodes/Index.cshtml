@@ -2,8 +2,8 @@
 @using System.Text.Json
 @using Krackend.Sagas.Orchestrations.Abstractions.Distribution.Security
 @using Krackend.Sagas.Orchestrations.Runtime.Distribution
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.DesignNodes.IndexModel
@@ -25,9 +25,9 @@
         <button type="button" class="z-button z-button-ghost od-view-toggle" data-node-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-node-grid>
-        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
-            Id = "runtime-design-nodes-grid", AriaLabel = "design nodes", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "Nodes") },
-            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+        @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions {
+            Id = "runtime-design-nodes-grid", AriaLabel = "design nodes", Binding = new KrackendGridBinding { Source = Url.Page(null, "Nodes") },
+            PageSize = 25,
             Columns = [new("name", "Name", false), new("key", "Key", false), new("status", "Status", false), new("distributionModeLabel", "Distribution", false), new("endpointBaseUri", "Endpoint", false), new("actions", "Actions", false)]
         })
     </div>

@@ -1,7 +1,7 @@
 @page
 @using Zoorce.Web.UI.Foundation.Components
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Metadata.IndexModel
 @{
     ViewData["Title"] = "Metadata";
@@ -15,10 +15,10 @@
         <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-catalog-grid>
-        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions
         {
-            Id = "metadata-grid", AriaLabel = "metadata descriptors", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
-            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Id = "metadata-grid", AriaLabel = "metadata descriptors", Binding = new KrackendGridBinding { Source = Url.Page(null, "List") },
+            PageSize = 25,
             Columns = [new("displayName", "Name"), new("key", "Key"), new("sourceKey", "Source key"), new("description", "Description"), new("actions", "Actions", false)]
         })
     </div>

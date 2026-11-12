@@ -1,0 +1,11 @@
+@using System.Text.Json
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
+@model KrackendGridOptions
+<section id="@Model.Id" class="krackend-catalog-grid" data-krackend-grid aria-label="@Model.AriaLabel">
+    <script type="application/json" data-krackend-grid-config>@Html.Raw(JsonSerializer.Serialize(new { binding = Model.Binding, pageSize = Model.PageSize, columns = Model.Columns }, new JsonSerializerOptions(JsonSerializerDefaults.Web)))</script>
+    <div class="z-toolbar" data-grid-toolbar>
+        <label class="z-search-field"><span aria-hidden="true">⌕</span><input type="search" data-grid-search aria-label="Search @Model.AriaLabel" placeholder="Search..." autocomplete="off" /></label>
+        <span data-grid-state role="status" aria-live="polite"></span>
+    </div>
+    <div data-grid-host aria-label="@Model.AriaLabel"></div>
+</section>

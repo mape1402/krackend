@@ -6,7 +6,7 @@
 @{
     var contextLabel = ThemeOptions.Value.TopBarContext?.Trim();
     var title = string.IsNullOrWhiteSpace(Model.Title) ? ThemeOptions.Value.Title : Model.Title;
-    var backLabel = "Back";
+    var backLabel = string.IsNullOrWhiteSpace(Model.Back?.Label) ? "Back" : Model.Back.Label;
 }
 <header class="z-topbar">
     <div class="z-topbar-start">
@@ -15,9 +15,9 @@
         </button>
         @if (Model.Back?.Visible ?? false)
         {
-            <button class="z-icon-button z-topbar-back" type="button" data-z-topbar-back aria-label="@backLabel" title="@backLabel" onclick="window.history.back()">
+            <a class="z-icon-button z-topbar-back" href="@Model.Back.Url" data-z-topbar-back aria-label="@backLabel" title="@backLabel">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5m7-7-7 7 7 7" /></svg>
-            </button>
+            </a>
         }
         <div class="z-topbar-context">
             @if (!string.IsNullOrWhiteSpace(contextLabel))

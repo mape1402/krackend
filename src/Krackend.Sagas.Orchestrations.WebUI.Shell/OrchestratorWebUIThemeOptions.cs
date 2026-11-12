@@ -10,49 +10,19 @@ public sealed class OrchestratorWebUIThemeOptions
     /// </summary>
     public OrchestratorWebUIThemeOptions()
     {
-        Light.PrimaryColor = "#245fc7";
-        Light.PrimaryHoverColor = "#194da7";
-        Light.SidebarBackgroundColor = "#edf3ff";
-        Light.SidebarBrandBackgroundColor = "#edf3ff";
-        Light.SidebarTextColor = "#1d2b42";
-        Light.SidebarMutedTextColor = "#596c85";
-        Light.ContentBackgroundColor = "#f8faff";
         Light.SurfaceColor = "#ffffff";
-        Light.TextColor = "#1b2433";
-        Light.MutedTextColor = "#59677a";
-        Light.BorderColor = "#d6e1f0";
-        Light.SubtleBackgroundColor = "#edf3ff";
         Light.CodeBackgroundColor = "#111b2a";
         Light.CodeTextColor = "#e0ebff";
         Light.ShadowColor = "#1a315424";
         Light.OverlayColor = "#101b2e8f";
-        Light.DataSecondaryColor = "#7c3aed";
-        Light.DataTertiaryColor = "#c026d3";
-        Light.DataQuaternaryColor = "#d97706";
-        Light.DataQuinaryColor = "#0f766e";
-        Dark.PrimaryColor = "#8dbaff";
-        Dark.PrimaryHoverColor = "#bdd6ff";
-        Dark.SidebarBackgroundColor = "#111624";
-        Dark.SidebarBrandBackgroundColor = "#111624";
-        Dark.SidebarTextColor = "#f1f5ff";
-        Dark.SidebarMutedTextColor = "#a8b6cc";
-        Dark.ContentBackgroundColor = "#0c0f17";
-        Dark.SurfaceColor = "#151a27";
-        Dark.TextColor = "#f1f5ff";
-        Dark.MutedTextColor = "#b3bfd0";
-        Dark.BorderColor = "#303d50";
-        Dark.SubtleBackgroundColor = "#222d3f";
         Dark.CodeBackgroundColor = "#0c121e";
         Dark.CodeTextColor = "#e1ebff";
         Dark.ShadowColor = "#0000007a";
-        Dark.SuccessColor = "#39d98a";
         Dark.SuccessSoftColor = "#123d2b";
         Dark.WarningColor = "#f2bd58";
         Dark.WarningSoftColor = "#3a2c12";
-        Dark.DangerColor = "#ff8291";
         Dark.DangerForegroundColor = "#29070d";
         Dark.DangerSoftColor = "#491720";
-        Dark.InfoColor = "#94b6ff";
         Dark.InfoSoftColor = "#1c2b52";
         Dark.DataPrimaryColor = "#7fb0ff";
         Dark.DataSecondaryColor = "#b494ff";
@@ -60,6 +30,21 @@ public sealed class OrchestratorWebUIThemeOptions
         Dark.DataQuaternaryColor = "#ffc86a";
         Dark.DataQuinaryColor = "#56d5c7";
         Dark.OverlayColor = "#070b129e";
+        Light.PrimaryColor = "#087a57"; Light.PrimaryHoverColor = "#056446";
+        Light.PrimarySoftColor = "#d9f2e7"; Light.SidebarBackgroundColor = "#eef5f1";
+        Light.SidebarBrandBackgroundColor = "#e4f0ea"; Light.SidebarTextColor = "#17362a";
+        Light.SidebarMutedTextColor = "#587267"; Light.ContentBackgroundColor = "#f6f8f7";
+        Light.TextColor = "#15251f"; Light.MutedTextColor = "#52675e"; Light.BorderColor = "#d6e2dc";
+        Light.SubtleBackgroundColor = "#edf3f0"; Light.DataPrimaryColor = "#2477c9";
+        Light.DataSecondaryColor = "#7156c5"; Light.DataTertiaryColor = "#c13e9a";
+        Light.DataQuaternaryColor = "#c57908"; Light.DataQuinaryColor = "#0a8075";
+        Dark.PrimaryColor = "#20e7a0"; Dark.PrimaryHoverColor = "#53f3be"; Dark.PrimarySoftColor = "#123f31";
+        Dark.SidebarBackgroundColor = "#07120f"; Dark.SidebarBrandBackgroundColor = "#06100d";
+        Dark.SidebarTextColor = "#eefff8"; Dark.SidebarMutedTextColor = "#83a89a";
+        Dark.ContentBackgroundColor = "#050b0a"; Dark.SurfaceColor = "#0b1613"; Dark.ElevatedColor = "#10201b";
+        Dark.TextColor = "#edfff7"; Dark.MutedTextColor = "#93aa9f"; Dark.BorderColor = "#1d3930";
+        Dark.SubtleBackgroundColor = "#132720"; Dark.SuccessColor = "#20e7a0";
+        Dark.InfoColor = "#8eb0ff"; Dark.DangerColor = "#ff7586";
     }
 
     /// <summary>

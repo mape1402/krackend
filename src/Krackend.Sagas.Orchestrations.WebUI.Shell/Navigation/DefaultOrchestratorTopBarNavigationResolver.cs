@@ -11,13 +11,14 @@ namespace Krackend.Sagas.Orchestrations.WebUI.Shell.Navigation;
 public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorTopBarNavigationResolver
 {
     private readonly IOptions<OrchestratorTopBarNavigationOptions> _options;
+    private readonly IUrlHelperFactory _urlHelperFactory;
 
     /// <summary>Initializes the resolver.</summary>
     public DefaultOrchestratorTopBarNavigationResolver(
         IUrlHelperFactory urlHelperFactory,
         IOptions<OrchestratorTopBarNavigationOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(urlHelperFactory);
+        _urlHelperFactory = urlHelperFactory ?? throw new ArgumentNullException(nameof(urlHelperFactory));
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
@@ -35,7 +36,8 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             return new ZoorceTopBarBackOptions
             {
                 Visible = configured.Visible,
-                Label = "Back"
+                Label = string.IsNullOrWhiteSpace(configured.Label) ? "Back" : configured.Label,
+                Url = configured.Url?.Trim()
             };
         }
 
@@ -55,7 +57,36 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
             return null;
         }
 
-        return new ZoorceTopBarBackOptions { Visible = true, Label = "Back" };
+        var url = _urlHelperFactory.GetUrlHelper(viewContext);
+        var requested = viewContext.HttpContext.Request.Query["returnUrl"].ToString();
+        var pathBase = viewContext.HttpContext.Request.PathBase.Value ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(requested) && url.IsLocalUrl(requested)
+            && (string.IsNullOrEmpty(pathBase) || string.Equals(requested, pathBase, StringComparison.OrdinalIgnoreCase)
+                || requested.StartsWith(pathBase + "/", StringComparison.OrdinalIgnoreCase)
+                || requested.StartsWith(pathBase + "?", StringComparison.OrdinalIgnoreCase)))
+            return new ZoorceTopBarBackOptions { Visible = true, Label = "Back", Url = requested };
+
+        string Page(string targetArea, string targetPage, object routeValues = null)
+        {
+            var route = new RouteValueDictionary(routeValues) { ["area"] = targetArea };
+            return url.Page(targetPage, null, route);
+        }
+        var destination = (area, page) switch
+        {
+            ("OrchestratorDesign", "/Orchestrations/Create" or "/Orchestrations/Details") => Page(area, "/Orchestrations/Index"),
+            ("OrchestratorDesign", "/OrchestrationVersions/Details") => Page(area, "/Orchestrations/Details", new { orchestrationId = Value(values, "orchestrationId") }),
+            ("OrchestratorDesign", "/OrchestrationStages/Details") => Page(area, "/OrchestrationVersions/Details", new { orchestrationId = Value(values, "orchestrationId"), versionId = Value(values, "versionId") }),
+            ("OrchestratorDesign", "/Reviews/Details") => Page(area, "/Reviews/Index"),
+            ("OrchestratorDistribution", "/ArtifactReleases/Index") => Page(area, "/ArtifactReleases/Index"),
+            ("OrchestratorDistribution", "/Promotions/Index") => Page(area, "/Promotions/Index"),
+            ("OrchestratorDistribution", "/Assignments/Index") => Page(area, "/Assignments/Index"),
+            ("OrchestratorRuntime", "/Artifacts/Index") => Page(area, "/Artifacts/Index"),
+            ("OrchestratorRuntime", "/DesignNodes/PendingReleases") => Page(area, "/DesignNodes/Index"),
+            ("OrchestratorRuntime", "/Instances/History") => Page(area, "/Instances/Index"),
+            ("OrchestratorRuntime", "/Instances/Detail") => Page(area, "/Instances/Index"),
+            _ => null
+        };
+        return string.IsNullOrEmpty(destination) ? null : new ZoorceTopBarBackOptions { Visible = true, Label = "Back", Url = destination };
     }
 
     private static bool HasDefaultBackAction(string area, string page, RouteValueDictionary values)
@@ -92,6 +123,11 @@ public sealed class DefaultOrchestratorTopBarNavigationResolver : IOrchestratorT
         }
 
         if (Matches(area, page, "OrchestratorDistribution", "/Promotions/Index") && Has(values, "orchestrationId"))
+        {
+            return true;
+        }
+
+        if (Matches(area, page, "OrchestratorDistribution", "/Assignments/Index") && Has(values, "assignmentId"))
         {
             return true;
         }

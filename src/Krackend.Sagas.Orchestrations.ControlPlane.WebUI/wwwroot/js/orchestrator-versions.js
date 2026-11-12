@@ -1,10 +1,10 @@
 (() => {
     const root = document.querySelector('[data-version-catalog]');
     if (!root) return;
-    const grid = root.querySelector('[data-z-data-grid]');
+    const grid = root.querySelector('[data-krackend-grid]');
     const gridView = root.querySelector('[data-version-grid]');
     const cardView = root.querySelector('[data-version-cards-view]');
-    const gridSearch = grid.querySelector('[data-z-grid-search]');
+    const gridSearch = grid.querySelector('[data-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-catalog-controls');
     const search = root.querySelector('[data-version-search]');
@@ -58,11 +58,6 @@
         });
         dropdown.append(toggle, menu); group.append(dropdown); return group;
     };
-    const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
-        const item = records.get(row.dataset.zGridKey); const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell && !cell.querySelector('[data-version-actions]')) cell.replaceChildren(actions(item));
-    });
-    new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
     if (gridToolbar) gridToolbar.append(toolbarEnd);
     const filters = cardView.querySelector('.od-catalog-filters');
     if (filters) {
@@ -80,15 +75,11 @@
             ? `Showing ${loaded.toLocaleString()} loaded of ${total.toLocaleString()}`
             : total ? `Showing ${loaded.toLocaleString()} of ${total.toLocaleString()}` : 'No matching versions';
     };
-    grid.addEventListener('zoorce:grid:loaded', event => {
-        if (!event.detail.append) records.clear();
-        event.detail.result.items.forEach(item => records.set(String(item.id), item));
-        const loaded = records.size;
-        const total = Number(event.detail.result.totalCount ?? 0);
-        setLoadedCount(loaded, total);
-        decorate();
+    const catalogGrid = window.KrackendCatalogGrid.mount(grid, {
+        renderCell: (field, item) => field === 'actions' ? actions(item) : null,
+        onLoaded: (result, loaded) => { if (!gridView.hidden) setLoadedCount(loaded, Number(result.totalCount ?? 0)); },
+        onCellClicked: event => { if (event.data && event.colDef.field !== 'actions' && !event.event.target.closest('button, a, input')) location.href = roadmapUrl(event.data.id); }
     });
-    grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
     const addCard = item => {
         const card = make('article', 'od-item-card od-version-card');
         const header = make('div', 'od-item-top'); const identity = document.createElement('div');
@@ -110,7 +101,7 @@
             const response = await fetch(url, { signal: controller.signal }); if (!response.ok) throw new Error();
             const result = await response.json(); if (current !== generation) return;
             result.items.forEach(addCard); page++; hasMore = result.hasMore; empty.hidden = cards.childElementCount !== 0;
-            more.hidden = !hasMore; setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
+            more.hidden = !hasMore; if (!cardView.hidden) setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
             if (hasMore && result.items.length) requestAnimationFrame(() => {
                 const rect = sentinel.getBoundingClientRect();
                 if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);

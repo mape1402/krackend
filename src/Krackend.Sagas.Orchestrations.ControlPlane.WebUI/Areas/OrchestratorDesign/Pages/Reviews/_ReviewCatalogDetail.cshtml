@@ -15,6 +15,7 @@
         <div data-review-optional="abortReason"><dt>Abort reason</dt><dd data-review-value="abortReason"></dd></div>
         <div data-review-optional="deployedArtifactId"><dt>Artifact</dt><dd data-review-value="deployedArtifactId"></dd></div>
     </dl>
+    <a data-review-details class="z-button z-button-ghost">Open full review</a>
 </div>
 <form method="post" id="catalogReviewApproveForm" data-review-post="Approve" data-orchestrator-validate="false">
     @Html.AntiForgeryToken()<input type="hidden" name="reviewId" /><input type="hidden" name="ReturnToCatalog" value="true" />
