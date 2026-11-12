@@ -55,6 +55,9 @@ public sealed class RuntimeReactiveEvent
     /// </summary>
     public required string SagaId { get; set; }
 
+    /// <summary>Gets or sets the trigger trace identifier, when available.</summary>
+    public string TraceId { get; set; }
+
     /// <summary>
     /// Gets or sets execution key.
     /// </summary>

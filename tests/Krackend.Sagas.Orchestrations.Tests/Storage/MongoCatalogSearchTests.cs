@@ -304,6 +304,7 @@ public sealed class MongoCatalogSearchTests
             OrchestrationDefinitionKey = "sales", CorrelationId = "corr", SagaId = "saga", ExecutionKey = "sales:1",
             OrchestrationVersion = "1.2.3", TotalTaskCount = 3, CompletedTaskCount = 1,
             MaxInstanceDurationSeconds = 0, IdleDurationSeconds = 1200,
+            Metadata = { ["TriggerTraceId"] = JsonValue.Create("mongo-trace") },
             StartedOnUtc = DateTime.UtcNow, LastUpdatedOnUtc = DateTime.UtcNow,
             SnapshotPayload = JsonNode.Parse("{\"large\":\"payload\"}")
         });
@@ -314,6 +315,7 @@ public sealed class MongoCatalogSearchTests
         Assert.Equal("1.2.3", item.OrchestrationVersion);
         Assert.Equal(3, item.TotalTaskCount);
         Assert.Equal(1, item.CompletedTaskCount);
+        Assert.Equal("mongo-trace", item.Metadata["TriggerTraceId"]!.GetValue<string>());
         Assert.Null(item.SnapshotPayload);
 
         var recent = await ((IRuntimeInstanceRecentSummaryReader)repository).GetRecentSummaries(10);

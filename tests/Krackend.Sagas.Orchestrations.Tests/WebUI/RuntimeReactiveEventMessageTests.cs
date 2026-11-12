@@ -37,6 +37,7 @@ public sealed class RuntimeReactiveEventMessageTests
             OrchestrationInstanceId = instanceId,
             CorrelationId = "correlation-1",
             SagaId = "saga-1",
+            TraceId = "trace-1",
             ExecutionKey = "sales.sale.created",
             StageExecutionId = stageExecutionId,
             StageKey = "inventory",
@@ -71,6 +72,7 @@ public sealed class RuntimeReactiveEventMessageTests
         Assert.Equal(instanceId.ToString(), message.OrchestrationInstanceId);
         Assert.Equal("correlation-1", message.CorrelationId);
         Assert.Equal("saga-1", message.SagaId);
+        Assert.Equal("trace-1", message.TraceId);
         Assert.Equal(stageExecutionId.ToString(), message.StageExecutionId);
         Assert.Equal("inventory", message.StageKey);
         Assert.Equal(taskExecutionId.ToString(), message.TaskExecutionId);

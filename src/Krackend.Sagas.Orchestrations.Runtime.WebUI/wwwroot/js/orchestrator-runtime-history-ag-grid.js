@@ -70,13 +70,13 @@
         } finally { requests.delete(controller); }
     } };
     const columns = [
-        { field: 'orchestrationLabel', headerName: 'Orchestration', pinned: 'left', width: 220, minWidth: 200,
+        { field: 'orchestrationLabel', headerName: 'Orchestration', pinned: 'left', flex: 1.3, minWidth: 170,
             cellRenderer: p => p.data ? `<div class="orchestration-cell"><span class="orchestration-glyph"><i class="bi bi-bezier2"></i></span><span class="orchestration-copy"><strong>${escape(p.data.orchestrationDefinitionKey || p.value || '—')}</strong><small>${escape(p.data.orchestrationVersion || '—')}</small></span></div>` : '' },
-        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID']].map(([field, headerName]) => ({ field, headerName, flex: 1, minWidth: 130,
-            cellRenderer: p => p.data ? `<div class="mono-cell"><span>${escape(p.value || '—')}</span><button class="copy-id" type="button" aria-label="Copy ${headerName}"><i class="bi bi-copy"></i></button></div>` : '' })),
-        { field: 'status', headerName: 'Status', flex: .7, minWidth: 105, cellRenderer: p => p.data ? `<span class="status-pill status-${escape(String(p.value || '').toLowerCase())}">${escape(p.value || '—')}</span>` : '' },
-        { field: 'startedOnUtc', headerName: 'Started (UTC)', flex: 1, minWidth: 145, sort: 'desc', valueFormatter: p => date(p.value) },
-        { field: 'lastUpdatedOnUtc', headerName: 'Updated (UTC)', flex: 1, minWidth: 145, valueFormatter: p => date(p.value) }
+        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID'], ['traceId', 'Trace ID']].map(([field, headerName]) => ({ field, headerName, flex: 1, minWidth: 115, sortable: field !== 'traceId',
+            cellRenderer: p => p.data ? `<div class="mono-cell"><span title="${escape(p.value || '')}">${escape(p.value || '—')}</span>${p.value ? `<button class="copy-id" type="button" aria-label="Copy ${headerName}"><i class="bi bi-copy"></i></button>` : ''}</div>` : '' })),
+        { field: 'status', headerName: 'Status', flex: .7, minWidth: 100, cellRenderer: p => p.data ? `<span class="status-pill status-${escape(String(p.value || '').toLowerCase())}">${escape(p.value || '—')}</span>` : '' },
+        { field: 'startedOnUtc', headerName: 'Started (UTC)', flex: 1, minWidth: 135, sort: 'desc', valueFormatter: p => date(p.value) },
+        { field: 'lastUpdatedOnUtc', headerName: 'Updated (UTC)', flex: 1, minWidth: 135, valueFormatter: p => date(p.value) }
     ];
     const api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20,
         maxConcurrentDatasourceRequests: 1,

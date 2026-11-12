@@ -11,77 +11,25 @@
     root.addEventListener('click', async event => {
         const button = event.target.closest('[data-copy-value]');
         if (!button) return;
-        try { await copy(button.dataset.copyValue); button.classList.add('is-copied'); setTimeout(() => button.classList.remove('is-copied'), 1100); }
-        catch { button.title = 'Clipboard unavailable'; }
+        const toast = root.querySelector('[data-detail-toast]');
+        try { await copy(button.dataset.copyValue); button.classList.add('is-copied'); if (toast) { toast.textContent = 'Copied to clipboard'; toast.hidden = false; } setTimeout(() => { button.classList.remove('is-copied'); if (toast) toast.hidden = true; }, 2000); }
+        catch { if (toast) { toast.textContent = 'Unable to copy'; toast.hidden = false; } }
     });
-    const drawer = root.querySelector('[data-transition-drawer]');
-    const drawerToggle = root.querySelector('[data-transition-drawer-toggle]');
-    const setDrawer = open => {
-        if (!drawer) return;
-        drawer.hidden = !open;
-        drawerToggle?.setAttribute('aria-expanded', String(open));
+    const filterActivity = () => {
+        const stage = root.querySelector('[data-activity-stage]')?.value || '';
+        const task = root.querySelector('[data-activity-task]')?.value || '';
+        const attempt = root.querySelector('[data-activity-attempt]')?.value || '';
+        const query = (root.querySelector('[data-activity-query]')?.value || '').toLowerCase();
+        let count = 0;
+        root.querySelectorAll('[data-activity-item]').forEach(item => {
+            const show = (!stage || item.dataset.stage === stage) && (!task || item.dataset.task === task) && (!attempt || item.dataset.attempt === attempt) && (!query || (item.dataset.event || '').toLowerCase().includes(query));
+            item.hidden = !show; if (show) count++;
+        });
+        const empty = root.querySelector('[data-activity-empty]'); if (empty) empty.hidden = count > 0;
     };
-    drawerToggle?.addEventListener('click', () => setDrawer(drawer?.hidden));
-    root.querySelector('[data-transition-drawer-close]')?.addEventListener('click', () => setDrawer(false));
-    const compensationDrawer = root.querySelector('[data-compensation-drawer]');
-    const setCompensationDrawer = open => {
-        if (compensationDrawer) compensationDrawer.hidden = !open;
-    };
-    root.querySelector('[data-compensation-drawer-close]')?.addEventListener('click', () => setCompensationDrawer(false));
+    root.querySelectorAll('[data-activity-stage],[data-activity-task],[data-activity-attempt],[data-activity-query]').forEach(control => control.addEventListener('input', filterActivity));
     root.querySelector('[data-recover-dialog-open]')?.addEventListener('click', event =>
         document.getElementById('recoverSagaDialog')?.open?.(event.currentTarget));
-    root.addEventListener('zoorce:timeline:select', event => {
-        const id = event.detail?.itemId;
-        const panels = root.querySelectorAll('[data-transition-details]');
-        let found = false;
-        panels.forEach(panel => { const selected = panel.dataset.transitionDetails === id; panel.hidden = !selected; found ||= selected; });
-        const placeholder = root.querySelector('[data-transition-placeholder]');
-        if (placeholder) placeholder.hidden = found;
-        if (found) setDrawer(true);
-
-        const compensationPanels = root.querySelectorAll('[data-compensation-details]');
-        let compensationFound = false;
-        compensationPanels.forEach(panel => {
-            const selected = panel.dataset.compensationDetails === id;
-            panel.hidden = !selected;
-            compensationFound ||= selected;
-        });
-        const compensationPlaceholder = root.querySelector('[data-compensation-placeholder]');
-        if (compensationPlaceholder) compensationPlaceholder.hidden = compensationFound;
-        if (compensationFound) setCompensationDrawer(true);
-    });
-
-    // Pretty-print valid JSON with safe token nodes. Content arrives Razor-encoded
-    // and this renderer never assigns JSON as HTML, so diagnostic payloads remain
-    // copyable without opening an XSS surface.
-    const appendJsonToken = (fragment, text, className) => {
-        const span = document.createElement('span');
-        span.className = className;
-        span.textContent = text;
-        fragment.append(span);
-    };
-    const renderJson = (view, source) => {
-        const formatted = JSON.stringify(JSON.parse(source), null, 2);
-        const fragment = document.createDocumentFragment();
-        const token = /("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*")|(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|\b(true|false|null)\b/g;
-        let cursor = 0;
-        for (let match; (match = token.exec(formatted));) {
-            fragment.append(document.createTextNode(formatted.slice(cursor, match.index)));
-            if (match[1]) appendJsonToken(fragment, match[1], 'json-key');
-            else if (match[2]) appendJsonToken(fragment, match[2], 'json-string');
-            else if (match[3]) appendJsonToken(fragment, match[3], 'json-number');
-            else appendJsonToken(fragment, match[4], match[4] === 'null' ? 'json-null' : 'json-boolean');
-            cursor = match.index + match[0].length;
-        }
-        fragment.append(document.createTextNode(formatted.slice(cursor)));
-        view.replaceChildren(fragment);
-    };
-    root.querySelectorAll('[data-json-view]').forEach(view => {
-        const source = view.textContent.trim();
-        if (!source) { view.textContent = 'No data recorded.'; return; }
-        try { renderJson(view, source); }
-        catch { /* Non-JSON diagnostic data remains readable as supplied. */ }
-    });
 
     const eventValue = (event, name) => event?.[name] ?? event?.[`${name.charAt(0).toUpperCase()}${name.slice(1)}`];
     const toTimestamp = value => {
@@ -105,33 +53,12 @@
     const formatUtc = value => {
         const text = typeof value === 'string' && !/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? `${value}Z` : value;
         const date = new Date(text);
-        return Number.isNaN(date.getTime()) ? '—' : date.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+        return Number.isNaN(date.getTime()) ? '—' : date.toISOString().replace('T', ' ').replace('Z', ' UTC');
     };
-    // Timelines are an operational view, so they must never silently switch
-    // the date into the browser's local zone. The component emits a compact
-    // localised label by default; replace it with the complete UTC anchor that
-    // is also used throughout the saga header and drill-down views.
-    const normalizeTimelineTimestamps = scope => {
-        (scope || root).querySelectorAll?.('[data-z-timeline-time][datetime]').forEach(time => {
-            const formatted = formatUtc(time.dateTime);
-            if (formatted === '—') return;
-            time.textContent = formatted;
-            time.title = formatted;
-        });
-    };
-    normalizeTimelineTimestamps();
     const statusClass = status => ({
         Running: 'od-status-running', Idle: 'od-status-warning', Completed: 'od-status-active',
         DeadLettered: 'od-status-warning', Failed: 'od-status-danger'
     }[String(status || '')] || 'od-status-inactive');
-    const timelineTone = status => {
-        const value = String(status || '').toLowerCase();
-        if (['completed', 'succeeded'].includes(value)) return 'Success';
-        if (['failed', 'timedout', 'deadlettered'].includes(value)) return 'Danger';
-        if (['skipped', 'disabled'].includes(value)) return 'Warning';
-        if (['running', 'waiting', 'waitingresponse', 'awaitingresponse', 'retrying'].includes(value)) return 'Info';
-        return 'Neutral';
-    };
     const toPublicStatus = status => {
         const value = String(status || 'Running');
         if (['Created', 'Running', 'Waiting', 'WaitingResponse', 'AwaitingResponse', 'Retrying', 'Compensating'].includes(value)) return 'Running';
@@ -140,75 +67,6 @@
         if (value === 'DeadLettered') return 'DeadLettered';
         if (['Failed', 'Stopped', 'Aborted', 'CompletedWithErrors', 'TimedOut', 'Cancelled'].includes(value)) return 'Failed';
         return value;
-    };
-    const appendTransitionField = (list, label, value, copyable = false) => {
-        const term = document.createElement('dt');
-        term.textContent = label;
-        const definition = document.createElement('dd');
-        const text = value == null || value === '' ? '—' : String(value);
-        if (copyable && text !== '—') {
-            definition.className = 'od-trace-copy-value';
-            const content = document.createElement('code');
-            content.textContent = text;
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'od-copy-button';
-            button.dataset.copyValue = text;
-            button.title = `Copy ${label.toLowerCase()}`;
-            button.setAttribute('aria-label', button.title);
-            button.innerHTML = '<i class="bi bi-copy" aria-hidden="true"></i>';
-            definition.append(content, button);
-        } else {
-            definition.textContent = text;
-        }
-        list.append(term, definition);
-    };
-    const upsertLiveTransition = event => {
-        const timeline = root.querySelector('#instance-activity-timeline');
-        const id = String(eventValue(event, 'id') || '');
-        if (!timeline || !id || !window.ZoorceTimeline?.applySnapshot) return;
-        // A reactive event carries timestamps persisted by the runtime.  Never
-        // substitute the browser clock: that would create a transition which
-        // does not exist in the durable execution history.  A malformed event
-        // is ignored and the next explicit refresh remains the source of truth.
-        const occurred = eventValue(event, 'occurredOnUtc') || eventValue(event, 'lastUpdatedOnUtc');
-        if (!occurred) return;
-        const from = eventValue(event, 'fromStatus');
-        const to = eventValue(event, 'toStatus');
-        const transition = String(eventValue(event, 'transitionType') || 'Transition');
-        const description = `${formatUtc(occurred)} · ${eventValue(event, 'message') || `${from || '—'} → ${to || '—'}`}`;
-        window.ZoorceTimeline.applySnapshot(timeline, {
-            item: {
-                id,
-                title: transition,
-                description,
-                timestamp: occurred,
-                tone: timelineTone(to),
-                state: ['Completed', 'Succeeded'].includes(String(to)) ? 'Completed' : ['Failed', 'TimedOut', 'DeadLettered'].includes(String(to)) ? 'Error' : 'Default',
-                metadata: { Status: `${from || '—'} → ${to || '—'}` }
-            }
-        });
-        normalizeTimelineTimestamps(timeline);
-
-        const drawer = root.querySelector('[data-transition-drawer]');
-        if (!drawer || [...drawer.querySelectorAll('[data-transition-details]')]
-            .some(panel => panel.dataset.transitionDetails === id)) return;
-        const article = document.createElement('article');
-        article.dataset.transitionDetails = id;
-        article.hidden = true;
-        const fields = document.createElement('dl');
-        fields.className = 'od-trace-fields';
-        appendTransitionField(fields, 'Transition ID', id, true);
-        appendTransitionField(fields, 'Transition', transition);
-        appendTransitionField(fields, 'At', formatUtc(occurred));
-        appendTransitionField(fields, 'Status', `${from || '—'} → ${to || '—'}`);
-        appendTransitionField(fields, 'Stage', eventValue(event, 'stageKey'));
-        appendTransitionField(fields, 'Task', eventValue(event, 'taskKey'));
-        appendTransitionField(fields, 'Attempt ID', eventValue(event, 'taskExecutionAttemptId'), true);
-        appendTransitionField(fields, 'Source', eventValue(event, 'producedBy'));
-        appendTransitionField(fields, 'Message', eventValue(event, 'message'));
-        article.append(fields);
-        drawer.append(article);
     };
     const applyLiveEvent = event => {
         const eventInstance = eventValue(event, 'orchestrationInstanceId');
@@ -239,7 +97,7 @@
         const notice = root.querySelector('[data-instance-live-update]');
         const noticeText = root.querySelector('[data-instance-live-update-text]');
         if (notice && noticeText) {
-            noticeText.textContent = `Live update · ${eventValue(event, 'transitionType') || 'transition'} at ${formatUtc(eventValue(event, 'occurredOnUtc'))}`;
+            noticeText.textContent = `Live update · ${eventValue(event, 'transitionType') || 'transition'} at ${formatUtc(eventValue(event, 'occurredOnUtc'))}. Refresh to update execution details.`;
             notice.hidden = false;
         }
         upsertLiveTransition(event);

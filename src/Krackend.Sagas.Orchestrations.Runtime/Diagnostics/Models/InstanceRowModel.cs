@@ -27,6 +27,9 @@ public sealed record InstanceRowModel(
     DateTime? CompensatedOnUtc = null,
     int RetryCount = 0)
 {
+    /// <summary>Gets the trace identifier attached to the incoming trigger, when available.</summary>
+    public string TraceId { get; init; }
+
     /// <summary>
     /// Gets the number of enabled orchestration tasks that are already complete
     /// for the instance. This is a diagnostics-only, display-safe progress value.

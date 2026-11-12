@@ -89,6 +89,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 OrchestrationInstanceId = transition.OrchestrationInstanceId,
                 CorrelationId = instance.CorrelationId,
                 SagaId = instance.SagaId,
+                TraceId = RuntimeInstanceTraceId.Get(instance),
                 ExecutionKey = instance.ExecutionKey,
                 StageExecutionId = transition.StageExecutionId,
                 StageKey = stageKey,

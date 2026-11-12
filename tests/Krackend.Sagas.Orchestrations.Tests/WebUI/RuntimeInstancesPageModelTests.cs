@@ -213,7 +213,7 @@ public sealed class RuntimeInstancesPageModelTests
 
     [Theory]
     [InlineData(null, "execution")]
-    [InlineData("overview", "overview")]
+    [InlineData("overview", "execution")]
     [InlineData("activity", "activity")]
     [InlineData("EXECUTION", "execution")]
     [InlineData("data", "data")]
@@ -247,6 +247,15 @@ public sealed class RuntimeInstancesPageModelTests
         Assert.Equal("task-one", page.Task.TaskKey);
         Assert.IsType<PageResult>(await page.OnGetAsync(id, section: "attempt", stageKey: "stage-one", taskKey: "task-one", attempt: 1));
         Assert.Equal(1, page.Attempt.AttemptNumber);
+        Assert.IsType<PageResult>(await page.OnGetAsync(id, section: "attempt", stageExecutionId: "stage", taskExecutionId: "task", attempt: 1));
+    }
+
+    [Fact]
+    public async Task DetailPageAllowsEmptyMetadata()
+    {
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader { EmptyMetadata = true });
+        Assert.IsType<PageResult>(await page.OnGetAsync(Ulid.NewUlid().ToString()));
+        Assert.Empty(page.TraceId);
     }
 
     [Fact]
@@ -432,6 +441,7 @@ public sealed class RuntimeInstancesPageModelTests
         public bool DetailMissing { get; set; }
         public string DetailStatus { get; set; } = "Running";
         public bool DetailHasIncompleteParallel { get; set; }
+        public bool EmptyMetadata { get; set; }
         public RuntimeInstanceCatalogQuery LastQuery { get; private set; }
 
         public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
@@ -468,6 +478,7 @@ public sealed class RuntimeInstancesPageModelTests
             return Task.FromResult(_detail with
             {
                 Instance = _detail.Instance with { Status = DetailStatus },
+                Metadata = EmptyMetadata ? string.Empty : _detail.Metadata,
                 Tasks = DetailHasIncompleteParallel ? [_detail.Tasks.First() with { Status = "Cancelled", ParallelGroupId = "group" }] : _detail.Tasks
             });
         }

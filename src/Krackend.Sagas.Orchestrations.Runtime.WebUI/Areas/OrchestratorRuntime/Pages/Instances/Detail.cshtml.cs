@@ -81,27 +81,36 @@ public sealed class DetailModel : PageModel
         return RedirectToPage(new { instanceId });
     }
 
-    public async Task<IActionResult> OnGetAsync(string instanceId, CancellationToken cancellationToken = default, string section = null, string stageKey = null, string taskKey = null, int? attempt = null)
+    public async Task<IActionResult> OnGetAsync(string instanceId, CancellationToken cancellationToken = default, string section = null, string stageKey = null, string taskKey = null, int? attempt = null, string stageExecutionId = null, string taskExecutionId = null)
     {
         if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out _))
             return NotFound();
+        Section = string.IsNullOrEmpty(section) ? "execution" : section.ToLowerInvariant();
+        if (Section is not ("overview" or "activity" or "execution" or "data" or "stage" or "task" or "attempt" or "compensations")) return NotFound();
+        if (Section == "overview") Section = "execution";
 
         try
         {
-            Detail = await _diagnostics.GetDetail(instanceId, cancellationToken);
+            Detail = _diagnostics is IRuntimeSectionDiagnosticsReader scoped
+                ? await scoped.GetDetailForSection(instanceId, Section, cancellationToken, new RuntimeDetailSelection(stageKey, taskKey, stageExecutionId, taskExecutionId, attempt))
+                : await _diagnostics.GetDetail(instanceId, cancellationToken);
             if (Detail is null) return NotFound();
-            TraceId = FindString(JsonNode.Parse(Detail.Metadata), "TraceId");
+            var metadata = string.IsNullOrWhiteSpace(Detail.Metadata) ? null : JsonNode.Parse(Detail.Metadata);
+            TraceId = FindString(metadata, "TraceId");
+            if (string.IsNullOrWhiteSpace(TraceId)) TraceId = FindString(metadata, "TriggerTraceId");
 
-            Section = string.IsNullOrEmpty(section) ? "execution" : section.ToLowerInvariant();
-            if (Section is not ("overview" or "activity" or "execution" or "data" or "stage" or "task" or "attempt" or "compensations")) return NotFound();
             if (Section is "stage" or "task" or "attempt")
             {
-                Stage = Detail.Stages.FirstOrDefault(x => string.Equals(x.StageKey, stageKey, StringComparison.Ordinal));
+                Stage = Detail.Stages.FirstOrDefault(x => !string.IsNullOrWhiteSpace(stageExecutionId)
+                    ? string.Equals(x.Id, stageExecutionId, StringComparison.Ordinal)
+                    : string.Equals(x.StageKey, stageKey, StringComparison.Ordinal));
                 if (Stage is null) return NotFound();
             }
             if (Section is "task" or "attempt")
             {
-                Task = Stage.Tasks.FirstOrDefault(x => string.Equals(x.TaskKey, taskKey, StringComparison.Ordinal));
+                Task = Stage.Tasks.FirstOrDefault(x => !string.IsNullOrWhiteSpace(taskExecutionId)
+                    ? string.Equals(x.Id, taskExecutionId, StringComparison.Ordinal)
+                    : string.Equals(x.TaskKey, taskKey, StringComparison.Ordinal));
                 if (Task is null) return NotFound();
             }
             if (Section is "attempt")

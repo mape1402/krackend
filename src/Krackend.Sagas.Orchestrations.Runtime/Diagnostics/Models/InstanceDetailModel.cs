@@ -12,4 +12,8 @@ public sealed record InstanceDetailModel(
     string Metadata,
     IReadOnlyCollection<CompensationDetailModel> Compensations,
     IReadOnlyCollection<RuntimeTimelineEntryModel> FunctionalTimeline,
-    IReadOnlyCollection<RuntimeTimelineEntryModel> TechnicalTimeline);
+    IReadOnlyCollection<RuntimeTimelineEntryModel> TechnicalTimeline)
+{
+    /// <summary>Whether the deployed artifact was available for this diagnostic view.</summary>
+    public bool? ArtifactAvailable { get; init; }
+}

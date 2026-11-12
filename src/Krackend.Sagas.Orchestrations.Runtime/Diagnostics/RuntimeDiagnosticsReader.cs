@@ -12,7 +12,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 /// <summary>
 /// Reads runtime storage and builds diagnostics models for dashboards and trace views.
 /// </summary>
-public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeInstanceCatalogReader, IRuntimeInstanceStatusCountsReader
+public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRuntimeSectionDiagnosticsReader, IRuntimeInstanceCatalogReader, IRuntimeInstanceStatusCountsReader, IRuntimeVisibleStageSummaryReader
 {
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
     private static readonly JsonSerializerOptions ArtifactJsonOptions = new(JsonSerializerDefaults.Web);
@@ -102,7 +102,26 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     }
 
     /// <inheritdoc />
-    public async Task<InstanceDetailModel> GetDetail(string instanceId, CancellationToken cancellationToken = default)
+    public async Task<RuntimeStageSummaryPage> GetVisibleStageSummaries(Id instanceId, int take, CancellationToken cancellationToken = default)
+    {
+        if (_stageRepository is not IRuntimeStageSummaryReader summaries)
+            throw new NotSupportedException("The configured runtime storage does not support stage summaries.");
+        var page = await summaries.GetStageSummaries(instanceId, take, cancellationToken);
+        var instance = await _instanceRepository.GetById(instanceId, cancellationToken);
+        var artifact = DeserializeArtifact(await TryGetRuntimeArtifact(instance, cancellationToken));
+        var disabled = (artifact?.StageDefinitions ?? []).Where(x => !x.IsEnabled).Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return new RuntimeStageSummaryPage(page.Items.Where(x => !disabled.Contains(x.StageKey)).ToArray(), page.HasMore);
+    }
+
+    /// <inheritdoc />
+    public Task<InstanceDetailModel> GetDetail(string instanceId, CancellationToken cancellationToken = default)
+        => GetDetailCore(instanceId, null, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<InstanceDetailModel> GetDetailForSection(string instanceId, string section, CancellationToken cancellationToken = default, RuntimeDetailSelection selection = null)
+        => GetDetailCore(instanceId, section ?? "execution", selection, cancellationToken);
+
+    private async Task<InstanceDetailModel> GetDetailCore(string instanceId, string section, RuntimeDetailSelection selection, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(instanceId))
             throw new ArgumentException("Instance id is required.", nameof(instanceId));
@@ -111,14 +130,49 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         var instance = await _instanceRepository.GetById(id, cancellationToken);
         var stages = (await _stageRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.Order).ToArray();
         var tasks = (await _taskRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
-        var compensations = (await _compensationRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray();
-        var transitions = (await _transitionRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.OccurredOnUtc).ToArray();
+        var compensations = section is null || string.Equals(section, "compensations", StringComparison.OrdinalIgnoreCase) ? (await _compensationRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.StartedOnUtc).ToArray() : [];
+        var transitions = section is null || string.Equals(section, "activity", StringComparison.OrdinalIgnoreCase) ? (await _transitionRepository.GetByInstanceId(id, cancellationToken)).OrderBy(x => x.OccurredOnUtc).ToArray() : [];
         var runtimeArtifact = await TryGetRuntimeArtifact(instance, cancellationToken);
         var artifact = DeserializeArtifact(runtimeArtifact);
 
+        // Disabled design elements are not part of the visible execution, even
+        // when older runtime versions persisted a skipped record for them.
+        if (artifact?.StageDefinitions is not null)
+        {
+            var definitions = artifact.StageDefinitions.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
+            var hiddenStages = stages.Where(x => definitions.TryGetValue(x.StageKey, out var definition) && !definition.IsEnabled)
+                .Select(x => x.Id).ToHashSet();
+            var stageKeys = stages.ToDictionary(x => x.Id, x => x.StageKey);
+            var hiddenTasks = tasks.Where(x => hiddenStages.Contains(x.StageExecutionId)
+                || (stageKeys.TryGetValue(x.StageExecutionId, out var key)
+                    && definitions.TryGetValue(key, out var definition)
+                    && definition.TaskDefinitions.Any(t => !t.IsEnabled && string.Equals(t.Key, x.TaskKey, StringComparison.OrdinalIgnoreCase))))
+                .Select(x => x.Id).ToHashSet();
+            stages = stages.Where(x => !hiddenStages.Contains(x.Id)).ToArray();
+            tasks = tasks.Where(x => !hiddenTasks.Contains(x.Id)).ToArray();
+            transitions = transitions.Where(x => (!x.StageExecutionId.HasValue || !hiddenStages.Contains(x.StageExecutionId.Value))
+                && (!x.TaskExecutionId.HasValue || !hiddenTasks.Contains(x.TaskExecutionId.Value))).ToArray();
+            compensations = compensations.Where(x => !hiddenTasks.Contains(x.SourceTaskExecutionId)).ToArray();
+        }
+
         var stageById = stages.ToDictionary(x => x.Id.ToString(), x => x.StageKey);
         var taskById = tasks.ToDictionary(x => x.Id.ToString(), x => x.TaskKey);
-        var taskDetails = await BuildTaskDetails(instance, tasks, stageById, cancellationToken);
+        bool MatchesSelection(TaskExecution task)
+        {
+            if (selection is null) return false;
+            var taskMatches = !string.IsNullOrWhiteSpace(selection.TaskExecutionId)
+                ? task.Id.ToString() == selection.TaskExecutionId
+                : string.Equals(task.TaskKey, selection.TaskKey, StringComparison.Ordinal);
+            var stageMatches = !string.IsNullOrWhiteSpace(selection.StageExecutionId)
+                ? task.StageExecutionId.ToString() == selection.StageExecutionId
+                : string.Equals(stageById.GetValueOrDefault(task.StageExecutionId.ToString()), selection.StageKey, StringComparison.Ordinal);
+            return taskMatches && stageMatches;
+        }
+        bool IncludeAttemptDetails(TaskExecution task, TaskExecutionAttempt attempt)
+            => section is null || (string.Equals(section, "attempt", StringComparison.OrdinalIgnoreCase) && selection?.Attempt == attempt.AttemptNumber && MatchesSelection(task));
+        bool IncludeTaskDetails(TaskExecution task)
+            => section is null || (string.Equals(section, "task", StringComparison.OrdinalIgnoreCase) && MatchesSelection(task));
+        var taskDetails = await BuildTaskDetails(instance, tasks, stageById, IncludeAttemptDetails, IncludeTaskDetails, section is null, cancellationToken);
         var stageDetails = BuildStageDetails(stages, taskDetails, artifact);
         var allTaskDetails = stageDetails.SelectMany(x => x.Tasks).ToArray();
         var transitionDetails = transitions.Select(x => ToTransition(x, stageById, taskById)).ToArray();
@@ -129,11 +183,11 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             stageDetails,
             allTaskDetails,
             transitionDetails,
-            FormatJson(instance.SnapshotPayload),
+            section is null || string.Equals(section, "data", StringComparison.OrdinalIgnoreCase) ? FormatJson(instance.SnapshotPayload) : string.Empty,
             FormatJson(instance.Metadata),
             compensations.Select(compensation => ToCompensation(compensation, taskById)).ToArray(),
             timeline.Where(x => x.TimelineKind == "Functional").ToArray(),
-            timeline.Where(x => x.TimelineKind == "Technical").ToArray());
+            timeline.Where(x => x.TimelineKind == "Technical").ToArray()) { ArtifactAvailable = artifact is not null };
     }
 
     /// <summary>
@@ -163,7 +217,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         {
             return await _runtimeArtifactRepository.GetById(instance.RuntimeOrchestrationArtifactId, cancellationToken);
         }
-        catch
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return null;
         }
@@ -211,10 +265,36 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         OrchestrationInstance instance,
         IReadOnlyCollection<TaskExecution> tasks,
         IReadOnlyDictionary<string, string> stageById,
+        Func<TaskExecution, TaskExecutionAttempt, bool> includeAttemptDetails,
+        Func<TaskExecution, bool> includeTaskDetails,
+        bool includeAllPayloads,
         CancellationToken cancellationToken)
     {
         ILookup<Id, TaskExecutionAttempt> attemptsByTask = null;
-        if (_attemptRepository is ITaskExecutionAttemptBatchReader attemptBatchReader)
+        if (!includeAllPayloads && _attemptRepository is ITaskExecutionAttemptSummaryBatchReader summaryReader &&
+            _attemptRepository is ITaskExecutionAttemptBatchReader detailReader)
+        {
+            var summaries = (await summaryReader.GetSummariesByTaskExecutionIds(tasks.Select(x => x.Id).ToArray(), cancellationToken)).ToArray();
+            var taskLookup = tasks.ToDictionary(x => x.Id);
+            var selected = summaries.Where(x => taskLookup.TryGetValue(x.TaskExecutionId, out var task) && includeAttemptDetails(task, x)).ToArray();
+            if (selected.Length > 0)
+            {
+                IReadOnlyCollection<TaskExecutionAttempt> full;
+                try
+                {
+                    full = selected.Length == 1
+                        ? [await _attemptRepository.GetById(selected[0].Id, cancellationToken)]
+                        : await detailReader.GetByTaskExecutionIds(selected.Select(x => x.TaskExecutionId).Distinct().ToArray(), cancellationToken);
+                }
+                catch (KeyNotFoundException) { full = []; }
+                var fullById = full.ToDictionary(x => x.Id);
+                for (var i = 0; i < summaries.Length; i++)
+                    if (fullById.TryGetValue(summaries[i].Id, out var value) && taskLookup.TryGetValue(value.TaskExecutionId, out var task) && includeAttemptDetails(task, value))
+                        summaries[i] = value;
+            }
+            attemptsByTask = summaries.ToLookup(x => x.TaskExecutionId);
+        }
+        else if (_attemptRepository is ITaskExecutionAttemptBatchReader attemptBatchReader)
         {
             var attempts = await attemptBatchReader.GetByTaskExecutionIds(tasks.Select(x => x.Id).ToArray(), cancellationToken);
             attemptsByTask = attempts.ToLookup(x => x.TaskExecutionId);
@@ -224,11 +304,12 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         Dictionary<Id, TaskDispatch> dispatchesByAttempt = null;
         if (attemptsByTask is not null && _dispatchRepository is ITaskDispatchBatchReader dispatchBatchReader)
         {
-            var attempts = attemptsByTask.SelectMany(x => x).ToArray();
-            var byId = await dispatchBatchReader.GetByIds(
-                attempts.Where(x => x.DispatchId.HasValue).Select(x => x.DispatchId.Value).ToArray(), cancellationToken);
-            var byAttempt = await dispatchBatchReader.GetByAttemptIds(
-                attempts.Where(x => !x.DispatchId.HasValue).Select(x => x.Id).ToArray(), cancellationToken);
+            var tasksById = tasks.ToDictionary(x => x.Id);
+            var attempts = attemptsByTask.SelectMany(x => x).Where(x => tasksById.TryGetValue(x.TaskExecutionId, out var task) && includeAttemptDetails(task, x)).ToArray();
+            var ids = attempts.Where(x => x.DispatchId.HasValue).Select(x => x.DispatchId.Value).ToArray();
+            var attemptIds = attempts.Where(x => !x.DispatchId.HasValue).Select(x => x.Id).ToArray();
+            IReadOnlyCollection<TaskDispatch> byId = ids.Length == 0 ? [] : await dispatchBatchReader.GetByIds(ids, cancellationToken);
+            IReadOnlyCollection<TaskDispatch> byAttempt = attemptIds.Length == 0 ? [] : await dispatchBatchReader.GetByAttemptIds(attemptIds, cancellationToken);
             dispatchesById = byId.GroupBy(x => x.Id).ToDictionary(x => x.Key, x => x.First());
             dispatchesByAttempt = byAttempt.GroupBy(x => x.TaskExecutionAttemptId).ToDictionary(x => x.Key, x => x.First());
         }
@@ -242,22 +323,23 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             var attemptDetails = new List<TaskAttemptDetailModel>();
             foreach (var attempt in attempts)
             {
-                TaskDispatch dispatch;
-                if (dispatchesById is null)
+                TaskDispatch dispatch = null;
+                var includeDetails = includeAttemptDetails(task, attempt);
+                if (includeDetails && dispatchesById is null)
                 {
-                    dispatch = attempt.DispatchId is null
-                        ? await _dispatchRepository.GetByAttemptId(attempt.Id, cancellationToken)
-                        : await _dispatchRepository.GetById(attempt.DispatchId.Value, cancellationToken);
+                    try
+                    {
+                        dispatch = attempt.DispatchId is null
+                            ? await _dispatchRepository.GetByAttemptId(attempt.Id, cancellationToken)
+                            : await _dispatchRepository.TryGetById(attempt.DispatchId.Value, cancellationToken);
+                    }
+                    catch (KeyNotFoundException) { dispatch = null; }
                 }
-                else if (attempt.DispatchId is { } dispatchId)
+                else if (includeDetails && attempt.DispatchId is { } dispatchId)
                 {
-                    if (!dispatchesById.TryGetValue(dispatchId, out dispatch))
-                        throw new KeyNotFoundException($"Task dispatch '{dispatchId}' was not found.");
+                    dispatchesById.TryGetValue(dispatchId, out dispatch);
                 }
-                else if (!dispatchesByAttempt.TryGetValue(attempt.Id, out dispatch))
-                {
-                    throw new KeyNotFoundException($"Task dispatch for attempt '{attempt.Id}' was not found.");
-                }
+                else if (includeDetails) { dispatchesByAttempt.TryGetValue(attempt.Id, out dispatch); }
 
                 attemptDetails.Add(new TaskAttemptDetailModel(
                     attempt.Id.ToString(),
@@ -268,12 +350,12 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
                     attempt.CompletedOnUtc,
                     attempt.FailedOnUtc,
                     attempt.TimedOutOnUtc,
-                    FormatJson(attempt.RequestPayload),
-                    FormatJson(attempt.ResponsePayload),
+                    includeDetails ? FormatJson(attempt.RequestPayload) : string.Empty,
+                    includeDetails ? FormatJson(attempt.ResponsePayload) : string.Empty,
                     attempt.ErrorCode,
                     attempt.ErrorMessage,
                     dispatch is null ? null : ToDispatch(dispatch, instance, task, attempt, stageById),
-                    FormatJson(attempt.Metadata),
+                    includeDetails ? FormatJson(attempt.Metadata) : string.Empty,
                     attempt.TaskExecutionId.ToString(),
                     attempt.DispatchId?.ToString()));
             }
@@ -296,8 +378,8 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
                 task.FailedOnUtc,
                 task.TimedOutOnUtc,
                 task.LastAttemptNumber,
-                FormatJson(task.OutputVariablesPayload),
-                FormatJson(task.Metadata),
+                includeTaskDetails(task) ? FormatJson(task.OutputVariablesPayload) : string.Empty,
+                includeTaskDetails(task) ? FormatJson(task.Metadata) : string.Empty,
                 attemptDetails,
                 instance.SagaId,
                 task.OnErrorPolicy.ToString(),
@@ -322,30 +404,31 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
     {
         var stageDetails = new List<StageDetailModel>();
         var consumedStageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tasksByStage = taskDetails.ToLookup(x => x.StageExecutionId, StringComparer.OrdinalIgnoreCase);
         var executedByKey = stages
             .GroupBy(x => x.StageKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderByDescending(stage => stage.StartedOnUtc).First(), StringComparer.OrdinalIgnoreCase);
 
         foreach (var stageArtifact in artifact?.StageDefinitions?.OrderBy(x => x.Order) ?? Enumerable.Empty<StageArtifact>())
         {
+            if (!stageArtifact.IsEnabled) continue;
             if (executedByKey.TryGetValue(stageArtifact.Key, out var stage))
             {
                 var stageId = stage.Id.ToString();
                 consumedStageIds.Add(stageId);
-                var executedTasks = taskDetails.Where(x => x.StageExecutionId == stageId).ToArray();
+                var executedTasks = tasksByStage[stageId].ToArray();
                 stageDetails.Add(ToStage(stage, MergeStageTasks(stageArtifact, stageId, executedTasks), stageArtifact));
                 continue;
             }
 
-            stageDetails.Add(stageArtifact.IsEnabled
-                ? ToPendingStage(stageArtifact)
-                : ToDisabledStage(stageArtifact));
+            stageDetails.Add(ToPendingStage(stageArtifact));
         }
 
-        foreach (var stage in stages.Where(x => !consumedStageIds.Contains(x.Id.ToString())).OrderBy(x => x.Order))
+        var disabledStages = (artifact?.StageDefinitions ?? []).Where(x => !x.IsEnabled).Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var stage in stages.Where(x => !consumedStageIds.Contains(x.Id.ToString()) && !disabledStages.Contains(x.StageKey)).OrderBy(x => x.Order))
         {
             var stageId = stage.Id.ToString();
-            stageDetails.Add(ToStage(stage, taskDetails.Where(x => x.StageExecutionId == stageId).ToArray(), null));
+            stageDetails.Add(ToStage(stage, tasksByStage[stageId].ToArray(), null));
         }
 
         return stageDetails.OrderBy(x => x.Order).ToArray();
@@ -364,6 +447,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
 
         foreach (var taskArtifact in stageArtifact.TaskDefinitions.OrderBy(x => x.Order))
         {
+            if (!taskArtifact.IsEnabled) continue;
             if (executedByKey.TryGetValue(taskArtifact.Key, out var executedTask))
             {
                 consumedTaskIds.Add(executedTask.Id);
@@ -376,12 +460,11 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
                 continue;
             }
 
-            merged.Add(taskArtifact.IsEnabled
-                ? ToPendingTask(stageExecutionId, taskArtifact)
-                : ToDisabledTask(stageExecutionId, taskArtifact));
+            merged.Add(ToPendingTask(stageExecutionId, taskArtifact));
         }
 
-        foreach (var task in executedTasks.Where(x => !consumedTaskIds.Contains(x.Id)))
+        var disabledTasks = stageArtifact.TaskDefinitions.Where(x => !x.IsEnabled).Select(x => x.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var task in executedTasks.Where(x => !consumedTaskIds.Contains(x.Id) && !disabledTasks.Contains(x.TaskKey)))
         {
             merged.Add(task);
         }
@@ -403,33 +486,9 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             null,
             null,
             FormatJson(BuildStageArtifactMetadata(stage)),
-            stage.TaskDefinitions.OrderBy(x => x.Order).Select(task => ToPendingTask(stageId, task)).ToArray(),
+            stage.TaskDefinitions.Where(x => x.IsEnabled).OrderBy(x => x.Order).Select(task => ToPendingTask(stageId, task)).ToArray(),
             false,
             null,
-            null,
-            stage.ParallelGroups?.Count ?? 0,
-            false,
-            stage.Name,
-            stage.Description);
-    }
-
-    private static StageDetailModel ToDisabledStage(StageArtifact stage)
-    {
-        var stageId = $"configured-stage:{stage.Key}";
-        return new StageDetailModel(
-            stageId,
-            stage.Key,
-            stage.Order,
-            nameof(StageExecutionStatus.Skipped),
-            StatusClass(nameof(StageExecutionStatus.Skipped)),
-            null,
-            null,
-            null,
-            null,
-            FormatJson(BuildStageArtifactMetadata(stage)),
-            stage.TaskDefinitions.OrderBy(x => x.Order).Select(task => ToDisabledTask(stageId, task)).ToArray(),
-            true,
-            "Disabled in the deployed orchestration design.",
             null,
             stage.ParallelGroups?.Count ?? 0,
             false,
@@ -467,14 +526,6 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             task.Notes,
             task.Order);
 
-    private static TaskDetailModel ToDisabledTask(string stageExecutionId, TaskArtifact task)
-        => ToPendingTask(stageExecutionId, task) with
-        {
-            Status = nameof(TaskExecutionStatus.Skipped),
-            WasSkipped = true,
-            SkipReason = "Disabled in the deployed orchestration design."
-        };
-
     private static InstanceRowModel ToRow(OrchestrationInstance instance, string orchestrationVersion = null)
         => ToRow(instance, new InstanceArtifactInfo(orchestrationVersion));
 
@@ -509,6 +560,7 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         {
             CompletedTaskCount = progress?.CompletedTaskCount,
             TotalTaskCount = progress?.TotalTaskCount,
+            TraceId = RuntimeInstanceTraceId.Get(instance),
             LastExecutedStageKey = instance.LastExecutedStageKey,
             LastExecutedTaskKey = instance.LastExecutedTaskKey
         };
@@ -570,6 +622,16 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
         TaskExecutionAttempt attempt,
         IReadOnlyDictionary<string, string> stageById)
     {
+        var command = dispatch.Metadata?.GetValueOrDefault("Runtime.Delivery.Command") as JsonObject;
+        var message = command?["messageMetadata"];
+        var propagation = command?["propagationMetadata"]?["items"];
+        var hasSnapshot = command is not null && (message is not null || propagation is not null);
+        if (!hasSnapshot)
+        {
+            message = BuildDispatchMetadata(dispatch, instance, task, attempt, stageById)
+                .GetValueOrDefault(OrchestrationMetadataConstants.OrchestrationMessageMetadataKey);
+            propagation = JsonSerializer.SerializeToNode(LoadPropagationMetadata(instance).Items, ArtifactJsonOptions);
+        }
         return new DispatchDetailModel(
             dispatch.Id.ToString(),
             dispatch.DispatchType,
@@ -583,7 +645,12 @@ public sealed class RuntimeDiagnosticsReader : IRuntimeDiagnosticsReader, IRunti
             dispatch.FailureReason,
             FormatJson(dispatch.RequestPayload),
             FormatJson(BuildDispatchMetadata(dispatch, instance, task, attempt, stageById)),
-            dispatch.TaskExecutionAttemptId.ToString());
+            dispatch.TaskExecutionAttemptId.ToString())
+        {
+            MessageMetadata = FormatJson(message),
+            PropagationMetadata = FormatJson(propagation),
+            MessageMetadataSource = hasSnapshot ? "Persisted" : "Reconstructed"
+        };
     }
 
     private static CompensationDetailModel ToCompensation(
