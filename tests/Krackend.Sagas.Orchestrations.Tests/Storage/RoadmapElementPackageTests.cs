@@ -216,7 +216,8 @@ public sealed class RoadmapElementPackageTests
         Assert.Contains("Clone task", page);
         Assert.Contains("Paste task", page);
         Assert.Contains("od-roadmap-dial", page);
-        Assert.Contains("data-paste-target=\"task\"", page);
+        Assert.Contains("task-actions-dial", page);
+        Assert.Contains("paste-task", page);
         Assert.Contains("data-roadmap-toast", page);
         using var source = await client.GetFromJsonAsync<JsonDocument>($"/roadmap-stage?handler=RoadmapElement&elementType=task&elementId={task.Id}&versionId={version.Id}");
         var package = source!.RootElement.GetProperty("package").GetString();

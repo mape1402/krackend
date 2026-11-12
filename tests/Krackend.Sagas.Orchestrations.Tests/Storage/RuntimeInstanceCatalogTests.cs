@@ -50,6 +50,7 @@ public sealed class RuntimeInstanceCatalogTests
         recent.OrchestrationVersion = "1.2.3";
         recent.TotalTaskCount = 3;
         recent.CompletedTaskCount = 1;
+        recent.Metadata["TriggerTraceId"] = System.Text.Json.Nodes.JsonValue.Create("dashboard-trace");
         await repo.Create(older);
         await repo.Create(recent);
         commands.Clear();
@@ -60,8 +61,8 @@ public sealed class RuntimeInstanceCatalogTests
         Assert.Equal(["recent", "older"], snapshot.Instances.Select(x => x.OrchestrationDefinitionKey));
         Assert.Equal("1.2.3", snapshot.Instances.First().OrchestrationVersion);
         Assert.Equal(1, snapshot.Instances.First().CompletedTaskCount);
+        Assert.Equal("dashboard-trace", snapshot.Instances.First().TraceId);
         Assert.DoesNotContain(commands, x => x.Contains("SnapshotPayload", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(commands, x => x.Contains("Metadata", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(commands, x => x.Contains("RuntimeOrchestrationArtifacts", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -85,6 +86,7 @@ public sealed class RuntimeInstanceCatalogTests
         instance.OrchestrationVersion = "1.2.3";
         instance.TotalTaskCount = 3;
         instance.CompletedTaskCount = 1;
+        instance.Metadata["TriggerTraceId"] = System.Text.Json.Nodes.JsonValue.Create("catalog-trace");
         await repository.Create(instance);
         commands.Clear();
 
@@ -98,9 +100,9 @@ public sealed class RuntimeInstanceCatalogTests
         Assert.Equal(3, item.TotalTaskCount);
         Assert.Equal(1, item.CompletedTaskCount);
         Assert.Null(item.SnapshotPayload);
+        Assert.Equal("catalog-trace", Krackend.Sagas.Orchestrations.Runtime.Diagnostics.RuntimeInstanceTraceId.Get(item));
         Assert.Equal(2, commands.Count);
         Assert.DoesNotContain(commands, command => command.Contains("SnapshotPayload", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(commands, command => command.Contains("Metadata", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(commands, command => command.Contains("RuntimeOrchestrationArtifacts", StringComparison.OrdinalIgnoreCase));
     }
 
