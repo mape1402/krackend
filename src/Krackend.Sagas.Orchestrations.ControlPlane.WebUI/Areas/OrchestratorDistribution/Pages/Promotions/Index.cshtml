@@ -1,7 +1,7 @@
 @page
 @using Krackend.Sagas.Orchestrations.ControlPlane.Distribution.Enums
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @using Zoorce.Web.UI.Foundation.Components
 @using Zoorce.Web.UI.Foundation.WaitDialog
 @using Microsoft.AspNetCore.Html
@@ -20,10 +20,10 @@
             <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
         </div>
         <div data-catalog-grid>
-            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+            @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions
             {
-                Id = "release-orchestrations-grid", AriaLabel = "orchestrations", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "OrchestrationList") },
-                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Id = "release-orchestrations-grid", AriaLabel = "orchestrations", Binding = new KrackendGridBinding { Source = Url.Page(null, "OrchestrationList") },
+                PageSize = 25,
                 Columns = [new("displayName", "Orchestration"), new("key", "Key"), new("status", "Status"), new("count", "Releases", false), new("latest", "Latest release", false), new("actions", "Actions", false)]
             })
         </div>
@@ -50,10 +50,10 @@ else
             <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
         </div>
         <div data-catalog-grid>
-            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+            @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions
             {
-                Id = "releases-grid", AriaLabel = "releases", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "ReleaseList", new { orchestrationId = Model.OrchestrationId }) },
-                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+                Id = "releases-grid", AriaLabel = "releases", Binding = new KrackendGridBinding { Source = Url.Page(null, "ReleaseList", new { orchestrationId = Model.OrchestrationId }) },
+                PageSize = 25,
                 Columns = [new("artifact", "Artifact", false), new("status", "Status", false), new("strategy", "Strategy"), new("requestedBy", "Requested by"), new("created", "Created"), new("actions", "Actions", false)]
             })
         </div>

@@ -11,14 +11,11 @@ function setup(kind) {
     const section = { dataset: { roadmapSection: kind, versionId: 'version', stageId: 'stage', editable: 'true' }, addEventListener: (name, fn) => { sectionHandlers[name] = fn; } };
     const toast = { hidden: true, textContent: '' };
     let dismissToast;
-    const menu = { style: {}, appendChild() {}, contains() { return false; } };
-    const menuButton = { addEventListener(name, fn) { handlers[`menu-${name}`] = fn; }, focus() {} };
-    let created = 0, copied = '', reloaded = false;
+    let copied = '', reloaded = false;
     let clipboard = JSON.stringify({ kind: 'krackend-roadmap-element', schemaVersion: 1, elementType: kind, data: {} });
     const document = {
         querySelectorAll: () => [section], querySelector: selector => selector === '[data-roadmap-toast]' ? toast : ({ content: 'csrf' }),
-        addEventListener(name, fn) { (handlers[name] ||= []).push(fn); },
-        createElement() { return created++ === 0 ? menu : menuButton; }, body: { appendChild() {} }
+        addEventListener(name, fn) { (handlers[name] ||= []).push(fn); }
     };
     const window = { location: { href: 'https://example.test/roadmap?versionId=version', reload() { reloaded = true; } },
         innerWidth: 1000, innerHeight: 800, OrchestratorMessages: { notify: value => notices.push(value) }, prompt: () => null,
@@ -37,7 +34,11 @@ function setup(kind) {
         handlers.click[0](event);
         await new Promise(resolve => setImmediate(resolve));
     };
-    return { click, requests, notices, sectionHandlers, section, handlers, menu, menuButton, toast,
+    const dial = async (target = kind, id = kind === 'task' ? 'task-actions-dial' : 'roadmap-actions-dial') => {
+        handlers['zoorce:speed-dial:select'][0]({ target: { id }, detail: { value: `paste-${target}` } });
+        await new Promise(resolve => setImmediate(resolve));
+    };
+    return { click, dial, requests, notices, sectionHandlers, section, handlers, toast,
         dismissToast: () => dismissToast(),
         get copied() { return copied; }, get reloaded() { return reloaded; }, set clipboard(value) { clipboard = value; } };
 }
@@ -63,13 +64,13 @@ test('copy writes portable JSON and clone creates without changing clipboard', a
 
 test('dial paste targets the correct editable section', async () => {
     const ui = setup('stage');
-    await ui.click('paste', 'stage');
+    await ui.dial('stage');
     assert.equal(JSON.parse(ui.requests[0].options.body).elementType, 'stage');
     assert.equal(ui.reloaded, true);
 
     const readOnly = setup('stage');
     readOnly.section.dataset.editable = 'false';
-    await readOnly.click('paste', 'stage');
+    await readOnly.dial('stage');
     assert.equal(readOnly.requests.length, 0);
 });
 
@@ -77,20 +78,15 @@ test('roadmap and task views provide their paste actions in a dial', () => {
     const pages = path.resolve(__dirname, '../../../../src/Krackend.Sagas.Orchestrations.ControlPlane.WebUI/Areas/OrchestratorDesign/Pages');
     const roadmap = fs.readFileSync(path.join(pages, 'OrchestrationVersions/Details.cshtml'), 'utf8');
     const tasks = fs.readFileSync(path.join(pages, 'OrchestrationStages/Details.cshtml'), 'utf8');
-    assert.match(roadmap, /od-roadmap-dial[\s\S]*data-paste-target="trigger"[\s\S]*data-paste-target="stage"/);
-    assert.match(tasks, /od-roadmap-dial[\s\S]*data-paste-target="task"/);
-    assert.doesNotMatch(roadmap + tasks, /z-button-ghost js-roadmap-paste/);
+    assert.match(roadmap, /ZoorceSpeedDial[\s\S]*Value = "paste-trigger"[\s\S]*Value = "paste-stage"/);
+    assert.match(tasks, /ZoorceSpeedDial[\s\S]*Value = "paste-task"/);
 });
 
-test('paste rejects mismatched clipboard content and context menu exposes paste', async () => {
+test('dial paste rejects mismatched clipboard content', async () => {
     const ui = setup('trigger');
     ui.clipboard = JSON.stringify({ kind: 'krackend-roadmap-element', schemaVersion: 1, elementType: 'task' });
-    await ui.click('paste');
+    await ui.dial('trigger');
     assert.equal(ui.requests.length, 0);
     assert.equal(ui.notices[0].type, 'error');
-    let prevented = false;
-    ui.sectionHandlers.contextmenu({ target: { closest: () => null }, preventDefault() { prevented = true; }, clientX: 30, clientY: 40 });
-    assert.equal(prevented, true);
-    assert.equal(ui.menuButton.textContent, 'Paste trigger');
-    assert.equal(ui.menu.style.display, 'block');
+    assert.equal(ui.sectionHandlers.contextmenu, undefined);
 });

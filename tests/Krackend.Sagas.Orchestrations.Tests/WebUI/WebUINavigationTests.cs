@@ -34,7 +34,7 @@ using System.Reflection;
 public sealed class WebUINavigationTests
 {
     [Fact]
-    public void TopBarNavigationResolverUsesBrowserHistoryForVersionDetails()
+    public void TopBarNavigationResolverUsesParentForVersionDetails()
     {
         var url = Substitute.For<IUrlHelper>();
         url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
@@ -51,7 +51,7 @@ public sealed class WebUINavigationTests
         Assert.NotNull(result);
         Assert.True(result.Visible);
         Assert.Equal("Back", result.Label);
-        Assert.True(string.IsNullOrEmpty(result.Url));
+        Assert.Equal("/admin/design/orchestrations/one", result.Url);
     }
 
     [Fact]
@@ -70,13 +70,14 @@ public sealed class WebUINavigationTests
         Assert.NotNull(result);
         Assert.True(result.Visible);
         Assert.Equal("Back", result.Label);
-        Assert.True(string.IsNullOrEmpty(result.Url));
+        Assert.Equal("/runtime/instances", result.Url);
     }
 
     [Theory]
     [InlineData("OrchestratorDesign", "/Orchestrations/Create")]
     [InlineData("OrchestratorDistribution", "/ArtifactReleases/Index")]
     [InlineData("OrchestratorDistribution", "/Promotions/Index")]
+    [InlineData("OrchestratorDistribution", "/Assignments/Index")]
     public void TopBarNavigationResolverProvidesContextualParentsForNestedCatalogFlows(
         string area,
         string page)
@@ -90,6 +91,7 @@ public sealed class WebUINavigationTests
             Options.Create(new OrchestratorTopBarNavigationOptions()));
         var values = page == "/Orchestrations/Create"
             ? Array.Empty<(string Key, string Value)>()
+            : page == "/Assignments/Index" ? new[] { ("assignmentId", "one") }
             : new[] { ("orchestrationId", "sales.sale.created") };
 
         var result = resolver.Resolve(CreateViewContext(area, page, values));
@@ -97,7 +99,7 @@ public sealed class WebUINavigationTests
         Assert.NotNull(result);
         Assert.True(result.Visible);
         Assert.Equal("Back", result.Label);
-        Assert.True(string.IsNullOrEmpty(result.Url));
+        Assert.Equal("/parent", result.Url);
     }
 
     [Fact]
@@ -118,9 +120,47 @@ public sealed class WebUINavigationTests
 
         Assert.NotNull(overrideResult);
         Assert.True(overrideResult.Visible);
-        Assert.Equal("Back", overrideResult.Label);
-        Assert.True(string.IsNullOrEmpty(overrideResult.Url));
+        Assert.Equal("Review queue", overrideResult.Label);
+        Assert.Equal("/ops/reviews", overrideResult.Url);
         Assert.Null(defaultResult);
+    }
+
+    [Theory]
+    [InlineData("/runtime/history?status=failed", "/runtime/history?status=failed")]
+    [InlineData("https://example.com/outside", "/runtime/instances")]
+    [InlineData("//example.com/outside", "/runtime/instances")]
+    public void TopBarNavigationUsesSafeExplicitOriginOrParent(string origin, string expected)
+    {
+        var url = Substitute.For<IUrlHelper>();
+        url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+        url.RouteUrl(Arg.Any<UrlRouteContext>()).Returns("/runtime/instances");
+        url.IsLocalUrl(Arg.Any<string>()).Returns(call => call.Arg<string>().StartsWith('/') && !call.Arg<string>().StartsWith("//"));
+        var factory = Substitute.For<IUrlHelperFactory>();
+        factory.GetUrlHelper(Arg.Any<ActionContext>()).Returns(url);
+        var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory, Options.Create(new OrchestratorTopBarNavigationOptions()));
+        var context = CreateViewContext("OrchestratorRuntime", "/Instances/Detail", ("instanceId", "one"));
+        context.HttpContext.Request.QueryString = QueryString.Create("returnUrl", origin);
+
+        Assert.Equal(expected, resolver.Resolve(context).Url);
+    }
+
+    [Theory]
+    [InlineData("/workspace/runtime/history", "/workspace/runtime/history")]
+    [InlineData("/other/runtime/history", "/workspace/runtime/instances")]
+    public void TopBarNavigationKeepsExplicitOriginsInsideTheHostPathBase(string origin, string expected)
+    {
+        var url = Substitute.For<IUrlHelper>();
+        url.ActionContext.Returns(new ActionContext(new DefaultHttpContext(), new RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+        url.RouteUrl(Arg.Any<UrlRouteContext>()).Returns("/workspace/runtime/instances");
+        url.IsLocalUrl(Arg.Any<string>()).Returns(true);
+        var factory = Substitute.For<IUrlHelperFactory>();
+        factory.GetUrlHelper(Arg.Any<ActionContext>()).Returns(url);
+        var resolver = new DefaultOrchestratorTopBarNavigationResolver(factory, Options.Create(new OrchestratorTopBarNavigationOptions()));
+        var context = CreateViewContext("OrchestratorRuntime", "/Instances/Detail", ("instanceId", "one"));
+        context.HttpContext.Request.PathBase = "/workspace";
+        context.HttpContext.Request.QueryString = QueryString.Create("returnUrl", origin);
+
+        Assert.Equal(expected, resolver.Resolve(context).Url);
     }
 
     [Fact]
@@ -186,8 +226,8 @@ public sealed class WebUINavigationTests
         Assert.Equal("K", theme.BrandMark);
         Assert.Equal(string.Empty, theme.TopBarContext);
         Assert.Equal(OrchestratorWebUIThemeMode.Light, theme.Mode);
-        Assert.Equal("#245fc7", theme.PrimaryColor);
-        Assert.Equal("#8dbaff", theme.Dark.PrimaryColor);
+        Assert.Equal("#087a57", theme.PrimaryColor);
+        Assert.Equal("#20e7a0", theme.Dark.PrimaryColor);
         Assert.IsType<DefaultOrchestratorThemeCssRenderer>(
             provider.GetRequiredService<IOrchestratorThemeCssRenderer>());
         Assert.IsType<DefaultOrchestratorThemeModeAccessor>(
@@ -443,8 +483,8 @@ public sealed class WebUINavigationTests
         Assert.Contains("--krackend-primary-hover:#abc;", css);
         Assert.Contains("--krackend-primary:#abcdef;", css);
         Assert.Contains("--krackend-primary-hover:#12345678;", css);
-        Assert.Contains("--krackend-surface:#151a27;", css);
-        Assert.Contains("--krackend-primary:#245fc7;", defaultCss);
+        Assert.Contains("--krackend-surface:#0b1613;", css);
+        Assert.Contains("--krackend-primary:#087a57;", defaultCss);
         Assert.DoesNotContain("red", css);
     }
 

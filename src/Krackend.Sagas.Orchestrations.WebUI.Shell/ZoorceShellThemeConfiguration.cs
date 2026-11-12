@@ -37,11 +37,11 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
             && string.Equals(source.BorderColor, defaults.BorderColor, StringComparison.OrdinalIgnoreCase);
         if (defaultAccent && defaultSurface)
         {
-            target.Elevated = dark ? "#1c2433" : "#ffffff";
-            target.PrimaryForeground = dark ? "#102038" : "#ffffff";
-            target.PrimarySoft = dark ? "#263a55" : "#e4efff";
+            target.Elevated = dark ? "#10201b" : "#ffffff";
+            target.PrimaryForeground = dark ? "#061b12" : "#ffffff";
+            target.PrimarySoft = dark ? "#123f31" : "#d9f2e7";
         }
-        if (defaultAccent) target.Glow = dark ? "rgba(94, 155, 245, 0.20)" : "rgba(36, 95, 199, 0.10)";
+        if (defaultAccent) target.Glow = dark ? "rgba(32, 231, 160, 0.20)" : "rgba(8, 122, 87, 0.10)";
         target.Primary = source.PrimaryColor;
         target.PrimaryHover = source.PrimaryHoverColor;
         target.Sidebar = source.SidebarBackgroundColor;
@@ -49,13 +49,17 @@ public sealed class ZoorceShellThemeConfiguration : IConfigureOptions<ZoorceShel
         target.SidebarMuted = source.SidebarMutedTextColor;
         target.Canvas = source.ContentBackgroundColor;
         target.Surface = source.SurfaceColor;
-        target.Elevated = source.ElevatedColor ?? (defaultAccent && defaultSurface ? target.Elevated : $"color-mix(in srgb, {source.SurfaceColor} 94%, {source.PrimaryColor})");
+        var useDefaultElevated = !defaultAccent || !defaultSurface
+            ? string.Equals(source.ElevatedColor, defaults.ElevatedColor, StringComparison.OrdinalIgnoreCase) : false;
+        target.Elevated = (useDefaultElevated ? null : source.ElevatedColor) ?? (defaultAccent && defaultSurface ? target.Elevated : $"color-mix(in srgb, {source.SurfaceColor} 94%, {source.PrimaryColor})");
         target.Text = source.TextColor;
         target.Muted = source.MutedTextColor;
         target.Border = source.BorderColor;
         target.Subtle = source.SubtleBackgroundColor;
         target.PrimaryForeground = source.PrimaryForegroundColor ?? (defaultAccent && defaultSurface ? target.PrimaryForeground : DefaultOrchestratorThemeCssRenderer.PreferredForeground(source.PrimaryColor, source.SurfaceColor));
-        target.PrimarySoft = source.PrimarySoftColor ?? (defaultAccent && defaultSurface ? target.PrimarySoft : $"color-mix(in srgb, {source.PrimaryColor} 12%, {source.SurfaceColor})");
+        var useDefaultSoft = !defaultAccent || !defaultSurface
+            ? string.Equals(source.PrimarySoftColor, defaults.PrimarySoftColor, StringComparison.OrdinalIgnoreCase) : false;
+        target.PrimarySoft = (useDefaultSoft ? null : source.PrimarySoftColor) ?? (defaultAccent && defaultSurface ? target.PrimarySoft : $"color-mix(in srgb, {source.PrimaryColor} 12%, {source.SurfaceColor})");
         target.Glow = source.GlowColor ?? (defaultAccent ? target.Glow : $"color-mix(in srgb, {source.PrimaryColor} {(dark ? 24 : 10)}%, transparent)");
         target.Success = source.SuccessColor;
         target.SuccessSoft = source.SuccessSoftColor;

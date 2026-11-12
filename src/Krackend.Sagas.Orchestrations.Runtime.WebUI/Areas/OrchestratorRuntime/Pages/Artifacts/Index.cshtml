@@ -1,6 +1,6 @@
 @page
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Artifacts.IndexModel
@@ -28,17 +28,17 @@
     <div data-artifact-grid>
         @if (!hasSelection)
         {
-            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
-                Id = "runtime-artifact-groups-grid", AriaLabel = "runtime orchestrations", Binding = new ZoorceDataBindingOptions { Source = source },
-                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions {
+                Id = "runtime-artifact-groups-grid", AriaLabel = "runtime orchestrations", Binding = new KrackendGridBinding { Source = source },
+                PageSize = 25,
                 Columns = [new("displayName", "Orchestration", false), new("versionCount", "Versions", false), new("activeCount", "Runtime enabled", false), new("latest", "Latest deployment", false), new("actions", "Actions", false)]
             })
         }
         else
         {
-            @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
-                Id = "runtime-artifact-versions-grid", AriaLabel = "runtime artifact versions", Binding = new ZoorceDataBindingOptions { Source = source },
-                LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions {
+                Id = "runtime-artifact-versions-grid", AriaLabel = "runtime artifact versions", Binding = new KrackendGridBinding { Source = source },
+                PageSize = 25,
                 Columns = [new("version", "Version", false), new("lifecycleStatus", "Lifecycle", false), new("status", "Runtime state", false), new("triggerReception", "Enabled triggers", false), new("deployed", "Deployed", false), new("lastReleaseId", "Release", false), new("actions", "Actions", false)]
             })
         }

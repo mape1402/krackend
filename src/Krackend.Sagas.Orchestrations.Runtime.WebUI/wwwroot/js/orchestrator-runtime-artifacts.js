@@ -2,10 +2,10 @@
     const root = document.querySelector('[data-artifact-catalog]');
     if (!root) return;
     const kind = root.dataset.kind;
-    const grid = root.querySelector('[data-z-data-grid]');
+    const grid = root.querySelector('[data-krackend-grid]');
     const gridView = root.querySelector('[data-artifact-grid]');
     const cardView = root.querySelector('[data-artifact-cards-view]');
-    const gridSearch = grid.querySelector('[data-z-grid-search]');
+    const gridSearch = grid.querySelector('[data-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-runtime-view-controls');
     const importAction = root.querySelector('.od-artifact-import-action');
@@ -51,46 +51,11 @@
         if (text !== undefined && text !== null) node.textContent = text;
         return node;
     };
-    const iconButton = (icon, label) => {
-        const button = make('button', 'btn btn-sm btn-outline-secondary');
-        button.type = 'button'; button.title = label; button.setAttribute('aria-label', label);
-        const glyph = make('i', `bi ${icon}`); glyph.setAttribute('aria-hidden', 'true'); button.append(glyph);
-        return button;
-    };
     const exportCandidate = item => {
         const url = new URL(root.dataset.indexUrl, location.href);
         url.searchParams.set('handler', 'ExportCandidate');
         url.searchParams.set('artifactId', item.id);
         window.location.assign(url.toString());
-    };
-    const actions = item => {
-        if (kind === 'groups') {
-            const link = make('a', 'btn btn-sm btn-outline-secondary');
-            const url = new URL(root.dataset.indexUrl, location.href); url.searchParams.set('orchestrationKey', item.key);
-            link.href = url.toString(); link.title = 'View versions'; link.setAttribute('aria-label', `View versions for ${item.key}`);
-            const icon = make('i', 'bi bi-eye'); icon.setAttribute('aria-hidden', 'true'); link.append(icon);
-            return link;
-        }
-        const group = make('div', 'd-flex gap-2');
-        const history = iconButton('bi-clock-history', `View history for version ${item.version}`);
-        history.addEventListener('click', () => showHistory(item)); group.append(history);
-        const exportButton = iconButton('bi-box-arrow-up-right', `Export version ${item.version} as a release candidate`);
-        exportButton.addEventListener('click', () => exportCandidate(item)); group.append(exportButton);
-        if (item.isActive && item.status === 'Ready') {
-            const standup = iconButton('bi-broadcast-pin', `Request standup for version ${item.version}`);
-            standup.addEventListener('click', () => {
-                const form = document.getElementById('artifact-standup-form'); form.elements.artifactId.value = item.id; form.requestSubmit();
-            });
-            group.append(standup);
-        }
-        if (item.isActive && item.status === 'Ready' && item.lifecycleStatus === 'Active' && item.totalTriggerCount > 0) {
-            const rollback = iconButton('bi-arrow-counterclockwise', `Rollback to version ${item.version}`);
-            rollback.addEventListener('click', () => {
-                const form = document.getElementById('artifact-rollback-form'); form.elements.artifactId.value = item.id; form.requestSubmit();
-            });
-            group.append(rollback);
-        }
-        return group;
     };
     const cardActions = item => {
         const dropdown = make('div', 'dropdown');
@@ -132,23 +97,10 @@
         }
         dropdown.append(toggle, menu); return dropdown;
     };
-    const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
-        const item = records.get(row.dataset.zGridKey);
-        const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell && !cell.querySelector('[data-artifact-actions]')) {
-            const content = actions(item); content.dataset.artifactActions = ''; cell.replaceChildren(content);
-        }
+    const catalogGrid = window.KrackendCatalogGrid.mount(grid, {
+        renderCell: (field, item) => field === 'actions' ? cardActions(item) : null,
+        onLoaded: (result, loaded) => { if (!gridView.hidden) setLoadedCount(loaded, Number(result.totalCount ?? 0)); }
     });
-    new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
-    grid.addEventListener('zoorce:grid:loaded', event => {
-        const loaded = event.detail.append ? records.size + event.detail.result.items.length : event.detail.result.items.length;
-        const total = Number(event.detail.result.totalCount ?? 0);
-        setLoadedCount(loaded, total);
-        if (!event.detail.append) records.clear();
-        event.detail.result.items.forEach(item => records.set(String(item.id), item));
-        decorate();
-    });
-    grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
 
     const addCard = item => {
         const card = make('article', 'od-runtime-instance-card');
@@ -174,7 +126,7 @@
             const result = await response.json(); if (current !== generation) return;
             result.items.forEach(addCard); page++; hasMore = result.hasMore;
             empty.hidden = cards.childElementCount !== 0; more.hidden = !hasMore;
-            setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
+            if (!cardView.hidden) setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
             if (hasMore && result.items.length) requestAnimationFrame(() => {
                 const rect = sentinel.getBoundingClientRect();
                 if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);

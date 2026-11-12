@@ -1,10 +1,10 @@
 (() => {
     const root = document.querySelector('[data-design-node-catalog]');
     if (!root) return;
-    const grid = root.querySelector('[data-z-data-grid]');
+    const grid = root.querySelector('[data-krackend-grid]');
     const gridView = root.querySelector('[data-node-grid]');
     const cardView = root.querySelector('[data-node-cards-view]');
-    const gridSearch = grid.querySelector('[data-z-grid-search]');
+    const gridSearch = grid.querySelector('[data-grid-search]');
     const gridToolbar = grid.querySelector('.z-toolbar');
     const viewControls = root.querySelector('.od-runtime-view-controls');
     const toolbarEnd = document.createElement('div');
@@ -118,19 +118,10 @@
         dropdown.append(toggle, menu); group.replaceChildren(dropdown);
         return group;
     };
-    const decorate = () => grid.querySelectorAll('tr[data-z-grid-key]').forEach(row => {
-        const item = records.get(row.dataset.zGridKey);
-        const cell = row.querySelector('[data-z-grid-field="actions"]');
-        if (item && cell && !cell.querySelector('[data-node-actions]')) { bind(row, item); cell.replaceChildren(actions(item)); }
+    const catalogGrid = window.KrackendCatalogGrid.mount(grid, {
+        renderCell: (field, item) => { if (field !== 'actions') return null; const wrapper = document.createElement('div'); bind(wrapper, item); wrapper.append(actions(item)); return wrapper; },
+        onLoaded: (result, loaded) => { if (!gridView.hidden) setLoadedCount(loaded, Number(result.totalCount ?? 0)); }
     });
-    new MutationObserver(decorate).observe(grid.querySelector('[data-z-grid-body]'), { childList: true, subtree: true });
-    grid.addEventListener('zoorce:grid:loaded', event => {
-        if (!event.detail.append) records.clear();
-        event.detail.result.items.forEach(item => records.set(String(item.id), item));
-        updateGridCount(event.detail.result);
-        decorate();
-    });
-    grid.dispatchEvent(new CustomEvent('zoorce:grid:refresh'));
 
     const addCard = item => {
         const card = make('article', 'od-runtime-instance-card'); bind(card, item);
@@ -150,7 +141,7 @@
             const result = await response.json(); if (current !== generation) return;
             result.items.forEach(addCard); page++; hasMore = result.hasMore;
             empty.hidden = cards.childElementCount !== 0; more.hidden = !hasMore;
-            setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
+            if (!cardView.hidden) setLoadedCount(cards.childElementCount, Number(result.totalCount ?? 0));
             if (hasMore && result.items.length) requestAnimationFrame(() => {
                 const rect = sentinel.getBoundingClientRect();
                 if (current === generation && !cardView.hidden && rect.top <= window.innerHeight + 200 && rect.bottom >= -200) load(false);

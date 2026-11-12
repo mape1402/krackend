@@ -1,6 +1,6 @@
 @page
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Design.Areas.OrchestratorDesign.Pages.Orchestrations.IndexModel
@@ -16,10 +16,10 @@
         <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-catalog-grid>
-        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions
         {
-            Id = "orchestrations-grid", AriaLabel = "orchestrations", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
-            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Id = "orchestrations-grid", AriaLabel = "orchestrations", Binding = new KrackendGridBinding { Source = Url.Page(null, "List") },
+            PageSize = 25,
             Columns = [new("displayName", "Name"), new("key", "Key"), new("domain", "Domain"), new("status", "Status"), new("actions", "Actions", false)]
         })
     </div>

@@ -1,6 +1,6 @@
 @page
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Assignments.IndexModel
 @{ ViewData["Title"] = "Assignments"; }
 
@@ -10,9 +10,9 @@
         <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-catalog-grid>
-        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
-            Id = "assignments-grid", AriaLabel = "assignments", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List") },
-            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+        @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions {
+            Id = "assignments-grid", AriaLabel = "assignments", Binding = new KrackendGridBinding { Source = Url.Page(null, "List") },
+            PageSize = 25,
             Columns = [new("runtime", "Runtime", false), new("release", "Release", false), new("status", "Status"), new("activation", "Activation", false), new("assigned", "Assigned"), new("actions", "Actions", false)]
         })
     </div>
@@ -34,10 +34,10 @@
 {
     <section class="od-panel mt-3" aria-label="Assignment attempts">
         <h2 class="h5">Attempts for @Model.AssignmentId</h2>
-        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions {
+        @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions {
             Id = "assignment-attempts-grid", AriaLabel = "assignment attempts",
-            Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "AttemptList", new { assignmentId = Model.AssignmentId }) },
-            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Binding = new KrackendGridBinding { Source = Url.Page(null, "AttemptList", new { assignmentId = Model.AssignmentId }) },
+            PageSize = 25,
             Columns = [new("action", "Action", false), new("initiatedBy", "By", false), new("started", "Start"), new("succeeded", "Success", false), new("error", "Error", false)]
         })
     </section>

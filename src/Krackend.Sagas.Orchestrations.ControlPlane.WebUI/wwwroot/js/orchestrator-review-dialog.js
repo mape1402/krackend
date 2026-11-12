@@ -19,6 +19,7 @@
         dialog.querySelectorAll('[data-review-action]').forEach(element => { element.hidden = !visibility[element.dataset.reviewAction]; });
         const roadmap = dialog.querySelector('[data-review-roadmap]');
         roadmap.href = data.roadmapUrl;
+        dialog.querySelector('[data-review-details]').href = data.detailsUrl;
         document.querySelectorAll('[data-review-post]').forEach(form => {
             const action = new URL(data.detailsUrl, location.origin);
             action.searchParams.set('handler', form.dataset.reviewPost);

@@ -201,23 +201,7 @@ main.container {
     z-index: 1000;
 }
 
-.od-roadmap-dial-trigger {
-    display: grid;
-    place-items: center;
-    width: 48px;
-    height: 48px;
-    border: 1px solid var(--od-border-strong);
-    border-radius: 50%;
-    background: var(--od-surface);
-    color: var(--od-text);
-    box-shadow: 0 6px 18px var(--krackend-shadow-color, rgba(15, 23, 42, 0.15));
-    font-size: 1.15rem;
-}
-
-.od-roadmap-dial-trigger:hover,
-.od-roadmap-dial-trigger:focus-visible {
-    background: color-mix(in srgb, var(--od-primary) 12%, var(--od-surface));
-}
+.od-roadmap-dial .z-speed-dial-actions[hidden] { display: none; }
 
 .od-roadmap-toast:not([hidden]) {
     position: fixed;

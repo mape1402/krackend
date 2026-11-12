@@ -21,12 +21,14 @@
 
 @if (Model.CanEdit)
 {
-    <div class="od-roadmap-dial dropup">
-        <button type="button" class="od-roadmap-dial-trigger" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Roadmap paste actions" title="Paste actions"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
-        <ul class="dropdown-menu dropdown-menu-end">
-            <li><button type="button" class="dropdown-item js-roadmap-paste" data-paste-target="trigger">Paste trigger</button></li>
-            <li><button type="button" class="dropdown-item js-roadmap-paste" data-paste-target="stage">Paste stage</button></li>
-        </ul>
+    <div class="od-roadmap-dial">
+        @await Component.InvokeAsync("ZoorceSpeedDial", new ZoorceSpeedDialOptions {
+            Id = "roadmap-actions-dial", Label = "Roadmap actions",
+            Items = [new ZoorceMenuItem { Value = "add-trigger", Text = "Add trigger", Icon = "+" },
+                     new ZoorceMenuItem { Value = "add-stage", Text = "Add stage", Icon = "+" },
+                     new ZoorceMenuItem { Value = "paste-trigger", Text = "Paste trigger", Icon = "⎘" },
+                     new ZoorceMenuItem { Value = "paste-stage", Text = "Paste stage", Icon = "⎘" }]
+        })
     </div>
 }
 <div class="od-roadmap-toast" data-roadmap-toast role="status" aria-live="polite" hidden></div>
@@ -108,12 +110,6 @@
                     <p class="od-empty">No triggers yet.</p>
                 }
 
-                @if (Model.CanEdit)
-                {
-                    <article class="od-trigger-item od-trigger-empty-item">
-                        <button type="button" class="od-add-link js-open-trigger-modal" data-trigger-mode="create">+ Add trigger</button>
-                    </article>
-                }
             </div>
         </div>
     </aside>
@@ -204,14 +200,6 @@
                 </article>
             }
 
-            @if (Model.CanEdit)
-            {
-                <article class="od-pipeline-item od-add-item">
-                    <div class="od-pipeline-card">
-                        <button type="button" class="od-add-link js-open-stage-modal" data-stage-mode="create">+ Add stage</button>
-                    </div>
-                </article>
-            }
         </div>
     </section>
 </div>
@@ -439,6 +427,18 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
         stageModalElement.open?.();
     }
 
+    function openNewStage() {
+        if (!canEdit) return;
+        stageModalTitle.textContent = 'Create stage';
+        stageSubmitButton.textContent = 'Create';
+        applyPayload({});
+        setVersionModalReadOnly(stageModalElement, false, stageSubmitButton);
+        openModal();
+    }
+    document.getElementById('roadmap-actions-dial')?.addEventListener('zoorce:speed-dial:select', event => {
+        if (event.detail.value === 'add-stage') openNewStage();
+    });
+
     document.querySelectorAll('.js-open-stage-modal').forEach(button => {
         button.addEventListener('click', async () => {
             const mode = button.getAttribute('data-stage-mode') || 'create';
@@ -463,15 +463,7 @@ function setVersionModalReadOnly(modalElement, readOnly, submitButton) {
                 return;
             }
 
-            if (!canEdit) {
-                return;
-            }
-
-            stageModalTitle.textContent = 'Create stage';
-            stageSubmitButton.textContent = 'Create';
-            applyPayload({});
-            setVersionModalReadOnly(stageModalElement, false, stageSubmitButton);
-            openModal();
+            openNewStage();
         });
     });
 })();
@@ -991,6 +983,18 @@ window.addEventListener('message', event => {
     document.getElementById('openTriggerCompensationConditionDesignerButton')?.addEventListener('click', () => openTriggerButterMorph('condition'));
     document.getElementById('openTriggerCompensationTransformationDesignerButton')?.addEventListener('click', () => openTriggerButterMorph('transformation'));
 
+    function openNewTrigger() {
+        if (!canEdit) return;
+        triggerModalTitle.textContent = 'Create trigger';
+        triggerSubmitButton.textContent = 'Create';
+        applyPayload({});
+        setVersionModalReadOnly(triggerModalElement, false, triggerSubmitButton);
+        openModal();
+    }
+    document.getElementById('roadmap-actions-dial')?.addEventListener('zoorce:speed-dial:select', event => {
+        if (event.detail.value === 'add-trigger') openNewTrigger();
+    });
+
     document.querySelectorAll('.js-open-trigger-modal').forEach(button => {
         button.addEventListener('click', async () => {
             const mode = button.getAttribute('data-trigger-mode') || 'create';
@@ -1015,15 +1019,7 @@ window.addEventListener('message', event => {
                 return;
             }
 
-            if (!canEdit) {
-                return;
-            }
-
-            triggerModalTitle.textContent = 'Create trigger';
-            triggerSubmitButton.textContent = 'Create';
-            applyPayload({});
-            setVersionModalReadOnly(triggerModalElement, false, triggerSubmitButton);
-            openModal();
+            openNewTrigger();
         });
     });
 

@@ -1,6 +1,6 @@
 @page
-@using Zoorce.Web.UI.Abstractions.Data
-@using Zoorce.Web.UI.DataGrid
+
+@using Krackend.Sagas.Orchestrations.WebUI.Shell.Grids
 @using Zoorce.Web.UI.Foundation.Components
 @using Microsoft.AspNetCore.Html
 @model Krackend.Sagas.Orchestrations.ControlPlane.WebUI.Distribution.Areas.OrchestratorDistribution.Pages.Artifacts.IndexModel
@@ -12,10 +12,10 @@
         <button type="button" class="z-button z-button-ghost od-catalog-view-button" data-catalog-view="cards" aria-label="Card view" title="Card view" aria-pressed="false"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i></button>
     </div>
     <div data-catalog-grid>
-        @await Component.InvokeAsync("ZoorceDataGrid", new ZoorceDataGridOptions
+        @await Component.InvokeAsync("KrackendAgGrid", new KrackendGridOptions
         {
-            Id = "artifacts-grid", AriaLabel = "artifacts", Binding = new ZoorceDataBindingOptions { Source = Url.Page(null, "List", new { orchestrationId = Model.OrchestrationId }) },
-            LoadMode = ZoorceDataLoadMode.InfiniteScroll, PageSize = 25,
+            Id = "artifacts-grid", AriaLabel = "artifacts", Binding = new KrackendGridBinding { Source = Url.Page(null, "List", new { orchestrationId = Model.OrchestrationId }) },
+            PageSize = 25,
             Columns = [new("displayName", "Orchestration"), new("version", "Version", false), new("artifactType", "Type"), new("created", "Created"), new("actions", "Actions", false)]
         })
     </div>
