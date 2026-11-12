@@ -41,6 +41,41 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task DueTimeoutsAreNotStarvedByOlderWaitsWithoutDeadlines()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var now = DateTime.UtcNow;
+        var instanceId = Id.New();
+        var stageId = Id.New();
+        db.TaskExecutions.AddRange(Enumerable.Range(0, 100).Select(i => new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = instanceId, StageExecutionId = stageId,
+            TaskKey = $"no-deadline-{i}", Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = now.AddHours(-2)
+        }));
+        var due = Enumerable.Range(0, 2).Select(i => new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = instanceId, StageExecutionId = stageId,
+            TaskKey = $"parallel-{i}", Status = TaskExecutionStatus.WaitingResponse,
+            WaitingSinceUtc = now.AddMinutes(-2), ResponseDeadlineUtc = now.AddMinutes(-1)
+        }).ToArray();
+        db.TaskExecutions.AddRange(due);
+        await db.SaveChangesAsync();
+
+        var tasks = scope.ServiceProvider.GetRequiredService<ITaskExecutionRepository>();
+        for (var scan = 0; scan < 2; scan++)
+        {
+            var page = await tasks.GetResponseTimeoutsDue(now, take: 100);
+            Assert.All(due, task => Assert.Contains(page, candidate => candidate.Id == task.Id));
+        }
+    }
+
+    [Fact]
     public async Task CatalogFiltersProjectedScopeStatusAndUtcDatesBeforePaging()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

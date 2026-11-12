@@ -52,13 +52,26 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
         DateTime dueBeforeUtc,
         int take = 100,
         CancellationToken cancellationToken = default)
-        => await DbContext.TaskExecutions.AsNoTracking()
+    {
+        var limit = Math.Max(1, take);
+        // Query projected deadlines first using the status/deadline index. Legacy waits without a deadline
+        // may have no timeout policy and must not repeatedly fill the page ahead of expired deadlines.
+        var due = await DbContext.TaskExecutions.AsNoTracking()
             .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
-                ((x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc) ||
-                 (x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc)))
-            .OrderBy(x => x.ResponseDeadlineUtc ?? x.WaitingSinceUtc)
-            .Take(Math.Max(1, take))
+                x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc)
+            .OrderBy(x => x.ResponseDeadlineUtc)
+            .Take(limit)
             .ToArrayAsync(cancellationToken);
+        if (due.Length == limit) return due;
+
+        var legacy = await DbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc)
+            .OrderBy(x => x.WaitingSinceUtc)
+            .Take(limit - due.Length)
+            .ToArrayAsync(cancellationToken);
+        return due.Concat(legacy).ToArray();
+    }
 
     public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingAction(
         int take = 100,

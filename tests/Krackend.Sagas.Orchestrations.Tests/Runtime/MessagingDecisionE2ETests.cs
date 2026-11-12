@@ -1953,6 +1953,78 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(4, harness.Dispatcher.Commands.Count);
     }
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    public async Task ReconcileProcessesBothOverdueParallelTasksWhenOneRetries(bool missingWaitingTimestamp, bool processDirectly, bool missingDeadline)
+    {
+        var group = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "parallel-overdue", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("task.retry", 1, retryPolicy: RetryPolicy(1, "TIMEOUT"),
+                    timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(60), "TIMEOUT"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.other", 2, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(60), "TIMEOUT"),
+                    executionMode: TaskExecutionMode.Parallel, parallelGroupId: group))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-overdue");
+        var retryCommand = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.retry");
+        var otherCommand = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other");
+        var repository = harness.GetRequiredService<ITaskExecutionRepository>();
+        var attemptRepository = harness.GetRequiredService<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = harness.GetRequiredService<ITaskDispatchRepository>();
+        foreach (var command in new[] { retryCommand, otherCommand })
+        {
+            var task = await harness.GetTaskAsync(command);
+            var sentOnUtc = DateTime.UtcNow.AddMinutes(-2);
+            var attempt = await harness.GetAttemptAsync(command);
+            var dispatch = await dispatchRepository.GetById(attempt.DispatchId!.Value);
+            attempt.WaitingSinceUtc = sentOnUtc;
+            dispatch.SentOnUtc = sentOnUtc;
+            await attemptRepository.Update(attempt);
+            await dispatchRepository.Update(dispatch);
+            task.WaitingSinceUtc = missingWaitingTimestamp ? null : sentOnUtc;
+            task.ResponseDeadlineUtc = missingDeadline ? null : sentOnUtc.AddSeconds(60);
+            task.TimeoutActionId = null;
+            await repository.Update(task);
+        }
+
+        if (processDirectly)
+        {
+            var processor = harness.GetRequiredService<IOrchestrationTimeoutProcessor>();
+            foreach (var command in new[] { retryCommand, otherCommand })
+                Assert.True((await processor.ProcessTaskTimeoutAsync((await harness.GetTaskAsync(command)).Id, DateTime.UtcNow)).Applied);
+        }
+        else
+        {
+            var instance = await harness.GetInstanceAsync(retryCommand);
+            var result = await harness.GetRequiredService<IOrchestrationReconciliationService>().ReconcileAsync(instance.Id.ToString());
+            Assert.Equal("Recovered", result.Status);
+        }
+        Assert.Contains(harness.Dispatcher.Commands, command => command.TaskKey == "task.retry" && command.MessageMetadata.Attempt == 2);
+        Assert.Equal(TaskExecutionStatus.TimedOut, (await harness.GetTaskAsync(otherCommand)).Status);
+        Assert.Equal(TaskExecutionStatus.TimedOut, (await harness.GetAttemptsAsync(retryCommand)).Single(x => x.AttemptNumber == 1).Status);
+    }
+
+    [Fact]
+    public async Task TimeoutDoesNotApplyAnOlderAttemptWhenCurrentAttemptIsMissing()
+    {
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            Stage("stage", 1, MessagingTask("task", 1, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(60), "TIMEOUT")))));
+        await harness.StartAsync(BusinessPayload("trigger"), "missing-current-attempt");
+        var command = Assert.Single(harness.Dispatcher.Commands);
+        var task = await harness.GetTaskAsync(command);
+        task.LastAttemptNumber = 2;
+        task.ResponseDeadlineUtc = DateTime.UtcNow.AddMinutes(-1);
+        await harness.GetRequiredService<ITaskExecutionRepository>().Update(task);
+
+        var result = await harness.GetRequiredService<IOrchestrationTimeoutProcessor>().ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow);
+
+        Assert.False(result.Applied);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, (await harness.GetAttemptAsync(command)).Status);
+        Assert.Single(harness.Dispatcher.Commands);
+    }
+
     [Fact]
     public async Task ParallelTimeoutDoesNotCancelOtherMembersOrCompleteTheStage()
     {

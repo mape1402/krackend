@@ -1,17 +1,96 @@
 namespace Krackend.Sagas.Orchestrations.Tests.Runtime;
 
 using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
+using Krackend.Sagas.Orchestrations.Abstractions.Artifacts;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using RabbitMQ.Client;
 using static Krackend.Sagas.Orchestrations.Tests.Runtime.RealInfrastructure.RealMessagingArtifactFactory;
 
 [Collection(RuntimeRealInfrastructureCollection.Name)]
 public sealed class OrchestrationReconciliationRealInfrastructureTests(RuntimeRealInfrastructureFixture infrastructure)
 {
+    [Fact(Timeout = 240_000)]
+    public async Task ReconciliationRepairsTwoParallelOverdueWaitsWithMissingTimestamps()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var version = new SemanticVersion(1, 0, 0);
+        var topics = new[] { $"reconcile.parallel.{suffix}.one", $"reconcile.parallel.{suffix}.two" };
+        var trigger = $"reconcile.parallel.trigger.{suffix}";
+        var group = Id.New();
+        await using var connection = await new ConnectionFactory { Uri = new Uri(infrastructure.RabbitMqConnectionString) }.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        foreach (var topic in topics)
+            await channel.QueueDeclareAsync(topic, durable: false, exclusive: false, autoDelete: false);
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(infrastructure);
+        var artifact = Artifact($"reconcile-parallel-{suffix}", version, $"reconcile-parallel-{suffix}", [EventTrigger(trigger, version)],
+            StageWithGraph("parallel", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                topics.Select((topic, index) => MessagingTask(topic, index + 1, version,
+                    retryPolicy: index == 0 ? RetryPolicy(1, "UnconsumedTimeout") : null,
+                    timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(60), "UnconsumedTimeout"),
+                    executionMode: TaskExecutionMode.Parallel, parallelGroupId: group)).ToArray()));
+        await runtime.DeployAndWaitReadyAsync(CreatePackage(artifact));
+        await runtime.PublishTriggerAsync(trigger, version.ToString(), BusinessPayload(("repro", true)), suffix);
+        var waiting = await PollingAssert.EventuallyAsync(
+            () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().Where(t => topics.Contains(t.TaskKey)).ToArrayAsync()),
+            tasks => tasks.Length == 2 && tasks.All(task => task.Status == TaskExecutionStatus.WaitingResponse && !string.IsNullOrWhiteSpace(task.TimeoutActionId)),
+            "Both parallel tasks must be dispatched and have timers.", TimeSpan.FromSeconds(35));
+
+        // Isolate the manual reconciliation from background repair and the original timers.
+        var background = runtime.Services.GetServices<IHostedService>().Single(service => service.GetType().Name == "OrchestrationTimeoutBackgroundService");
+        await background.StopAsync(CancellationToken.None);
+        await using (var scope = runtime.Services.CreateAsyncScope())
+        {
+            var scheduler = scope.ServiceProvider.GetRequiredService<ITaskResponseTimeoutScheduler>();
+            foreach (var task in waiting)
+                await scheduler.CancelAsync(new TaskResponseTimeoutCancellationRequest
+                {
+                    OrchestrationInstanceId = task.OrchestrationInstanceId, TaskExecutionId = task.Id,
+                    ActionId = task.TimeoutActionId, Lane = task.TimeoutActionLane
+                });
+        }
+        await runtime.QueryAsync(async db =>
+        {
+            var sentOnUtc = DateTime.UtcNow.AddMinutes(-2);
+            var tasks = await db.TaskExecutions.Where(task => topics.Contains(task.TaskKey)).ToArrayAsync();
+            foreach (var task in tasks)
+            {
+                var attempt = await db.TaskExecutionAttempts.SingleAsync(item => item.TaskExecutionId == task.Id && item.AttemptNumber == task.LastAttemptNumber);
+                var dispatch = await db.TaskDispatches.SingleAsync(item => item.Id == attempt.DispatchId);
+                attempt.WaitingSinceUtc = sentOnUtc;
+                dispatch.SentOnUtc = sentOnUtc;
+                task.WaitingSinceUtc = null;
+                task.ResponseDeadlineUtc = sentOnUtc.AddSeconds(60);
+                task.TimeoutActionId = null;
+            }
+            await db.SaveChangesAsync();
+            return true;
+        });
+        await using (var scope = runtime.Services.CreateAsyncScope())
+        {
+            var result = await scope.ServiceProvider.GetRequiredService<IOrchestrationReconciliationService>()
+                .ReconcileAsync(waiting[0].OrchestrationInstanceId.ToString());
+            Assert.Equal("Recovered", result.Status);
+            Assert.Equal(2, result.Findings.Count(finding => finding.Message.Contains("Timeout for")));
+        }
+        var transitions = await runtime.QueryAsync(db => db.ExecutionTransitions.AsNoTracking()
+            .Where(transition => transition.TransitionType == "TaskTimedOut").ToArrayAsync());
+        Assert.Equal(2, transitions.Select(transition => transition.TaskExecutionId).Distinct().Count());
+        await PollingAssert.EventuallyAsync(
+            () => runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().SingleAsync(task => task.TaskKey == topics[0])),
+            task => task.LastAttemptNumber == 2,
+            "The first timed-out task must be retried.", TimeSpan.FromSeconds(20));
+        await PollingAssert.EventuallyAsync(
+            () => channel.QueueDeclarePassiveAsync(topics[0]), queue => queue.MessageCount == 2,
+            "Only the first task should publish a retry.", TimeSpan.FromSeconds(20));
+        Assert.Equal(1u, (await channel.QueueDeclarePassiveAsync(topics[1])).MessageCount);
+    }
+
     [Fact(Timeout = 240_000)]
     public async Task ReconciliationAfterRestartResumesPersistedCompletionOnlyOnce()
     {
