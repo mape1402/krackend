@@ -329,6 +329,20 @@ public sealed class RuntimeInstancesPageModelTests
         await recovery.DidNotReceiveWithAnyArgs().RecoverTerminalAsync(default, default, default);
     }
 
+    [Fact]
+    public async Task DetailPageAllowsExplicitRecoveryOfACompletedSagaWithCancelledParallelWork()
+    {
+        var id = Ulid.NewUlid().ToString();
+        var recovery = Substitute.For<IOrchestrationRecoveryService>();
+        recovery.RecoverTerminalAsync(id, null, Arg.Any<CancellationToken>())
+            .Returns(OrchestrationRecoveryResult.Success(id, "Running", "Recovery queued."));
+        var page = CreateDetailPage(new FakeRuntimeDiagnosticsReader { DetailStatus = "Completed", DetailHasIncompleteParallel = true }, recovery);
+        await page.OnGetAsync(id);
+        Assert.True(page.CanRecover);
+        Assert.IsType<RedirectToPageResult>(await page.OnPostRecoverAsync(id));
+        await recovery.Received(1).RecoverTerminalAsync(id, null, Arg.Any<CancellationToken>());
+    }
+
     private static IndexModel CreatePage(
         FakeRuntimeDiagnosticsReader reader,
         string routePrefix)
@@ -417,6 +431,7 @@ public sealed class RuntimeInstancesPageModelTests
         public bool PagingUnsupported { get; set; }
         public bool DetailMissing { get; set; }
         public string DetailStatus { get; set; } = "Running";
+        public bool DetailHasIncompleteParallel { get; set; }
         public RuntimeInstanceCatalogQuery LastQuery { get; private set; }
 
         public Task<RuntimeDashboardSnapshotModel> GetSnapshot(CancellationToken cancellationToken = default)
@@ -452,7 +467,8 @@ public sealed class RuntimeInstancesPageModelTests
             if (DetailMissing) throw new KeyNotFoundException();
             return Task.FromResult(_detail with
             {
-                Instance = _detail.Instance with { Status = DetailStatus }
+                Instance = _detail.Instance with { Status = DetailStatus },
+                Tasks = DetailHasIncompleteParallel ? [_detail.Tasks.First() with { Status = "Cancelled", ParallelGroupId = "group" }] : _detail.Tasks
             });
         }
     }

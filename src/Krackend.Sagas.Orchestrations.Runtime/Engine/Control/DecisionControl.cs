@@ -7,6 +7,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Artifacts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Payloads;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
@@ -115,8 +116,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 .ToArray();
             var dispatchPayload = _payloadState.GetDispatchPayload(instance, request.Payload);
 
-            var failedTask = taskExecutions.FirstOrDefault(x =>
-                x.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut);
+            var failedTasks = taskExecutions.Where(x =>
+                x.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut).ToArray();
             // Failed is a deterministic terminal aggregate outcome. Transient task failures
             // remain Running until retry/continue/idle policy is evaluated below.
             if (instance.Status == OrchestrationInstanceStatus.Failed)
@@ -124,23 +125,25 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return [];
             }
 
-            if (failedTask is not null)
+            if (failedTasks.Length > 0)
             {
                 if (HasCompensationTerminalFailure(instance))
                 {
                     return [];
                 }
 
-                var failedArtifact = tasks.FirstOrDefault(x => x.Key == failedTask.TaskKey);
-                if (await ShouldRetryAsync(failedTask, failedArtifact, request, cancellationToken))
+                var resumed = BuildManualRecoveryDecision(instance, currentStage, currentStageExecution, tasks, taskExecutions,
+                    dispatchPayload, metadataDescriptors, resolvedArtifact.Artifact.ExecutionPolicy);
+                if (resumed is not null) return [resumed];
+
+                var tasksByKey = tasks.ToLookup(x => x.Key, StringComparer.Ordinal);
+                foreach (var candidate in failedTasks)
                 {
-                    return [new RetryDecision(
-                        instance.Id,
-                        currentStageExecution.Id,
-                        failedTask.Id,
-                        currentStage.Key,
-                        failedArtifact,
-                        dispatchPayload?.ToJsonString())
+                    if (TryGetBoolean(candidate.Metadata, ParallelCancellationRecovery.ResumeFailedMetadataKey)) continue;
+                    var candidateArtifact = tasksByKey[candidate.TaskKey].FirstOrDefault();
+                    if (!await ShouldRetryAsync(candidate, candidateArtifact, request, cancellationToken)) continue;
+                    return [new RetryDecision(instance.Id, currentStageExecution.Id, candidate.Id, currentStage.Key,
+                        candidateArtifact, dispatchPayload?.ToJsonString())
                     {
                         MetadataDescriptors = metadataDescriptors,
                         OrchestrationExecutionPolicy = resolvedArtifact.Artifact.ExecutionPolicy,
@@ -148,23 +151,45 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     }];
                 }
 
+                // A failed member must not stop work already running in its parallel group.
+                // Also dispatch members that have not started when a concurrency limit split
+                // the group into batches. Later stages remain blocked until the join resolves.
+                foreach (var groupId in failedTasks.Select(f => tasksByKey[f.TaskKey].FirstOrDefault()?.ParallelGroupId)
+                    .Where(id => id.HasValue).Distinct())
+                {
+                    var members = tasks.Where(t => t.ParallelGroupId == groupId).ToArray();
+                    var memberKeys = members.Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
+                    var executions = taskExecutions.Where(t => memberKeys.Contains(t.TaskKey)).ToArray();
+                    if (executions.Any(t => t.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying))
+                        return [];
+                    var existingKeys = executions.Select(t => t.TaskKey).ToHashSet(StringComparer.Ordinal);
+                    var unstarted = members.Where(t => !existingKeys.Contains(t.Key)).ToArray();
+                    if (unstarted.Length > 0)
+                    {
+                        var limit = currentStage.ParallelGroups.FirstOrDefault(g => g.Id == groupId.Value)?.MaxParallelAgents ?? int.MaxValue;
+                        var serializedPayload = dispatchPayload?.ToJsonString();
+                        return unstarted.Take(limit).Select(task => (IDecision)new DispatchTaskDecision(
+                            instance.Id, currentStageExecution.Id, currentStage.Key, task, serializedPayload)
+                        {
+                            MetadataDescriptors = metadataDescriptors,
+                            OrchestrationExecutionPolicy = resolvedArtifact.Artifact.ExecutionPolicy,
+                            StageExecutionPolicy = currentStage.ExecutionPolicy
+                        }).ToArray();
+                    }
+                    if (executions.Any(t => t.Status is TaskExecutionStatus.Pending or TaskExecutionStatus.Cancelled)) return [];
+                }
+
+                var failedTask = failedTasks.FirstOrDefault(f => !ShouldContinueAfterFailure(f, tasksByKey[f.TaskKey].FirstOrDefault()));
+                if (failedTask is null)
+                {
+                    if (taskExecutions.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying or TaskExecutionStatus.Pending or TaskExecutionStatus.Cancelled)) return [];
+                    return BuildNextTaskDecisions(instance, stages, currentStage, currentStageExecution, tasks, taskExecutions,
+                        dispatchPayload, metadataDescriptors, resolvedArtifact.Artifact.ExecutionPolicy);
+                }
+                var failedArtifact = tasksByKey[failedTask.TaskKey].FirstOrDefault();
                 if (failedArtifact?.OnErrorPolicy == OnErrorPolicy.StopAndCompensate)
                 {
                     return [new CompensateInstanceDecision(instance.Id, request.ArtifactId, dispatchPayload?.ToJsonString())];
-                }
-
-                if (ShouldContinueAfterFailure(failedTask, failedArtifact))
-                {
-                    return BuildNextTaskDecisions(
-                        instance,
-                        stages,
-                        currentStage,
-                        currentStageExecution,
-                        tasks,
-                        taskExecutions,
-                        dispatchPayload,
-                        metadataDescriptors,
-                        resolvedArtifact.Artifact.ExecutionPolicy);
                 }
 
                 // Only an unanswered command is uncertain enough to retain the saga in
@@ -186,7 +211,10 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                     ResolveDeadLetterReason(instance, failedTask))];
             }
 
-            if (taskExecutions.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse))
+            var recovery = BuildManualRecoveryDecision(instance, currentStage, currentStageExecution, tasks, taskExecutions,
+                dispatchPayload, metadataDescriptors, resolvedArtifact.Artifact.ExecutionPolicy);
+            if (recovery is not null) return [recovery];
+            if (taskExecutions.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying or TaskExecutionStatus.Pending or TaskExecutionStatus.Cancelled))
             {
                 return [];
             }
@@ -201,6 +229,42 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 dispatchPayload,
                 metadataDescriptors,
                 resolvedArtifact.Artifact.ExecutionPolicy);
+        }
+
+        private static RetryDecision BuildManualRecoveryDecision(
+            OrchestrationInstance instance, StageArtifact stage, StageExecution stageExecution,
+            IReadOnlyCollection<TaskArtifact> tasks, IReadOnlyCollection<TaskExecution> executions, JsonNode payload,
+            IReadOnlyCollection<MetadataDescriptorArtifact> metadataDescriptors, ExecutionPolicyArtifact policy)
+        {
+            foreach (var execution in executions.Where(x =>
+                (x.Status == TaskExecutionStatus.Cancelled && TryGetBoolean(x.Metadata, ParallelCancellationRecovery.ResumeMetadataKey)) ||
+                (x.Status is (TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut) && TryGetBoolean(x.Metadata, ParallelCancellationRecovery.ResumeFailedMetadataKey))))
+            {
+                var task = tasks.FirstOrDefault(x => x.Key == execution.TaskKey);
+                if (task?.ParallelGroupId is not { } groupId || execution.ParallelGroupId != groupId) continue;
+                var earlierWorkIncomplete = tasks.TakeWhile(x => x.Id != task.Id)
+                    .Where(x => x.ParallelGroupId != groupId)
+                    .Any(earlier =>
+                    {
+                        var prior = executions.FirstOrDefault(x => x.TaskKey == earlier.Key);
+                        return prior is null || !(prior.Status is (TaskExecutionStatus.Completed or TaskExecutionStatus.Skipped or
+                            TaskExecutionStatus.CompletedWithErrors or TaskExecutionStatus.Compensated) ||
+                            (prior.Status is (TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut) && ShouldContinueAfterFailure(prior, earlier)));
+                    });
+                if (earlierWorkIncomplete) continue;
+                var limit = stage.ParallelGroups.FirstOrDefault(x => x.Id == groupId)?.MaxParallelAgents ?? int.MaxValue;
+                var active = executions.Count(x => x.ParallelGroupId == groupId &&
+                    x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying);
+                if (active >= limit) continue;
+                return new RetryDecision(instance.Id, stageExecution.Id, execution.Id, stage.Key, task, payload?.ToJsonString())
+                {
+                    ResumeManual = true,
+                    MetadataDescriptors = metadataDescriptors,
+                    OrchestrationExecutionPolicy = policy,
+                    StageExecutionPolicy = stage.ExecutionPolicy
+                };
+            }
+            return null;
         }
 
         private static IReadOnlyCollection<IDecision> BuildNextTaskDecisions(
@@ -348,56 +412,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return false;
             }
 
-            if (await IsNonRetryableCandidateAsync(failedTask, request, cancellationToken))
+            var requestResult = string.IsNullOrWhiteSpace(request.MessageMetadata?.TaskExecutionId) ||
+                string.Equals(request.MessageMetadata.TaskExecutionId, failedTask.Id.ToString(), StringComparison.OrdinalIgnoreCase)
+                ? request.ExecutionResultMetadata : null;
+            if (requestResult?.IsRetryableCandidate == false)
             {
                 return false;
             }
-
-            var errorCode = await ResolveFailureErrorCodeAsync(failedTask, request, cancellationToken);
-            return !string.IsNullOrWhiteSpace(errorCode)
-                && retryPolicy.RetryableErrorCodes.Contains(errorCode, StringComparer.OrdinalIgnoreCase);
-        }
-
-        private async Task<string> ResolveFailureErrorCodeAsync(
-            TaskExecution failedTask,
-            DecisionRequest request,
-            CancellationToken cancellationToken)
-        {
-            if (!string.IsNullOrWhiteSpace(request.ExecutionResultMetadata?.ErrorCode))
-            {
-                return request.ExecutionResultMetadata.ErrorCode;
-            }
-
             var attempts = await _attemptRepository.GetByTaskExecutionId(failedTask.Id, cancellationToken);
-            var lastAttempt = attempts
-                .OrderByDescending(x => x.AttemptNumber)
-                .FirstOrDefault();
-
-            if (!string.IsNullOrWhiteSpace(lastAttempt?.ErrorCode))
-            {
-                return lastAttempt.ErrorCode;
-            }
-
-            return TryGetString(lastAttempt?.Metadata, "ExecutionErrorCode")
-                ?? TryGetString(lastAttempt?.Metadata, "PreparationErrorCode");
-        }
-
-        private async Task<bool> IsNonRetryableCandidateAsync(
-            TaskExecution failedTask,
-            DecisionRequest request,
-            CancellationToken cancellationToken)
-        {
-            if (request.ExecutionResultMetadata?.IsRetryableCandidate == false)
-            {
-                return true;
-            }
-
-            var attempts = await _attemptRepository.GetByTaskExecutionId(failedTask.Id, cancellationToken);
-            var lastAttempt = attempts
-                .OrderByDescending(x => x.AttemptNumber)
-                .FirstOrDefault();
-
-            return TryGetNullableBoolean(lastAttempt?.Metadata, "ExecutionIsRetryableCandidate") == false;
+            var lastAttempt = attempts.OrderByDescending(x => x.AttemptNumber).FirstOrDefault();
+            if (TryGetNullableBoolean(lastAttempt?.Metadata, "ExecutionIsRetryableCandidate") == false)
+                return false;
+            var errorCode = !string.IsNullOrWhiteSpace(requestResult?.ErrorCode) ? requestResult.ErrorCode
+                : !string.IsNullOrWhiteSpace(lastAttempt?.ErrorCode) ? lastAttempt.ErrorCode
+                : TryGetString(lastAttempt?.Metadata, "ExecutionErrorCode") ?? TryGetString(lastAttempt?.Metadata, "PreparationErrorCode");
+            return !string.IsNullOrWhiteSpace(errorCode) && retryPolicy.RetryableErrorCodes.Contains(errorCode, StringComparer.OrdinalIgnoreCase);
         }
 
         private static RetryPolicyArtifact ResolveRetryPolicy(
@@ -501,7 +530,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
                 return null;
             }
 
-            if (IsInstanceTerminalForCallback(instance.Status))
+            // A dead-lettered saga may still receive the result of a parallel command
+            // that was already sent. Record that exact outstanding attempt without
+            // resuming the saga; Recover can then reuse its actual response payload.
+            var lateParallelResult = instance.Status == OrchestrationInstanceStatus.DeadLettered &&
+                task.ParallelGroupId.HasValue && IsCallbackReady(task, attempt, dispatch) &&
+                task.LastAttemptNumber == attempt.AttemptNumber;
+            var cancelledParallelResult = IsCancelledParallelCallback(instance, task, attempt, dispatch);
+            if (IsInstanceTerminalForCallback(instance.Status) && !lateParallelResult && !cancelledParallelResult)
             {
                 return null;
             }
@@ -509,10 +545,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             if (task.OrchestrationInstanceId != instanceId ||
                 attempt.TaskExecutionId != task.Id ||
                 dispatch.TaskExecutionAttemptId != attempt.Id ||
+                (task.LastAttemptNumber > 0 && task.LastAttemptNumber != attempt.AttemptNumber) ||
                 (request.MessageMetadata.Attempt > 0 && request.MessageMetadata.Attempt != attempt.AttemptNumber))
             {
                 return null;
             }
+
+            if (cancelledParallelResult)
+                return BuildCompleteCallbackDecision(request, instanceId, taskExecutionId, dispatchId);
 
             if (IsCallbackResolved(task, attempt, dispatch))
             {
@@ -575,6 +615,14 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control
             => task.Status == TaskExecutionStatus.WaitingResponse &&
                 attempt.Status == TaskExecutionStatus.WaitingResponse &&
                 string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase);
+
+        internal static bool IsCancelledParallelCallback(OrchestrationInstance instance, TaskExecution task,
+            TaskExecutionAttempt attempt, TaskDispatch dispatch)
+            => instance.Status is (OrchestrationInstanceStatus.DeadLettered or OrchestrationInstanceStatus.Idle or OrchestrationInstanceStatus.Running) &&
+                task.ParallelGroupId.HasValue && task.Status == TaskExecutionStatus.Cancelled &&
+                attempt.Status == TaskExecutionStatus.Cancelled && task.LastAttemptNumber == attempt.AttemptNumber &&
+                string.Equals(dispatch.DispatchStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) &&
+                dispatch.Metadata?.ContainsKey("Recovery.DispatchCancellationReason") == true;
 
         private static bool IsCallbackResolved(
             TaskExecution task,

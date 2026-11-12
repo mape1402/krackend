@@ -85,8 +85,8 @@ internal sealed class RecordingRemoteCommandDispatcher : IRemoteCommandDispatche
             task.WaitingSinceUtc = now;
             attempt.Status = TaskExecutionStatus.WaitingResponse;
             attempt.WaitingSinceUtc = now;
-            instance.Status = OrchestrationInstanceStatus.Waiting;
-            instance.WaitingSinceUtc = now;
+            instance.Status = OrchestrationInstanceStatus.Running;
+            instance.WaitingSinceUtc = null;
         }
         else
         {

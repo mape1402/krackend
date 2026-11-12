@@ -13,6 +13,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Engine.Control;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Coordination;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Conditions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Timeouts;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Transformations;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Validation;
@@ -1877,8 +1878,305 @@ public sealed class MessagingDecisionE2ETests
         Assert.Equal(OrchestrationInstanceStatus.Completed, instance.Status);
     }
 
+    [Theory]
+    [InlineData(OnErrorPolicy.Stop)]
+    [InlineData(OnErrorPolicy.Continue)]
+    public async Task ParallelFailureDoesNotFinishOrStopOtherTasksBeforeTheyRespond(OnErrorPolicy policy)
+    {
+        var groupId = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "stage-parallel", 1,
+                [new ParallelGroupArtifact(groupId, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("task.fail", 1, onErrorPolicy: policy, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
+                MessagingTask("task.other1", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
+                MessagingTask("task.other2", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId))));
+
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-failure-barrier");
+        var failed = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail");
+        var other1 = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other1");
+        var other2 = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other2");
+        await harness.ForwardAsync(failed, null, Failure("PermanentFailure", "failed"));
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await harness.GetInstanceAsync(failed)).Status);
+        await harness.ForwardAsync(other1, BusinessPayload("one"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await harness.GetInstanceAsync(failed)).Status);
+        await harness.ForwardAsync(other2, BusinessPayload("two"), Success());
+        Assert.Equal(TaskExecutionStatus.Completed, (await harness.GetTaskAsync(other1)).Status);
+        Assert.Equal(TaskExecutionStatus.Completed, (await harness.GetTaskAsync(other2)).Status);
+        Assert.Equal(policy == OnErrorPolicy.Continue ? OrchestrationInstanceStatus.Completed : OrchestrationInstanceStatus.DeadLettered,
+            (await harness.GetInstanceAsync(failed)).Status);
+    }
+
     [Fact]
-    public async Task EngineDoesNotAcceptLateParallelSuccessCallbackAfterInstanceIsDeadLettered()
+    public async Task ParallelFailureStillDispatchesRemainingMembersWhenConcurrencyIsLimited()
+    {
+        var group = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "limited-group", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, 2)], [],
+                MessagingTask("task.fail", 1, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.active", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.pending", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-limited-failure");
+        Assert.Equal(2, harness.Dispatcher.Commands.Count);
+        var failed = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail");
+        var active = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.active");
+        await harness.ForwardAsync(failed, null, Failure("PermanentFailure", "failed"));
+        Assert.Equal(2, harness.Dispatcher.Commands.Count);
+        await harness.ForwardAsync(active, BusinessPayload("active"), Success());
+        var pending = Assert.Single(harness.Dispatcher.Commands.Where(x => x.TaskKey == "task.pending"));
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await harness.GetInstanceAsync(failed)).Status);
+        await harness.ForwardAsync(pending, BusinessPayload("pending"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, (await harness.GetInstanceAsync(failed)).Status);
+    }
+
+    [Fact]
+    public async Task ParallelRetryOnlyReexecutesTheFailedTaskAndWaitsForAllMembers()
+    {
+        var group = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "parallel-retry", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("task.retry", 1, retryPolicy: RetryPolicy(1, "TransientFailure"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.other1", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.other2", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-retry");
+        var failed = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.retry");
+        var other1 = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other1");
+        var other2 = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other2");
+        await harness.ForwardAsync(failed, null, Failure("TransientFailure", "retry", true));
+        var retry = harness.Dispatcher.Commands.Last();
+        Assert.Equal("task.retry", retry.TaskKey);
+        Assert.Equal(4, harness.Dispatcher.Commands.Count);
+        await harness.ForwardAsync(other2, BusinessPayload("two"), Success());
+        await harness.ForwardAsync(retry, BusinessPayload("retry succeeded"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await harness.GetInstanceAsync(failed)).Status);
+        await harness.ForwardAsync(other1, BusinessPayload("one"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Completed, (await harness.GetInstanceAsync(failed)).Status);
+        Assert.Equal(4, harness.Dispatcher.Commands.Count);
+    }
+
+    [Fact]
+    public async Task ParallelTimeoutDoesNotCancelOtherMembersOrCompleteTheStage()
+    {
+        var group = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "parallel-timeout", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("task.timeout", 1, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(60), "TIMEOUT"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.other1", 2, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(120), "TIMEOUT"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.other2", 3, timeoutPolicy: TimeoutPolicy(Duration.FromSeconds(120), "TIMEOUT"), executionMode: TaskExecutionMode.Parallel, parallelGroupId: group))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-timeout");
+        var timedOut = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.timeout");
+        var other1 = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other1");
+        var other2 = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.other2");
+        var task = await harness.GetTaskAsync(timedOut);
+        var result = await harness.GetRequiredService<IOrchestrationTimeoutProcessor>()
+            .ProcessTaskTimeoutAsync(task.Id, task.WaitingSinceUtc!.Value.AddSeconds(61));
+        Assert.True(result.Applied);
+        Assert.Equal(OrchestrationInstanceStatus.Running, (await harness.GetInstanceAsync(timedOut)).Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, (await harness.GetTaskAsync(other1)).Status);
+        Assert.Equal(TaskExecutionStatus.WaitingResponse, (await harness.GetTaskAsync(other2)).Status);
+        await harness.ForwardAsync(other1, BusinessPayload("one"), Success());
+        await harness.ForwardAsync(other2, BusinessPayload("two"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Idle, (await harness.GetInstanceAsync(timedOut)).Status);
+    }
+
+    [Fact]
+    public async Task RecoveredTaskInLaterGroupWaitsForEarlierGroup()
+    {
+        var firstGroup = Id.New(); var secondGroup = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "ordered-groups", 1,
+                [new ParallelGroupArtifact(firstGroup, ParallelJoinPolicy.WaitAll, null), new ParallelGroupArtifact(secondGroup, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("first.one", 1, executionMode: TaskExecutionMode.Parallel, parallelGroupId: firstGroup),
+                MessagingTask("first.two", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: firstGroup),
+                MessagingTask("second.one", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: secondGroup))));
+        await harness.StartAsync(BusinessPayload("trigger"), "ordered-group-recovery");
+        var first = harness.Dispatcher.Commands.Single(x => x.TaskKey == "first.one");
+        var second = harness.Dispatcher.Commands.Single(x => x.TaskKey == "first.two");
+        var instance = await harness.GetInstanceAsync(first);
+        var stage = (await harness.GetStagesAsync(first)).Single();
+        var cancelled = new TaskExecution
+        {
+            Id = Id.New(), OrchestrationInstanceId = instance.Id, StageExecutionId = stage.Id, TaskKey = "second.one",
+            TaskKind = TaskKind.Messaging, ParallelGroupId = secondGroup, Status = TaskExecutionStatus.Cancelled,
+            LastAttemptNumber = 1, CorrelationId = instance.CorrelationId
+        };
+        cancelled.Metadata["Recovery.ResumeCancelled"] = JsonValue.Create(true);
+        await harness.Services.GetRequiredService<ITaskExecutionRepository>().Create(cancelled);
+        await harness.ForwardAsync(first, BusinessPayload("one"), Success());
+        Assert.Equal(2, harness.Dispatcher.Commands.Count);
+        await harness.ForwardAsync(second, BusinessPayload("two"), Success());
+        var resumed = Assert.Single(harness.Dispatcher.Commands.Where(x => x.TaskKey == "second.one"));
+        await harness.ForwardAsync(resumed, BusinessPayload("resumed"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Completed, (await harness.GetInstanceAsync(first)).Status);
+    }
+
+    [Fact]
+    public async Task RecoverRetriesAllFailedParallelMembersWithoutRepeatingSuccessfulMembers()
+    {
+        var group = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "multiple-failures", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("task.fail1", 1, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.fail2", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.success", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-multiple-failures");
+        var first = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail1");
+        var second = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail2");
+        var success = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.success");
+        await harness.ForwardAsync(first, null, Failure("PermanentFailure", "one"));
+        await harness.ForwardAsync(second, null, Failure("PermanentFailure", "two"));
+        await harness.ForwardAsync(success, BusinessPayload("success"), Success());
+        var instance = await harness.GetInstanceAsync(first);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        var recovery = await harness.GetRequiredService<IOrchestrationRecoveryService>().RecoverTerminalAsync(instance.Id.ToString());
+        Assert.True(recovery.Succeeded, recovery.Message);
+        var replays = harness.Dispatcher.Commands.Skip(3).ToArray();
+        Assert.Equal(2, replays.Length);
+        Assert.DoesNotContain(replays, x => x.TaskKey == "task.success");
+        foreach (var replay in replays) await harness.ForwardAsync(replay, BusinessPayload(replay.TaskKey), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Completed, (await harness.GetInstanceAsync(first)).Status);
+    }
+
+    [Fact]
+    public async Task RecoverMultipleFailedParallelMembersRespectsConcurrencyLimit()
+    {
+        var group = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "limited-recovery", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, 1)], [],
+                MessagingTask("task.fail1", 1, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.fail2", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask("task.success", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-limited-recovery");
+        var first = Assert.Single(harness.Dispatcher.Commands);
+        await harness.ForwardAsync(first, null, Failure("PermanentFailure", "one"));
+        var second = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail2");
+        await harness.ForwardAsync(second, null, Failure("PermanentFailure", "two"));
+        var success = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.success");
+        await harness.ForwardAsync(success, BusinessPayload("success"), Success());
+        var instance = await harness.GetInstanceAsync(first);
+        Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
+        var recovery = await harness.GetRequiredService<IOrchestrationRecoveryService>().RecoverTerminalAsync(instance.Id.ToString());
+        Assert.True(recovery.Succeeded, recovery.Message);
+        Assert.Equal(4, harness.Dispatcher.Commands.Count);
+        var replay1 = harness.Dispatcher.Commands[3];
+        await harness.ForwardAsync(replay1, BusinessPayload("replay1"), Success());
+        Assert.Equal(5, harness.Dispatcher.Commands.Count);
+        var replay2 = harness.Dispatcher.Commands[4];
+        Assert.NotEqual(replay1.TaskKey, replay2.TaskKey);
+        await harness.ForwardAsync(replay2, BusinessPayload("replay2"), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Completed, (await harness.GetInstanceAsync(first)).Status);
+    }
+
+    [Theory]
+    [InlineData(true, false, false, false, false, false)]
+    [InlineData(false, false, false, false, false, false)]
+    [InlineData(true, true, false, false, false, false)]
+    [InlineData(true, true, true, false, false, false)]
+    [InlineData(true, false, false, true, false, false)]
+    [InlineData(true, false, false, false, true, false)]
+    [InlineData(false, false, false, false, true, false)]
+    [InlineData(true, false, false, false, true, true)]
+    public async Task RecoverParallelGroupResumesOnlyConfirmedCancelledDeliveries(bool confirmedCancellation, bool alreadyCompleted, bool laterStageExecuted, bool failedStage, bool reconcile, bool idle)
+    {
+        var groupId = Id.New();
+        using var harness = await MessagingEngineHarness.CreateAsync(CreateArtifact(
+            StageWithGraph(Id.New(), "stage-parallel", 1,
+                [new ParallelGroupArtifact(groupId, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask("task.fail", 1, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
+                MessagingTask("task.other1", 2, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId),
+                MessagingTask("task.other2", 3, executionMode: TaskExecutionMode.Parallel, parallelGroupId: groupId))));
+        await harness.StartAsync(BusinessPayload("trigger"), "parallel-recovery");
+        var failed = harness.Dispatcher.Commands.Single(x => x.TaskKey == "task.fail");
+        var others = harness.Dispatcher.Commands.Where(x => x.TaskKey != "task.fail").ToArray();
+        await harness.ForwardAsync(failed, null, Failure("PermanentFailure", "failed"));
+        var instance = await harness.GetInstanceAsync(failed);
+        instance.Status = idle ? OrchestrationInstanceStatus.Idle : reconcile ? OrchestrationInstanceStatus.Running : alreadyCompleted ? OrchestrationInstanceStatus.Completed : OrchestrationInstanceStatus.DeadLettered;
+        if (alreadyCompleted) { instance.CompletedOnUtc = DateTime.UtcNow; instance.FinalOutcome = "Completed"; }
+        await harness.Services.GetRequiredService<IOrchestrationInstanceRepository>().Update(instance);
+        var taskRepository = harness.Services.GetRequiredService<ITaskExecutionRepository>();
+        var attemptRepository = harness.Services.GetRequiredService<ITaskExecutionAttemptRepository>();
+        var dispatchRepository = harness.Services.GetRequiredService<ITaskDispatchRepository>();
+        if (failedStage)
+        {
+            var stage = (await harness.GetStagesAsync(failed)).Single();
+            stage.Status = StageExecutionStatus.Failed;
+            await harness.Services.GetRequiredService<IStageExecutionRepository>().Update(stage);
+        }
+        if (alreadyCompleted || reconcile)
+        {
+            var failedTask = await harness.GetTaskAsync(failed);
+            failedTask.Status = TaskExecutionStatus.Completed;
+            await taskRepository.Update(failedTask);
+            var stage = (await harness.GetStagesAsync(failed)).Single();
+            stage.Status = alreadyCompleted ? StageExecutionStatus.Completed : StageExecutionStatus.Running;
+            stage.CompletedOnUtc = alreadyCompleted ? DateTime.UtcNow : null;
+            await harness.Services.GetRequiredService<IStageExecutionRepository>().Update(stage);
+            if (laterStageExecuted)
+                await harness.Services.GetRequiredService<IStageExecutionRepository>().Create(new StageExecution
+                {
+                    Id = Id.New(), OrchestrationInstanceId = instance.Id, StageKey = "later-stage", Order = stage.Order + 1,
+                    Status = StageExecutionStatus.Completed
+                });
+        }
+        foreach (var command in others)
+        {
+            var task = await harness.GetTaskAsync(command);
+            var attempt = await harness.GetAttemptAsync(command);
+            var dispatch = await dispatchRepository.GetById(new Id(Ulid.Parse(command.DispatchId)));
+            task.Status = TaskExecutionStatus.Cancelled;
+            attempt.Status = TaskExecutionStatus.Cancelled;
+            dispatch.DispatchStatus = "Cancelled";
+            dispatch.SentOnUtc = null;
+            dispatch.PhysicalCancellationPending = false;
+            dispatch.PhysicalCancellationCompletedOnUtc = DateTime.UtcNow;
+            dispatch.Metadata["Recovery.DispatchCancellationProviderStatus"] = JsonValue.Create(confirmedCancellation ? "Cancelled" : "TooLate");
+            await taskRepository.Update(task);
+            await attemptRepository.Update(attempt);
+            await dispatchRepository.Update(dispatch);
+        }
+
+        var recovery = harness.Services.GetRequiredService<IOrchestrationRecoveryService>();
+        OrchestrationRecoveryResult result;
+        if (reconcile)
+        {
+            var reconciliation = await harness.Services.GetRequiredService<IOrchestrationReconciliationService>().ReconcileAsync(instance.Id.ToString());
+            result = reconciliation.Findings.Any(x => x.Status == "Intervention")
+                ? OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(), string.Join(" ", reconciliation.Findings.Select(x => x.Message)))
+                : OrchestrationRecoveryResult.Success(instance.Id.ToString(), instance.Status.ToString(), "Reconciled.");
+        }
+        else if (confirmedCancellation && !alreadyCompleted && !failedStage)
+        {
+            var concurrent = await Task.WhenAll(recovery.RecoverTerminalAsync(instance.Id.ToString()),
+                recovery.RecoverTerminalAsync(instance.Id.ToString()));
+            result = Assert.Single(concurrent, x => x.Succeeded);
+            Assert.Single(concurrent, x => !x.Succeeded);
+        }
+        else result = await recovery.RecoverTerminalAsync(instance.Id.ToString());
+        if (!confirmedCancellation || laterStageExecuted)
+        {
+            Assert.False(result.Succeeded);
+            Assert.Contains(laterStageExecuted ? "later" : "uncertain", result.Message);
+            Assert.Equal(3, harness.Dispatcher.Commands.Count);
+            Assert.Equal(reconcile ? OrchestrationInstanceStatus.Running : alreadyCompleted ? OrchestrationInstanceStatus.Completed : OrchestrationInstanceStatus.DeadLettered,
+                (await harness.GetInstanceAsync(failed)).Status);
+            return;
+        }
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(alreadyCompleted || reconcile ? 5 : 6, harness.Dispatcher.Commands.Count);
+        var replays = harness.Dispatcher.Commands.Skip(3).ToArray();
+        Assert.Equal(alreadyCompleted || reconcile ? 2 : 3, replays.Select(x => x.TaskKey).Distinct().Count());
+        foreach (var command in replays)
+            await harness.ForwardAsync(command, BusinessPayload(command.TaskKey), Success());
+        Assert.Equal(OrchestrationInstanceStatus.Completed, (await harness.GetInstanceAsync(failed)).Status);
+        foreach (var command in others)
+            Assert.Equal(TaskExecutionStatus.Completed, (await harness.GetTaskAsync(command)).Status);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task EngineRecordsLateParallelSuccessWithoutReactivatingDeadLetteredSaga(bool logicallyCancelled, bool staleAttempt)
     {
         var groupId = Id.New();
 
@@ -1898,6 +2196,25 @@ public sealed class MessagingDecisionE2ETests
         var lateCommand = harness.Dispatcher.Commands.Single(command => command.TaskKey == "task.parallel.late");
 
         await harness.ForwardAsync(failedCommand, null, Failure("PermanentFailure", "parallel task failed"));
+        var deadLettered = await harness.GetInstanceAsync(failedCommand);
+        deadLettered.Status = OrchestrationInstanceStatus.DeadLettered;
+        await harness.Services.GetRequiredService<IOrchestrationInstanceRepository>().Update(deadLettered);
+        if (logicallyCancelled)
+        {
+            var task = await harness.GetTaskAsync(lateCommand);
+            var attempt = await harness.GetAttemptAsync(lateCommand);
+            var dispatches = harness.Services.GetRequiredService<ITaskDispatchRepository>();
+            var dispatch = await dispatches.GetById(new Id(Ulid.Parse(lateCommand.DispatchId)));
+            task.Status = TaskExecutionStatus.Cancelled;
+            attempt.Status = TaskExecutionStatus.Cancelled;
+            if (staleAttempt) task.LastAttemptNumber = attempt.AttemptNumber + 1;
+            dispatch.DispatchStatus = "Cancelled";
+            dispatch.Metadata["Recovery.DispatchCancellationReason"] = JsonValue.Create("instance entered dead letter");
+            await harness.Services.GetRequiredService<ITaskExecutionRepository>().Update(task);
+            await harness.Services.GetRequiredService<ITaskExecutionAttemptRepository>().Update(attempt);
+            await dispatches.Update(dispatch);
+        }
+        await harness.ForwardAsync(lateCommand, BusinessPayload("late-success"), Success());
         await harness.ForwardAsync(lateCommand, BusinessPayload("late-success"), Success());
 
         var instance = await harness.GetInstanceAsync(failedCommand);
@@ -1905,10 +2222,17 @@ public sealed class MessagingDecisionE2ETests
         var transitions = await harness.GetTransitionsAsync(failedCommand);
 
         Assert.Equal(OrchestrationInstanceStatus.DeadLettered, instance.Status);
-        Assert.Equal(TaskExecutionStatus.WaitingResponse, lateTask.Status);
-        Assert.DoesNotContain(transitions, transition =>
+        if (staleAttempt)
+        {
+            Assert.Equal(TaskExecutionStatus.Cancelled, lateTask.Status);
+            Assert.DoesNotContain(transitions, transition => transition.TaskExecutionId == lateTask.Id && transition.TransitionType == "TaskCallbackCompleted");
+            return;
+        }
+        Assert.Equal(TaskExecutionStatus.Completed, lateTask.Status);
+        Assert.Equal("late-success", (await harness.GetAttemptAsync(lateCommand)).ResponsePayload!["value"]!.GetValue<string>());
+        Assert.Single(transitions.Where(transition =>
             transition.TaskExecutionId == lateTask.Id &&
-            transition.TransitionType == "TaskCallbackCompleted");
+            transition.TransitionType == "TaskCallbackCompleted"));
     }
 
     [Fact]

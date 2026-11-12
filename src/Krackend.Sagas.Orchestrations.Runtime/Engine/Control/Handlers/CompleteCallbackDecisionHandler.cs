@@ -78,6 +78,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var timeoutDueOnUtc = task.ResponseDeadlineUtc;
             var timeoutAttemptId = attempt.Id;
             var timeoutAttemptNumber = attempt.AttemptNumber;
+            var keepDeadLettered = instance.Status == OrchestrationInstanceStatus.DeadLettered;
 
             dispatch.DispatchStatus = succeeded ? "Acknowledged" : "Failed";
             dispatch.AcknowledgedOnUtc = succeeded ? now : null;
@@ -101,16 +102,17 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             attempt.ErrorMessage = succeeded ? null : errorMessage;
             CopyExecutionResultMetadata(attempt, result);
 
-            instance.Status = OrchestrationInstanceStatus.Running;
-            instance.FailedOnUtc = null;
-            instance.ErrorSummary = succeeded ? null : errorMessage;
-            instance.WaitingSinceUtc = null;
-            instance.IdleSinceUtc = null;
-            instance.IdleExpiresOnUtc = null;
-            // A valid callback during Idle resumes the instance. The old dispatch may still
-            // be physically cancelled by Mule, but it must no longer be treated as an
-            // instance-level cancellation intent.
-            instance.DispatchCancellationPending = false;
+            if (!keepDeadLettered)
+            {
+                instance.Status = OrchestrationInstanceStatus.Running;
+                instance.FailedOnUtc = null;
+                instance.ErrorSummary = succeeded ? null : errorMessage;
+                instance.WaitingSinceUtc = null;
+                instance.IdleSinceUtc = null;
+                instance.IdleExpiresOnUtc = null;
+                // A valid callback during Idle resumes the instance.
+                instance.DispatchCancellationPending = false;
+            }
             instance.LastUpdatedOnUtc = now;
             if (succeeded)
             {
@@ -182,13 +184,21 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             TaskDispatch dispatch,
             bool succeeded)
         {
-            if (IsHardTerminal(instance.Status) ||
+            var lateParallelResult = instance.Status == OrchestrationInstanceStatus.DeadLettered &&
+                task.ParallelGroupId.HasValue && task.Status == TaskExecutionStatus.WaitingResponse &&
+                attempt.Status == TaskExecutionStatus.WaitingResponse &&
+                string.Equals(dispatch.DispatchStatus, "WaitingResponse", StringComparison.OrdinalIgnoreCase) &&
+                task.LastAttemptNumber == attempt.AttemptNumber;
+            var cancelledParallelResult = DecisionControl.IsCancelledParallelCallback(instance, task, attempt, dispatch);
+            if ((IsHardTerminal(instance.Status) && !lateParallelResult && !cancelledParallelResult) ||
                 task.OrchestrationInstanceId != instance.Id ||
                 attempt.TaskExecutionId != task.Id ||
                 dispatch.TaskExecutionAttemptId != attempt.Id)
             {
                 return false;
             }
+
+            if (cancelledParallelResult) return true;
 
             if (task.Status == TaskExecutionStatus.WaitingResponse &&
                 attempt.Status == TaskExecutionStatus.WaitingResponse &&

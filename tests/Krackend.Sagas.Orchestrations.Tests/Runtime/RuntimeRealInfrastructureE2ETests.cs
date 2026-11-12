@@ -27,6 +27,52 @@ public sealed class RuntimeRealInfrastructureE2ETests
     }
 
     [Fact(Timeout = 180_000)]
+    public async Task RuntimeRecoversParallelFailureWithoutLosingOtherResults()
+    {
+        var suffix = NewSuffix();
+        var version = new SemanticVersion(3, 0, 0);
+        var trigger = Topic(suffix, "events.parallel.recovery");
+        var failing = Topic(suffix, "commands.parallel.failing");
+        var first = Topic(suffix, "commands.parallel.first");
+        var second = Topic(suffix, "commands.parallel.second");
+        var after = Topic(suffix, "commands.parallel.after");
+        var group = Id.New();
+        await using var services = await RealMessagingServiceHost.StartAsync(_infrastructure, Endpoints(version, failing, first, second, after));
+        await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
+        services.Scenario.Enqueue(failing, RealMessagingServiceOutcome.Failure("PermanentFailure", "first attempt failed", isRetryableCandidate: false));
+        services.Scenario.Enqueue(failing, RealMessagingServiceOutcome.Success(BusinessPayload(("recovered", true))));
+        services.Scenario.Enqueue(first, RealMessagingServiceOutcome.DelayedSuccess(BusinessPayload(("first", true)), TimeSpan.FromSeconds(3)));
+        services.Scenario.Enqueue(second, RealMessagingServiceOutcome.DelayedSuccess(BusinessPayload(("second", true)), TimeSpan.FromSeconds(3)));
+        services.Scenario.Enqueue(after, RealMessagingServiceOutcome.Success(BusinessPayload(("after", true))));
+        var artifact = Artifact(Topic(suffix, "parallel.recovery"), version, $"real-parallel-recovery-{suffix}",
+            [EventTrigger(trigger, version)],
+            StageWithGraph("parallel", 1, [new ParallelGroupArtifact(group, ParallelJoinPolicy.WaitAll, null)], [],
+                MessagingTask(failing, 1, version, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask(first, 2, version, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group),
+                MessagingTask(second, 3, version, executionMode: TaskExecutionMode.Parallel, parallelGroupId: group)),
+            Stage("after", 2, MessagingTask(after, 1, version)));
+        await runtime.DeployAndWaitReadyAsync(CreatePackage(artifact));
+        var correlation = $"parallel-recovery-{suffix}";
+        await runtime.PublishTriggerAsync(trigger, version.ToString(), BusinessPayload(("value", "start")), correlation);
+        var instance = await runtime.WaitForInstanceStatusAsync(correlation, OrchestrationInstanceStatus.DeadLettered, TimeSpan.FromSeconds(90));
+        var tasks = await runtime.QueryAsync(db => db.TaskExecutions.AsNoTracking().Where(x => x.OrchestrationInstanceId == instance.Id).ToArrayAsync());
+        Assert.Equal(TaskExecutionStatus.Failed, tasks.Single(x => x.TaskKey == failing).Status);
+        Assert.Equal(TaskExecutionStatus.Completed, tasks.Single(x => x.TaskKey == first).Status);
+        Assert.Equal(TaskExecutionStatus.Completed, tasks.Single(x => x.TaskKey == second).Status);
+        Assert.DoesNotContain(tasks, x => x.TaskKey == after);
+        await using (var scope = runtime.Services.CreateAsyncScope())
+        {
+            var result = await scope.ServiceProvider.GetRequiredService<IOrchestrationRecoveryService>().RecoverTerminalAsync(instance.Id.ToString());
+            Assert.True(result.Succeeded, result.Message);
+        }
+        await runtime.WaitForInstanceStatusAsync(correlation, OrchestrationInstanceStatus.Completed, TimeSpan.FromSeconds(90));
+        Assert.Equal(2, (await AttemptsForTaskAsync(runtime, failing)).Length);
+        Assert.Single(await AttemptsForTaskAsync(runtime, first));
+        Assert.Single(await AttemptsForTaskAsync(runtime, second));
+        Assert.Single(await AttemptsForTaskAsync(runtime, after));
+    }
+
+    [Fact(Timeout = 180_000)]
     public async Task RuntimeQueriesProjectedExpirationUsingRealSqlServer()
     {
         await using var runtime = await RealMessagingRuntimeHarness.StartAsync(_infrastructure);
