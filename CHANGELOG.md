@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ------
 
+## [v6.4.1] - 2026-11-12
+
+### Fixed
+
+- Prioritize expired task response deadlines over legacy waits without a projected deadline, preventing those waits from filling the timeout repair batch ahead of expired parallel tasks.
+- Recover a missing task waiting timestamp from the confirmed dispatch during saga reconciliation, and process an expired projected deadline even when the waiting timestamp is missing.
+- Validate the current attempt and its confirmed dispatch before applying a timeout or its grace period.
+
+------
+
 ## [v6.4.0] - 2026-11-12
 
 ### Added
