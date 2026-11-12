@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, ITaskExecutionAttemptRepository, ITaskExecutionAttemptBatchReader
+internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, ITaskExecutionAttemptRepository, ITaskExecutionAttemptBatchReader, ITaskExecutionAttemptSummaryBatchReader
 {
     public TaskExecutionAttemptRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -49,6 +49,32 @@ internal sealed class TaskExecutionAttemptRepository : RuntimeRepositoryBase, IT
         foreach (var batch in taskExecutionIds.Distinct().Chunk(200))
             results.AddRange(await DbContext.TaskExecutionAttempts.AsNoTracking()
                 .Where(x => batch.Contains(x.TaskExecutionId)).ToArrayAsync(cancellationToken));
+        return results;
+    }
+
+    public async Task<IReadOnlyCollection<TaskExecutionAttempt>> GetSummariesByTaskExecutionIds(
+        IReadOnlyCollection<Id> taskExecutionIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(taskExecutionIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        var results = new List<TaskExecutionAttempt>();
+        foreach (var batch in taskExecutionIds.Distinct().Chunk(200))
+        {
+            var rows = await DbContext.TaskExecutionAttempts.AsNoTracking()
+                .Where(x => batch.Contains(x.TaskExecutionId))
+                .Select(x => new
+                {
+                    x.Id, x.TaskExecutionId, x.AttemptNumber, x.Status, x.StartedOnUtc, x.WaitingSinceUtc,
+                    x.CompletedOnUtc, x.FailedOnUtc, x.TimedOutOnUtc, x.ErrorCode, x.ErrorMessage
+                }).ToArrayAsync(cancellationToken);
+            results.AddRange(rows.Select(x => new TaskExecutionAttempt
+            {
+                Id = x.Id, TaskExecutionId = x.TaskExecutionId, AttemptNumber = x.AttemptNumber,
+                Status = x.Status, StartedOnUtc = x.StartedOnUtc, WaitingSinceUtc = x.WaitingSinceUtc,
+                CompletedOnUtc = x.CompletedOnUtc, FailedOnUtc = x.FailedOnUtc, TimedOutOnUtc = x.TimedOutOnUtc,
+                ErrorCode = x.ErrorCode, ErrorMessage = x.ErrorMessage
+            }));
+        }
         return results;
     }
 

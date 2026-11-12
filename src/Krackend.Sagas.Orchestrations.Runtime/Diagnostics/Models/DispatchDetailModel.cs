@@ -16,4 +16,12 @@ public sealed record DispatchDetailModel(
     string FailureReason,
     string RequestPayload,
     string Metadata,
-    string TaskExecutionAttemptId = null);
+    string TaskExecutionAttemptId = null)
+{
+    /// <summary>Orchestration metadata prepared for this delivery.</summary>
+    public string MessageMetadata { get; init; }
+    /// <summary>Propagation metadata prepared for this delivery.</summary>
+    public string PropagationMetadata { get; init; }
+    /// <summary>Whether message metadata is a persisted snapshot or reconstructed.</summary>
+    public string MessageMetadataSource { get; init; }
+}

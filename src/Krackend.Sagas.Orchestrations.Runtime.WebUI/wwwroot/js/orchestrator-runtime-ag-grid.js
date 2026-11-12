@@ -7,7 +7,7 @@
     const workspace = root.querySelector('[data-workspace]');
     const inspector = window.KrackendInstanceInspector.create(root, workspace, () => { selected = null; scheduleInspectorFit(); });
     const counts = { total: 0, running: 0, idle: 0, completed: 0, deadLettered: 0, failed: 0 };
-    const pending = [], seen = new Set(), selectedRows = new Map();
+    const pending = [], seen = new Set();
     let hours = 24, statusGroup = '', compact = false, selected = null, countsRequest, sparkRequest, searchTimer, liveTimer, countsTimer, sparkTimer, inspectorTimer, pendingInspectorId, inspectorFitTimer;
     let revision = 0;
     let snapshotEnd = new Date(), snapshotTotal = null, flushedAppends = 0, layoutRevision = 0;
@@ -48,11 +48,6 @@
         return agGrid.themeQuartz.withParams({ accentColor: c('--primary', '#087a57'), backgroundColor: c('--surface', '#fff'),
             foregroundColor: c('--text', '#15251f'), borderColor: c('--border', '#d6e2dc'), fontSize: 10, spacing: 6 });
     }
-    function loadedRows(gridApi) {
-        const rows = [];
-        gridApi.forEachNode(node => { if (node.data) rows.push(node.data); });
-        return rows;
-    }
     function listUrl(startRow) {
         const url = new URL(root.dataset.source, location.href);
         url.searchParams.set('page', String(Math.floor(startRow / 25) + 1));
@@ -64,51 +59,18 @@
         if (statusGroup) url.searchParams.set('statusGroup', statusGroup);
         return url;
     }
-    function updateSelection(gridApi) {
-        root.querySelector('[data-selection-bar]').hidden = selectedRows.size === 0;
-        root.querySelector('[data-selection-count]').textContent = String(selectedRows.size);
-        const header = grid.querySelector('[data-select-loaded]'), rows = loadedRows(gridApi);
-        if (header) {
-            const checked = rows.filter(row => selectedRows.has(String(row.id))).length;
-            header.checked = rows.length > 0 && checked === rows.length;
-            header.indeterminate = checked > 0 && checked < rows.length;
-            header.disabled = rows.length === 0;
-        }
-    }
-    class SelectionHeader {
-        init(params) {
-            this.element = document.createElement('input'); this.element.type = 'checkbox';
-            this.element.dataset.selectLoaded = ''; this.element.setAttribute('aria-label', 'Select loaded rows');
-            this.element.title = 'Select loaded rows';
-            this.element.addEventListener('change', () => {
-                const checked = this.element.checked;
-                root.querySelector('[data-selection-message]').textContent = '';
-                loadedRows(params.api).forEach(row => checked ? selectedRows.set(String(row.id), row) : selectedRows.delete(String(row.id)));
-                params.api.refreshCells({ columns: ['selection'], force: true });
-                updateSelection(params.api);
-            });
-        }
-        getGui() { return this.element; }
-    }
     const columnDefs = [
-        { colId: 'selection', width: 42, minWidth: 42, maxWidth: 42, pinned: 'left', sortable: false, resizable: false, headerComponent: SelectionHeader,
-            cellRenderer: p => { if (!p.data) return ''; const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
-                checkbox.checked = selectedRows.has(String(p.data.id)); checkbox.setAttribute('aria-label', `Select ${p.data.sagaId || p.data.id}`);
-                checkbox.addEventListener('click', e => e.stopPropagation()); checkbox.addEventListener('change', () => {
-                    if (checkbox.checked) selectedRows.set(String(p.data.id), p.data); else selectedRows.delete(String(p.data.id)); updateSelection(p.api);
-                }); return checkbox; } },
-        { field: 'orchestrationLabel', headerName: 'Orchestration', pinned: 'left', width: 195,
+        { field: 'orchestrationLabel', headerName: 'Orchestration', pinned: 'left', minWidth: 170, flex: 1.3,
             cellRenderer: p => p.data ? `<div class="orchestration-cell"><span class="orchestration-glyph"><i class="bi bi-bezier2"></i></span><span class="orchestration-copy"><strong>${escape(p.data.orchestrationDefinitionKey)}</strong><small>${escape(p.data.orchestrationVersion || '')}</small></span></div>` : '' },
-        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID']].map(([field, headerName]) => ({ field, headerName, width: 145,
-            cellRenderer: p => p.data ? `<div class="mono-cell"><span>${escape(p.value || '—')}</span><button class="copy-id" type="button" aria-label="Copy ${headerName}"><i class="bi bi-copy"></i></button></div>` : '' })),
-        { field: 'status', headerName: 'Status', width: 110, cellRenderer: p => p.data ? rowStatus(p.data) : '' },
-        { field: 'progress', headerName: 'Progress', width: 105, sortable: false,
+        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID'], ['traceId', 'Trace ID']].map(([field, headerName]) => ({ field, headerName, minWidth: 115, flex: 1,
+            cellRenderer: p => p.data ? `<div class="mono-cell"><span title="${escape(p.value || '')}">${escape(p.value || '—')}</span>${p.value ? `<button class="copy-id" type="button" aria-label="Copy ${headerName}"><i class="bi bi-copy"></i></button>` : ''}</div>` : '' })),
+        { field: 'status', headerName: 'Status', width: 105, cellRenderer: p => p.data ? rowStatus(p.data) : '' },
+        { field: 'progress', headerName: 'Progress', width: 100, sortable: false,
             cellRenderer: p => { if (!p.data) return ''; const n = progress(p.data); return n == null ? '—' : `<div class="progress-cell"><div class="progress-cell-track"><span style="width:${n}%"></span></div><small>${n}%</small></div>`; } },
-        { field: 'currentStageKey', headerName: 'Current workflow', minWidth: 150, flex: 1, sortable: false,
+        { field: 'currentStageKey', headerName: 'Current workflow', minWidth: 125, flex: 1, sortable: false,
             cellRenderer: p => p.data ? `<div class="workflow-cell"><strong>${escape(p.data.currentStageKey || p.data.lastExecutedStageKey || '—')}</strong><small>${escape(p.data.currentTaskKey || p.data.lastExecutedTaskKey || '')}</small></div>` : '' },
-        { field: 'retryCount', headerName: 'Retries', width: 80, sortable: false },
-        { field: 'startedOnUtc', headerName: 'Started', width: 105, cellRenderer: p => p.data ? relativeDate(p.value) : '' },
-        { field: 'lastUpdatedOnUtc', headerName: 'Updated', width: 105, cellRenderer: p => p.data ? relativeDate(p.value) : '' },
+        { field: 'startedOnUtc', headerName: 'Started', width: 95, cellRenderer: p => p.data ? relativeDate(p.value) : '' },
+        { field: 'lastUpdatedOnUtc', headerName: 'Updated', width: 95, cellRenderer: p => p.data ? relativeDate(p.value) : '' },
         { headerName: 'Duration', width: 80, sortable: false, cellRenderer: p => p.data ? duration(p.data) : '' }
     ];
     let api;
@@ -156,7 +118,6 @@
     api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20,
         maxConcurrentDatasourceRequests: 1, blockLoadDebounceMillis: 100, columnDefs, defaultColDef: { sortable: false, resizable: true, minWidth: 80 },
         rowHeight: 45, headerHeight: 34, getRowId: p => String(p.data.id), suppressMultiSort: true,
-        onModelUpdated: e => updateSelection(e.api),
         onCellClicked: e => { if (!e.data) return; if (e.event?.target?.closest('.copy-id')) { navigator.clipboard?.writeText(String(e.value || '')); return; } if (!e.event?.target?.closest('input, button, a')) renderInspector(e.data); },
         onCellKeyDown: e => { if (e.data && e.event?.key === 'Enter' && !e.event.target?.closest('input, button, a')) { e.event.preventDefault(); renderInspector(e.data); } } });
     function refresh() { revision++; layoutRevision++; snapshotEnd = new Date(); snapshotTotal = null; flushedAppends = 0; appended.length = 0; appendedById.clear(); snapshotPages.clear(); snapshotRows.clear(); api.setGridOption('datasource', datasource); }
@@ -205,15 +166,6 @@
     root.querySelector('[data-runtime-refresh]').addEventListener('click', () => { inspector.close(); refresh(); void refreshCounts(); void refreshSparks(); });
     root.querySelector('[data-density]').addEventListener('click', () => { compact = !compact; api.setGridOption('rowHeight', compact ? 35 : 45); api.resetRowHeights(); });
     root.querySelector('[data-fit-columns]').addEventListener('click', () => api.sizeColumnsToFit());
-    root.querySelector('[data-inspect-selected]').addEventListener('click', () => { const first = selectedRows.values().next().value; if (first) renderInspector(first); });
-    root.querySelector('[data-copy-selected]').addEventListener('click', async event => {
-        const button = event.currentTarget, ids = [...selectedRows.values()].map(row => row.sagaId || row.id).join('\n');
-        if (!ids) return;
-        try { await navigator.clipboard.writeText(ids); button.textContent = 'Copied'; }
-        catch { button.textContent = 'Clipboard unavailable'; }
-        setTimeout(() => { button.innerHTML = '<i class="bi bi-copy"></i> Copy IDs'; }, 2000);
-    });
-    root.querySelector('[data-clear-selection]').addEventListener('click', () => { selectedRows.clear(); api.refreshCells({ columns: ['selection'], force: true }); updateSelection(api); });
     const scheduleCounts = () => { if (!countsTimer) countsTimer = setTimeout(() => { countsTimer = 0; void refreshCounts(); }, 15000); };
     function appendRow(row) {
         const id = String(row.id);
@@ -244,7 +196,7 @@
         if (term && !['orchestrationDefinitionKey', 'correlationId', 'sagaId', 'executionKey', 'orchestrationInstanceId']
             .some(key => String(value(event, key) || '').toLowerCase().includes(term))) return;
         const row = { id, orchestrationDefinitionKey: value(event, 'orchestrationDefinitionKey'), orchestrationVersion: value(event, 'orchestrationVersion'),
-            sagaId: value(event, 'sagaId'), correlationId: value(event, 'correlationId'), executionKey: value(event, 'executionKey'), status,
+            sagaId: value(event, 'sagaId'), correlationId: value(event, 'correlationId'), traceId: value(event, 'traceId'), executionKey: value(event, 'executionKey'), status,
             startedOnUtc: value(event, 'startedOnUtc'), lastUpdatedOnUtc: value(event, 'lastUpdatedOnUtc') || value(event, 'occurredOnUtc'),
             completedTaskCount: value(event, 'completedTaskCount'), totalTaskCount: value(event, 'totalTaskCount'),
             currentStageKey: value(event, 'currentStageKey'), currentTaskKey: value(event, 'currentTaskKey'),
@@ -306,6 +258,7 @@
         }
         if (!current) return;
         const next = { ...current, status: publicStatus(value(event, 'instanceStatus') || current.status),
+            traceId: value(event, 'traceId') || current.traceId,
             currentStageKey: value(event, 'currentStageKey') ?? current.currentStageKey, currentTaskKey: value(event, 'currentTaskKey') ?? current.currentTaskKey,
             lastExecutedStageKey: value(event, 'lastExecutedStageKey') ?? current.lastExecutedStageKey, lastExecutedTaskKey: value(event, 'lastExecutedTaskKey') ?? current.lastExecutedTaskKey,
             lastUpdatedOnUtc: value(event, 'lastUpdatedOnUtc') || value(event, 'occurredOnUtc') || current.lastUpdatedOnUtc,
@@ -313,7 +266,7 @@
             totalTaskCount: value(event, 'progressKnown') === false ? null : value(event, 'totalTaskCount') ?? current.totalTaskCount };
         if (appendedIndex !== undefined) appended[appendedIndex] = next;
         const cached = snapshotRows.get(id); if (cached) Object.assign(cached, next);
-        node?.setData(next); if (selectedRows.has(id)) selectedRows.set(id, next); if (selected?.id === id) {
+        node?.setData(next); if (selected?.id === id) {
             selected = next; inspector.update(next);
             if (/^Stage/i.test(transition)) {
                 pendingInspectorId = id;

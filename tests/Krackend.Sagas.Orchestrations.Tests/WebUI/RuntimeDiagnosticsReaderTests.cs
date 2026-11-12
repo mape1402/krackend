@@ -148,11 +148,71 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
+    public async Task DetailSectionLoadsOnlyItsRelevantHistory()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        var reader = CreateReader(store);
+        var execution = await reader.GetDetailForSection(store.Instance.Id.ToString(), "execution");
+        var activity = await reader.GetDetailForSection(store.Instance.Id.ToString(), "activity");
+        var compensations = await reader.GetDetailForSection(store.Instance.Id.ToString(), "compensations");
+        Assert.Empty(execution.Transitions);
+        Assert.Empty(execution.Compensations);
+        Assert.NotEmpty(activity.Transitions);
+        Assert.Empty(activity.Compensations);
+        Assert.Empty(compensations.Transitions);
+        Assert.NotEmpty(compensations.Compensations);
+    }
+
+    [Fact]
+    public async Task DetailSectionLoadsDispatchAndPayloadOnlyForSelectedAttempt()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Attempt.RequestPayload = JsonNode.Parse("""{"id":9007199254740993}""");
+        var attempts = new BatchAttemptRepository(store, [store.Attempt]);
+        var dispatches = new BatchDispatchRepository(store, [store.Dispatch], []);
+        var reader = CreateReader(store, attempts, dispatches);
+
+        var taskView = await reader.GetDetailForSection(store.Instance.Id.ToString(), "task");
+        var summaryAttempt = Assert.Single(Assert.Single(taskView.Tasks).Attempts);
+        Assert.Null(summaryAttempt.Dispatch);
+        Assert.Empty(summaryAttempt.RequestPayload);
+        Assert.Equal(0, dispatches.IdCalls);
+        Assert.Equal(0, dispatches.AttemptCalls);
+
+        var selection = new RuntimeDetailSelection(store.Stage.StageKey, store.Task.TaskKey, store.Stage.Id.ToString(), store.Task.Id.ToString(), store.Attempt.AttemptNumber);
+        var attemptView = await reader.GetDetailForSection(store.Instance.Id.ToString(), "attempt", selection: selection);
+        var selected = Assert.Single(Assert.Single(attemptView.Tasks).Attempts);
+        Assert.Contains("9007199254740993", selected.RequestPayload);
+        Assert.NotNull(selected.Dispatch);
+        Assert.Equal(1, dispatches.IdCalls);
+        Assert.Equal(0, dispatches.AttemptCalls);
+    }
+
+    [Fact]
+    public async Task DetailSectionUsesAttemptSummariesBeforeLoadingSelectedAttempt()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Attempt.RequestPayload = JsonNode.Parse("""{"value":"kept"}""");
+        var attempts = new SummaryAttemptRepository(store);
+        var reader = CreateReader(store, attempts, new BatchDispatchRepository(store, [store.Dispatch], []));
+        var taskView = await reader.GetDetailForSection(store.Instance.Id.ToString(), "task");
+        Assert.Empty(Assert.Single(Assert.Single(taskView.Tasks).Attempts).RequestPayload);
+        Assert.Equal(1, attempts.SummaryCalls);
+        Assert.Equal(0, attempts.BatchCalls);
+        var selection = new RuntimeDetailSelection(store.Stage.StageKey, store.Task.TaskKey, store.Stage.Id.ToString(), store.Task.Id.ToString(), store.Attempt.AttemptNumber);
+        var attemptView = await reader.GetDetailForSection(store.Instance.Id.ToString(), "attempt", selection: selection);
+        Assert.Contains("kept", Assert.Single(Assert.Single(attemptView.Tasks).Attempts).RequestPayload);
+        Assert.Equal(2, attempts.SummaryCalls);
+        Assert.Equal(0, attempts.BatchCalls);
+    }
+
+    [Fact]
     public async Task GetSnapshotAndSummary_ReturnTrafficAndVersionedRows()
     {
         var bucket = new DateTime(2026, 8, 12, 12, 1, 0, DateTimeKind.Utc);
         var store = RuntimeDiagnosticsStore.Create();
         store.Instance.OrchestrationVersion = "1.0.0";
+        store.Instance.Metadata["TriggerTraceId"] = JsonValue.Create("trace-123");
         store.TrafficPoints = [new RuntimeTrafficPoint(bucket, 2, 3, 4, 5)];
         var reader = CreateReader(store);
 
@@ -161,6 +221,7 @@ public sealed class RuntimeDiagnosticsReaderTests
 
         var instance = Assert.Single(snapshot.Instances);
         Assert.Equal("1.0.0", instance.OrchestrationVersion);
+        Assert.Equal("trace-123", instance.TraceId);
         Assert.Equal("orders v1.0.0", instance.OrchestrationLabel);
         Assert.Equal("reserve-stock", instance.LastExecutedStageKey);
         Assert.Equal("reserve", instance.LastExecutedTaskKey);
@@ -254,7 +315,7 @@ public sealed class RuntimeDiagnosticsReaderTests
     }
 
     [Fact]
-    public async Task GetDetail_WhenConfiguredStageIsDisabled_LabelsItsStageAndTasksAsSkipped()
+    public async Task GetDetail_WhenConfiguredStageIsDisabled_OmitsIt()
     {
         var store = RuntimeDiagnosticsStore.Create();
         store.UseArtifactWithPendingConfiguredItems();
@@ -263,18 +324,11 @@ public sealed class RuntimeDiagnosticsReaderTests
 
         var detail = await reader.GetDetail(store.Instance.Id.ToString());
 
-        var disabledStage = Assert.Single(detail.Stages.Where(stage => stage.StageKey == "capture-payment"));
-        Assert.Equal("Skipped", disabledStage.Status);
-        Assert.True(disabledStage.WasSkipped);
-        Assert.Contains("Disabled in the deployed orchestration design", disabledStage.SkipReason);
-        var disabledTask = Assert.Single(disabledStage.Tasks);
-        Assert.Equal("Skipped", disabledTask.Status);
-        Assert.True(disabledTask.WasSkipped);
-        Assert.Contains("Disabled in the deployed orchestration design", disabledTask.SkipReason);
+        Assert.DoesNotContain(detail.Stages, stage => stage.StageKey == "capture-payment");
     }
 
     [Fact]
-    public async Task GetDetail_WhenConfiguredTaskIsDisabled_LabelsItAsSkippedWithoutChangingItsStage()
+    public async Task GetDetail_WhenConfiguredTaskIsDisabled_OmitsItWithoutChangingItsStage()
     {
         var store = RuntimeDiagnosticsStore.Create();
         store.UseArtifactWithPendingConfiguredItems();
@@ -284,10 +338,34 @@ public sealed class RuntimeDiagnosticsReaderTests
         var detail = await reader.GetDetail(store.Instance.Id.ToString());
 
         var stage = Assert.Single(detail.Stages.Where(candidate => candidate.StageKey == "reserve-stock"));
-        var disabledTask = Assert.Single(stage.Tasks.Where(task => task.TaskKey == "notify-customer"));
-        Assert.Equal("Skipped", disabledTask.Status);
-        Assert.True(disabledTask.WasSkipped);
-        Assert.Contains("Disabled in the deployed orchestration design", disabledTask.SkipReason);
+        Assert.DoesNotContain(stage.Tasks, task => task.TaskKey == "notify-customer");
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenExecutedEnabledTaskWasSkipped_PreservesIt()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        store.Task.WasSkipped = true;
+        store.Task.SkipReason = "Condition evaluated to false";
+        var detail = await CreateReader(store).GetDetail(store.Instance.Id.ToString());
+        var task = Assert.Single(detail.Tasks.Where(x => x.TaskKey == store.Task.TaskKey));
+        Assert.True(task.WasSkipped);
+        Assert.Equal("Condition evaluated to false", task.SkipReason);
+    }
+
+    [Fact]
+    public async Task GetDetail_WhenExecutedStageOrTaskIsDisabled_OmitsRecordedWork()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.UseArtifactWithPendingConfiguredItems();
+        store.Artifact.ArtifactPayload["stageDefinitions"]!.AsArray()[0]!["taskDefinitions"]!.AsArray()[0]!["isEnabled"] = false;
+        var taskDetail = await CreateReader(store).GetDetail(store.Instance.Id.ToString());
+        Assert.DoesNotContain(taskDetail.Tasks, task => task.TaskKey == store.Task.TaskKey);
+        store.Artifact.ArtifactPayload["stageDefinitions"]!.AsArray()[0]!["isEnabled"] = false;
+        var stageDetail = await CreateReader(store).GetDetail(store.Instance.Id.ToString());
+        Assert.DoesNotContain(stageDetail.Stages, stage => stage.StageKey == store.Stage.StageKey);
+        Assert.DoesNotContain(stageDetail.Tasks, task => task.TaskKey == store.Task.TaskKey);
     }
 
     [Fact]
@@ -590,8 +668,34 @@ public sealed class RuntimeDiagnosticsReaderTests
         var store = RuntimeDiagnosticsStore.Create();
         var attempts = new BatchAttemptRepository(store, [store.Attempt]);
         var dispatches = new BatchDispatchRepository(store, [], []);
-        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-            CreateReader(store, attempts, dispatches).GetDetail(store.Instance.Id.ToString()));
+        var detail = await CreateReader(store, attempts, dispatches).GetDetail(store.Instance.Id.ToString());
+        Assert.Null(Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch);
+    }
+
+    [Fact]
+    public async Task DetailUsesTheMessageMetadataPersistedForEachDispatch()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Dispatch.Metadata["Runtime.Delivery.Command"] = JsonNode.Parse("""
+            {"messageMetadata":{"attempt":1,"sagaId":"saved-saga"},
+             "propagationMetadata":{"items":{"audit.context":{"requestId":"saved-request"}}}}
+            """)!;
+        var detail = await CreateReader(store).GetDetail(store.Instance.Id.ToString());
+        var dispatch = Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch;
+        Assert.Equal("Persisted", dispatch.MessageMetadataSource);
+        Assert.Contains("saved-saga", dispatch.MessageMetadata);
+        Assert.Contains("saved-request", dispatch.PropagationMetadata);
+        Assert.DoesNotContain("Runtime.Delivery.Command", dispatch.PropagationMetadata);
+    }
+
+    [Fact]
+    public async Task DetailLabelsLegacyMetadataAsReconstructed()
+    {
+        var store = RuntimeDiagnosticsStore.Create();
+        store.Dispatch.Metadata.Clear();
+        var detail = await CreateReader(store).GetDetail(store.Instance.Id.ToString());
+        var dispatch = Assert.Single(Assert.Single(detail.Tasks).Attempts).Dispatch;
+        Assert.Equal("Reconstructed", dispatch.MessageMetadataSource);
     }
 
     [Fact]
@@ -1026,6 +1130,23 @@ public sealed class RuntimeDiagnosticsReaderTests
         {
             BatchCalls++;
             return Task.FromResult(attempts);
+        }
+    }
+
+    private sealed class SummaryAttemptRepository(RuntimeDiagnosticsStore store) : AttemptRepositoryStub(store), ITaskExecutionAttemptBatchReader, ITaskExecutionAttemptSummaryBatchReader
+    {
+        public int SummaryCalls { get; private set; }
+        public int BatchCalls { get; private set; }
+        public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetSummariesByTaskExecutionIds(IReadOnlyCollection<Id> ids, CancellationToken cancellationToken = default)
+        {
+            SummaryCalls++;
+            var item = store.Attempt;
+            return Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>([new TaskExecutionAttempt { Id = item.Id, TaskExecutionId = item.TaskExecutionId, AttemptNumber = item.AttemptNumber, DispatchId = item.DispatchId, Status = item.Status }]);
+        }
+        public Task<IReadOnlyCollection<TaskExecutionAttempt>> GetByTaskExecutionIds(IReadOnlyCollection<Id> ids, CancellationToken cancellationToken = default)
+        {
+            BatchCalls++;
+            return Task.FromResult<IReadOnlyCollection<TaskExecutionAttempt>>([store.Attempt]);
         }
     }
 

@@ -99,3 +99,7 @@ body:has([data-runtime-statistics]) .z-main { overflow: visible; }
 .instance-inspector .inspector-actions a { justify-content:center; }
 .instance-inspector [data-inspector-more] { color:var(--muted); font-size:9px; }
 @media(max-width:700px) { .history-workspace { height:auto; min-height:0; } .instances-reference .history-workspace .history-surface { grid-template-rows:auto auto 360px auto; } .instances-workspace.inspector-open { grid-template-columns:minmax(0,1fr) 0; } .instances-workspace .instance-inspector { position:absolute; z-index:5; top:0; right:0; bottom:0; width:min(330px,100%); box-shadow:-8px 0 24px rgba(16,24,40,.14); } }
+.mono-cell { min-width: 0; width: 100%; }
+.mono-cell > span { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono-cell > button { flex: 0 0 19px; }
+.instances-reference .ag-cell-focus:not(:focus-visible) { border-color: transparent !important; outline: none; }

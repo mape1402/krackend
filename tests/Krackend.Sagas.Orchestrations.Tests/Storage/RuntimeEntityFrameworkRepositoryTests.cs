@@ -64,6 +64,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         {
             var instance = Instance(Id.New(), status, time);
             instance.OrchestrationDefinitionKey = key; instance.OrchestrationVersion = version;
+            instance.Metadata["TriggerTraceId"] = JsonValue.Create("trace-" + time.Hour);
             await repository.Create(instance);
         }
         var catalog = Assert.IsAssignableFrom<IRuntimeInstanceCatalogRepository>(repository);
@@ -77,6 +78,7 @@ public sealed class RuntimeEntityFrameworkRepositoryTests
         var second = await catalog.GetPage(query with { PageNumber = 2 });
         Assert.Equal(2, first.TotalCount); Assert.Equal(2, second.TotalCount);
         Assert.Equal(start, Assert.Single(first.Items).StartedOnUtc);
+        Assert.Equal("trace-0", Assert.Single(first.Items).Metadata["TriggerTraceId"]!.GetValue<string>());
         Assert.Equal(start.AddHours(2), Assert.Single(second.Items).StartedOnUtc);
     }
 

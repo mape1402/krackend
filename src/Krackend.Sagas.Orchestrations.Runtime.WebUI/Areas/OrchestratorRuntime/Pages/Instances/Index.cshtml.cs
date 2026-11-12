@@ -69,6 +69,8 @@ public sealed class IndexModel : PageModel
     {
         if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out var id)) return BadRequest("The instance ID is invalid.");
         if (_stages is not IRuntimeStageSummaryReader reader) return StatusCode(503, "Stage summaries are not available.");
+        if (_diagnosticsReader is IRuntimeVisibleStageSummaryReader visible)
+            return new JsonResult(await visible.GetVisibleStageSummaries(new Id(id), 20, cancellationToken));
         return new JsonResult(await reader.GetStageSummaries(new Id(id), 20, cancellationToken));
     }
 

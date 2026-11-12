@@ -157,7 +157,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
                 x.CurrentStageKey, x.CurrentTaskKey, x.LastExecutedStageKey, x.LastExecutedTaskKey,
                 x.CurrentParallelGroupKey, x.StartedOnUtc, x.LastUpdatedOnUtc, x.WaitingSinceUtc,
                 x.CompletedOnUtc, x.FailedOnUtc, x.ErrorSummary, x.FinalOutcome, x.StoppedOnUtc,
-                x.CompensationStartedOnUtc, x.CompensatedOnUtc, x.RetryCount
+                x.CompensationStartedOnUtc, x.CompensatedOnUtc, x.RetryCount, x.Metadata
             }).ToArrayAsync(cancellationToken);
         return rows.Select(x => new OrchestrationInstance
         {
@@ -173,7 +173,7 @@ internal sealed class OrchestrationInstanceRepository : RuntimeRepositoryBase, I
             CompletedOnUtc = x.CompletedOnUtc, FailedOnUtc = x.FailedOnUtc,
             ErrorSummary = x.ErrorSummary, FinalOutcome = x.FinalOutcome, StoppedOnUtc = x.StoppedOnUtc,
             CompensationStartedOnUtc = x.CompensationStartedOnUtc, CompensatedOnUtc = x.CompensatedOnUtc,
-            RetryCount = x.RetryCount
+            RetryCount = x.RetryCount, Metadata = x.Metadata
         }).ToArray();
     }
 

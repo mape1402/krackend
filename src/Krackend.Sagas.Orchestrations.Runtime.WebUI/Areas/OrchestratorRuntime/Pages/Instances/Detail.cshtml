@@ -2,7 +2,6 @@
 @using Microsoft.AspNetCore.Html
 @using Microsoft.AspNetCore.Mvc.Rendering
 @using System.Text.Json.Nodes
-@using Zoorce.Web.UI.Timelines
 @using Krackend.Sagas.Orchestrations.Runtime.Diagnostics
 @model Krackend.Sagas.Orchestrations.Runtime.WebUI.Areas.OrchestratorRuntime.Pages.Instances.DetailModel
 @{
@@ -11,13 +10,15 @@
     var id = instance.Id;
     var section = Model.Section;
     var active = section is "stage" or "task" or "attempt" ? "execution" : section;
+    var stageCursor = string.IsNullOrWhiteSpace(instance.CurrentStageKey) ? instance.LastExecutedStageKey : instance.CurrentStageKey;
+    var taskCursor = string.IsNullOrWhiteSpace(instance.CurrentTaskKey) ? instance.LastExecutedTaskKey : instance.CurrentTaskKey;
     // The shell owns the route title. The orchestration identity is already
     // presented in the fixed saga overview, so duplicating it in the top bar
     // makes the detail page harder to scan.
     ViewData["Title"] = "Saga details";
-    string Timestamp(DateTime? value) => value.HasValue ? $"{value.Value:yyyy-MM-dd HH:mm:ss} UTC" : "—";
-    DateTime? ExecutionTimestamp(params DateTime?[] timestamps) => timestamps.FirstOrDefault(timestamp => timestamp.HasValue);
-    DateTimeOffset TimelineTime(DateTime value) => new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
+    string Timestamp(DateTime? value) => value.HasValue ? $"{value.Value:yyyy-MM-dd HH:mm:ss.fff} UTC" : "—";
+    string Duration(DateTime? start, DateTime? end) => start.HasValue && end.HasValue && end >= start ? (end.Value - start.Value).TotalSeconds < 1 ? $"{(end.Value - start.Value).TotalMilliseconds:0} ms" : $"{(end.Value - start.Value).TotalSeconds:0.##} s" : "—";
+    string JsonPart(string json, string key) { try { return (JsonNode.Parse(json)?[key])?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) ?? string.Empty; } catch { return string.Empty; } }
     string MetadataValue(string metadata, string key)
     {
         if (string.IsNullOrWhiteSpace(metadata) || metadata == "—") return string.Empty;
@@ -35,21 +36,14 @@
         if (node is JsonObject obj && obj[key] is JsonValue value && value.TryGetValue<string>(out var text)) return text ?? string.Empty;
         return string.Empty;
     }
-    ZoorceTimelineTone Tone(string status) => status?.ToLowerInvariant() switch {
-        "completed" or "succeeded" => ZoorceTimelineTone.Success,
-        "failed" or "timedout" or "deadlettered" => ZoorceTimelineTone.Danger,
-        "running" or "waiting" or "waitingresponse" => ZoorceTimelineTone.Info,
-        "skipped" or "disabled" => ZoorceTimelineTone.Warning,
-        _ => ZoorceTimelineTone.Neutral
-    };
-    IHtmlContent CopyValue(string value, string label)
+    IHtmlContent CopyValue(string value, string label, bool showValue = true)
     {
         var container = new TagBuilder("span");
         container.AddCssClass("od-copy-reference");
         var text = new TagBuilder("code");
         text.AddCssClass("od-copy-reference-value");
         text.InnerHtml.Append(string.IsNullOrWhiteSpace(value) ? "—" : value);
-        container.InnerHtml.AppendHtml(text);
+        if (showValue) container.InnerHtml.AppendHtml(text);
         if (!string.IsNullOrWhiteSpace(value))
         {
             var button = new TagBuilder("button");
@@ -63,19 +57,6 @@
         }
         return container;
     }
-    ZoorceTimelineItem[] ActivityItems() => detail.Transitions.OrderBy(item => item.OccurredOnUtc).Select(item => new ZoorceTimelineItem(
-        item.Id, new DateTimeOffset(DateTime.SpecifyKind(item.OccurredOnUtc, DateTimeKind.Utc)), item.TransitionType,
-        $"{Timestamp(item.OccurredOnUtc)} · {item.Message}", Tone: Tone(item.ToStatus),
-        Metadata: new Dictionary<string, string> { ["Status"] = $"{item.FromStatus} → {item.ToStatus}" })).ToArray();
-    ZoorceTimelineItem[] CompensationItems() => detail.Compensations
-        .Select(item => new { Item = item, Timestamp = ExecutionTimestamp(item.StartedOnUtc, item.CompletedOnUtc, item.FailedOnUtc) })
-        .Where(entry => entry.Timestamp.HasValue)
-        .OrderBy(entry => entry.Timestamp)
-        .Select(entry => new ZoorceTimelineItem(
-            entry.Item.Id, TimelineTime(entry.Timestamp!.Value), entry.Item.CompensationTaskKey,
-            $"{entry.Item.Status} · source: {entry.Item.SourceTaskKey}", Tone: Tone(entry.Item.Status),
-            Metadata: new Dictionary<string, string> { ["Source task"] = entry.Item.SourceTaskKey }))
-        .ToArray();
 }
 @section Head {
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
@@ -88,38 +69,23 @@
                 <p class="od-instance-overview-kicker">Orchestration execution</p>
                 <h1>@instance.OrchestrationLabel</h1>
             </div>
-            <span class="od-status @instance.StatusClass" data-instance-status>@instance.Status</span>
+            <div class="od-overview-actions"><span class="od-status @instance.StatusClass" data-instance-status>@instance.Status</span>
+            @if (Model.CanRecover) { <button type="button" class="z-button z-button-primary od-action-button" data-recover-dialog-open><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Recover saga</button> }
+            @if (Model.CanReconcile) { <form method="post" asp-page-handler="Reconcile" data-orchestrator-busy="true" data-busy-title="Reconciling saga"><input type="hidden" name="instanceId" value="@instance.Id" /><button type="submit" class="z-button z-button-secondary od-action-button"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Reconcile saga</button></form> }</div>
         </div>
         <div class="od-instance-overview-facts">
-            <section class="od-instance-reference-group" aria-label="Saga references">
-                <div class="od-instance-reference-list">
-                    <div><span>Saga ID</span>@CopyValue(instance.SagaId, "saga ID")</div>
-                    <div><span>Correlation ID</span>@CopyValue(instance.CorrelationId, "correlation ID")</div>
-                    @if (!string.IsNullOrWhiteSpace(Model.TraceId)) { <div><span>Trace ID</span>@CopyValue(Model.TraceId, "trace ID")</div> }
-                </div>
-            </section>
-            <section class="od-instance-lifecycle-group" aria-label="Saga lifecycle">
-                <div><span>Started</span><strong>@Timestamp(instance.StartedOnUtc)</strong></div>
-                <div><span>Last updated</span><strong data-instance-last-updated>@Timestamp(instance.LastUpdatedOnUtc)</strong></div>
-                <div><span>Progress</span><strong data-instance-progress data-completed-tasks="@instance.CompletedTaskCount" data-total-tasks="@instance.TotalTaskCount">@instance.CompletedTaskCount/@instance.TotalTaskCount enabled tasks</strong></div>
-            </section>
+            <div class="od-overview-fact"><span>Saga ID</span>@CopyValue(instance.SagaId, "saga ID")</div>
+            <div class="od-overview-fact"><span>Correlation ID</span>@CopyValue(instance.CorrelationId, "correlation ID")</div>
+            <div class="od-overview-fact"><span>Trace ID</span>@CopyValue(Model.TraceId, "trace ID")</div>
+            <div class="od-overview-fact"><span>Started</span><strong>@Timestamp(instance.StartedOnUtc)</strong></div>
+            <div class="od-overview-fact"><span>Last updated</span><strong data-instance-last-updated>@Timestamp(instance.LastUpdatedOnUtc)</strong></div>
+            <div class="od-overview-fact"><span>Duration</span><strong>@Duration(instance.StartedOnUtc, instance.CompletedOnUtc ?? instance.FailedOnUtc ?? instance.StoppedOnUtc ?? DateTime.UtcNow)</strong></div>
         </div>
         <p class="od-instance-live-update" data-instance-live-update hidden aria-live="polite">
             <span class="od-live-dot" aria-hidden="true"></span><span data-instance-live-update-text></span>
         </p>
-        @if (Model.CanRecover)
-        {
-            <button type="button" class="z-button z-button-primary od-instance-replay" data-recover-dialog-open>
-                <i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Recover saga</span>
-            </button>
-        }
-        @if (Model.CanReconcile)
-        {
-            <form method="post" asp-page-handler="Reconcile" data-orchestrator-busy="true" data-busy-title="Reconciling saga">
-                <input type="hidden" name="instanceId" value="@instance.Id" />
-                <button type="submit" class="z-button z-button-primary od-instance-replay"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Reconcile saga</span></button>
-            </form>
-        }
+        @if (!string.IsNullOrWhiteSpace(instance.ErrorSummary) && instance.Status is "Failed" or "DeadLettered") { <p class="od-instance-error"><i class="bi bi-exclamation-circle"></i> @instance.ErrorSummary @CopyValue(instance.ErrorSummary, "saga error", false) @if (!string.IsNullOrWhiteSpace(stageCursor) && !string.IsNullOrWhiteSpace(taskCursor)) { <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stageCursor" asp-route-taskKey="@taskCursor">View task</a> }</p> }
+        @if (detail.ArtifactAvailable == false) { <p class="od-instance-operation-message">The deployed artifact is unavailable; configured names and pending work may be incomplete.</p> }
         @if (!string.IsNullOrWhiteSpace(Model.RecoveryMessage))
         {
             <p class="od-instance-operation-message od-instance-operation-@((TempData["RecoveryTone"]?.ToString()) ?? "neutral")">@Model.RecoveryMessage</p>
@@ -134,116 +100,100 @@
     </nav>
 
     <div class="od-trace-content">
+    <div class="od-detail-toast" data-detail-toast role="status" aria-live="polite" hidden></div>
     @if (section == "activity")
     {
+        var attemptsById = detail.Tasks.SelectMany(t => t.Attempts).ToLookup(a => a.Id);
         <section class="od-trace-section od-activity-workspace" aria-label="Saga activity">
-            <div class="od-trace-heading"><div><h2>Activity</h2><p>Every persisted transition, ordered by its full UTC timestamp.</p></div><button type="button" class="z-button z-button-secondary" data-transition-drawer-toggle aria-expanded="false">Transition details</button></div>
-            <div class="od-activity-timeline">
-            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "instance-activity-timeline", AriaLabel = "Saga activity", Variant = ZoorceTimelineVariant.Rail, Orientation = ZoorceTimelineOrientation.Vertical, OverflowMode = ZoorceTimelineOverflowMode.Stack, ShowOverflowControls = false, GroupBy = ZoorceTimelineGroupBy.None, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = true, ShowRelativeTime = false, ShowMetadata = true, Interaction = ZoorceTimelineInteraction.Select, Items = ActivityItems(), EmptyMessage = "No activity has been recorded." })
-            </div>
-            <aside class="od-transition-drawer" data-transition-drawer hidden aria-label="Selected transition">
-                <div class="od-transition-drawer-heading"><strong>Transition details</strong><button type="button" class="z-button z-button-ghost" data-transition-drawer-close aria-label="Close transition details"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
-                <p data-transition-placeholder>Select an item from the timeline.</p>
-                @foreach (var transition in detail.Transitions.OrderBy(x => x.OccurredOnUtc))
-                {
-                    <article data-transition-details="@transition.Id" hidden>
-                        <dl class="od-trace-fields"><dt>Transition</dt><dd>@transition.TransitionType</dd><dt>At</dt><dd>@Timestamp(transition.OccurredOnUtc)</dd><dt>Status</dt><dd>@transition.FromStatus → @transition.ToStatus</dd><dt>Stage</dt><dd>@transition.StageKey</dd><dt>Task</dt><dd>@transition.TaskKey</dd><dt>Attempt ID</dt><dd>@CopyValue(transition.TaskExecutionAttemptId, "attempt ID")</dd><dt>Source</dt><dd>@transition.ProducedBy</dd><dt>Message</dt><dd>@transition.Message</dd></dl>
-                        @if (!string.IsNullOrEmpty(transition.StageKey)) { <a class="z-button z-button-secondary" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="@(string.IsNullOrEmpty(transition.TaskKey) ? "stage" : "task")" asp-route-stageKey="@transition.StageKey" asp-route-taskKey="@transition.TaskKey">Open execution</a> }
-                        <div class="od-json-block"><div><span>Payload</span>@CopyValue(transition.Payload, "transition payload")</div><pre class="od-json-view" data-json-view>@transition.Payload</pre></div>
-                    </article>
-                }
-            </aside>
+            <div class="od-trace-heading"><div><h2>Activity</h2><p>Persisted transitions in chronological order, UTC.</p></div><span class="od-trace-count">@detail.Transitions.Count events</span></div>
+            <div class="od-activity-filters"><label>Stage <select data-activity-stage><option value="">All stages</option>@foreach (var key in detail.Transitions.Select(x => x.StageKey).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct()) { <option value="@key">@key</option> }</select></label><label>Task <select data-activity-task><option value="">All tasks</option>@foreach (var key in detail.Transitions.Select(x => x.TaskKey).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct()) { <option value="@key">@key</option> }</select></label><label>Attempt <select data-activity-attempt><option value="">All attempts</option>@foreach (var item in detail.Tasks.SelectMany(x => x.Attempts.Select(a => new { Task = x.TaskKey, Attempt = a }))) { <option value="@item.Attempt.Id">@item.Task · Attempt @item.Attempt.AttemptNumber</option> }</select></label><label>Event <input type="search" data-activity-query placeholder="Filter events" /></label></div>
+            <div class="od-activity-list">@foreach (var transition in detail.Transitions.OrderBy(x => x.OccurredOnUtc)) {
+                var linkedAttempt = attemptsById[transition.TaskExecutionAttemptId ?? string.Empty].FirstOrDefault();
+                <details class="od-event" data-activity-item data-stage="@transition.StageKey" data-task="@transition.TaskKey" data-attempt="@transition.TaskExecutionAttemptId" data-event="@transition.TransitionType @transition.Message">
+                    <summary><time>@Timestamp(transition.OccurredOnUtc)</time><span><strong>@transition.TransitionType</strong><small>@transition.Message</small></span><span class="od-event-status">@transition.FromStatus → @transition.ToStatus</span></summary>
+                    <dl class="od-trace-fields"><dt>Stage</dt><dd>@transition.StageKey</dd><dt>Task</dt><dd>@transition.TaskKey</dd><dt>Attempt ID</dt><dd>@CopyValue(transition.TaskExecutionAttemptId, "attempt ID")</dd><dt>Source</dt><dd>@transition.ProducedBy</dd><dt>Transition ID</dt><dd>@CopyValue(transition.Id, "transition ID")</dd></dl>
+                    @if (!string.IsNullOrEmpty(transition.StageKey)) { <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="@(linkedAttempt is not null ? "attempt" : string.IsNullOrEmpty(transition.TaskKey) ? "stage" : "task")" asp-route-stageKey="@transition.StageKey" asp-route-taskKey="@transition.TaskKey" asp-route-stageExecutionId="@transition.StageExecutionId" asp-route-taskExecutionId="@transition.TaskExecutionId" asp-route-attempt="@linkedAttempt?.AttemptNumber">Open execution</a> }
+                    @if (!string.IsNullOrWhiteSpace(transition.Payload)) { <div class="od-json-block"><div><span>Transition payload</span>@CopyValue(transition.Payload, "transition payload", false)</div><pre class="od-json-view" data-json-view>@transition.Payload</pre></div> }
+                </details>
+            }</div><p class="od-empty-filter" data-activity-empty hidden>No matching events.</p>
         </section>
     }
     else if (section == "execution")
     {
-        var recordedStages = detail.Stages
-            .Select(stage => new { Stage = stage, Timestamp = ExecutionTimestamp(stage.StartedOnUtc, stage.CompletedOnUtc, stage.FailedOnUtc) })
-            .Where(entry => entry.Timestamp.HasValue)
-            .OrderBy(entry => entry.Timestamp)
-            .ToArray();
-        var stages = recordedStages.Select((entry, index) => new ZoorceTimelineItem($"stage-{index}", TimelineTime(entry.Timestamp!.Value), entry.Stage.ConfiguredName ?? entry.Stage.StageKey, entry.Stage.Status, Tone: Tone(entry.Stage.Status), TargetUrl: Url.Page("./Detail", new { instanceId = id, section = "stage", stageKey = entry.Stage.StageKey }))).ToArray();
-        var skippedStages = detail.Stages.Where(stage => !ExecutionTimestamp(stage.StartedOnUtc, stage.CompletedOnUtc, stage.FailedOnUtc).HasValue && (stage.WasSkipped || string.Equals(stage.Status, "Skipped", StringComparison.OrdinalIgnoreCase) || string.Equals(stage.Status, "Disabled", StringComparison.OrdinalIgnoreCase))).OrderBy(stage => stage.Order).ToArray();
-        <section class="od-trace-section od-trace-timeline"><div class="od-trace-heading"><div><h2>Stages</h2><p>Each stage is a durable step in this saga.</p></div><span class="od-trace-count">@detail.Stages.Count stages</span></div>
-            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "instance-stages-timeline", AriaLabel = "Stages", Variant = ZoorceTimelineVariant.Rail, Orientation = ZoorceTimelineOrientation.Vertical, OverflowMode = ZoorceTimelineOverflowMode.Stack, ShowOverflowControls = false, GroupBy = ZoorceTimelineGroupBy.None, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = true, ShowRelativeTime = false, ShowMetadata = false, Interaction = ZoorceTimelineInteraction.Navigate, Items = stages, EmptyMessage = "No persisted stage execution has been recorded." })
-            @if (skippedStages.Length > 0)
-            {
-                <div class="od-trace-unrecorded" aria-label="Stages skipped by design"><span>Skipped by design</span>@foreach (var skippedStage in skippedStages) { <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@skippedStage.StageKey"><strong>@(skippedStage.ConfiguredName ?? skippedStage.StageKey)</strong><span class="od-status @skippedStage.StatusClass">@skippedStage.Status</span><small>@(string.IsNullOrWhiteSpace(skippedStage.SkipReason) ? "No stage execution was scheduled." : skippedStage.SkipReason)</small></a> }</div>
-            }
+        <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Execution</h2><p>Stages in the configured order, including pending and skipped work.</p></div><span class="od-trace-count">@detail.Stages.Count stages</span></div>
+            <div class="od-execution-cards">@foreach (var stage in detail.Stages) {
+                <a class="od-execution-card" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey" asp-route-stageExecutionId="@stage.Id">
+                    <span class="od-execution-icon"><i class="bi bi-layers"></i></span><span class="od-execution-name"><strong>@(stage.ConfiguredName ?? stage.StageKey)</strong><small>@stage.Tasks.Count tasks · @(stage.HasExecution ? Timestamp(stage.StartedOnUtc) : stage.WasSkipped ? "Disabled or skipped" : "Not started")</small></span><span class="od-status @stage.StatusClass">@stage.Status</span><i class="bi bi-chevron-right"></i>
+                </a>
+            }</div>
         </section>
     }
     else if (section == "stage")
     {
         var stage = Model.Stage;
-        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a class="od-trace-breadcrumb-root" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution"><i class="bi bi-diagram-3" aria-hidden="true"></i><span>Stages</span></a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><span class="od-trace-breadcrumb-current">@(stage.ConfiguredName ?? stage.StageKey)</span></nav>
-        <section class="od-trace-section od-trace-context-panel"><div class="od-trace-heading"><div><h2>@(stage.ConfiguredName ?? stage.StageKey)</h2><p>Stage context and enabled work.</p></div><span class="od-status @stage.StatusClass">@stage.Status</span></div><div class="od-trace-summary"><div><span>Stage ID</span>@CopyValue(stage.Id, "stage ID")</div><div><span>Started</span><strong>@Timestamp(stage.StartedOnUtc)</strong></div><div><span>Completed</span><strong>@Timestamp(stage.CompletedOnUtc)</strong></div><div><span>Condition</span><strong>@stage.ExecutionConditionResult</strong></div></div>@if (!string.IsNullOrWhiteSpace(stage.ErrorSummary)) { <p class="od-trace-error">@stage.ErrorSummary</p> }@if (!string.IsNullOrWhiteSpace(stage.Metadata) && stage.Metadata != "—") { <div class="od-json-block"><div><span>Stage metadata</span>@CopyValue(stage.Metadata, "stage metadata")</div><pre class="od-json-view" data-json-view>@stage.Metadata</pre></div> }</section>
-        var recordedTasks = stage.Tasks
-            .Select(task => new { Task = task, Timestamp = ExecutionTimestamp(task.StartedOnUtc, task.WaitingSinceUtc, task.CompletedOnUtc, task.FailedOnUtc, task.TimedOutOnUtc) })
-            .Where(entry => entry.Timestamp.HasValue)
-            .OrderBy(entry => entry.Timestamp)
-            .ToArray();
-        var tasks = recordedTasks.Select((entry, index) => new ZoorceTimelineItem($"task-{index}", TimelineTime(entry.Timestamp!.Value), entry.Task.ConfiguredName ?? entry.Task.TaskKey, entry.Task.Status, Tone: Tone(entry.Task.Status), TargetUrl: Url.Page("./Detail", new { instanceId = id, section = "task", stageKey = stage.StageKey, taskKey = entry.Task.TaskKey }))).ToArray();
-        var skippedTasks = stage.Tasks.Where(task => !ExecutionTimestamp(task.StartedOnUtc, task.WaitingSinceUtc, task.CompletedOnUtc, task.FailedOnUtc, task.TimedOutOnUtc).HasValue && (task.WasSkipped || string.Equals(task.Status, "Skipped", StringComparison.OrdinalIgnoreCase) || string.Equals(task.Status, "Disabled", StringComparison.OrdinalIgnoreCase))).OrderBy(task => task.Order).ToArray();
-        <section class="od-trace-section od-trace-timeline"><div class="od-trace-heading"><div><h2>Tasks</h2><p>Tasks run within this stage. Disabled design tasks are explicitly marked as skipped.</p></div><span class="od-trace-count">@stage.Tasks.Count tasks</span></div>
-            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "stage-tasks-timeline", AriaLabel = "Tasks", Variant = ZoorceTimelineVariant.Activity, Orientation = ZoorceTimelineOrientation.Vertical, OverflowMode = ZoorceTimelineOverflowMode.Stack, ShowOverflowControls = false, GroupBy = ZoorceTimelineGroupBy.None, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = true, ShowRelativeTime = false, ShowMetadata = false, Interaction = ZoorceTimelineInteraction.Navigate, Items = tasks, EmptyMessage = "No tasks have been recorded." })
-            @if (skippedTasks.Length > 0)
-            {
-                <div class="od-trace-unrecorded" aria-label="Tasks skipped by design"><span>Skipped by design</span>@foreach (var skippedTask in skippedTasks) { <a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@skippedTask.TaskKey"><strong>@(skippedTask.ConfiguredName ?? skippedTask.TaskKey)</strong><span class="od-status @RuntimeDiagnosticsReader.StatusClass(skippedTask.Status)">@skippedTask.Status</span><small>@(string.IsNullOrWhiteSpace(skippedTask.SkipReason) ? "No task execution was scheduled." : skippedTask.SkipReason)</small></a> }</div>
-            }
-        </section>
+        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution">Stages</a><i class="bi bi-chevron-right"></i><span>@(stage.ConfiguredName ?? stage.StageKey)</span></nav>
+        <section class="od-trace-section od-trace-context-panel"><div class="od-trace-heading"><div><h2>@(stage.ConfiguredName ?? stage.StageKey)</h2><p>Stage execution</p></div><span class="od-status @stage.StatusClass">@stage.Status</span></div><div class="od-trace-summary"><div><span>Stage ID</span>@CopyValue(stage.Id, "stage ID")</div><div><span>Started</span><strong>@Timestamp(stage.StartedOnUtc)</strong></div><div><span>Finished</span><strong>@Timestamp(stage.CompletedOnUtc ?? stage.FailedOnUtc)</strong></div><div><span>Duration</span><strong>@Duration(stage.StartedOnUtc, stage.CompletedOnUtc ?? stage.FailedOnUtc)</strong></div><div><span>Condition</span><strong>@(stage.ExecutionConditionResult?.ToString() ?? "—")</strong></div></div>@if (!string.IsNullOrWhiteSpace(stage.ErrorSummary)) { <p class="od-trace-error">@stage.ErrorSummary @CopyValue(stage.ErrorSummary, "stage error", false)</p> }</section>
+        @if (!string.IsNullOrWhiteSpace(stage.SkipReason)) { <p class="od-empty-filter">@stage.SkipReason</p> }
+        <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Tasks</h2><p>Configured tasks, including pending and parallel work.</p></div><span class="od-trace-count">@stage.Tasks.Count tasks</span></div><div class="od-execution-cards">@foreach (var task in stage.Tasks) {
+            <a class="od-execution-card" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@task.TaskKey" asp-route-stageExecutionId="@stage.Id" asp-route-taskExecutionId="@task.Id"><span class="od-execution-icon"><i class="bi bi-lightning-charge"></i></span><span class="od-execution-name"><strong>@(task.ConfiguredName ?? task.TaskKey)</strong><small>@(string.IsNullOrEmpty(task.ParallelGroupId) ? "Sequential" : $"Parallel group {task.ParallelGroupId}") · @(task.HasExecution ? Timestamp(task.StartedOnUtc) : task.WasSkipped ? "Disabled or skipped" : "Not started")</small></span><span class="od-status @RuntimeDiagnosticsReader.StatusClass(task.Status)">@task.Status</span><i class="bi bi-chevron-right"></i></a>
+        }</div></section>
+        @if (!string.IsNullOrWhiteSpace(stage.Metadata)) { <section class="od-trace-section"><details><summary>Stage metadata</summary><div class="od-json-block"><div><span>Metadata</span>@CopyValue(stage.Metadata, "stage metadata", false)</div><pre class="od-json-view" data-json-view>@stage.Metadata</pre></div></details></section> }
     }
     else if (section == "task")
     {
         var stage = Model.Stage; var task = Model.Task;
-        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a class="od-trace-breadcrumb-root" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution"><i class="bi bi-diagram-3" aria-hidden="true"></i><span>Stages</span></a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><a class="od-trace-breadcrumb-parent" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey">@(stage.ConfiguredName ?? stage.StageKey)</a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><span class="od-trace-breadcrumb-current">@(task.ConfiguredName ?? task.TaskKey)</span></nav>
-        <section class="od-trace-section od-trace-context-panel"><div class="od-trace-heading"><div><h2>@(task.ConfiguredName ?? task.TaskKey)</h2><p>@task.TaskKind · @task.ExecutionMode</p></div><span class="od-status @RuntimeDiagnosticsReader.StatusClass(task.Status)">@task.Status</span></div><div class="od-trace-summary"><div><span>Task ID</span>@CopyValue(task.Id, "task ID")</div><div><span>Started</span><strong>@Timestamp(task.StartedOnUtc)</strong></div><div><span>Completed</span><strong>@Timestamp(task.CompletedOnUtc)</strong></div><div><span>Attempts</span><strong>@task.Attempts.Count</strong></div></div>@if (!string.IsNullOrWhiteSpace(task.ErrorSummary)) { <p class="od-trace-error">@task.ErrorSummary</p> }</section>
-        var attempts = task.Attempts
-            .Select(attempt => new { Attempt = attempt, Timestamp = ExecutionTimestamp(attempt.StartedOnUtc, attempt.WaitingSinceUtc, attempt.CompletedOnUtc, attempt.FailedOnUtc, attempt.TimedOutOnUtc) })
-            .Where(entry => entry.Timestamp.HasValue)
-            .OrderBy(entry => entry.Attempt.AttemptNumber)
-            .Select(entry => new ZoorceTimelineItem($"attempt-{entry.Attempt.AttemptNumber}", TimelineTime(entry.Timestamp!.Value), $"Attempt {entry.Attempt.AttemptNumber}", entry.Attempt.Status, Tone: Tone(entry.Attempt.Status), TargetUrl: Url.Page("./Detail", new { instanceId = id, section = "attempt", stageKey = stage.StageKey, taskKey = task.TaskKey, attempt = entry.Attempt.AttemptNumber })))
-            .ToArray();
-        <section class="od-trace-section od-trace-timeline od-attempt-timeline"><div class="od-trace-heading"><div><h2>Attempts</h2><p>Each retry is recorded chronologically.</p></div><span class="od-trace-count">@attempts.Length attempts</span></div>
-            @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "task-attempts-timeline", AriaLabel = "Attempts", Variant = ZoorceTimelineVariant.Milestones, Orientation = ZoorceTimelineOrientation.Horizontal, OverflowMode = ZoorceTimelineOverflowMode.Scroll, ShowOverflowControls = true, GroupBy = ZoorceTimelineGroupBy.None, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = true, ShowRelativeTime = false, ShowMetadata = false, Interaction = ZoorceTimelineInteraction.Navigate, Items = attempts, EmptyMessage = "No attempts have been recorded." })
-        </section>
+        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution">Stages</a><i class="bi bi-chevron-right"></i><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey" asp-route-stageExecutionId="@stage.Id">@(stage.ConfiguredName ?? stage.StageKey)</a><i class="bi bi-chevron-right"></i><span>@(task.ConfiguredName ?? task.TaskKey)</span></nav>
+        <section class="od-trace-section od-trace-context-panel"><div class="od-trace-heading"><div><h2>@(task.ConfiguredName ?? task.TaskKey)</h2><p>@task.TaskKind · @task.ExecutionMode</p></div><span class="od-status @RuntimeDiagnosticsReader.StatusClass(task.Status)">@task.Status</span></div><div class="od-trace-summary"><div><span>Task ID</span>@CopyValue(task.Id, "task ID")</div><div><span>Started</span><strong>@Timestamp(task.StartedOnUtc)</strong></div><div><span>Finished</span><strong>@Timestamp(task.CompletedOnUtc ?? task.FailedOnUtc ?? task.TimedOutOnUtc)</strong></div><div><span>Attempts</span><strong>@task.Attempts.Count</strong></div></div>@if (!string.IsNullOrWhiteSpace(task.ErrorSummary)) { <p class="od-trace-error">@(task.Status == "Completed" ? "Previous attempt error: " : "Error: ")@task.ErrorSummary @CopyValue(task.ErrorSummary, "task error", false)</p> }</section>
+        <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Attempts</h2><p>Each execution and retry, in order.</p></div><span class="od-trace-count">@task.Attempts.Count attempts</span></div><div class="od-attempt-list">@foreach (var attempt in task.Attempts.OrderBy(x => x.AttemptNumber)) {
+            <a class="od-attempt-row" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="attempt" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@task.TaskKey" asp-route-stageExecutionId="@stage.Id" asp-route-taskExecutionId="@task.Id" asp-route-attempt="@attempt.AttemptNumber"><span class="od-attempt-number">@attempt.AttemptNumber</span><span class="od-attempt-main"><strong>Attempt @attempt.AttemptNumber</strong><small>Started @Timestamp(attempt.StartedOnUtc) · @Duration(attempt.StartedOnUtc, attempt.CompletedOnUtc ?? attempt.FailedOnUtc ?? attempt.TimedOutOnUtc)</small>@if (!string.IsNullOrWhiteSpace(attempt.ErrorMessage)) { <small class="od-attempt-error">@attempt.ErrorMessage</small> }</span><span class="od-status @RuntimeDiagnosticsReader.StatusClass(attempt.Status)">@attempt.Status</span><i class="bi bi-chevron-right"></i></a>
+        } @if (task.Attempts.Count == 0) { <p class="od-empty-filter">No attempts recorded for this task.</p> }</div></section>
+        @if (!string.IsNullOrWhiteSpace(task.SkipReason)) { <p class="od-empty-filter">@task.SkipReason</p> }
+        @if (!string.IsNullOrWhiteSpace(task.Metadata) || !string.IsNullOrWhiteSpace(task.OutputVariablesPayload)) { <section class="od-trace-section"><details><summary>Task data and metadata</summary><div class="od-detail-grid"><div class="od-json-block"><div><span>Output variables</span>@CopyValue(task.OutputVariablesPayload, "output variables payload", false)</div><pre class="od-json-view" data-json-view>@task.OutputVariablesPayload</pre></div><div class="od-json-block"><div><span>Task metadata</span>@CopyValue(task.Metadata, "task metadata", false)</div><pre class="od-json-view" data-json-view>@task.Metadata</pre></div></div></details></section> }
     }
     else if (section == "attempt")
     {
         var stage = Model.Stage; var task = Model.Task; var attempt = Model.Attempt;
         var exceptionDetails = MetadataValue(attempt.Metadata, "ExecutionExceptionDetails");
-        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a class="od-trace-breadcrumb-root" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution"><i class="bi bi-diagram-3" aria-hidden="true"></i><span>Stages</span></a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><a class="od-trace-breadcrumb-parent" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey">@(stage.ConfiguredName ?? stage.StageKey)</a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><a class="od-trace-breadcrumb-parent" asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@task.TaskKey">@(task.ConfiguredName ?? task.TaskKey)</a><i class="bi bi-chevron-right od-trace-breadcrumb-separator" aria-hidden="true"></i><span class="od-trace-breadcrumb-current">Attempt @attempt.AttemptNumber</span></nav>
-        <div class="od-trace-layout">
-            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Attempt @attempt.AttemptNumber</h2><p>Task execution record</p></div><span class="od-status @RuntimeDiagnosticsReader.StatusClass(attempt.Status)">@attempt.Status</span></div><dl class="od-trace-fields"><dt>Attempt ID</dt><dd>@CopyValue(attempt.Id, "attempt ID")</dd><dt>Started</dt><dd>@Timestamp(attempt.StartedOnUtc)</dd><dt>Waiting since</dt><dd>@Timestamp(attempt.WaitingSinceUtc)</dd><dt>Completed</dt><dd>@Timestamp(attempt.CompletedOnUtc)</dd><dt>Failed</dt><dd>@Timestamp(attempt.FailedOnUtc)</dd><dt>Timed out</dt><dd>@Timestamp(attempt.TimedOutOnUtc)</dd><dt>Error code</dt><dd>@attempt.ErrorCode</dd><dt>Error</dt><dd class="od-trace-error">@attempt.ErrorMessage</dd></dl>@if (!string.IsNullOrWhiteSpace(exceptionDetails)) { <div class="od-json-block"><div><span>Exception diagnostics</span>@CopyValue(exceptionDetails, "exception diagnostics")</div><pre class="od-json-view" data-json-view>@exceptionDetails</pre></div> }<div class="od-json-block"><div><span>Request</span>@CopyValue(attempt.RequestPayload, "request payload")</div><pre class="od-json-view" data-json-view>@attempt.RequestPayload</pre></div><div class="od-json-block"><div><span>Response</span>@CopyValue(attempt.ResponsePayload, "response payload")</div><pre class="od-json-view" data-json-view>@attempt.ResponsePayload</pre></div><div class="od-json-block"><div><span>Attempt metadata</span>@CopyValue(attempt.Metadata, "attempt metadata")</div><pre class="od-json-view" data-json-view>@attempt.Metadata</pre></div></section>
-            @if (attempt.Dispatch is { } dispatch) { <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Dispatch</h2><p>@dispatch.DispatchType · @dispatch.DispatchStatus</p></div></div><dl class="od-trace-fields"><dt>Dispatch ID</dt><dd>@CopyValue(dispatch.Id, "dispatch ID")</dd><dt>Destination</dt><dd>@dispatch.Destination</dd><dt>Command ID</dt><dd>@CopyValue(dispatch.CommandId, "command ID")</dd><dt>Correlation ID</dt><dd>@CopyValue(dispatch.CorrelationId, "correlation ID")</dd><dt>Sent</dt><dd>@Timestamp(dispatch.SentOnUtc)</dd><dt>Acknowledged</dt><dd>@Timestamp(dispatch.AcknowledgedOnUtc)</dd><dt>Failed</dt><dd>@Timestamp(dispatch.FailedOnUtc)</dd><dt>Failure</dt><dd class="od-trace-error">@dispatch.FailureReason</dd></dl><div class="od-json-block"><div><span>Payload</span>@CopyValue(dispatch.RequestPayload, "dispatch payload")</div><pre class="od-json-view" data-json-view>@dispatch.RequestPayload</pre></div><div class="od-json-block"><div><span>Dispatch metadata</span>@CopyValue(dispatch.Metadata, "dispatch metadata")</div><pre class="od-json-view" data-json-view>@dispatch.Metadata</pre></div></section> }
+        <nav class="od-trace-breadcrumb" aria-label="Execution path"><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="execution">Stages</a><i class="bi bi-chevron-right"></i><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="stage" asp-route-stageKey="@stage.StageKey" asp-route-stageExecutionId="@stage.Id">@(stage.ConfiguredName ?? stage.StageKey)</a><i class="bi bi-chevron-right"></i><a asp-page="./Detail" asp-route-instanceId="@id" asp-route-section="task" asp-route-stageKey="@stage.StageKey" asp-route-taskKey="@task.TaskKey" asp-route-stageExecutionId="@stage.Id" asp-route-taskExecutionId="@task.Id">@(task.ConfiguredName ?? task.TaskKey)</a><i class="bi bi-chevron-right"></i><span>Attempt @attempt.AttemptNumber</span></nav>
+        <section class="od-trace-section od-trace-context-panel"><div class="od-trace-heading"><div><h2>Attempt @attempt.AttemptNumber</h2><p>Execution and delivery diagnostics</p></div><span class="od-status @RuntimeDiagnosticsReader.StatusClass(attempt.Status)">@attempt.Status</span></div><div class="od-trace-summary"><div><span>Attempt ID</span>@CopyValue(attempt.Id, "attempt ID")</div><div><span>Started</span><strong>@Timestamp(attempt.StartedOnUtc)</strong></div><div><span>Waiting since</span><strong>@Timestamp(attempt.WaitingSinceUtc)</strong></div><div><span>Finished</span><strong>@Timestamp(attempt.CompletedOnUtc ?? attempt.FailedOnUtc ?? attempt.TimedOutOnUtc)</strong></div><div><span>Duration</span><strong>@Duration(attempt.StartedOnUtc, attempt.CompletedOnUtc ?? attempt.FailedOnUtc ?? attempt.TimedOutOnUtc)</strong></div></div>
+            @if (!string.IsNullOrWhiteSpace(attempt.ErrorCode) || !string.IsNullOrWhiteSpace(attempt.ErrorMessage)) { <div class="od-attempt-error-panel"><strong>@(attempt.ErrorCode ?? "Execution error")</strong><p>@attempt.ErrorMessage</p>@CopyValue(attempt.ErrorMessage, "attempt error", false)</div> }
+        </section>
+        @if (!string.IsNullOrWhiteSpace(exceptionDetails)) {
+            <section class="od-trace-section od-exception-section" aria-label="Exception diagnostics"><div class="od-trace-heading"><div><h2>Exception diagnostics</h2><p>Reported exception and stack trace. Scroll or resize the viewer to inspect the full text.</p></div>@CopyValue(exceptionDetails, "exception diagnostics", false)</div><pre class="od-json-view od-exception-view" data-json-view>@exceptionDetails</pre></section>
+        }
+        <div class="od-detail-grid">
+            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Request</h2><p>Payload prepared for this attempt.</p></div>@CopyValue(attempt.RequestPayload, "request payload", false)</div><pre class="od-json-view od-json-view-expanded" data-json-view>@attempt.RequestPayload</pre></section>
+            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Response</h2><p>@(string.IsNullOrWhiteSpace(attempt.ResponsePayload) && (attempt.Status is "WaitingResponse" or "Running") ? "Waiting for a response." : "Response recorded for this attempt, when available.")</p></div>@CopyValue(attempt.ResponsePayload, "response payload", false)</div><pre class="od-json-view od-json-view-expanded" data-json-view>@attempt.ResponsePayload</pre></section>
         </div>
+        @if (attempt.Dispatch is { } dispatch) {
+            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Message metadata</h2><p>Metadata prepared for this task delivery. @(dispatch.MessageMetadataSource == "Reconstructed" ? "Reconstructed from available records; the original snapshot is unavailable." : "Persisted delivery snapshot.")</p></div><span class="od-trace-count">@dispatch.MessageMetadataSource</span></div><div class="od-detail-grid"><div class="od-json-block"><div><span>Orchestration metadata</span>@CopyValue(dispatch.MessageMetadata, "orchestration metadata", false)</div><pre class="od-json-view" data-json-view>@dispatch.MessageMetadata</pre></div><div class="od-json-block"><div><span>Propagation metadata</span>@CopyValue(dispatch.PropagationMetadata, "propagation metadata", false)</div><pre class="od-json-view" data-json-view>@dispatch.PropagationMetadata</pre></div></div></section>
+            <section class="od-trace-section"><div class="od-trace-heading"><div><h2>Dispatch</h2><p>@dispatch.DispatchType · @dispatch.DispatchStatus</p></div></div><div class="od-trace-summary"><div><span>Dispatch ID</span>@CopyValue(dispatch.Id, "dispatch ID")</div><div><span>Command ID</span>@CopyValue(dispatch.CommandId, "command ID")</div><div><span>Destination</span>@CopyValue(dispatch.Destination, "destination")</div><div><span>Correlation ID</span>@CopyValue(dispatch.CorrelationId, "correlation ID")</div><div><span>Sent</span><strong>@Timestamp(dispatch.SentOnUtc)</strong></div><div><span>Acknowledged</span><strong>@Timestamp(dispatch.AcknowledgedOnUtc)</strong></div></div>@if (!string.IsNullOrWhiteSpace(dispatch.FailureReason)) { <p class="od-trace-error">@dispatch.FailureReason @CopyValue(dispatch.FailureReason, "dispatch error", false)</p> }<details><summary>Technical dispatch metadata</summary><div class="od-json-block"><div><span>Dispatch diagnostics</span>@CopyValue(dispatch.Metadata, "dispatch metadata", false)</div><pre class="od-json-view" data-json-view>@dispatch.Metadata</pre></div></details></section>
+        } else { <section class="od-trace-section"><h2>Dispatch unavailable</h2><p>No dispatch record is available for this attempt.</p></section> }
+        <section class="od-trace-section"><details><summary>Attempt metadata</summary><div class="od-json-block"><div><span>Attempt diagnostics</span>@CopyValue(attempt.Metadata, "attempt metadata", false)</div><pre class="od-json-view" data-json-view>@attempt.Metadata</pre></div></details></section>
     }
     else if (section == "data")
     {
-        <section class="od-data-workspace" aria-label="Initial saga data"><article class="od-trace-section"><div class="od-trace-heading"><div><h2>Payload</h2><p>Business data captured at ingress.</p></div>@CopyValue(detail.SnapshotPayload, "trigger payload")</div><pre class="od-json-view od-json-view-expanded" data-json-view>@detail.SnapshotPayload</pre></article><article class="od-trace-section"><div class="od-trace-heading"><div><h2>Metadata</h2><p>Context captured at orchestration ingress.</p></div>@CopyValue(detail.Metadata, "trigger metadata")</div><pre class="od-json-view od-json-view-expanded" data-json-view>@detail.Metadata</pre></article></section>
+        var trigger = JsonPart(detail.SnapshotPayload, "trigger");
+        var triggerPayload = JsonPart(trigger, "payload");
+        <section class="od-data-workspace" aria-label="Saga data">
+            <article class="od-trace-section"><div class="od-trace-heading"><div><h2>Trigger payload</h2><p>Business data received when this saga started.</p></div>@CopyValue(triggerPayload, "trigger payload", false)</div><pre class="od-json-view od-json-view-expanded" data-json-view>@triggerPayload</pre></article>
+            <article class="od-trace-section"><div class="od-trace-heading"><div><h2>Saga metadata</h2><p>Persisted orchestration context.</p></div>@CopyValue(detail.Metadata, "saga metadata", false)</div><pre class="od-json-view od-json-view-expanded" data-json-view>@detail.Metadata</pre></article>
+            <article class="od-trace-section od-data-snapshot"><div class="od-trace-heading"><div><h2>Execution snapshot</h2><p>Trigger, task data, and variables recorded by the runtime.</p></div>@CopyValue(detail.SnapshotPayload, "execution snapshot", false)</div><pre class="od-json-view od-json-view-expanded" data-json-view>@detail.SnapshotPayload</pre></article>
+        </section>
     }
     else if (section == "compensations")
     {
-        var compensations = CompensationItems();
-        <section class="od-trace-section od-compensation-workspace" aria-label="Compensation execution">
-            <div class="od-trace-heading"><div><h2>Compensations</h2><p>Rollback work is recorded in the same execution order as the source tasks.</p></div><span class="od-trace-count">@compensations.Length records</span></div>
-            <div class="od-compensation-timeline">
-                @await Component.InvokeAsync("ZoorceTimeline", new ZoorceTimelineOptions { Id = "instance-compensations-timeline", AriaLabel = "Compensations", Variant = ZoorceTimelineVariant.Activity, Orientation = ZoorceTimelineOrientation.Vertical, OverflowMode = ZoorceTimelineOverflowMode.Stack, ShowOverflowControls = false, GroupBy = ZoorceTimelineGroupBy.None, Density = ZoorceTimelineDensity.Compact, ShowTimestamp = true, ShowRelativeTime = false, ShowMetadata = true, Interaction = ZoorceTimelineInteraction.Select, Items = compensations, EmptyMessage = "No compensations were required for this saga." })
-            </div>
-            <aside class="od-transition-drawer od-compensation-drawer" data-compensation-drawer hidden aria-label="Selected compensation">
-                <div class="od-transition-drawer-heading"><strong>Compensation details</strong><button type="button" class="z-button z-button-ghost" data-compensation-drawer-close aria-label="Close compensation details"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
-                <p data-compensation-placeholder>Select a compensation from the timeline.</p>
-                @foreach (var compensation in detail.Compensations.OrderBy(item => item.StartedOnUtc ?? item.CompletedOnUtc ?? item.FailedOnUtc))
-                {
-                    <article data-compensation-details="@compensation.Id" hidden>
-                        <div class="od-compensation-detail-summary"><strong>@compensation.CompensationTaskKey</strong><span class="od-status @RuntimeDiagnosticsReader.StatusClass(compensation.Status)">@compensation.Status</span></div>
-                        <dl class="od-trace-fields"><dt>Compensation ID</dt><dd>@CopyValue(compensation.Id, "compensation ID")</dd><dt>Source task</dt><dd>@compensation.SourceTaskKey</dd><dt>Source task ID</dt><dd>@CopyValue(compensation.SourceTaskExecutionId, "source task ID")</dd><dt>Started</dt><dd>@Timestamp(compensation.StartedOnUtc)</dd><dt>Completed</dt><dd>@Timestamp(compensation.CompletedOnUtc)</dd><dt>Failed</dt><dd>@Timestamp(compensation.FailedOnUtc)</dd><dt>Error</dt><dd class="od-trace-error">@compensation.ErrorMessage</dd></dl>
-                        <div class="od-json-block"><div><span>Request</span>@CopyValue(compensation.RequestPayload, "compensation request")</div><pre class="od-json-view" data-json-view>@compensation.RequestPayload</pre></div>
-                        <div class="od-json-block"><div><span>Response</span>@CopyValue(compensation.ResponsePayload, "compensation response")</div><pre class="od-json-view" data-json-view>@compensation.ResponsePayload</pre></div>
-                        <div class="od-json-block"><div><span>Metadata</span>@CopyValue(compensation.Metadata, "compensation metadata")</div><pre class="od-json-view" data-json-view>@compensation.Metadata</pre></div>
-                    </article>
-                }
-            </aside>
-        </section>
+        <section class="od-trace-section" aria-label="Compensation execution"><div class="od-trace-heading"><div><h2>Compensations</h2><p>Recorded compensation work and its outcome.</p></div><span class="od-trace-count">@detail.Compensations.Count records</span></div><div class="od-activity-list">
+        @foreach (var compensation in detail.Compensations.OrderBy(item => item.StartedOnUtc ?? item.CompletedOnUtc ?? item.FailedOnUtc)) {
+            <details class="od-event"><summary><time>@Timestamp(compensation.StartedOnUtc ?? compensation.CompletedOnUtc ?? compensation.FailedOnUtc)</time><span><strong>@compensation.CompensationTaskKey</strong><small>Source task: @compensation.SourceTaskKey</small></span><span class="od-status @RuntimeDiagnosticsReader.StatusClass(compensation.Status)">@compensation.Status</span></summary>
+                <dl class="od-trace-fields"><dt>Compensation ID</dt><dd>@CopyValue(compensation.Id, "compensation ID")</dd><dt>Source task ID</dt><dd>@CopyValue(compensation.SourceTaskExecutionId, "source task ID")</dd><dt>Started</dt><dd>@Timestamp(compensation.StartedOnUtc)</dd><dt>Finished</dt><dd>@Timestamp(compensation.CompletedOnUtc ?? compensation.FailedOnUtc)</dd><dt>Duration</dt><dd>@Duration(compensation.StartedOnUtc, compensation.CompletedOnUtc ?? compensation.FailedOnUtc)</dd></dl>
+                @if (!string.IsNullOrWhiteSpace(compensation.ErrorMessage)) { <p class="od-trace-error">@compensation.ErrorMessage @CopyValue(compensation.ErrorMessage, "compensation error", false)</p> }
+                <div class="od-detail-grid"><div class="od-json-block"><div><span>Request</span>@CopyValue(compensation.RequestPayload, "compensation request payload", false)</div><pre class="od-json-view" data-json-view>@compensation.RequestPayload</pre></div><div class="od-json-block"><div><span>Response</span>@CopyValue(compensation.ResponsePayload, "compensation response payload", false)</div><pre class="od-json-view" data-json-view>@compensation.ResponsePayload</pre></div></div>
+                <div class="od-json-block"><div><span>Metadata</span>@CopyValue(compensation.Metadata, "compensation metadata", false)</div><pre class="od-json-view" data-json-view>@compensation.Metadata</pre></div>
+            </details>
+        }
+        @if (detail.Compensations.Count == 0) { <p class="od-empty-filter">No compensations were recorded for this saga.</p> }
+        </div></section>
     }
     </div>
 </main>
@@ -267,6 +217,6 @@
 
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
-    <script src="/_content/Zoorce.Web.UI.Timelines/js/zoorce-timeline.js" asp-append-version="true"></script>
+    <script defer src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/detail-code-viewer.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-detail.js" asp-append-version="true"></script>
 }

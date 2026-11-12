@@ -33,7 +33,7 @@
             const percent = !known ? null : row.totalTaskCount === 0 ? (status === 'Completed' ? 100 : 0) : Math.max(0, Math.min(100, Math.round(100 * row.completedTaskCount / row.totalTaskCount)));
             query('[data-inspector-progress-label]').textContent = percent == null ? 'Not available' : `${percent}% · ${row.completedTaskCount}/${row.totalTaskCount} tasks`;
             query('[data-inspector-progress]').style.width = `${percent ?? 0}%`;
-            const fields = [['Saga ID', row.sagaId], ['Correlation ID', row.correlationId], ['Version', row.orchestrationVersion], ['Retries', row.retryCount], ['Started', formatDate(row.startedOnUtc)], ['Current / last task', row.currentTaskKey || row.lastExecutedTaskKey]];
+            const fields = [['Saga ID', row.sagaId], ['Correlation ID', row.correlationId], ['Version', row.orchestrationVersion], ['Trace ID', row.traceId], ['Started', formatDate(row.startedOnUtc)], ['Current / last task', row.currentTaskKey || row.lastExecutedTaskKey]];
             query('[data-inspector-metadata]').innerHTML = fields.map(([key, value]) => { const text = value == null || value === '' ? '—' : value; return `<div><dt>${escape(key)}</dt><dd title="${escape(text)}">${escape(text)}</dd></div>`; }).join('');
             query('[data-inspector-duration]').textContent = duration(row);
             const detail = root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(row.id));
@@ -53,7 +53,7 @@
                 const result = await response.json();
                 if (epoch !== revision || String(selected?.id) !== id) return;
                 const items = Array.isArray(result.items) ? result.items : [];
-                if (!items.length) { stages.textContent = 'No recorded stages.'; return; }
+                if (!items.length) { stages.textContent = 'No recorded stages.'; more.hidden = !result.hasMore; return; }
                 stages.innerHTML = items.map(item => {
                     const state = item.wasSkipped ? 'Skipped' : String(item.status || 'Unknown');
                     const style = /^(Completed|Compensated)$/i.test(state) ? 'done' : /^(Failed|TimedOut)$/i.test(state) ? 'failed' : /^(Running|Waiting|Compensating)$/i.test(state) ? 'active' : '';
