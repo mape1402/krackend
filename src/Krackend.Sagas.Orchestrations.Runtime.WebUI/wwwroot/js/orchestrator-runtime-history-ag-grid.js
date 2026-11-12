@@ -3,6 +3,7 @@
     if (!root) return;
     const grid = root.querySelector('#historyGrid');
     if (!window.agGrid) { grid.textContent = 'The history grid could not load.'; return; }
+    const inspector = window.KrackendInstanceInspector.create(root, root.querySelector('[data-workspace]'));
 
     const form = root.querySelector('[data-history-filters]');
     const from = root.querySelector('[data-history-from]');
@@ -71,32 +72,28 @@
     const columns = [
         { field: 'orchestrationLabel', headerName: 'Orchestration', pinned: 'left', width: 220, minWidth: 200,
             cellRenderer: p => p.data ? `<div class="orchestration-cell"><span class="orchestration-glyph"><i class="bi bi-bezier2"></i></span><span class="orchestration-copy"><strong>${escape(p.data.orchestrationDefinitionKey || p.value || '—')}</strong><small>${escape(p.data.orchestrationVersion || '—')}</small></span></div>` : '' },
-        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID']].map(([field, headerName]) => ({ field, headerName, flex: 1, minWidth: 170,
+        ...[['correlationId', 'Correlation ID'], ['sagaId', 'Saga ID']].map(([field, headerName]) => ({ field, headerName, flex: 1, minWidth: 130,
             cellRenderer: p => p.data ? `<div class="mono-cell"><span>${escape(p.value || '—')}</span><button class="copy-id" type="button" aria-label="Copy ${headerName}"><i class="bi bi-copy"></i></button></div>` : '' })),
-        { field: 'status', headerName: 'Status', flex: .7, minWidth: 125, cellRenderer: p => p.data ? `<span class="status-pill status-${escape(String(p.value || '').toLowerCase())}">${escape(p.value || '—')}</span>` : '' },
-        { field: 'startedOnUtc', headerName: 'Started (UTC)', flex: 1, minWidth: 175, sort: 'desc', valueFormatter: p => date(p.value) },
-        { field: 'lastUpdatedOnUtc', headerName: 'Updated (UTC)', flex: 1, minWidth: 175, valueFormatter: p => date(p.value) },
-        { headerName: 'Actions', width: 95, sortable: false, cellRenderer: p => {
-            if (!p.data) return '';
-            const a = document.createElement('a');
-            a.href = root.dataset.detailTemplate.replace('__instance_id__', encodeURIComponent(p.data.id));
-            a.className = 'z-button z-button-ghost'; a.textContent = 'View';
-            a.setAttribute('aria-label', `View instance ${p.data.id}`);
-            return a;
-        } }
+        { field: 'status', headerName: 'Status', flex: .7, minWidth: 105, cellRenderer: p => p.data ? `<span class="status-pill status-${escape(String(p.value || '').toLowerCase())}">${escape(p.value || '—')}</span>` : '' },
+        { field: 'startedOnUtc', headerName: 'Started (UTC)', flex: 1, minWidth: 145, sort: 'desc', valueFormatter: p => date(p.value) },
+        { field: 'lastUpdatedOnUtc', headerName: 'Updated (UTC)', flex: 1, minWidth: 145, valueFormatter: p => date(p.value) }
     ];
     const api = agGrid.createGrid(grid, { theme: theme(), rowModelType: 'infinite', datasource, cacheBlockSize: 25, maxBlocksInCache: 20,
         maxConcurrentDatasourceRequests: 1,
         blockLoadDebounceMillis: 100, rowHeight: 45, headerHeight: 34, suppressMultiSort: true, getRowId: p => String(p.data.id),
         defaultColDef: { sortable: true, resizable: true, minWidth: 100 }, columnDefs: columns,
         onCellClicked: async event => {
-            if (!event.data || !event.event?.target?.closest('.copy-id')) return;
-            try { await navigator.clipboard.writeText(String(event.value || '')); message.textContent = 'ID copied.'; }
-            catch { message.textContent = 'Unable to copy the ID.'; }
-        }
+            if (!event.data) return;
+            if (event.event?.target?.closest('.copy-id')) {
+                try { await navigator.clipboard.writeText(String(event.value || '')); message.textContent = 'ID copied.'; }
+                catch { message.textContent = 'Unable to copy the ID.'; }
+            } else if (!event.event?.target?.closest('input, button, a')) inspector.open(event.data);
+        },
+        onCellKeyDown: event => { if (event.data && event.event?.key === 'Enter' && !event.event.target?.closest('input, button, a')) { event.event.preventDefault(); inspector.open(event.data); } }
     });
     function refresh() {
         revision++;
+        inspector.close();
         requests.forEach(controller => controller.abort());
         message.textContent = ''; count.textContent = '';
         api.setGridOption('datasource', datasource);
@@ -130,6 +127,6 @@
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-bs-theme', 'data-krackend-theme'] });
     window.addEventListener('pagehide', event => {
         if (event.persisted) return;
-        closed = true; clearTimeout(searchTimer); requests.forEach(controller => controller.abort()); themeObserver.disconnect(); api.destroy();
+        closed = true; clearTimeout(searchTimer); inspector.close(); requests.forEach(controller => controller.abort()); themeObserver.disconnect(); api.destroy();
     });
 })();

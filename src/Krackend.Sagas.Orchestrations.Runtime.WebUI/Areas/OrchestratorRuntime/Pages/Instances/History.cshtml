@@ -7,7 +7,8 @@
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
-<section class="runtime-reference instances-reference" data-instance-history data-default-from="@from" data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+<section class="runtime-reference instances-reference" data-instance-history data-default-from="@from" data-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "List" })" data-stages-source="@Url.Page("/Instances/Index", new { area = "OrchestratorRuntime", handler = "InspectorStages" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+  <div class="instances-workspace history-workspace" data-workspace>
     <div class="grid-surface history-surface">
         <div class="grid-commandbar">
             <label class="search-box"><i class="bi bi-search" aria-hidden="true"></i><input type="search" data-history-search aria-label="Search history" placeholder="Search orchestration, correlation, saga…" /></label>
@@ -25,8 +26,11 @@
         <div id="historyGrid" aria-label="Instance history grid"></div>
         <div class="grid-footer"><span data-history-message role="status" aria-live="polite"></span><span data-history-count aria-live="polite"></span></div>
     </div>
+    @await Html.PartialAsync("_InstanceInspector")
+  </div>
 </section>
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.3.0/dist/ag-grid-community.min.js"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-inspector.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-history-ag-grid.js" asp-append-version="true"></script>
 }

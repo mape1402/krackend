@@ -21,7 +21,7 @@ function history() {
     const api = { setGridOption(name) { if (name === 'datasource') refreshes++; }, destroy() {} };
     const agGrid = { themeQuartz: { withParams: () => ({}) }, createGrid(element, options) { gridOptions = options; return api; } };
     const document = { querySelector: () => root, documentElement: {}, createElement: () => ({ setAttribute() {} }) };
-    const window = { agGrid, addEventListener(type, callback) { handlers[type] = callback; } };
+    const window = { agGrid, KrackendInstanceInspector: { create: () => ({ open() {}, close() {} }) }, addEventListener(type, callback) { handlers[type] = callback; } };
     const source = fs.readFileSync(path.join(__dirname, '../../../src/Krackend.Sagas.Orchestrations.Runtime.WebUI/wwwroot/js/orchestrator-runtime-history-ag-grid.js'), 'utf8');
     class MutationObserver { observe() {} disconnect() {} }
     vm.runInNewContext(source, { window, document, agGrid, MutationObserver, URL, AbortController, Date, setTimeout, clearTimeout,

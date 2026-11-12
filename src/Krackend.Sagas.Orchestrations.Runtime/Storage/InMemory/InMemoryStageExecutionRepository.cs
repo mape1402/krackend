@@ -4,7 +4,7 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
 {
-    internal sealed class InMemoryStageExecutionRepository : IStageExecutionRepository
+    internal sealed class InMemoryStageExecutionRepository : IStageExecutionRepository, IRuntimeStageSummaryReader
     {
         private readonly InMemoryRuntimeStore _store;
 
@@ -41,5 +41,15 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Storage.InMemory
                 .Where(x => x.OrchestrationInstanceId == instanceId)
                 .OrderBy(x => x.Order)
                 .ToArray());
+
+        public Task<RuntimeStageSummaryPage> GetStageSummaries(Id instanceId, int take = 20, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var size = Math.Clamp(take, 1, 50);
+            var rows = _store.Stages.Values.Where(x => x.OrchestrationInstanceId == instanceId).OrderBy(x => x.Order)
+                .ThenBy(x => x.Id).Take(size + 1).Select(x => new RuntimeStageSummary(x.StageKey, x.Order,
+                    x.Status.ToString(), x.WasSkipped, x.StartedOnUtc, x.CompletedOnUtc, x.FailedOnUtc)).ToArray();
+            return Task.FromResult(new RuntimeStageSummaryPage(rows.Take(size).ToArray(), rows.Length > size));
+        }
     }
 }

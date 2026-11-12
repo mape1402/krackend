@@ -6,6 +6,7 @@ using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,6 +18,22 @@ using NSubstitute;
 
 public sealed class RuntimeInstancesPageModelTests
 {
+    [Fact]
+    public async Task InspectorStagesValidatesIdAndUsesBoundedReader()
+    {
+        var reader = new FakeRuntimeDiagnosticsReader();
+        var stages = Substitute.For<IStageExecutionRepository, IRuntimeStageSummaryReader>();
+        var summary = (IRuntimeStageSummaryReader)stages;
+        var id = Id.New();
+        summary.GetStageSummaries(id, 20, Arg.Any<CancellationToken>()).Returns(new RuntimeStageSummaryPage([], false));
+        var page = new IndexModel(reader, Options.Create(new OrchestratorRuntimeWebUIOptions()), stages);
+        Assert.IsType<BadRequestObjectResult>(await page.OnGetInspectorStagesAsync("bad-id"));
+        Assert.IsType<JsonResult>(await page.OnGetInspectorStagesAsync(id.ToString()));
+        await summary.Received(1).GetStageSummaries(id, 20, Arg.Any<CancellationToken>());
+        var unsupported = new IndexModel(reader, Options.Create(new OrchestratorRuntimeWebUIOptions()));
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await unsupported.OnGetInspectorStagesAsync(id.ToString())).StatusCode);
+    }
+
     [Fact]
     public async Task OnGetDoesNotLoadDashboardOrAllInstances()
     {

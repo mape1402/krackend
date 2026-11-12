@@ -17,7 +17,7 @@ test('infinite instance selection only selects loaded rows without fetching more
         querySelectorAll() { return []; } };
     const document = { documentElement: {}, querySelector: () => root, createElement: () => field() };
     const agGrid = { themeQuartz: { withParams: () => ({}) }, createGrid(element, config) { options = config; return api; } };
-    const window = { agGrid, addEventListener() {} };
+    const window = { agGrid, addEventListener() {}, KrackendInstanceInspector: { create: () => ({ open() {}, close() {}, update() {} }) } };
     class MutationObserver { observe() {} disconnect() {} }
     const source = fs.readFileSync(path.join(__dirname, '../../../src/Krackend.Sagas.Orchestrations.Runtime.WebUI/wwwroot/js/orchestrator-runtime-ag-grid.js'), 'utf8');
     vm.runInNewContext(source, { window, document, agGrid, MutationObserver, URL, AbortController, Date, setTimeout, clearTimeout,
