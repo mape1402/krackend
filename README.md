@@ -12,6 +12,14 @@ Modular backend building blocks for .NET services and orchestration runtimes.
 
 Krackend runtime libraries, hosts, and samples target .NET 10. Applications consuming these packages require .NET 10 or later. The Roslyn analyzer retains its compatible `netstandard2.0` target.
 
+## Version 6.4 highlights
+
+`v6.4.0` refreshes the orchestration Runtime dashboard, Statistics, Instances, History, and instance detail views with AG Grid, Apache ECharts, row inspectors, formatted payloads, and trace information. Control Plane and Runtime catalogs share configurable theming and improved navigation. Roadmap creation and paste actions use Zoorce speed dials, and a new draft opens directly.
+
+Failure causes are stored as a Runtime projection. New failure events are projected as they occur, and historical events and their orchestration scopes are reconstructed gradually by the statistics job. Hosts must migrate the new failure-event and backfill-checkpoint storage and indexes; the SQL Server sample includes migrations. Statistics can be incomplete until backfill finishes. The release also repairs recovery of unfinished parallel tasks and caches artifacts during timeout repair passes.
+
+Hosts continue to select and configure their own EF providers and migrations. The Control Plane SQL Server sample now includes the previously missing migration for designer concurrency tokens. See the [v6.4.0 upgrade notes](CHANGELOG.md#v640---2026-11-12) and [Sagas configuration reference](docs/krackend-sagas-api-configuration.md).
+
 ## Version 6.3 highlights
 
 `v6.3.0` stores the effective lifetime and Idle durations and the UTC expiration deadline on each Runtime instance. The supervisor queries Running instances by the indexed deadline without loading artifacts, and recovery recalculates the deadline from the projected policy. Recoverable legacy instances are projected in lease-protected batches at startup.
@@ -383,7 +391,7 @@ Expiration is detected by the next scan, so it is not an exact deadline: with th
 
 Hosts own their storage migrations. Add the two nullable Control Plane version fields and the three Runtime instance fields plus the `(Status, ExpiresOnUtc, Id)` index before deploying updated hosts; SQL Server sample migrations are included. At startup, a separate paged, lease-protected backfill projects policies for recoverable legacy instances and caches each artifact within that run. Unavailable or leased instances are retried on the next lifetime scan. A null maximum indicates an unprojected legacy instance; zero means expiration is disabled. Stop older writers before completing the upgrade, because they do not populate these fields. Runtime defaults are captured during projection and do not retroactively alter already-projected instances.
 
-The SQL Server sample's existing migration snapshot predates the `ConcurrencyToken` properties on `StageDefinitions`, `TaskDefinitions`, and `TriggerBindings`. EF reports these pre-existing differences as pending model changes. The lifetime migration does not add those columns; reconcile the sample host's existing schema and migrations before running automatic migrations.
+The Control Plane SQL Server sample includes the `AddDesignConcurrencyTokens` migration for `StageDefinitions`, `TaskDefinitions`, and `TriggerBindings`. The lifetime migration does not add those columns. Hosts with existing databases must apply their own migration and follow the concurrency-token upgrade guidance below.
 
 For a staged Pigeon rollout or archived recovery, the consumer acknowledgement mode must be `OnHandlerSuccess`. A delivery with no active matching ingress fails through the execution pipeline before Pigeon requests retry, so an idempotency inbox does not mark it complete or race with redelivery. The transport must support retry/redelivery. `Manual` and `OnReceive` are rejected for staged connector preparation.
 
@@ -433,7 +441,7 @@ The mapping and execution-condition designers use isolated in-memory ButterMorph
 
 Designer saves compare the schema and design revisions last loaded by the editor with the current values and report conflicts without replacing the local draft. Changes to the same task, stage, or trigger are also protected by an EF optimistic concurrency token during the write. A concurrent schema change in another record is still subject to the interval between checking the schema and committing the design.
 
-The Control Plane EF model requires a non-null `ConcurrencyToken` string of up to 32 characters on `TaskDefinitions`, `StageDefinitions`, and `TriggerBindings`. Before deploying to an existing relational database, the host must add these columns and initialize existing rows to the empty string through its EF migration. MongoDB hosts must likewise initialize the field on existing documents before deploying. Drain older Control Plane instances during this upgrade: instances that do not update the tokens cannot participate in the concurrency check. EF manages the tokens independently of the database provider after the upgrade.
+The Control Plane EF model requires a non-null `ConcurrencyToken` string of up to 32 characters on `TaskDefinitions`, `StageDefinitions`, and `TriggerBindings`. Before deploying to an existing relational database, the host must add these columns and initialize existing rows to the empty string through its EF migration; the SQL Server sample includes `AddDesignConcurrencyTokens`. MongoDB hosts must likewise initialize the field on existing documents before deploying. Drain older Control Plane instances during this upgrade: instances that do not update the tokens cannot participate in the concurrency check. EF manages the tokens independently of the database provider after the upgrade.
 
 Custom Control Plane storage implementations must implement the conditional designer-save operations on the task, stage, and trigger repositories. Their default implementations reject the save rather than silently bypassing the concurrency check.
 
