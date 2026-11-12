@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/orchestrator-runtime.css" asp-append-version="true" />
     <link rel="stylesheet" href="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/css/runtime-reference.css" asp-append-version="true" />
 }
-<section class="runtime-reference instances-reference" data-runtime-catalog data-source="@Url.Page(null, "List")" data-counts-source="@Url.Page(null, "Counts")" data-activity-source="@Url.Page("/Dashboard/Index", "Activity", new { area = "OrchestratorRuntime" })" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
+<section class="runtime-reference instances-reference" data-runtime-catalog data-source="@Url.Page(null, "List")" data-counts-source="@Url.Page(null, "Counts")" data-activity-source="@Url.Page("/Dashboard/Index", "Activity", new { area = "OrchestratorRuntime" })" data-stages-source="@Url.Page(null, "InspectorStages")" data-detail-template="@Url.Page("/Instances/Detail", new { area = "OrchestratorRuntime", instanceId = "__instance_id__" })">
     <div class="od-monitor-counters instance-metrics" aria-label="Instance totals" aria-live="polite">
         @foreach (var counter in counters) {
             <button type="button" class="fleet-card" style="--accent:var(--@counter.Item4)" data-status-group="@counter.Item5" aria-pressed="@(counter.Item5 == "" ? "true" : "false")"><span class="fleet-label"><i class="bi bi-@counter.Item3 fleet-icon"></i>@counter.Item2</span><span data-monitor-metric-skeleton="@counter.Item1"><span class="z-skeleton z-skeleton-line z-skeleton-animate"></span></span><span class="fleet-value-line" data-monitor-metric-data="@counter.Item1" hidden><strong data-monitor-count="@counter.Item1">0</strong><small class="fleet-share" data-monitor-share="@counter.Item1"></small></span><span data-metric-spark="@counter.Item1" title="Observed status transitions in the selected period"></span></button>
@@ -41,16 +41,7 @@
             <div id="instancesGrid" aria-label="Runtime instances grid"></div>
             <div class="grid-footer"><div class="od-live-indicator" data-live-state="connecting"><span class="od-live-dot"></span><span data-live-label>Connecting</span></div><span data-runtime-loaded-copy aria-live="polite"></span></div>
         </section>
-        <aside class="instance-inspector" data-inspector aria-label="Instance inspector" aria-hidden="true">
-            <div class="inspector-head"><div><span class="eyebrow">Instance inspector</span><h2 data-inspector-title>Select an instance</h2></div><button class="icon-button subtle" type="button" data-close-inspector aria-label="Close inspector"><i class="bi bi-x-lg"></i></button></div>
-            <div class="inspector-content" data-inspector-content hidden>
-                <div class="inspector-status-row"><span data-inspector-status></span><span data-inspector-updated></span></div>
-                <div class="inspector-progress"><div><strong>Execution progress</strong><span data-inspector-progress-label></span></div><div class="progress-track"><span data-inspector-progress></span></div></div>
-                <dl class="metadata-grid" data-inspector-metadata></dl>
-                <div class="inspector-section"><div class="section-title"><h3>Current execution</h3></div><div data-inspector-execution></div></div>
-                <div class="inspector-actions"><a class="z-button z-button-primary" data-inspector-detail>Full detail</a></div>
-            </div>
-        </aside>
+        @await Html.PartialAsync("_InstanceInspector")
     </div>
 </section>
 @section Scripts {
@@ -58,6 +49,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.3.0/dist/ag-grid-community.min.js"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-sparklines.js" asp-append-version="true"></script>
+    <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-inspector.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-ag-grid.js" asp-append-version="true"></script>
     <script src="/_content/Krackend.Sagas.Orchestrations.Runtime.WebUI/js/orchestrator-runtime-monitor.js" asp-append-version="true"></script>
 }

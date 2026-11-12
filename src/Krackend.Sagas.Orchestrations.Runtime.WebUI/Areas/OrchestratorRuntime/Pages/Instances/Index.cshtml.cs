@@ -1,6 +1,7 @@
 using Krackend.Sagas.Orchestrations.Runtime.Diagnostics;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
+using Krackend.Sagas.Orchestrations.Abstractions.Primitives;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
@@ -14,13 +15,16 @@ public sealed class IndexModel : PageModel
 {
     private readonly IRuntimeDiagnosticsReader _diagnosticsReader;
     private readonly OrchestratorRuntimeWebUIOptions _options;
+    private readonly IStageExecutionRepository _stages;
 
     public IndexModel(
         IRuntimeDiagnosticsReader diagnosticsReader,
-        IOptions<OrchestratorRuntimeWebUIOptions> options)
+        IOptions<OrchestratorRuntimeWebUIOptions> options,
+        IStageExecutionRepository stages = null)
     {
         _diagnosticsReader = diagnosticsReader;
         _options = options.Value;
+        _stages = stages;
     }
 
     /// <summary>
@@ -59,6 +63,14 @@ public sealed class IndexModel : PageModel
     /// Handles the initial dashboard page request.
     /// </summary>
     public Task OnGetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Loads a bounded stage summary for the selected instance inspector.</summary>
+    public async Task<IActionResult> OnGetInspectorStagesAsync(string instanceId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId) || !Ulid.TryParse(instanceId, out var id)) return BadRequest("The instance ID is invalid.");
+        if (_stages is not IRuntimeStageSummaryReader reader) return StatusCode(503, "Stage summaries are not available.");
+        return new JsonResult(await reader.GetStageSummaries(new Id(id), 20, cancellationToken));
+    }
 
     /// <summary>Loads a filtered page of instances for the runtime catalog.</summary>
     public async Task<IActionResult> OnGetListAsync([FromQuery(Name = "page")] int page = 1, int pageSize = 25,

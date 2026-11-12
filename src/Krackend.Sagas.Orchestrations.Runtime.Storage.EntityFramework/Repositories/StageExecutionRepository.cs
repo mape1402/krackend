@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class StageExecutionRepository : RuntimeRepositoryBase, IStageExecutionRepository
+internal sealed class StageExecutionRepository : RuntimeRepositoryBase, IStageExecutionRepository, IRuntimeStageSummaryReader
 {
     public StageExecutionRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -39,4 +39,15 @@ internal sealed class StageExecutionRepository : RuntimeRepositoryBase, IStageEx
             .Where(x => x.OrchestrationInstanceId == instanceId)
             .OrderBy(x => x.Order)
             .ToArrayAsync(cancellationToken);
+
+    public async Task<RuntimeStageSummaryPage> GetStageSummaries(Id instanceId, int take = 20, CancellationToken cancellationToken = default)
+    {
+        var size = Math.Clamp(take, 1, 50);
+        var rows = await DbContext.StageExecutions.AsNoTracking().Where(x => x.OrchestrationInstanceId == instanceId)
+            .OrderBy(x => x.Order).ThenBy(x => x.Id).Take(size + 1)
+            .Select(x => new { x.StageKey, x.Order, x.Status, x.WasSkipped, x.StartedOnUtc, x.CompletedOnUtc, x.FailedOnUtc })
+            .ToArrayAsync(cancellationToken);
+        return new RuntimeStageSummaryPage(rows.Take(size).Select(x => new RuntimeStageSummary(x.StageKey, x.Order,
+            x.Status.ToString(), x.WasSkipped, x.StartedOnUtc, x.CompletedOnUtc, x.FailedOnUtc)).ToArray(), rows.Length > size);
+    }
 }
