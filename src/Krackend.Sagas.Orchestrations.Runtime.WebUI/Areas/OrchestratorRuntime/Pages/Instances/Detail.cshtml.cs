@@ -46,7 +46,13 @@ public sealed class DetailModel : PageModel
     public string LiveHubPath => $"/{(string.IsNullOrWhiteSpace(_options.RoutePrefix) ? "runtime" : _options.RoutePrefix.Trim('/'))}/live";
 
     /// <summary>Gets whether the persisted terminal instance can be recovered by an operator.</summary>
-    public bool CanRecover => Detail?.Instance?.Status is "DeadLettered" or "Failed";
+    public bool CanRecover => CanRecoverInstance(Detail);
+
+    private static bool CanRecoverInstance(InstanceDetailModel detail)
+        => detail?.Instance?.Status is "DeadLettered" or "Failed" ||
+            (detail?.Instance?.Status == "Completed" && detail.Tasks?.Any(task =>
+                !string.IsNullOrWhiteSpace(task.ParallelGroupId) &&
+                task.Status is "Cancelled" or "WaitingResponse") == true);
 
     /// <summary>Gets whether the active saga can be inspected for missing work.</summary>
     public bool CanReconcile => Detail?.Instance?.Status is "Running" or "Idle" or "Compensating";
@@ -127,7 +133,7 @@ public sealed class DetailModel : PageModel
             return NotFound();
         }
 
-        if (current?.Instance?.Status is not ("DeadLettered" or "Failed"))
+        if (!CanRecoverInstance(current))
         {
             RecoveryMessage = "This saga has already changed state and cannot be recovered from this view.";
             if (PageContext?.HttpContext is not null) TempData["RecoveryTone"] = "danger";

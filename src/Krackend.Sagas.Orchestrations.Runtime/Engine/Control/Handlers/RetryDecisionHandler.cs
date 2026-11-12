@@ -3,6 +3,8 @@ using Krackend.Sagas.Orchestrations.Abstractions.Runtime;
 using Krackend.Sagas.Orchestrations.Abstractions.Runtime.Storage;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions;
 using Krackend.Sagas.Orchestrations.Runtime.Engine.Dispatching;
+using Krackend.Sagas.Orchestrations.Runtime.Engine.Recovery;
+using System.Text.Json.Nodes;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 {
@@ -27,10 +29,20 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var taskExecution = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);
-            if (!CanRetryCurrentTaskState(taskExecution, decision.Task))
+            if (decision.ResumeManual)
             {
-                return;
+                var key = taskExecution.Status == TaskExecutionStatus.Cancelled
+                    ? ParallelCancellationRecovery.ResumeMetadataKey : ParallelCancellationRecovery.ResumeFailedMetadataKey;
+                if (taskExecution.Status is not (TaskExecutionStatus.Cancelled or TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut) ||
+                    !taskExecution.Metadata.TryGetValue(key, out var resume) ||
+                    resume is not JsonValue value || !value.TryGetValue<bool>(out var enabled) || !enabled)
+                    return;
+                taskExecution.Metadata.Remove(key);
+                taskExecution.Metadata.Remove("RetrySuppressed");
+                taskExecution.Metadata["ManualReplay"] = JsonValue.Create(true);
+                taskExecution.Metadata["Recovery.ReplayRequestedOnUtc"] = JsonValue.Create(now);
             }
+            else if (!CanRetryCurrentTaskState(taskExecution, decision.Task)) return;
 
             await _taskAttemptDispatcher.DispatchAsync(
                 new TaskAttemptDispatchRequest
@@ -46,7 +58,7 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
                     Payload = decision.Payload,
                     MetadataDescriptors = decision.MetadataDescriptors,
                     NowUtc = now,
-                    ScheduledOnUtc = ResolveRetryScheduledOnUtc(taskExecution, decision.Task, now)
+                    ScheduledOnUtc = decision.ResumeManual ? new DateTimeOffset(now, TimeSpan.Zero) : ResolveRetryScheduledOnUtc(taskExecution, decision.Task, now)
                 },
                 cancellationToken);
         }

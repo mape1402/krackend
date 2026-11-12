@@ -409,7 +409,7 @@ public sealed class OrchestrationReconciliationTests
             Instances.GetById(Instance.Id, Arg.Any<CancellationToken>()).Returns(Instance);
             Lease.TryExecuteAsync(Instance.Id, Arg.Any<Func<CancellationToken, Task>>(), Arg.Any<CancellationToken>(), false)
                 .Returns(async call => { await call.ArgAt<Func<CancellationToken, Task>>(1)(call.ArgAt<CancellationToken>(2)); return true; });
-            Service = new(Instances, Stages, Tasks, Attempts, Dispatches, Compensations, Transitions, Lease, DispatchRecovery, CancellationCoordinator, Cancellations, CompensationRecovery, Deadline, Scheduler, Timeout, Inspector, Engine, NullLogger<DefaultOrchestrationReconciliationService>.Instance);
+            Service = new(Instances, Stages, Tasks, Attempts, Dispatches, new Fakes.NoopRuntimeStorageUnitOfWork(), Compensations, Transitions, Lease, DispatchRecovery, CancellationCoordinator, Cancellations, CompensationRecovery, Deadline, Scheduler, Timeout, Inspector, Engine, NullLogger<DefaultOrchestrationReconciliationService>.Instance);
         }
         public (TaskExecution Task, TaskExecutionAttempt Attempt, TaskDispatch Dispatch) ArrangeWait(DateTime due)
         {

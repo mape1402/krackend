@@ -42,6 +42,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
     private readonly IRuntimeStorageUnitOfWork _storageUnitOfWork;
     private readonly ArchivedRecoveryIngressPreparer _archivedIngressPreparer;
     private readonly OrchestrationTimeoutOptions _timeoutOptions;
+    private readonly IOrchestrationReconciliationService _reconciliation;
 
     public DefaultOrchestrationRecoveryService(
         IOrchestrationInstanceRepository instanceRepository,
@@ -58,7 +59,8 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         IOrchestrationDispatchCancellationCoordinator dispatchCancellationCoordinator,
         IOrchestrationInstanceCoordinator coordinator = null,
         ArchivedRecoveryIngressPreparer archivedIngressPreparer = null,
-        IOptions<OrchestrationTimeoutOptions> timeoutOptions = null)
+        IOptions<OrchestrationTimeoutOptions> timeoutOptions = null,
+        IOrchestrationReconciliationService reconciliation = null)
     {
         _instanceRepository = instanceRepository ?? throw new ArgumentNullException(nameof(instanceRepository));
         _stageRepository = stageRepository ?? throw new ArgumentNullException(nameof(stageRepository));
@@ -75,6 +77,7 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
         _coordinator = coordinator ?? PassthroughOrchestrationInstanceCoordinator.Instance;
         _archivedIngressPreparer = archivedIngressPreparer;
         _timeoutOptions = timeoutOptions?.Value ?? new OrchestrationTimeoutOptions();
+        _reconciliation = reconciliation;
     }
 
     public async Task<OrchestrationRecoveryResult> ReplayAsync(
@@ -131,6 +134,9 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 $"Instance '{parsedInstanceId}' was not found.");
         }
 
+        if (instance.Status == OrchestrationInstanceStatus.Completed)
+            return await RecoverIncorrectlyCompletedParallelAsync(instance, payload, cancellationToken);
+
         if (!IsRecoverable(instance.Status) || (terminalOnly && !IsOperatorRecoverableTerminal(instance.Status)))
         {
             return OrchestrationRecoveryResult.Rejected(
@@ -151,14 +157,40 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             .ToArray();
         var stageExecutions = await _stageRepository.GetByInstanceId(instance.Id, cancellationToken);
         var taskExecutions = await _taskRepository.GetByInstanceId(instance.Id, cancellationToken);
-        var failedTask = taskExecutions
+        var failures = taskExecutions
             .Where(x => x.Status is TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut)
             .OrderByDescending(x => x.FailedOnUtc ?? x.TimedOutOnUtc ?? x.StartedOnUtc ?? DateTime.MinValue)
-            .FirstOrDefault();
+            .ToArray();
+        var failedTask = failures.FirstOrDefault(task =>
+        {
+            var stage = stageExecutions.FirstOrDefault(x => x.Id == task.StageExecutionId);
+            var definition = stages.FirstOrDefault(x => string.Equals(x.Key, stage?.StageKey, StringComparison.OrdinalIgnoreCase))
+                ?.TaskDefinitions?.FirstOrDefault(x => string.Equals(x.Key, task.TaskKey, StringComparison.Ordinal));
+            return !FailureIsAllowedToContinue(task, definition);
+        }) ?? failures.FirstOrDefault();
 
         if (failedTask is not null)
         {
-            return await ReplayTaskCoreAsync(
+            var cancelled = taskExecutions.Where(x => x.StageExecutionId == failedTask.StageExecutionId &&
+                x.Status == TaskExecutionStatus.Cancelled).ToArray();
+            var owningStage = stageExecutions.FirstOrDefault(x => x.Id == failedTask.StageExecutionId);
+            if (cancelled.Length > 0 && !HasMatchingParallelDefinitions(owningStage, stages, cancelled))
+                return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                    "Cancelled parallel tasks do not match the orchestration artifact; inspect the execution before recovery.");
+            var parallelFailures = taskExecutions.Where(x => failedTask.ParallelGroupId.HasValue && x.Id != failedTask.Id &&
+                x.StageExecutionId == failedTask.StageExecutionId && x.ParallelGroupId == failedTask.ParallelGroupId &&
+                x.Status is (TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut)).ToArray();
+            if (parallelFailures.Length > 0 && !HasMatchingParallelDefinitions(owningStage, stages, parallelFailures))
+                return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                    "Failed parallel tasks do not match the orchestration artifact; inspect the execution before recovery.");
+            var stageDefinition = stages.FirstOrDefault(x => string.Equals(x.Key, owningStage?.StageKey, StringComparison.OrdinalIgnoreCase));
+            var otherFailures = parallelFailures.Where(task => !FailureIsAllowedToContinue(task,
+                stageDefinition?.TaskDefinitions?.FirstOrDefault(definition => definition.Key == task.TaskKey))).ToArray();
+            var unsafeCancellation = await PrepareCancelledParallelTasksAsync(instance, cancelled, cancellationToken);
+            if (unsafeCancellation is not null) return unsafeCancellation;
+            await PrepareOtherParallelFailuresAsync(otherFailures, cancellationToken);
+
+            var replay = await ReplayTaskCoreAsync(
                 instance,
                 failedTask,
                 stageExecutions,
@@ -168,12 +200,28 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 null,
                 now,
                 cancellationToken);
+            if (!replay.Succeeded) return replay;
+            if (cancelled.Length > 0 || otherFailures.Length > 0)
+                await _sagaEngine.OrchestrateAsync(BuildForwardIntent(instance, payload), cancellationToken);
+            if (failedTask.ParallelGroupId.HasValue && _reconciliation is not null)
+                await _reconciliation.ReconcileAsync(instance.Id.ToString(), cancellationToken);
+            return replay;
         }
 
         var failedStage = stageExecutions
             .Where(x => x.Status == StageExecutionStatus.Failed)
             .OrderByDescending(x => x.FailedOnUtc ?? x.StartedOnUtc)
             .FirstOrDefault();
+        var currentStage = failedStage ?? stageExecutions.FirstOrDefault(x =>
+            string.Equals(x.StageKey, instance.CurrentStageKey, StringComparison.OrdinalIgnoreCase));
+        var cancelledWithoutFailure = taskExecutions.Where(x => currentStage is not null &&
+            x.StageExecutionId == currentStage.Id &&
+            x.Status == TaskExecutionStatus.Cancelled).ToArray();
+        if (cancelledWithoutFailure.Length > 0 && !HasMatchingParallelDefinitions(currentStage, stages, cancelledWithoutFailure))
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                "Cancelled parallel tasks do not match the orchestration artifact; inspect the execution before recovery.");
+        var cancellationFailure = await PrepareCancelledParallelTasksAsync(instance, cancelledWithoutFailure, cancellationToken);
+        if (cancellationFailure is not null) return cancellationFailure;
         if (failedStage is not null)
         {
             return await ReplayStageAsync(
@@ -207,11 +255,123 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
             now,
             cancellationToken);
         await _sagaEngine.OrchestrateAsync(BuildForwardIntent(instance, payload), cancellationToken);
+        if (cancelledWithoutFailure.Length > 0 && _reconciliation is not null)
+            await _reconciliation.ReconcileAsync(instance.Id.ToString(), cancellationToken);
 
         return OrchestrationRecoveryResult.Success(
             instance.Id.ToString(),
             OrchestrationInstanceStatus.Running.ToString(),
             "Replay requested for recoverable orchestration instance.");
+    }
+
+    private async Task<OrchestrationRecoveryResult> RecoverIncorrectlyCompletedParallelAsync(
+        OrchestrationInstance instance, string payload, CancellationToken cancellationToken)
+    {
+        var taskExecutions = await _taskRepository.GetByInstanceId(instance.Id, cancellationToken);
+        var unresolved = taskExecutions.Where(x => x.ParallelGroupId.HasValue &&
+            x.Status is TaskExecutionStatus.Cancelled or TaskExecutionStatus.WaitingResponse).ToArray();
+        if (unresolved.Length == 0)
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                $"Instance '{instance.Id}' is not in a recoverable status.");
+        var stageIds = unresolved.Select(x => x.StageExecutionId).Distinct().ToArray();
+        if (stageIds.Length != 1 || instance.DispatchCancellationPending)
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                "The completed saga has multiple incomplete stages or a pending cancellation; inspect its execution before recovery.");
+        var stageExecutions = await _stageRepository.GetByInstanceId(instance.Id, cancellationToken);
+        var stage = stageExecutions.FirstOrDefault(x => x.Id == stageIds[0]);
+        if (stage is null || stage.Status != StageExecutionStatus.Completed ||
+            stageExecutions.Any(x => x.Id != stage.Id && x.Order > stage.Order) ||
+            taskExecutions.Any(x => x.StageExecutionId == stage.Id &&
+                (x.Status is TaskExecutionStatus.Pending or TaskExecutionStatus.Running or TaskExecutionStatus.Retrying ||
+                 (x.Status == TaskExecutionStatus.Cancelled && !x.ParallelGroupId.HasValue))))
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                "The completed saga has later or uncertain work; inspect its execution before recovery.");
+
+        var preparationFailure = await PrepareArchivedIngressAsync(instance, cancellationToken);
+        if (preparationFailure is not null) return preparationFailure;
+        var artifact = await _artifactResolver.ResolveAsync(instance.RuntimeOrchestrationArtifactId.ToString(), cancellationToken);
+        if (artifact?.Artifact?.StageDefinitions is null || !HasMatchingParallelDefinitions(stage, artifact.Artifact.StageDefinitions, unresolved))
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                "The incomplete parallel tasks do not match the orchestration artifact.");
+        var stageDefinition = artifact.Artifact.StageDefinitions.First(x => x.IsEnabled &&
+            string.Equals(x.Key, stage.StageKey, StringComparison.OrdinalIgnoreCase));
+        var failedParallel = taskExecutions.Where(task => task.StageExecutionId == stage.Id && task.ParallelGroupId.HasValue &&
+            task.Status is (TaskExecutionStatus.Failed or TaskExecutionStatus.TimedOut) &&
+            !FailureIsAllowedToContinue(task, stageDefinition.TaskDefinitions.FirstOrDefault(definition => definition.Key == task.TaskKey))).ToArray();
+        if (failedParallel.Length > 0 && !HasMatchingParallelDefinitions(stage, artifact.Artifact.StageDefinitions, failedParallel))
+            return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                "The failed parallel tasks do not match the orchestration artifact.");
+        var cancelled = unresolved.Where(x => x.Status == TaskExecutionStatus.Cancelled).ToArray();
+        var unsafeCancellation = await PrepareCancelledParallelTasksAsync(instance, cancelled, cancellationToken);
+        if (unsafeCancellation is not null) return unsafeCancellation;
+        await PrepareOtherParallelFailuresAsync(failedParallel, cancellationToken);
+
+        var now = DateTime.UtcNow;
+        EnsureProjectedPolicy(instance, artifact.Artifact);
+        stage.Status = StageExecutionStatus.Running;
+        stage.CompletedOnUtc = null;
+        instance.Status = OrchestrationInstanceStatus.Running;
+        instance.CompletedOnUtc = null;
+        instance.FinalOutcome = string.Empty;
+        instance.CurrentStageKey = stage.StageKey;
+        instance.CurrentTaskKey = string.Empty;
+        instance.LastUpdatedOnUtc = now;
+        instance.Metadata[ReplayRequestedOnUtcMetadataKey] = JsonValue.Create(now);
+        instance.Metadata[ReplayRequestedByMetadataKey] = JsonValue.Create("operator");
+        InstanceLifetimePolicy.ResetDeadline(instance, now);
+        await using (var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken))
+        using (_storageUnitOfWork.DeferAutoSave())
+        {
+            await _stageRepository.Update(stage, cancellationToken);
+            await _instanceRepository.Update(instance, cancellationToken);
+            await CreateReplayTransition(instance, stage.Id, null, "StageReplayRequested", "Completed", "Running",
+                "Operator resumed a prematurely completed parallel stage.", now, cancellationToken);
+            await CreateReplayTransition(instance, null, null, "InstanceReplayRequested", "Completed", "Running",
+                "Operator resumed a prematurely completed saga.", now, cancellationToken);
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        await _sagaEngine.OrchestrateAsync(BuildForwardIntent(instance, payload), cancellationToken);
+        if (_reconciliation is not null) await _reconciliation.ReconcileAsync(instance.Id.ToString(), cancellationToken);
+        return OrchestrationRecoveryResult.Success(instance.Id.ToString(), "Running", "The incomplete parallel stage was resumed.");
+    }
+
+    private Task<OrchestrationRecoveryResult> PrepareCancelledParallelTasksAsync(
+        OrchestrationInstance instance, IReadOnlyCollection<TaskExecution> cancelled, CancellationToken cancellationToken)
+        => ParallelCancellationRecovery.PrepareAsync(instance, cancelled, _taskRepository, _attemptRepository,
+            _dispatchRepository, _storageUnitOfWork, _dispatchCancellationCoordinator, cancellationToken);
+
+    private static bool HasMatchingParallelDefinitions(StageExecution execution, IReadOnlyCollection<StageArtifact> stages,
+        IReadOnlyCollection<TaskExecution> tasks)
+    {
+        var stage = stages?.FirstOrDefault(x => x.IsEnabled &&
+            string.Equals(x.Key, execution?.StageKey, StringComparison.OrdinalIgnoreCase));
+        return stage?.TaskDefinitions is not null && stage.ParallelGroups is not null && tasks.All(task =>
+            task.ParallelGroupId.HasValue && stage.ParallelGroups.Any(group => group.Id == task.ParallelGroupId.Value) &&
+            stage.TaskDefinitions.Any(definition => definition.IsEnabled && definition.ParallelGroupId == task.ParallelGroupId &&
+                string.Equals(definition.Key, task.TaskKey, StringComparison.Ordinal)));
+    }
+
+    private static bool FailureIsAllowedToContinue(TaskExecution task, TaskArtifact definition)
+        => definition?.OnErrorPolicy == OnErrorPolicy.Continue ||
+            (task.Status == TaskExecutionStatus.TimedOut &&
+             definition?.TimeoutPolicy?.TimeoutBehaviorPolicy is WaitTimeoutBehaviorPolicyArtifact wait &&
+             wait.OrchestrationAction == OrchestrationActionOnTimeout.Continue);
+
+    private async Task PrepareOtherParallelFailuresAsync(IReadOnlyCollection<TaskExecution> failed, CancellationToken cancellationToken)
+    {
+        if (failed.Count == 0) return;
+        await using var transaction = await _storageUnitOfWork.BeginTransactionAsync(cancellationToken);
+        using (_storageUnitOfWork.DeferAutoSave())
+        {
+            foreach (var task in failed)
+            {
+                task.Metadata[ParallelCancellationRecovery.ResumeFailedMetadataKey] = JsonValue.Create(true);
+                await _taskRepository.Update(task, cancellationToken);
+            }
+            await _storageUnitOfWork.SaveChanges(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<OrchestrationRecoveryResult> ReplayTaskAsync(
@@ -725,6 +885,19 @@ internal sealed class DefaultOrchestrationRecoveryService : IOrchestrationRecove
                 instance.Id.ToString(),
                 instance.Status.ToString(),
                 $"Failed task '{failedTask.TaskKey}' cannot be replayed because its artifact definition is unavailable.");
+        }
+
+        if (failedTask.ParallelGroupId.HasValue && stageExecution.Status != StageExecutionStatus.Running)
+        {
+            if (stageExecution.Status != StageExecutionStatus.Failed)
+                return OrchestrationRecoveryResult.Rejected(instance.Id.ToString(), instance.Status.ToString(),
+                    $"Parallel stage '{stageExecution.StageKey}' is {stageExecution.Status}; inspect it before replaying a task.");
+            stageExecution.Status = StageExecutionStatus.Running;
+            stageExecution.FailedOnUtc = null;
+            stageExecution.ErrorSummary = null;
+            await _stageRepository.Update(stageExecution, cancellationToken);
+            await CreateReplayTransition(instance, stageExecution.Id, null, "StageReplayRequested", "Failed", "Running",
+                $"Parallel stage '{stageExecution.StageKey}' resumed for task recovery.", now, cancellationToken);
         }
 
         var previousTaskStatus = failedTask.Status;

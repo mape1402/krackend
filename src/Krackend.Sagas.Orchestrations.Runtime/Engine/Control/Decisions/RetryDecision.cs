@@ -14,6 +14,8 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
     {
         public string Kind => "retry-task";
 
+        public bool ResumeManual { get; init; }
+
         public IReadOnlyCollection<MetadataDescriptorArtifact> MetadataDescriptors { get; init; } = Array.Empty<MetadataDescriptorArtifact>();
 
         public ExecutionPolicyArtifact OrchestrationExecutionPolicy { get; init; } = ExecutionPolicyArtifact.Empty;

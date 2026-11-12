@@ -16,6 +16,7 @@ internal sealed class DefaultOrchestrationReconciliationService(
     ITaskExecutionRepository tasks,
     ITaskExecutionAttemptRepository attempts,
     ITaskDispatchRepository dispatches,
+    IRuntimeStorageUnitOfWork unitOfWork,
     ICompensationExecutionRepository compensations,
     IExecutionTransitionRepository transitions,
     IOrchestrationInstanceCoordinator coordinator,
@@ -78,6 +79,22 @@ internal sealed class DefaultOrchestrationReconciliationService(
             }
         }
         var instanceTasks = await tasks.GetByInstanceId(id, cancellationToken);
+        var cancelledTasks = instanceTasks.Where(task => task.Status == TaskExecutionStatus.Cancelled).ToArray();
+        var preparedCancelled = false;
+        if (cancelledTasks.Length > 0 && instance.Status is (OrchestrationInstanceStatus.Running or OrchestrationInstanceStatus.Idle))
+        {
+            var activeStage = initialStages.FirstOrDefault(stage => stage.Status == StageExecutionStatus.Running &&
+                string.Equals(stage.StageKey, instance.CurrentStageKey, StringComparison.OrdinalIgnoreCase));
+            if (activeStage is null || cancelledTasks.Any(task => !task.ParallelGroupId.HasValue || task.StageExecutionId != activeStage.Id))
+                findings.Add(new("Intervention", "Cancelled tasks do not belong to the current running parallel stage; inspect them before resuming."));
+            else
+            {
+                var result = await ParallelCancellationRecovery.PrepareAsync(instance, cancelledTasks, tasks, attempts,
+                    dispatches, unitOfWork, cancellationCoordinator, cancellationToken);
+                if (result is not null) findings.Add(new("Intervention", result.Message));
+                else preparedCancelled = true;
+            }
+        }
         foreach (var candidate in instanceTasks)
         {
             try
@@ -282,8 +299,8 @@ internal sealed class DefaultOrchestrationReconciliationService(
         // Re-read after repairs: a timeout can itself advance the saga. Never advance past active work.
         instance = await instances.GetById(id, cancellationToken);
         instanceTasks = await tasks.GetByInstanceId(id, cancellationToken);
-        if (instance.Status == OrchestrationInstanceStatus.Running &&
-            !instanceTasks.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying) &&
+        if ((instance.Status == OrchestrationInstanceStatus.Running || (instance.Status == OrchestrationInstanceStatus.Idle && preparedCancelled)) &&
+            (preparedCancelled || !instanceTasks.Any(x => x.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying)) &&
             !findings.Any(x => x.Status == "Intervention"))
         {
             await engine.OrchestrateAsync(new ForwardIntent
@@ -298,7 +315,19 @@ internal sealed class DefaultOrchestrationReconciliationService(
                 },
                 Payload = instance.SnapshotPayload?.DeepClone()
             }, cancellationToken);
-            findings.Add(new("Recovered", "The orchestration engine re-evaluated the persisted execution state."));
+            if (preparedCancelled)
+            {
+                var currentTasks = await tasks.GetByInstanceId(id, cancellationToken);
+                var cannotResume = currentTasks.Any(task => task.Status == TaskExecutionStatus.Cancelled &&
+                    task.Metadata is not null && task.Metadata.TryGetValue(ParallelCancellationRecovery.ResumeMetadataKey, out var marker) &&
+                    marker is JsonValue value && value.TryGetValue<bool>(out var marked) && marked &&
+                    !currentTasks.Any(other => other.ParallelGroupId == task.ParallelGroupId &&
+                        other.Status is TaskExecutionStatus.Running or TaskExecutionStatus.WaitingResponse or TaskExecutionStatus.Retrying));
+                findings.Add(cannotResume
+                    ? new("Intervention", "A prepared parallel task could not resume; verify its artifact and execution state.")
+                    : new("Recovered", "The orchestration engine resumed or scheduled the recoverable parallel tasks."));
+            }
+            else findings.Add(new("Recovered", "The orchestration engine re-evaluated the persisted execution state."));
         }
         else if (instance.Status == OrchestrationInstanceStatus.Compensating &&
             !findings.Any(x => x.Status == "Intervention") &&
