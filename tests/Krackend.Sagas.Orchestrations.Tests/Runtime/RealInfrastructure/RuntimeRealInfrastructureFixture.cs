@@ -87,6 +87,14 @@ public sealed class RuntimeRealInfrastructureFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        if (Environment.GetEnvironmentVariable("KRACKEND_DISASTER_CHILD") == "1")
+        {
+            RabbitMqConnectionString = Environment.GetEnvironmentVariable("KRACKEND_DISASTER_RABBIT")!;
+            RedisConnectionString = Environment.GetEnvironmentVariable("KRACKEND_DISASTER_REDIS")!;
+            MasterSqlConnectionString = Environment.GetEnvironmentVariable("KRACKEND_DISASTER_SQL")!;
+            return;
+        }
+
         _rabbitMq = new ContainerBuilder()
             .WithImage("rabbitmq:3-management")
             .WithPortBinding(5672, true)
@@ -126,6 +134,12 @@ public sealed class RuntimeRealInfrastructureFixture : IAsyncLifetime
 
     public string BuildSqlConnectionString(string databaseName)
     {
+        if (Environment.GetEnvironmentVariable("KRACKEND_DISASTER_CHILD") == "1")
+        {
+            var builder = new SqlConnectionStringBuilder(MasterSqlConnectionString) { InitialCatalog = databaseName };
+            return builder.ConnectionString;
+        }
+
         if (_sqlServer is null)
         {
             throw new InvalidOperationException("SQL Server container is not running.");

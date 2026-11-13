@@ -41,6 +41,46 @@ namespace Krackend.Sagas.Orchestrations.Tests.Storage;
 public sealed class RuntimeEntityFrameworkRepositoryTests
 {
     [Fact]
+    public async Task RuntimeDependencyProbeReportsMissingFailureProjectionColumns()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        await db.Database.ExecuteSqlRawAsync("DROP INDEX IF EXISTS \"IX_SagaFailureEvents_OrchestrationKey_OrchestrationVersion_TransitionType_OccurredOnUtc\"");
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"SagaFailureEvents\" DROP COLUMN \"OrchestrationKey\"");
+        var probe = scope.ServiceProvider.GetServices<IRuntimeDependencyProbe>()
+            .Single(item => item.GetType().Name == "EntityFrameworkRuntimePrimaryPersistenceProbe");
+        var result = await probe.CheckAsync();
+        Assert.False(result.IsAvailable);
+        Assert.Contains("failure-event schema", result.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("OrchestrationKey", result.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PendingResponseReaderDistinguishesOnTimeLateAndCompletedActions()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var provider = CreateProvider(configureDbContext: options => options.UseSqlite(connection));
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        var deadline = DateTime.UtcNow;
+        var onTime = new DurableAction { Key = ActionKey.From("BackchannelSaga"), Lane = "runtime-backchannel", Payload = "{}", PayloadType = "test", Status = DurableActionStatus.Locked, CreatedOnUtc = new DateTimeOffset(deadline.AddSeconds(-1)) };
+        var late = new DurableAction { Key = ActionKey.From("BackchannelSaga"), Lane = "runtime-backchannel", Payload = "{}", PayloadType = "test", Status = DurableActionStatus.Pending, CreatedOnUtc = new DateTimeOffset(deadline.AddSeconds(1)) };
+        var completed = new DurableAction { Key = ActionKey.From("BackchannelSaga"), Lane = "runtime-backchannel", Payload = "{}", PayloadType = "test", Status = DurableActionStatus.Completed, CreatedOnUtc = new DateTimeOffset(deadline.AddSeconds(-1)) };
+        db.Set<DurableAction>().AddRange(onTime, late, completed);
+        await db.SaveChangesAsync();
+        var reader = scope.ServiceProvider.GetRequiredService<IOrchestrationDurableActionStateReader>();
+        Assert.Equal(DurableWorkPresence.Present, await reader.ReadPendingBeforeAsync(onTime.Id.ToString(), deadline));
+        Assert.Equal(DurableWorkPresence.Terminal, await reader.ReadPendingBeforeAsync(late.Id.ToString(), deadline));
+        Assert.Equal(DurableWorkPresence.Terminal, await reader.ReadPendingBeforeAsync(completed.Id.ToString(), deadline));
+    }
+
+    [Fact]
     public async Task DueTimeoutsAreNotStarvedByOlderWaitsWithoutDeadlines()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

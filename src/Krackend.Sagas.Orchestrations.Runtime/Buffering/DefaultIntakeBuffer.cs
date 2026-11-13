@@ -13,11 +13,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Buffering
 
         public Task EnqueueWorkAsync(WorkItem workItem, CancellationToken cancellationToken = default)
         {
-            _logger.LogWarning(
-                "Runtime work item for artifact '{artifactId}' was ignored because no intake buffer is registered.",
-                workItem?.ArtifactId);
-
-            return Task.CompletedTask;
+            ArgumentNullException.ThrowIfNull(workItem);
+            _logger.LogError(
+                "Runtime work item for artifact '{artifactId}' was not accepted because no intake buffer is registered.",
+                workItem.ArtifactId);
+            throw new InvalidOperationException("No orchestration intake buffer is registered; configure durable runtime buffering before receiving messages.");
         }
     }
 }

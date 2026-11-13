@@ -26,6 +26,7 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
     private readonly IOrchestrationInstanceCoordinator _coordinator;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MuleTaskResponseTimeoutScheduler> _logger;
+    private readonly OrchestrationTimeoutRepairCursor _repairCursor;
 
     public MuleTaskResponseTimeoutScheduler(
         IMuleStorage storage,
@@ -37,7 +38,8 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         ITaskDispatchRepository dispatches,
         IOrchestrationInstanceCoordinator coordinator,
         IServiceScopeFactory scopeFactory,
-        ILogger<MuleTaskResponseTimeoutScheduler> logger)
+        ILogger<MuleTaskResponseTimeoutScheduler> logger,
+        OrchestrationTimeoutRepairCursor repairCursor = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
@@ -49,6 +51,7 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _repairCursor = repairCursor ?? new OrchestrationTimeoutRepairCursor();
     }
 
     public bool UsesDurableScheduling => true;
@@ -128,11 +131,34 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
 
     public async Task<int> RepairAsync(int take = 100, CancellationToken cancellationToken = default)
     {
+        await _repairCursor.Gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RepairPageAsync(take, cancellationToken);
+        }
+        finally
+        {
+            _repairCursor.Gate.Release();
+        }
+    }
+
+    private async Task<int> RepairPageAsync(int take, CancellationToken cancellationToken)
+    {
         var repaired = 0;
         // A completed/dead-lettered timer can still have a reference on a waiting task.
         // Recheck a bounded page of expired waits under the normal instance lease, rather
         // than trusting that reference or recreating a deduplicated, already-consumed action.
-        var overdue = await _tasks.GetResponseTimeoutsDue(DateTime.UtcNow, Math.Max(1, take), cancellationToken);
+        var limit = Math.Max(1, take);
+        var pageReader = _tasks as IResponseTimeoutRepairPageReader;
+        if (pageReader is null && !_repairCursor.WarnedMissingPaging)
+        {
+            _logger.LogWarning("The configured task repository does not support paged timeout repair; inconsistent records can block later candidates.");
+            _repairCursor.WarnedMissingPaging = true;
+        }
+        var overdue = pageReader is null
+            ? await _tasks.GetResponseTimeoutsDue(DateTime.UtcNow, limit, cancellationToken)
+            : await pageReader.GetResponseTimeoutsDuePage(DateTime.UtcNow, _repairCursor.DueOffset, limit, cancellationToken);
+        var unresolvedDue = 0;
         var batch = new OrchestrationTimeoutBatchContext();
         foreach (var task in overdue)
         {
@@ -144,6 +170,7 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
                     ? await batchProcessor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, batch, cancellationToken)
                     : await processor.ProcessTaskTimeoutAsync(task.Id, DateTime.UtcNow, cancellationToken);
                 if (result.Applied) repaired++;
+                else unresolvedDue++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -151,13 +178,21 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
             }
             catch (Exception exception)
             {
+                unresolvedDue++;
                 _logger.LogWarning(exception, "Could not repair overdue response timeout for task '{TaskId}'.", task.Id);
             }
         }
 
-        var missing = await _tasks.GetResponseTimeoutsMissingAction(Math.Max(1, take), cancellationToken);
+        if (pageReader is not null)
+            _repairCursor.DueOffset = NextOffset(_repairCursor.DueOffset, unresolvedDue, overdue.Count, limit);
+
+        var missing = pageReader is null
+            ? await _tasks.GetResponseTimeoutsMissingAction(limit, cancellationToken)
+            : await pageReader.GetResponseTimeoutsMissingActionPage(_repairCursor.MissingActionOffset, limit, cancellationToken);
+        var unresolvedMissing = 0;
         foreach (var task in missing)
         {
+            var scheduled = false;
             try
             {
                 var attempt = (await _attempts.GetByTaskExecutionId(task.Id, cancellationToken))
@@ -184,6 +219,8 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
                     DueOnUtc = dueOnUtc
                 }, cancellationToken);
                 repaired++;
+                var current = await _tasks.GetById(task.Id, cancellationToken);
+                scheduled = current.Status != TaskExecutionStatus.WaitingResponse || !string.IsNullOrWhiteSpace(current.TimeoutActionId);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -193,10 +230,20 @@ internal sealed class MuleTaskResponseTimeoutScheduler : ITaskResponseTimeoutSch
             {
                 _logger.LogWarning(exception, "Could not repair response timeout action for task '{TaskId}'.", task.Id);
             }
+            finally
+            {
+                if (!scheduled) unresolvedMissing++;
+            }
         }
+
+        if (pageReader is not null)
+            _repairCursor.MissingActionOffset = NextOffset(_repairCursor.MissingActionOffset, unresolvedMissing, missing.Count, limit);
 
         return repaired;
     }
+
+    private static int NextOffset(int offset, int unresolved, int count, int limit)
+        => count < limit || unresolved > int.MaxValue - offset ? 0 : offset + unresolved;
 
     private async Task<TimeoutReferenceCaptureResult> CaptureReferenceAsync(
         TaskResponseTimeoutScheduleRequest request,

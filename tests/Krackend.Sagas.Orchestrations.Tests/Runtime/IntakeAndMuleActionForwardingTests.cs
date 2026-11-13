@@ -78,7 +78,7 @@ public sealed class IntakeAndMuleActionForwardingTests
     }
 
     [Fact]
-    public async Task DefaultRuntimeIntakeBufferIgnoresWorkWithoutThrowing()
+    public async Task DefaultRuntimeIntakeBufferRejectsWorkWhenNotConfigured()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -87,7 +87,7 @@ public sealed class IntakeAndMuleActionForwardingTests
         using var scope = provider.CreateScope();
         var buffer = scope.ServiceProvider.GetRequiredService<IIntakeBuffer>();
 
-        await buffer.EnqueueWorkAsync(WorkItem(), CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => buffer.EnqueueWorkAsync(WorkItem(), CancellationToken.None));
     }
 
     private static WorkItem WorkItem()

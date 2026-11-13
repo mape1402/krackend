@@ -11,5 +11,9 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Decisions
         OrchestrationExecutionResultMetadata ExecutionResultMetadata) : IDecision
     {
         public string Kind => "complete-callback";
+
+        // The result was already committed before an interruption. Re-evaluate the saga
+        // without applying the callback or its payload a second time.
+        public bool ResumeOnly { get; init; }
     }
 }

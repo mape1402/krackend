@@ -55,6 +55,11 @@ namespace Krackend.Sagas.Orchestrations.Runtime.Engine.Control.Handlers
 
         public async Task HandleAsync(CompleteCallbackDecision decision, CancellationToken cancellationToken = default)
         {
+            if (decision.ResumeOnly)
+            {
+                return;
+            }
+
             var now = DateTime.UtcNow;
             var instance = await _instanceRepository.GetById(decision.InstanceId, cancellationToken);
             var task = await _taskRepository.GetById(decision.TaskExecutionId, cancellationToken);

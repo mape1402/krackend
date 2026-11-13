@@ -391,12 +391,12 @@ public sealed class RuntimeSmallComponentBehaviorTests
     }
 
     [Fact]
-    public async Task DefaultIntakeBufferAcceptsWorkItemsAndNullFallbackItems()
+    public async Task DefaultIntakeBufferRejectsWorkWhenNoBufferIsConfigured()
     {
         var buffer = new DefaultIntakeBuffer(NullLogger<DefaultIntakeBuffer>.Instance);
 
-        await buffer.EnqueueWorkAsync(new WorkItem { ArtifactId = "artifact-a" });
-        await buffer.EnqueueWorkAsync(null!);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => buffer.EnqueueWorkAsync(new WorkItem { ArtifactId = "artifact-a" }));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => buffer.EnqueueWorkAsync(null!));
     }
 
     [Fact]

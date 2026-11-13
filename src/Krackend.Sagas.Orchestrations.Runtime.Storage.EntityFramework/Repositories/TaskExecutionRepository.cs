@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Krackend.Sagas.Orchestrations.Runtime.Storage.EntityFramework.Repositories;
 
-internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExecutionRepository
+internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExecutionRepository, IResponseTimeoutRepairPageReader
 {
     public TaskExecutionRepository(RuntimeDbContext dbContext, IRuntimeStorageUnitOfWork unitOfWork)
         : base(dbContext, unitOfWork)
@@ -83,4 +83,33 @@ internal sealed class TaskExecutionRepository : RuntimeRepositoryBase, ITaskExec
             .OrderBy(x => x.ResponseDeadlineUtc)
             .Take(Math.Max(1, take))
             .ToArrayAsync(cancellationToken);
+
+    public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsDuePage(
+        DateTime dueBeforeUtc, int skip, int take, CancellationToken cancellationToken = default)
+    {
+        var offset = Math.Max(0, skip);
+        var limit = Math.Max(1, take);
+        var projected = DbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                x.ResponseDeadlineUtc != null && x.ResponseDeadlineUtc <= dueBeforeUtc);
+        var due = await projected.OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
+            .Skip(offset).Take(limit).ToArrayAsync(cancellationToken);
+        if (due.Length == limit) return due;
+
+        var legacyOffset = offset == 0 ? 0 : Math.Max(0, offset - await projected.CountAsync(cancellationToken));
+        var legacy = await DbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                x.ResponseDeadlineUtc == null && x.WaitingSinceUtc <= dueBeforeUtc)
+            .OrderBy(x => x.WaitingSinceUtc).ThenBy(x => x.Id)
+            .Skip(legacyOffset).Take(limit - due.Length).ToArrayAsync(cancellationToken);
+        return due.Concat(legacy).ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<TaskExecution>> GetResponseTimeoutsMissingActionPage(
+        int skip, int take, CancellationToken cancellationToken = default)
+        => await DbContext.TaskExecutions.AsNoTracking()
+            .Where(x => x.Status == TaskExecutionStatus.WaitingResponse &&
+                x.ResponseDeadlineUtc != null && string.IsNullOrWhiteSpace(x.TimeoutActionId))
+            .OrderBy(x => x.ResponseDeadlineUtc).ThenBy(x => x.Id)
+            .Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToArrayAsync(cancellationToken);
 }

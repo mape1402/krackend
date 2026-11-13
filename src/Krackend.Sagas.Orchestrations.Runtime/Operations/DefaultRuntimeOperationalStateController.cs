@@ -100,6 +100,16 @@ internal sealed class DefaultRuntimeOperationalStateController : IRuntimeOperati
             _gate.Release();
         }
 
+        if (snapshot.State == RuntimeOperationalState.Closed)
+        {
+            _logger.LogError("Orchestration runtime is closed: {Failures}", string.Join("; ",
+                snapshot.Dependencies.Where(result => !result.IsAvailable).Select(result => $"{result.Name}: {result.Reason}")));
+        }
+        else if (previous.State == RuntimeOperationalState.Closed)
+        {
+            _logger.LogInformation("Orchestration runtime admission reopened after its critical dependencies recovered.");
+        }
+
         await NotifyHandlersAsync(previous, snapshot, cancellationToken);
         return snapshot;
     }

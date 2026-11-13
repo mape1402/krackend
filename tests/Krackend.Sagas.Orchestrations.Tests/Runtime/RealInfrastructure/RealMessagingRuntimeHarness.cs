@@ -51,7 +51,9 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
         string? databaseName = null,
         string? replicaId = null,
         bool gossipEnabled = false,
-        bool butterMorphEnabled = false)
+        bool butterMorphEnabled = false,
+        Action<IServiceCollection>? configureTestServices = null,
+        TimeSpan? muleLockTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(infrastructure);
 
@@ -142,12 +144,21 @@ internal sealed class RealMessagingRuntimeHarness : IAsyncDisposable
                             options.LeaseDuration = TimeSpan.FromSeconds(30);
                             options.DeduplicationRetention = TimeSpan.FromMinutes(30);
                         });
-                        mule.Configure(options => options.ImmediateDispatch = true);
+                        mule.Configure(options =>
+                        {
+                            options.ImmediateDispatch = true;
+                            if (muleLockTimeout.HasValue)
+                            {
+                                options.LockTimeout = muleLockTimeout.Value;
+                                options.DispatchInterval = TimeSpan.FromSeconds(1);
+                            }
+                        });
                     },
                     runtimeMule =>
                     {
                         runtimeMule.Profile = KrackendMuleRuntimeProfile.HighThroughput;
                     });
+                configureTestServices?.Invoke(services);
             })
             .Build();
 
